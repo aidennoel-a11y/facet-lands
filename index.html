@@ -40,17 +40,22 @@
       </dl>
 
       <div class="toggles">
-        <label><input id="autofly" type="checkbox" /> Auto-fly <kbd>F</kbd></label>
+        <label><input id="fly" type="checkbox" checked /> Fly <kbd>V</kbd></label>
+        <label><input id="automove" type="checkbox" /> Auto-move <kbd>F</kbd></label>
         <label><input id="wireframe" type="checkbox" /> Triangles <kbd>G</kbd></label>
       </div>
     </section>
 
-    <aside class="keys" aria-label="Controls">
+    <aside class="keys" data-mode="fly" aria-label="Controls">
       <span><kbd>Drag</kbd> look</span>
-      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly</span>
-      <span><kbd>Space</kbd>/<kbd>Q</kbd> up / down</span>
-      <span><kbd>Shift</kbd> fast</span>
-      <span><kbd>Wheel</kbd> speed</span>
+      <span class="fly-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly</span>
+      <span class="fly-only"><kbd>Space</kbd>/<kbd>Q</kbd> up / down</span>
+      <span class="fly-only"><kbd>Shift</kbd> fast</span>
+      <span class="fly-only"><kbd>Wheel</kbd> speed</span>
+      <span class="walk-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
+      <span class="walk-only"><kbd>Space</kbd> jump</span>
+      <span class="walk-only"><kbd>Shift</kbd> sprint</span>
+      <span><kbd>V</kbd> fly / walk</span>
     </aside>
 
     <canvas id="minimap" width="360" height="360" aria-label="Minimap, north up"></canvas>

@@ -24,6 +24,32 @@ export function createTreeLayer() {
     name: 'trees',
     material,
     count: 0, // trees currently loaded, for the HUD
+    trunks: new Map(), // "cx,cz" -> [x, z, radius, ...] in world space, for collisions
+
+    /**
+     * Pushes a circle (the walking player) out of any tree trunk it overlaps.
+     * Bushes are soft and can be walked through.
+     */
+    collide(position, radius, chunkSize) {
+      const cx = Math.floor(position.x / chunkSize);
+      const cz = Math.floor(position.z / chunkSize);
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const list = layer.trunks.get(`${cx + dx},${cz + dz}`);
+          if (!list) continue;
+          for (let k = 0; k < list.length; k += 3) {
+            const ox = position.x - list[k];
+            const oz = position.z - list[k + 1];
+            const min = radius + list[k + 2];
+            const d2 = ox * ox + oz * oz;
+            if (d2 >= min * min || d2 === 0) continue;
+            const d = Math.sqrt(d2);
+            position.x += (ox / d) * (min - d);
+            position.z += (oz / d) * (min - d);
+          }
+        }
+      }
+    },
 
     build({ cx, cz, lod, groundHeightAt, generator, config }) {
       if (lod > config.treeMaxLod) return null;
@@ -89,6 +115,12 @@ export function createTreeLayer() {
         }
       }
 
+      const trunks = [];
+      for (const [type, list] of Object.entries(placed)) {
+        if (type === 'bush') continue;
+        for (const t of list) trunks.push(originX + t.x, originZ + t.z, 0.35 * t.s);
+      }
+
       const group = new Group();
       group.name = 'trees';
       let count = 0;
@@ -110,12 +142,17 @@ export function createTreeLayer() {
       }
       if (count === 0) return null;
       group.userData.count = count;
+      group.userData.key = `${cx},${cz}`;
+      group.userData.trunks = trunks;
       layer.count += count;
+      layer.trunks.set(group.userData.key, trunks);
       return group;
     },
 
     dispose(group) {
       layer.count -= group.userData.count;
+      // A rebuilt chunk (new LOD) may already have registered its trunks.
+      if (layer.trunks.get(group.userData.key) === group.userData.trunks) layer.trunks.delete(group.userData.key);
       for (const mesh of group.children) mesh.dispose(); // geometry is shared
     },
   };

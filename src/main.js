@@ -4,7 +4,7 @@ import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
-import { FlyControls } from './controls/FlyControls.js';
+import { PlayerControls } from './controls/PlayerControls.js';
 import { Minimap } from './ui/Minimap.js';
 
 const SKY_TOP = new THREE.Color(0x3f7fd0);
@@ -19,7 +19,7 @@ const scene = new THREE.Scene();
 const drawDistance = WORLD.viewDistance * WORLD.chunkSize;
 scene.fog = new THREE.Fog(SKY_HORIZON, drawDistance * 0.45, drawDistance * 0.95);
 
-const camera = new THREE.PerspectiveCamera(60, 1, 0.5, drawDistance * 1.5);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.3, drawDistance * 1.5);
 
 // Gradient sky dome that follows the camera.
 const sky = new THREE.Mesh(
@@ -80,7 +80,11 @@ function placeCamera() {
   controls.lookAt(new THREE.Vector3(best.x, best.h * 0.5, best.z));
 }
 
-const controls = new FlyControls(camera, canvas, (x, z) => Math.max(generator.getHeight(x, z), WORLD.seaLevel));
+const controls = new PlayerControls(camera, canvas, {
+  groundHeight: (x, z) => chunks.groundHeightAt(x, z),
+  seaLevel: WORLD.seaLevel,
+  collide: (position, radius) => trees.collide(position, radius, WORLD.chunkSize),
+});
 placeCamera();
 
 // --- HUD -----------------------------------------------------------------------
@@ -90,7 +94,9 @@ const ui = {
   seedForm: document.getElementById('seed-form'),
   randomSeed: document.getElementById('random-seed'),
   wireframe: document.getElementById('wireframe'),
-  autofly: document.getElementById('autofly'),
+  fly: document.getElementById('fly'),
+  automove: document.getElementById('automove'),
+  keys: document.querySelector('.keys'),
   fps: document.getElementById('stat-fps'),
   chunks: document.getElementById('stat-chunks'),
   tris: document.getElementById('stat-tris'),
@@ -122,12 +128,18 @@ ui.randomSeed.addEventListener('click', () => {
 ui.wireframe.addEventListener('change', () => {
   for (const m of [terrainMaterial, water.material, trees.material]) m.wireframe = ui.wireframe.checked;
 });
-ui.autofly.addEventListener('change', () => {
-  controls.autoFly = ui.autofly.checked;
+ui.automove.addEventListener('change', () => {
+  controls.autoMove = ui.automove.checked;
+});
+ui.fly.addEventListener('change', () => {
+  const mode = ui.fly.checked ? 'fly' : 'walk';
+  controls.setMode(mode);
+  ui.keys.dataset.mode = mode;
 });
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
-  if (e.code === 'KeyF') ui.autofly.click();
+  if (e.code === 'KeyV') ui.fly.click();
+  if (e.code === 'KeyF') ui.automove.click();
   if (e.code === 'KeyG') ui.wireframe.click();
 });
 
@@ -170,11 +182,11 @@ function tick(now) {
     ui.tris.textContent = `${(chunks.triangleCount / 1000).toFixed(0)}k`;
     ui.trees.textContent = `${(trees.count / 1000).toFixed(1)}k`;
     ui.alt.textContent = `${Math.round(camera.position.y)} m`;
-    ui.speed.textContent = `${Math.round(controls.speed)} m/s`;
+    ui.speed.textContent = `${Math.round(controls.currentSpeed)} m/s`;
   }
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { scene, camera, chunks, get generator() { return generator; }, WORLD };
+window.world = { scene, camera, chunks, controls, get generator() { return generator; }, WORLD };

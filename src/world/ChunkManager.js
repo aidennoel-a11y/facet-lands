@@ -1,6 +1,8 @@
 import { Group, Mesh } from 'three';
 import { buildChunkGeometry } from './ChunkMesher.js';
 
+const NEIGHBOURS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
+
 /**
  * Keeps a ring of chunks loaded around the camera.
  *
@@ -128,7 +130,7 @@ export class ChunkManager {
     mesh.name = 'ground';
     group.add(mesh);
 
-    const chunk = { key, cx, cz, lod, group, mesh, triangles, layerObjects: [] };
+    const chunk = { key, cx, cz, lod, group, mesh, triangles, groundHeightAt, layerObjects: [] };
 
     for (const layer of this.layers) {
       const object = layer.build({
@@ -155,6 +157,25 @@ export class ChunkManager {
     chunk.mesh.geometry.dispose();
     for (const { layer, object } of chunk.layerObjects) layer.dispose?.(object);
     this.triangleCount -= chunk.triangles;
+  }
+
+  /**
+   * Height of the loaded triangle surface at a world position (what you'd
+   * actually stand on). Falls back to the generator where nothing is loaded.
+   */
+  groundHeightAt(x, z) {
+    const { chunkSize } = this.config;
+    const cx = Math.floor(x / chunkSize);
+    const cz = Math.floor(z / chunkSize);
+    // Vertex jitter lets a chunk's surface poke slightly past its square,
+    // so check the neighbours before giving up.
+    for (const [dx, dz] of NEIGHBOURS) {
+      const chunk = this.chunks.get(`${cx + dx},${cz + dz}`);
+      if (!chunk) continue;
+      const h = chunk.groundHeightAt(x - (cx + dx) * chunkSize, z - (cz + dz) * chunkSize);
+      if (h !== null) return h;
+    }
+    return this.generator.getHeight(x, z);
   }
 
   get loadedCount() {

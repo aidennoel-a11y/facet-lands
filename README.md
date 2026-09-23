@@ -17,15 +17,21 @@ npm run build    # production build in dist/
 
 ### Controls
 
-| Input | Action |
-| --- | --- |
-| Drag (mouse / touch) | Look around |
-| `W` `A` `S` `D` / arrows | Fly |
-| `Space` / `E`, `Ctrl` / `Q` | Up / down |
-| `Shift` | Fly faster |
-| Mouse wheel | Change cruising speed |
-| `F` | Toggle auto-fly |
-| `G` | Show the triangles (wireframe) |
+Tick **Fly** (or press `V`) to switch between flying and walking.
+
+| Input | Flying | Walking |
+| --- | --- | --- |
+| Drag (mouse / touch) | Look around | Look around |
+| `W` `A` `S` `D` / arrows | Fly where you look | Walk |
+| `Space` | Up | Jump |
+| `Ctrl` / `Q` | Down | – |
+| `Shift` | Fly faster | Sprint |
+| Mouse wheel | Change cruising speed | – |
+| `F` | Auto-move forward | Auto-move forward |
+| `G` | Show the triangles (wireframe) | same |
+
+Walking has gravity, stops you at slopes too steep to climb, blocks you at tree
+trunks (bushes you can walk through), and makes you swim in deep water.
 
 Type any seed into the panel and press **Build**, or press **Random**. The same seed
 always makes the same world.
@@ -48,7 +54,7 @@ src/
     layers/
       WaterLayer.js         per-chunk water sheet, colored by depth, animated waves
       TreeLayer.js          scatters instanced trees over nearby chunks
-  controls/FlyControls.js   free-fly camera that stays above the ground
+  controls/PlayerControls.js  fly and walk modes: gravity, slopes, trunks, swimming
   ui/Minimap.js             hill-shaded top-down map
 ```
 

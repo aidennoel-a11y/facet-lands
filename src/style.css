@@ -180,6 +180,10 @@ kbd {
   align-items: center;
   gap: 3px;
 }
+.keys[data-mode='fly'] .walk-only,
+.keys[data-mode='walk'] .fly-only {
+  display: none;
+}
 
 #minimap {
   position: fixed;
