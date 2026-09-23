@@ -39,7 +39,7 @@ export class TerrainGenerator {
     const continent = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3);
 
     // Where mountain ranges live (0 = lowland, 1 = full mountains).
-    const mask = smoothstep(0.08, 0.5, this.mountainMaskNoise.fbm(x * 0.0006, z * 0.0006, 3));
+    const mask = this.getMountainness(x, z);
 
     // Crested ranges, with the crests softened a little so peaks aren't needles.
     const ridges = this.ridgeNoise.ridged(x * 0.0012, z * 0.0012, 4, 2, 0.47, 0.012);
@@ -54,6 +54,11 @@ export class TerrainGenerator {
     const lakes = smoothstep(0.35, 0.65, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - mask);
 
     return 14 + continent * 16 + hills + mountains - sea - lakes;
+  }
+
+  /** How mountainous an area is: 0 = lowland, 1 = in a range. Foothills lie in between. */
+  getMountainness(x, z) {
+    return smoothstep(0.08, 0.5, this.mountainMaskNoise.fbm(x * 0.0006, z * 0.0006, 3));
   }
 
   /**

@@ -5,7 +5,8 @@ import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer } from './world/layers/GrassLayer.js';
-import { createCaveLayer } from './world/layers/CaveLayer.js';
+import { caveNightVision, createCaveLayer } from './world/layers/CaveLayer.js';
+import { createRockLayer } from './world/layers/RockLayer.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
 import { PlayerControls } from './controls/PlayerControls.js';
@@ -38,7 +39,9 @@ const rayEffects = new RayEffects(renderer);
 const light = { direction: dayNight.lightDirection, color: dayNight.light.color, strength: 1 };
 
 // --- Terrain -----------------------------------------------------------------
-const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
+// Double-sided so that, from inside a cave, a lip of ground overhanging the
+// mouth shows as ground rather than letting the sky through.
+const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
 // A heightfield has no back faces, so render its front faces into the shadow map.
 terrainMaterial.shadowSide = THREE.FrontSide;
 let generator = new TerrainGenerator(WORLD.seed, WORLD);
@@ -51,6 +54,8 @@ chunks.addLayer(trees);
 chunks.addLayer(grass);
 const caves = createCaveLayer(WORLD);
 chunks.addLayer(caves);
+const rocks = createRockLayer(WORLD);
+chunks.addLayer(rocks);
 
 /**
  * What you'd stand on at (x, z) from feet height `feetY`: the terrain, or a
@@ -82,6 +87,7 @@ const controls = new PlayerControls(camera, canvas, {
   seaLevel: WORLD.seaLevel,
   collide: (position, radius) => {
     trees.collide(position, radius, WORLD.chunkSize);
+    rocks.collide(position, radius);
     generator.caves.collide(position, radius, position.y - controls.eyeHeight);
   },
 });
@@ -109,6 +115,7 @@ const ui = {
   cycle: document.getElementById('cycle'),
   shadows: document.getElementById('shadows'),
   rays: document.getElementById('rays'),
+  night: document.getElementById('night'),
   presets: document.querySelectorAll('[data-hour]'),
   alt: document.getElementById('stat-alt'),
   speed: document.getElementById('stat-speed'),
@@ -136,7 +143,7 @@ ui.randomSeed.addEventListener('click', () => {
   setSeed(value);
 });
 ui.wireframe.addEventListener('change', () => {
-  for (const m of [terrainMaterial, water.material, trees.material, trees.leafMaterial, grass.material, caves.material, ...clouds.materials]) {
+  for (const m of [terrainMaterial, water.material, trees.material, trees.leafMaterial, grass.material, caves.material, rocks.material, ...clouds.materials]) {
     m.wireframe = ui.wireframe.checked;
   }
 });
@@ -154,6 +161,14 @@ for (const button of ui.presets) {
     ui.clock.textContent = dayNight.clock;
   });
 }
+// Night vision, for testing: a soft green-white light everywhere, caves
+// no longer dimmed and no underground haze.
+const nightVisionLight = new THREE.AmbientLight(0xd4ffdc, 0);
+scene.add(nightVisionLight);
+ui.night.addEventListener('change', () => {
+  nightVisionLight.intensity = ui.night.checked ? 1.6 : 0;
+  caveNightVision.value = ui.night.checked ? 1 : 0;
+});
 ui.shadows.addEventListener('change', () => {
   dayNight.shadows = ui.shadows.checked;
 });
@@ -173,6 +188,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyT') ui.cycle.click();
   if (e.code === 'KeyH') ui.shadows.click();
   if (e.code === 'KeyR') ui.rays.click();
+  if (e.code === 'KeyN') ui.night.click();
 });
 
 // --- Hotbar and placing things --------------------------------------------------
@@ -240,7 +256,14 @@ function useItem(clientX, clientY, item) {
     hotbar.flash(controls.mode === 'walk' ? 'Too far away: get closer' : 'Point at the ground');
     return;
   }
-  const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  const normal = hit.face.normal.clone();
+  if (hit.instanceId !== undefined) {
+    // Rocks are instanced: turn the normal by that rock's own transform too.
+    const instance = new THREE.Matrix4();
+    hit.object.getMatrixAt(hit.instanceId, instance);
+    normal.transformDirection(instance);
+  }
+  normal.transformDirection(hit.object.matrixWorld);
   if (normal.dot(raycaster.ray.direction) > 0) normal.negate(); // caves are seen from inside
   if (item.id === 'torch' && !torches.place(hit.point, normal)) hotbar.flash("Torches can't hang from a ceiling");
 }
@@ -263,7 +286,7 @@ function updateVisibility() {
   // Underground, a short dark haze replaces the sky: caves fade into darkness
   // rather than showing gaps where far-off tunnels aren't built yet.
   const toMouth = mouths.reduce((d, e) => Math.min(d, Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z)), Infinity);
-  caveHaze.target = underground ? Math.min(1, Math.max(0, (toMouth - 4) / 16)) : 0;
+  caveHaze.target = underground && !ui.night.checked ? Math.min(1, Math.max(0, (toMouth - 4) / 16)) : 0;
 }
 
 const caveHaze = { target: 0, amount: 0, color: new THREE.Color(0x07080b) };

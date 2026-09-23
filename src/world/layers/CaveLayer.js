@@ -6,6 +6,9 @@ import { Group, Mesh, MeshLambertMaterial, ShaderChunk } from 'three';
  * darker the further you are from an entrance. Point lights (torches) are
  * left untouched, so a torch lights a deep cave just as brightly as the mouth.
  */
+/** Night vision (testing): 1 lifts the cave darkening completely. */
+export const caveNightVision = { value: 0 };
+
 function caveMaterial() {
   const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const lights = ShaderChunk.lights_fragment_begin.replace(
@@ -13,16 +16,18 @@ function caveMaterial() {
     'vec3 caveBeforeSky = reflectedLight.directDiffuse;\n#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )',
   );
   material.onBeforeCompile = (shader) => {
+    shader.uniforms.uNightVision = caveNightVision;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float skyLight;\nvarying float vSkyLight;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSkyLight = skyLight;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vSkyLight;')
+      .replace('#include <common>', '#include <common>\nvarying float vSkyLight;\nuniform float uNightVision;')
       .replace(
         '#include <lights_fragment_begin>',
         `${lights}
-        reflectedLight.directDiffuse = caveBeforeSky + (reflectedLight.directDiffuse - caveBeforeSky) * vSkyLight;
-        irradiance *= vSkyLight;`,
+        float caveSky = max(vSkyLight, uNightVision);
+        reflectedLight.directDiffuse = caveBeforeSky + (reflectedLight.directDiffuse - caveBeforeSky) * caveSky;
+        irradiance *= caveSky;`,
       );
   };
   material.customProgramCacheKey = () => 'cave';

@@ -144,14 +144,24 @@ export class CaveSystem {
     return this.field.entrancesNear(minX, minZ, maxX, maxZ);
   }
 
-  /** Is this terrain point part of a cave mouth (drawn by the cave mesh instead)? */
-  cutsTerrain(entrances, x, z) {
-    return entrances.length > 0 && CaveField.mouthDistance(entrances, x, z) < this.field.cutRadius;
+  /**
+   * Is the ground point (x, y, z) over an entrance tunnel's air (so the
+   * terrain there should be cut away to open the mouth)? `margin` demands
+   * that much clearance inside the tunnel, so a cut never exposes rock the
+   * (coarser) cave mesh treats as solid.
+   */
+  cutsTerrain(entrances, x, y, z, margin = 0.6) {
+    for (const e of entrances) {
+      const b = e.bounds;
+      if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
+      if (CaveField.ramp(e, x, y - 0.8, z) < -margin) return true;
+    }
+    return false;
   }
 
   /** Is the ground at (x, z) a cave mouth? */
   isHole(x, z) {
-    return this.cutsTerrain(this.mouthsNear(x, z, x, z), x, z);
+    return this.cutsTerrain(this.mouthsNear(x, z, x, z), x, this.generator.getHeight(x, z), z);
   }
 
   /**

@@ -35,6 +35,9 @@ export const WORLD = {
   // Caves (their mouths are cut into full-detail terrain only)
   caveMaxLod: 1,
 
+  // Rocks: boulders up to this LOD, small stones one level closer
+  rockMaxLod: 2,
+
   // Grass
   grassSpacing: 1.6, // metres between grass tufts
   grassMaxLod: 0,

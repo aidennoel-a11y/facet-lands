@@ -50,9 +50,37 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     }
   }
 
+  // Cave mouths (full detail only): triangles sitting over an entrance
+  // tunnel's air are left out, opening a hole straight into it. Worked out
+  // first because the hole's rim adds triangles.
+  const caveSystem = resolution === finest ? generator.caves : null;
+  const mouths = caveSystem ? caveSystem.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
+  const cut = new Set(); // (cell index * 2 + triangle) of removed triangles
+  const overAir = (k) => caveSystem.cutsTerrain(mouths, originX + gridX[k], gridY[k], originZ + gridZ[k]);
+  if (mouths.length) {
+    for (let j = 0; j < resolution; j++) {
+      for (let i = 0; i < resolution; i++) {
+        const tris = cellTriangles(i, j);
+        for (let t = 0; t < 6; t += 3) {
+          const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
+          const corners = overAir(p0) + overAir(p1) + overAir(p2);
+          const centre = caveSystem.cutsTerrain(
+            mouths,
+            originX + (gridX[p0] + gridX[p1] + gridX[p2]) / 3,
+            (gridY[p0] + gridY[p1] + gridY[p2]) / 3,
+            originZ + (gridZ[p0] + gridZ[p1] + gridZ[p2]) / 3,
+          );
+          // Only triangles wholly over the tunnel: never leave rock uncovered.
+          if (centre && corners === 3) cut.add((j * resolution + i) * 2 + t / 3);
+        }
+      }
+    }
+  }
+
   const surfaceTris = resolution * resolution * 2;
   const skirtTris = resolution * 4 * 2;
-  const totalVerts = (surfaceTris + skirtTris) * 3;
+  const rimTris = cut.size * 3 * 2; // at most a wall quad per cut triangle edge
+  const totalVerts = (surfaceTris + skirtTris + rimTris) * 3;
   const positions = new Float32Array(totalVerts * 3);
   const normals = new Float32Array(totalVerts * 3);
   const colors = new Float32Array(totalVerts * 3);
@@ -109,11 +137,6 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     const flip = hash2(baseGx + i * step, baseGz + j * step, seed + 7) < 0.5;
     return flip ? [a, c, d, a, d, b] : [a, c, b, b, c, d];
   }
-  // Cave mouths: at full detail, triangles right around an entrance are
-  // left out; the cave mesh draws the ground and the opening there instead.
-  const caveSystem = resolution === finest ? generator.caves : null;
-  const caves = caveSystem ? caveSystem.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
-  const cut = new Set(); // (cell index * 2 + triangle) of removed triangles
   for (let j = 0; j < resolution; j++) {
     for (let i = 0; i < resolution; i++) {
       const tris = cellTriangles(i, j);
@@ -121,20 +144,65 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
       const gz = baseGz + j * step;
       for (let t = 0; t < 6; t += 3) {
         const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
-        if (caves.length) {
-          const cx3 = originX + (gridX[p0] + gridX[p1] + gridX[p2]) / 3;
-          const cz3 = originZ + (gridZ[p0] + gridZ[p1] + gridZ[p2]) / 3;
-          if (caveSystem.cutsTerrain(caves, cx3, cz3)) {
-            cut.add((j * resolution + i) * 2 + t / 3);
-            continue;
-          }
-        }
+        if (cut.has((j * resolution + i) * 2 + t / 3)) continue;
         pushTri(gridX[p0], gridY[p0], gridZ[p0], gridX[p1], gridY[p1], gridZ[p1], gridX[p2], gridY[p2], gridZ[p2], gx * 2 + t / 3, gz);
         for (const p of [p0, p1, p2]) {
           vertexNormals[p * 3] += normal.x;
           vertexNormals[p * 3 + 1] += normal.y;
           vertexNormals[p * 3 + 2] += normal.z;
         }
+      }
+    }
+  }
+
+  // 2b. Cave mouth rims: rock walls hanging from the edge of each hole, facing
+  //     into it, so the opening looks dug into the ground rather than cut out.
+  if (cut.size) {
+    const edgeUse = new Map(); // "a,b" -> { cut: [triangle centres], kept: count }
+    for (let j = 0; j < resolution; j++) {
+      for (let i = 0; i < resolution; i++) {
+        const tris = cellTriangles(i, j);
+        for (let t = 0; t < 6; t += 3) {
+          const isCut = cut.has((j * resolution + i) * 2 + t / 3);
+          const tri = [tris[t], tris[t + 1], tris[t + 2]];
+          const cx3 = (gridX[tri[0]] + gridX[tri[1]] + gridX[tri[2]]) / 3;
+          const cz3 = (gridZ[tri[0]] + gridZ[tri[1]] + gridZ[tri[2]]) / 3;
+          for (let e = 0; e < 3; e++) {
+            const a = tri[e], b = tri[(e + 1) % 3];
+            const key = a < b ? `${a},${b}` : `${b},${a}`;
+            let use = edgeUse.get(key);
+            if (!use) edgeUse.set(key, (use = { a, b, cut: [], kept: 0 }));
+            if (isCut) use.cut.push([cx3, cz3]);
+            else use.kept++;
+          }
+        }
+      }
+    }
+    const rimNormal = new Vector3();
+    for (const { a, b, cut: cutSides, kept } of edgeUse.values()) {
+      if (cutSides.length !== 1) continue; // not on the hole's edge (or inside it)
+      const [ccx, ccz] = cutSides[0];
+      const mx = (gridX[a] + gridX[b]) / 2;
+      const mz = (gridZ[a] + gridZ[b]) / 2;
+      if (!kept) {
+        // Edge on the chunk border: only add a wall if the ground across it is solid.
+        const ox = 2 * mx - ccx, oz = 2 * mz - ccz;
+        if (caveSystem.cutsTerrain(mouths, originX + ox, (gridY[a] + gridY[b]) / 2, originZ + oz, 0)) continue;
+      }
+      const depth = 4.5;
+      rimNormal.set(ccx - mx, 0, ccz - mz).normalize(); // into the hole
+      const ax = gridX[a], ay = gridY[a], az = gridZ[a];
+      const bx = gridX[b], by = gridY[b], bz = gridZ[b];
+      // Wind the quad so its front faces into the hole: (a, b, b-below) faces
+      // along (ez, 0, -ex).
+      const ex = bx - ax, ez = bz - az;
+      const faceIn = ez * rimNormal.x - ex * rimNormal.z > 0;
+      if (faceIn) {
+        pushTri(ax, ay, az, bx, by, bz, bx, by - depth, bz, a, b, rimNormal);
+        pushTri(ax, ay, az, bx, by - depth, bz, ax, ay - depth, az, b, a, rimNormal);
+      } else {
+        pushTri(bx, by, bz, ax, ay, az, ax, ay - depth, az, a, b, rimNormal);
+        pushTri(bx, by, bz, ax, ay - depth, az, bx, by - depth, bz, b, a, rimNormal);
       }
     }
   }

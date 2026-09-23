@@ -2,7 +2,6 @@ import { BufferAttribute, BufferGeometry, Color, ConeGeometry } from 'three';
 import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
-import { faceColor } from '../biomes.js';
 import { CaveField } from './CaveField.js';
 
 export const CELLS = 40; // grid cells per chunk edge (3.2 m each for 128 m chunks)
@@ -124,11 +123,6 @@ function gridHeight(grid, x, z) {
   return (H[c] * (1 - tx) + H[c + 1] * tx) * (1 - tz) + (H[c + n] * (1 - tx) + H[c + n + 1] * tx) * tz;
 }
 
-function smoothstep(a, b, x) {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
-
 /**
  * Daylight reaching a point: full near an entrance, fading to almost none a
  * few tens of metres in. Torches aren't affected (see CaveLayer).
@@ -141,14 +135,13 @@ function skyLightAt(entrances, x, y, z) {
 
 /**
  * Marching cubes over the chunk grid, with the ground surface folded in
- * (field = min(ground - y, caves)). Triangles that are just the ground are
- * dropped (the terrain mesh already draws it) except right around cave
- * mouths, where they replace the terrain so the mouth is seamless.
- * Returns chunk-local geometry, flat-shaded, with per-face colours.
+ * (field = min(ground - y, caves)) so cave walls end where they meet the
+ * ground. Triangles that are just the ground are dropped: the terrain mesh
+ * draws the ground, including the hole at each mouth. Returns chunk-local
+ * geometry, flat-shaded, with per-face colours.
  */
 export function meshChunk(grid, field) {
   const { x0, z0, cell, n, ny, yMin, values, H, entrances } = grid;
-  const keepRadius = field.cutRadius + 1.5;
   const seed = field.seed;
   const positions = [];
   const colors = [];
@@ -165,11 +158,6 @@ export function meshChunk(grid, field) {
   // Small deterministic nudge per vertex (keyed on world position so chunks
   // agree on shared vertices) for a rockier facet pattern.
   const jitter = (x, y, z, axis) => (hash2(Math.round(x * 3.1 + y * 7.7), Math.round(z * 3.1 - y * 5.3), seed + axis) - 0.5) * 0.7;
-  const field3 = (px, py, pz) => Math.min(gridHeight(grid, px, pz) - py, sampleGrid(grid, px, py, pz));
-
-  // The table winds every triangle the same way relative to the field;
-  // work out once whether that faces the air (it must, for front faces).
-  let flip = null;
 
   // Which heights of each column hold cave air? Cells away from cave air
   // and away from a mouth can only produce plain ground (which the terrain
@@ -192,14 +180,7 @@ export function meshChunk(grid, field) {
       const col = k * n + i;
       let jFrom = Math.min(lowAir[col], lowAir[col + 1], lowAir[col + n], lowAir[col + n + 1]) - 1;
       let jTo = Math.max(highAir[col], highAir[col + 1], highAir[col + n], highAir[col + n + 1]) + 1;
-      const nearMouth =
-        entrances.length > 0 && CaveField.mouthDistance(entrances, x0 + (i + 0.5) * cell, z0 + (k + 0.5) * cell) < keepRadius + cell * 1.5;
-      if (nearMouth) {
-        jFrom = 0;
-        jTo = ny - 1;
-      } else if (jTo < 0) {
-        continue; // solid rock (or plain ground) all the way
-      }
+      if (jTo < 0) continue; // solid rock (or plain ground) all the way
       jFrom = Math.max(0, jFrom);
       jTo = Math.min(ny - 1, jTo);
       for (let j = jFrom; j < jTo; j++) {
@@ -239,7 +220,7 @@ export function meshChunk(grid, field) {
           // Ground or cave? On the ground surface the ground term is the smaller one.
           const ground = gridHeight(grid, wx, wz) - cy;
           const isGround = ground < 2.5 && ground <= sampleGrid(grid, wx, cy, wz) + 0.05;
-          if (isGround && CaveField.mouthDistance(entrances, wx, wz) > keepRadius) continue; // the terrain mesh draws this
+          if (isGround) continue; // plain ground: the terrain mesh draws it
 
           // Face normal from the table's winding.
           const ax = edgeX[tri[0]], ay = edgeY[tri[0]], az = edgeZ[tri[0]];
@@ -251,24 +232,26 @@ export function meshChunk(grid, field) {
           const len = Math.hypot(nx, nyv, nz);
           if (len < 1e-9) continue; // degenerate
           nx /= len; nyv /= len; nz /= len;
-          if (flip === null) {
-            // Step along the normal: it should lead into air (lower field).
-            const ahead = field3(wx + nx, cy + nyv, wz + nz);
-            const behind = field3(wx - nx, cy - nyv, wz - nz);
-            if (ahead !== behind) flip = ahead > behind;
-          }
-          if (flip) {
+          // The normal must point into the air, i.e. down the field's
+          // gradient. Get the gradient from this cell's own corner values.
+          const u = cxL / cell - i, w = czL / cell - k, t2 = (cy - yMin) / cell - j;
+          const c = cornerVal;
+          const gx =
+            (1 - t2) * (1 - w) * (c[1] - c[0]) + t2 * (1 - w) * (c[2] - c[3]) + (1 - t2) * w * (c[5] - c[4]) + t2 * w * (c[6] - c[7]);
+          const gy =
+            (1 - u) * (1 - w) * (c[3] - c[0]) + u * (1 - w) * (c[2] - c[1]) + (1 - u) * w * (c[7] - c[4]) + u * w * (c[6] - c[5]);
+          const gz =
+            (1 - u) * (1 - t2) * (c[4] - c[0]) + u * (1 - t2) * (c[5] - c[1]) + (1 - u) * t2 * (c[7] - c[3]) + u * t2 * (c[6] - c[2]);
+          if (nx * gx + nyv * gy + nz * gz > 0) {
             const tmp = tri[1];
             tri[1] = tri[2];
             tri[2] = tmp;
             nx = -nx; nyv = -nyv; nz = -nz;
           }
 
-          // Colour: grassy ground at the mouth, otherwise rock by orientation.
+          // Colour rock by which way the face points.
           const faceSeed = hash2(Math.round(wx * 2), Math.round(cy * 2 + wz * 3), seed);
-          if (isGround) {
-            faceColor(field.generator.getBiome(wx, wz), cy + field.generator.getColorJitter(wx, wz), Math.max(0, nyv), color);
-          } else if (nyv > 0.55) {
+          if (nyv > 0.55) {
             color.set(FLOOR[Math.floor(faceSeed * FLOOR.length)]);
           } else if (nyv < -0.45) {
             color.set(CEILING);
@@ -283,12 +266,9 @@ export function meshChunk(grid, field) {
             // Every adjustment depends only on the vertex's own world position,
             // so triangles (and chunks) sharing a corner move it identically.
             const wxv = x0 + px, wyv = py, wzv = z0 + pz;
-            if (Math.abs(gridHeight(grid, wxv, wzv) - wyv) < 0.35) {
-              // On the ground: tuck the edge of the mouth's ground just under
-              // the terrain mesh it overlaps.
-              const d = entrances.length ? CaveField.mouthDistance(entrances, wxv, wzv) : Infinity;
-              py -= 0.15 * smoothstep(field.cutRadius - 1, field.cutRadius + 0.5, d);
-            } else {
+            // Where the rock meets the ground surface (the rim of a mouth),
+            // leave the vertex on the surface so it meets the terrain.
+            if (Math.abs(gridHeight(grid, wxv, wzv) - wyv) >= 0.35) {
               // Rock: a small nudge for a rougher facet pattern.
               px += jitter(wxv, wyv, wzv, 1);
               py += jitter(wxv, wyv, wzv, 2) * 0.6;
@@ -296,7 +276,7 @@ export function meshChunk(grid, field) {
             }
             positions.push(px, py, pz);
             colors.push(color.r, color.g, color.b);
-            sky.push(isGround ? 1 : entrances.length ? skyLightAt(entrances, x0 + px, py, z0 + pz) : 0.03);
+            sky.push(entrances.length ? skyLightAt(entrances, x0 + px, py, z0 + pz) : 0.03);
           }
         }
       }

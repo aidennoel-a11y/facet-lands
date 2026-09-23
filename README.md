@@ -37,6 +37,7 @@ Tick **Fly** (or press `V`) to switch between flying and walking.
 | `T` | Pause / resume the day cycle | same |
 | `H` | Shadows on / off (for slower computers) | same |
 | `R` | Ray effects (light shafts, ambient occlusion) on / off | same |
+| `N` | Night vision (for testing: lights everything, caves included) | same |
 | Click / tap | Use the selected hotbar item (place a torch) | same |
 | Right-click | Pick up the torch you point at | same |
 | `1`–`9` | Choose a hotbar slot | same (the wheel also scrolls it while walking) |
@@ -79,6 +80,7 @@ src/
   render/
     DayNight.js             sky dome shader (sun, moon, stars), lights, fog, moving shadow box
     RayEffects.js           screen-space ray marching: light shafts and ambient occlusion
+  world/layers/RockLayer.js rocks and boulders, thickest in the foothills
     wind.js                 vertex-shader sway shared by trees and grass
   player/PlayerBody.js      invisible walking body that casts your shadow
   world/caves/
@@ -134,7 +136,8 @@ in a biome's `trees.species`.
 (`treeSpacing`), so a tree is always in the same place. A forest-density noise
 makes woods and clearings; spots under water or too steep are skipped; the biome's
 `trees` list picks a species that suits the height (broadleaf low, pines higher,
-the odd dead pine near the tree line). Trees stand on the actual triangle surface,
+the odd dead pine near the tree line). No tree stands perfectly straight: each
+leans a little at random, and more on slopes, downhill. Trees stand on the actual triangle surface,
 using `groundHeightAt` from the mesher, and each species in a chunk is one
 `InstancedMesh`, plus one for its leaf clusters (only on the nearest chunks,
 `leafMaxLod`). `treeScale` sets their overall size. Only chunks up to `treeMaxLod` get
@@ -160,25 +163,33 @@ shadow map, so looking down you see your shadow walk, swing its arms and jump.
 **Caves** (`world/caves/`): caves come from a 3D field, built from noise just
 like the terrain, so they go on forever and the same seed always gives the same
 caves. Tunnels form wherever two 3D noise fields are both close to zero, which
-traces long, winding, branching passages that link up into networks; a third,
-slower noise field opens big squat rooms along them. In a 512 m test block, about
-three quarters of all cave air is one connected system. A regional mask leaves
-some areas solid, and caves stay between -30 m and 55 m, always under at least
-7 m of rock. Entrances are dug separately: some hillsides get a ramp sloping
-about 30 degrees into the hill, only where it reaches cave air with a floor just
-below and keeps a floor under it and rock over it the whole way, so you can
-always walk back out.
+traces long, branching passages that link up into networks; the coordinates are
+warped by a slow 2D noise first, so the passages snake and twist. A third, slower
+noise field opens big squat rooms along them. A regional mask leaves some areas
+solid, and caves stay between -30 m and 55 m, always under at least 7 m of rock.
+
+Entrances appear on hillsides and on open ground alike. Each is a winding tunnel
+dug down from the surface: a chain of 8 m segments, each turning up to about 30
+degrees left or right and sloping down about 25 degrees (35 at first on flat
+ground), until it reaches cave air with a floor just below. Every segment must
+keep a floor under it and rock over it, so you can always walk back out. At the
+surface, the terrain opens a hole exactly where it sits over the tunnel, lined
+with a rock rim, and the cave rock carries on below: the ground is only ever the
+terrain's own triangles.
 
 Each nearby chunk samples the field on a 3.2 m grid and turns it into faceted rock
-with marching cubes, on a background worker so exploring doesn't stutter. Around
-a mouth the cave mesh also draws the ground itself (and the terrain mesh is cut
-away there), so the opening joins the hillside without seams. Stalagmites rise
-from floors, stalactites hang from roofs and the odd pillar joins the two.
-Walking uses the same field, so floors, walls, roofs and stalagmites are solid
-where you see them. Daylight fades the further you are from an entrance (the
-cave shader dims sun, moon and sky light by a per-vertex `skyLight` value) but
-torchlight doesn't, and underground a dark haze replaces the sky. Cave mouths
-show as dark dots on the minimap.
+with marching cubes, on a background worker so exploring doesn't stutter.
+Stalagmites rise from floors, stalactites hang from roofs and the odd pillar
+joins the two. Walking uses the same field, so floors, walls, roofs and
+stalagmites are solid where you see them. Daylight fades the further you are from
+an entrance (the cave shader dims sun, moon and sky light by a per-vertex
+`skyLight` value) but torchlight doesn't, and underground a dark haze replaces
+the sky. Cave mouths show as dark dots on the minimap.
+
+**Rocks** (`layers/RockLayer.js`): five lumpy low-poly rock shapes in grey-violet
+stone, some with moss on top, scattered everywhere but far thicker in the
+foothills (where mountainous and lowland meet) and on steep ground. Boulders show
+from further away and block you when walking; small stones only near you.
 
 **Drawing only what you can see:** three.js already skips every mesh outside the
 camera's view. On top of that, caves are only drawn from the surface in chunks

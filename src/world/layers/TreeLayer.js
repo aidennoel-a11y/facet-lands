@@ -6,6 +6,8 @@ import { LEAF_GEOMETRIES, TREE_GEOMETRIES } from '../trees.js';
 const matrix = new Matrix4();
 const position = new Vector3();
 const rotation = new Quaternion();
+const spin = new Quaternion();
+const lean = new Vector3();
 const scale = new Vector3();
 const up = new Vector3(0, 1, 0);
 const tint = new Color();
@@ -105,10 +107,9 @@ export function createTreeLayer() {
           if (!(ground >= seaLevel + 1.2)) continue; // outside the chunk, in water or over a cave mouth
 
           // Too steep for roots? (height change per metre)
-          const slope =
-            Math.abs(generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) +
-            Math.abs(generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2));
-          if (slope / 4 > 0.95) continue;
+          const gradX = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
+          const gradZ = (generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2)) / 4;
+          if (Math.abs(gradX) + Math.abs(gradZ) > 0.95) continue;
 
           // Pick a species that is happy at this height (edges blurred a bit).
           const h = ground + (hash2(gi, gj, seed + 3) - 0.5) * 16;
@@ -137,6 +138,10 @@ export function createTreeLayer() {
             sy: size * (0.85 + hash2(gi, gj, seed + 6) * 0.35),
             rot: hash2(gi, gj, seed + 7) * Math.PI * 2,
             shade: hash2(gi, gj, seed + 8),
+            // No tree grows perfectly straight: a small random lean, plus a
+            // lean downhill on slopes (up to about 12 degrees).
+            leanX: (hash2(gi, gj, seed + 9) - 0.5) * 0.08 - gradX * 0.16,
+            leanZ: (hash2(gi, gj, seed + 10) - 0.5) * 0.08 - gradZ * 0.16,
           });
         }
       }
@@ -155,7 +160,10 @@ export function createTreeLayer() {
         mesh.name = type;
         list.forEach((t, k) => {
           position.set(t.x, t.y, t.z);
-          rotation.setFromAxisAngle(up, t.rot);
+          // Spin about the trunk, then tip over by the lean.
+          lean.set(t.leanZ, 0, -t.leanX);
+          const angle = Math.min(0.21, lean.length());
+          rotation.setFromAxisAngle(lean.normalize(), angle).multiply(spin.setFromAxisAngle(up, t.rot));
           scale.set(t.s, t.sy, t.s);
           mesh.setMatrixAt(k, matrix.compose(position, rotation, scale));
           // Slight per-tree brightness/warmth change so forests aren't flat.
