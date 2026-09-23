@@ -20,6 +20,10 @@ export const WORLD = {
   vertexJitter: 0.35, // fraction of a cell each vertex is nudged in x/z
   skirtDepth: 30, // hides cracks where chunks of different LOD meet
 
-  // Reserved for water, beaches etc. Heights below this read as "lowland".
-  seaLevel: 0,
+  // Water fills everything below this height (seas and lakes).
+  seaLevel: 2,
+
+  // Trees
+  treeSpacing: 6, // metres between candidate tree spots (lower = denser)
+  treeMaxLod: 1, // only chunks at this LOD or closer get trees
 };

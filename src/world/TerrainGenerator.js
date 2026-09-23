@@ -23,6 +23,8 @@ export class TerrainGenerator {
     this.flatNoise = new SimplexNoise(this.seed + 4);
     this.detailNoise = new SimplexNoise(this.seed + 5);
     this.climateNoise = new SimplexNoise(this.seed + 6);
+    this.lakeNoise = new SimplexNoise(this.seed + 7);
+    this.forestNoise = new SimplexNoise(this.seed + 8);
 
     this.biomes = Object.values(BIOMES).map(prepareBiome);
   }
@@ -43,7 +45,11 @@ export class TerrainGenerator {
     const flatness = smoothstep(-0.15, 0.35, this.flatNoise.fbm(x * 0.0009, z * 0.0009, 2));
     const hills = this.hillNoise.fbm(x * 0.004, z * 0.004, 3) * 14 * (1 - 0.85 * flatness) * (1 - 0.6 * mask);
 
-    return 14 + continent * 16 + hills + mountains;
+    // Seas where the continent noise dips, and lake basins in the lowlands.
+    const sea = smoothstep(-0.05, -0.45, continent) * 34;
+    const lakes = smoothstep(0.35, 0.65, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - mask);
+
+    return 14 + continent * 16 + hills + mountains - sea - lakes;
   }
 
   /**
@@ -52,6 +58,15 @@ export class TerrainGenerator {
    */
   getColorJitter(x, z) {
     return this.detailNoise.fbm(x * 0.01, z * 0.01, 3) * 22;
+  }
+
+  /**
+   * How forested a spot is, in [0, 1]: dense woods, open meadows and the
+   * odd lone tree in between.
+   */
+  getForestDensity(x, z) {
+    const n = this.forestNoise.fbm(x * 0.0028, z * 0.0028, 3);
+    return 0.05 + 0.95 * smoothstep(-0.2, 0.25, n);
   }
 
   /**

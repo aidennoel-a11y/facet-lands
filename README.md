@@ -2,8 +2,10 @@
 
 A low-poly, procedurally generated world built with [three.js](https://threejs.org).
 The ground is made entirely of flat-shaded triangles, colored by height
-(sand → meadow → deep grass → scrub → violet-grey rock → snow), with steep faces
-turning to rock. The world streams in as chunks around the camera, so it never ends.
+(sea bed → beach sand → meadow → deep grass → scrub → violet-grey rock → snow caps on
+the highest peaks), with steep faces turning to rock. Seas and lakes fill the low
+ground, and forests of pines, broadleaf trees and bushes cover the land. The world
+streams in as chunks around the camera, so it never ends.
 
 ## Run it
 
@@ -42,14 +44,35 @@ src/
     biomes.js               biome definitions and the face-coloring rule
     ChunkMesher.js          turns one chunk into a triangle mesh
     ChunkManager.js         loads/unloads chunks around the camera, LOD, build budget
+    trees.js                low-poly tree models (pine, broadleaf, bush, dead pine)
+    layers/
+      WaterLayer.js         per-chunk water sheet, colored by depth, animated waves
+      TreeLayer.js          scatters instanced trees over nearby chunks
   controls/FlyControls.js   free-fly camera that stays above the ground
   ui/Minimap.js             hill-shaded top-down map
 ```
 
 **Terrain shape** (`TerrainGenerator.getHeight`): a broad "continent" noise sets
-the general rise and fall; a low-frequency mask decides where mountain ranges
-are, and inside them ridged noise makes sharp crests; elsewhere gentle hills are
-flattened further by a "flatness" noise to leave open plains.
+the general rise and fall and dips into seas; a low-frequency mask decides where
+mountain ranges are, and inside them ridged noise makes sharp crests; elsewhere
+gentle hills are flattened further by a "flatness" noise to leave open plains, and
+a lake noise scoops basins out of the lowlands.
+
+**Snow** (`biomes.js`): faces above the biome's `snowLine` (138 m) turn white unless
+they are near-vertical cliffs. The line is blurred by noise so the caps look natural.
+
+**Water** (`layers/WaterLayer.js`): every chunk that dips below `seaLevel` gets a
+jittered triangle sheet. Each face is colored by the depth of the ground under it,
+from see-through turquoise at the shore to deep blue, and a vertex shader rolls
+small waves across it by world position so they flow over chunk borders.
+
+**Trees** (`layers/TreeLayer.js`): candidate spots sit on a jittered world grid
+(`treeSpacing`), so a tree is always in the same place. A forest-density noise
+makes woods and clearings; spots under water or too steep are skipped; the biome's
+`trees` list picks a species that suits the height (broadleaf low, pines higher,
+the odd dead pine near the tree line). Trees stand on the actual triangle surface,
+using `groundHeightAt` from the mesher, and each species in a chunk is one
+`InstancedMesh`. Only chunks up to `treeMaxLod` get trees.
 
 **Triangles** (`ChunkMesher`): each chunk is a grid of cells, two triangles per
 cell. Vertices are nudged randomly (but deterministically) so the mesh doesn't
@@ -91,33 +114,26 @@ biomes that should also change the *shape* of the land (flat deserts, jagged
 tundra), blend each biome's height function by climate weight inside `getHeight`
 so borders stay smooth.
 
-### Trees, rocks, water: chunk layers
+### Changing trees per biome
 
-Anything that belongs to a chunk can be added as a layer. `build()` runs every
-time a chunk is built and whatever it returns is added to that chunk and removed
-with it:
+Each biome has a `trees` entry: an overall `density` and a list of species with a
+weight and a height range. A desert biome might use `density: 0.1` with only
+bushes; a taiga biome only pines. New tree models go in `trees.js`.
+
+### More things per chunk: layers
+
+Water and trees are both chunk layers, and anything else (rocks, grass, houses)
+can be one too. `build(context)` runs every time a chunk is built and whatever it
+returns is added to that chunk and removed with it; `update(time)` runs every frame.
 
 ```js
-const waterMaterial = new THREE.MeshLambertMaterial({ color: 0x4f86c6, transparent: true, opacity: 0.85 });
-
 chunks.addLayer({
-  name: 'water',
-  build({ cx, cz, config }) {
-    const size = config.chunkSize;
-    const water = new THREE.Mesh(
-      new THREE.PlaneGeometry(size, size).rotateX(-Math.PI / 2).translate(size / 2, 0, size / 2),
-      waterMaterial,
-    );
-    water.position.y = config.seaLevel;
-    return water;
+  name: 'rocks',
+  build({ cx, cz, lod, groundHeightAt, generator, config }) {
+    // return an Object3D positioned in chunk-local coordinates, or null
   },
   dispose(object) {
-    object.geometry.dispose();
+    // free anything this layer created for the chunk
   },
 });
 ```
-
-A tree layer would do the same with an `InstancedMesh`: scatter points with the
-seeded `hash2()`, read the ground height from `generator.getHeight(x, z)`, skip
-steep or high spots, and only build it for near LODs (`lod <= 1`) to keep
-distant chunks cheap.

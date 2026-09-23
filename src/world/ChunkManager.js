@@ -12,7 +12,8 @@ import { buildChunkGeometry } from './ChunkMesher.js';
  * Extending: register a layer with `addLayer({ name, build, dispose })`.
  * `build(context)` is called every time a chunk is (re)built and may return
  * an Object3D (trees, water plane, rocks...) that is added to the chunk and
- * removed with it. See README for an example.
+ * removed with it; `update(time)`, if present, runs every frame. See
+ * layers/WaterLayer.js and layers/TreeLayer.js.
  */
 export class ChunkManager {
   constructor(scene, generator, config, material) {
@@ -56,8 +57,9 @@ export class ChunkManager {
     return lods.length - 1;
   }
 
-  /** Call once per frame with the camera (or player) position. */
-  update(position) {
+  /** Call once per frame with the camera (or player) position and time in seconds. */
+  update(position, time = 0) {
+    for (const layer of this.layers) layer.update?.(time);
     const { chunkSize } = this.config;
     const ccx = Math.floor(position.x / chunkSize);
     const ccz = Math.floor(position.z / chunkSize);
@@ -116,7 +118,7 @@ export class ChunkManager {
   #build({ key, cx, cz, lod }) {
     const { chunkSize, lods } = this.config;
     const resolution = lods[lod].resolution;
-    const { geometry, triangles, heights } = buildChunkGeometry(this.generator, this.config, cx, cz, resolution);
+    const { geometry, triangles, heights, groundHeightAt } = buildChunkGeometry(this.generator, this.config, cx, cz, resolution);
 
     const group = new Group();
     group.name = `chunk ${key}`;
@@ -129,7 +131,9 @@ export class ChunkManager {
     const chunk = { key, cx, cz, lod, group, mesh, triangles, layerObjects: [] };
 
     for (const layer of this.layers) {
-      const object = layer.build({ chunk, cx, cz, lod, resolution, heights, generator: this.generator, config: this.config });
+      const object = layer.build({
+        chunk, cx, cz, lod, resolution, heights, groundHeightAt, generator: this.generator, config: this.config,
+      });
       if (object) {
         group.add(object);
         chunk.layerObjects.push({ layer, object });

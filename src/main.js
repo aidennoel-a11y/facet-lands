@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { WORLD } from './config.js';
 import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
+import { createWaterLayer } from './world/layers/WaterLayer.js';
+import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { FlyControls } from './controls/FlyControls.js';
 import { Minimap } from './ui/Minimap.js';
 
@@ -57,6 +59,10 @@ scene.add(sun);
 const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
 let generator = new TerrainGenerator(WORLD.seed);
 const chunks = new ChunkManager(scene, generator, WORLD, terrainMaterial);
+const water = createWaterLayer();
+const trees = createTreeLayer();
+chunks.addLayer(water);
+chunks.addLayer(trees);
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
 function placeCamera() {
@@ -74,7 +80,7 @@ function placeCamera() {
   controls.lookAt(new THREE.Vector3(best.x, best.h * 0.5, best.z));
 }
 
-const controls = new FlyControls(camera, canvas, (x, z) => generator.getHeight(x, z));
+const controls = new FlyControls(camera, canvas, (x, z) => Math.max(generator.getHeight(x, z), WORLD.seaLevel));
 placeCamera();
 
 // --- HUD -----------------------------------------------------------------------
@@ -88,6 +94,7 @@ const ui = {
   fps: document.getElementById('stat-fps'),
   chunks: document.getElementById('stat-chunks'),
   tris: document.getElementById('stat-tris'),
+  trees: document.getElementById('stat-trees'),
   alt: document.getElementById('stat-alt'),
   speed: document.getElementById('stat-speed'),
 };
@@ -113,7 +120,7 @@ ui.randomSeed.addEventListener('click', () => {
   setSeed(value);
 });
 ui.wireframe.addEventListener('change', () => {
-  terrainMaterial.wireframe = ui.wireframe.checked;
+  for (const m of [terrainMaterial, water.material, trees.material]) m.wireframe = ui.wireframe.checked;
 });
 ui.autofly.addEventListener('change', () => {
   controls.autoFly = ui.autofly.checked;
@@ -144,12 +151,12 @@ function tick(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
   controls.update(dt);
-  chunks.update(camera.position);
+  chunks.update(camera.position, now / 1000);
   sky.position.copy(camera.position);
   renderer.render(scene, camera);
 
   camera.getWorldDirection(dir);
-  minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z));
+  minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
 
   frames++;
   fpsTime += dt;
@@ -161,6 +168,7 @@ function tick(now) {
       ? `${chunks.loadedCount} +${chunks.pendingCount}`
       : `${chunks.loadedCount}`;
     ui.tris.textContent = `${(chunks.triangleCount / 1000).toFixed(0)}k`;
+    ui.trees.textContent = `${(trees.count / 1000).toFixed(1)}k`;
     ui.alt.textContent = `${Math.round(camera.position.y)} m`;
     ui.speed.textContent = `${Math.round(controls.speed)} m/s`;
   }

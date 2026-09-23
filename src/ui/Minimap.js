@@ -1,6 +1,9 @@
 import { Color, SRGBColorSpace } from 'three';
 import { faceColor } from '../world/biomes.js';
 
+const SHALLOW = new Color(0x4fbfc4);
+const DEEP = new Color(0x2c67b0);
+
 /**
  * Top-down, hill-shaded map of the terrain around the camera, drawn
  * straight from the generator (no chunks needed), north up.
@@ -27,7 +30,7 @@ export class Minimap {
     this.center = null;
   }
 
-  #render(generator, cx, cz) {
+  #render(generator, cx, cz, seaLevel) {
     const { samples: n, metersPerSample: s, image } = this;
     const half = (n * s) / 2;
     const heights = new Float32Array((n + 1) * (n + 1));
@@ -45,10 +48,18 @@ export class Minimap {
         const upness = s / Math.sqrt(hx * hx + hz * hz + s * s);
         const wx = cx - half + i * s;
         const wz = cz - half + j * s;
-        faceColor(generator.getBiome(wx, wz), h + generator.getColorJitter(wx, wz), upness, this._color);
+        let shade;
+        if (h < seaLevel) {
+          this._color.copy(SHALLOW).lerp(DEEP, Math.min(1, (seaLevel - h) / 16));
+          shade = 1;
+        } else {
+          faceColor(generator.getBiome(wx, wz), h + generator.getColorJitter(wx, wz), upness, this._color);
+          // Forests read a touch darker, like the woods on a paper map.
+          if (h < 110) this._color.multiplyScalar(1 - 0.3 * generator.getForestDensity(wx, wz));
+          // Light from the north-west.
+          shade = Math.min(1.35, Math.max(0.55, 1 + (-hx - hz) * 0.035));
+        }
         this._color.getRGB(this._rgb, SRGBColorSpace);
-        // Light from the north-west.
-        const shade = Math.min(1.35, Math.max(0.55, 1 + (-hx - hz) * 0.035));
         const o = (j * n + i) * 4;
         data[o] = Math.min(255, this._rgb.r * 255 * shade);
         data[o + 1] = Math.min(255, this._rgb.g * 255 * shade);
@@ -62,7 +73,7 @@ export class Minimap {
   }
 
   /** Call every frame; re-samples the terrain only after moving a while. */
-  update(generator, position, heading) {
+  update(generator, position, heading, seaLevel) {
     const { samples: n, metersPerSample: s } = this;
     const redrawDistance = (n * s) / 8;
     if (
@@ -71,7 +82,7 @@ export class Minimap {
       Math.abs(position.x - this.center.x) > redrawDistance ||
       Math.abs(position.z - this.center.z) > redrawDistance
     ) {
-      this.#render(generator, position.x, position.z);
+      this.#render(generator, position.x, position.z, seaLevel);
     }
 
     const { ctx, canvas } = this;
