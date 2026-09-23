@@ -71,7 +71,7 @@ export class Minimap {
     this.bufferCtx.putImageData(image, 0, 0);
     // Cave mouths in view, drawn as markers on top.
     this.caveMouths = generator.caves
-      ? generator.caves.near(cx - half, cz - half, cx + half, cz + half).map((c) => c.entrance)
+      ? generator.caves.mouthsNear(cx - half, cz - half, cx + half, cz + half).map((e) => e.mouth)
       : [];
     this.center = { x: cx, z: cz };
     this.generator = generator;

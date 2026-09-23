@@ -21,7 +21,7 @@ export const WORLD = {
 
   // Low-poly look
   vertexJitter: 0.35, // fraction of a cell each vertex is nudged in x/z
-  skirtDepth: 30, // hides cracks where chunks of different LOD meet
+  skirtDepth: 6, // hides cracks where chunks of different LOD meet (less than the rock over caves)
 
   // Water fills everything below this height (seas and lakes).
   seaLevel: 2,

@@ -54,34 +54,11 @@ chunks.addLayer(caves);
 
 /**
  * What you'd stand on at (x, z) from feet height `feetY`: the terrain, or a
- * cave floor if you're inside a tunnel. Over a cave mouth there's no
- * terrain, so you drop into the cave.
+ * cave floor underground. The cave system reads the same procedural field
+ * the cave meshes are built from, so floors, walls and roofs match them.
  */
 function groundAt(x, feetY, z) {
-  const step = 1.2;
-  const terrain = chunks.groundHeightAt(x, z); // NaN over a cave mouth
-  const cave = generator.caves.floorAt(x, feetY + 1, z);
-  let height = -Infinity;
-  let inCave = false;
-  let ceiling = Infinity;
-  if (Number.isFinite(terrain) && terrain <= feetY + step) height = terrain;
-  if (cave && cave.floor <= feetY + step && cave.floor > height) {
-    height = cave.floor;
-    inCave = true;
-    ceiling = cave.ceiling;
-  }
-  if (height === -Infinity) {
-    if (cave) {
-      // Inside a tunnel but its floor is above a step away: a slope up.
-      height = cave.floor;
-      inCave = true;
-      ceiling = cave.ceiling;
-    } else {
-      // Solid rock (or ground above us), or dropping through a mouth.
-      height = Number.isFinite(terrain) ? terrain : generator.getHeight(x, z) - 3;
-    }
-  }
-  return { height, inCave, ceiling };
+  return generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
 }
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
@@ -103,7 +80,10 @@ function placeCamera() {
 const controls = new PlayerControls(camera, canvas, {
   groundAt,
   seaLevel: WORLD.seaLevel,
-  collide: (position, radius) => trees.collide(position, radius, WORLD.chunkSize),
+  collide: (position, radius) => {
+    trees.collide(position, radius, WORLD.chunkSize);
+    generator.caves.collide(position, radius, position.y - controls.eyeHeight);
+  },
 });
 placeCamera();
 const body = new PlayerBody(scene);
@@ -265,6 +245,39 @@ function useItem(clientX, clientY, item) {
   if (item.id === 'torch' && !torches.place(hit.point, normal)) hotbar.flash("Torches can't hang from a ceiling");
 }
 
+// --- What to draw ---------------------------------------------------------------
+// three.js already skips anything outside the view. On top of that, caves are
+// sealed in rock: from the surface you can only see into them through a mouth,
+// and from deep inside you can't see the surface at all. So skip drawing what
+// the rock hides.
+function updateVisibility() {
+  const p = camera.position;
+  const underground = p.y < generator.getHeight(p.x, p.z) - 1.5;
+  const mouths = generator.caves.mouthsNear(p.x - 70, p.z - 70, p.x + 70, p.z + 70);
+  const nearMouth = mouths.some((e) => Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z) < 60);
+  const surface = !underground || nearMouth;
+  // Near a mouth you can see down the tunnel beyond it, so show all caves.
+  chunks.setVisibility(surface, underground || nearMouth ? 'all' : 'mouths');
+  clouds.group.visible = surface;
+
+  // Underground, a short dark haze replaces the sky: caves fade into darkness
+  // rather than showing gaps where far-off tunnels aren't built yet.
+  const toMouth = mouths.reduce((d, e) => Math.min(d, Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z)), Infinity);
+  caveHaze.target = underground ? Math.min(1, Math.max(0, (toMouth - 4) / 16)) : 0;
+}
+
+const caveHaze = { target: 0, amount: 0, color: new THREE.Color(0x07080b) };
+const openFog = { near: scene.fog.near, far: scene.fog.far };
+function applyCaveHaze(dt) {
+  caveHaze.amount += (caveHaze.target - caveHaze.amount) * Math.min(1, dt * 3);
+  const a = caveHaze.amount;
+  if (a < 0.001) return;
+  scene.fog.near = openFog.near + (12 - openFog.near) * a;
+  scene.fog.far = openFog.far + (170 - openFog.far) * a;
+  scene.fog.color.lerp(caveHaze.color, a);
+  dayNight.sky.visible = a < 0.98;
+}
+
 // --- Loop --------------------------------------------------------------------
 function resize() {
   const w = canvas.clientWidth;
@@ -291,9 +304,14 @@ function tick(now) {
   chunks.update(camera.position, now / 1000, dir);
   const wind = updateWind(now / 1000);
   dayNight.update(dt, camera.position);
+  scene.fog.near = openFog.near;
+  scene.fog.far = openFog.far;
+  dayNight.sky.visible = true;
+  applyCaveHaze(dt);
   clouds.update(dt, camera.position, dayNight.horizon, generator, wind);
   body.update(controls, dt);
   torches.update(now / 1000, camera.position);
+  updateVisibility();
   if (ui.rays.checked) {
     light.strength = dayNight.lightStrength;
     rayEffects.render(scene, camera, light);

@@ -36,6 +36,25 @@ export class ChunkManager {
     this.layers = [];
     this.centerKey = null;
     this.triangleCount = 0;
+    // What to draw (on top of three's per-mesh view-frustum culling):
+    //   surface  terrain and every non-cave layer (trees, grass, water...)
+    //   caves    'all', or 'mouths' for only the chunks with a cave mouth
+    this.visibility = { surface: true, caves: 'all' };
+  }
+
+  /** Changes what's drawn; see `visibility`. Cheap to call every frame. */
+  setVisibility(surface, caves) {
+    if (surface === this.visibility.surface && caves === this.visibility.caves) return;
+    this.visibility = { surface, caves };
+    for (const chunk of this.chunks.values()) this.#applyVisibility(chunk);
+  }
+
+  #applyVisibility(chunk) {
+    const { surface, caves } = this.visibility;
+    chunk.mesh.visible = surface;
+    for (const { layer, object } of chunk.layerObjects) {
+      object.visible = layer.name === 'caves' ? caves === 'all' || object.userData.hasMouth === true : surface;
+    }
   }
 
   addLayer(layer) {
@@ -177,6 +196,7 @@ export class ChunkManager {
     if (previous) this.#unload(previous);
 
     this.chunks.set(key, chunk);
+    this.#applyVisibility(chunk);
     this.root.add(group);
     this.triangleCount += triangles;
   }
@@ -205,7 +225,7 @@ export class ChunkManager {
       const h = chunk.groundHeightAt(x - (cx + dx) * chunkSize, z - (cz + dz) * chunkSize);
       if (h !== null) return h;
     }
-    if (this.generator.caves?.isHole(x, z)) return NaN;
+    if (this.generator.caves?.isHole(x, z)) return NaN; // a cave mouth
     return this.generator.getHeight(x, z);
   }
 

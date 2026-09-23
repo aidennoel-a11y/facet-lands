@@ -109,10 +109,10 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     const flip = hash2(baseGx + i * step, baseGz + j * step, seed + 7) < 0.5;
     return flip ? [a, c, d, a, d, b] : [a, c, b, b, c, d];
   }
-  // Cave mouths: at full detail, triangles whose centre falls inside the
-  // first stretch of a cave tunnel are left out, opening a hole into it.
+  // Cave mouths: at full detail, triangles right around an entrance are
+  // left out; the cave mesh draws the ground and the opening there instead.
   const caveSystem = resolution === finest ? generator.caves : null;
-  const caves = caveSystem ? caveSystem.near(originX, originZ, originX + chunkSize, originZ + chunkSize, 8) : [];
+  const caves = caveSystem ? caveSystem.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
   const cut = new Set(); // (cell index * 2 + triangle) of removed triangles
   for (let j = 0; j < resolution; j++) {
     for (let i = 0; i < resolution; i++) {
@@ -123,9 +123,8 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
         const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
         if (caves.length) {
           const cx3 = originX + (gridX[p0] + gridX[p1] + gridX[p2]) / 3;
-          const cy3 = (gridY[p0] + gridY[p1] + gridY[p2]) / 3;
           const cz3 = originZ + (gridZ[p0] + gridZ[p1] + gridZ[p2]) / 3;
-          if (caveSystem.cutsTerrain(caves, cx3, cy3, cz3)) {
+          if (caveSystem.cutsTerrain(caves, cx3, cz3)) {
             cut.add((j * resolution + i) * 2 + t / 3);
             continue;
           }
@@ -149,15 +148,13 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     (t) => resolution * n + (resolution - t), // south edge, j = res, walking -x
     (t) => (resolution - t) * n, // west edge, i = 0, walking -z
   ];
-  // Skirts stop just above any cave tunnel running underneath, so they
-  // never slice through one.
-  const skirtCaves = generator.caves ? generator.caves.near(originX, originZ, originX + chunkSize, originZ + chunkSize, 8) : [];
-  const skirtBottom = (k) => {
-    const y = gridY[k];
-    if (!skirtCaves.length) return y - skirtDepth;
-    const roof = generator.caves.roofUnder(skirtCaves, originX + gridX[k], originZ + gridZ[k], y);
-    return Math.max(y - skirtDepth, Math.min(y, roof + 0.3));
-  };
+  // Skirts are shallower than the rock over any cave, and stop short of an
+  // entrance ramp running underneath, so they never wall a cave off.
+  const ramps = generator.caves ? generator.caves.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
+  const skirtBottom = (k) =>
+    ramps.length
+      ? generator.caves.skirtBottom(ramps, originX + gridX[k], gridY[k], originZ + gridZ[k], skirtDepth)
+      : gridY[k] - skirtDepth;
   for (const edge of edges) {
     for (let t = 0; t < resolution; t++) {
       const p = edge(t);

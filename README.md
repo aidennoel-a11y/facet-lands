@@ -81,8 +81,12 @@ src/
     RayEffects.js           screen-space ray marching: light shafts and ambient occlusion
     wind.js                 vertex-shader sway shared by trees and grass
   player/PlayerBody.js      invisible walking body that casts your shadow
-  world/caves.js            cave generation, terrain cut-outs, cave floors, tunnel meshes
-  world/layers/CaveLayer.js adds cave tunnels (and glowing crystals) to chunks
+  world/caves/
+    CaveField.js            the procedural cave field: tunnels, rooms, entrance ramps
+    caveMesher.js           marching cubes + stalagmites for one chunk
+    caveWorker.js           builds cave chunks on a background thread
+    CaveSystem.js           cave cache, terrain cut-outs, collisions and floors
+  world/layers/CaveLayer.js adds cave rock and stalagmites to nearby chunks
   items/Torches.js          placeable torches with a shared pool of point lights
   ui/Hotbar.js              the 9-slot hotbar
   controls/PlayerControls.js  fly and walk modes: gravity, slopes, trunks, swimming
@@ -153,17 +157,33 @@ the camera and snaps to whole shadow-map texels so shadows don't shimmer.
 where you are. Its material draws nothing on screen but it still renders into the
 shadow map, so looking down you see your shadow walk, swing its arms and jump.
 
-**Caves** (`world/caves.js`): each 384 m region may hold one cave. It starts on a
-hillside, heads into the hill and down, then wanders underground, keeping rock
-overhead and staying above sea level, sometimes swelling into a chamber before
-pinching shut. The tunnel is a chain of low-poly rings with a flat, walkable floor.
-Where the first stretch meets the hillside, full-detail terrain triangles are left
-out to open the mouth; chunk skirts stop above tunnels so they never wall one off.
-Walking, the cave floor becomes your ground, the roof stops your jumps and the
-rock walls block you. Inside, daylight fades the deeper you go (the cave shader
-dims sun, moon and sky light by a per-vertex `skyLight` value) but torchlight
-doesn't, and glowing crystals stud the walls. Cave mouths show as dark dots on the
-minimap.
+**Caves** (`world/caves/`): caves come from a 3D field, built from noise just
+like the terrain, so they go on forever and the same seed always gives the same
+caves. Tunnels form wherever two 3D noise fields are both close to zero, which
+traces long, winding, branching passages that link up into networks; a third,
+slower noise field opens big squat rooms along them. In a 512 m test block, about
+three quarters of all cave air is one connected system. A regional mask leaves
+some areas solid, and caves stay between -30 m and 55 m, always under at least
+7 m of rock. Entrances are dug separately: some hillsides get a ramp sloping
+about 30 degrees into the hill, only where it reaches cave air with a floor just
+below and keeps a floor under it and rock over it the whole way, so you can
+always walk back out.
+
+Each nearby chunk samples the field on a 3.2 m grid and turns it into faceted rock
+with marching cubes, on a background worker so exploring doesn't stutter. Around
+a mouth the cave mesh also draws the ground itself (and the terrain mesh is cut
+away there), so the opening joins the hillside without seams. Stalagmites rise
+from floors, stalactites hang from roofs and the odd pillar joins the two.
+Walking uses the same field, so floors, walls, roofs and stalagmites are solid
+where you see them. Daylight fades the further you are from an entrance (the
+cave shader dims sun, moon and sky light by a per-vertex `skyLight` value) but
+torchlight doesn't, and underground a dark haze replaces the sky. Cave mouths
+show as dark dots on the minimap.
+
+**Drawing only what you can see:** three.js already skips every mesh outside the
+camera's view. On top of that, caves are only drawn from the surface in chunks
+with a mouth (or when you're near one), and deep underground (more than 60 m from
+an entrance) the terrain, trees, grass, water and clouds aren't drawn at all.
 
 **Torches** (`items/Torches.js`): a stick with a flickering two-layer flame and a
 glow. The light itself comes from a fixed pool of 6 point lights handed to the
