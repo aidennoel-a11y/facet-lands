@@ -105,7 +105,7 @@ export function createTreeLayer() {
 
           const ground = groundHeightAt(lx, lz);
           if (!(ground >= seaLevel + 1.2)) continue; // outside the chunk, in water or over a cave mouth
-          if (generator.caves.field.inHollow(wx, wz, -2)) continue; // keep cave entrances clear
+          if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
 
           // Too steep for roots? (height change per metre)
           const gradX = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;

@@ -7,6 +7,7 @@ import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer } from './world/layers/GrassLayer.js';
 import { caveNightVision, createCaveLayer } from './world/layers/CaveLayer.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
+import { createEntranceLayer } from './world/layers/EntranceLayer.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
 import { PlayerControls } from './controls/PlayerControls.js';
@@ -54,6 +55,7 @@ chunks.addLayer(trees);
 chunks.addLayer(grass);
 const caves = createCaveLayer(WORLD);
 chunks.addLayer(caves);
+chunks.addLayer(createEntranceLayer(WORLD, caves.material));
 const rocks = createRockLayer(WORLD);
 chunks.addLayer(rocks);
 

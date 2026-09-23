@@ -26,8 +26,8 @@ const STONE_TIP = new Color(0xbdb4a4);
 
 /**
  * Samples the cave field for one chunk. The grid stores caves + entrance
- * ramps (not the ground surface), so physics can use it directly; meshing
- * folds the ground in per column.
+ * tunnels and their built parts (not the ground surface), so physics can
+ * use it directly; meshing folds the ground in per column.
  */
 export function sampleChunk(field, cx, cz, chunkSize) {
   const g = field.generator;
@@ -55,16 +55,9 @@ export function sampleChunk(field, cx, cz, chunkSize) {
   }
   if (!anyCave) return null;
 
-  // Vertical range: the cave band, plus any ramp and the ground in mouth zones.
+  // Vertical range: the cave band, plus any entrance tunnel.
   let top = maxTop + 4;
-  for (const e of entrances) {
-    top = Math.max(top, e.maxY + 3);
-    for (let c = 0; c < H.length; c++) {
-      const x = x0 + (c % n) * cell;
-      const z = z0 + Math.floor(c / n) * cell;
-      if (Math.hypot(x - e.mouth.x, z - e.mouth.z) < field.zoneRadius + cell) top = Math.max(top, H[c] + 4);
-    }
-  }
+  for (const e of entrances) top = Math.max(top, e.maxY + 3);
   const yMin = Math.floor((field.bottom - 4) / cell) * cell;
   const ny = Math.min(96, Math.ceil((top - yMin) / cell) + 1);
 
@@ -80,7 +73,7 @@ export function sampleChunk(field, cx, cz, chunkSize) {
         let d = field.caves(x, y, z, H[c], region[c]);
         for (const e of entrances) {
           if (y < e.minY - 2 || y > e.maxY + 2) continue;
-          d = Math.min(d, CaveField.ramp(e, x, y, z));
+          d = Math.min(d, CaveField.ramp(e, x, y, z), CaveField.hull(e, x, y, z));
         }
         values[c * ny + j] = d;
         if (d < 0) hasAir = true;
@@ -121,16 +114,6 @@ function gridHeight(grid, x, z) {
   const tx = fx - i, tz = fz - k;
   const c = k * n + i;
   return (H[c] * (1 - tx) + H[c + 1] * tx) * (1 - tz) + (H[c + n] * (1 - tx) + H[c + n + 1] * tx) * tz;
-}
-
-/**
- * Daylight reaching a point: full near an entrance, fading to almost none a
- * few tens of metres in. Torches aren't affected (see CaveLayer).
- */
-function skyLightAt(entrances, x, y, z) {
-  let best = Infinity;
-  for (const e of entrances) best = Math.min(best, Math.hypot(x - e.mouth.x, y - e.mouth.y, z - e.mouth.z));
-  return Math.min(1, Math.max(0.03, 1.3 - best / 34));
 }
 
 /**
@@ -221,6 +204,8 @@ export function meshChunk(grid, field) {
           const ground = gridHeight(grid, wx, wz) - cy;
           const isGround = ground < 2.5 && ground <= sampleGrid(grid, wx, cy, wz) + 0.05;
           if (isGround) continue; // plain ground: the terrain mesh draws it
+          // Wholly inside an entrance's built part: EntranceLayer draws that.
+          if (entrances.some((e) => tri.every((ev) => CaveField.inBuilt(e, x0 + edgeX[ev], edgeY[ev], z0 + edgeZ[ev])))) continue;
 
           // Face normal from the table's winding.
           const ax = edgeX[tri[0]], ay = edgeY[tri[0]], az = edgeZ[tri[0]];
@@ -276,7 +261,7 @@ export function meshChunk(grid, field) {
             }
             positions.push(px, py, pz);
             colors.push(color.r, color.g, color.b);
-            sky.push(entrances.length ? skyLightAt(entrances, x0 + px, py, z0 + pz) : 0.03);
+            sky.push(entrances.length ? CaveField.skyLight(entrances, x0 + px, py, z0 + pz) : 0.03);
           }
         }
       }
@@ -323,7 +308,7 @@ export function decorateChunk(grid, field) {
       tmp.copy(STONE_LOW).lerp(STONE_TIP, t).multiplyScalar(0.9 + hash2(v, Math.round(x * 10), seed) * 0.2);
       for (let q = 0; q < 3; q++) colors.set([tmp.r, tmp.g, tmp.b], (v + q) * 3);
     }
-    skyArr.fill(skyLightAt(entrances, x, y, z));
+    skyArr.fill(entrances.length ? CaveField.skyLight(entrances, x, y, z) : 0.03);
     g.setAttribute('color', new BufferAttribute(colors, 3));
     g.setAttribute('skyLight', new BufferAttribute(skyArr, 1));
     parts.push(g);
@@ -355,7 +340,7 @@ export function decorateChunk(grid, field) {
           while (roof < floor + 30 && f(x, roof, z) < 0) roof += 0.5;
           const gap = roof - floor;
           // Nothing on the floor of an entrance tunnel: keep the way in clear.
-          const inEntrance = entrances.some((e) => CaveField.ramp(e, x, floor + 1, z) < 1.5);
+          const inEntrance = entrances.some((e) => CaveField.inBuilt(e, x, floor, z) || CaveField.ramp(e, x, floor + 1, z) < 1.5);
           const flat = !inEntrance && f(x, floor + 0.6, z) < -0.3 && f(x + 1.5, floor - 0.5, z) >= 0 && f(x - 1.5, floor - 0.5, z) >= 0;
           const r1 = hash2(Math.round(x * 3), Math.round(floor * 3), seed + 1);
           const r2 = hash2(Math.round(z * 3), Math.round(roof * 3), seed + 2);

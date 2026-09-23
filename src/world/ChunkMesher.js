@@ -1,6 +1,7 @@
 import { BufferAttribute, BufferGeometry, Color, Vector3 } from 'three';
 import { hash2 } from '../noise/random.js';
 import { faceColor } from './biomes.js';
+import { CaveField } from './caves/CaveField.js';
 
 const color = new Color();
 const ab = new Vector3();
@@ -50,30 +51,51 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     }
   }
 
-  // Cave mouths (full detail only): triangles sitting over an entrance
-  // tunnel's air are left out, opening a hole straight into it. Worked out
-  // first because the hole's rim adds triangles.
+  // Cave entrances (full detail only): each entrance's pit outline is cut
+  // out of the surface exactly. Triangles it overlaps are clipped against
+  // the outline, so the hole has clean straight edges (EntranceLayer builds
+  // the walls that line it). Worked out first because clipping adds triangles.
   const caveSystem = resolution === finest ? generator.caves : null;
-  const mouths = caveSystem ? caveSystem.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
-  const cut = new Set(); // (cell index * 2 + triangle) of removed triangles
-  const overAir = (k) => caveSystem.cutsTerrain(mouths, originX + gridX[k], gridY[k], originZ + gridZ[k]);
-  if (mouths.length) {
+  const holes = caveSystem
+    ? caveSystem
+        .mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize)
+        .filter(({ holeBounds: b }) => b.maxX > originX && b.minX < originX + chunkSize && b.maxZ > originZ && b.minZ < originZ + chunkSize)
+    : [];
+  // Outlines in chunk-local x/z, counter-clockwise, with their bounds.
+  const outlines = holes.map((e) => {
+    const points = e.hole.map(([u, v]) => {
+      const [x, z] = CaveField.world(e, u, v);
+      return [x - originX, z - originZ];
+    });
+    const b = e.holeBounds;
+    return { points, minX: b.minX - originX, maxX: b.maxX - originX, minZ: b.minZ - originZ, maxZ: b.maxZ - originZ };
+  });
+  const clipped = new Map(); // (cell index * 2 + triangle) -> pieces left over: [[x, y, z] x3, ...]
+  let clippedTris = 0;
+  if (outlines.length) {
     for (let j = 0; j < resolution; j++) {
       for (let i = 0; i < resolution; i++) {
         const tris = cellTriangles(i, j);
         for (let t = 0; t < 6; t += 3) {
-          const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
-          const corners = overAir(p0) + overAir(p1) + overAir(p2);
-          const centre = caveSystem.cutsTerrain(
-            mouths,
-            originX + (gridX[p0] + gridX[p1] + gridX[p2]) / 3,
-            (gridY[p0] + gridY[p1] + gridY[p2]) / 3,
-            originZ + (gridZ[p0] + gridZ[p1] + gridZ[p2]) / 3,
-            0.3,
-          );
-          // Triangles mostly over the tunnel; the rim walls line the edge of
-          // the hole, so the bit of rock a partly-covered triangle exposes is hidden.
-          if (centre && corners >= 2) cut.add((j * resolution + i) * 2 + t / 3);
+          const ids = [tris[t], tris[t + 1], tris[t + 2]];
+          let pieces = [ids.map((k) => [gridX[k], gridY[k], gridZ[k]])];
+          let touched = false;
+          for (const outline of outlines) {
+            if (Math.max(...ids.map((k) => gridX[k])) < outline.minX || Math.min(...ids.map((k) => gridX[k])) > outline.maxX) continue;
+            if (Math.max(...ids.map((k) => gridZ[k])) < outline.minZ || Math.min(...ids.map((k) => gridZ[k])) > outline.maxZ) continue;
+            const next = [];
+            for (const piece of pieces) {
+              const rest = subtractOutline(piece, outline.points);
+              if (rest !== null) touched = true;
+              next.push(...(rest ?? [piece]));
+            }
+            pieces = next;
+          }
+          if (!touched) continue;
+          const out = [];
+          for (const piece of pieces) for (let q = 1; q < piece.length - 1; q++) out.push([piece[0], piece[q], piece[q + 1]]);
+          clipped.set((j * resolution + i) * 2 + t / 3, out);
+          clippedTris += out.length;
         }
       }
     }
@@ -81,8 +103,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
 
   const surfaceTris = resolution * resolution * 2;
   const skirtTris = resolution * 4 * 2;
-  const rimTris = cut.size * 3 * 2; // at most a wall quad per cut triangle edge
-  const totalVerts = (surfaceTris + skirtTris + rimTris) * 3;
+  const totalVerts = (surfaceTris + skirtTris + clippedTris) * 3;
   const positions = new Float32Array(totalVerts * 3);
   const normals = new Float32Array(totalVerts * 3);
   const colors = new Float32Array(totalVerts * 3);
@@ -94,7 +115,9 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
 
   // skirtNormal: light and colour the face like the ground above it, so the
   // sliver you see through an LOD crack blends right in.
-  function pushTri(ax, ay, az, bx, by, bz, qx, qy, qz, varSeedX, varSeedZ, skirtNormal = null) {
+  // colorAt: [x, y, z] to colour the face as if it were centred there (the
+  // pieces of a clipped triangle all take the whole triangle's colour).
+  function pushTri(ax, ay, az, bx, by, bz, qx, qy, qz, varSeedX, varSeedZ, skirtNormal = null, colorAt = null) {
     const isSkirt = skirtNormal !== null;
     if (isSkirt) {
       normal.copy(skirtNormal);
@@ -104,9 +127,9 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
       normal.crossVectors(ab, ac).normalize();
     }
 
-    const mx = (ax + bx + qx) / 3;
-    const my = isSkirt ? Math.max(ay, by, qy) : (ay + by + qy) / 3;
-    const mz = (az + bz + qz) / 3;
+    const mx = colorAt ? colorAt[0] : (ax + bx + qx) / 3;
+    const my = colorAt ? colorAt[1] : isSkirt ? Math.max(ay, by, qy) : (ay + by + qy) / 3;
+    const mz = colorAt ? colorAt[2] : (az + bz + qz) / 3;
     const wx = originX + mx;
     const wz = originZ + mz;
     const biome = generator.getBiome(wx, wz);
@@ -146,65 +169,25 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
       const gz = baseGz + j * step;
       for (let t = 0; t < 6; t += 3) {
         const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
-        if (cut.has((j * resolution + i) * 2 + t / 3)) continue;
-        pushTri(gridX[p0], gridY[p0], gridZ[p0], gridX[p1], gridY[p1], gridZ[p1], gridX[p2], gridY[p2], gridZ[p2], gx * 2 + t / 3, gz);
+        const pieces = clipped.get((j * resolution + i) * 2 + t / 3);
+        if (pieces) {
+          const centre = [
+            (gridX[p0] + gridX[p1] + gridX[p2]) / 3,
+            (gridY[p0] + gridY[p1] + gridY[p2]) / 3,
+            (gridZ[p0] + gridZ[p1] + gridZ[p2]) / 3,
+          ];
+          for (const [a, b, c] of pieces) {
+            pushTri(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], gx * 2 + t / 3, gz, null, centre);
+          }
+          if (!pieces.length) continue;
+        } else {
+          pushTri(gridX[p0], gridY[p0], gridZ[p0], gridX[p1], gridY[p1], gridZ[p1], gridX[p2], gridY[p2], gridZ[p2], gx * 2 + t / 3, gz);
+        }
         for (const p of [p0, p1, p2]) {
           vertexNormals[p * 3] += normal.x;
           vertexNormals[p * 3 + 1] += normal.y;
           vertexNormals[p * 3 + 2] += normal.z;
         }
-      }
-    }
-  }
-
-  // 2b. Cave mouth rims: rock walls hanging from the edge of each hole, facing
-  //     into it, so the opening looks dug into the ground rather than cut out.
-  if (cut.size) {
-    const edgeUse = new Map(); // "a,b" -> { cut: [triangle centres], kept: count }
-    for (let j = 0; j < resolution; j++) {
-      for (let i = 0; i < resolution; i++) {
-        const tris = cellTriangles(i, j);
-        for (let t = 0; t < 6; t += 3) {
-          const isCut = cut.has((j * resolution + i) * 2 + t / 3);
-          const tri = [tris[t], tris[t + 1], tris[t + 2]];
-          const cx3 = (gridX[tri[0]] + gridX[tri[1]] + gridX[tri[2]]) / 3;
-          const cz3 = (gridZ[tri[0]] + gridZ[tri[1]] + gridZ[tri[2]]) / 3;
-          for (let e = 0; e < 3; e++) {
-            const a = tri[e], b = tri[(e + 1) % 3];
-            const key = a < b ? `${a},${b}` : `${b},${a}`;
-            let use = edgeUse.get(key);
-            if (!use) edgeUse.set(key, (use = { a, b, cut: [], kept: 0 }));
-            if (isCut) use.cut.push([cx3, cz3]);
-            else use.kept++;
-          }
-        }
-      }
-    }
-    const rimNormal = new Vector3();
-    for (const { a, b, cut: cutSides, kept } of edgeUse.values()) {
-      if (cutSides.length !== 1) continue; // not on the hole's edge (or inside it)
-      const [ccx, ccz] = cutSides[0];
-      const mx = (gridX[a] + gridX[b]) / 2;
-      const mz = (gridZ[a] + gridZ[b]) / 2;
-      if (!kept) {
-        // Edge on the chunk border: only add a wall if the ground across it is solid.
-        const ox = 2 * mx - ccx, oz = 2 * mz - ccz;
-        if (caveSystem.cutsTerrain(mouths, originX + ox, (gridY[a] + gridY[b]) / 2, originZ + oz, 0)) continue;
-      }
-      const depth = 4.5;
-      rimNormal.set(ccx - mx, 0, ccz - mz).normalize(); // into the hole
-      const ax = gridX[a], ay = gridY[a], az = gridZ[a];
-      const bx = gridX[b], by = gridY[b], bz = gridZ[b];
-      // Wind the quad so its front faces into the hole: (a, b, b-below) faces
-      // along (ez, 0, -ex).
-      const ex = bx - ax, ez = bz - az;
-      const faceIn = ez * rimNormal.x - ex * rimNormal.z > 0;
-      if (faceIn) {
-        pushTri(ax, ay, az, bx, by, bz, bx, by - depth, bz, a, b, rimNormal);
-        pushTri(ax, ay, az, bx, by - depth, bz, ax, ay - depth, az, b, a, rimNormal);
-      } else {
-        pushTri(bx, by, bz, ax, ay, az, ax, ay - depth, az, a, b, rimNormal);
-        pushTri(bx, by, bz, ax, ay - depth, az, bx, by - depth, bz, b, a, rimNormal);
       }
     }
   }
@@ -272,7 +255,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
           const u = (px * e2z - e2x * pz) / det;
           const w = (e1x * pz - px * e1z) / det;
           if (u >= -1e-4 && w >= -1e-4 && u + w <= 1 + 1e-4) {
-            if (cut.size && cut.has((j * resolution + i) * 2 + t / 3)) return NaN;
+            if (holes.length && holes.some((e) => CaveField.inHole(e, x + originX, z + originZ))) return NaN;
             const e1y = gridY[p1] - gridY[p0];
             const e2y = gridY[p2] - gridY[p0];
             if (out) {
@@ -290,7 +273,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
   }
 
   const geometry = new BufferGeometry();
-  // Trim the unused space left by any triangles cut for cave mouths.
+  // Trim any unused space (clipped pieces too thin to keep).
   geometry.setAttribute('position', new BufferAttribute(v < positions.length ? positions.slice(0, v) : positions, 3));
   geometry.setAttribute('normal', new BufferAttribute(v < normals.length ? normals.slice(0, v) : normals, 3));
   geometry.setAttribute('color', new BufferAttribute(v < colors.length ? colors.slice(0, v) : colors, 3));
@@ -304,4 +287,55 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     heights: { gridX, gridY, gridZ, size: n },
     groundHeightAt,
   };
+}
+
+/**
+ * Keeps the part of a convex polygon (points [x, y, z], lying in one plane)
+ * outside a convex outline ([x, z] points, counter-clockwise). Returns the
+ * convex pieces left, or null if the polygon doesn't touch the outline.
+ * Heights are interpolated along the polygon's edges, so the pieces stay
+ * in its plane and meet the neighbouring triangles exactly.
+ */
+function subtractOutline(polygon, outline) {
+  const sides = outline.map(([ax, az], i) => {
+    const [bx, bz] = outline[(i + 1) % outline.length];
+    return (p) => (bx - ax) * (p[2] - az) - (bz - az) * (p[0] - ax); // > 0 inside
+  });
+  // Wholly outside one edge: untouched.
+  if (sides.some((side) => polygon.every((p) => side(p) <= 1e-6))) return null;
+  const pieces = [];
+  let rest = polygon;
+  for (const side of sides) {
+    const outside = clipPolygon(rest, (p) => -side(p));
+    if (outside.length >= 3 && polygonArea(outside) > 1e-4) pieces.push(outside);
+    rest = clipPolygon(rest, side);
+    if (rest.length < 3) break;
+  }
+  return pieces; // what's left in `rest` is inside the outline: dropped
+}
+
+/** Sutherland-Hodgman: the part of a convex polygon where f(p) >= 0. */
+function clipPolygon(points, f) {
+  const out = [];
+  for (let k = 0; k < points.length; k++) {
+    const p = points[k];
+    const q = points[(k + 1) % points.length];
+    const fp = f(p), fq = f(q);
+    if (fp >= 0) out.push(p);
+    if (fp >= 0 !== fq >= 0) {
+      const t = fp / (fp - fq);
+      out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t]);
+    }
+  }
+  return out;
+}
+
+/** Area of a polygon's footprint (x/z). */
+function polygonArea(points) {
+  let a = 0;
+  for (let k = 0; k < points.length; k++) {
+    const p = points[k], q = points[(k + 1) % points.length];
+    a += p[0] * q[2] - q[0] * p[2];
+  }
+  return Math.abs(a) / 2;
 }

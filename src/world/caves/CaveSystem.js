@@ -144,24 +144,9 @@ export class CaveSystem {
     return this.field.entrancesNear(minX, minZ, maxX, maxZ);
   }
 
-  /**
-   * Is the ground point (x, y, z) over an entrance tunnel's air (so the
-   * terrain there should be cut away to open the mouth)? `margin` demands
-   * that much clearance inside the tunnel, so a cut never exposes rock the
-   * (coarser) cave mesh treats as solid.
-   */
-  cutsTerrain(entrances, x, y, z, margin = 0.6) {
-    for (const e of entrances) {
-      const b = e.bounds;
-      if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
-      if (CaveField.ramp(e, x, y - 0.8, z) < -margin) return true;
-    }
-    return false;
-  }
-
-  /** Is the ground at (x, z) a cave mouth? */
+  /** Is the ground at (x, z) inside an entrance's pit (no terrain surface there)? */
   isHole(x, z) {
-    return this.cutsTerrain(this.mouthsNear(x, z, x, z), x, this.generator.getHeight(x, z), z);
+    return this.mouthsNear(x, z, x, z).some((e) => CaveField.inHole(e, x, z));
   }
 
   /**
@@ -177,32 +162,42 @@ export class CaveSystem {
 
   // --- Physics -----------------------------------------------------------------
 
-  /** Cave field (caves + ramps, not the ground) at a point: grid if built, else computed. */
-  caveDensity(x, y, z) {
+  /**
+   * Cave field (caves, entrance tunnels and the entrances' built parts; not
+   * the ground) at a point: the grid if built, else computed. Pass the
+   * entrances near (x, z) when you already have them.
+   */
+  caveDensity(x, y, z, entrances = this.mouthsNear(x, z, x, z)) {
+    // Inside an entrance's built part, its exact shape is all there is.
+    for (const e of entrances) if (CaveField.inBuilt(e, x, y, z)) return CaveField.corridor(e, x, y, z);
+    let d;
     const g = this.#gridAt(x, y, z);
-    if (g) return sampleGrid(g, x, y, z);
-    if (g === null) return 50; // no caves there
-    const entrances = this.field.entrancesNear(x, z, x, z);
-    let d = this.field.caves(x, y, z, this.generator.getHeight(x, z), this.field.regionRock(x, z));
-    for (const e of entrances) d = Math.min(d, CaveField.ramp(e, x, y, z));
+    if (g) {
+      d = sampleGrid(g, x, y, z);
+    } else if (g === null) {
+      d = 50; // no caves there
+    } else {
+      d = this.field.caves(x, y, z, this.generator.getHeight(x, z), this.field.regionRock(x, z));
+      for (const e of entrances) d = Math.min(d, CaveField.ramp(e, x, y, z), CaveField.hull(e, x, y, z));
+    }
     return d;
   }
 
   /**
    * What you'd stand on at (x, z) from feet height `feetY`, given the terrain
-   * mesh height there (NaN over a cave mouth, where the cave mesh is the
+   * mesh height there (NaN over an entrance's pit, where the ramp is the
    * ground). Returns { height, inCave, ceiling }.
    */
   groundAt(x, feetY, z, terrainHeight) {
     const H = this.generator.getHeight(x, z);
     const surface = Number.isFinite(terrainHeight) ? terrainHeight : H;
     // Fast path: nowhere near a cave.
-    const nearMouth = this.mouthsNear(x, z, x, z).length > 0;
-    if (!nearMouth && this.field.regionRock(x, z) > 10 && Number.isFinite(terrainHeight)) {
+    const entrances = this.mouthsNear(x, z, x, z);
+    if (!entrances.length && this.field.regionRock(x, z) > 10 && Number.isFinite(terrainHeight)) {
       return { height: terrainHeight, inCave: false, ceiling: Infinity };
     }
 
-    const solid = (y) => Math.min(surface - y, this.caveDensity(x, y, z)) > 0;
+    const solid = (y) => Math.min(surface - y, this.caveDensity(x, y, z, entrances)) > 0;
     const top = feetY + 1.2;
 
     // Rock at step height: a wall. Report where the rock ends above (so the

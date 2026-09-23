@@ -48,7 +48,7 @@ function rockGeometry(seed, base = 'dodeca') {
   return g;
 }
 
-const SHAPES = [
+export const ROCK_SHAPES = [
   rockGeometry(101, 'dodeca'),
   rockGeometry(202, 'ico'),
   rockGeometry(303, 'dodeca'),
@@ -115,7 +115,7 @@ export function createRockLayer(config) {
       const { snowLine } = generator.getBiome(x0 + chunkSize / 2, z0 + chunkSize / 2);
       const smallStones = lod <= config.rockMaxLod - 1;
 
-      const placed = SHAPES.map(() => []);
+      const placed = ROCK_SHAPES.map(() => []);
       const boulders = [];
       for (let j = 0; j < cells; j++) {
         for (let i = 0; i < cells; i++) {
@@ -144,7 +144,7 @@ export function createRockLayer(config) {
           const r = hash2(gi, gj, seed + 3);
           const boulder = r < 0.1 + 0.15 * foothill;
           if (!boulder && !smallStones) continue;
-          if (boulder && generator.caves.field.inHollow(wx, wz)) continue; // keep cave entrances clear
+          if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
           const size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.6 * foothill) : 0.25 + hash2(gi, gj, seed + 4) * 0.6;
           const sx = size * (0.8 + hash2(gi, gj, seed + 5) * 0.5);
           const sy = size * (0.55 + hash2(gi, gj, seed + 6) * 0.45);
@@ -155,7 +155,7 @@ export function createRockLayer(config) {
           euler.set((hash2(gi, gj, seed + 8) - 0.5) * 0.5, hash2(gi, gj, seed + 9) * Math.PI * 2, (hash2(gi, gj, seed + 10) - 0.5) * 0.5);
           rotation.setFromEuler(euler);
           scale.set(sx, sy, sz);
-          const shape = Math.floor(hash2(gi, gj, seed + 11) * SHAPES.length);
+          const shape = Math.floor(hash2(gi, gj, seed + 11) * ROCK_SHAPES.length);
           placed[shape].push(matrix.compose(position, rotation, scale).clone());
           if (boulder) boulders.push(wx, wz, Math.min(sx, sz) * 0.75);
         }
@@ -165,7 +165,7 @@ export function createRockLayer(config) {
       group.name = 'rocks';
       placed.forEach((list, s) => {
         if (!list.length) return;
-        const mesh = new InstancedMesh(SHAPES[s], material, list.length);
+        const mesh = new InstancedMesh(ROCK_SHAPES[s], material, list.length);
         list.forEach((m, k) => mesh.setMatrixAt(k, m));
         mesh.computeBoundingSphere();
         mesh.castShadow = true;
