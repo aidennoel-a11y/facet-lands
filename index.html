@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Facet Lands</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500&display=swap"
+    />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <canvas id="scene" aria-label="Procedurally generated low-poly terrain"></canvas>
+
+    <section class="panel" aria-label="World controls">
+      <header class="brand">
+        <h1>Facet Lands</h1>
+        <p>Low-poly terrain · chunked</p>
+      </header>
+
+      <form id="seed-form" class="seed">
+        <label for="seed">Seed</label>
+        <div class="seed-row">
+          <input id="seed" type="text" autocomplete="off" spellcheck="false" />
+          <button type="submit">Build</button>
+          <button type="button" id="random-seed" title="Random seed">Random</button>
+        </div>
+      </form>
+
+      <dl class="stats">
+        <div><dt>FPS</dt><dd id="stat-fps">–</dd></div>
+        <div><dt>Chunks</dt><dd id="stat-chunks">–</dd></div>
+        <div><dt>Triangles</dt><dd id="stat-tris">–</dd></div>
+        <div><dt>Altitude</dt><dd id="stat-alt">–</dd></div>
+        <div><dt>Speed</dt><dd id="stat-speed">–</dd></div>
+      </dl>
+
+      <div class="toggles">
+        <label><input id="autofly" type="checkbox" /> Auto-fly <kbd>F</kbd></label>
+        <label><input id="wireframe" type="checkbox" /> Triangles <kbd>G</kbd></label>
+      </div>
+    </section>
+
+    <aside class="keys" aria-label="Controls">
+      <span><kbd>Drag</kbd> look</span>
+      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly</span>
+      <span><kbd>Space</kbd>/<kbd>Q</kbd> up / down</span>
+      <span><kbd>Shift</kbd> fast</span>
+      <span><kbd>Wheel</kbd> speed</span>
+    </aside>
+
+    <canvas id="minimap" width="360" height="360" aria-label="Minimap, north up"></canvas>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
