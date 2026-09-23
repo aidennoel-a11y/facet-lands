@@ -10,8 +10,11 @@ export const WORLD = {
 
   // Level of detail: cells per chunk edge, picked by distance (in chunks).
   // Every level must divide the one above it so vertices line up at seams.
+  // The first two share a resolution; level 0 only exists so layers such as
+  // grass can be limited to the chunks right around the player.
   lods: [
-    { maxDistance: 2, resolution: 32 }, // 4 m triangles near the camera
+    { maxDistance: 1, resolution: 32 }, // 4 m triangles; grass lives here
+    { maxDistance: 2, resolution: 32 },
     { maxDistance: 5, resolution: 16 },
     { maxDistance: Infinity, resolution: 8 },
   ],
@@ -25,5 +28,19 @@ export const WORLD = {
 
   // Trees
   treeSpacing: 6, // metres between candidate tree spots (lower = denser)
-  treeMaxLod: 1, // only chunks at this LOD or closer get trees
+  treeMaxLod: 2, // only chunks at this LOD or closer get trees
+  treeScale: 1.6, // overall tree size multiplier
+
+  // Grass
+  grassSpacing: 1.6, // metres between grass tufts
+  grassMaxLod: 0,
+  grassFade: [70, 115], // tufts shrink away between these distances (m)
+
+  // Sun, moon and sky
+  dayLengthMinutes: 8, // one full day/night cycle
+  startHour: 9.5,
+
+  // Shadows follow the camera and cover a square this many metres across.
+  shadowExtent: 360,
+  shadowMapSize: 4096,
 };

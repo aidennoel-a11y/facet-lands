@@ -33,16 +33,29 @@
       <dl class="stats">
         <div><dt>FPS</dt><dd id="stat-fps">–</dd></div>
         <div><dt>Chunks</dt><dd id="stat-chunks">–</dd></div>
-        <div><dt>Triangles</dt><dd id="stat-tris">–</dd></div>
         <div><dt>Trees</dt><dd id="stat-trees">–</dd></div>
+        <div><dt>Grass</dt><dd id="stat-grass">–</dd></div>
         <div><dt>Altitude</dt><dd id="stat-alt">–</dd></div>
         <div><dt>Speed</dt><dd id="stat-speed">–</dd></div>
       </dl>
+
+      <div class="time">
+        <label for="time">Time <output id="clock">09:30</output></label>
+        <label class="cycle"><input id="cycle" type="checkbox" checked /> Day cycle <kbd>T</kbd></label>
+        <input id="time" type="range" min="0" max="23.99" step="0.01" value="9.5" aria-label="Time of day" />
+        <div class="presets" role="group" aria-label="Jump to time">
+          <button type="button" data-hour="6.2">Dawn</button>
+          <button type="button" data-hour="12">Noon</button>
+          <button type="button" data-hour="17.9">Dusk</button>
+          <button type="button" data-hour="0">Night</button>
+        </div>
+      </div>
 
       <div class="toggles">
         <label><input id="fly" type="checkbox" checked /> Fly <kbd>V</kbd></label>
         <label><input id="automove" type="checkbox" /> Auto-move <kbd>F</kbd></label>
         <label><input id="wireframe" type="checkbox" /> Triangles <kbd>G</kbd></label>
+        <label><input id="shadows" type="checkbox" checked /> Shadows <kbd>H</kbd></label>
       </div>
     </section>
 
@@ -56,6 +69,7 @@
       <span class="walk-only"><kbd>Space</kbd> jump</span>
       <span class="walk-only"><kbd>Shift</kbd> sprint</span>
       <span><kbd>V</kbd> fly / walk</span>
+      <span><kbd>T</kbd> pause time</span>
     </aside>
 
     <canvas id="minimap" width="360" height="360" aria-label="Minimap, north up"></canvas>

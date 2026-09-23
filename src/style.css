@@ -133,6 +133,55 @@ button:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.time {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.time > label[for='time'] {
+  font: 600 11px/1 var(--display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.time output {
+  margin-left: 6px;
+  font: 600 18px/1 var(--display);
+  letter-spacing: 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.time input[type='range'] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.time .presets {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.time .presets button {
+  padding: 5px 0;
+  font-size: 12px;
+}
+.time .cycle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.time .cycle input {
+  accent-color: var(--accent);
+}
+
 .toggles {
   display: flex;
   flex-wrap: wrap;

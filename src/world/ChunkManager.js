@@ -9,7 +9,10 @@ const NEIGHBOURS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], 
  * - Chunks within `viewDistance` are built, farther ones are dropped.
  * - Nearby chunks use more triangles than distant ones (LOD).
  * - Building is spread over frames (`chunkBuildBudgetMs`) so moving never
- *   causes a long stall; the closest missing chunks are built first.
+ *   causes a long stall. Missing chunks are built nearest first, favouring
+ *   the ones in front of the camera so what you look at fills in quickest.
+ * - Chunks outside the camera's view stay loaded but aren't drawn (three.js
+ *   frustum culling), so turning around is instant and costs nothing.
  *
  * Extending: register a layer with `addLayer({ name, build, dispose })`.
  * `build(context)` is called every time a chunk is (re)built and may return
@@ -59,8 +62,13 @@ export class ChunkManager {
     return lods.length - 1;
   }
 
-  /** Call once per frame with the camera (or player) position and time in seconds. */
-  update(position, time = 0) {
+  /**
+   * Call once per frame.
+   * @param position  camera (or player) position
+   * @param time      seconds, passed on to layers' update()
+   * @param forward   optional camera view direction, to build what's in view first
+   */
+  update(position, time = 0, forward = null) {
     for (const layer of this.layers) layer.update?.(time);
     const { chunkSize } = this.config;
     const ccx = Math.floor(position.x / chunkSize);
@@ -70,7 +78,25 @@ export class ChunkManager {
       this.centerKey = key;
       this.#refreshWanted(ccx, ccz);
     }
+    if (this.queue.length && forward) this.#prioritise(position, forward);
     this.#processQueue();
+  }
+
+  /** Re-order pending chunks: near first, and chunks behind you count double. */
+  #prioritise(position, forward) {
+    const { chunkSize } = this.config;
+    const flen = Math.hypot(forward.x, forward.z) || 1;
+    const fx = forward.x / flen;
+    const fz = forward.z / flen;
+    for (const job of this.queue) {
+      const dx = (job.cx + 0.5) * chunkSize - position.x;
+      const dz = (job.cz + 0.5) * chunkSize - position.z;
+      const d = Math.hypot(dx, dz);
+      const facing = d > 0 ? (dx * fx + dz * fz) / d : 1; // 1 ahead, -1 behind
+      job.priority = d * (1.5 - 0.5 * facing);
+    }
+    // Most urgent last, since the queue is consumed with pop().
+    this.queue.sort((a, b) => b.priority - a.priority);
   }
 
   #refreshWanted(ccx, ccz) {
@@ -128,6 +154,8 @@ export class ChunkManager {
 
     const mesh = new Mesh(geometry, this.material);
     mesh.name = 'ground';
+    mesh.castShadow = true; // hills shade the valleys behind them
+    mesh.receiveShadow = true;
     group.add(mesh);
 
     const chunk = { key, cx, cz, lod, group, mesh, triangles, groundHeightAt, layerObjects: [] };

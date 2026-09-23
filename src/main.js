@@ -4,65 +4,41 @@ import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
+import { createGrassLayer } from './world/layers/GrassLayer.js';
 import { PlayerControls } from './controls/PlayerControls.js';
+import { PlayerBody } from './player/PlayerBody.js';
+import { DayNight } from './render/DayNight.js';
+import { windTime } from './render/wind.js';
 import { Minimap } from './ui/Minimap.js';
-
-const SKY_TOP = new THREE.Color(0x3f7fd0);
-const SKY_HORIZON = new THREE.Color(0xd6e8f7);
 
 // --- Renderer, scene, camera -------------------------------------------------
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const scene = new THREE.Scene();
 const drawDistance = WORLD.viewDistance * WORLD.chunkSize;
-scene.fog = new THREE.Fog(SKY_HORIZON, drawDistance * 0.45, drawDistance * 0.95);
+scene.fog = new THREE.Fog(0xd6e8f7, drawDistance * 0.45, drawDistance * 0.95);
 
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, drawDistance * 1.5);
 
-// Gradient sky dome that follows the camera.
-const sky = new THREE.Mesh(
-  new THREE.SphereGeometry(drawDistance * 1.2, 32, 16),
-  new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    fog: false,
-    uniforms: { top: { value: SKY_TOP }, horizon: { value: SKY_HORIZON } },
-    vertexShader: /* glsl */ `
-      varying vec3 vDir;
-      void main() {
-        vDir = normalize(position);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform vec3 top;
-      uniform vec3 horizon;
-      varying vec3 vDir;
-      void main() {
-        float t = pow(clamp(vDir.y, 0.0, 1.0), 0.55);
-        gl_FragColor = vec4(mix(horizon, top, t), 1.0);
-        #include <colorspace_fragment>
-      }`,
-  }),
-);
-sky.renderOrder = -1;
-scene.add(sky);
-
-// Soft sky/ground fill plus a warm sun: flat faces read clearly as facets.
-scene.add(new THREE.HemisphereLight(0xdcecff, 0x5b4c3a, 1.4));
-const sun = new THREE.DirectionalLight(0xfff1dc, 2.6);
-sun.position.set(-0.7, 0.75, 0.45);
-scene.add(sun);
+// Sky dome, sun, moon, stars, lighting and shadows, driven by the time of day.
+const dayNight = new DayNight(scene, WORLD, drawDistance * 1.2);
 
 // --- Terrain -----------------------------------------------------------------
 const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
+// A heightfield has no back faces, so render its front faces into the shadow map.
+terrainMaterial.shadowSide = THREE.FrontSide;
 let generator = new TerrainGenerator(WORLD.seed);
 const chunks = new ChunkManager(scene, generator, WORLD, terrainMaterial);
-const water = createWaterLayer();
+const water = createWaterLayer({ skyColor: dayNight.horizon });
 const trees = createTreeLayer();
+const grass = createGrassLayer(WORLD);
 chunks.addLayer(water);
 chunks.addLayer(trees);
+chunks.addLayer(grass);
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
 function placeCamera() {
@@ -86,6 +62,7 @@ const controls = new PlayerControls(camera, canvas, {
   collide: (position, radius) => trees.collide(position, radius, WORLD.chunkSize),
 });
 placeCamera();
+const body = new PlayerBody(scene);
 
 // --- HUD -----------------------------------------------------------------------
 const minimap = new Minimap(document.getElementById('minimap'));
@@ -99,8 +76,13 @@ const ui = {
   keys: document.querySelector('.keys'),
   fps: document.getElementById('stat-fps'),
   chunks: document.getElementById('stat-chunks'),
-  tris: document.getElementById('stat-tris'),
   trees: document.getElementById('stat-trees'),
+  grass: document.getElementById('stat-grass'),
+  time: document.getElementById('time'),
+  clock: document.getElementById('clock'),
+  cycle: document.getElementById('cycle'),
+  shadows: document.getElementById('shadows'),
+  presets: document.querySelectorAll('[data-hour]'),
   alt: document.getElementById('stat-alt'),
   speed: document.getElementById('stat-speed'),
 };
@@ -126,7 +108,26 @@ ui.randomSeed.addEventListener('click', () => {
   setSeed(value);
 });
 ui.wireframe.addEventListener('change', () => {
-  for (const m of [terrainMaterial, water.material, trees.material]) m.wireframe = ui.wireframe.checked;
+  for (const m of [terrainMaterial, water.material, trees.material, trees.leafMaterial, grass.material]) {
+    m.wireframe = ui.wireframe.checked;
+  }
+});
+ui.time.addEventListener('input', () => {
+  dayNight.hour = Number(ui.time.value);
+  ui.clock.textContent = dayNight.clock;
+});
+ui.cycle.addEventListener('change', () => {
+  dayNight.playing = ui.cycle.checked;
+});
+for (const button of ui.presets) {
+  button.addEventListener('click', () => {
+    dayNight.hour = Number(button.dataset.hour);
+    ui.time.value = dayNight.hour;
+    ui.clock.textContent = dayNight.clock;
+  });
+}
+ui.shadows.addEventListener('change', () => {
+  dayNight.shadows = ui.shadows.checked;
 });
 ui.automove.addEventListener('change', () => {
   controls.autoMove = ui.automove.checked;
@@ -141,6 +142,8 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyV') ui.fly.click();
   if (e.code === 'KeyF') ui.automove.click();
   if (e.code === 'KeyG') ui.wireframe.click();
+  if (e.code === 'KeyT') ui.cycle.click();
+  if (e.code === 'KeyH') ui.shadows.click();
 });
 
 // --- Loop --------------------------------------------------------------------
@@ -160,18 +163,21 @@ let frames = 0;
 let fpsTime = 0;
 
 function tick(now) {
-  const dt = Math.min((now - lastTime) / 1000, 0.1);
+  const elapsed = (now - lastTime) / 1000;
+  const dt = Math.min(elapsed, 0.1); // big hitches shouldn't teleport the player
   lastTime = now;
   controls.update(dt);
-  chunks.update(camera.position, now / 1000);
-  sky.position.copy(camera.position);
+  camera.getWorldDirection(dir);
+  chunks.update(camera.position, now / 1000, dir);
+  windTime.value = now / 1000;
+  dayNight.update(dt, camera.position);
+  body.update(controls, dt);
   renderer.render(scene, camera);
 
-  camera.getWorldDirection(dir);
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
 
   frames++;
-  fpsTime += dt;
+  fpsTime += elapsed;
   if (fpsTime >= 0.5) {
     ui.fps.textContent = Math.round(frames / fpsTime);
     frames = 0;
@@ -179,8 +185,10 @@ function tick(now) {
     ui.chunks.textContent = chunks.pendingCount
       ? `${chunks.loadedCount} +${chunks.pendingCount}`
       : `${chunks.loadedCount}`;
-    ui.tris.textContent = `${(chunks.triangleCount / 1000).toFixed(0)}k`;
     ui.trees.textContent = `${(trees.count / 1000).toFixed(1)}k`;
+    ui.grass.textContent = `${(grass.count / 1000).toFixed(0)}k`;
+    ui.clock.textContent = dayNight.clock;
+    if (document.activeElement !== ui.time) ui.time.value = dayNight.hour.toFixed(2);
     ui.alt.textContent = `${Math.round(camera.position.y)} m`;
     ui.speed.textContent = `${Math.round(controls.currentSpeed)} m/s`;
   }
@@ -189,4 +197,4 @@ function tick(now) {
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { scene, camera, chunks, controls, get generator() { return generator; }, WORLD };
+window.world = { scene, camera, chunks, controls, dayNight, get generator() { return generator; }, WORLD };

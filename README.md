@@ -4,8 +4,10 @@ A low-poly, procedurally generated world built with [three.js](https://threejs.o
 The ground is made entirely of flat-shaded triangles, colored by height
 (sea bed → beach sand → meadow → deep grass → scrub → violet-grey rock → snow caps on
 the highest peaks), with steep faces turning to rock. Seas and lakes fill the low
-ground, and forests of pines, broadleaf trees and bushes cover the land. The world
-streams in as chunks around the camera, so it never ends.
+ground, forests of pines, broadleaf trees and bushes cover the land, and grass tufts
+sway around your feet. A sun and moon cross the sky in a day/night cycle and cast
+shadows on everything, including your own when you walk. The world streams in as
+chunks around the camera, so it never ends.
 
 ## Run it
 
@@ -29,9 +31,15 @@ Tick **Fly** (or press `V`) to switch between flying and walking.
 | Mouse wheel | Change cruising speed | – |
 | `F` | Auto-move forward | Auto-move forward |
 | `G` | Show the triangles (wireframe) | same |
+| `T` | Pause / resume the day cycle | same |
+| `H` | Shadows on / off (for slower computers) | same |
 
 Walking has gravity, stops you at slopes too steep to climb, blocks you at tree
 trunks (bushes you can walk through), and makes you swim in deep water.
+
+**Time of day:** drag the Time slider to any hour, or jump straight to Dawn, Noon,
+Dusk or Night. Untick **Day cycle** (`T`) to hold that time while you look around.
+A full day lasts `dayLengthMinutes` (8 by default) in `config.js`.
 
 Type any seed into the panel and press **Build**, or press **Random**. The same seed
 always makes the same world.
@@ -53,7 +61,12 @@ src/
     trees.js                low-poly tree models (pine, broadleaf, bush, dead pine)
     layers/
       WaterLayer.js         per-chunk water sheet, colored by depth, animated waves
-      TreeLayer.js          scatters instanced trees over nearby chunks
+      TreeLayer.js          scatters instanced trees (and their leaf triangles) over nearby chunks
+      GrassLayer.js         grass tufts around the player, tinted to match the ground
+  render/
+    DayNight.js             sky dome shader (sun, moon, stars), lights, fog, moving shadow box
+    wind.js                 vertex-shader sway shared by trees and grass
+  player/PlayerBody.js      invisible walking body that casts your shadow
   controls/PlayerControls.js  fly and walk modes: gravity, slopes, trunks, swimming
   ui/Minimap.js             hill-shaded top-down map
 ```
@@ -78,19 +91,43 @@ makes woods and clearings; spots under water or too steep are skipped; the biome
 `trees` list picks a species that suits the height (broadleaf low, pines higher,
 the odd dead pine near the tree line). Trees stand on the actual triangle surface,
 using `groundHeightAt` from the mesher, and each species in a chunk is one
-`InstancedMesh`. Only chunks up to `treeMaxLod` get trees.
+`InstancedMesh`, plus one for its semi-transparent leaf triangles floating around
+the crown. `treeScale` sets their overall size. Only chunks up to `treeMaxLod` get
+trees.
 
 **Triangles** (`ChunkMesher`): each chunk is a grid of cells, two triangles per
 cell. Vertices are nudged randomly (but deterministically) so the mesh doesn't
 look like a grid, and each cell's diagonal is flipped at random. Every triangle
 has its own vertices, so each face gets one normal and one color: the faceted look.
 
+**Sky, sun and shadows** (`render/DayNight.js`): one number, the hour, drives
+everything. The sun circles east → south → west on a tilted path; the sky shader
+draws the gradient, a warm glow around the sun at sunrise and sunset, the sun and
+moon discs and stars at night. Fog takes the horizon colour so the distance always
+blends into the sky. A single directional light plays the sun by day and the moon
+by night and casts shadows; its shadow box (`shadowExtent`, `shadowMapSize`) follows
+the camera and snaps to whole shadow-map texels so shadows don't shimmer.
+
+**Your shadow** (`player/PlayerBody.js`): in walk mode a simple blocky body stands
+where you are. Its material draws nothing on screen but it still renders into the
+shadow map, so looking down you see your shadow walk, swing its arms and jump.
+
+**Wind** (`render/wind.js`): trees and grass bend in the vertex shader, more the
+higher up a vertex is, with a phase that varies by position so gusts ripple across
+the land. Shadow depth materials use the same code so shadows sway too.
+
+**Grass** (`layers/GrassLayer.js`): tufts of single-triangle blades on the chunks
+right around you (`grassMaxLod`), coloured by the ground they stand on, and shrunk
+away with distance (`grassFade`) so there's no visible edge.
+
 **Chunks and LOD** (`ChunkManager`): chunks within `viewDistance` of the camera
 are loaded, the rest dropped. Near chunks use 32×32 cells, farther ones 16×16 and
-8×8. Building is capped at a few milliseconds per frame (nearest first), and a
+8×8. Building is capped at a few milliseconds per frame (nearest first, and what's
+in front of the camera before what's behind), and a
 chunk that changes detail level is swapped only once its new mesh is ready. Small
 "skirts" hang from each chunk's edges to hide cracks between detail levels.
-Fog hides the loading edge.
+Fog hides the loading edge. Chunks out of view stay loaded but aren't drawn
+(frustum culling), so turning around is instant.
 
 ## Extending it
 

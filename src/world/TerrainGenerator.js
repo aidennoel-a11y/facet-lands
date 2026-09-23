@@ -25,6 +25,7 @@ export class TerrainGenerator {
     this.climateNoise = new SimplexNoise(this.seed + 6);
     this.lakeNoise = new SimplexNoise(this.seed + 7);
     this.forestNoise = new SimplexNoise(this.seed + 8);
+    this.grassNoise = new SimplexNoise(this.seed + 9);
 
     this.biomes = Object.values(BIOMES).map(prepareBiome);
   }
@@ -67,6 +68,11 @@ export class TerrainGenerator {
   getForestDensity(x, z) {
     const n = this.forestNoise.fbm(x * 0.0028, z * 0.0028, 3);
     return 0.05 + 0.95 * smoothstep(-0.2, 0.25, n);
+  }
+
+  /** How grassy a spot is, in [0, 1]: lush meadows and thinner patches. */
+  getGrassDensity(x, z) {
+    return 0.35 + 0.65 * smoothstep(-0.3, 0.3, this.grassNoise.fbm(x * 0.012, z * 0.012, 2));
   }
 
   /**

@@ -157,7 +157,8 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
   // Height of the actual triangle surface at a chunk-local point (x, z).
   // Differs slightly from generator.getHeight() because the mesh is made of
   // flat triangles; things standing on the ground (trees) should use this.
-  function groundHeightAt(x, z) {
+  // If `out` is given, out.normalY receives how flat the triangle is (1 = flat).
+  function groundHeightAt(x, z, out) {
     const ci = Math.floor(x / cellSize);
     const cj = Math.floor(z / cellSize);
     // Jitter can push a point into a neighbouring cell's triangles.
@@ -177,7 +178,15 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
           const u = (px * e2z - e2x * pz) / det;
           const w = (e1x * pz - px * e1z) / det;
           if (u >= -1e-4 && w >= -1e-4 && u + w <= 1 + 1e-4) {
-            return gridY[p0] + u * (gridY[p1] - gridY[p0]) + w * (gridY[p2] - gridY[p0]);
+            const e1y = gridY[p1] - gridY[p0];
+            const e2y = gridY[p2] - gridY[p0];
+            if (out) {
+              const nx = e1y * e2z - e1z * e2y;
+              const ny = e1z * e2x - e1x * e2z;
+              const nz = e1x * e2y - e1y * e2x;
+              out.normalY = Math.abs(ny) / Math.hypot(nx, ny, nz);
+            }
+            return gridY[p0] + u * e1y + w * e2y;
           }
         }
       }

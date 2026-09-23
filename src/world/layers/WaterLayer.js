@@ -17,10 +17,12 @@ function smoothstep(a, b, x) {
  * everywhere, so neighbouring sheets always line up). Faces are coloured by
  * how deep the ground is underneath: see-through turquoise at the shore,
  * deep blue further out. A small vertex shader rolls gentle waves across it,
- * driven by world position so the waves flow across chunk borders.
+ * driven by world position so the waves flow across chunk borders, and a
+ * fresnel term mixes in the sky colour (`skyColor`, kept live by the caller)
+ * at grazing angles, so the sea glows orange at sunset and dark at night.
  */
-export function createWaterLayer({ resolution = 16, waveHeight = 0.35 } = {}) {
-  const uniforms = { uTime: { value: 0 } };
+export function createWaterLayer({ resolution = 16, waveHeight = 0.35, skyColor = new Color(0xd6e8f7) } = {}) {
+  const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor } };
 
   const material = new MeshPhongMaterial({
     vertexColors: true,
@@ -31,6 +33,18 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.35 } = {}) {
   });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
+    shader.uniforms.uSky = uniforms.uSky;
+    // Fresnel: looking across the water you see the sky reflected in it,
+    // looking straight down you see into it.
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uSky;')
+      .replace(
+        '#include <fog_fragment>',
+        /* glsl */ `float fresnel = pow(1.0 - clamp(dot(normal, normalize(vViewPosition) * -1.0), 0.0, 1.0), 3.0);
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, uSky, fresnel * 0.35);
+        gl_FragColor.a = mix(gl_FragColor.a, 1.0, fresnel * 0.4);
+        #include <fog_fragment>`,
+      );
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime;')
       .replace(
@@ -127,6 +141,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.35 } = {}) {
       const mesh = new Mesh(geometry, material);
       mesh.name = 'water';
       mesh.renderOrder = 1;
+      mesh.receiveShadow = true;
       return mesh;
     },
 

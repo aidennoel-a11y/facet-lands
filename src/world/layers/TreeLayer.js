@@ -1,6 +1,7 @@
-import { Color, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
+import { Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../../noise/random.js';
-import { TREE_GEOMETRIES } from '../trees.js';
+import { addWind, windDepthMaterial } from '../../render/wind.js';
+import { LEAF_GEOMETRIES, TREE_GEOMETRIES } from '../trees.js';
 
 const matrix = new Matrix4();
 const position = new Vector3();
@@ -16,13 +17,29 @@ const tint = new Color();
  * given tree is always in the same place whichever LOD builds its chunk.
  * Each spot is kept or skipped by the forest-density noise, then checked
  * for water, slope and altitude, and finally given a species from its
- * biome's `trees` list. Every species in a chunk is one InstancedMesh.
+ * biome's `trees` list. Every species in a chunk is one InstancedMesh, plus
+ * a second one for its semi-transparent leaf triangles sharing the same
+ * transforms. Trees sway in the wind and cast shadows.
  */
 export function createTreeLayer() {
-  const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const WIND = { strength: 0.012, speed: 1.1 };
+  const material = addWind(new MeshLambertMaterial({ vertexColors: true, flatShading: true }), WIND);
+  const leafMaterial = addWind(
+    new MeshLambertMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.6,
+      side: DoubleSide,
+      depthWrite: false,
+    }),
+    WIND,
+  );
+  const depthMaterial = windDepthMaterial(WIND);
+
   const layer = {
     name: 'trees',
     material,
+    leafMaterial,
     count: 0, // trees currently loaded, for the HUD
     trunks: new Map(), // "cx,cz" -> [x, z, radius, ...] in world space, for collisions
 
@@ -53,7 +70,7 @@ export function createTreeLayer() {
 
     build({ cx, cz, lod, groundHeightAt, generator, config }) {
       if (lod > config.treeMaxLod) return null;
-      const { chunkSize, treeSpacing, seaLevel } = config;
+      const { chunkSize, treeSpacing, seaLevel, treeScale } = config;
       const cells = Math.round(chunkSize / treeSpacing);
       const spacing = chunkSize / cells;
       const originX = cx * chunkSize;
@@ -101,7 +118,7 @@ export function createTreeLayer() {
           }
           species ??= trees.species[trees.species.length - 1];
 
-          const size = 0.75 + hash2(gi, gj, seed + 5) * 0.6;
+          const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale;
           (placed[species.type] ??= []).push({
             x: lx,
             // Sink the base a little so trunks never float on sloped faces.
@@ -118,7 +135,7 @@ export function createTreeLayer() {
       const trunks = [];
       for (const [type, list] of Object.entries(placed)) {
         if (type === 'bush') continue;
-        for (const t of list) trunks.push(originX + t.x, originZ + t.z, 0.35 * t.s);
+        for (const t of list) trunks.push(originX + t.x, originZ + t.z, 0.3 * t.s);
       }
 
       const group = new Group();
@@ -137,8 +154,24 @@ export function createTreeLayer() {
           mesh.setColorAt(k, tint.setRGB(v * (0.96 + t.shade * 0.08), v, v * 0.95));
         });
         mesh.computeBoundingSphere();
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.customDepthMaterial = depthMaterial;
         group.add(mesh);
         count += list.length;
+
+        const leafGeometry = LEAF_GEOMETRIES[type];
+        if (leafGeometry) {
+          const leavesMesh = new InstancedMesh(leafGeometry, leafMaterial, list.length);
+          leavesMesh.name = `${type} leaves`;
+          leavesMesh.instanceMatrix = mesh.instanceMatrix;
+          leavesMesh.instanceColor = mesh.instanceColor;
+          leavesMesh.computeBoundingSphere();
+          leavesMesh.castShadow = true; // dappled shade under the crown
+          leavesMesh.receiveShadow = true;
+          leavesMesh.customDepthMaterial = depthMaterial;
+          group.add(leavesMesh);
+        }
       }
       if (count === 0) return null;
       group.userData.count = count;
