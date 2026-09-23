@@ -69,9 +69,11 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
             originX + (gridX[p0] + gridX[p1] + gridX[p2]) / 3,
             (gridY[p0] + gridY[p1] + gridY[p2]) / 3,
             originZ + (gridZ[p0] + gridZ[p1] + gridZ[p2]) / 3,
+            0.3,
           );
-          // Only triangles wholly over the tunnel: never leave rock uncovered.
-          if (centre && corners === 3) cut.add((j * resolution + i) * 2 + t / 3);
+          // Triangles mostly over the tunnel; the rim walls line the edge of
+          // the hole, so the bit of rock a partly-covered triangle exposes is hidden.
+          if (centre && corners >= 2) cut.add((j * resolution + i) * 2 + t / 3);
         }
       }
     }

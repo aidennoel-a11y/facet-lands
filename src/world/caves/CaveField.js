@@ -17,9 +17,10 @@ import { hash2, mulberry32 } from '../../noise/random.js';
  *  - A regional mask switches caves off in some areas, and a band keeps
  *    them between `bottom` and `top`, always with `cover` metres of rock
  *    under the ground surface, so they never break through by accident.
- *  - Entrances: on hillsides and open ground, a winding tunnel is dug from
- *    the surface down into the network. The terrain mesh opens a hole where
- *    it sits over that tunnel, lined with a rock rim.
+ *  - Entrances: on hillsides and open ground, the land is dug into a
+ *    level-floored hollow, and a tunnel ramps down through its floor, then
+ *    winds down into the network. The terrain mesh opens a hole where it sits over that
+ *    tunnel, lined with a rock rim.
  */
 export class CaveField {
   constructor(generator, { seaLevel, chunkSize }) {
@@ -38,9 +39,11 @@ export class CaveField {
     this.cover = 7; // rock kept between caves and the ground above
 
     this.entranceRegion = 256; // one possible entrance per region this size
-    this.mouthRadius = 3.4; // ramp radius
-    this.zoneRadius = 12; // margin kept around an entrance's tunnel (bounds, grid height)
-    this.cutRadius = 9.5; // roughly how far the opening reaches from the mouth point
+    this.mouthRadius = 3.6; // entrance tunnel radius
+    this.hollowFloor = 8; // radius of the level floor of the hollow around an entrance
+    this.hollowRadius = 20; // the hollow's full radius (it blends into the land by here)
+    this.hollowDepth = 6; // how far the floor sits below the land at the mouth
+    this.zoneRadius = 22; // margin kept around an entrance (bounds, grid height)
     this.entrances = new Map();
     this.chunkSize = chunkSize;
   }
@@ -83,19 +86,53 @@ export class CaveField {
 
   /** The entrance in one region (or null), cached. */
   entrance(rx, rz) {
-    const key = `${rx},${rz}`;
-    if (this.entrances.has(key)) return this.entrances.get(key);
-    const e = this.#makeEntrance(rx, rz);
-    this.entrances.set(key, e);
+    const key = rx * 65536 + rz;
+    let e = this.entrances.get(key);
+    if (e === undefined) {
+      e = this.#makeEntrance(rx, rz);
+      this.entrances.set(key, e);
+    }
     return e;
   }
 
   /**
-   * Picks a spot in the region (a hillside or open ground) and digs a winding
-   * tunnel down from it: a chain of short segments, each turning a little
-   * left or right and sloping down about 25 degrees, until it reaches cave
-   * air with a floor just below. Every segment must keep a floor under it
-   * (no drops you can't climb back up) and, past the mouth, rock over it
+   * The ground height at (x, z), given the natural land height `base` there:
+   * the land, with a level-floored hollow dug into it around a cave entrance
+   * (on a hillside, a terrace cut into the slope). Unchanged almost
+   * everywhere. The terrain generator calls this, so the ground, trees and
+   * grass all follow the hollow.
+   */
+  groundHeight(x, z, base) {
+    const R = this.entranceRegion;
+    const e = this.entrance(Math.floor(x / R), Math.floor(z / R));
+    return e ? this.#hollow(e.mouth, x, z, base) : base;
+  }
+
+  /** `base` blended towards the hollow's floor level around `mouth`. */
+  #hollow(mouth, x, z, base) {
+    const d = Math.hypot(x - mouth.x, z - mouth.z);
+    if (d >= this.hollowRadius) return base;
+    const t = Math.min(1, Math.max(0, (d - this.hollowFloor) / (this.hollowRadius - this.hollowFloor)));
+    const w = 1 - t * t * (3 - 2 * t);
+    return base + (mouth.y - base) * w;
+  }
+
+  /** Is (x, z) inside an entrance hollow? (Trees and boulders keep out.) */
+  inHollow(x, z, margin = 0) {
+    const R = this.entranceRegion;
+    const e = this.entrance(Math.floor(x / R), Math.floor(z / R));
+    return !!e && Math.hypot(x - e.mouth.x, z - e.mouth.z) < this.hollowRadius + margin;
+  }
+
+  /**
+   * Picks a spot in the region (a hillside or open ground), digs a level-
+   * floored hollow there, and sinks a tunnel through the hollow's floor: a
+   * ramp heading into the hill (any way on open ground), so the floor opens
+   * in a long hole you can see from around the hollow and walk down into.
+   * Below that it winds downwards in short segments, each turning a little
+   * left or right and sloping about 25 degrees, until it reaches cave air
+   * with a floor just below. Every segment must keep a floor under it (no
+   * drops you can't climb back up) and, once out of the hollow, rock over it
    * (so it never breaks the surface). Regions with no spot that works get
    * no entrance.
    */
@@ -105,48 +142,50 @@ export class CaveField {
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     if (rand() > 0.85) return null;
     const r = this.mouthRadius;
-    const segLength = 8;
 
     for (let attempt = 0; attempt < 16; attempt++) {
       const x = (rx + 0.2 + rand() * 0.6) * R;
       const z = (rz + 0.2 + rand() * 0.6) * R;
-      const h = g.getHeight(x, z);
-      if (h < this.seaLevel + 8) continue;
-      const gx = (g.getHeight(x + 3, z) - g.getHeight(x - 3, z)) / 6;
-      const gz = (g.getHeight(x, z + 3) - g.getHeight(x, z - 3)) / 6;
+      const h = g.getBaseHeight(x, z);
+      if (h < this.seaLevel + 10) continue;
+      const gx = (g.getBaseHeight(x + 3, z) - g.getBaseHeight(x - 3, z)) / 6;
+      const gz = (g.getBaseHeight(x, z + 3) - g.getBaseHeight(x, z - 3)) / 6;
       const slope = Math.hypot(gx, gz);
-      if (slope > 1.2) continue;
-      // Into the hill on a slope; any direction on open ground, where the
-      // first stretch dips more steeply to get under the surface quickly.
-      const hillside = slope > 0.15;
-      let yaw = hillside ? Math.atan2(gz, gx) : rand() * Math.PI * 2;
+      if (slope > 0.7) continue;
+      // Into the hill on a slope; any direction on open ground.
+      let yaw = slope > 0.12 ? Math.atan2(gz, gx) : rand() * Math.PI * 2;
+      const mouth = { x, y: h - this.hollowDepth, z };
+      const ground = (px, pz) => this.#hollow(mouth, px, pz, g.getBaseHeight(px, pz));
 
-      const points = [{ x: x - Math.cos(yaw) * 2, y: h + 1, z: z - Math.sin(yaw) * 2 }];
+      // Start a little behind the mouth point, so the hole is centred on it,
+      // with the tunnel's floor just under the hollow's floor.
+      const points = [{ x: x - Math.cos(yaw) * 4, y: mouth.y + 1.8, z: z - Math.sin(yaw) * 4 }];
       let travelled = 0;
       let ok = false;
       for (let seg = 0; seg < 12; seg++) {
         const p = points[points.length - 1];
         if (seg > 0) yaw += (rand() - 0.5) * 1.1; // turn up to ~30 degrees either way
-        const pitch = !hillside && seg < 2 ? 0.62 : 0.44; // about 35 or 25 degrees down
-        const run = Math.cos(pitch) * segLength;
-        const q = { x: p.x + Math.cos(yaw) * run, y: p.y - Math.sin(pitch) * segLength, z: p.z + Math.sin(yaw) * run };
+        const length = seg === 0 ? 13 : 8;
+        const pitch = seg === 0 ? 0.36 : 0.44; // about 20, then 25 degrees down
+        const run = Math.cos(pitch) * length;
+        const q = { x: p.x + Math.cos(yaw) * run, y: p.y - Math.sin(pitch) * length, z: p.z + Math.sin(yaw) * run };
         if (q.y < this.bottom + 4) break;
-        // Check along the new segment: floor below, and rock above once past the mouth.
+        // Check along the new segment: floor below, and rock above once out of the hollow.
         let valid = true;
         for (let t = 0.25; t <= 1.001 && valid; t += 0.25) {
           const sx = p.x + (q.x - p.x) * t, sy = p.y + (q.y - p.y) * t, sz = p.z + (q.z - p.z) * t;
-          const H = g.getHeight(sx, sz);
+          const H = ground(sx, sz);
           const rr = this.regionRock(sx, sz);
           if (this.caves(sx, sy - r - 2, sz, H, rr) < 0) valid = false; // a void under the tunnel
           const fromMouth = Math.hypot(sx - x, sz - z);
-          if (fromMouth > this.cutRadius + 3 && H - (sy + r) < 2) valid = false; // too close to the surface
+          if (fromMouth > this.hollowFloor + 3 && H - (sy + r) < 2) valid = false; // too close to the surface
         }
         if (!valid) break;
         points.push(q);
-        travelled += segLength;
-        const H = g.getHeight(q.x, q.z);
+        travelled += length;
+        const H = ground(q.x, q.z);
         const rr = this.regionRock(q.x, q.z);
-        if (travelled >= 16 && this.caves(q.x, q.y, q.z, H, rr) < -1.5 && this.caves(q.x, q.y - 4.5, q.z, H, rr) > 0) {
+        if (travelled >= 21 && this.caves(q.x, q.y, q.z, H, rr) < -1.5 && this.caves(q.x, q.y - 4.5, q.z, H, rr) > 0) {
           ok = true;
           break;
         }
@@ -158,18 +197,18 @@ export class CaveField {
       const xs = points.map((p) => p.x), ys = points.map((p) => p.y), zs = points.map((p) => p.z);
       return {
         id: `${rx},${rz}`,
-        mouth: { x, y: h, z },
+        mouth,
         start: points[0],
         end: points[points.length - 1],
         segments,
         r,
-        minY: Math.min(...ys) - r * 1.4,
-        maxY: Math.max(...ys) + r * 1.4,
+        minY: Math.min(...ys) - r * 1.35,
+        maxY: Math.max(h, ...ys) + r * 1.35,
         bounds: {
-          minX: Math.min(...xs) - this.zoneRadius,
-          maxX: Math.max(...xs) + this.zoneRadius,
-          minZ: Math.min(...zs) - this.zoneRadius,
-          maxZ: Math.max(...zs) + this.zoneRadius,
+          minX: Math.min(x, ...xs) - this.zoneRadius,
+          maxX: Math.max(x, ...xs) + this.zoneRadius,
+          minZ: Math.min(z, ...zs) - this.zoneRadius,
+          maxZ: Math.max(z, ...zs) + this.zoneRadius,
         },
       };
     }
@@ -196,16 +235,17 @@ export class CaveField {
   /** Signed distance to an entrance tunnel (a chain of capsules): negative inside. */
   static ramp(e, x, y, z) {
     let best = Infinity;
+    const r = e.r;
     for (let s = 0; s < e.segments.length; s++) {
       const [a, b] = e.segments[s];
-      // The first stretch is wider, so the mouth opens generously.
-      const r = s === 0 ? e.r * 1.4 : e.r;
       const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
       const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy + (z - a.z) * dz) / (dx * dx + dy * dy + dz * dz)));
       const qx = a.x + dx * t - x, qy = a.y + dy * t - y, qz = a.z + dz * t - z;
+      // The first stretch flares out into a wide mouth.
+      const rs = s === 0 ? r * (1.35 - 0.35 * t) : r;
       // Flatten the bottom a little so the tunnel has a walkable floor.
-      const floorLift = Math.max(0, -qy - r * 0.55) * 1.8;
-      best = Math.min(best, Math.sqrt(qx * qx + qy * qy + qz * qz) + floorLift - r);
+      const floorLift = Math.max(0, -qy - rs * 0.55) * 1.8;
+      best = Math.min(best, Math.sqrt(qx * qx + qy * qy + qz * qz) + floorLift - rs);
     }
     return best;
   }

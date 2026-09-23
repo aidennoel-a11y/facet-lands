@@ -69,7 +69,7 @@ const scale = new Vector3();
 
 /**
  * Rocks and boulders scattered over the land: a few everywhere, many more in
- * the foothills where mountains meet lowland, and on steep ground. Small
+ * the foothills where mountains meet lowland; none on cliffs or snow. Small
  * stones only appear on the nearest chunks; boulders are visible further out
  * and block you when walking.
  */
@@ -112,6 +112,7 @@ export function createRockLayer(config) {
       const x0 = cx * chunkSize;
       const z0 = cz * chunkSize;
       const seed = generator.seed ^ 0x3c6ef372;
+      const { snowLine } = generator.getBiome(x0 + chunkSize / 2, z0 + chunkSize / 2);
       const smallStones = lod <= config.rockMaxLod - 1;
 
       const placed = SHAPES.map(() => []);
@@ -125,27 +126,32 @@ export function createRockLayer(config) {
           const wx = x0 + lx;
           const wz = z0 + lz;
 
-          // Foothills (partly mountainous) and steep ground get the most rocks.
+          // Foothills (partly mountainous) get the most rocks. Steep faces
+          // get none (they'd hang off the slope), nor do snow caps.
           const m = generator.getMountainness(wx, wz);
           const foothill = Math.max(0, 1 - Math.abs(m - 0.45) / 0.35);
+          const chance = 0.025 + 0.26 * foothill;
+          if (hash2(gi, gj, seed) > chance) continue;
           const gx = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
           const gz = (generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2)) / 4;
-          const steep = smoothstep(0.35, 1.0, Math.hypot(gx, gz));
-          const chance = 0.025 + 0.26 * foothill + 0.14 * steep;
-          if (hash2(gi, gj, seed) > chance) continue;
+          const slope = Math.hypot(gx, gz);
+          if (slope > 0.7) continue;
 
           const ground = groundHeightAt(lx, lz);
           if (!(ground > seaLevel - 0.6)) continue; // off-chunk, deep water or a cave mouth
+          if (ground + generator.getColorJitter(wx, wz) > snowLine - 15) continue; // snow
 
           const r = hash2(gi, gj, seed + 3);
           const boulder = r < 0.1 + 0.15 * foothill;
           if (!boulder && !smallStones) continue;
+          if (boulder && generator.caves.field.inHollow(wx, wz)) continue; // keep cave entrances clear
           const size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.6 * foothill) : 0.25 + hash2(gi, gj, seed + 4) * 0.6;
           const sx = size * (0.8 + hash2(gi, gj, seed + 5) * 0.5);
           const sy = size * (0.55 + hash2(gi, gj, seed + 6) * 0.45);
           const sz = size * (0.8 + hash2(gi, gj, seed + 7) * 0.5);
 
-          position.set(lx, ground - sy * 0.3, lz);
+          // Sunk deeper on a slope, so the uphill side doesn't float.
+          position.set(lx, ground - sy * (0.3 + 0.5 * slope) - slope * Math.max(sx, sz) * 0.4, lz);
           euler.set((hash2(gi, gj, seed + 8) - 0.5) * 0.5, hash2(gi, gj, seed + 9) * Math.PI * 2, (hash2(gi, gj, seed + 10) - 0.5) * 0.5);
           rotation.setFromEuler(euler);
           scale.set(sx, sy, sz);

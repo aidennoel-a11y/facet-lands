@@ -33,8 +33,16 @@ export class TerrainGenerator {
     this.caves = new CaveSystem(this, config);
   }
 
-  /** Terrain height in metres at a world position. */
+  /**
+   * Terrain height in metres at a world position: the natural land, with a
+   * hollow dug around each cave entrance.
+   */
   getHeight(x, z) {
+    return this.caves.field.groundHeight(x, z, this.getBaseHeight(x, z));
+  }
+
+  /** The natural land, before cave-entrance hollows (entrances are placed on this). */
+  getBaseHeight(x, z) {
     // Broad rise and fall of the land.
     const continent = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3);
 

@@ -354,7 +354,9 @@ export function decorateChunk(grid, field) {
           let roof = floor + 0.5;
           while (roof < floor + 30 && f(x, roof, z) < 0) roof += 0.5;
           const gap = roof - floor;
-          const flat = f(x, floor + 0.6, z) < -0.3 && f(x + 1.5, floor - 0.5, z) >= 0 && f(x - 1.5, floor - 0.5, z) >= 0;
+          // Nothing on the floor of an entrance tunnel: keep the way in clear.
+          const inEntrance = entrances.some((e) => CaveField.ramp(e, x, floor + 1, z) < 1.5);
+          const flat = !inEntrance && f(x, floor + 0.6, z) < -0.3 && f(x + 1.5, floor - 0.5, z) >= 0 && f(x - 1.5, floor - 0.5, z) >= 0;
           const r1 = hash2(Math.round(x * 3), Math.round(floor * 3), seed + 1);
           const r2 = hash2(Math.round(z * 3), Math.round(roof * 3), seed + 2);
           if (gap > 3 && gap < 11 && r1 < 0.12 && flat) {
