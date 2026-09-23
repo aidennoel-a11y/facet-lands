@@ -5,12 +5,15 @@ import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer } from './world/layers/GrassLayer.js';
+import { createCaveLayer } from './world/layers/CaveLayer.js';
+import { Torches } from './items/Torches.js';
+import { Hotbar } from './ui/Hotbar.js';
 import { PlayerControls } from './controls/PlayerControls.js';
 import { PlayerBody } from './player/PlayerBody.js';
 import { DayNight } from './render/DayNight.js';
 import { RayEffects } from './render/RayEffects.js';
 import { Clouds } from './world/Clouds.js';
-import { windTime } from './render/wind.js';
+import { describeWind, updateWind } from './render/wind.js';
 import { Minimap } from './ui/Minimap.js';
 
 // --- Renderer, scene, camera -------------------------------------------------
@@ -38,7 +41,7 @@ const light = { direction: dayNight.lightDirection, color: dayNight.light.color,
 const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
 // A heightfield has no back faces, so render its front faces into the shadow map.
 terrainMaterial.shadowSide = THREE.FrontSide;
-let generator = new TerrainGenerator(WORLD.seed);
+let generator = new TerrainGenerator(WORLD.seed, WORLD);
 const chunks = new ChunkManager(scene, generator, WORLD, terrainMaterial);
 const water = createWaterLayer({ skyColor: dayNight.horizon });
 const trees = createTreeLayer();
@@ -46,6 +49,40 @@ const grass = createGrassLayer(WORLD);
 chunks.addLayer(water);
 chunks.addLayer(trees);
 chunks.addLayer(grass);
+const caves = createCaveLayer(WORLD);
+chunks.addLayer(caves);
+
+/**
+ * What you'd stand on at (x, z) from feet height `feetY`: the terrain, or a
+ * cave floor if you're inside a tunnel. Over a cave mouth there's no
+ * terrain, so you drop into the cave.
+ */
+function groundAt(x, feetY, z) {
+  const step = 1.2;
+  const terrain = chunks.groundHeightAt(x, z); // NaN over a cave mouth
+  const cave = generator.caves.floorAt(x, feetY + 1, z);
+  let height = -Infinity;
+  let inCave = false;
+  let ceiling = Infinity;
+  if (Number.isFinite(terrain) && terrain <= feetY + step) height = terrain;
+  if (cave && cave.floor <= feetY + step && cave.floor > height) {
+    height = cave.floor;
+    inCave = true;
+    ceiling = cave.ceiling;
+  }
+  if (height === -Infinity) {
+    if (cave) {
+      // Inside a tunnel but its floor is above a step away: a slope up.
+      height = cave.floor;
+      inCave = true;
+      ceiling = cave.ceiling;
+    } else {
+      // Solid rock (or ground above us), or dropping through a mouth.
+      height = Number.isFinite(terrain) ? terrain : generator.getHeight(x, z) - 3;
+    }
+  }
+  return { height, inCave, ceiling };
+}
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
 function placeCamera() {
@@ -64,12 +101,14 @@ function placeCamera() {
 }
 
 const controls = new PlayerControls(camera, canvas, {
-  groundHeight: (x, z) => chunks.groundHeightAt(x, z),
+  groundAt,
   seaLevel: WORLD.seaLevel,
   collide: (position, radius) => trees.collide(position, radius, WORLD.chunkSize),
 });
 placeCamera();
 const body = new PlayerBody(scene);
+const torches = new Torches(scene);
+torches.loadWorld(WORLD.seed);
 
 // --- HUD -----------------------------------------------------------------------
 const minimap = new Minimap(document.getElementById('minimap'));
@@ -84,7 +123,7 @@ const ui = {
   fps: document.getElementById('stat-fps'),
   chunks: document.getElementById('stat-chunks'),
   trees: document.getElementById('stat-trees'),
-  grass: document.getElementById('stat-grass'),
+  wind: document.getElementById('stat-wind'),
   time: document.getElementById('time'),
   clock: document.getElementById('clock'),
   cycle: document.getElementById('cycle'),
@@ -98,9 +137,10 @@ ui.seed.value = WORLD.seed;
 
 function setSeed(seed) {
   WORLD.seed = seed;
-  generator = new TerrainGenerator(seed);
+  generator = new TerrainGenerator(seed, WORLD);
   chunks.setGenerator(generator);
   minimap.invalidate();
+  torches.loadWorld(seed);
   placeCamera();
 }
 
@@ -116,7 +156,7 @@ ui.randomSeed.addEventListener('click', () => {
   setSeed(value);
 });
 ui.wireframe.addEventListener('change', () => {
-  for (const m of [terrainMaterial, water.material, trees.material, trees.leafMaterial, grass.material, ...clouds.materials]) {
+  for (const m of [terrainMaterial, water.material, trees.material, trees.leafMaterial, grass.material, caves.material, ...clouds.materials]) {
     m.wireframe = ui.wireframe.checked;
   }
 });
@@ -155,6 +195,76 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') ui.rays.click();
 });
 
+// --- Hotbar and placing things --------------------------------------------------
+const hotbar = new Hotbar(document.getElementById('hotbar'), [
+  { id: 'torch', name: 'Torch', icon: 'torch' },
+  { id: 'pickup', name: 'Pick up torch', icon: 'pickup' },
+]);
+
+// Scroll through the hotbar while walking (flying uses the wheel for speed).
+canvas.addEventListener(
+  'wheel',
+  (e) => {
+    if (controls.mode === 'walk') hotbar.step(e.deltaY > 0 ? 1 : -1);
+  },
+  { passive: true },
+);
+
+// A quick click or tap (not a drag to look around) uses the selected item
+// where you point; right-click always picks a torch back up.
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let press = null;
+canvas.addEventListener('pointerdown', (e) => {
+  press = { x: e.clientX, y: e.clientY, time: performance.now(), button: e.button };
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (!press) return;
+  const quick = performance.now() - press.time < 400 && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6;
+  if (quick) useItem(e.clientX, e.clientY, press.button === 2 ? { id: 'pickup' } : hotbar.selected);
+  press = null;
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+/** Terrain and cave meshes you can put things on, near the camera. */
+function solidTargets() {
+  const size = WORLD.chunkSize;
+  const ccx = Math.floor(camera.position.x / size);
+  const ccz = Math.floor(camera.position.z / size);
+  const reachChunks = controls.mode === 'walk' ? 1 : 2;
+  const out = [];
+  for (const chunk of chunks.chunks.values()) {
+    const near = Math.abs(chunk.cx - ccx) <= reachChunks && Math.abs(chunk.cz - ccz) <= reachChunks;
+    chunk.group.traverse((o) => {
+      // Caves can reach far from the chunk that owns them, so always include those.
+      if (o.userData.solid && (near || o.name.startsWith('cave'))) out.push(o);
+    });
+  }
+  return out;
+}
+
+function useItem(clientX, clientY, item) {
+  if (!item) return;
+  const rect = canvas.getBoundingClientRect();
+  pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  const reach = controls.mode === 'walk' ? 8 : 150;
+
+  if (item.id === 'pickup') {
+    if (!torches.removeAlongRay(raycaster.ray, reach)) hotbar.flash('Point at a torch to pick it up');
+    return;
+  }
+  raycaster.far = reach;
+  const hit = raycaster.intersectObjects(solidTargets(), false)[0];
+  if (!hit) {
+    hotbar.flash(controls.mode === 'walk' ? 'Too far away: get closer' : 'Point at the ground');
+    return;
+  }
+  const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  if (normal.dot(raycaster.ray.direction) > 0) normal.negate(); // caves are seen from inside
+  if (item.id === 'torch' && !torches.place(hit.point, normal)) hotbar.flash("Torches can't hang from a ceiling");
+}
+
 // --- Loop --------------------------------------------------------------------
 function resize() {
   const w = canvas.clientWidth;
@@ -179,10 +289,11 @@ function tick(now) {
   controls.update(dt);
   camera.getWorldDirection(dir);
   chunks.update(camera.position, now / 1000, dir);
-  windTime.value = now / 1000;
+  const wind = updateWind(now / 1000);
   dayNight.update(dt, camera.position);
-  clouds.update(dt, camera.position, dayNight.horizon);
+  clouds.update(dt, camera.position, dayNight.horizon, generator, wind);
   body.update(controls, dt);
+  torches.update(now / 1000, camera.position);
   if (ui.rays.checked) {
     light.strength = dayNight.lightStrength;
     rayEffects.render(scene, camera, light);
@@ -202,7 +313,7 @@ function tick(now) {
       ? `${chunks.loadedCount} +${chunks.pendingCount}`
       : `${chunks.loadedCount}`;
     ui.trees.textContent = `${(trees.count / 1000).toFixed(1)}k`;
-    ui.grass.textContent = `${(grass.count / 1000).toFixed(0)}k`;
+    ui.wind.textContent = describeWind(wind);
     ui.clock.textContent = dayNight.clock;
     if (document.activeElement !== ui.time) ui.time.value = dayNight.hour.toFixed(2);
     ui.alt.textContent = `${Math.round(camera.position.y)} m`;
@@ -213,4 +324,4 @@ function tick(now) {
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { scene, camera, chunks, controls, dayNight, clouds, rayEffects, get generator() { return generator; }, WORLD };
+window.world = { THREE, scene, camera, chunks, controls, dayNight, clouds, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };

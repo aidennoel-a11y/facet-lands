@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry, Color, Mesh, MeshPhongMaterial } from 'three';
 import { hash2 } from '../../noise/random.js';
+import { windStrength } from '../../render/wind.js';
 
 const SHALLOW = new Color(0x4fbfc4);
 const DEEP = new Color(0x2c67b0);
@@ -21,7 +22,7 @@ function smoothstep(a, b, x) {
  * fresnel term mixes in the sky colour (`skyColor`, kept live by the caller)
  * at grazing angles, so the sea glows orange at sunset and dark at night.
  */
-export function createWaterLayer({ resolution = 16, waveHeight = 0.35, skyColor = new Color(0xd6e8f7) } = {}) {
+export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor = new Color(0xd6e8f7) } = {}) {
   const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor } };
 
   const material = new MeshPhongMaterial({
@@ -34,6 +35,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.35, skyColor 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
     shader.uniforms.uSky = uniforms.uSky;
+    shader.uniforms.uWind = windStrength;
     // Fresnel: looking across the water you see the sky reflected in it,
     // looking straight down you see into it.
     shader.fragmentShader = shader.fragmentShader
@@ -46,15 +48,16 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.35, skyColor 
         #include <fog_fragment>`,
       );
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;\nattribute float waveScale;')
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `#include <begin_vertex>
         vec4 wp = modelMatrix * vec4(transformed, 1.0);
-        transformed.y += ${waveHeight.toFixed(3)} * (
-          sin(wp.x * 0.045 + uTime * 0.9) +
-          cos(wp.z * 0.038 + uTime * 0.7) +
-          0.5 * sin((wp.x + wp.z) * 0.11 + uTime * 1.6));`,
+        // Shallow and small water barely ripples; open, deep water rolls, more so when windy.
+        transformed.y += ${waveHeight.toFixed(3)} * waveScale * (0.25 + 0.75 * uWind) * (
+          sin(wp.x * 0.04 + uTime * 0.7) +
+          cos(wp.z * 0.034 + uTime * 0.55) +
+          0.4 * sin((wp.x + wp.z) * 0.1 + uTime * 1.2));`,
       );
   };
 
@@ -96,6 +99,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.35, skyColor 
 
       const positions = [];
       const colors = [];
+      const waves = [];
       const addTri = (a, b, c, variation) => {
         // Keep faces with any corner under water; drop fully dry ones.
         const wet = seaLevel + 1.5;
@@ -107,6 +111,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.35, skyColor 
         for (const k of [a, b, c]) {
           positions.push(xs[k], seaLevel, zs[k]);
           colors.push(color.r, color.g, color.b, alpha);
+          waves.push(0.1 + 0.9 * smoothstep(1, 16, seaLevel - ground[k]));
         }
       };
 
@@ -134,6 +139,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.35, skyColor 
       const geometry = new BufferGeometry();
       geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
       geometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 4));
+      geometry.setAttribute('waveScale', new BufferAttribute(new Float32Array(waves), 1));
       geometry.computeBoundingSphere();
       // Waves move vertices a little; pad the bounds so culling stays correct.
       geometry.boundingSphere.radius += waveHeight * 3;

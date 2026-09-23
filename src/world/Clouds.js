@@ -56,6 +56,10 @@ function cloudGeometry(rand) {
  * Fog swallows them near the wrap distance, so you never see one pop.
  * About a third are wispy and see-through; the solid ones cast moving
  * shadows on the land and block the sun (so light shafts form around them).
+ *
+ * Clouds drift faster or slower with the wind, and keep clear of the land:
+ * each one checks the ground under its footprint (and a little ahead) and
+ * rises smoothly over mountains instead of passing through them.
  */
 export class Clouds {
   constructor(scene, { seed = 'clouds', count = 70, range = 2600, minHeight = 170, maxHeight = 310 } = {}) {
@@ -85,12 +89,35 @@ export class Clouds {
       mesh.rotation.y = rand() * Math.PI * 2;
       mesh.position.set((rand() - 0.5) * range, minHeight + rand() * (maxHeight - minHeight), (rand() - 0.5) * range);
       mesh.castShadow = !wispy;
+      const box = mesh.geometry.boundingBox;
+      mesh.userData.baseY = mesh.position.y;
+      mesh.userData.bottom = box.min.y * mesh.scale.y; // flat base, below the centre
+      mesh.userData.reach = Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) * Math.max(mesh.scale.x, mesh.scale.z);
+      mesh.userData.targetY = mesh.position.y;
       mesh.renderOrder = wispy ? 2 : 0;
       this.group.add(mesh);
       this.clouds.push(mesh);
     }
     scene.add(this.group);
     this.materials = [this.solid, this.wispy];
+    this.clearance = 18; // metres between a cloud's base and the ground below it
+    this._next = 0;
+  }
+
+  /** Height a cloud needs so its base clears the land under and just ahead of it. */
+  #targetHeight(cloud, generator) {
+    const { baseY, bottom, reach } = cloud.userData;
+    const p = cloud.position;
+    const ahead = 25; // seconds of drift to look ahead
+    let highest = -Infinity;
+    for (const [ox, oz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7]]) {
+      for (const t of [0, ahead]) {
+        const x = p.x + ox * reach + this.wind.x * t;
+        const z = p.z + oz * reach + this.wind.z * t;
+        highest = Math.max(highest, generator.getHeight(x, z));
+      }
+    }
+    return Math.max(baseY, highest + this.clearance - bottom);
   }
 
   /**
@@ -98,16 +125,31 @@ export class Clouds {
    * @param focus    camera position (clouds wrap around it)
    * @param skyGlow  colour the clouds pick up from the sky (e.g. the horizon)
    */
-  update(dt, focus, skyGlow) {
+  update(dt, focus, skyGlow, generator, windStrength = 1) {
     const half = this.range / 2;
+    const speed = 0.25 + 0.75 * windStrength; // clouds never stop entirely
     for (const cloud of this.clouds) {
       const p = cloud.position;
-      p.x += this.wind.x * dt;
-      p.z += this.wind.z * dt;
-      if (p.x - focus.x > half) p.x -= this.range;
-      else if (p.x - focus.x < -half) p.x += this.range;
-      if (p.z - focus.z > half) p.z -= this.range;
-      else if (p.z - focus.z < -half) p.z += this.range;
+      p.x += this.wind.x * speed * dt;
+      p.z += this.wind.z * speed * dt;
+      let wrapped = false;
+      if (p.x - focus.x > half) (p.x -= this.range), (wrapped = true);
+      else if (p.x - focus.x < -half) (p.x += this.range), (wrapped = true);
+      if (p.z - focus.z > half) (p.z -= this.range), (wrapped = true);
+      else if (p.z - focus.z < -half) (p.z += this.range), (wrapped = true);
+      if (wrapped || cloud.userData.generator !== generator) {
+        cloud.userData.targetY = this.#targetHeight(cloud, generator);
+        cloud.userData.generator = generator;
+        p.y = cloud.userData.targetY; // out of sight in the fog, so just jump
+      }
+      // Ease towards the height that clears the land.
+      p.y += (cloud.userData.targetY - p.y) * Math.min(1, dt * 0.6);
+    }
+    // Re-check the land under a few clouds each frame.
+    for (let k = 0; k < 6; k++) {
+      const cloud = this.clouds[this._next];
+      cloud.userData.targetY = this.#targetHeight(cloud, generator);
+      this._next = (this._next + 1) % this.clouds.length;
     }
     // A little self-light in the sky's colour: soft undersides by day,
     // pink-orange at sunset, dim blue at night.

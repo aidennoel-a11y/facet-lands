@@ -29,7 +29,7 @@ export const BIOMES = {
     ],
     cliff: 0x908a9e,
     cliffSlope: [0.72, 0.5], // normal.y where cliff blending starts / is full
-    snowLine: 138, // peaks above this get snow caps
+    snowLine: 125, // peaks above this get snow caps
     snow: 0xf1f4f7,
     trees: {
       density: 1,

@@ -21,7 +21,7 @@ import { hash2, mulberry32 } from '../noise/random.js';
 // crown to sunlit at the top, plus a small random shade: the faceted look.
 //
 // Leafy species also get a "leaf" geometry: small, flat, pyramid-shaped
-// leaf clusters studding the crown's surface, drawn semi-transparent. They
+// leaf clusters set into the faces of the crown itself, drawn semi-transparent. They
 // break up the smooth silhouette, catch the light a little differently from
 // the crown underneath, and cast dappled shadows.
 
@@ -84,6 +84,17 @@ function part(geometry, colorLow, colorHigh = colorLow, options = {}) {
   return g;
 }
 
+/**
+ * Merges a tree's woody parts and crown into one geometry, and keeps the
+ * crown on its own (as userData.crown) so leaf clusters can be placed right
+ * on its faces.
+ */
+function withCrown(wood, crown) {
+  const solid = mergeGeometries([...wood, ...crown]);
+  solid.userData.crown = mergeGeometries(crown);
+  return solid;
+}
+
 // Pine tiers: [radius, height, centre y]
 const PINE_TIERS = [
   [2.5, 2.8, 3.0],
@@ -106,10 +117,7 @@ function pineTier([radius, height, cy], i) {
 }
 
 function pine() {
-  return mergeGeometries([
-    part(new CylinderGeometry(0.2, 0.34, 2.4, 6), TRUNK, 0x7d5a40, { y: 1.2, seed: 2 }),
-    ...PINE_TIERS.map(pineTier),
-  ]);
+  return withCrown([part(new CylinderGeometry(0.2, 0.34, 2.4, 6), TRUNK, 0x7d5a40, { y: 1.2, seed: 2 })], PINE_TIERS.map(pineTier));
 }
 
 // Broadleaf crown blobs: [x, y, z, radius]
@@ -122,14 +130,16 @@ const BROADLEAF_BLOBS = [
 ];
 
 function broadleaf() {
-  return mergeGeometries([
-    part(new CylinderGeometry(0.22, 0.38, 3.0, 6), TRUNK, 0x80593f, { y: 1.5, seed: 3 }),
-    part(new CylinderGeometry(0.07, 0.13, 1.4, 4), TRUNK, TRUNK, { x: 0.45, y: 3.2, rz: -0.8, seed: 4 }),
-    part(new CylinderGeometry(0.07, 0.12, 1.3, 4), TRUNK, TRUNK, { x: -0.4, y: 3.1, rz: 0.75, seed: 5 }),
-    ...BROADLEAF_BLOBS.map(([x, y, z, r], i) =>
+  return withCrown(
+    [
+      part(new CylinderGeometry(0.22, 0.38, 3.0, 6), TRUNK, 0x80593f, { y: 1.5, seed: 3 }),
+      part(new CylinderGeometry(0.07, 0.13, 1.4, 4), TRUNK, TRUNK, { x: 0.45, y: 3.2, rz: -0.8, seed: 4 }),
+      part(new CylinderGeometry(0.07, 0.12, 1.3, 4), TRUNK, TRUNK, { x: -0.4, y: 3.1, rz: 0.75, seed: 5 }),
+    ],
+    BROADLEAF_BLOBS.map(([x, y, z, r], i) =>
       part(new IcosahedronGeometry(r, 0), 0x3f7f35, 0x7fbd58, { x, y, z, sy: 0.82, lump: 0.2, seed: 30 + i }),
     ),
-  ]);
+  );
 }
 
 // Spruce: many narrow, dark, blue-green tiers.
@@ -143,13 +153,13 @@ const SPRUCE_TIERS = [
 ];
 
 function spruce() {
-  return mergeGeometries([
-    part(new CylinderGeometry(0.16, 0.3, 2.0, 6), 0x5e4231, 0x6e4c35, { y: 1.0, seed: 50 }),
-    ...SPRUCE_TIERS.map(([radius, height, cy], i) => {
+  return withCrown(
+    [part(new CylinderGeometry(0.16, 0.3, 2.0, 6), 0x5e4231, 0x6e4c35, { y: 1.0, seed: 50 })],
+    SPRUCE_TIERS.map(([radius, height, cy], i) => {
       const cone = new ConeGeometry(radius, height, 7, 1);
       return part(cone, 0x1f4d37, 0x3a7652, { y: cy, lump: 0.1, seed: 51 + i });
     }),
-  ]);
+  );
 }
 
 // Birch: slim white trunk with dark markings, small airy yellow-green crown.
@@ -161,17 +171,15 @@ const BIRCH_BLOBS = [
 ];
 
 function birch() {
-  return mergeGeometries([
-    part(new CylinderGeometry(0.12, 0.2, 6.4, 6, 4), 0xe9e5da, 0xf4f1ea, {
-      y: 3.2,
-      seed: 60,
-      speckle: [0x38322c, 0.28],
-    }),
-    part(new CylinderGeometry(0.04, 0.07, 1.3, 4), 0xe9e5da, 0xe9e5da, { x: 0.35, y: 4.6, rz: -0.9, seed: 61 }),
-    ...BIRCH_BLOBS.map(([x, y, z, r], i) =>
+  return withCrown(
+    [
+      part(new CylinderGeometry(0.12, 0.2, 6.4, 6, 4), 0xe9e5da, 0xf4f1ea, { y: 3.2, seed: 60, speckle: [0x38322c, 0.28] }),
+      part(new CylinderGeometry(0.04, 0.07, 1.3, 4), 0xe9e5da, 0xe9e5da, { x: 0.35, y: 4.6, rz: -0.9, seed: 61 }),
+    ],
+    BIRCH_BLOBS.map(([x, y, z, r], i) =>
       part(new IcosahedronGeometry(r, 0), 0x6f9e3c, 0xb3d56a, { x, y, z, sy: 0.9, lump: 0.22, seed: 62 + i }),
     ),
-  ]);
+  );
 }
 
 // Poplar: tall, columnar crown of stacked stretched blobs.
@@ -183,12 +191,12 @@ const POPLAR_BLOBS = [
 ];
 
 function poplar() {
-  return mergeGeometries([
-    part(new CylinderGeometry(0.16, 0.3, 3.0, 6), TRUNK, 0x7d5a40, { y: 1.5, seed: 70 }),
-    ...POPLAR_BLOBS.map(([x, y, z, r], i) =>
+  return withCrown(
+    [part(new CylinderGeometry(0.16, 0.3, 3.0, 6), TRUNK, 0x7d5a40, { y: 1.5, seed: 70 })],
+    POPLAR_BLOBS.map(([x, y, z, r], i) =>
       part(new IcosahedronGeometry(r, 0), 0x3d7a33, 0x78b04f, { x, y, z, sy: 1.5, lump: 0.18, seed: 71 + i }),
     ),
-  ]);
+  );
 }
 
 // Autumn maple: a broad round crown in orange and red.
@@ -200,13 +208,15 @@ const MAPLE_BLOBS = [
 ];
 
 function maple() {
-  return mergeGeometries([
-    part(new CylinderGeometry(0.2, 0.36, 2.8, 6), 0x5f4332, 0x6e4c35, { y: 1.4, seed: 80 }),
-    part(new CylinderGeometry(0.06, 0.12, 1.4, 4), 0x5f4332, 0x5f4332, { x: -0.45, y: 3.0, rz: 0.8, seed: 81 }),
-    ...MAPLE_BLOBS.map(([x, y, z, r], i) =>
+  return withCrown(
+    [
+      part(new CylinderGeometry(0.2, 0.36, 2.8, 6), 0x5f4332, 0x6e4c35, { y: 1.4, seed: 80 }),
+      part(new CylinderGeometry(0.06, 0.12, 1.4, 4), 0x5f4332, 0x5f4332, { x: -0.45, y: 3.0, rz: 0.8, seed: 81 }),
+    ],
+    MAPLE_BLOBS.map(([x, y, z, r], i) =>
       part(new IcosahedronGeometry(r, 0), 0xa8401f, 0xf0a13a, { x, y, z, sy: 0.85, lump: 0.2, seed: 82 + i }),
     ),
-  ]);
+  );
 }
 
 const BUSH_BLOBS = [
@@ -216,7 +226,8 @@ const BUSH_BLOBS = [
 ];
 
 function bush() {
-  return mergeGeometries(
+  return withCrown(
+    [],
     BUSH_BLOBS.map(([x, y, z, r], i) =>
       part(new DodecahedronGeometry(r, 0), 0x4f8c3d, 0x86c05c, { x, y, z, sy: 0.72, lump: 0.18, seed: 40 + i }),
     ),
@@ -272,7 +283,7 @@ function leaves(count, [minSize, maxSize], palette, placeOnShape, seed) {
 
   for (let i = 0; i < count; i++) {
     const { p, n, down } = placeOnShape(rand);
-    const centre = p.clone().addScaledVector(n, 0.02 + rand() * 0.12);
+    const centre = p.clone().addScaledVector(n, -0.05 - rand() * 0.08); // sunk slightly into the crown
     side.crossVectors(n, down).normalize();
     const along = down.clone().addScaledVector(n, (rand() - 0.5) * 0.3).normalize();
     const s = minSize + rand() * (maxSize - minSize);
@@ -303,44 +314,49 @@ function leaves(count, [minSize, maxSize], palette, placeOnShape, seed) {
   return g;
 }
 
-/** Surface points on a set of (vertically squashed) spheres, bigger ones more often. */
-function onBlobs(blobs, squash) {
-  const total = blobs.reduce((sum, b) => sum + b[3] * b[3], 0);
+/**
+ * Surface points on a crown mesh: a random face (bigger and more sunward
+ * faces more often) and a random point on it, with that face's normal. The
+ * leaf clusters are placed right on these, so they sit on the crown.
+ */
+function onMesh(geometry) {
+  const pos = geometry.attributes.position;
+  const faces = [];
+  let total = 0;
+  const a = new Vector3(), b = new Vector3(), c = new Vector3();
+  const e1 = new Vector3(), e2 = new Vector3();
+  for (let f = 0; f < pos.count; f += 3) {
+    a.fromBufferAttribute(pos, f);
+    b.fromBufferAttribute(pos, f + 1);
+    c.fromBufferAttribute(pos, f + 2);
+    const n = new Vector3().crossVectors(e1.subVectors(b, a), e2.subVectors(c, a));
+    const area = n.length() / 2;
+    n.normalize();
+    const weight = area * (0.35 + Math.max(0, n.y));
+    faces.push({ a: a.clone(), b: b.clone(), c: c.clone(), n, weight });
+    total += weight;
+  }
   return (rand) => {
     let pick = rand() * total;
-    let blob = blobs[0];
-    for (const b of blobs) {
-      pick -= b[3] * b[3];
+    let face = faces[faces.length - 1];
+    for (const f of faces) {
+      pick -= f.weight;
       if (pick <= 0) {
-        blob = b;
+        face = f;
         break;
       }
     }
-    const [x, y, z, r] = blob;
-    // Favour the upper, sunlit half of the crown.
-    const u = Math.min(1, -1 + 2 * Math.pow(rand(), 0.7));
-    const phi = rand() * Math.PI * 2;
-    const ring = Math.sqrt(1 - u * u);
-    const n = new Vector3(ring * Math.cos(phi), u, ring * Math.sin(phi));
-    const p = new Vector3(x + n.x * r, y + n.y * r * squash, z + n.z * r);
-    n.y /= squash;
-    n.normalize();
-    const down = new Vector3(0, -1, 0).addScaledVector(n, n.y).normalize();
-    if (down.lengthSq() < 0.01) down.set(1, 0, 0);
-    return { p, n, down };
-  };
-}
-
-/** Surface points on the pine's cone tiers. */
-function onCones(tiers) {
-  return (rand) => {
-    const [radius, height, cy] = tiers[Math.floor(rand() * tiers.length)];
-    const f = Math.pow(rand(), 0.6); // 0 at the tip, 1 at the rim
-    const phi = rand() * Math.PI * 2;
-    const r = radius * f;
-    const p = new Vector3(Math.cos(phi) * r, cy + height / 2 - height * f, Math.sin(phi) * r);
-    const n = new Vector3(Math.cos(phi) * height, radius, Math.sin(phi) * height).normalize();
-    const down = new Vector3(Math.cos(phi) * radius, -height, Math.sin(phi) * radius).normalize();
+    let u = rand();
+    let v = rand();
+    if (u + v > 1) {
+      u = 1 - u;
+      v = 1 - v;
+    }
+    const p = face.a.clone().addScaledVector(e1.subVectors(face.b, face.a), u).addScaledVector(e2.subVectors(face.c, face.a), v);
+    const n = face.n.clone();
+    const down = new Vector3(0, -1, 0).addScaledVector(n, n.y);
+    if (down.lengthSq() < 1e-4) down.set(1, 0, 0).addScaledVector(n, -n.x);
+    down.normalize();
     return { p, n, down };
   };
 }
@@ -357,12 +373,14 @@ export const TREE_GEOMETRIES = {
   deadPine: deadPine(),
 };
 
+const crown = (type) => onMesh(TREE_GEOMETRIES[type].userData.crown);
+
 export const LEAF_GEOMETRIES = {
-  pine: leaves(40, [0.35, 0.6], [0x3f8a4a, 0x4f9c57, 0x5fae62, 0x376f3f], onCones(PINE_TIERS), 11),
-  spruce: leaves(40, [0.3, 0.5], [0x2c5e44, 0x3a7050, 0x478260], onCones(SPRUCE_TIERS), 14),
-  birch: leaves(40, [0.3, 0.55], [0x9cc85a, 0xb6d86c, 0x86b84c, 0xcbe07a], onBlobs(BIRCH_BLOBS, 0.9), 15),
-  poplar: leaves(40, [0.35, 0.6], [0x5a9a42, 0x6fae4c, 0x84c05a], onBlobs(POPLAR_BLOBS, 1.5), 16),
-  maple: leaves(55, [0.45, 0.8], [0xe07a2c, 0xf2a33c, 0xc9502a, 0xf5c04a, 0xb33a22], onBlobs(MAPLE_BLOBS, 0.85), 17),
-  broadleaf: leaves(55, [0.45, 0.8], [0x6aac4a, 0x7fbe55, 0x93cc62, 0x5a9a42, 0xa6d26c], onBlobs(BROADLEAF_BLOBS, 0.82), 12),
-  bush: leaves(16, [0.25, 0.45], [0x78b556, 0x8fc663, 0x9fd06d], onBlobs(BUSH_BLOBS, 0.72), 13),
+  pine: leaves(40, [0.35, 0.6], [0x3f8a4a, 0x4f9c57, 0x5fae62, 0x376f3f], crown('pine'), 11),
+  spruce: leaves(40, [0.3, 0.5], [0x2c5e44, 0x3a7050, 0x478260], crown('spruce'), 14),
+  broadleaf: leaves(55, [0.45, 0.8], [0x6aac4a, 0x7fbe55, 0x93cc62, 0x5a9a42, 0xa6d26c], crown('broadleaf'), 12),
+  birch: leaves(40, [0.3, 0.55], [0x9cc85a, 0xb6d86c, 0x86b84c, 0xcbe07a], crown('birch'), 15),
+  poplar: leaves(40, [0.35, 0.6], [0x5a9a42, 0x6fae4c, 0x84c05a], crown('poplar'), 16),
+  maple: leaves(55, [0.45, 0.8], [0xe07a2c, 0xf2a33c, 0xc9502a, 0xf5c04a, 0xb33a22], crown('maple'), 17),
+  bush: leaves(16, [0.25, 0.45], [0x78b556, 0x8fc663, 0x9fd06d], crown('bush'), 13),
 };

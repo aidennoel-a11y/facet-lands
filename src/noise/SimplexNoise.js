@@ -87,17 +87,19 @@ export class SimplexNoise {
   }
 
   /**
-   * Ridged multifractal in [0, 1]: sharp crests where the noise crosses zero.
-   * Good for mountain ranges.
+   * Ridged multifractal in [0, 1]: crests where the noise crosses zero.
+   * Good for mountain ranges. `softness` > 0 rounds the crests off (0 keeps
+   * them knife-sharp).
    */
-  ridged(x, y, octaves = 5, lacunarity = 2, gain = 0.5) {
+  ridged(x, y, octaves = 5, lacunarity = 2, gain = 0.5, softness = 0) {
     let sum = 0;
     let amp = 1;
     let freq = 1;
     let norm = 0;
     let weight = 1;
     for (let o = 0; o < octaves; o++) {
-      let n = 1 - Math.abs(this.noise2D(x * freq, y * freq));
+      const v = this.noise2D(x * freq, y * freq);
+      let n = 1 - Math.sqrt(v * v + softness);
       n *= n;
       n *= weight;
       weight = Math.min(1, Math.max(0, n * 2));

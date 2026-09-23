@@ -12,8 +12,13 @@ import { Euler, Vector3 } from 'three';
  *
  * Both: drag (mouse or touch) to look; auto-move walks/flies forward on its own.
  *
+ * Caves: underground, the cave floor is the ground, the roof stops jumps,
+ * and the rock walls block you like any too-steep slope.
+ *
  * `world` supplies what the controls need to know about the terrain:
- *   groundHeight(x, z)         height of the surface you'd stand on
+ *   groundAt(x, feetY, z)      { height, inCave, ceiling }: the surface you'd
+ *                              stand on from feet height feetY (terrain or
+ *                              cave floor)
  *   seaLevel                   water surface height
  *   collide(position, radius)  pushes position out of solid things (optional)
  */
@@ -155,14 +160,28 @@ export class PlayerControls {
     }
 
     const pos = this.camera.position;
-    const floor = this.#standHeight(pos.x, pos.z) + this.flyClearance;
+    const ground = this.#ground(pos.x, pos.y - this.eyeHeight, pos.z);
+    const floor = ground.stand + (ground.inCave ? 0.4 : this.flyClearance);
     if (pos.y < floor) pos.y = floor;
+    if (ground.inCave && pos.y > ground.ceiling - 0.2) pos.y = Math.max(floor, ground.ceiling - 0.2);
   }
 
-  /** Where your feet rest: the ground, or floating at the surface in deep water. */
-  #standHeight(x, z) {
-    const ground = this.world.groundHeight(x, z);
-    return Math.max(ground, this.world.seaLevel - this.swimDepth);
+  /**
+   * What's under your feet at (x, feetY, z):
+   *   stand    height your feet rest at (floating at the surface in deep water)
+   *   inCave   standing on a cave floor
+   *   ceiling  the cave roof above you (Infinity outside)
+   *   swim     deep water under you
+   */
+  #ground(x, feetY, z) {
+    const g = this.world.groundAt(x, feetY, z);
+    const deepWater = !g.inCave && g.height < this.world.seaLevel - this.swimDepth;
+    return {
+      stand: deepWater ? this.world.seaLevel - this.swimDepth : g.height,
+      inCave: g.inCave,
+      ceiling: g.ceiling,
+      swim: deepWater,
+    };
   }
 
   #updateWalk(dt) {
@@ -180,17 +199,19 @@ export class PlayerControls {
       const step = (this.currentSpeed * dt) / len;
       mx *= step;
       mz *= step;
-      // Try the full move, then slide along each axis if it's too steep.
+      // Try the full move, then slide along each axis if it's blocked.
       if (!this.#tryMove(mx, mz) && !this.#tryMove(mx, 0)) this.#tryMove(0, mz);
     }
     this.world.collide?.(pos, this.radius);
 
     // Vertical: gravity, landing, and sticking to the ground going downhill.
-    const floor = this.#standHeight(pos.x, pos.z);
-    this.swimming = this.world.groundHeight(pos.x, pos.z) < this.world.seaLevel - this.swimDepth;
+    const feetNow = pos.y - this.eyeHeight;
+    const ground = this.#ground(pos.x, feetNow, pos.z);
+    const floor = ground.stand;
+    this.swimming = ground.swim;
     const wasGrounded = this.grounded;
     this.velocityY = Math.max(-this.maxFallSpeed, this.velocityY - this.gravity * dt);
-    let feet = pos.y - this.eyeHeight + this.velocityY * dt;
+    let feet = feetNow + this.velocityY * dt;
 
     if (feet <= floor || (wasGrounded && this.velocityY <= 0 && feet - floor < 0.6)) {
       feet = floor;
@@ -199,15 +220,28 @@ export class PlayerControls {
     } else {
       this.grounded = false;
     }
+    // Bump your head on the cave roof.
+    if (ground.inCave && feet + this.eyeHeight > ground.ceiling - 0.15) {
+      feet = Math.max(floor, ground.ceiling - 0.15 - this.eyeHeight);
+      this.velocityY = Math.min(this.velocityY, 0);
+    }
     pos.y = feet + this.eyeHeight;
   }
 
+  /**
+   * Moves sideways if the spot is somewhere you could be: not a wall of
+   * rock (ground far above your feet), not a slope too steep to climb, and
+   * with enough headroom in a cave.
+   */
   #tryMove(dx, dz) {
     const pos = this.camera.position;
-    if (this.grounded && !this.swimming) {
-      const rise = this.#standHeight(pos.x + dx, pos.z + dz) - this.#standHeight(pos.x, pos.z);
-      if (rise > 0 && rise / Math.hypot(dx, dz) > this.maxClimb) return false;
-    }
+    const feet = pos.y - this.eyeHeight;
+    const here = this.#ground(pos.x, feet, pos.z);
+    const there = this.#ground(pos.x + dx, feet, pos.z + dz);
+    const rise = there.stand - here.stand;
+    if (!there.swim && there.stand > feet + 1.2) return false; // a wall
+    if (there.inCave && there.ceiling - there.stand < this.eyeHeight + 0.25) return false; // too low
+    if (this.grounded && !here.swim && rise > 0 && rise / Math.hypot(dx, dz) > this.maxClimb) return false;
     pos.x += dx;
     pos.z += dz;
     return true;

@@ -109,6 +109,11 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     const flip = hash2(baseGx + i * step, baseGz + j * step, seed + 7) < 0.5;
     return flip ? [a, c, d, a, d, b] : [a, c, b, b, c, d];
   }
+  // Cave mouths: at full detail, triangles whose centre falls inside the
+  // first stretch of a cave tunnel are left out, opening a hole into it.
+  const caveSystem = resolution === finest ? generator.caves : null;
+  const caves = caveSystem ? caveSystem.near(originX, originZ, originX + chunkSize, originZ + chunkSize, 8) : [];
+  const cut = new Set(); // (cell index * 2 + triangle) of removed triangles
   for (let j = 0; j < resolution; j++) {
     for (let i = 0; i < resolution; i++) {
       const tris = cellTriangles(i, j);
@@ -116,6 +121,15 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
       const gz = baseGz + j * step;
       for (let t = 0; t < 6; t += 3) {
         const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
+        if (caves.length) {
+          const cx3 = originX + (gridX[p0] + gridX[p1] + gridX[p2]) / 3;
+          const cy3 = (gridY[p0] + gridY[p1] + gridY[p2]) / 3;
+          const cz3 = originZ + (gridZ[p0] + gridZ[p1] + gridZ[p2]) / 3;
+          if (caveSystem.cutsTerrain(caves, cx3, cy3, cz3)) {
+            cut.add((j * resolution + i) * 2 + t / 3);
+            continue;
+          }
+        }
         pushTri(gridX[p0], gridY[p0], gridZ[p0], gridX[p1], gridY[p1], gridZ[p1], gridX[p2], gridY[p2], gridZ[p2], gx * 2 + t / 3, gz);
         for (const p of [p0, p1, p2]) {
           vertexNormals[p * 3] += normal.x;
@@ -135,12 +149,23 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     (t) => resolution * n + (resolution - t), // south edge, j = res, walking -x
     (t) => (resolution - t) * n, // west edge, i = 0, walking -z
   ];
+  // Skirts stop just above any cave tunnel running underneath, so they
+  // never slice through one.
+  const skirtCaves = generator.caves ? generator.caves.near(originX, originZ, originX + chunkSize, originZ + chunkSize, 8) : [];
+  const skirtBottom = (k) => {
+    const y = gridY[k];
+    if (!skirtCaves.length) return y - skirtDepth;
+    const roof = generator.caves.roofUnder(skirtCaves, originX + gridX[k], originZ + gridZ[k], y);
+    return Math.max(y - skirtDepth, Math.min(y, roof + 0.3));
+  };
   for (const edge of edges) {
     for (let t = 0; t < resolution; t++) {
       const p = edge(t);
       const q = edge(t + 1);
       const px = gridX[p], py = gridY[p], pz = gridZ[p];
       const qx = gridX[q], qy = gridY[q], qz = gridZ[q];
+      const pb = skirtBottom(p);
+      const qb = skirtBottom(q);
       skirtNormal
         .set(
           vertexNormals[p * 3] + vertexNormals[q * 3],
@@ -148,9 +173,10 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
           vertexNormals[p * 3 + 2] + vertexNormals[q * 3 + 2],
         )
         .normalize();
+      if (skirtNormal.lengthSq() === 0) skirtNormal.set(0, 1, 0);
       // Outward-facing (the edges above walk clockwise seen from above).
-      pushTri(px, py, pz, qx, qy, qz, qx, qy - skirtDepth, qz, p, q, skirtNormal);
-      pushTri(px, py, pz, qx, qy - skirtDepth, qz, px, py - skirtDepth, pz, q, p, skirtNormal);
+      pushTri(px, py, pz, qx, qy, qz, qx, qb, qz, p, q, skirtNormal);
+      pushTri(px, py, pz, qx, qb, qz, px, pb, pz, q, p, skirtNormal);
     }
   }
 
@@ -158,6 +184,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
   // Differs slightly from generator.getHeight() because the mesh is made of
   // flat triangles; things standing on the ground (trees) should use this.
   // If `out` is given, out.normalY receives how flat the triangle is (1 = flat).
+  // Returns NaN over a cave mouth (no ground there) and null outside the chunk.
   function groundHeightAt(x, z, out) {
     const ci = Math.floor(x / cellSize);
     const cj = Math.floor(z / cellSize);
@@ -178,6 +205,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
           const u = (px * e2z - e2x * pz) / det;
           const w = (e1x * pz - px * e1z) / det;
           if (u >= -1e-4 && w >= -1e-4 && u + w <= 1 + 1e-4) {
+            if (cut.size && cut.has((j * resolution + i) * 2 + t / 3)) return NaN;
             const e1y = gridY[p1] - gridY[p0];
             const e2y = gridY[p2] - gridY[p0];
             if (out) {
@@ -195,9 +223,10 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
   }
 
   const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new BufferAttribute(normals, 3));
-  geometry.setAttribute('color', new BufferAttribute(colors, 3));
+  // Trim the unused space left by any triangles cut for cave mouths.
+  geometry.setAttribute('position', new BufferAttribute(v < positions.length ? positions.slice(0, v) : positions, 3));
+  geometry.setAttribute('normal', new BufferAttribute(v < normals.length ? normals.slice(0, v) : normals, 3));
+  geometry.setAttribute('color', new BufferAttribute(v < colors.length ? colors.slice(0, v) : colors, 3));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
 

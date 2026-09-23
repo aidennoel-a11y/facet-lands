@@ -34,7 +34,7 @@
         <div><dt>FPS</dt><dd id="stat-fps">–</dd></div>
         <div><dt>Chunks</dt><dd id="stat-chunks">–</dd></div>
         <div><dt>Trees</dt><dd id="stat-trees">–</dd></div>
-        <div><dt>Grass</dt><dd id="stat-grass">–</dd></div>
+        <div><dt>Wind</dt><dd id="stat-wind">–</dd></div>
         <div><dt>Altitude</dt><dd id="stat-alt">–</dd></div>
         <div><dt>Speed</dt><dd id="stat-speed">–</dd></div>
       </dl>
@@ -69,11 +69,16 @@
       <span class="walk-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
       <span class="walk-only"><kbd>Space</kbd> jump</span>
       <span class="walk-only"><kbd>Shift</kbd> sprint</span>
+      <span><kbd>Click</kbd> use item</span>
+      <span><kbd>Right-click</kbd> pick up torch</span>
+      <span><kbd>1</kbd>–<kbd>9</kbd> hotbar</span>
       <span><kbd>V</kbd> fly / walk</span>
       <span><kbd>T</kbd> pause time</span>
     </aside>
 
-    <canvas id="minimap" width="360" height="360" aria-label="Minimap, north up"></canvas>
+    <nav id="hotbar" class="hotbar" aria-label="Hotbar"></nav>
+
+    <canvas id="minimap" width="360" height="360" aria-label="Minimap, north up (dark dots are cave entrances)"></canvas>
 
     <script type="module" src="./src/main.js"></script>
   </body>

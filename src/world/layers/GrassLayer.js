@@ -112,7 +112,7 @@ export function createGrassLayer(config) {
           if (hash2(gi, gj, seed) > generator.getGrassDensity(wx, wz)) continue;
 
           const ground = groundHeightAt(lx, lz, surface);
-          if (ground === null || ground < seaLevel + 3.5 || surface.normalY < 0.8) continue;
+          if (!(ground >= seaLevel + 3.5) || surface.normalY < 0.8) continue; // also skips cave mouths
 
           // Only where the ground itself is green (not sand, rock or snow).
           const colourHeight = ground + generator.getColorJitter(wx, wz);

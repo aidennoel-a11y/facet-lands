@@ -213,13 +213,12 @@ kbd {
 
 .keys {
   position: fixed;
-  left: var(--gutter);
-  bottom: calc(var(--gutter) + env(safe-area-inset-bottom, 0px));
-  max-width: calc(100vw - 2 * var(--gutter) - 180px);
+  right: var(--gutter);
+  top: calc(var(--gutter) + env(safe-area-inset-top, 0px));
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  padding: 8px 12px;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
   font-size: 12px;
   background: var(--card);
   border-radius: 10px;
@@ -245,13 +244,112 @@ kbd {
   background: #3d4f8a;
 }
 
+/* Hotbar: nine square slots centred along the bottom edge. */
+.hotbar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--gutter) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.hotbar-slots {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  background: rgba(29, 39, 51, 0.55);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+.hotbar .slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.14);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.hotbar .slot svg {
+  width: 32px;
+  height: 32px;
+}
+.hotbar .slot[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.slot-key {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  font: 600 11px/1 var(--display);
+  color: rgba(255, 255, 255, 0.8);
+}
+.hotbar-label {
+  margin: 0;
+  padding: 3px 10px;
+  font: 600 15px/1.2 var(--display);
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: rgba(29, 39, 51, 0.55);
+  border-radius: 6px;
+  opacity: 0;
+}
+.hotbar-label.show {
+  animation: hotbar-label 1.8s ease forwards;
+}
+@keyframes hotbar-label {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hotbar-label.show {
+    animation-duration: 2.5s;
+    animation-timing-function: steps(1, end);
+  }
+}
+
+@media (max-width: 900px) {
+  .keys {
+    display: none;
+  }
+}
+
 @media (max-width: 600px) {
+  .hotbar .slot {
+    width: 34px;
+    height: 34px;
+  }
+  .hotbar .slot svg {
+    width: 24px;
+    height: 24px;
+  }
+  .hotbar {
+    left: var(--gutter);
+    transform: none;
+    justify-items: start;
+  }
   .keys {
     display: none;
   }
   #minimap {
     width: 120px;
     height: 120px;
+    bottom: calc(var(--gutter) + 64px + env(safe-area-inset-bottom, 0px)); /* above the hotbar */
   }
   .panel {
     padding: 10px 12px;

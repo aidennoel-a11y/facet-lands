@@ -32,6 +32,9 @@ export const WORLD = {
   treeScale: 1.6, // overall tree size multiplier
   leafMaxLod: 0, // leaf clusters only on chunks this close
 
+  // Caves (their mouths are cut into full-detail terrain only)
+  caveMaxLod: 1,
+
   // Grass
   grassSpacing: 1.6, // metres between grass tufts
   grassMaxLod: 0,

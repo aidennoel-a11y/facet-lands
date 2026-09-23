@@ -24,6 +24,7 @@ export class Minimap {
     this.generator = null;
     this._color = new Color();
     this._rgb = { r: 0, g: 0, b: 0 };
+    this.caveMouths = [];
   }
 
   invalidate() {
@@ -68,6 +69,10 @@ export class Minimap {
       }
     }
     this.bufferCtx.putImageData(image, 0, 0);
+    // Cave mouths in view, drawn as markers on top.
+    this.caveMouths = generator.caves
+      ? generator.caves.near(cx - half, cz - half, cx + half, cz + half).map((c) => c.entrance)
+      : [];
     this.center = { x: cx, z: cz };
     this.generator = generator;
   }
@@ -100,6 +105,17 @@ export class Minimap {
     ctx.translate(w / 2, w / 2);
     ctx.scale(scale, scale);
     ctx.drawImage(this.buffer, -n / 2 - ox, -n / 2 - oz);
+    for (const mouth of this.caveMouths) {
+      const x = (mouth.x - position.x) / s;
+      const z = (mouth.z - position.z) / s;
+      ctx.beginPath();
+      ctx.arc(x, z, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#1b1720';
+      ctx.fill();
+      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = '#f4efe6';
+      ctx.stroke();
+    }
     ctx.restore();
 
     // Player marker, pointing the way the camera faces.

@@ -5,7 +5,9 @@ The ground is made entirely of flat-shaded triangles, colored by height
 (sea bed → beach sand → meadow → deep grass → scrub → violet-grey rock → snow caps on
 the highest peaks), with steep faces turning to rock. Seas and lakes fill the low
 ground, forests of six kinds of tree cover the land, and grass tufts sway around
-your feet. Low-poly clouds drift overhead. A sun and moon cross the sky in a
+your feet. Caves burrow into the hillsides; carry torches in to light them.
+Low-poly clouds drift overhead, lifting over the mountains, and the wind comes and
+goes. A sun and moon cross the sky in a
 day/night cycle and cast shadows on everything, including your own when you walk,
 and ray-marched light shafts and ambient occlusion finish the picture. The world streams in as
 chunks around the camera, so it never ends.
@@ -35,6 +37,14 @@ Tick **Fly** (or press `V`) to switch between flying and walking.
 | `T` | Pause / resume the day cycle | same |
 | `H` | Shadows on / off (for slower computers) | same |
 | `R` | Ray effects (light shafts, ambient occlusion) on / off | same |
+| Click / tap | Use the selected hotbar item (place a torch) | same |
+| Right-click | Pick up the torch you point at | same |
+| `1`–`9` | Choose a hotbar slot | same (the wheel also scrolls it while walking) |
+
+**Hotbar and torches:** slot 1 is a torch: click the ground, a cave floor or a
+wall to place one (walking you can reach 8 m, flying much further). Slot 2 picks
+torches back up, as does right-clicking one. Torches are saved per seed in your
+browser, so they're still there next time.
 
 Walking has gravity, stops you at slopes too steep to climb, blocks you at tree
 trunks (bushes you can walk through), and makes you swim in deep water.
@@ -71,23 +81,30 @@ src/
     RayEffects.js           screen-space ray marching: light shafts and ambient occlusion
     wind.js                 vertex-shader sway shared by trees and grass
   player/PlayerBody.js      invisible walking body that casts your shadow
+  world/caves.js            cave generation, terrain cut-outs, cave floors, tunnel meshes
+  world/layers/CaveLayer.js adds cave tunnels (and glowing crystals) to chunks
+  items/Torches.js          placeable torches with a shared pool of point lights
+  ui/Hotbar.js              the 9-slot hotbar
   controls/PlayerControls.js  fly and walk modes: gravity, slopes, trunks, swimming
   ui/Minimap.js             hill-shaded top-down map
 ```
 
 **Terrain shape** (`TerrainGenerator.getHeight`): a broad "continent" noise sets
 the general rise and fall and dips into seas; a low-frequency mask decides where
-mountain ranges are, and inside them ridged noise makes sharp crests; elsewhere
+mountain ranges are, and inside them ridged noise (with slightly rounded crests)
+makes the ridges; elsewhere
 gentle hills are flattened further by a "flatness" noise to leave open plains, and
 a lake noise scoops basins out of the lowlands.
 
-**Snow** (`biomes.js`): faces above the biome's `snowLine` (138 m) turn white unless
+**Snow** (`biomes.js`): faces above the biome's `snowLine` (125 m) turn white unless
 they are near-vertical cliffs. The line is blurred by noise so the caps look natural.
 
 **Water** (`layers/WaterLayer.js`): every chunk that dips below `seaLevel` gets a
 jittered triangle sheet. Each face is colored by the depth of the ground under it,
 from see-through turquoise at the shore to deep blue, and a vertex shader rolls
-small waves across it by world position so they flow over chunk borders.
+small waves across it by world position so they flow over chunk borders. Waves
+scale with the depth under each vertex, so ponds and small lakes stay almost still
+while open water rolls.
 
 **Tree models** (`world/trees.js`): six trees plus bushes and dead pines:
 
@@ -103,7 +120,8 @@ small waves across it by world position so they flow over chunk borders.
 Crowns are overlapping blobs (or stacked cones) whose corners are pushed in and out
 so no face sits on a perfect sphere, coloured per face from shaded bottom to sunlit
 top. Each leafy tree also has semi-transparent leaf clusters, flat three-sided
-pyramids studding the crown, which break up the silhouette and dapple the shade.
+pyramids set right into the crown's own faces (sunward faces more often), which
+break up the silhouette and dapple the shade.
 To add a tree, write a function returning a merged geometry in `trees.js`, add it
 (and optionally its leaves) to `TREE_GEOMETRIES` / `LEAF_GEOMETRIES`, and list it
 in a biome's `trees.species`.
@@ -135,11 +153,29 @@ the camera and snaps to whole shadow-map texels so shadows don't shimmer.
 where you are. Its material draws nothing on screen but it still renders into the
 shadow map, so looking down you see your shadow walk, swing its arms and jump.
 
+**Caves** (`world/caves.js`): each 384 m region may hold one cave. It starts on a
+hillside, heads into the hill and down, then wanders underground, keeping rock
+overhead and staying above sea level, sometimes swelling into a chamber before
+pinching shut. The tunnel is a chain of low-poly rings with a flat, walkable floor.
+Where the first stretch meets the hillside, full-detail terrain triangles are left
+out to open the mouth; chunk skirts stop above tunnels so they never wall one off.
+Walking, the cave floor becomes your ground, the roof stops your jumps and the
+rock walls block you. Inside, daylight fades the deeper you go (the cave shader
+dims sun, moon and sky light by a per-vertex `skyLight` value) but torchlight
+doesn't, and glowing crystals stud the walls. Cave mouths show as dark dots on the
+minimap.
+
+**Torches** (`items/Torches.js`): a stick with a flickering two-layer flame and a
+glow. The light itself comes from a fixed pool of 6 point lights handed to the
+torches nearest you each frame; the light count never changes, so placing torches
+never makes the renderer recompile its shaders.
+
 **Clouds** (`world/Clouds.js`): each cloud is a row of lumpy icosahedron puffs
 with a flat base, white on top and blue-grey underneath. About a third are wispy
 and see-through; the solid ones cast moving shadows and block the sun. They drift
 with the wind in a square around the camera and wrap around at the edges, where
-the fog hides them. They pick up a tint from the sky, so they turn pink and orange
+the fog hides them. Each cloud checks the ground under its footprint (and a little
+ahead of it) and rises smoothly over mountains rather than passing through them. They pick up a tint from the sky, so they turn pink and orange
 at sunset.
 
 **Ray effects** (`render/RayEffects.js`): browsers don't expose ray-tracing
@@ -152,7 +188,8 @@ clouds, trunks and peaks. Toggle with `R`.
 
 **Wind** (`render/wind.js`): trees and grass bend in the vertex shader, more the
 higher up a vertex is, with a phase that varies by position so gusts ripple across
-the land. Shadow depth materials use the same code so shadows sway too.
+the land. The wind's strength wanders slowly between still spells and gusty
+spells (shown in the panel), and clouds and water waves follow it too. Shadow depth materials use the same code so shadows sway too.
 
 **Grass** (`layers/GrassLayer.js`): tufts of single-triangle blades on the chunks
 right around you (`grassMaxLod`), coloured by the ground they stand on, and shrunk

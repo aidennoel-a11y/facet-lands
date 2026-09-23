@@ -102,7 +102,7 @@ export function createTreeLayer() {
           if (!trees || keep > generator.getForestDensity(wx, wz) * trees.density) continue;
 
           const ground = groundHeightAt(lx, lz);
-          if (ground === null || ground < seaLevel + 1.2) continue;
+          if (!(ground >= seaLevel + 1.2)) continue; // outside the chunk, in water or over a cave mouth
 
           // Too steep for roots? (height change per metre)
           const slope =

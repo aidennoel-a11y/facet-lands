@@ -155,6 +155,7 @@ export class ChunkManager {
     const mesh = new Mesh(geometry, this.material);
     mesh.name = 'ground';
     mesh.castShadow = true; // hills shade the valleys behind them
+    mesh.userData.solid = true; // things (torches) can be placed on it
     mesh.receiveShadow = true;
     group.add(mesh);
 
@@ -190,6 +191,7 @@ export class ChunkManager {
   /**
    * Height of the loaded triangle surface at a world position (what you'd
    * actually stand on). Falls back to the generator where nothing is loaded.
+   * NaN means there's a cave mouth here: no ground surface at all.
    */
   groundHeightAt(x, z) {
     const { chunkSize } = this.config;
@@ -203,6 +205,7 @@ export class ChunkManager {
       const h = chunk.groundHeightAt(x - (cx + dx) * chunkSize, z - (cz + dz) * chunkSize);
       if (h !== null) return h;
     }
+    if (this.generator.caves?.isHole(x, z)) return NaN;
     return this.generator.getHeight(x, z);
   }
 
