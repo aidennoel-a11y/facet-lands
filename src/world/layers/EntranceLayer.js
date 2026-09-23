@@ -276,8 +276,12 @@ function buildEntrance(e, generator, groundHeightAt, x0, z0) {
     return [u, v + (v / l) * 1.3, y + ((y - centreY) / l) * 1.3];
   });
   for (let k = 0; k < end.length - 1; k++) b.quad(end[k], end[k + 1], flange[k + 1], flange[k], CAVE_WALL, [1, 0, 0], false);
-  const fe = floorAt(s.E);
-  b.quad([s.E, -s.w, fe], [s.E, s.w, fe], [s.E, s.w, fe - 0.9], [s.E, -s.w, fe - 0.9], CAVE_FLOOR, [1, 0, 0], false);
+  // The ramp carries on across the short chamber where the cave takes over
+  // (as wide as the chamber), ending in a small step down.
+  const ue = s.E + 1.5, fe = floorAt(ue) - 0.05, wide = s.w + 1.2;
+  const endRow = [[s.E, -s.w - 0.12], [s.E, s.w + 0.12], [ue, wide], [ue, -wide]].map(([u, v]) => [u, v, floorAt(u) - 0.05]);
+  b.quad(endRow[0], endRow[3], endRow[2], endRow[1], CAVE_FLOOR, [0, 0, 1], false);
+  b.quad([ue, -wide, fe], [ue, wide, fe], [ue, wide, fe - 0.9], [ue, -wide, fe - 0.9], CAVE_FLOOR, [1, 0, 0], false);
 
   const parts = [b.geometry()];
 
