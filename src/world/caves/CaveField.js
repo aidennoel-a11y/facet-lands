@@ -80,17 +80,21 @@ export class CaveField {
 
   // --- Entrances ---------------------------------------------------------------
   //
-  // Each entrance is laid out along its own axis: u runs from the pit's
-  // front tip (u = 0) into the ground, v across it. Going in:
+  // Each entrance is generated along its own axes: u runs from the front of
+  // the pit (u = 0) into the ground, v across it. Its shape is procedural:
+  // width, centre line, floor and roof height all wander along u (sums of
+  // random waves), and its overall size, slope and ledge vary per entrance.
+  // These are sampled every `step` metres into arrays on `e.shape`, so the
+  // mesh, the terrain hole and physics all read the same shape. Going in:
   //
-  //   0 .. L-ledge  an open pit with rock walls; a ramp slopes down it
-  //   L-ledge .. L  the ramp runs on under a rock ledge (the cave mouth)
-  //   L .. E        a short arched tunnel lined with smooth rock
+  //   0 .. L-ledge  an open pit; its floor slopes down
+  //   L-ledge .. L  the floor runs on under an overhanging rock outcrop
+  //   L .. E        a short rock tunnel (bending a little)
   //   E ..          the winding tunnel (capsules), down to the cave network
   //
-  // The terrain mesh leaves out exactly the pit's outline (a convex polygon,
-  // clipped cleanly), EntranceLayer builds the walls, ramp, ledge and tunnel
-  // lining, and corridor() is their walkable space for physics.
+  // The terrain mesh leaves out exactly the pit (a strip of convex
+  // trapezoids, clipped cleanly), EntranceLayer builds the rock around it,
+  // and corridor() is its walkable space for physics.
 
   /** The entrance in one region (or null), cached. */
   entrance(rx, rz) {
@@ -104,14 +108,15 @@ export class CaveField {
   }
 
   /**
-   * Picks a spot in the region (a hillside or open ground) and lays an
-   * entrance there facing into the hill: the pit runs until the ground
-   * stands well over the tunnel roof, then the lined tunnel, then a tunnel
-   * winding down in short segments, each turning a little left or right
-   * and sloping about 25 degrees, until it reaches cave air with a floor
-   * just below. The whole built part must sit inside one terrain chunk and
-   * clear of natural caves; every winding segment must keep a floor under
-   * it and rock over it. Regions with no spot that works get no entrance.
+   * Picks a spot in the region (a hillside or open ground), generates an
+   * entrance shape there facing into the hill, and lays it out: the pit
+   * runs until the ground stands well over the tunnel roof, then the rock
+   * tunnel, then a tunnel winding down in short segments, each turning a
+   * little left or right and sloping about 25 degrees, until it reaches
+   * cave air with a floor just below. The whole built part must sit inside
+   * one terrain chunk and clear of natural caves; every winding segment
+   * must keep a floor under it and rock over it. Regions with no spot that
+   * works get no entrance.
    */
   #makeEntrance(rx, rz) {
     const g = this.generator;
@@ -120,7 +125,18 @@ export class CaveField {
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     if (rand() > 0.85) return null;
     const r = this.mouthRadius;
-    const w = 3.3, slope = 0.42, archH = 4.6, lining = 7, ledge = 3.5;
+    const step = 0.5;
+    const samples = 81; // 40 m of shape
+
+    // A smooth random wiggle: a few sine waves with random lengths and phases.
+    const wave = (amp, minLen, maxLen) => {
+      const parts = [0, 1, 2].map(() => ({
+        f: (2 * Math.PI) / (minLen + rand() * (maxLen - minLen)),
+        p: rand() * Math.PI * 2,
+        a: amp * (0.4 + rand() * 0.6),
+      }));
+      return (u) => parts.reduce((sum, q) => sum + q.a * Math.sin(q.f * u + q.p), 0) / 1.6;
+    };
 
     for (let attempt = 0; attempt < 30; attempt++) {
       const x = (rx + 0.2 + rand() * 0.6) * R;
@@ -132,38 +148,76 @@ export class CaveField {
       const grade = Math.hypot(gx, gz);
       if (grade > 0.6) continue;
       // Into the hill on a slope; any direction on open ground.
-      const yaw = grade > 0.1 ? Math.atan2(gz, gx) : rand() * Math.PI * 2;
+      const yaw = (grade > 0.1 ? Math.atan2(gz, gx) : rand() * Math.PI * 2) + (rand() - 0.5) * 0.5;
       const dx = Math.cos(yaw), dz = Math.sin(yaw);
       const wx = (u, v) => x + dx * u - dz * v;
       const wz = (u, v) => z + dz * u + dx * v;
       const ground = (u, v) => g.getHeight(wx(u, v), wz(u, v));
+
+      // This entrance's shape.
+      const w0 = 2.7 + rand() * 1.4; // typical half-width
+      const slope = 0.33 + rand() * 0.15;
+      const archH0 = 3.9 + rand() * 1.1;
+      const lining = 6 + rand() * 3;
+      const ledge = 2.5 + rand() * 2.5;
+      const tipLen = 2 + rand() * 3;
+      const bend = (rand() - 0.5) * 0.06;
+      const sway = wave(0.55, 8, 18);
+      const widthWave = wave(0.16, 4, 10);
+      const floorWave = wave(0.22, 3, 8);
+      const archWave = wave(0.1, 3, 7);
       const floor0 = top - 0.25;
-      const floorAt = (u) => floor0 - slope * Math.max(0, u);
+      const hw = [], c = [], fl = [], ah = [];
+      for (let k = 0; k < samples; k++) {
+        const u = k * step;
+        const taper = u < tipLen ? 0.35 + 0.65 * Math.sqrt(u / tipLen) : 1;
+        hw.push(w0 * (1 + widthWave(u)) * taper);
+        c.push(sway(u) - sway(0));
+        fl.push(floor0 - slope * u + (floorWave(u) - floorWave(0)) * Math.min(1, u / 2));
+        ah.push(archH0 * (1 + archWave(u)));
+      }
+      const at = (arr, u) => {
+        const f = Math.min(samples - 1.0001, Math.max(0, u / step));
+        const i = Math.floor(f);
+        return arr[i] + (arr[i + 1] - arr[i]) * (f - i);
+      };
+      const floorAt = (u) => at(fl, u);
+      const sides = (u, m) => [at(c, u) - at(hw, u) - m, at(c, u), at(c, u) + at(hw, u) + m];
 
       // The pit ends where the ground stands well over the tunnel roof, and
-      // stays so along the lined tunnel and over the (taller) winding tunnel
+      // stays so along the rock tunnel and over the (taller) winding tunnel
       // it hands over to.
-      const covered = (u, height) => [-w - 1, 0, w + 1].every((v) => ground(u, v) - floorAt(u) >= height);
+      const covered = (u, height) => sides(u, 1).every((v) => ground(u, v) - floorAt(u) >= height);
       let L = 0;
-      for (let u = 9; u <= 24 && !L; u += 0.5) {
+      for (let u = 9; u <= 24 && !L; u += step) {
         let ok = true;
-        for (let k = 0; k <= lining + 3 && ok; k += 1.5) ok = covered(u + k, k < lining - 4 ? archH + 1.6 : 2.3 + r + 2.5);
+        for (let k = 0; k <= lining + 3 && ok; k += 1.5) ok = covered(u + k, k < lining - 4 ? at(ah, u + k) + 1.6 : 2.3 + r + 2.5);
         if (ok) L = u;
       }
       if (!L) continue;
       const E = L + lining;
+      // Past the pit, the tunnel bends a little.
+      for (let k = 0; k < samples; k++) if (k * step > L) c[k] += bend * (k * step - L) ** 2;
       // The ground beside the pit mustn't dip below its floor (a gully across it).
       let sound = true;
-      for (let u = 0; u <= L && sound; u += 2) sound = ground(u, -w - 0.5) > floorAt(u) + 0.2 && ground(u, w + 0.5) > floorAt(u) + 0.2;
+      for (let u = 0; u <= L && sound; u += 2) {
+        const [a, , b] = sides(u, 0.5);
+        sound = ground(u, a) > floorAt(u) + 0.2 && ground(u, b) > floorAt(u) + 0.2;
+      }
       if (!sound) continue;
       // All of it inside one chunk, so one chunk mesh holds the whole hole.
       const cx = Math.floor(x / size), cz = Math.floor(z / size);
-      const corners = [[-3, -w - 3], [-3, w + 3], [E + 3, -w - 3], [E + 3, w + 3]];
-      if (!corners.every(([u, v]) => wx(u, v) > cx * size + 2 && wx(u, v) < (cx + 1) * size - 2 && wz(u, v) > cz * size + 2 && wz(u, v) < (cz + 1) * size - 2)) continue;
+      const outline = [];
+      for (let u = -3; u <= E + 3; u += 2) {
+        const [a, , b] = sides(u, 3.5);
+        outline.push([u, a], [u, b]);
+      }
+      const inside = ([u, v]) => wx(u, v) > cx * size + 2 && wx(u, v) < (cx + 1) * size - 2 && wz(u, v) > cz * size + 2 && wz(u, v) < (cz + 1) * size - 2;
+      if (!outline.every(inside)) continue;
       // No natural cave breaking into the built part.
       let clear = true;
       for (let u = 0; u <= E - 3 && clear; u += 2) {
-        for (const v of [-w - 1, 0, w + 1]) {
+        for (const v of sides(u, 1)) {
           const px = wx(u, v), pz = wz(u, v);
           const H = g.getHeight(px, pz), rr = this.regionRock(px, pz);
           for (const dy of [-2, 1, 3.5, 6]) if (this.caves(px, floorAt(u) + dy, pz, H, rr) < 1) clear = false;
@@ -171,10 +225,10 @@ export class CaveField {
       }
       if (!clear) continue;
 
-      // The winding tunnel, starting just inside the lined one.
+      // The winding tunnel, starting just inside the rock one and carrying on its bend.
       const uS = E - 2;
-      const points = [{ x: wx(uS, 0), y: floorAt(uS) + 2.3, z: wz(uS, 0) }];
-      let heading = yaw;
+      const points = [{ x: wx(uS, at(c, uS)), y: floorAt(uS) + 2.3, z: wz(uS, at(c, uS)) }];
+      let heading = yaw + Math.atan(at(c, E) - at(c, E - 1));
       let travelled = 0;
       let ok = false;
       for (let seg = 0; seg < 12; seg++) {
@@ -209,24 +263,31 @@ export class CaveField {
       const segments = [];
       for (let i = 0; i < points.length - 1; i++) segments.push([points[i], points[i + 1]]);
       const ys = points.map((p) => p.y);
-      const xs = [...points.map((p) => p.x), ...corners.map(([u, v]) => wx(u, v))];
-      const zs = [...points.map((p) => p.z), ...corners.map(([u, v]) => wz(u, v))];
+      const xs = [...points.map((p) => p.x), ...outline.map(([u, v]) => wx(u, v))];
+      const zs = [...points.map((p) => p.z), ...outline.map(([u, v]) => wz(u, v))];
+      // The pit as a strip of trapezoids (each convex, counter-clockwise).
+      const holePieces = [];
+      for (let k = 0; k * step < L - 1e-6; k++) {
+        const u0 = k * step, u1 = (k + 1) * step;
+        holePieces.push([[u0, c[k] - hw[k]], [u1, c[k + 1] - hw[k + 1]], [u1, c[k + 1] + hw[k + 1]], [u0, c[k] + hw[k]]]);
+      }
+      const holeX = holePieces.flat().map(([u, v]) => wx(u, v)), holeZ = holePieces.flat().map(([u, v]) => wz(u, v));
       const mouthU = L - ledge;
       const shape = {
-        ox: x, oz: z, dx, dz, top, floor0, slope,
-        w, tip: 1.6, tipLen: 2.2, L, E, ledge, archH, wallH: 2.4,
-        yLedge: floorAt(L) + archH,
-        back: L + 2.5, // the ledge's rock reaches this far along
+        ox: x, oz: z, dx, dz, top, floor0, step,
+        hw, c, fl, ah, // sampled half-width, centre line, floor and roof height
+        tipLen, L, E, ledge,
+        yLedge: floorAt(L) + at(ah, L) + 0.5, // underside of the outcrop over the mouth
+        back: L + 2.5, // the outcrop's rock reaches this far along
+        side: 3, // ...and this far beyond the pit's sides
       };
-      const hole = [[0, -shape.tip], [shape.tipLen, -w], [L, -w], [L, w], [shape.tipLen, w], [0, shape.tip]];
-      const holeX = hole.map(([u, v]) => wx(u, v)), holeZ = hole.map(([u, v]) => wz(u, v));
       return {
         id: `${rx},${rz}`,
         shape,
-        hole, // the pit's outline in (u, v), counter-clockwise
+        holePieces,
         holeBounds: { minX: Math.min(...holeX), maxX: Math.max(...holeX), minZ: Math.min(...holeZ), maxZ: Math.max(...holeZ) },
         // Where daylight gives way to the cave (for lighting, the minimap and visibility).
-        mouth: { x: wx(mouthU, 0), y: floorAt(mouthU), z: wz(mouthU, 0) },
+        mouth: { x: wx(mouthU, at(c, mouthU)), y: floorAt(mouthU), z: wz(mouthU, at(c, mouthU)) },
         start: points[0],
         end: points[points.length - 1],
         segments,
@@ -269,8 +330,8 @@ export class CaveField {
     const R = this.entranceRegion;
     const e = this.entrance(Math.floor(x / R), Math.floor(z / R));
     if (!e) return false;
-    const [u, v] = CaveField.local(e, x, z);
-    return u > -margin && u < e.shape.back + margin && Math.abs(v) < e.shape.w + 2.2 + margin;
+    const [u, v] = CaveField.across(e, x, z);
+    return u > -margin && u < e.shape.back + margin && Math.abs(v) < CaveField.halfWidth(e, u) + e.shape.side + margin;
   }
 
   /** World (x, z) to an entrance's own axes [u, v]. */
@@ -280,64 +341,87 @@ export class CaveField {
     return [px * s.dx + pz * s.dz, pz * s.dx - px * s.dz];
   }
 
+  /** Like local(), but v measured from the entrance's (wandering) centre line. */
+  static across(e, x, z) {
+    const [u, v] = CaveField.local(e, x, z);
+    return [u, v - CaveField.centreAt(e, u)];
+  }
+
   /** An entrance's own axes (u, v) back to world [x, z]. */
   static world(e, u, v) {
     const s = e.shape;
     return [s.ox + s.dx * u - s.dz * v, s.oz + s.dz * u + s.dx * v];
   }
 
-  /** Height of an entrance's ramp floor at distance u along it. */
+  /** One of an entrance's sampled shape arrays, at distance u along it. */
+  static sampleAt(e, arr, u) {
+    const f = Math.min(arr.length - 1.0001, Math.max(0, u / e.shape.step));
+    const i = Math.floor(f);
+    return arr[i] + (arr[i + 1] - arr[i]) * (f - i);
+  }
+
+  /** Height of an entrance's floor at distance u along it. */
   static floorAt(e, u) {
-    return e.shape.floor0 - e.shape.slope * Math.max(0, u);
+    return CaveField.sampleAt(e, e.shape.fl, u);
   }
 
   /** Half the width of the pit (and tunnel) at distance u along it. */
   static halfWidth(e, u) {
-    const s = e.shape;
-    return u >= s.tipLen ? s.w : s.tip + ((s.w - s.tip) * Math.max(0, u)) / s.tipLen;
+    return CaveField.sampleAt(e, e.shape.hw, u);
   }
 
-  /** Height of the lined tunnel's roof above its floor, at v across it. */
-  static archTop(e, v) {
-    const s = e.shape;
-    const t = Math.min(1, Math.abs(v) / s.w);
-    return s.wallH + (s.archH - s.wallH) * Math.sqrt(1 - t * t);
+  /** Where the centre line runs (v) at distance u along it. */
+  static centreAt(e, u) {
+    return CaveField.sampleAt(e, e.shape.c, u);
+  }
+
+  /** Floor-to-roof height of the rock tunnel's middle, at distance u along it. */
+  static archAt(e, u) {
+    return CaveField.sampleAt(e, e.shape.ah, u);
+  }
+
+  /** Height of the rock tunnel's roof above its floor, at v across it (from the centre line). */
+  static archTop(e, u, v) {
+    const h = CaveField.archAt(e, u);
+    const wall = h * 0.5;
+    const t = Math.min(1, Math.abs(v) / CaveField.halfWidth(e, u));
+    return wall + (h - wall) * Math.sqrt(1 - t * t);
   }
 
   /** Is (x, z) inside an entrance's pit (where the terrain mesh has a hole)? */
   static inHole(e, x, z) {
-    const [u, v] = CaveField.local(e, x, z);
+    const [u, v] = CaveField.across(e, x, z);
     return u > 0 && u < e.shape.L && Math.abs(v) < CaveField.halfWidth(e, u);
   }
 
   /**
-   * The walkable space of an entrance's built part (pit, under the ledge,
-   * lined tunnel) as a signed distance: negative inside. Used for physics,
+   * The walkable space of an entrance's built part (pit, under the outcrop,
+   * rock tunnel) as a signed distance: negative inside. Used for physics,
    * alongside the cave field.
    */
   static corridor(e, x, y, z) {
     const s = e.shape;
-    const [u, v] = CaveField.local(e, x, z);
+    const [u, v] = CaveField.across(e, x, z);
     const floor = CaveField.floorAt(e, u);
     let d = Math.max(-u, u - s.E, Math.abs(v) - CaveField.halfWidth(e, u), floor - y);
-    if (u >= s.L) d = Math.max(d, y - (floor + CaveField.archTop(e, v)));
+    if (u >= s.L) d = Math.max(d, y - (floor + CaveField.archTop(e, u, v)));
     else if (u >= s.L - s.ledge) d = Math.max(d, y - s.yLedge);
     return d;
   }
 
   /**
    * The built part's space grown by a margin, reaching a little past the
-   * lined tunnel's end: what the cave mesh is made from there. The cave
-   * mesh is coarse and rounds corners off, so it's made to sit well outside
-   * the (smooth, EntranceLayer-drawn) lining, never cutting into it, and
-   * opens into a short chamber where the lining hands over to the cave.
+   * rock tunnel's end: what the cave mesh is made from there. The cave mesh
+   * is coarse and rounds corners off, so it's made to sit well outside the
+   * (EntranceLayer-drawn) rock, never cutting into it, and opens into a
+   * short chamber where the tunnel hands over to the cave.
    */
   static hull(e, x, y, z) {
     const s = e.shape;
-    const [u, v] = CaveField.local(e, x, z);
+    const [u, v] = CaveField.across(e, x, z);
     const floor = CaveField.floorAt(e, u);
     let d = Math.max(-u - 1, u - (s.E + 1.5), Math.abs(v) - CaveField.halfWidth(e, u) - 1.2, floor - 0.3 - y);
-    if (u >= s.L - 0.5) d = Math.max(d, y - (floor + s.archH + 1.2));
+    if (u >= s.L - 0.5) d = Math.max(d, y - (floor + CaveField.archAt(e, u) + 1.7));
     else if (u >= s.L - s.ledge) d = Math.max(d, y - (s.yLedge + 1.2));
     return d;
   }
@@ -348,8 +432,8 @@ export class CaveField {
    */
   static inBuilt(e, x, y, z) {
     const s = e.shape;
-    const [u, v] = CaveField.local(e, x, z);
-    return u > -1.5 && u < s.E - 0.3 && Math.abs(v) < s.w + 2.5 && y > CaveField.floorAt(e, u) - 3;
+    const [u, v] = CaveField.across(e, x, z);
+    return u > -1.5 && u < s.E - 0.3 && Math.abs(v) < CaveField.halfWidth(e, u) + 2.5 && y > CaveField.floorAt(e, u) - 3;
   }
 
   /**
@@ -379,10 +463,10 @@ export class CaveField {
       const widen = 1 - 0.18 * k * k * (3 - 2 * k);
       best = Math.min(best, Math.sqrt((qx * qx + qz * qz) * widen * widen + qy * qy) + floorLift - r);
     }
-    // Where it starts, inside the lined tunnel, keep it just under the ramp
-    // (so the cave mesh there stays hidden below the lining's floor).
-    const [u, v] = CaveField.local(e, x, z);
-    if (u < e.shape.E && Math.abs(v) < e.shape.w + r) best = Math.max(best, CaveField.floorAt(e, u) - 0.3 - y);
+    // Where it starts, inside the rock tunnel, keep it just under the floor
+    // (so the cave mesh there stays hidden below the built floor).
+    const [u, v] = CaveField.across(e, x, z);
+    if (u < e.shape.E && Math.abs(v) < CaveField.halfWidth(e, u) + r) best = Math.max(best, CaveField.floorAt(e, u) - 0.3 - y);
     return best;
   }
 }

@@ -6,6 +6,7 @@ import { ROCK_SHAPES } from './RockLayer.js';
 
 const SOIL = [0x7b6a55, 0x735f4b, 0x85725b];
 const PIT_ROCK = [0x8a8597, 0x7e798c, 0x908b9d, 0x767183];
+const DARK_ROCK = [0x6c6778, 0x625e6e, 0x716c7c];
 const PATH = [0x8b7a64, 0x7f6e5a, 0x857462, 0x796955];
 const CAVE_WALL = [0x6f6a79, 0x77727f, 0x656170, 0x7f7a86];
 const CAVE_FLOOR = [0x6b6158, 0x5f564e, 0x746a5f];
@@ -40,6 +41,7 @@ class Builder {
    * darkens with distance into the cave, like the cave rock).
    */
   tri(a, b, c, palette, facing, open) {
+    if (typeof facing === 'function') facing = facing(a, b, c);
     const A = this.at(...a);
     let B = this.at(...b);
     let C = this.at(...c);
@@ -56,6 +58,11 @@ class Builder {
     const my = (A[1] + B[1] + C[1]) / 3;
     const mz = (A[2] + B[2] + C[2]) / 3 + this.z0;
     const h = hash2(Math.round(mx * 5), Math.round(mz * 5 + my * 3), this.seed);
+    if (palette === 'mossy') {
+      // Moss on faces that look up, bare rock on the steep ones.
+      const ny = Math.abs(n[1]) / Math.hypot(n[0], n[1], n[2]);
+      palette = ny > 0.72 && h < 0.85 ? MOSS : PIT_ROCK;
+    }
     this.color.set(palette[Math.floor(h * palette.length)]).multiplyScalar(0.9 + hash2(Math.round(my * 7), Math.round(mx * 3), this.seed) * 0.18);
     for (const p of [A, B, C]) {
       this.positions.push(p[0], p[1], p[2]);
@@ -99,11 +106,13 @@ class Builder {
 }
 
 /**
- * The built part of one cave entrance (see CaveField): rock-and-soil walls
- * lining the pit the terrain leaves open, a dirt ramp down it, a mossy rock
- * ledge over its far end with the tunnel's arched mouth beneath, a short
- * arched tunnel lined with smooth rock, and a few boulders on the rim.
- * Returns chunk-local geometries.
+ * The rock around one cave entrance, generated from its shape (see
+ * CaveField): craggy walls with a band of soil at the top lining the pit
+ * the terrain leaves open, an uneven floor strewn with rubble, an
+ * overhanging rock outcrop over the far end with boulders on it and moss
+ * where it faces the sky, the rough rock tunnel beyond the mouth, and a few
+ * boulders on the rim. Every entrance's shape and every facet's nudge come
+ * from its seed, so no two look alike. Returns chunk-local geometries.
  */
 function buildEntrance(e, generator, groundHeightAt, x0, z0) {
   const s = e.shape;
@@ -111,6 +120,8 @@ function buildEntrance(e, generator, groundHeightAt, x0, z0) {
   const rand = mulberry32(hash2(Math.round(s.ox), Math.round(s.oz), generator.seed ^ 0x3c6ef372) * 4294967296);
   const floorAt = (u) => CaveField.floorAt(e, u);
   const half = (u) => CaveField.halfWidth(e, u);
+  const centre = (u) => CaveField.centreAt(e, u);
+  const arch = (u) => CaveField.archAt(e, u);
   // The ground at local (u, v): the terrain mesh where there is one, else the land.
   const ground = (u, v) => {
     const [x, z] = CaveField.world(e, u, v);
@@ -118,195 +129,223 @@ function buildEntrance(e, generator, groundHeightAt, x0, z0) {
     return Number.isFinite(h) ? h : generator.getHeight(x, z);
   };
   const jitter = (u, v, k) => hash2(Math.round(u * 13 + v * 3), Math.round(v * 13 - u * 5), generator.seed + k);
+  // Faces in the pit look in towards the middle of it.
+  const intoPit = (p, q, r) => {
+    const u = (p[0] + q[0] + r[0]) / 3, v = (p[1] + q[1] + r[1]) / 3;
+    const tu = Math.min(Math.max(u, 1.5), s.L - 0.5);
+    return [tu - u, centre(tu) - v, 0];
+  };
 
-  // 1. Pit walls, hanging from the terrain's cut edge down below the ramp:
-  //    a band of soil at the top, rock below. The top edge follows the cut
-  //    edge closely so wall and ground meet without a gap.
-  const outline = e.hole;
-  const count = outline.length;
-  const cornerTop = outline.map(([u, v], i) => {
-    // Just outside the corner, along the bisector of its two edges.
-    const [pu, pv] = outline[(i + count - 1) % count], [nu, nv] = outline[(i + 1) % count];
-    let ou = (v - pv) / Math.hypot(u - pu, v - pv) + (nv - v) / Math.hypot(nu - u, nv - v);
-    let ov = -(u - pu) / Math.hypot(u - pu, v - pv) - (nu - u) / Math.hypot(nu - u, nv - v);
-    const l = Math.hypot(ou, ov) || 1;
-    return ground(u + (ou / l) * 0.05, v + (ov / l) * 0.05);
+  // 1. Pit walls, hanging from the terrain's cut edge down below the floor:
+  //    a band of soil at the top, then rock that bulges in and is undercut
+  //    here and there. The top edge follows the cut edge (sampled as finely
+  //    as the pit's shape) so wall and ground meet without a gap.
+  const kL = Math.round(s.L / s.step);
+  const path = [];
+  for (let k = kL; k >= 0; k--) path.push([k * s.step, s.c[k] + s.hw[k]]); // right side, back to front
+  const tipFrom = path.length - 1;
+  for (const f of [0.66, 0.33]) path.push([0, s.c[0] - s.hw[0] + 2 * s.hw[0] * f]); // across the front
+  const tipTo = path.length;
+  for (let k = 0; k <= kL; k++) path.push([k * s.step, s.c[k] - s.hw[k]]); // left side, front to back
+  const outward = path.map((_, i) => {
+    const p = path[Math.max(0, i - 1)], q = path[Math.min(path.length - 1, i + 1)];
+    const du = q[0] - p[0], dv = q[1] - p[1], l = Math.hypot(du, dv) || 1;
+    return [dv / l, -du / l]; // the path runs counter-clockwise round the pit
   });
-  const rowPoint = (u, v, out, g, depth, push) => [u - out[0] * push, v - out[1] * push, g - depth];
-  for (let i = 0; i < count; i++) {
-    const a = outline[i], c = outline[(i + 1) % count];
-    if (a[0] === s.L && c[0] === s.L) continue; // the back edge: the ledge and tunnel mouth are there
-    const du = c[0] - a[0], dv = c[1] - a[1];
-    const len = Math.hypot(du, dv);
-    const out = [dv / len, -du / len]; // outward (the outline runs counter-clockwise)
-    const facing = [-out[0], -out[1], 0];
-    const fine = Math.max(1, Math.ceil(len / 0.5));
-    const top = [];
-    for (let k = 0; k <= fine; k++) {
-      const u = a[0] + (du * k) / fine, v = a[1] + (dv * k) / fine;
-      const g = k === 0 ? cornerTop[i] : k === fine ? cornerTop[(i + 1) % count] : ground(u + out[0] * 0.03, v + out[1] * 0.03);
-      top.push([u, v, g]);
-    }
-    const coarse = Math.max(1, Math.round(len / 1.8));
-    const soil = [], low = [], bottom = [];
-    for (let k = 0; k <= coarse; k++) {
-      const t = k / coarse;
-      const u = a[0] + du * t, v = a[1] + dv * t;
-      const g = top[Math.round(t * fine)][2];
-      const f = floorAt(u) - 0.5;
-      const corner = k === 0 || k === coarse; // shared with the next wall: keep on the outline
-      const soilDepth = Math.min(1.3, (g - f) * 0.3);
-      soil.push(rowPoint(u, v, out, g, soilDepth, corner ? 0 : 0.12 + jitter(u, v, 1) * 0.2));
-      low.push(rowPoint(u, v, out, g, soilDepth + (g - soilDepth - f) * (0.4 + jitter(u, v, 2) * 0.2), corner ? 0 : jitter(u, v, 3) * 0.35));
-      bottom.push([u, v, f]);
-    }
-    b.zip(top, soil, SOIL, facing, true);
-    b.zip(soil, low, PIT_ROCK, facing, true);
-    b.zip(low, bottom, PIT_ROCK, facing, true);
+  const top = path.map(([u, v], i) => [u, v, ground(u + outward[i][0] * 0.03, v + outward[i][1] * 0.03)]);
+  const columns = new Set([0, tipFrom, tipTo, path.length - 1]);
+  for (let i = 0; i < path.length; i += 3) columns.add(i);
+  const cols = [...columns].sort((i, j) => i - j);
+  const rows = [[], [], [], [], []]; // soil, rock, lower rock, foot, bottom
+  for (const i of cols) {
+    const [u, v] = path[i];
+    const [ou, ov] = outward[i];
+    const end = i === 0 || i === path.length - 1; // under the outcrop, meeting the tunnel
+    const at = (y, push) => [u - ou * push, v - ov * push, y];
+    const g = top[i][2];
+    const floor = floorAt(u);
+    const f = floor - 0.5;
+    const depth = g - f;
+    const soil = Math.min(1.1, depth * 0.22) * (0.5 + jitter(u, v, 1) * 0.8);
+    const y1 = g - soil - (depth - soil) * (0.25 + jitter(u, v, 2) * 0.25);
+    const y2 = floor + 0.25 + (y1 - floor - 0.25) * (0.3 + jitter(u, v, 3) * 0.35);
+    rows[0].push(at(g - soil, end ? 0 : 0.05 + jitter(u, v, 4) * 0.25));
+    rows[1].push(at(Math.max(y1, floor + 0.3), end ? 0 : (jitter(u, v, 5) - 0.45) * 0.9));
+    rows[2].push(at(Math.max(y2, floor + 0.28), end ? 0 : (jitter(u, v, 6) - 0.45) * 0.7));
+    rows[3].push(at(floor + 0.25, 0)); // straight down to the floor, so no crack shows along it
+    rows[4].push([u, v, f]);
   }
+  b.zip(top, rows[0], SOIL, intoPit, true);
+  b.zip(rows[0], rows[1], PIT_ROCK, intoPit, true);
+  b.zip(rows[1], rows[2], PIT_ROCK, intoPit, true);
+  b.zip(rows[2], rows[3], DARK_ROCK, intoPit, true);
+  b.zip(rows[3], rows[4], DARK_ROCK, intoPit, true);
 
-  // 2. The ramp, from the pit's tip to the end of the lined tunnel.
-  const us = [0, s.tipLen];
-  for (let u = s.tipLen + 2.1; u < s.L - 0.8; u += 2.1) us.push(u);
-  us.push(s.L);
-  for (let u = s.L + 2.4; u < s.E - 0.8; u += 2.4) us.push(u);
-  us.push(s.E);
+  // 2. The floor, from the front of the pit to the end of the rock tunnel:
+  //    bumpy, a little higher by the walls, tucked under them at the edges.
+  const us = new Set([s.L, s.E]);
+  for (let u = 0; u < s.E; u += 1.5) us.add(Math.round(u * 100) / 100);
+  const along = [...us].sort((p, q) => p - q);
   const across = [-1, -0.5, 0, 0.5, 1];
-  const rows = us.map((u, r) =>
+  const floorRows = along.map((u, r) =>
     across.map((f, c) => {
-      const edge = r === 0 || r === us.length - 1 || c === 0 || c === across.length - 1;
-      // The edges tuck a little under the walls, so no crack shows between them.
-      return [u, f * (half(u) + 0.12), floorAt(u) + (edge ? 0 : (jitter(u, f, 4) - 0.5) * 0.14)];
+      const edge = r === 0 || r === along.length - 1 || c === 0 || c === across.length - 1;
+      const v = centre(u) + f * (half(u) + 0.12);
+      return [u, v, floorAt(u) + (edge ? 0 : (jitter(u, f, 7) - 0.4) * 0.22 + 0.08 * (1 - f * f))];
     }),
   );
-  for (let r = 0; r < rows.length - 1; r++) {
-    const inTunnel = us[r] >= s.L;
-    const open = us[r + 1] <= s.L - s.ledge;
+  for (let r = 0; r < floorRows.length - 1; r++) {
+    const u = along[r];
+    const open = along[r + 1] <= s.L - s.ledge;
     for (let c = 0; c < across.length - 1; c++) {
-      b.quad(rows[r][c], rows[r + 1][c], rows[r + 1][c + 1], rows[r][c + 1], inTunnel ? CAVE_FLOOR : PATH, [0, 0, 1], open);
+      const palette = u >= s.L ? CAVE_FLOOR : jitter(u, c, 8) < 0.2 ? PIT_ROCK : PATH;
+      b.quad(floorRows[r][c], floorRows[r + 1][c], floorRows[r + 1][c + 1], floorRows[r][c + 1], palette, [0, 0, 1], open);
     }
   }
 
-  // 3. The lined tunnel: an arch (straight walls, rounded roof) swept from
-  //    the mouth to the winding tunnel.
-  const profile = [[-1, -0.5], [-1, s.wallH]];
-  for (let k = 1; k <= 5; k++) {
-    const th = Math.PI - (k * Math.PI) / 6;
-    profile.push([Math.cos(th), s.wallH + (s.archH - s.wallH) * Math.sin(th)]);
-  }
-  profile.push([1, s.wallH], [1, -0.5]);
-  const ringAt = (u, rough) =>
-    profile.map(([f, h], k) => {
-      const inner = rough && k > 0 && k < profile.length - 1;
-      // Walls only lean in (leaning out would open a crack along the floor).
-      const dv = !inner ? 0 : Math.abs(f) === 1 ? -f * jitter(u, k, 5) * 0.3 : (jitter(u, k, 5) - 0.5) * 0.5;
-      return [u, f * s.w + dv, floorAt(u) + h + (inner ? (jitter(u, k, 6) - 0.5) * 0.35 : 0)];
+  // 3. The rock tunnel past the mouth: rings of an arched profile swept
+  //    along its (bending) centre line, each pushed out unevenly.
+  const profile = [[-1, -0.5], [-1, 0.2]];
+  for (let k = 0; k <= 8; k++) profile.push([Math.cos(Math.PI - (k * Math.PI) / 8), Math.sin(Math.PI - (k * Math.PI) / 8)]);
+  profile.push([1, 0.2], [1, -0.5]);
+  const heightOf = (u, [f, a], k) => (k < 2 || k > profile.length - 3 ? a : arch(u) * 0.5 + arch(u) * 0.5 * a);
+  const ringAt = (u, rough) => {
+    const mid = floorAt(u) + arch(u) * 0.45;
+    return profile.map((p, k) => {
+      const v = centre(u) + p[0] * half(u);
+      const y = floorAt(u) + heightOf(u, p, k);
+      if (!rough || k < 2 || k > profile.length - 3) return [u, v, y];
+      // Pushed outwards from the middle (never in, so it never narrows the way).
+      const dv = v - centre(u), dy = y - mid, l = Math.hypot(dv, dy) || 1;
+      const push = 0.1 + jitter(u, k, 9) * 0.45;
+      return [u + (jitter(u, k, 10) - 0.5) * 0.5, v + (dv / l) * push, y + (dy / l) * push];
     });
-  const rings = [ringAt(s.L, false), ringAt((s.L + s.E) / 2, true), ringAt(s.E, false)];
+  };
+  const ringUs = [s.L];
+  for (let u = s.L + 1.5; u < s.E - 0.7; u += 1.5) ringUs.push(u);
+  ringUs.push(s.E);
+  const rings = ringUs.map((u, i) => ringAt(u, i > 0 && i < ringUs.length - 1));
   for (let r = 0; r < rings.length - 1; r++) {
     for (let k = 0; k < profile.length - 1; k++) {
       const p = rings[r][k], q = rings[r][k + 1];
-      const roof = profile[k][1] >= s.wallH && profile[k + 1][1] >= s.wallH && k > 0 && k < profile.length - 2;
-      const facing = [0, -(p[1] + q[1]) / 2, floorAt(p[0]) + 1.8 - (p[2] + q[2]) / 2];
+      const roof = k >= 3 && k <= profile.length - 5;
+      const u = (p[0] + q[0]) / 2;
+      const facing = [0, centre(u) - (p[1] + q[1]) / 2, floorAt(u) + arch(u) * 0.45 - (p[2] + q[2]) / 2];
       b.quad(p, rings[r + 1][k], rings[r + 1][k + 1], q, roof ? CEILING : CAVE_WALL, facing, false);
     }
   }
 
-  // 4. The rock face around the tunnel's mouth, up to the ledge.
+  // 4. The rock face above the tunnel's mouth, up to the outcrop.
   const mouth = rings[0];
-  const apex = 4; // index of the top of the arch in `profile`
-  for (const [from, to, v] of [[1, apex, -s.w], [apex, profile.length - 2, s.w]]) {
-    const corner = [s.L, v, s.yLedge];
-    for (let k = from; k < to; k++) b.tri(corner, mouth[k], mouth[k + 1], PIT_ROCK, [-1, 0, 0], false);
-  }
+  const face = [-1, -0.5, 0, 0.5, 1].map((f) => [s.L, centre(s.L) + f * half(s.L), s.yLedge]);
+  b.zip(face, mouth.slice(2, profile.length - 2), PIT_ROCK, [-1, 0, 0], false);
 
-  // 5. The ledge: a slab of rock over the far end of the pit, its underside
-  //    level with the top of the arch, mossy on top, sinking into the ground
-  //    at its sides and back.
-  const cols = [-(s.w + 2.2), -(s.w + 0.6), -s.w / 2, 0, s.w / 2, s.w + 0.6, s.w + 2.2];
-  const lip = cols.map(() => s.L - s.ledge + (rand() - 0.6) * 0.8); // ragged front edge
-  const lastCol = cols.length - 1;
-  const outer = (c) => c === 0 || c === lastCol;
-  // Domed: highest along the middle, sinking into the ground at the sides.
-  const slabTop = (u, v, c) => {
-    if (outer(c)) return ground(u, v) - 0.35;
-    const t = v / (s.w + 0.6);
-    return ground(u, v) + 0.35 + 0.65 * (1 - t * t) + rand() * 0.25;
+  // 5. The outcrop: a craggy mass of rock over the far end of the pit, its
+  //    underside roofing the mouth, its front edge ragged, domed on top and
+  //    sinking into the ground at its sides and back.
+  const cL = centre(s.L), hL = half(s.L);
+  const spanL = hL + 1.4 + rand() * 1.4, spanR = hL + 1.4 + rand() * 1.4;
+  const count = Math.max(6, Math.ceil((spanL + spanR) / 1.2));
+  const vs = [];
+  for (let j = 0; j <= count; j++) vs.push(cL - spanL + ((spanL + spanR) * j) / count);
+  // Ragged, and curving back into the ground beyond the pit's sides, so the
+  // outcrop is a rounded mass rather than a flat lid.
+  const lip = vs.map((v) => s.L - s.ledge + (rand() - 0.5) * 1.2 + Math.max(0, Math.abs(v - cL) - hL + 0.3) * 1.1);
+  const last = vs.length - 1;
+  const outer = (j) => j === 0 || j === last;
+  const dome = 0.8 + rand() * 0.9;
+  const slabTop = (u, v, j) => {
+    if (outer(j)) return ground(u, v) - 0.35;
+    const t = (v - cL) / (v < cL ? spanL : spanR);
+    return ground(u, v) + 0.3 + dome * (1 - t * t) + rand() * 0.35;
   };
   // Underside.
   const under = [
-    cols.map((v, c) => [lip[c], v, s.yLedge]),
-    cols.map((v, c) => [(lip[c] + s.L) / 2, v, s.yLedge + (c > 1 && c < lastCol - 1 ? (rand() - 0.5) * 0.3 : 0)]),
-    cols.map((v) => [s.L, v, s.yLedge]),
+    vs.map((v, j) => [lip[j], v, s.yLedge]),
+    vs.map((v, j) => [(lip[j] + s.L) / 2, v, s.yLedge + (outer(j) ? 0 : rand() * 0.4)]),
+    vs.map((v) => [s.L, v, s.yLedge]),
   ];
   for (let r = 0; r < 2; r++) {
-    for (let c = 1; c < lastCol - 1; c++) {
-      b.quad(under[r][c], under[r + 1][c], under[r + 1][c + 1], under[r][c + 1], CEILING, [0, 0, -1], false);
-    }
+    for (let j = 1; j < last - 1; j++) b.quad(under[r][j], under[r + 1][j], under[r + 1][j + 1], under[r][j + 1], CEILING, [0, 0, -1], false);
   }
-  // Front face.
-  const faceBottom = cols.map((v, c) => (outer(c) ? [lip[c], v, ground(lip[c], v) - 0.4] : [lip[c], v, s.yLedge]));
-  const faceTop = cols.map((v, c) => [lip[c] - 0.3, v, slabTop(lip[c] - 0.3, v, c)]);
-  const faceMid = cols.map((v, c) => [lip[c] - 0.35 - rand() * 0.35, v, (faceBottom[c][2] + faceTop[c][2]) / 2]);
-  for (let c = 0; c < lastCol; c++) {
-    b.quad(faceBottom[c], faceBottom[c + 1], faceMid[c + 1], faceMid[c], PIT_ROCK, [-1, 0, 0], true);
-    b.quad(faceMid[c], faceMid[c + 1], faceTop[c + 1], faceTop[c], PIT_ROCK, [-1, 0, 0], true);
+  // Front face, in three bands pushed out unevenly.
+  const faceBottom = vs.map((v, j) => (outer(j) ? [lip[j], v, ground(lip[j], v) - 0.4] : [lip[j], v, s.yLedge]));
+  const faceTop = vs.map((v, j) => [lip[j] - 0.3, v, slabTop(lip[j] - 0.3, v, j)]);
+  const band = (t, out) => vs.map((v, j) => [lip[j] - (outer(j) ? 0.1 : out()), v, faceBottom[j][2] + (faceTop[j][2] - faceBottom[j][2]) * t]);
+  const faceRows = [faceBottom, band(0.35, () => 0.2 + rand() * 0.6), band(0.7, () => 0.1 + rand() * 0.5), faceTop];
+  for (let r = 0; r < faceRows.length - 1; r++) {
+    for (let j = 0; j < last; j++) b.quad(faceRows[r][j], faceRows[r][j + 1], faceRows[r + 1][j + 1], faceRows[r + 1][j], PIT_ROCK, [-1, 0, 0], true);
   }
   // Top.
   const topRows = [
     faceTop,
-    cols.map((v, c) => [(lip[c] + s.L) / 2, v, slabTop((lip[c] + s.L) / 2, v, c)]),
-    cols.map((v, c) => [s.L + 0.4, v, slabTop(s.L + 0.4, v, c)]),
-    cols.map((v, c) => [s.L + 1.5, v, (slabTop(s.L + 1.5, v, c) + ground(s.L + 1.5, v)) / 2 - 0.1]),
-    cols.map((v) => [s.back, v, ground(s.back, v) - 0.35]),
+    vs.map((v, j) => [(lip[j] + s.L) / 2, v, slabTop((lip[j] + s.L) / 2, v, j)]),
+    vs.map((v, j) => [s.L + 0.4, v, slabTop(s.L + 0.4, v, j)]),
+    vs.map((v, j) => [s.L + 1.5, v, (slabTop(s.L + 1.5, v, j) + ground(s.L + 1.5, v)) / 2 - 0.1]),
+    vs.map((v) => [s.back, v, ground(s.back, v) - 0.35]),
   ];
   for (let r = 0; r < topRows.length - 1; r++) {
-    for (let c = 0; c < lastCol; c++) {
-      const palette = r < 3 && c > 0 && c < lastCol - 1 ? MOSS : PIT_ROCK;
-      b.quad(topRows[r][c], topRows[r + 1][c], topRows[r + 1][c + 1], topRows[r][c + 1], palette, [0, 0, 1], true);
-    }
+    for (let j = 0; j < last; j++) b.quad(topRows[r][j], topRows[r + 1][j], topRows[r + 1][j + 1], topRows[r][j + 1], 'mossy', [0, 0, 1], true);
   }
 
-  // 6. Where the lined tunnel meets the winding one: a flange of rock round
-  //    the arch (hiding the seam) and the end of the ramp.
-  const end = rings[2];
-  const centreY = floorAt(s.E) + 1.6;
+  // 6. Where the rock tunnel meets the winding one: a flange of rock round
+  //    it (hiding the seam), and the floor carrying on across the short
+  //    chamber where the cave takes over, ending in a small step down.
+  const end = rings[rings.length - 1];
+  const centreY = floorAt(s.E) + arch(s.E) * 0.45;
   const flange = end.map(([u, v, y]) => {
-    const l = Math.hypot(v, y - centreY) || 1;
-    return [u, v + (v / l) * 1.3, y + ((y - centreY) / l) * 1.3];
+    const dv = v - centre(s.E), l = Math.hypot(dv, y - centreY) || 1;
+    return [u, v + (dv / l) * 1.3, y + ((y - centreY) / l) * 1.3];
   });
   for (let k = 0; k < end.length - 1; k++) b.quad(end[k], end[k + 1], flange[k + 1], flange[k], CAVE_WALL, [1, 0, 0], false);
-  // The ramp carries on across the short chamber where the cave takes over
-  // (as wide as the chamber), ending in a small step down.
-  const ue = s.E + 1.5, fe = floorAt(ue) - 0.05, wide = s.w + 1.2;
-  const endRow = [[s.E, -s.w - 0.12], [s.E, s.w + 0.12], [ue, wide], [ue, -wide]].map(([u, v]) => [u, v, floorAt(u) - 0.05]);
+  const ue = s.E + 1.5;
+  const endRow = [
+    [s.E, centre(s.E) - half(s.E) - 0.12],
+    [s.E, centre(s.E) + half(s.E) + 0.12],
+    [ue, centre(ue) + half(ue) + 1.2],
+    [ue, centre(ue) - half(ue) - 1.2],
+  ].map(([u, v]) => [u, v, floorAt(u) - 0.05]);
   b.quad(endRow[0], endRow[3], endRow[2], endRow[1], CAVE_FLOOR, [0, 0, 1], false);
-  b.quad([ue, -wide, fe], [ue, wide, fe], [ue, wide, fe - 0.9], [ue, -wide, fe - 0.9], CAVE_FLOOR, [1, 0, 0], false);
+  const fe = floorAt(ue) - 0.05;
+  b.quad([ue, endRow[3][1], fe], [ue, endRow[2][1], fe], [ue, endRow[2][1], fe - 0.9], [ue, endRow[3][1], fe - 0.9], CAVE_FLOOR, [1, 0, 0], false);
 
   const parts = [b.geometry()];
 
-  // 7. A few boulders on the rim and the ledge.
+  // 7. Boulders: a few big ones heaped on and beside the outcrop, some on
+  //    the rim of the pit, and rubble on its floor.
   const matrix = new Matrix4();
   const rotation = new Quaternion();
   const scale = new Vector3();
-  const place = (u, v, y, size) => {
+  const place = (u, v, y, size, sunk) => {
     const geometry = ROCK_SHAPES[Math.floor(rand() * ROCK_SHAPES.length)].clone();
-    rotation.setFromEuler(new Euler((rand() - 0.5) * 0.4, rand() * Math.PI * 2, (rand() - 0.5) * 0.4));
-    scale.set(size * (0.9 + rand() * 0.4), size * (0.6 + rand() * 0.3), size * (0.9 + rand() * 0.4));
-    matrix.compose(new Vector3(...b.at(u, v, y - size * 0.25)), rotation, scale);
+    rotation.setFromEuler(new Euler((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5));
+    scale.set(size * (0.8 + rand() * 0.5), size * (0.55 + rand() * 0.4), size * (0.8 + rand() * 0.5));
+    const at = b.at(u, v, y - size * sunk);
+    matrix.compose(new Vector3(...at), rotation, scale);
     geometry.applyMatrix4(matrix);
-    geometry.setAttribute('skyLight', new BufferAttribute(new Float32Array(geometry.attributes.position.count).fill(1), 1));
+    const sky = u < s.L - s.ledge ? 1 : CaveField.skyLight([e], at[0] + x0, at[1], at[2] + z0);
+    geometry.setAttribute('skyLight', new BufferAttribute(new Float32Array(geometry.attributes.position.count).fill(sky), 1));
     parts.push(geometry);
   };
-  const rimRocks = 2 + Math.floor(rand() * 3);
-  for (let k = 0; k < rimRocks; k++) {
-    const u = 1.5 + rand() * (s.L - s.ledge - 2.5);
-    const v = (rand() < 0.5 ? -1 : 1) * (s.w + 1 + rand() * 1.4);
-    place(u, v, ground(u, v), 0.6 + rand() * 1.1);
+  const heaped = 2 + Math.floor(rand() * 3);
+  for (let k = 0; k < heaped; k++) {
+    const u = s.L - s.ledge + 0.5 + rand() * (s.ledge + 1);
+    const side = rand() < 0.5 ? -1 : 1;
+    const v = cL + side * (hL + 0.3 + rand() * (side < 0 ? spanL - hL : spanR - hL));
+    place(u, v, ground(u, v) + 0.3, 1.2 + rand() * 1.3, 0.3);
   }
-  const u = (s.L - s.ledge + s.L) / 2 + rand();
-  const v = (rand() - 0.5) * s.w;
-  place(u, v, ground(u, v) + 0.5, 0.7 + rand() * 0.6);
+  const rim = Math.floor(rand() * 5);
+  for (let k = 0; k < rim; k++) {
+    const u = 1 + rand() * Math.max(0.5, s.L - s.ledge - 2);
+    const v = centre(u) + (rand() < 0.5 ? -1 : 1) * (half(u) + 0.8 + rand() * 1.8);
+    place(u, v, ground(u, v), 0.5 + rand() * 1.1, 0.25);
+  }
+  const rubble = 2 + Math.floor(rand() * 5);
+  for (let k = 0; k < rubble; k++) {
+    const u = 1 + rand() * (s.E - 2);
+    const v = centre(u) + (rand() < 0.5 ? -1 : 1) * Math.max(0, half(u) - 0.35 - rand() * 0.8);
+    place(u, v, floorAt(u), 0.25 + rand() * 0.35, 0.2);
+  }
 
   return parts;
 }

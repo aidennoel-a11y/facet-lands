@@ -51,25 +51,28 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     }
   }
 
-  // Cave entrances (full detail only): each entrance's pit outline is cut
-  // out of the surface exactly. Triangles it overlaps are clipped against
-  // the outline, so the hole has clean straight edges (EntranceLayer builds
-  // the walls that line it). Worked out first because clipping adds triangles.
+  // Cave entrances (full detail only): each entrance's pit is cut out of
+  // the surface exactly. The pit is a strip of convex pieces; triangles
+  // they overlap are clipped against them, so the hole's edge follows the
+  // pit's winding outline cleanly (EntranceLayer builds the rock that lines
+  // it). Worked out first because clipping adds triangles.
   const caveSystem = resolution === finest ? generator.caves : null;
   const holes = caveSystem
     ? caveSystem
         .mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize)
         .filter(({ holeBounds: b }) => b.maxX > originX && b.minX < originX + chunkSize && b.maxZ > originZ && b.minZ < originZ + chunkSize)
     : [];
-  // Outlines in chunk-local x/z, counter-clockwise, with their bounds.
-  const outlines = holes.map((e) => {
-    const points = e.hole.map(([u, v]) => {
-      const [x, z] = CaveField.world(e, u, v);
-      return [x - originX, z - originZ];
-    });
-    const b = e.holeBounds;
-    return { points, minX: b.minX - originX, maxX: b.maxX - originX, minZ: b.minZ - originZ, maxZ: b.maxZ - originZ };
-  });
+  // Pieces in chunk-local x/z, counter-clockwise, with their bounds.
+  const outlines = holes.flatMap((e) =>
+    e.holePieces.map((piece) => {
+      const points = piece.map(([u, v]) => {
+        const [x, z] = CaveField.world(e, u, v);
+        return [x - originX, z - originZ];
+      });
+      const xs = points.map((p) => p[0]), zs = points.map((p) => p[1]);
+      return { points, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
+    }),
+  );
   const clipped = new Map(); // (cell index * 2 + triangle) -> pieces left over: [[x, y, z] x3, ...]
   let clippedTris = 0;
   if (outlines.length) {
