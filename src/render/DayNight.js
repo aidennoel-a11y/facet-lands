@@ -151,6 +151,16 @@ export class DayNight {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
 
+  /** Direction towards whichever of sun or moon is lighting the world. */
+  get lightDirection() {
+    return this._lightDir;
+  }
+
+  /** How strong that light's shafts should be, 0..1 (the moon's are faint). */
+  get lightStrength() {
+    return this.sunDir.y > -0.05 ? this.light.intensity / 2.6 : (this.light.intensity / 0.8) * 0.3;
+  }
+
   update(dt, focus) {
     if (this.playing) this.hour = (this.hour + (dt * 24) / (this.config.dayLengthMinutes * 60)) % 24;
 

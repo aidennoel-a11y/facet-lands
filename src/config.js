@@ -30,6 +30,7 @@ export const WORLD = {
   treeSpacing: 6, // metres between candidate tree spots (lower = denser)
   treeMaxLod: 2, // only chunks at this LOD or closer get trees
   treeScale: 1.6, // overall tree size multiplier
+  leafMaxLod: 0, // leaf clusters only on chunks this close
 
   // Grass
   grassSpacing: 1.6, // metres between grass tufts

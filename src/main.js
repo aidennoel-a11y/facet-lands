@@ -8,13 +8,15 @@ import { createGrassLayer } from './world/layers/GrassLayer.js';
 import { PlayerControls } from './controls/PlayerControls.js';
 import { PlayerBody } from './player/PlayerBody.js';
 import { DayNight } from './render/DayNight.js';
+import { RayEffects } from './render/RayEffects.js';
+import { Clouds } from './world/Clouds.js';
 import { windTime } from './render/wind.js';
 import { Minimap } from './ui/Minimap.js';
 
 // --- Renderer, scene, camera -------------------------------------------------
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -26,6 +28,11 @@ const camera = new THREE.PerspectiveCamera(60, 1, 0.3, drawDistance * 1.5);
 
 // Sky dome, sun, moon, stars, lighting and shadows, driven by the time of day.
 const dayNight = new DayNight(scene, WORLD, drawDistance * 1.2);
+const clouds = new Clouds(scene);
+
+// Ray-marched ambient occlusion and light shafts, drawn after the scene.
+const rayEffects = new RayEffects(renderer);
+const light = { direction: dayNight.lightDirection, color: dayNight.light.color, strength: 1 };
 
 // --- Terrain -----------------------------------------------------------------
 const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -82,6 +89,7 @@ const ui = {
   clock: document.getElementById('clock'),
   cycle: document.getElementById('cycle'),
   shadows: document.getElementById('shadows'),
+  rays: document.getElementById('rays'),
   presets: document.querySelectorAll('[data-hour]'),
   alt: document.getElementById('stat-alt'),
   speed: document.getElementById('stat-speed'),
@@ -108,7 +116,7 @@ ui.randomSeed.addEventListener('click', () => {
   setSeed(value);
 });
 ui.wireframe.addEventListener('change', () => {
-  for (const m of [terrainMaterial, water.material, trees.material, trees.leafMaterial, grass.material]) {
+  for (const m of [terrainMaterial, water.material, trees.material, trees.leafMaterial, grass.material, ...clouds.materials]) {
     m.wireframe = ui.wireframe.checked;
   }
 });
@@ -144,6 +152,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyG') ui.wireframe.click();
   if (e.code === 'KeyT') ui.cycle.click();
   if (e.code === 'KeyH') ui.shadows.click();
+  if (e.code === 'KeyR') ui.rays.click();
 });
 
 // --- Loop --------------------------------------------------------------------
@@ -153,6 +162,7 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  rayEffects.setSize();
 }
 window.addEventListener('resize', resize);
 resize();
@@ -171,8 +181,14 @@ function tick(now) {
   chunks.update(camera.position, now / 1000, dir);
   windTime.value = now / 1000;
   dayNight.update(dt, camera.position);
+  clouds.update(dt, camera.position, dayNight.horizon);
   body.update(controls, dt);
-  renderer.render(scene, camera);
+  if (ui.rays.checked) {
+    light.strength = dayNight.lightStrength;
+    rayEffects.render(scene, camera, light);
+  } else {
+    renderer.render(scene, camera);
+  }
 
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
 
@@ -197,4 +213,4 @@ function tick(now) {
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { scene, camera, chunks, controls, dayNight, get generator() { return generator; }, WORLD };
+window.world = { scene, camera, chunks, controls, dayNight, clouds, rayEffects, get generator() { return generator; }, WORLD };

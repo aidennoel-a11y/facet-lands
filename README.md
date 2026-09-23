@@ -4,9 +4,10 @@ A low-poly, procedurally generated world built with [three.js](https://threejs.o
 The ground is made entirely of flat-shaded triangles, colored by height
 (sea bed → beach sand → meadow → deep grass → scrub → violet-grey rock → snow caps on
 the highest peaks), with steep faces turning to rock. Seas and lakes fill the low
-ground, forests of pines, broadleaf trees and bushes cover the land, and grass tufts
-sway around your feet. A sun and moon cross the sky in a day/night cycle and cast
-shadows on everything, including your own when you walk. The world streams in as
+ground, forests of six kinds of tree cover the land, and grass tufts sway around
+your feet. Low-poly clouds drift overhead. A sun and moon cross the sky in a
+day/night cycle and cast shadows on everything, including your own when you walk,
+and ray-marched light shafts and ambient occlusion finish the picture. The world streams in as
 chunks around the camera, so it never ends.
 
 ## Run it
@@ -33,6 +34,7 @@ Tick **Fly** (or press `V`) to switch between flying and walking.
 | `G` | Show the triangles (wireframe) | same |
 | `T` | Pause / resume the day cycle | same |
 | `H` | Shadows on / off (for slower computers) | same |
+| `R` | Ray effects (light shafts, ambient occlusion) on / off | same |
 
 Walking has gravity, stops you at slopes too steep to climb, blocks you at tree
 trunks (bushes you can walk through), and makes you swim in deep water.
@@ -58,13 +60,15 @@ src/
     biomes.js               biome definitions and the face-coloring rule
     ChunkMesher.js          turns one chunk into a triangle mesh
     ChunkManager.js         loads/unloads chunks around the camera, LOD, build budget
-    trees.js                low-poly tree models (pine, broadleaf, bush, dead pine)
+    trees.js                low-poly tree models and their leaf clusters
+    Clouds.js               drifting low-poly clouds, solid and see-through
     layers/
       WaterLayer.js         per-chunk water sheet, colored by depth, animated waves
       TreeLayer.js          scatters instanced trees (and their leaf triangles) over nearby chunks
       GrassLayer.js         grass tufts around the player, tinted to match the ground
   render/
     DayNight.js             sky dome shader (sun, moon, stars), lights, fog, moving shadow box
+    RayEffects.js           screen-space ray marching: light shafts and ambient occlusion
     wind.js                 vertex-shader sway shared by trees and grass
   player/PlayerBody.js      invisible walking body that casts your shadow
   controls/PlayerControls.js  fly and walk modes: gravity, slopes, trunks, swimming
@@ -85,14 +89,33 @@ jittered triangle sheet. Each face is colored by the depth of the ground under i
 from see-through turquoise at the shore to deep blue, and a vertex shader rolls
 small waves across it by world position so they flow over chunk borders.
 
+**Tree models** (`world/trees.js`): six trees plus bushes and dead pines:
+
+| Tree | Look | Grows at |
+| --- | --- | --- |
+| Broadleaf | Round, lumpy five-blob crown | 6–55 m |
+| Poplar | Tall, narrow column | 5–35 m |
+| Autumn maple | Broad crown in orange and red (rare) | 8–50 m |
+| Birch | Slim white trunk with dark marks, airy yellow-green crown | 12–75 m |
+| Pine | Four drooping cone tiers | 20–110 m |
+| Spruce | Six narrow, dark blue-green tiers | 45–125 m |
+
+Crowns are overlapping blobs (or stacked cones) whose corners are pushed in and out
+so no face sits on a perfect sphere, coloured per face from shaded bottom to sunlit
+top. Each leafy tree also has semi-transparent leaf clusters, flat three-sided
+pyramids studding the crown, which break up the silhouette and dapple the shade.
+To add a tree, write a function returning a merged geometry in `trees.js`, add it
+(and optionally its leaves) to `TREE_GEOMETRIES` / `LEAF_GEOMETRIES`, and list it
+in a biome's `trees.species`.
+
 **Trees** (`layers/TreeLayer.js`): candidate spots sit on a jittered world grid
 (`treeSpacing`), so a tree is always in the same place. A forest-density noise
 makes woods and clearings; spots under water or too steep are skipped; the biome's
 `trees` list picks a species that suits the height (broadleaf low, pines higher,
 the odd dead pine near the tree line). Trees stand on the actual triangle surface,
 using `groundHeightAt` from the mesher, and each species in a chunk is one
-`InstancedMesh`, plus one for its semi-transparent leaf triangles floating around
-the crown. `treeScale` sets their overall size. Only chunks up to `treeMaxLod` get
+`InstancedMesh`, plus one for its leaf clusters (only on the nearest chunks,
+`leafMaxLod`). `treeScale` sets their overall size. Only chunks up to `treeMaxLod` get
 trees.
 
 **Triangles** (`ChunkMesher`): each chunk is a grid of cells, two triangles per
@@ -111,6 +134,21 @@ the camera and snaps to whole shadow-map texels so shadows don't shimmer.
 **Your shadow** (`player/PlayerBody.js`): in walk mode a simple blocky body stands
 where you are. Its material draws nothing on screen but it still renders into the
 shadow map, so looking down you see your shadow walk, swing its arms and jump.
+
+**Clouds** (`world/Clouds.js`): each cloud is a row of lumpy icosahedron puffs
+with a flat base, white on top and blue-grey underneath. About a third are wispy
+and see-through; the solid ones cast moving shadows and block the sun. They drift
+with the wind in a square around the camera and wrap around at the edges, where
+the fog hides them. They pick up a tint from the sky, so they turn pink and orange
+at sunset.
+
+**Ray effects** (`render/RayEffects.js`): browsers don't expose ray-tracing
+hardware, so the scene is drawn into an off-screen image and its depth buffer,
+and a final shader marches rays through that depth buffer. Short rays around each
+pixel find nearby geometry that blocks sky light (ambient occlusion: contact
+shading at tree bases and in creases). A ray from each pixel towards the sun on
+screen counts how much open sky lies that way, so beams of light stream between
+clouds, trunks and peaks. Toggle with `R`.
 
 **Wind** (`render/wind.js`): trees and grass bend in the vertex shader, more the
 higher up a vertex is, with a phase that varies by position so gusts ripple across

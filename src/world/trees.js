@@ -6,142 +6,363 @@ import {
   CylinderGeometry,
   DodecahedronGeometry,
   IcosahedronGeometry,
+  Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { mulberry32 } from '../noise/random.js';
+import { hash2, mulberry32 } from '../noise/random.js';
 
 // Low-poly tree models. Each species is one merged geometry with its colours
-// baked into vertex colours, so a whole forest of a species is a single
-// instanced draw call per chunk. Sizes are in metres, base at y = 0.
+// baked into per-face vertex colours, so a whole forest of a species is a
+// single instanced draw call per chunk. Sizes are in metres, base at y = 0.
 //
-// Each leafy species also has a "leaf" geometry: loose single triangles
-// floating just outside the crown, drawn semi-transparent on top of the
-// solid shape. They soften the silhouette and cast dappled shadows.
+// Crowns are built from a few overlapping blobs (or stacked cones for pines)
+// whose corners are pushed in and out a little, so no two faces sit on a
+// perfect sphere. Each face gets a colour from dark at the bottom of the
+// crown to sunlit at the top, plus a small random shade: the faceted look.
+//
+// Leafy species also get a "leaf" geometry: small, flat, pyramid-shaped
+// leaf clusters studding the crown's surface, drawn semi-transparent. They
+// break up the smooth silhouette, catch the light a little differently from
+// the crown underneath, and cast dappled shadows.
 
 const TRUNK = 0x6e4c35;
 const BARK_DEAD = 0x7c6655;
 
-/** Give a geometry a flat colour, flat normals and no uvs so parts merge cleanly. */
-function part(geometry, hex, { x = 0, y = 0, z = 0, rx = 0, rz = 0, sy = 1 } = {}) {
+const tmp = new Color();
+const bottom = new Color();
+const top = new Color();
+
+/**
+ * Pushes each corner in or out from `centre` by up to `amount` (a fraction
+ * of its distance). The offset is hashed from the corner's position, so
+ * faces that share a corner still meet: no cracks.
+ */
+function lumpy(geometry, amount, seed, centre = new Vector3()) {
+  const pos = geometry.attributes.position;
+  const v = new Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const h = hash2(Math.round(v.x * 97 + v.y * 13), Math.round(v.z * 97 - v.y * 31), seed);
+    v.sub(centre).multiplyScalar(1 + (h - 0.5) * 2 * amount).add(centre);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  return geometry;
+}
+
+/**
+ * Prepares one piece of a tree: non-indexed (so every face is flat), placed,
+ * and coloured per face from `colorLow` (bottom of the piece) to `colorHigh`
+ * (top), with a small random shade per face.
+ */
+function part(geometry, colorLow, colorHigh = colorLow, options = {}) {
+  const { x = 0, y = 0, z = 0, rx = 0, rz = 0, sx = 1, sy = 1, sz = 1, lump = 0, seed = 1, speckle = null } = options;
   const g = geometry.index ? geometry.toNonIndexed() : geometry;
   g.deleteAttribute('uv');
-  g.scale(1, sy, 1);
+  g.scale(sx, sy, sz);
+  if (lump) lumpy(g, lump, seed);
   if (rx) g.rotateX(rx);
   if (rz) g.rotateZ(rz);
   g.translate(x, y, z);
   g.computeVertexNormals();
-  const c = new Color(hex); // converts sRGB hex to the linear working space
-  const count = g.attributes.position.count;
-  const colors = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) colors.set([c.r, c.g, c.b], i * 3);
+
+  g.computeBoundingBox();
+  const { min, max } = g.boundingBox;
+  const rand = mulberry32(seed * 7919);
+  bottom.set(colorLow);
+  top.set(colorHigh);
+  const pos = g.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  for (let f = 0; f < pos.count; f += 3) {
+    const cy = (pos.getY(f) + pos.getY(f + 1) + pos.getY(f + 2)) / 3;
+    const t = max.y > min.y ? (cy - min.y) / (max.y - min.y) : 0.5;
+    tmp.copy(bottom).lerp(top, t).multiplyScalar(0.9 + rand() * 0.2);
+    // Optional random faces in a second colour (birch bark markings).
+    if (speckle && rand() < speckle[1]) tmp.set(speckle[0]);
+    for (let k = 0; k < 3; k++) colors.set([tmp.r, tmp.g, tmp.b], (f + k) * 3);
+  }
   g.setAttribute('color', new BufferAttribute(colors, 3));
   return g;
 }
 
+// Pine tiers: [radius, height, centre y]
+const PINE_TIERS = [
+  [2.5, 2.8, 3.0],
+  [2.05, 2.6, 4.5],
+  [1.55, 2.4, 5.9],
+  [1.0, 2.2, 7.2],
+];
+
+function pineTier([radius, height, cy], i) {
+  const cone = new ConeGeometry(radius, height, 8, 1);
+  // Let the lower rim droop unevenly, like heavy boughs.
+  const pos = cone.attributes.position;
+  for (let k = 0; k < pos.count; k++) {
+    if (pos.getY(k) < -height / 2 + 0.01) {
+      const a = Math.atan2(pos.getZ(k), pos.getX(k));
+      pos.setY(k, pos.getY(k) - (0.15 + 0.3 * (0.5 + 0.5 * Math.sin(a * 3 + i))));
+    }
+  }
+  return part(cone, 0x2b6139, 0x4c9a55, { y: cy, lump: 0.12, seed: 20 + i });
+}
+
 function pine() {
   return mergeGeometries([
-    part(new CylinderGeometry(0.22, 0.34, 2.2, 5), TRUNK, { y: 1.1 }),
-    part(new ConeGeometry(2.3, 3.6, 7), 0x3d7a45, { y: 3.4 }),
-    part(new ConeGeometry(1.8, 3.1, 7), 0x43864b, { y: 5.1 }),
-    part(new ConeGeometry(1.2, 2.7, 7), 0x4b9352, { y: 6.8 }),
+    part(new CylinderGeometry(0.2, 0.34, 2.4, 6), TRUNK, 0x7d5a40, { y: 1.2, seed: 2 }),
+    ...PINE_TIERS.map(pineTier),
   ]);
 }
+
+// Broadleaf crown blobs: [x, y, z, radius]
+const BROADLEAF_BLOBS = [
+  [0, 4.3, 0, 2.1],
+  [1.25, 4.8, 0.55, 1.55],
+  [-1.15, 4.6, -0.65, 1.65],
+  [0.15, 5.8, -0.2, 1.4],
+  [-0.4, 4.9, 1.2, 1.3],
+];
 
 function broadleaf() {
   return mergeGeometries([
-    part(new CylinderGeometry(0.25, 0.38, 2.8, 5), TRUNK, { y: 1.4 }),
-    part(new IcosahedronGeometry(2.3, 0), 0x5e9e45, { y: 4.1, sy: 0.9 }),
-    part(new IcosahedronGeometry(1.5, 0), 0x6bab4c, { x: 0.9, y: 5.2, z: -0.4 }),
+    part(new CylinderGeometry(0.22, 0.38, 3.0, 6), TRUNK, 0x80593f, { y: 1.5, seed: 3 }),
+    part(new CylinderGeometry(0.07, 0.13, 1.4, 4), TRUNK, TRUNK, { x: 0.45, y: 3.2, rz: -0.8, seed: 4 }),
+    part(new CylinderGeometry(0.07, 0.12, 1.3, 4), TRUNK, TRUNK, { x: -0.4, y: 3.1, rz: 0.75, seed: 5 }),
+    ...BROADLEAF_BLOBS.map(([x, y, z, r], i) =>
+      part(new IcosahedronGeometry(r, 0), 0x3f7f35, 0x7fbd58, { x, y, z, sy: 0.82, lump: 0.2, seed: 30 + i }),
+    ),
   ]);
 }
 
-function bush() {
+// Spruce: many narrow, dark, blue-green tiers.
+const SPRUCE_TIERS = [
+  [1.9, 2.4, 2.6],
+  [1.65, 2.2, 3.8],
+  [1.4, 2.1, 5.0],
+  [1.15, 2.0, 6.2],
+  [0.9, 1.9, 7.3],
+  [0.6, 1.8, 8.4],
+];
+
+function spruce() {
   return mergeGeometries([
-    part(new DodecahedronGeometry(1.1, 0), 0x6aa84f, { y: 0.6, sy: 0.75 }),
-    part(new DodecahedronGeometry(0.75, 0), 0x78b556, { x: 0.8, y: 0.5, z: 0.3, sy: 0.75 }),
+    part(new CylinderGeometry(0.16, 0.3, 2.0, 6), 0x5e4231, 0x6e4c35, { y: 1.0, seed: 50 }),
+    ...SPRUCE_TIERS.map(([radius, height, cy], i) => {
+      const cone = new ConeGeometry(radius, height, 7, 1);
+      return part(cone, 0x1f4d37, 0x3a7652, { y: cy, lump: 0.1, seed: 51 + i });
+    }),
   ]);
+}
+
+// Birch: slim white trunk with dark markings, small airy yellow-green crown.
+const BIRCH_BLOBS = [
+  [0, 5.6, 0, 1.35],
+  [0.7, 6.6, 0.3, 1.05],
+  [-0.6, 6.3, -0.4, 1.1],
+  [0.1, 7.5, 0, 0.9],
+];
+
+function birch() {
+  return mergeGeometries([
+    part(new CylinderGeometry(0.12, 0.2, 6.4, 6, 4), 0xe9e5da, 0xf4f1ea, {
+      y: 3.2,
+      seed: 60,
+      speckle: [0x38322c, 0.28],
+    }),
+    part(new CylinderGeometry(0.04, 0.07, 1.3, 4), 0xe9e5da, 0xe9e5da, { x: 0.35, y: 4.6, rz: -0.9, seed: 61 }),
+    ...BIRCH_BLOBS.map(([x, y, z, r], i) =>
+      part(new IcosahedronGeometry(r, 0), 0x6f9e3c, 0xb3d56a, { x, y, z, sy: 0.9, lump: 0.22, seed: 62 + i }),
+    ),
+  ]);
+}
+
+// Poplar: tall, columnar crown of stacked stretched blobs.
+const POPLAR_BLOBS = [
+  [0, 3.8, 0, 1.25],
+  [0.15, 5.6, 0.1, 1.2],
+  [-0.1, 7.3, -0.1, 1.05],
+  [0.05, 8.8, 0.05, 0.8],
+];
+
+function poplar() {
+  return mergeGeometries([
+    part(new CylinderGeometry(0.16, 0.3, 3.0, 6), TRUNK, 0x7d5a40, { y: 1.5, seed: 70 }),
+    ...POPLAR_BLOBS.map(([x, y, z, r], i) =>
+      part(new IcosahedronGeometry(r, 0), 0x3d7a33, 0x78b04f, { x, y, z, sy: 1.5, lump: 0.18, seed: 71 + i }),
+    ),
+  ]);
+}
+
+// Autumn maple: a broad round crown in orange and red.
+const MAPLE_BLOBS = [
+  [0, 4.0, 0, 2.0],
+  [1.2, 4.5, -0.4, 1.5],
+  [-1.1, 4.4, 0.6, 1.55],
+  [0.1, 5.4, 0.2, 1.4],
+];
+
+function maple() {
+  return mergeGeometries([
+    part(new CylinderGeometry(0.2, 0.36, 2.8, 6), 0x5f4332, 0x6e4c35, { y: 1.4, seed: 80 }),
+    part(new CylinderGeometry(0.06, 0.12, 1.4, 4), 0x5f4332, 0x5f4332, { x: -0.45, y: 3.0, rz: 0.8, seed: 81 }),
+    ...MAPLE_BLOBS.map(([x, y, z, r], i) =>
+      part(new IcosahedronGeometry(r, 0), 0xa8401f, 0xf0a13a, { x, y, z, sy: 0.85, lump: 0.2, seed: 82 + i }),
+    ),
+  ]);
+}
+
+const BUSH_BLOBS = [
+  [0, 0.65, 0, 1.0],
+  [0.75, 0.5, 0.35, 0.75],
+  [-0.6, 0.45, -0.3, 0.7],
+];
+
+function bush() {
+  return mergeGeometries(
+    BUSH_BLOBS.map(([x, y, z, r], i) =>
+      part(new DodecahedronGeometry(r, 0), 0x4f8c3d, 0x86c05c, { x, y, z, sy: 0.72, lump: 0.18, seed: 40 + i }),
+    ),
+  );
 }
 
 function deadPine() {
   return mergeGeometries([
-    part(new CylinderGeometry(0.1, 0.3, 7, 5), BARK_DEAD, { y: 3.5 }),
-    part(new CylinderGeometry(0.04, 0.09, 1.8, 4), BARK_DEAD, { x: 0.6, y: 3.6, rz: -1.0 }),
-    part(new CylinderGeometry(0.04, 0.08, 1.4, 4), BARK_DEAD, { x: -0.45, y: 4.8, rz: 0.9 }),
-    part(new CylinderGeometry(0.03, 0.07, 1.2, 4), BARK_DEAD, { z: 0.4, y: 2.6, rx: 1.0 }),
+    part(new CylinderGeometry(0.1, 0.3, 7, 5), BARK_DEAD, 0x938070, { y: 3.5, seed: 6 }),
+    part(new CylinderGeometry(0.04, 0.09, 1.8, 4), BARK_DEAD, BARK_DEAD, { x: 0.6, y: 3.6, rz: -1.0, seed: 7 }),
+    part(new CylinderGeometry(0.04, 0.08, 1.4, 4), BARK_DEAD, BARK_DEAD, { x: -0.45, y: 4.8, rz: 0.9, seed: 8 }),
+    part(new CylinderGeometry(0.03, 0.07, 1.2, 4), BARK_DEAD, BARK_DEAD, { z: 0.4, y: 2.6, rx: 1.0, seed: 9 }),
   ]);
 }
 
 /**
- * Loose leaf triangles. `placeOnShape(rand)` returns [x, y, z, nx, ny, nz]:
- * a point on the crown and the outward direction there.
+ * Leaf clusters: `count` very flat three-sided pyramids sitting on the crown
+ * surface, their tips pointing outwards. Unlike single triangles they never
+ * thin out to a sliver when seen edge-on, so they read as chunky low-poly
+ * clumps of leaves. `placeOnShape(rand)` returns { p, n, down }: a surface
+ * point, its outward normal and a direction pointing down the slope (where
+ * one corner hangs). Alpha varies per cluster, so some are nearly solid and
+ * others you can see through.
  */
-function leaves(count, size, colors, placeOnShape, seed) {
+function leaves(count, [minSize, maxSize], palette, placeOnShape, seed) {
   const rand = mulberry32(seed);
-  const positions = new Float32Array(count * 9);
-  const normals = new Float32Array(count * 9);
-  const cols = new Float32Array(count * 9);
+  const positions = new Float32Array(count * 36); // 4 faces x 3 corners x xyz
+  const normals = new Float32Array(count * 36);
+  const colors = new Float32Array(count * 48); // rgba
+  const side = new Vector3();
+  const a = new Vector3();
+  const b = new Vector3();
+  const faceNormal = new Vector3();
   const c = new Color();
-  for (let i = 0; i < count; i++) {
-    const [px, py, pz, nx, ny, nz] = placeOnShape(rand);
-    const out = 0.15 + rand() * 0.35; // float a little off the surface
-    const cx = px + nx * out;
-    const cy = py + ny * out;
-    const cz = pz + nz * out;
-    const s = size * (0.7 + rand() * 0.6);
-    const spin = rand() * Math.PI * 2;
-    for (let v = 0; v < 3; v++) {
-      const a = spin + (v * Math.PI * 2) / 3;
-      // A tilted triangle: corners spread sideways and a little up/down.
-      positions.set([cx + Math.cos(a) * s, cy + (rand() - 0.5) * s * 0.9, cz + Math.sin(a) * s], i * 9 + v * 3);
-      normals.set([nx, ny, nz], i * 9 + v * 3);
+  const underside = new Color();
+  let v = 0;
+
+  function face(p0, p1, p2, outward, col, alpha) {
+    a.subVectors(p1, p0);
+    b.subVectors(p2, p0);
+    faceNormal.crossVectors(a, b).normalize();
+    if (faceNormal.dot(outward) < 0) {
+      faceNormal.negate();
+      [p1, p2] = [p2, p1];
     }
-    c.set(colors[Math.floor(rand() * colors.length)]);
-    for (let v = 0; v < 3; v++) cols.set([c.r, c.g, c.b], i * 9 + v * 3);
+    for (const q of [p0, p1, p2]) {
+      positions.set([q.x, q.y, q.z], v * 3);
+      normals.set([faceNormal.x, faceNormal.y, faceNormal.z], v * 3);
+      colors.set([col.r, col.g, col.b, alpha], v * 4);
+      v++;
+    }
   }
+
+  for (let i = 0; i < count; i++) {
+    const { p, n, down } = placeOnShape(rand);
+    const centre = p.clone().addScaledVector(n, 0.02 + rand() * 0.12);
+    side.crossVectors(n, down).normalize();
+    const along = down.clone().addScaledVector(n, (rand() - 0.5) * 0.3).normalize();
+    const s = minSize + rand() * (maxSize - minSize);
+    const corners = [
+      centre.clone().addScaledVector(along, s),
+      centre.clone().addScaledVector(side, 0.87 * s).addScaledVector(along, -0.5 * s),
+      centre.clone().addScaledVector(side, -0.87 * s).addScaledVector(along, -0.5 * s),
+    ];
+    const apex = centre.clone().addScaledVector(n, s * (0.25 + rand() * 0.15));
+
+    c.set(palette[Math.floor(rand() * palette.length)]).multiplyScalar(0.92 + rand() * 0.16);
+    underside.copy(c).multiplyScalar(0.7);
+    const alpha = 0.55 + rand() * 0.4;
+
+    for (let k = 0; k < 3; k++) {
+      const q0 = corners[k];
+      const q1 = corners[(k + 1) % 3];
+      const out = q0.clone().add(q1).multiplyScalar(0.5).sub(centre).addScaledVector(n, 0.5 * s);
+      face(q0, q1, apex, out, c, alpha);
+    }
+    face(corners[0], corners[1], corners[2], n.clone().negate(), underside, alpha);
+  }
+
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(positions, 3));
   g.setAttribute('normal', new BufferAttribute(normals, 3));
-  g.setAttribute('color', new BufferAttribute(cols, 3));
+  g.setAttribute('color', new BufferAttribute(colors, 4));
   return g;
 }
 
-/** Point on an ellipsoid crown centred at (0, cy, 0). */
-function onBlob(cy, rx, ry, jitter = 0) {
+/** Surface points on a set of (vertically squashed) spheres, bigger ones more often. */
+function onBlobs(blobs, squash) {
+  const total = blobs.reduce((sum, b) => sum + b[3] * b[3], 0);
   return (rand) => {
-    const u = rand() * 2 - 1;
+    let pick = rand() * total;
+    let blob = blobs[0];
+    for (const b of blobs) {
+      pick -= b[3] * b[3];
+      if (pick <= 0) {
+        blob = b;
+        break;
+      }
+    }
+    const [x, y, z, r] = blob;
+    // Favour the upper, sunlit half of the crown.
+    const u = Math.min(1, -1 + 2 * Math.pow(rand(), 0.7));
     const phi = rand() * Math.PI * 2;
-    const r = Math.sqrt(1 - u * u);
-    const nx = r * Math.cos(phi);
-    const ny = u * 0.8 + 0.2;
-    const nz = r * Math.sin(phi);
-    const ox = (rand() - 0.5) * jitter;
-    const oz = (rand() - 0.5) * jitter;
-    return [nx * rx + ox, cy + u * ry, nz * rx + oz, nx, ny, nz];
+    const ring = Math.sqrt(1 - u * u);
+    const n = new Vector3(ring * Math.cos(phi), u, ring * Math.sin(phi));
+    const p = new Vector3(x + n.x * r, y + n.y * r * squash, z + n.z * r);
+    n.y /= squash;
+    n.normalize();
+    const down = new Vector3(0, -1, 0).addScaledVector(n, n.y).normalize();
+    if (down.lengthSq() < 0.01) down.set(1, 0, 0);
+    return { p, n, down };
   };
 }
 
-/** Point on one of a pine's stacked cones: [radius, height, centreY]. */
-function onCones(cones) {
+/** Surface points on the pine's cone tiers. */
+function onCones(tiers) {
   return (rand) => {
-    const [radius, height, centreY] = cones[Math.floor(rand() * cones.length)];
-    const f = Math.pow(rand(), 0.7); // more near the wide skirt of each tier
+    const [radius, height, cy] = tiers[Math.floor(rand() * tiers.length)];
+    const f = Math.pow(rand(), 0.6); // 0 at the tip, 1 at the rim
     const phi = rand() * Math.PI * 2;
     const r = radius * f;
-    const y = centreY + height / 2 - height * f;
-    return [Math.cos(phi) * r, y, Math.sin(phi) * r, Math.cos(phi), 0.45, Math.sin(phi)];
+    const p = new Vector3(Math.cos(phi) * r, cy + height / 2 - height * f, Math.sin(phi) * r);
+    const n = new Vector3(Math.cos(phi) * height, radius, Math.sin(phi) * height).normalize();
+    const down = new Vector3(Math.cos(phi) * radius, -height, Math.sin(phi) * radius).normalize();
+    return { p, n, down };
   };
 }
 
 /** Built once and shared by every chunk. */
 export const TREE_GEOMETRIES = {
   pine: pine(),
+  spruce: spruce(),
   broadleaf: broadleaf(),
+  birch: birch(),
+  poplar: poplar(),
+  maple: maple(),
   bush: bush(),
   deadPine: deadPine(),
 };
 
 export const LEAF_GEOMETRIES = {
-  pine: leaves(46, 0.55, [0x5aa35c, 0x4c9152, 0x6db36a], onCones([[2.3, 3.6, 3.4], [1.8, 3.1, 5.1], [1.2, 2.7, 6.8]]), 11),
-  broadleaf: leaves(70, 0.6, [0x7dbb52, 0x8cc95c, 0x6aa84a, 0xa2cf66], onBlob(4.4, 2.4, 1.9, 1.0), 12),
-  bush: leaves(18, 0.4, [0x86c05c, 0x9ccf6a], onBlob(0.6, 1.2, 0.6), 13),
+  pine: leaves(40, [0.35, 0.6], [0x3f8a4a, 0x4f9c57, 0x5fae62, 0x376f3f], onCones(PINE_TIERS), 11),
+  spruce: leaves(40, [0.3, 0.5], [0x2c5e44, 0x3a7050, 0x478260], onCones(SPRUCE_TIERS), 14),
+  birch: leaves(40, [0.3, 0.55], [0x9cc85a, 0xb6d86c, 0x86b84c, 0xcbe07a], onBlobs(BIRCH_BLOBS, 0.9), 15),
+  poplar: leaves(40, [0.35, 0.6], [0x5a9a42, 0x6fae4c, 0x84c05a], onBlobs(POPLAR_BLOBS, 1.5), 16),
+  maple: leaves(55, [0.45, 0.8], [0xe07a2c, 0xf2a33c, 0xc9502a, 0xf5c04a, 0xb33a22], onBlobs(MAPLE_BLOBS, 0.85), 17),
+  broadleaf: leaves(55, [0.45, 0.8], [0x6aac4a, 0x7fbe55, 0x93cc62, 0x5a9a42, 0xa6d26c], onBlobs(BROADLEAF_BLOBS, 0.82), 12),
+  bush: leaves(16, [0.25, 0.45], [0x78b556, 0x8fc663, 0x9fd06d], onBlobs(BUSH_BLOBS, 0.72), 13),
 };

@@ -35,7 +35,11 @@ export const BIOMES = {
       density: 1,
       species: [
         { type: 'broadleaf', weight: 1, minHeight: 6, maxHeight: 55 },
-        { type: 'pine', weight: 1.4, minHeight: 20, maxHeight: 110 },
+        { type: 'poplar', weight: 0.35, minHeight: 5, maxHeight: 35 },
+        { type: 'maple', weight: 0.15, minHeight: 8, maxHeight: 50 },
+        { type: 'birch', weight: 0.6, minHeight: 12, maxHeight: 75 },
+        { type: 'pine', weight: 1.2, minHeight: 20, maxHeight: 110 },
+        { type: 'spruce', weight: 0.9, minHeight: 45, maxHeight: 125 },
         { type: 'bush', weight: 0.5, minHeight: 5, maxHeight: 90 },
         { type: 'deadPine', weight: 0.06, minHeight: 30, maxHeight: 120 },
       ],

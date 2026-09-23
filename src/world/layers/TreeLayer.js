@@ -27,13 +27,22 @@ export function createTreeLayer() {
   const leafMaterial = addWind(
     new MeshLambertMaterial({
       vertexColors: true,
-      transparent: true,
-      opacity: 0.6,
+      transparent: true, // each leaf carries its own alpha in its vertex colour
       side: DoubleSide,
       depthWrite: false,
     }),
     WIND,
   );
+  // Light the far side of each leaf cluster as if it faced outwards too, so
+  // leaves seen against the sky glow green instead of turning black.
+  const windCompile = leafMaterial.onBeforeCompile;
+  leafMaterial.onBeforeCompile = (shader, renderer) => {
+    windCompile(shader, renderer);
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <normal_fragment_begin>',
+      '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal *= faceDirection;\n#endif',
+    );
+  };
   const depthMaterial = windDepthMaterial(WIND);
 
   const layer = {
@@ -160,7 +169,8 @@ export function createTreeLayer() {
         group.add(mesh);
         count += list.length;
 
-        const leafGeometry = LEAF_GEOMETRIES[type];
+        // Leaf facets only up close; far away they'd be sub-pixel anyway.
+        const leafGeometry = lod <= config.leafMaxLod ? LEAF_GEOMETRIES[type] : null;
         if (leafGeometry) {
           const leavesMesh = new InstancedMesh(leafGeometry, leafMaterial, list.length);
           leavesMesh.name = `${type} leaves`;
