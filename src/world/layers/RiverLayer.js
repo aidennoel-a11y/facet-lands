@@ -1,4 +1,15 @@
-import { BufferAttribute, BufferGeometry, Color, Mesh, MeshPhongMaterial } from 'three';
+import {
+  BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
+  Color,
+  Group,
+  InstancedBufferAttribute,
+  InstancedMesh,
+  Mesh,
+  MeshLambertMaterial,
+  MeshPhongMaterial,
+} from 'three';
 import { hash2 } from '../../noise/random.js';
 
 const DEEP = new Color(0x4fbfc4).lerp(new Color(0x2c67b0), 0.45);
@@ -26,8 +37,11 @@ function smoothstep(a, b, x) {
  * so the two meet without a seam (it's drawn first, so the lake doesn't
  * show through it twice).
  *
- * The water drifts slowly downstream: ripples of light carried along the
- * flow (faster where it's steeper), and white water down rapids and falls.
+ * The water is see-through, and flows: streaks of light drawn out along the
+ * current drift downstream (faster where it's steeper) and the surface's
+ * facets ripple with it; white water down rapids and falls. Waterfalls
+ * throw blocky spray: cubes of water tumbling over the lip and splashing
+ * up where it lands (all worked out on the GPU from the time).
  */
 export function createRiverLayer(skyColor) {
   const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor } };
@@ -42,8 +56,20 @@ export function createRiverLayer(skyColor) {
     shader.uniforms.uTime = uniforms.uTime;
     shader.uniforms.uSky = uniforms.uSky;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 flow;\nvarying vec3 vFlow;\nvarying vec2 vWorld;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFlow = flow;\nvWorld = (modelMatrix * vec4(transformed, 1.0)).xz;');
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec3 flow;\nvarying vec3 vFlow;\nvarying vec2 vWorld;')
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `#include <begin_vertex>
+        vFlow = flow;
+        vWorld = (modelMatrix * vec4(transformed, 1.0)).xz;
+        // Low swells running downstream, so the facets catch the light as they pass.
+        float swell = length(flow.xy);
+        if (swell > 0.0) {
+          vec2 along = flow.xy / swell;
+          float s = dot(vWorld, along);
+          transformed.y += min(swell, 1.0) * 0.05 * (sin(s * 0.9 - uTime * (1.2 + swell * 1.6)) + 0.6 * sin(dot(vWorld, vec2(-along.y, along.x)) * 0.7 + s * 0.4 - uTime * 1.1));
+        }`,
+      );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
@@ -62,8 +88,10 @@ export function createRiverLayer(skyColor) {
           f = f * f * (3.0 - 2.0 * f);
           return mix(mix(cellHash(i), cellHash(i + vec2(1.0, 0.0)), f.x), mix(cellHash(i + vec2(0.0, 1.0)), cellHash(i + vec2(1.0, 1.0)), f.x), f.y);
         }
-        float ripples(vec2 p) {
-          return valueNoise(p * 0.32) * 0.6 + valueNoise(p * 0.85 + 13.0) * 0.4;
+        // Streaks drawn out along the current (u along it, v across).
+        float streaks(vec2 p, vec2 along) {
+          vec2 q = vec2(dot(p, along), dot(p, vec2(-along.y, along.x)));
+          return valueNoise(q * vec2(0.16, 0.75)) * 0.65 + valueNoise(q * vec2(0.35, 1.6) + 13.0) * 0.35;
         }`,
       )
       .replace(
@@ -72,13 +100,18 @@ export function createRiverLayer(skyColor) {
         // along it, two copies half a cycle apart cross-fading, so they can
         // flow on for ever without stretching (a flow map).
         vec2 current = vFlow.xy;
+        float speed = length(current);
+        vec2 along = speed > 0.001 ? current / speed : vec2(1.0, 0.0);
         vec2 at = mod(vWorld, 2048.0);
-        float cycle = 3.0;
+        float cycle = 2.5;
         float p0 = fract(uTime / cycle), p1 = fract(uTime / cycle + 0.5);
         float w0 = 1.0 - abs(2.0 * p0 - 1.0);
-        float r = ripples(at - current * p0 * cycle) * w0 + ripples(at - current * p1 * cycle + vec2(7.3, 2.1)) * (1.0 - w0);
-        float moving = clamp(length(current) * 2.0, 0.0, 1.0);
-        gl_FragColor.rgb += smoothstep(0.6, 0.85, r) * (0.05 + 0.1 * moving + 0.25 * vFlow.z);
+        float r = streaks(at - current * p0 * cycle, along) * w0 + streaks(at - current * p1 * cycle + vec2(7.3, 2.1), along) * (1.0 - w0);
+        float moving = clamp(speed * 1.5, 0.0, 1.0);
+        // Bright streaks and darker troughs between them.
+        gl_FragColor.rgb *= 1.0 - 0.12 * moving * (1.0 - r);
+        gl_FragColor.rgb += smoothstep(0.55, 0.82, r) * (0.04 + 0.22 * moving + 0.25 * vFlow.z);
+        gl_FragColor.a = mix(gl_FragColor.a, min(1.0, gl_FragColor.a + 0.25), smoothstep(0.55, 0.82, r) * moving);
         gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 0.98), vFlow.z * (0.5 + 0.3 * r));
         gl_FragColor.a = mix(gl_FragColor.a, 1.0, vFlow.z * 0.6);
         float fresnel = pow(1.0 - clamp(dot(normal, normalize(vViewPosition) * -1.0), 0.0, 1.0), 3.0);
@@ -87,6 +120,75 @@ export function createRiverLayer(skyColor) {
       );
   };
   material.customProgramCacheKey = () => 'river';
+
+  // Waterfall spray: little cubes, each flying on its own arc (start, velocity,
+  // how long it lives, when it starts) and shrinking away as it lands.
+  const cube = new BoxGeometry(1, 1, 1);
+  const sprayMaterial = new MeshLambertMaterial({ color: 0xeef7fa, emissive: 0x4a6068 });
+  sprayMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = uniforms.uTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec3 aStart;\nattribute vec3 aVelocity;\nattribute vec3 aLife;')
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `// aLife: x = lifetime (s), y = phase (0..1), z = size.
+        float age = fract(uTime / aLife.x + aLife.y) * aLife.x;
+        float k = age / aLife.x;
+        float spin = aLife.y * 40.0 + age * 3.0;
+        vec3 p = position;
+        p.xz = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * p.xz;
+        vec3 transformed = p * aLife.z * (1.0 - k * k) + aStart + aVelocity * age + vec3(0.0, -4.9 * age * age, 0.0);`,
+      );
+  };
+  sprayMaterial.customProgramCacheKey = () => 'spray';
+
+  /** Spray for each waterfall in the chunk: cubes pouring over the lip, and splashing up at the foot. */
+  function spray(rivers, x0, z0, chunkSize) {
+    const starts = [], velocities = [], lives = [];
+    let n = 0;
+    for (const course of rivers) {
+      const P = course.points;
+      for (let i = 0; i < P.length - 1; i++) {
+        const a = P[i], b = P[i + 1];
+        const run = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+        const fall = a.level - b.level;
+        if (fall / run < 0.4 || fall < 0.8) continue;
+        if (a.x < x0 || a.x >= x0 + chunkSize || a.z < z0 || a.z >= z0 + chunkSize) continue;
+        const ux = (b.x - a.x) / run, uz = (b.z - a.z) / run;
+        const width = Math.max(1.5, Math.max(a.width, b.width) * 0.8);
+        let seed = Math.floor(a.x * 13 + a.z * 7) >>> 0;
+        const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+        const drop = Math.sqrt((2 * (fall + 0.3)) / 9.8); // seconds to fall
+        const pour = Math.round(10 + width * 4), splash = Math.round(12 + width * 4);
+        for (let k = 0; k < pour; k++) {
+          const across = (rand() - 0.5) * width;
+          starts.push(a.x - x0 - uz * across, a.level + 0.1, a.z - z0 + ux * across);
+          const v = 1.2 + rand() * 1.2;
+          velocities.push(ux * v, rand() * 0.4, uz * v);
+          lives.push(drop, rand(), 0.22 + rand() * 0.25);
+        }
+        for (let k = 0; k < splash; k++) {
+          const across = (rand() - 0.5) * width * 1.2;
+          const out = rand() * 1.5;
+          starts.push(b.x - x0 - uz * across + ux * out, b.level + 0.05, b.z - z0 + ux * across + uz * out);
+          const up = 1.5 + rand() * 2.5 + Math.min(2, fall * 0.4);
+          const a2 = rand() * Math.PI * 2, side = 0.6 + rand() * 1.6;
+          velocities.push(Math.cos(a2) * side + ux * 0.8, up, Math.sin(a2) * side + uz * 0.8);
+          lives.push((2 * up) / 9.8, rand(), 0.15 + rand() * 0.25);
+        }
+        n += pour + splash;
+      }
+    }
+    if (!n) return null;
+    const geometry = cube.clone();
+    geometry.setAttribute('aStart', new InstancedBufferAttribute(new Float32Array(starts), 3));
+    geometry.setAttribute('aVelocity', new InstancedBufferAttribute(new Float32Array(velocities), 3));
+    geometry.setAttribute('aLife', new InstancedBufferAttribute(new Float32Array(lives), 3));
+    const mesh = new InstancedMesh(geometry, sprayMaterial, n);
+    mesh.frustumCulled = false; // it moves on the GPU; there are only a few
+    mesh.name = 'spray';
+    return mesh;
+  }
 
   return {
     name: 'rivers',
@@ -103,7 +205,8 @@ export function createRiverLayer(skyColor) {
       const { chunkSize, seaLevel } = config;
       const rivers = generator.rivers;
       const x0 = cx * chunkSize, z0 = cz * chunkSize;
-      if (!rivers.inBox(x0, z0, x0 + chunkSize, z0 + chunkSize).length) return null;
+      const courses = rivers.inBox(x0, z0, x0 + chunkSize, z0 + chunkSize);
+      if (!courses.length) return null;
 
       // The water at each grid point: its level, current, white water, how
       // far in from the channel's edge, and how much it has given way to a
@@ -127,7 +230,7 @@ export function createRiverLayer(skyColor) {
           level[k] = w.level + 0.03 + 0.07 * (1 - river[k]);
           depth[k] = w.level - generator.getHeight(x, z);
           const drop = Math.max(0, w.drop);
-          const speed = w.pond ? 0 : 0.3 + Math.min(1.8, drop * 9);
+          const speed = w.pond ? 0 : 0.7 + Math.min(2.3, drop * 12);
           flow[k * 3] = w.fx * speed * river[k];
           flow[k * 3 + 1] = w.fz * speed * river[k];
           flow[k * 3 + 2] = Math.min(1, Math.max(0, (drop - 0.25) / 0.5));
@@ -149,7 +252,8 @@ export function createRiverLayer(skyColor) {
         const t = smoothstep(-1, 16, (depth[a] + depth[b] + depth[c]) / 3);
         lakeColor.copy(LAKE_SHALLOW).lerp(LAKE_DEEP, t);
         color.copy(SHALLOW).lerp(DEEP, deep).lerp(lakeColor, 1 - r).multiplyScalar(shade);
-        const alpha = 0.72 + 0.14 * deep + (0.68 + 0.26 * t - 0.72 - 0.14 * deep) * (1 - r);
+        const clear = 0.5 + 0.18 * deep; // see-through, more so at the edges
+        const alpha = clear + (0.68 + 0.26 * t - clear) * (1 - r);
         for (const k of [a, b, c]) {
           positions.push((k % n) * GRID, level[k], Math.floor(k / n) * GRID);
           colors.push(color.r, color.g, color.b, alpha);
@@ -183,11 +287,19 @@ export function createRiverLayer(skyColor) {
       mesh.name = 'river';
       mesh.renderOrder = 0; // before the lake or sea, so where it runs on over one that doesn't show through
       mesh.receiveShadow = true;
-      return mesh;
+      const group = new Group();
+      group.name = 'rivers';
+      group.add(mesh);
+      const falls = spray(courses, x0, z0, chunkSize);
+      if (falls) group.add(falls);
+      return group;
     },
 
-    dispose(mesh) {
-      mesh.geometry.dispose();
+    dispose(group) {
+      for (const child of group.children) {
+        child.geometry.dispose();
+        if (child.isInstancedMesh) child.dispose();
+      }
     },
   };
 }
