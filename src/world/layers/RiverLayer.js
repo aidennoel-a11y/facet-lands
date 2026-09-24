@@ -37,9 +37,9 @@ function smoothstep(a, b, x) {
  * so the two meet without a seam (it's drawn first, so the lake doesn't
  * show through it twice).
  *
- * The water is see-through, and flows: streaks of light drawn out along the
- * current drift downstream (faster where it's steeper) and the surface's
- * facets ripple with it; white water down rapids and falls. Waterfalls
+ * The water is see-through, and flows: light streaks in chevrons pointing
+ * downstream drift along it (quicker where it's steeper); white water down
+ * rapids and falls. Waterfalls
  * throw blocky spray: cubes of water tumbling over the lip and splashing
  * up where it lands (all worked out on the GPU from the time).
  */
@@ -56,66 +56,22 @@ export function createRiverLayer(skyColor) {
     shader.uniforms.uTime = uniforms.uTime;
     shader.uniforms.uSky = uniforms.uSky;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec3 flow;\nvarying vec3 vFlow;\nvarying vec2 vWorld;')
-      .replace(
-        '#include <begin_vertex>',
-        /* glsl */ `#include <begin_vertex>
-        vFlow = flow;
-        vWorld = (modelMatrix * vec4(transformed, 1.0)).xz;
-        // Low swells running downstream, so the facets catch the light as they pass.
-        float swell = length(flow.xy);
-        if (swell > 0.0) {
-          vec2 along = flow.xy / swell;
-          float s = dot(vWorld, along);
-          transformed.y += min(swell, 1.0) * 0.05 * (sin(s * 0.9 - uTime * (1.2 + swell * 1.6)) + 0.6 * sin(dot(vWorld, vec2(-along.y, along.x)) * 0.7 + s * 0.4 - uTime * 1.1));
-        }`,
-      );
+      .replace('#include <common>', '#include <common>\nattribute vec4 flow;\nattribute float streaks;\nvarying vec4 vFlow;\nvarying float vStreaks;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFlow = flow;\nvStreaks = streaks;');
     shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        /* glsl */ `#include <common>
-        uniform float uTime;
-        uniform vec3 uSky;
-        varying vec3 vFlow;
-        varying vec2 vWorld;
-        float cellHash(vec2 p) {
-          vec3 q = fract(vec3(p.xyx) * 0.1031);
-          q += dot(q, q.yzx + 33.33);
-          return fract((q.x + q.y) * q.z);
-        }
-        float valueNoise(vec2 p) {
-          vec2 i = floor(p), f = fract(p);
-          f = f * f * (3.0 - 2.0 * f);
-          return mix(mix(cellHash(i), cellHash(i + vec2(1.0, 0.0)), f.x), mix(cellHash(i + vec2(0.0, 1.0)), cellHash(i + vec2(1.0, 1.0)), f.x), f.y);
-        }
-        // Streaks drawn out along the current (u along it, v across).
-        float streaks(vec2 p, vec2 along) {
-          vec2 q = vec2(dot(p, along), dot(p, vec2(-along.y, along.x)));
-          return valueNoise(q * vec2(0.16, 0.75)) * 0.65 + valueNoise(q * vec2(0.35, 1.6) + 13.0) * 0.35;
-        }`,
-      )
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uSky;\nvarying vec4 vFlow;\nvarying float vStreaks;')
       .replace(
         '#include <fog_fragment>',
-        /* glsl */ `// flow: xy = the current (m/s), z = white water. The ripples are carried
-        // along it, two copies half a cycle apart cross-fading, so they can
-        // flow on for ever without stretching (a flow map).
-        vec2 current = vFlow.xy;
-        float speed = length(current);
-        vec2 along = speed > 0.001 ? current / speed : vec2(1.0, 0.0);
-        vec2 at = mod(vWorld, 2048.0);
-        float cycle = 2.5;
-        float p0 = fract(uTime / cycle), p1 = fract(uTime / cycle + 0.5);
-        float w0 = 1.0 - abs(2.0 * p0 - 1.0);
-        float r = streaks(at - current * p0 * cycle, along) * w0 + streaks(at - current * p1 * cycle + vec2(7.3, 2.1), along) * (1.0 - w0);
-        float moving = clamp(speed * 1.5, 0.0, 1.0);
-        // Bright streaks and darker troughs between them.
-        gl_FragColor.rgb *= 1.0 - 0.12 * moving * (1.0 - r);
-        gl_FragColor.rgb += smoothstep(0.55, 0.82, r) * (0.04 + 0.22 * moving + 0.25 * vFlow.z);
-        gl_FragColor.a = mix(gl_FragColor.a, min(1.0, gl_FragColor.a + 0.25), smoothstep(0.55, 0.82, r) * moving);
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 0.98), vFlow.z * (0.5 + 0.3 * r));
-        gl_FragColor.a = mix(gl_FragColor.a, 1.0, vFlow.z * 0.6);
+        /* glsl */ `// flow: x = metres along the river, y = out from its middle (1 at the
+        // channel's edge), z = speed, w = white water.
+        float phase = vFlow.x * 0.42 - vFlow.y * 1.6 - uTime * vFlow.z * 2.4;
+        float streak = smoothstep(0.72, 0.97, sin(phase) * 0.5 + 0.5 + 0.35 * sin(vFlow.x * 0.11 + vFlow.y * 2.3));
+        gl_FragColor.rgb += streak * step(0.01, vFlow.z) * (0.13 + 0.25 * vFlow.w) * vStreaks;
+        gl_FragColor.a = min(1.0, gl_FragColor.a + streak * 0.2 * step(0.01, vFlow.z) * vStreaks);
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 0.98), vFlow.w * (0.55 + 0.25 * sin(phase * 2.0)));
+        gl_FragColor.a = mix(gl_FragColor.a, 1.0, vFlow.w * 0.6);
         float fresnel = pow(1.0 - clamp(dot(normal, normalize(vViewPosition) * -1.0), 0.0, 1.0), 3.0);
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, uSky, fresnel * 0.3 * (1.0 - vFlow.z));
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, uSky, fresnel * 0.3 * (1.0 - vFlow.w));
         #include <fog_fragment>`,
       );
   };
@@ -214,7 +170,7 @@ export function createRiverLayer(skyColor) {
       const cells = chunkSize / GRID;
       const n = cells + 1;
       const level = new Float32Array(n * n).fill(NaN);
-      const flow = new Float32Array(n * n * 3);
+      const flow = new Float32Array(n * n * 4);
       const inset = new Float32Array(n * n);
       const river = new Float32Array(n * n); // 1 in the river, 0 out in the lake it flows into
       const depth = new Float32Array(n * n); // of the water, for the lake's colours
@@ -230,10 +186,10 @@ export function createRiverLayer(skyColor) {
           level[k] = w.level + 0.03 + 0.07 * (1 - river[k]);
           depth[k] = w.level - generator.getHeight(x, z);
           const drop = Math.max(0, w.drop);
-          const speed = w.pond ? 0 : 0.7 + Math.min(2.3, drop * 12);
-          flow[k * 3] = w.fx * speed * river[k];
-          flow[k * 3 + 1] = w.fz * speed * river[k];
-          flow[k * 3 + 2] = Math.min(1, Math.max(0, (drop - 0.25) / 0.5));
+          flow[k * 4] = w.along;
+          flow[k * 4 + 1] = Math.min(1.5, w.across);
+          flow[k * 4 + 2] = w.pond ? 0 : (0.6 + Math.min(2.4, drop * 6)) * river[k];
+          flow[k * 4 + 3] = Math.min(1, Math.max(0, (drop - 0.25) / 0.5));
           inset[k] = w.inset;
           any = true;
         }
@@ -243,6 +199,7 @@ export function createRiverLayer(skyColor) {
       const positions = [];
       const colors = [];
       const flows = [];
+      const streaks = [];
       const seed = generator.seed ^ 0x3c6ef372;
       const tri = (a, b, c, shade) => {
         if (Number.isNaN(level[a]) || Number.isNaN(level[b]) || Number.isNaN(level[c])) return;
@@ -252,12 +209,17 @@ export function createRiverLayer(skyColor) {
         const t = smoothstep(-1, 16, (depth[a] + depth[b] + depth[c]) / 3);
         lakeColor.copy(LAKE_SHALLOW).lerp(LAKE_DEEP, t);
         color.copy(SHALLOW).lerp(DEEP, deep).lerp(lakeColor, 1 - r).multiplyScalar(shade);
+        // Where two rivers meet, their distances along don't match: no
+        // streaks on the few faces that straddle the two.
+        const spread = Math.max(flow[a * 4], flow[b * 4], flow[c * 4]) - Math.min(flow[a * 4], flow[b * 4], flow[c * 4]);
+        const streaky = spread < 8 ? 1 : 0;
         const clear = 0.5 + 0.18 * deep; // see-through, more so at the edges
         const alpha = clear + (0.68 + 0.26 * t - clear) * (1 - r);
         for (const k of [a, b, c]) {
           positions.push((k % n) * GRID, level[k], Math.floor(k / n) * GRID);
           colors.push(color.r, color.g, color.b, alpha);
-          flows.push(flow[k * 3], flow[k * 3 + 1], flow[k * 3 + 2]);
+          flows.push(flow[k * 4], flow[k * 4 + 1], flow[k * 4 + 2], flow[k * 4 + 3]);
+          streaks.push(streaky);
         }
       };
       for (let j = 0; j < cells; j++) {
@@ -280,7 +242,8 @@ export function createRiverLayer(skyColor) {
       const geometry = new BufferGeometry();
       geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
       geometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 4));
-      geometry.setAttribute('flow', new BufferAttribute(new Float32Array(flows), 3));
+      geometry.setAttribute('flow', new BufferAttribute(new Float32Array(flows), 4));
+      geometry.setAttribute('streaks', new BufferAttribute(new Float32Array(streaks), 1));
       geometry.computeVertexNormals();
       geometry.computeBoundingSphere();
       const mesh = new Mesh(geometry, material);

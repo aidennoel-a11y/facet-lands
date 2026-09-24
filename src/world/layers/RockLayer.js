@@ -84,7 +84,9 @@ const scale = new Vector3();
  * boulders at the foot of steep mountainsides;
  * none on the mountainsides themselves, on cliffs or on snow. Small
  * stones only appear on the nearest chunks; boulders are visible further out
- * and block you when walking.
+ * and are solid when walking: each is taken as an ellipsoid of its own size,
+ * turn and height (see surfaceAt), so you can step up onto a low one, climb
+ * onto a big one's top if you jump, and walk into its side as a wall.
  */
 export function createRockLayer(config) {
   const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
@@ -94,28 +96,55 @@ export function createRockLayer(config) {
   const layer = {
     name: 'rocks',
     material,
-    boulders: new Map(), // "cx,cz" -> [x, z, radius, ...] for collisions
+    boulders: new Map(), // "cx,cz" -> [x, z, centre y, half-widths x, y, z, turn, ...] (world space)
 
-    collide(pos, radius) {
+    /**
+     * The top of any boulder at (x, z) (world), or -Infinity: each boulder
+     * as an ellipsoid round its centre, the size of the rock (its corners
+     * stick out a little past this, its faces sit a little inside).
+     */
+    surfaceAt(x, z) {
       const size = config.chunkSize;
-      const cx = Math.floor(pos.x / size);
-      const cz = Math.floor(pos.z / size);
+      const cx = Math.floor(x / size);
+      const cz = Math.floor(z / size);
+      let top = -Infinity;
       for (let dz = -1; dz <= 1; dz++) {
         for (let dx = -1; dx <= 1; dx++) {
           const list = layer.boulders.get(`${cx + dx},${cz + dz}`);
           if (!list) continue;
-          for (let k = 0; k < list.length; k += 3) {
-            const ox = pos.x - list[k];
-            const oz = pos.z - list[k + 1];
-            const min = radius + list[k + 2];
-            const d2 = ox * ox + oz * oz;
-            if (d2 >= min * min || d2 === 0) continue;
-            const d = Math.sqrt(d2);
-            pos.x += (ox / d) * (min - d);
-            pos.z += (oz / d) * (min - d);
+          for (let k = 0; k < list.length; k += 7) {
+            const ox = x - list[k], oz = z - list[k + 1];
+            const rx = list[k + 3], rz = list[k + 5];
+            if (Math.abs(ox) > Math.max(rx, rz) || Math.abs(oz) > Math.max(rx, rz)) continue;
+            // Into the rock's own frame (it's turned about the vertical).
+            const c = Math.cos(list[k + 6]), s = Math.sin(list[k + 6]);
+            const u = (ox * c - oz * s) / rx, v = (ox * s + oz * c) / rz;
+            const r2 = u * u + v * v;
+            if (r2 >= 1) continue;
+            top = Math.max(top, list[k + 2] + list[k + 4] * Math.sqrt(1 - r2));
           }
         }
       }
+      return top;
+    },
+
+    /**
+     * The boulders lying in or within `margin` metres of a chunk, as
+     * [x, z, radius, ...] (world space): where trees mustn't grow.
+     */
+    bouldersNear(cx, cz, generator, margin = 8) {
+      const size = config.chunkSize;
+      const x0 = cx * size - margin, z0 = cz * size - margin;
+      const x1 = (cx + 1) * size + margin, z1 = (cz + 1) * size + margin;
+      const out = [];
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          for (const c of layer.candidates(cx + dx, cz + dz, generator)) {
+            if (c.boulder && c.wx > x0 && c.wx < x1 && c.wz > z0 && c.wz < z1) out.push(c.wx, c.wz, Math.max(c.sx, c.sz) * 0.93);
+          }
+        }
+      }
+      return out;
     },
 
     /**
@@ -248,7 +277,8 @@ export function createRockLayer(config) {
         rotation.setFromEuler(euler);
         scale.set(c.sx, c.sy, c.sz);
         placed[c.shape].push(matrix.compose(position, rotation, scale).clone());
-        if (c.boulder) boulders.push(c.wx, c.wz, Math.min(c.sx, c.sz) * 0.75);
+        // (Rocks average about their unit size: 0.93 of it.)
+        if (c.boulder) boulders.push(c.wx, c.wz, position.y, c.sx * 0.93, c.sy * 0.93, c.sz * 0.93, c.ry);
       }
 
       const group = new Group();

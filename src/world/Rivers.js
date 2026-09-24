@@ -364,9 +364,11 @@ export class Rivers {
 
   #add(points, pond, kind, tarn = null) {
     const river = { points, pond, tarn, kind, id: this.list.length };
+    let along = 0; // metres from the source
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i], b = points[i + 1];
-      const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, stream: kind === 'stream' };
+      const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, stream: kind === 'stream', along };
+      along += Math.hypot(b.x - a.x, b.z - a.z);
       const r = Rivers.channel(Math.max(a.width, b.width) / 2) + INFLUENCE;
       const box = [Math.min(a.x, b.x) - r, Math.min(a.z, b.z) - r, Math.max(a.x, b.x) + r, Math.max(a.z, b.z) + r];
       this.#index(this.cells, seg, ...box);
@@ -433,6 +435,7 @@ export class Rivers {
     out.fx = dx / run;
     out.fz = dz / run;
     out.drop = (seg.la - seg.lb) / run;
+    out.along = seg.along + t * run;
     return out;
   }
 
@@ -529,8 +532,9 @@ export class Rivers {
 
   /**
    * The water surface at (x, z), within `margin` metres of a channel:
-   * { level, fx, fz (flow direction), drop (per metre), inset (how far in
-   * from the channel's edge), pond }, or null. Where channels overlap (two
+   * { level, fx, fz (flow direction), drop (per metre), along (metres from
+   * its source), across (from its middle, 1 at the channel's edge), inset
+   * (how far in from the channel's edge), pond }, or null. Where channels overlap (two
    * rivers meeting, a stream's pools and falls) the water takes the lowest
    * of their levels, just as carve() digs the bed under the lowest, so the
    * two run together as one.
@@ -542,7 +546,7 @@ export class Rivers {
     let best = null, bestGap = Infinity; // nearest channel
     let low = null, lowEnd = null; // lowest channel we're inside (alongside a stretch, or past its end)
     for (const item of near) {
-      let d, half, level, fx = 0, fz = 0, drop = 0, end = false, pond = false;
+      let d, half, level, fx = 0, fz = 0, drop = 0, along = 0, end = false, pond = false;
       if (item.pond) {
         const p = item.pond;
         d = Math.hypot(x - p.x, z - p.z);
@@ -551,10 +555,10 @@ export class Rivers {
         pond = true;
       } else {
         Rivers.#measure(item, x, z, m);
-        ({ d, half, level, fx, fz, drop, end } = m);
+        ({ d, half, level, fx, fz, drop, along, end } = m);
       }
       if (d > half + margin) continue;
-      const found = { level, fx, fz, drop, inset: half - d, pond };
+      const found = { level, fx, fz, drop, along, across: d / half, inset: half - d, pond };
       if (d - half < bestGap) {
         bestGap = d - half;
         best = found;

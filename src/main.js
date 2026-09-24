@@ -62,7 +62,8 @@ terrainMaterial.shadowSide = THREE.FrontSide;
 let generator = new TerrainGenerator(WORLD.seed, WORLD);
 const chunks = new ChunkManager(scene, generator, WORLD, terrainMaterial);
 const water = createWaterLayer({ skyColor: dayNight.horizon });
-const trees = createTreeLayer();
+const rocks = createRockLayer(WORLD);
+const trees = createTreeLayer({ rocks });
 const grass = createGrassLayer(WORLD);
 chunks.addLayer(water);
 chunks.addLayer(createRiverLayer(dayNight.horizon));
@@ -72,7 +73,6 @@ chunks.addLayer(grass);
 const caves = createCaveLayer(WORLD);
 chunks.addLayer(caves);
 chunks.addLayer(createEntranceLayer(WORLD, caves.material));
-const rocks = createRockLayer(WORLD);
 chunks.addLayer(rocks);
 
 /**
@@ -81,7 +81,10 @@ chunks.addLayer(rocks);
  * the cave meshes are built from, so floors, walls and roofs match them.
  */
 function groundAt(x, feetY, z) {
-  return generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
+  const g = generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
+  // Boulders are solid: you stand on their tops (and walk into their sides as walls).
+  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z));
+  return g;
 }
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
@@ -105,7 +108,6 @@ const controls = new PlayerControls(camera, canvas, {
   seaLevel: WORLD.seaLevel,
   collide: (position, radius) => {
     trees.collide(position, radius, WORLD.chunkSize);
-    rocks.collide(position, radius);
     generator.caves.collide(position, radius, position.y - controls.eyeHeight);
   },
 });

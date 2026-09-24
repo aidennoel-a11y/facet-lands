@@ -29,7 +29,15 @@ function smoothstep(a, b, x) {
  * a second one for its semi-transparent leaf triangles sharing the same
  * transforms. Trees sway in the wind and cast shadows.
  */
-export function createTreeLayer() {
+// How thick each kind of trunk is (at chest height, for a tree of size 1),
+// and how far off centre it stands (the acacia leans).
+const TRUNK_RADIUS = { pine: 0.31, spruce: 0.27, broadleaf: 0.34, birch: 0.19, poplar: 0.27, maple: 0.33, acacia: 0.27, deadPine: 0.27, cactus: 0.4 };
+const TRUNK_OFFSET = { acacia: 0.4 };
+
+/**
+ * @param rocks  the rock layer, if any: trees don't grow on its boulders
+ */
+export function createTreeLayer({ rocks = null } = {}) {
   const WIND = { strength: 0.012, speed: 1.1 };
   const material = addWind(new MeshLambertMaterial({ vertexColors: true, flatShading: true }), WIND);
   const leafMaterial = addWind(
@@ -100,6 +108,51 @@ export function createTreeLayer() {
       const seed = generator.seed ^ 0x7f4a7c15;
 
       const placed = {}; // species -> [{x, y, z, s, sy, rot, shade}]
+      // Boulders nearby, binned by cell: no tree grows out of a rock.
+      const blocked = new Map();
+      if (rocks) {
+        const list = rocks.bouldersNear(cx, cz, generator, spacing);
+        for (let k = 0; k < list.length; k += 3) {
+          const i = Math.floor((list[k] - originX) / spacing), j = Math.floor((list[k + 1] - originZ) / spacing);
+          const key = `${i},${j}`;
+          if (!blocked.has(key)) blocked.set(key, []);
+          blocked.get(key).push(list[k], list[k + 1], list[k + 2]);
+        }
+      }
+      const onRock = (wx, wz, i, j) => {
+        for (let dj = -1; dj <= 1; dj++) {
+          for (let di = -1; di <= 1; di++) {
+            const list = blocked.get(`${i + di},${j + dj}`);
+            if (!list) continue;
+            for (let k = 0; k < list.length; k += 3) if (Math.hypot(wx - list[k], wz - list[k + 1]) < list[k + 2] + 0.6) return true;
+          }
+        }
+        return false;
+      };
+      // Where the tree spot in grid cell (gi, gj) is, and how big its tree would be.
+      const spot = (gi, gj) => ({
+        x: (gi + 0.1 + 0.8 * hash2(gi, gj, seed + 1)) * spacing,
+        z: (gj + 0.1 + 0.8 * hash2(gi, gj, seed + 2)) * spacing,
+        s: (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale,
+      });
+      // Trees don't grow into each other: of two spots too close together,
+      // only the one ranking higher (a fixed coin toss per spot, so
+      // neighbouring chunks agree) can hold a tree, if it's likely to.
+      const crowded = (gi, gj, likely) => {
+        const me = spot(gi, gj);
+        const rank = hash2(gi, gj, seed + 14);
+        for (let dj = -1; dj <= 1; dj++) {
+          for (let di = -1; di <= 1; di++) {
+            if (!di && !dj) continue;
+            const ni = gi + di, nj = gj + dj;
+            if (hash2(ni, nj, seed + 14) < rank) continue; // it gives way to us
+            if (hash2(ni, nj, seed) > likely) continue; // it wouldn't be a tree anyway
+            const other = spot(ni, nj);
+            if (Math.hypot(other.x - me.x, other.z - me.z) < 1.7 * (me.s + other.s) * 0.5) return true;
+          }
+        }
+        return false;
+      };
       for (let j = 0; j < cells; j++) {
         for (let i = 0; i < cells; i++) {
           const gi = cx * cells + i;
@@ -113,7 +166,10 @@ export function createTreeLayer() {
           // Near a biome border, each spot takes one biome or the other at random.
           const biome = generator.pickBiome(wx, wz, hash2(gi, gj, seed + 11));
           const trees = biome.trees;
-          if (!trees || keep > (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density) continue;
+          const likely = (trees ? (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density : 0);
+          if (!trees || keep > likely) continue;
+          if (crowded(gi, gj, likely)) continue;
+          if (onRock(wx, wz, i, j)) continue;
 
           const ground = groundHeightAt(lx, lz, surface);
           if (!(ground >= seaLevel + 1.2)) continue; // outside the chunk, in water or over a cave mouth
@@ -174,7 +230,9 @@ export function createTreeLayer() {
       const trunks = [];
       for (const [type, list] of Object.entries(placed)) {
         if (NO_COLLIDE.has(type)) continue;
-        for (const t of list) trunks.push(originX + t.x, originZ + t.z, 0.3 * t.s);
+        const r = TRUNK_RADIUS[type] ?? 0.3, off = TRUNK_OFFSET[type] ?? 0;
+        // (A tree turned by `rot` about the vertical has its own x axis along (cos rot, -sin rot).)
+        for (const t of list) trunks.push(originX + t.x + Math.cos(t.rot) * off * t.s, originZ + t.z - Math.sin(t.rot) * off * t.s, r * t.s);
       }
 
       const group = new Group();

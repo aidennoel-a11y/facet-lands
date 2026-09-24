@@ -8,6 +8,8 @@ import { Color } from 'three';
 const MUD = new Color(0x5f4a36);
 const DIRT = new Color(0x7d6547);
 const RIVERBED = new Color(0x55493b);
+const ICE = new Color(0x9fcbe0); // glacier ice
+const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
 const GRAVEL = new Color(0x8a8590);
 const SHORE = {
   mud: new Color(0x5f4a36),
@@ -181,20 +183,24 @@ export class TerrainGenerator {
         if (large > 0) ridges += (this.ridgeNoise.ridged(qx * 0.00052 + 91, qz * 0.00052 - 37, 4, 2, 0.47, 0.012) - ridges) * large;
         // More, closer peaks in the heart.
         if (heart > 0) ridges += (this.ridgeNoise.ridged(qx * 0.0016 - 211, qz * 0.0016 + 157, 3, 2, 0.47, 0.02) - ridges) * 0.4 * heart;
-        // Some ranges are massifs rather than lines: a broad knot of rounded
-        // peaks clustered together, rising from one mass.
+        // Some ranges are massifs rather than lines: a broad knot of peaks
+        // clustered together, rising from one mass. Its summits are crested
+        // knots of ridges, not smooth domes.
         const massif = smoothstep(0.1, 0.45, this.massifNoise.fbm(x * 0.00022 - 400, z * 0.00022 + 700, 2));
         if (massif > 0) {
-          // Rounded knolls on a dome that swells towards the middle.
-          const knots = this.massifNoise.fbm(qx * 0.0017 + 55, qz * 0.0017 - 91, 2);
-          const blob = 0.2 + 0.3 * core + 0.55 * Math.max(-0.3, knots);
-          ridges += (blob + 0.3 * ridges - ridges) * massif;
+          const knots = this.massifNoise.ridged(qx * 0.0017 + 55, qz * 0.0017 - 91, 3, 2, 0.5, 0.015);
+          const blob = 0.12 + 0.25 * core + 0.6 * knots;
+          ridges += (blob + 0.4 * ridges - ridges) * massif;
         }
         const spiky = smoothstep(0.3, 0.6, this.spikeNoise.fbm(x * 0.0003, z * 0.0003, 2)) * heart * (1 - massif);
         const peaks = Math.pow(ridges, 1.7 + 1.1 * spiky) * (1 + 1.0 * spiky);
-        // Knobbly shoulders and spurs, so high ground is never a flat plateau.
-        const rugged = this.ruggedNoise.fbm(x * 0.0035, z * 0.0035, 2) * 18;
-        mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged);
+        // Knobbly shoulders and spurs, so high ground is never a flat plateau
+        // or one smooth dome; rougher the higher it gets. Up high, jagged
+        // crags: sharp little ridges and gullies over the peaks' flanks.
+        const high = smoothstep(0.06, 0.35, peaks);
+        const rugged = this.ruggedNoise.fbm(x * 0.0035, z * 0.0035, 2) * (18 + 16 * high);
+        const crags = high > 0 ? (this.ruggedNoise.ridged(x * 0.011 + 13, z * 0.011 - 7, 3, 2, 0.5, 0.01) - 0.3) * 22 * high : 0;
+        mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged + crags);
       }
       mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size) * (1 - 0.5 * bowl);
     }
@@ -205,9 +211,9 @@ export class TerrainGenerator {
     const hz = w.blackHills;
     let blackHills = 0;
     if (hz > 0) {
-      const domes = Math.pow(smoothstep(-0.2, 0.7, this.hillsNoise.fbm(x * 0.0021, z * 0.0021, 3)), 1.4);
+      const domes = Math.pow(smoothstep(-0.2, 0.7, this.hillsNoise.fbm(x * 0.00105, z * 0.00105, 3)), 1.4);
       const heart = smoothstep(0.35, 0.8, hz);
-      blackHills = hz * (22 + domes * 55) + heart * domes * this.#tors(x, z) + heart * this.#needles(x, z, domes);
+      blackHills = hz * (38 + domes * 105) + heart * domes * this.#tors(x, z) + heart * this.#needles(x, z, domes);
     }
 
     // Broad rise and fall of the land, lifted in dry country so seas
@@ -366,7 +372,7 @@ export class TerrainGenerator {
    * from mountain ranges and the dry country.
    */
   #hillsZone(x, z, range) {
-    const zone = smoothstep(0.3, 0.46, this.hillsNoise.fbm(x * 0.00024 - 250, z * 0.00024 + 610, 2));
+    const zone = smoothstep(0.3, 0.46, this.hillsNoise.fbm(x * 0.00012 - 250, z * 0.00012 + 610, 2));
     if (zone <= 0) return 0;
     const hilly = smoothstep(-0.2, 0.25, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
     return zone * hilly * (1 - smoothstep(0.02, 0.2, range)) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z)));
@@ -407,7 +413,7 @@ export class TerrainGenerator {
    * weathered tops.
    */
   #needles(x, z, domes) {
-    const C = 70;
+    const C = 110;
     const ci = Math.floor(x / C), cj = Math.floor(z / C);
     const s = this.seed ^ 0x5eed;
     let best = 0;
@@ -417,12 +423,12 @@ export class TerrainGenerator {
         if (hash2(i, j, s) > 0.4 * domes) continue;
         const px = (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * C;
         const pz = (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * C;
-        const r = 10 + 6 * hash2(i, j, s + 3);
+        const r = 16 + 10 * hash2(i, j, s + 3);
         const d = Math.hypot(x - px, z - pz);
         if (d >= r) continue;
         // A broad rounded cap, then steep sides down to the foot.
         const t = d / r;
-        best = Math.max(best, (18 + 26 * hash2(i, j, s + 4)) * Math.pow(1 - Math.pow(t, 2.6), 0.5));
+        best = Math.max(best, (30 + 42 * hash2(i, j, s + 4)) * Math.pow(1 - Math.pow(t, 2.6), 0.5));
       }
     }
     return best;
@@ -507,6 +513,15 @@ export class TerrainGenerator {
   surfaceColor(x, z, height, upness, out, jitter = this.getColorJitter(x, z)) {
     const w = this.getBiomeWeights(x, z, {});
     blendedFaceColor(this.biomes, w, height, upness, out);
+    // Ice up in the snow: the steep faces are icy blue-grey rock, and here
+    // and there the snow gives way to blue glacier ice.
+    if (height > 170 && w.temperate + w.savanna > 0.5) {
+      const up = smoothstep(175, 205, height);
+      const steep = 1 - smoothstep(0.35, 0.6, upness);
+      const glacier = smoothstep(0.15, 0.45, this.detailNoise.noise2D(x * 0.012 + 90, z * 0.012 - 40)) * smoothstep(0.45, 0.6, upness) * (1 - smoothstep(0.85, 0.95, upness));
+      if (steep > 0) out.lerp(ICY_ROCK, 0.55 * steep * up);
+      if (glacier > 0) out.lerp(ICE, 0.75 * glacier * up);
+    }
     // Lake shores: mud, dirt, grass and rock; rocky outcrops on beaches.
     const ground = height - jitter; // `height` has the colour jitter added
     const shore = ground < 9 ? this.getShore(x, z, ground) : null;
