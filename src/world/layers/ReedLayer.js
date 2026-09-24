@@ -103,7 +103,7 @@ export function createReedLayer(config) {
           const river = generator.rivers.at(wx, wz, 2.2);
           if (!river) continue;
           const e = river.d - river.half; // from the water's edge: negative in the water
-          if (e < -1.2) continue;
+          if (e < -1.5) continue;
           // In patches, thickest right at the edge.
           const patch = 0.5 + 0.5 * Math.sin(wx * 0.09 + Math.sin(wz * 0.07) * 3);
           if (hash2(gi, gj, seed) > patch * (1 - Math.abs(e + 0.2) / 2.4)) continue;

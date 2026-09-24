@@ -1,4 +1,5 @@
 import { BufferAttribute, BufferGeometry, Color, Mesh, MeshPhongMaterial } from 'three';
+import { Rivers } from '../Rivers.js';
 
 const RIVER = new Color(0x4fbfc4).lerp(new Color(0x2c67b0), 0.3);
 const FOAM = new Color(0xe8f4f6);
@@ -96,7 +97,7 @@ export function createRiverLayer(skyColor) {
           const c = RIVER.clone().multiplyScalar(shade).lerp(FOAM, white * 0.5);
           const edge = (k, s) => {
             const p = points[k];
-            const half = p.width / 2 + 1.3;
+            const half = Rivers.channel(p.width / 2) + 0.4; // tucked under the banks
             return [p.x + side[k][0] * half * s, p.level + 0.12, p.z + side[k][1] * half * s, along[k], s];
           };
           const quad = [edge(i, -1), edge(i + 1, -1), edge(i + 1, 1), edge(i, 1)];

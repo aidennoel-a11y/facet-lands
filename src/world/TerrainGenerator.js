@@ -42,6 +42,7 @@ export class TerrainGenerator {
     this.spikeNoise = new SimplexNoise(this.seed + 14);
     this.bowlNoise = new SimplexNoise(this.seed + 15);
     this.ruggedNoise = new SimplexNoise(this.seed + 16);
+    this.massifNoise = new SimplexNoise(this.seed + 17);
     this._range = { value: 0, size: 1, large: 0 };
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
@@ -58,13 +59,17 @@ export class TerrainGenerator {
     // Mountains catch the rain: around a range the land is greener, so a
     // desert gives way to savanna before it reaches the mountains, rather
     // than cutting through them.
-    return Math.min(1, Math.max(0, this.#rawAridity(x, z) - 0.55 * smoothstep(-0.12, 0.4, range)));
+    // Finer detail on top of the broad climate breaks biomes into smaller
+    // patches (the land's shape follows only the broad climate, so it
+    // stays smooth).
+    const detail = this.aridityNoise.fbm(x * 0.0007 + 300, z * 0.0007 - 300, 2) * 0.3;
+    return Math.min(1, Math.max(0, this.#rawAridity(x, z) + detail - 0.55 * smoothstep(-0.12, 0.4, range)));
   }
 
   /** The climate's dryness before mountains have their say (can exceed 1 in the driest deserts). */
   #rawAridity(x, z) {
-    const wx = x + this.aridityNoise.noise2D(x * 0.0005 + 31, z * 0.0005 - 17) * 350;
-    const wz = z + this.aridityNoise.noise2D(x * 0.0005 - 53, z * 0.0005 + 71) * 350;
+    const wx = x + this.aridityNoise.noise2D(x * 0.0008 + 31, z * 0.0008 - 17) * 260;
+    const wz = z + this.aridityNoise.noise2D(x * 0.0008 - 53, z * 0.0008 + 71) * 260;
     return 0.5 + this.aridityNoise.fbm(wx * 0.00016, wz * 0.00016, 3) * 1.3;
   }
 
@@ -117,11 +122,24 @@ export class TerrainGenerator {
       if (core > 0) {
         const heart = smoothstep(0.52, 0.85, range);
         // Broader crests on the bigger ranges.
-        let ridges = this.ridgeNoise.ridged(x * 0.0008, z * 0.0008, 4, 2, 0.47, 0.012);
-        if (large > 0) ridges += (this.ridgeNoise.ridged(x * 0.00052 + 91, z * 0.00052 - 37, 4, 2, 0.47, 0.012) - ridges) * large;
+        // Crests follow warped coordinates, so they bend and branch rather
+        // than running in long straight lines.
+        const qx = x + this.massifNoise.noise2D(x * 0.00035 + 17, z * 0.00035) * 220;
+        const qz = z + this.massifNoise.noise2D(x * 0.00035, z * 0.00035 - 29) * 220;
+        let ridges = this.ridgeNoise.ridged(qx * 0.0008, qz * 0.0008, 4, 2, 0.47, 0.012);
+        if (large > 0) ridges += (this.ridgeNoise.ridged(qx * 0.00052 + 91, qz * 0.00052 - 37, 4, 2, 0.47, 0.012) - ridges) * large;
         // More, closer peaks in the heart.
-        if (heart > 0) ridges += (this.ridgeNoise.ridged(x * 0.0016 - 211, z * 0.0016 + 157, 3, 2, 0.47, 0.02) - ridges) * 0.4 * heart;
-        const spiky = smoothstep(0.3, 0.6, this.spikeNoise.fbm(x * 0.0003, z * 0.0003, 2)) * heart;
+        if (heart > 0) ridges += (this.ridgeNoise.ridged(qx * 0.0016 - 211, qz * 0.0016 + 157, 3, 2, 0.47, 0.02) - ridges) * 0.4 * heart;
+        // Some ranges are massifs rather than lines: a broad knot of rounded
+        // peaks clustered together, rising from one mass.
+        const massif = smoothstep(0.1, 0.45, this.massifNoise.fbm(x * 0.00022 - 400, z * 0.00022 + 700, 2));
+        if (massif > 0) {
+          // Rounded knolls on a dome that swells towards the middle.
+          const knots = this.massifNoise.fbm(qx * 0.0017 + 55, qz * 0.0017 - 91, 2);
+          const blob = 0.2 + 0.3 * core + 0.55 * Math.max(-0.3, knots);
+          ridges += (blob + 0.3 * ridges - ridges) * massif;
+        }
+        const spiky = smoothstep(0.3, 0.6, this.spikeNoise.fbm(x * 0.0003, z * 0.0003, 2)) * heart * (1 - massif);
         const peaks = Math.pow(ridges, 1.7 + 1.1 * spiky) * (1 + 1.0 * spiky);
         // Knobbly shoulders and spurs, so high ground is never a flat plateau.
         const rugged = this.ruggedNoise.fbm(x * 0.0035, z * 0.0035, 2) * 18;
@@ -133,7 +151,8 @@ export class TerrainGenerator {
     // Broad rise and fall of the land, lifted in dry country so seas
     // rarely reach a desert, and around mountain ranges so they don't
     // drop straight into the sea.
-    const continent = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.34 * w.desert + 0.1 * w.savanna + 0.5 * mask;
+    const dryness = this.#rawAridity(x, z);
+    const continent = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.34 * smoothstep(0.62, 0.8, dryness) + 0.1 * smoothstep(0.3, 0.5, dryness) + 0.5 * mask;
 
     // Rolling hills in the plains (bigger in some regions than others),
     // lower swells in the savanna, dunes in the desert.
@@ -195,7 +214,7 @@ export class TerrainGenerator {
    * odd lone tree in between.
    */
   getForestDensity(x, z) {
-    const n = this.forestNoise.fbm(x * 0.0028, z * 0.0028, 3);
+    const n = this.forestNoise.fbm(x * 0.0045, z * 0.0045, 3);
     return 0.05 + 0.95 * smoothstep(-0.2, 0.25, n);
   }
 

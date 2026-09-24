@@ -69,7 +69,8 @@ const scale = new Vector3();
 
 /**
  * Rocks and boulders scattered over the land: a few everywhere, more in the
- * foothills, and heaps of big boulders at the foot of steep mountainsides;
+ * foothills, boulder fields on flat bare stone high up, and heaps of big
+ * boulders at the foot of steep mountainsides;
  * none on the mountainsides themselves, on cliffs or on snow. Small
  * stones only appear on the nearest chunks; boulders are visible further out
  * and block you when walking.
@@ -152,7 +153,11 @@ export function createRockLayer(config) {
           // Stones along river banks, on the mud just beside the water.
           const river = generator.rivers.at(wx, wz, 3.5);
           const bank = river && river.d > river.half + 0.4 ? 1 : 0;
-          const chance = 0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank;
+          // Flat, bare stone high in the mountains: strewn with boulders
+          // and rubble, so it's never a dead plain.
+          const colourHeight = generator.getHeight(wx, wz) + generator.getColorJitter(wx, wz);
+          const stony = smoothstep(132, 150, colourHeight) * (1 - smoothstep(snowLine - 20, snowLine - 8, colourHeight)) * flat;
+          const chance = 0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony;
           if (hash2(gi, gj, seed) > chance) continue;
 
           const ground = groundHeightAt(lx, lz);
@@ -160,11 +165,11 @@ export function createRockLayer(config) {
           if (ground + generator.getColorJitter(wx, wz) > snowLine - 15) continue; // snow
 
           const r = hash2(gi, gj, seed + 3);
-          const boulder = r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff);
+          const boulder = r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony);
           if (!boulder && !smallStones) continue;
           if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
           if (!bank && generator.rivers.at(wx, wz, 1)) continue; // and rivers
-          const size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.2 * foothill + 3.2 * foot + 2.5 * cliff) * (bank ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
+          const size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.2 * foothill + 3.2 * foot + 2.5 * cliff + 2.2 * stony) * (bank ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
           const sx = size * (0.8 + hash2(gi, gj, seed + 5) * 0.5);
           // Big fallen boulders stand chunkier and taller.
           const sy = size * (0.55 + hash2(gi, gj, seed + 6) * 0.45 + (boulder ? 0.35 * Math.max(foot, cliff) : 0));

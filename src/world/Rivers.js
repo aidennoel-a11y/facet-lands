@@ -168,13 +168,22 @@ export class Rivers {
     return this.cells.get(this.#key(Math.floor(x / CELL), Math.floor(z / CELL)));
   }
 
-  /** Distance, water level and half-width of a segment's nearest point to (x, z). */
+  /**
+   * Half-width of a river's open water, given half its nominal width: never
+   * narrower than 4.5 m, so the terrain's triangles (about 4 m) always have
+   * corners in the riverbed and can't bridge over the water.
+   */
+  static channel(halfWidth) {
+    return Math.max(halfWidth + 1.3, 4.5);
+  }
+
+  /** Distance, water level and (open-water) half-width of a segment's nearest point to (x, z). */
   static #measure(seg, x, z, out) {
     const dx = seg.bx - seg.ax, dz = seg.bz - seg.az;
     const t = Math.max(0, Math.min(1, ((x - seg.ax) * dx + (z - seg.az) * dz) / (dx * dx + dz * dz)));
     out.d = Math.hypot(seg.ax + dx * t - x, seg.az + dz * t - z);
     out.level = seg.la + (seg.lb - seg.la) * t;
-    out.half = (seg.wa + (seg.wb - seg.wa) * t) / 2;
+    out.half = Rivers.channel((seg.wa + (seg.wb - seg.wa) * t) / 2);
     return out;
   }
 
@@ -189,13 +198,14 @@ export class Rivers {
       const { d, level, half } = Rivers.#measure(seg, x, z, m);
       if (d > half + INFLUENCE) continue;
       if (d < half) {
+        // The bed: below the water all the way to its edge.
         const s = d / half;
-        h = Math.min(h, level - (0.6 + half * 0.15) * (1 - s * s));
+        h = Math.min(h, level - 0.3 - (0.4 + half * 0.12) * (1 - s * s));
         inWater = true;
       } else {
         // Valley side: from just above the water up to the land.
-        h = Math.min(h, level + 0.25 + Math.max(0, d - half - 2.5) * 0.5);
-        if (d < half + 7) bank = Math.max(bank, level + 0.25 - Math.max(0, d - half - 2.5) * 0.6);
+        h = Math.min(h, level + 0.2 + Math.max(0, d - half - 1.5) * 0.5);
+        if (d < half + 6) bank = Math.max(bank, level + 0.2 - Math.max(0, d - half - 1.5) * 0.6);
       }
     }
     // Banks never lower than the water beside them (except out in a lake or the sea).
