@@ -112,13 +112,18 @@ export function createGrassLayer(config) {
           if (keep > generator.getGrassDensity(wx, wz) * generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass) continue;
 
           const ground = groundHeightAt(lx, lz, surface);
-          if (!(ground >= seaLevel + 3.5) || surface.normalY < 0.8) continue; // also skips cave mouths
+          if (!(ground >= seaLevel + 0.7) || surface.normalY < 0.8) continue; // also skips cave mouths
+          // Near the water only on a lake's grassy shore patches.
+          const shore = ground < seaLevel + 5.5 ? generator.getShore(wx, wz, ground) : null;
+          if (ground < seaLevel + 3.5 && !(shore && shore.kind === 'grass')) continue;
+          if (shore && shore.kind !== 'grass' && shore.fade > 0.5) continue;
           if (generator.caves?.field.nearEntrance(wx, wz, 0.6)) continue; // nor under an entrance's ledge
-          if (generator.rivers?.at(wx, wz, 3)) continue; // nor on a river's muddy banks (reeds grow there)
+          const river = generator.rivers?.at(wx, wz, 3);
+          if (river && river.d < river.water + 2.5) continue; // nor on a river's muddy banks (reeds grow there)
 
           // Only where the ground itself is green (not sand, rock or snow).
           const colourHeight = ground + generator.getColorJitter(wx, wz);
-          if (colourHeight < 6 || colourHeight > 140) continue;
+          if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > 140) continue;
 
           generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color);
           const v = 0.9 + hash2(gi, gj, seed + 3) * 0.22;

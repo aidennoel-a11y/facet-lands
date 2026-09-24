@@ -3,10 +3,11 @@ import { Rivers } from '../Rivers.js';
 
 const RIVER = new Color(0x4fbfc4).lerp(new Color(0x2c67b0), 0.3);
 const FOAM = new Color(0xe8f4f6);
+const POND = new Color(0x4fbfc4).lerp(new Color(0x2c67b0), 0.5);
 
 /**
- * River water (see Rivers): a ribbon along each river at its water
- * level, a little wider than its bed so its edges tuck under the banks.
+ * River and stream water (see Rivers): a ribbon along each course at its
+ * water level, and a disc for the pond it rises from.
  * Light streaks drift down it in chevrons pointing downstream (quicker
  * where it's steeper), so you can see which way it flows; steep stretches
  * would show as white water.
@@ -97,13 +98,31 @@ export function createRiverLayer(skyColor) {
           const c = RIVER.clone().multiplyScalar(shade).lerp(FOAM, white * 0.5);
           const edge = (k, s) => {
             const p = points[k];
-            const half = Rivers.channel(p.width / 2) + 0.4; // tucked under the banks
-            return [p.x + side[k][0] * half * s, p.level + 0.12, p.z + side[k][1] * half * s, along[k], s];
+            const half = p.width / 2 + 0.5; // its edges over the channel's submerged margin
+            return [p.x + side[k][0] * half * s, p.level + 0.03, p.z + side[k][1] * half * s, along[k], s];
           };
           const quad = [edge(i, -1), edge(i + 1, -1), edge(i + 1, 1), edge(i, 1)];
           for (const k of [0, 2, 1, 0, 3, 2]) {
             const [x, y, z, u, s] = quad[k];
             vertex(x, y, z, c, 0.84, [u, s, speed, white]);
+          }
+        }
+        // Its source pond, drawn by the chunk holding its centre.
+        for (const pond of [river.pond, river.tarn]) {
+          if (!pond || !inChunk(pond.x, pond.z)) continue;
+          const n = 20;
+          const rim = [];
+          for (let k = 0; k < n; k++) {
+            const t = (k / n) * Math.PI * 2;
+            const r = Rivers.pondRadius(pond, pond.x + Math.cos(t), pond.z + Math.sin(t)) + 0.4;
+            rim.push([pond.x + Math.cos(t) * r, pond.z + Math.sin(t) * r]);
+          }
+          for (let k = 0; k < n; k++) {
+            const p = rim[k], q = rim[(k + 1) % n];
+            const c = POND.clone().multiplyScalar(0.96 + ((k * 5) % 4) * 0.025);
+            vertex(pond.x, pond.level + 0.03, pond.z, c, 0.86, [0, 0, 0, 0]);
+            vertex(q[0], pond.level + 0.03, q[1], c, 0.86, [0, 0, 0, 0]);
+            vertex(p[0], pond.level + 0.03, p[1], c, 0.86, [0, 0, 0, 0]);
           }
         }
       }

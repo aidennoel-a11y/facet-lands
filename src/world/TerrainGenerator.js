@@ -1,5 +1,5 @@
 import { SimplexNoise } from '../noise/SimplexNoise.js';
-import { hashSeed } from '../noise/random.js';
+import { hash2, hashSeed } from '../noise/random.js';
 import { BIOME_IDS, BIOMES, blendedFaceColor, prepareBiome } from './biomes.js';
 import { CaveSystem } from './caves/CaveSystem.js';
 import { Rivers } from './Rivers.js';
@@ -8,6 +8,16 @@ import { Color } from 'three';
 const MUD = new Color(0x5f4a36);
 const DIRT = new Color(0x7d6547);
 const RIVERBED = new Color(0x55493b);
+const GRAVEL = new Color(0x8a8590);
+const SHORE = {
+  mud: new Color(0x5f4a36),
+  dirt: new Color(0x7d6547),
+  grass: new Color(0x8fbc5c),
+  rock: new Color(0x8a8597),
+};
+// Sandstone strata on mesa walls, bottom to top, repeating.
+const STRATA = [0xc4744a, 0xd89a64, 0xb05a3c, 0xe2b482, 0xa8583a, 0xcf8455].map((c) => new Color(c));
+const stratum = new Color();
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -43,10 +53,14 @@ export class TerrainGenerator {
     this.bowlNoise = new SimplexNoise(this.seed + 15);
     this.ruggedNoise = new SimplexNoise(this.seed + 16);
     this.massifNoise = new SimplexNoise(this.seed + 17);
+    this.hillsNoise = new SimplexNoise(this.seed + 18); // Black Hills country
+    this.mesaNoise = new SimplexNoise(this.seed + 19);
+    this.escarpNoise = new SimplexNoise(this.seed + 20);
     this._range = { value: 0, size: 1, large: 0 };
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
-    this._weights = { temperate: 1, savanna: 0, desert: 0 };
+    this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0 };
+    this._features = { mesa: 0, mesaTop: 0, escarp: 0, hills: 0 };
     this.rivers = new Rivers(this, config);
     this.caves = new CaveSystem(this, config);
   }
@@ -68,6 +82,15 @@ export class TerrainGenerator {
 
   /** The climate's dryness before mountains have their say (can exceed 1 in the driest deserts). */
   #rawAridity(x, z) {
+    // Asked for several times per point: remember the last one.
+    if (x === this._aridX && z === this._aridZ) return this._arid;
+    this._aridX = x;
+    this._aridZ = z;
+    this._arid = this.#rawAridityAt(x, z);
+    return this._arid;
+  }
+
+  #rawAridityAt(x, z) {
     const wx = x + this.aridityNoise.noise2D(x * 0.0008 + 31, z * 0.0008 - 17) * 260;
     const wz = z + this.aridityNoise.noise2D(x * 0.0008 - 53, z * 0.0008 + 71) * 260;
     return 0.5 + this.aridityNoise.fbm(wx * 0.00016, wz * 0.00016, 3) * 1.3;
@@ -81,12 +104,17 @@ export class TerrainGenerator {
    * Pass `out` to reuse an object.
    */
   getBiomeWeights(x, z, out = {}, range) {
+    if (range === undefined) range = this.#rangeField(x, z).value;
     const a = this.getAridity(x, z, range);
     const temperate = 1 - smoothstep(0.3, 0.42, a);
     const desert = smoothstep(0.62, 0.74, a);
-    out.temperate = temperate;
-    out.savanna = Math.max(0, 1 - temperate - desert);
+    // Black Hills country: a kind of mountain range of its own, in the
+    // green lands (see #hillsZone).
+    const hills = this.#hillsZone(x, z, range ?? this.#rangeField(x, z).value) * (1 - desert);
+    out.temperate = temperate * (1 - hills);
+    out.savanna = Math.max(0, 1 - temperate - desert) * (1 - hills);
     out.desert = desert;
+    out.blackHills = hills;
     return out;
   }
 
@@ -146,6 +174,18 @@ export class TerrainGenerator {
         mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged);
       }
       mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size) * (1 - 0.5 * bowl);
+
+      // Black Hills country: instead of crested ranges, rounded granite
+      // domes under pine forest, with clusters of sheer granite needles.
+      const hz = w.blackHills;
+      if (hz > 0) {
+        const core2 = smoothstep(0.2, 0.62, range);
+        const domes = Math.pow(smoothstep(-0.45, 0.75, this.hillsNoise.fbm(x * 0.0013, z * 0.0013, 3)), 1.3) * 125;
+        const knobs = this.ruggedNoise.fbm(x * 0.004 + 70, z * 0.004 - 70, 2) * 10;
+        const density = core2 * smoothstep(-0.1, 0.3, this.hillsNoise.fbm(x * 0.0011 + 900, z * 0.0011 - 300, 2));
+        const hillsLand = Math.pow(mask, 1.3) * 55 * (0.8 + 0.3 * size) + core2 * (domes + knobs) + (density > 0 ? this.#needles(x, z, density) : 0);
+        mountains += (hillsLand - mountains) * hz;
+      }
     }
 
     // Broad rise and fall of the land, lifted in dry country so seas
@@ -169,7 +209,126 @@ export class TerrainGenerator {
     const sea = smoothstep(-0.05, -0.45, continent) * 34;
     const lakes = smoothstep(0.28, 0.72, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - smoothstep(0, 0.4, mask)) * (1 - w.desert) * (1 - 0.6 * w.savanna);
 
-    return 14 + continent * 16 + hills + dunes + mountains - sea - lakes;
+    const f = this.#features(x, z, dryness, mask, w);
+    return 14 + continent * 16 + hills + dunes + mountains + f.mesaHeight + f.escarpHeight - sea - lakes;
+  }
+
+  /**
+   * Mesas and escarpments at (x, z) (reusing one object):
+   *  - mesa (0..1): mesa country, in the dry savanna and desert: flat-topped
+   *    hills with sheer sides, stepping up in two or three layers.
+   *  - escarp (0..1): escarpment country in the green lowlands: now and
+   *    then the land drops in a sheer cliff.
+   * `mesaHeight` and `escarpHeight` are what they add to the land.
+   */
+  #features(x, z, dryness, mask, w) {
+    const out = this._features;
+    out.mesa = 0;
+    out.mesaHeight = 0;
+    out.escarp = 0;
+    out.escarpHeight = 0;
+    const flatland = 1 - smoothstep(0.02, 0.3, mask);
+    if (flatland <= 0) return out;
+    const mesa = smoothstep(0.12, 0.38, this.mesaNoise.fbm(x * 0.00025 + 40, z * 0.00025 - 40, 2)) * smoothstep(0.42, 0.6, dryness) * flatland;
+    if (mesa > 0) {
+      const wx = x + this.mesaNoise.noise2D(x * 0.004, z * 0.004) * 14;
+      const wz = z + this.mesaNoise.noise2D(x * 0.004 + 50, z * 0.004) * 14;
+      const m = this.mesaNoise.fbm(wx * 0.0016, wz * 0.0016, 3);
+      const layers = smoothstep(0.16, 0.2, m) * 22 + smoothstep(0.34, 0.375, m) * 16 + smoothstep(0.5, 0.53, m) * 11;
+      out.mesa = mesa;
+      out.mesaHeight = mesa * layers;
+    }
+    const green = 1 - w.desert;
+    const escarp = smoothstep(0.3, 0.5, this.escarpNoise.fbm(x * 0.0003, z * 0.0003, 2)) * flatland * green;
+    if (escarp > 0) {
+      const e = this.escarpNoise.fbm(x * 0.0011 + 100, z * 0.0011 - 100, 2);
+      const tall = 10 + 10 * (this.escarpNoise.noise2D(x * 0.0006 - 20, z * 0.0006) * 0.5 + 0.5);
+      out.escarp = escarp;
+      out.escarpHeight = escarp * smoothstep(0.08, 0.095, e) * tall;
+    }
+    return out;
+  }
+
+  /** Mesas and escarpments at (x, z): { mesa, mesaHeight, escarp, escarpHeight }. */
+  getFeatures(x, z) {
+    const range = this.#rangeField(x, z).value;
+    const w = this.getBiomeWeights(x, z, {}, range);
+    const r = range - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
+    return { ...this.#features(x, z, this.#rawAridity(x, z), smoothstep(0.08, 0.55, r), w) };
+  }
+
+  /** How much (x, z) is open sea rather than an inland lake (0..1). */
+  getOceanness(x, z) {
+    const f = this.#rangeField(x, z);
+    const dryness = this.#rawAridity(x, z);
+    const mask = smoothstep(0.08, 0.55, f.value - 0.9 * smoothstep(0.85, 1.25, dryness));
+    const continent = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.34 * smoothstep(0.62, 0.8, dryness) + 0.1 * smoothstep(0.3, 0.5, dryness) + 0.5 * mask;
+    return smoothstep(-0.02, -0.25, continent);
+  }
+
+  /**
+   * What the shore is like at (x, z), for ground at `height` near the water
+   * line: lakes are edged with mud at the water, then patches of dirt, grass
+   * and rock; the sea's sandy beaches have outcrops of rock. Returns
+   * { kind: 'mud' | 'dirt' | 'grass' | 'rock', fade (0..1), ocean }, or null
+   * away from the shore (and in the desert). Colours, grass, reeds and
+   * rocks all follow this, so they agree.
+   */
+  getShore(x, z, height) {
+    const sea = this.rivers.seaLevel;
+    if (height > sea + 5.5 || height < sea - 3) return null;
+    if (this.getBiomeWeights(x, z, {}).desert > 0.5) return null;
+    const ocean = this.getOceanness(x, z) > 0.5;
+    const fade = 1 - smoothstep(sea + 3.5, sea + 5.5, height);
+    const p = this.detailNoise.noise2D(x * 0.05, z * 0.05);
+    if (ocean) return p > 0.55 && height > sea - 0.5 ? { kind: 'rock', fade: fade * 0.6, ocean } : null;
+    if (height < sea + 0.7) return { kind: 'mud', fade, ocean };
+    if (p > 0.38) return { kind: 'rock', fade, ocean };
+    if (this.grassNoise.noise2D(x * 0.08 + 7, z * 0.08) > -0.15) return { kind: 'grass', fade, ocean };
+    return { kind: 'dirt', fade, ocean };
+  }
+
+  /**
+   * How much the land here is given to steep rock faces (mountains, mesas,
+   * escarpments, Black Hills): 0..1. Where boulders gather at the foot of cliffs.
+   */
+  getCliffiness(x, z) {
+    const f = this.getFeatures(x, z);
+    return Math.max(this.getMountainness(x, z), f.mesa, f.escarp);
+  }
+
+  /**
+   * Black Hills country (0..1): some ranges in the green lands are rounded
+   * granite domes and needles instead of crested peaks.
+   */
+  #hillsZone(x, z, range) {
+    const zone = smoothstep(0.18, 0.42, this.hillsNoise.fbm(x * 0.00018 - 250, z * 0.00018 + 610, 2));
+    if (zone <= 0) return 0;
+    return zone * smoothstep(-0.05, 0.25, range) * (1 - smoothstep(0.5, 0.68, this.#rawAridity(x, z)));
+  }
+
+  /**
+   * Granite needles: sheer pointed spires, one per 26 m cell where the
+   * cell's hash falls under `density` (so they gather in clusters).
+   */
+  #needles(x, z, density) {
+    const C = 26;
+    const ci = Math.floor(x / C), cj = Math.floor(z / C);
+    const s = this.seed ^ 0x5eed;
+    let best = 0;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const i = ci + di, j = cj + dj;
+        if (hash2(i, j, s) > density * 0.9) continue;
+        const px = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * C;
+        const pz = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * C;
+        const r = 5 + 6 * hash2(i, j, s + 3);
+        const d = Math.hypot(x - px, z - pz);
+        if (d >= r) continue;
+        best = Math.max(best, (22 + 48 * hash2(i, j, s + 4)) * Math.pow(1 - d / r, 0.55));
+      }
+    }
+    return best;
   }
 
   /**
@@ -180,6 +339,8 @@ export class TerrainGenerator {
    * reusing one object.
    */
   #rangeField(x, z) {
+    const out = this._range;
+    if (x === out.x && z === out.z) return out; // asked for several times per point
     const t = Math.min(1, Math.max(0, 0.5 + this.rangeSizeNoise.fbm(x * 0.00007, z * 0.00007, 2) * 1.3));
     const small = 1 - smoothstep(0, 0.45, t);
     const large = smoothstep(0.55, 1, t);
@@ -189,7 +350,8 @@ export class TerrainGenerator {
     if (small > 0) value += small * this.mountainMaskNoise.fbm(x * f * 2 + 311, z * f * 2 - 173, 2);
     if (usual > 0) value += usual * this.mountainMaskNoise.fbm(x * f, z * f, 2);
     if (large > 0) value += large * this.mountainMaskNoise.fbm(x * f * 0.5 - 517, z * f * 0.5 + 229, 2);
-    const out = this._range;
+    out.x = x;
+    out.z = z;
     out.value = value;
     out.size = 0.5 * small + usual + 2 * large;
     out.large = large;
@@ -246,14 +408,30 @@ export class TerrainGenerator {
 
   /** Ground colour of a face at (x, z): blended across the biomes there. */
   surfaceColor(x, z, height, upness, out) {
-    blendedFaceColor(this.biomes, this.getBiomeWeights(x, z, {}), height, upness, out);
-    // Muddy banks along rivers, fading to dirt and then the land's own colour.
-    const river = this.rivers.at(x, z, 5);
+    const w = this.getBiomeWeights(x, z, {});
+    blendedFaceColor(this.biomes, w, height, upness, out);
+    // Lake shores: mud, dirt, grass and rock; rocky outcrops on beaches.
+    const ground = height - this.getColorJitter(x, z); // `height` has colour jitter added
+    const shore = ground < 9 ? this.getShore(x, z, ground) : null;
+    if (shore) out.lerp(SHORE[shore.kind], 0.85 * shore.fade);
+    // Mesa walls: bands of red and orange sandstone.
+    if (upness < 0.85 && w.desert + w.savanna > 0.2) {
+      const f = this.getFeatures(x, z);
+      if (f.mesa > 0.05) {
+        const band = Math.floor((height + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 0.8) / 2.4);
+        stratum.copy(STRATA[((band % STRATA.length) + STRATA.length) % STRATA.length]);
+        out.lerp(stratum, Math.min(1, f.mesa * 1.5) * (1 - smoothstep(0.6, 0.85, upness)));
+      }
+    }
+    // Muddy banks along rivers and ponds (gravel along mountain streams),
+    // fading to dirt and then the land's own colour.
+    const river = this.rivers.at(x, z, 4);
     if (river) {
-      const e = river.d - river.half; // metres from the water's edge
-      if (e < -0.5) out.lerp(RIVERBED, 0.85);
-      else if (e < 1.8) out.lerp(MUD, 0.85);
-      else out.lerp(DIRT, 0.8 * (1 - smoothstep(2.5, 5, e)) * (0.7 + 0.3 * this.detailNoise.noise2D(x * 0.3, z * 0.3)));
+      const e = river.d - river.water; // metres from the water's edge
+      const gravel = river.stream && this.getMountainness(x, z) > 0.3;
+      if (e < -0.3) out.lerp(RIVERBED, 0.85);
+      else if (e < 1.8) out.lerp(gravel ? GRAVEL : MUD, 0.85);
+      else out.lerp(gravel ? GRAVEL : DIRT, 0.8 * (1 - smoothstep(river.half - river.water + 1.5, river.half - river.water + 4, e)) * (0.7 + 0.3 * this.detailNoise.noise2D(x * 0.3, z * 0.3)));
     }
     return out;
   }

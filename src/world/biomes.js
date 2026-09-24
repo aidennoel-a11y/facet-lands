@@ -85,6 +85,41 @@ export const BIOMES = {
     },
   },
 
+  // Black Hills country: rounded granite domes and needles under dark
+  // ponderosa pine forest, meadows between; no snow.
+  blackHills: {
+    id: 'blackHills',
+    name: 'Black Hills',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xd8c690 },
+      { height: 5, color: 0xd8c690 },
+      { height: 8, color: 0x9cc063 }, // meadow
+      { height: 40, color: 0x7aa84f },
+      { height: 90, color: 0x5f9446 }, // pine country
+      { height: 150, color: 0x6f8f4c },
+      { height: 200, color: 0xa8959a }, // bare granite
+      { height: 260, color: 0xb39fa0 },
+    ],
+    cliff: 0xb09c9c, // pinkish-grey granite
+    cliffSlope: [0.7, 0.48],
+    snowLine: 999,
+    snow: 0xf1f4f7,
+    grass: 0.9,
+    trees: {
+      density: 1.15,
+      clumped: true,
+      species: [
+        { type: 'pine', weight: 2.4, minHeight: 8, maxHeight: 230 }, // ponderosa
+        { type: 'spruce', weight: 0.5, minHeight: 60, maxHeight: 230 },
+        { type: 'birch', weight: 0.35, minHeight: 10, maxHeight: 140 }, // aspen stands
+        { type: 'bush', weight: 0.3, minHeight: 5, maxHeight: 200 },
+        { type: 'deadPine', weight: 0.08, minHeight: 20, maxHeight: 230 },
+      ],
+    },
+  },
+
   desert: {
     id: 'desert',
     name: 'Desert',

@@ -140,7 +140,7 @@ export function createRockLayer(config) {
           if (slope > 0.55) continue;
           const flat = 1 - smoothstep(0.2, 0.45, slope);
           let foot = 0, cliff = 0;
-          if (m > 0.05 && flat > 0) {
+          if (flat > 0 && (m > 0.05 || generator.getCliffiness(wx, wz) > 0.05)) {
             const here = generator.getHeight(wx, wz);
             let rise = 0;
             for (let k = 0; k < 6; k++) {
@@ -152,12 +152,16 @@ export function createRockLayer(config) {
           }
           // Stones along river banks, on the mud just beside the water.
           const river = generator.rivers.at(wx, wz, 3.5);
-          const bank = river && river.d > river.half + 0.4 ? 1 : 0;
+          const bank = river && river.d > river.water + 0.4 ? 1 : 0;
           // Flat, bare stone high in the mountains: strewn with boulders
           // and rubble, so it's never a dead plain.
-          const colourHeight = generator.getHeight(wx, wz) + generator.getColorJitter(wx, wz);
+          const land = generator.getHeight(wx, wz);
+          const colourHeight = land + generator.getColorJitter(wx, wz);
           const stony = smoothstep(132, 150, colourHeight) * (1 - smoothstep(snowLine - 20, snowLine - 8, colourHeight)) * flat;
-          const chance = 0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony;
+          // Shores: rock outcrops on beaches and lake edges, stones along the rest of a lake's edge.
+          const shore = land < seaLevel + 5.5 ? generator.getShore(wx, wz, land) : null;
+          const shoreRock = shore ? (shore.kind === 'rock' ? (shore.ocean ? 1.4 : 1) : shore.ocean ? 0 : 0.3) * Math.max(shore.fade, 0.6) : 0;
+          const chance = 0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock;
           if (hash2(gi, gj, seed) > chance) continue;
 
           const ground = groundHeightAt(lx, lz);
@@ -165,7 +169,7 @@ export function createRockLayer(config) {
           if (ground + generator.getColorJitter(wx, wz) > snowLine - 15) continue; // snow
 
           const r = hash2(gi, gj, seed + 3);
-          const boulder = r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony);
+          const boulder = r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0));
           if (!boulder && !smallStones) continue;
           if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
           if (!bank && generator.rivers.at(wx, wz, 1)) continue; // and rivers

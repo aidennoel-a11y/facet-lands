@@ -65,8 +65,8 @@ const scale = new Vector3();
 const up = new Vector3(0, 1, 0);
 
 /**
- * Reeds along river banks, in clumps on the mud at the water's edge (and a
- * little way into the shallows), on the chunks near you. They sway in the
+ * Reeds along river banks and lake edges, in clumps on the mud at the
+ * water's edge (and a little way into the shallows), on the chunks near you. They sway in the
  * wind like the grass.
  */
 export function createReedLayer(config) {
@@ -83,11 +83,15 @@ export function createReedLayer(config) {
   return {
     name: 'reeds',
 
-    build({ cx, cz, lod, groundHeightAt, generator }) {
+    build({ cx, cz, lod, groundHeightAt, generator, heights }) {
       if (lod > 1 || !generator.rivers) return null;
       const size = config.chunkSize;
       const x0 = cx * size, z0 = cz * size;
-      if (!generator.rivers.inBox(x0, z0, x0 + size, z0 + size).length) return null;
+      const sea = config.seaLevel;
+      let low = Infinity;
+      for (const y of heights.gridY) low = Math.min(low, y);
+      const shoreline = low < sea + 0.5; // a lake or sea edge runs through
+      if (!shoreline && !generator.rivers.inBox(x0, z0, x0 + size, z0 + size).length) return null;
       const seed = generator.seed ^ 0x2f1b3c77;
       const spacing = 1.6;
       const cells = Math.round(size / spacing);
@@ -101,9 +105,26 @@ export function createReedLayer(config) {
           const lz = (j + hash2(gi, gj, seed + 2)) * step;
           const wx = x0 + lx, wz = z0 + lz;
           const river = generator.rivers.at(wx, wz, 2.2);
-          if (!river) continue;
-          const e = river.d - river.half; // from the water's edge: negative in the water
-          if (e < -1.5) continue;
+          if (!river) {
+            // Lake edges: in patches along the muddy water line (not the sea).
+            if (!shoreline) continue;
+            const ground = groundHeightAt(lx, lz);
+            if (!(ground > sea - 0.7 && ground < sea + 0.45)) continue;
+            const shore = generator.getShore(wx, wz, ground);
+            if (!shore || shore.ocean) continue;
+            const patch = 0.5 + 0.5 * Math.sin(wx * 0.07 + Math.sin(wz * 0.05) * 3);
+            if (hash2(gi, gj, seed) > patch * 0.8 - 0.15) continue;
+            const s = 0.8 + hash2(gi, gj, seed + 3) * 0.55;
+            position.set(lx, ground - 0.1, lz);
+            rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 4) * Math.PI * 2);
+            scale.set(s, s * (0.85 + hash2(gi, gj, seed + 5) * 0.4), s);
+            matrices.push(matrix.compose(position, rotation, scale).clone());
+            shades.push(0.85 + hash2(gi, gj, seed + 6) * 0.3);
+            continue;
+          }
+          if (river.stream && generator.getMountainness(wx, wz) > 0.3) continue; // mountain streams: gravel, no reeds
+          const e = river.d - river.water; // from the water's edge: negative in the water
+          if (e < -Math.min(1.2, river.water * 0.6)) continue;
           // In patches, thickest right at the edge.
           const patch = 0.5 + 0.5 * Math.sin(wx * 0.09 + Math.sin(wz * 0.07) * 3);
           if (hash2(gi, gj, seed) > patch * (1 - Math.abs(e + 0.2) / 2.4)) continue;
