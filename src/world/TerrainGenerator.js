@@ -165,7 +165,7 @@ export class TerrainGenerator {
     const sea = this.rivers.seaLevel;
     if (base < sea + 0.4) return 0;
     const shore = smoothstep(sea + 0.4, sea + 2.5, base);
-    const amount = (0.22 + 0.8 * smoothstep(50, 170, base)) * (1 - 0.6 * this._weights.desert - 0.35 * this._erg) * shore;
+    const amount = (0.22 + 0.8 * smoothstep(50, 170, base)) * (1 - 0.6 * this._weights.desert) * (1 - this._erg) * shore;
     return (this.roughNoise.noise2D(x * 0.13, z * 0.13) + 0.45 * this.roughNoise.noise2D(x * 0.29 + 17, z * 0.29 - 9)) * amount;
   }
 
@@ -214,7 +214,7 @@ export class TerrainGenerator {
           ridges += (blob + 0.4 * ridges - ridges) * massif;
         }
         const spiky = smoothstep(0.3, 0.6, this.spikeNoise.fbm(x * 0.0003, z * 0.0003, 2)) * heart * (1 - massif);
-        const peaks = Math.pow(ridges, 1.7 + 1.1 * spiky) * (1 + 1.0 * spiky);
+        const peaks = Math.pow(ridges, 1.7 + 1.1 * spiky) * (1 + 0.75 * spiky);
         // Knobbly shoulders and spurs, so high ground is never a flat plateau
         // or one smooth dome; rougher the higher it gets. Up high, jagged
         // crags: sharp little ridges and gullies over the peaks' flanks.
@@ -224,6 +224,13 @@ export class TerrainGenerator {
         mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged + crags);
       }
       mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size) * (1 - 0.5 * bowl);
+      // The very tallest peaks are tamed: above 300 m they rise ever more
+      // slowly (never past about 460), their tips rounding off a little
+      // rather than shooting up into needles.
+      if (mountains > 300) {
+        const over = mountains - 300;
+        mountains = 300 + over / (1 + over / 160);
+      }
     }
 
     // Black Hills country: the land rises into rounded granite domes under
@@ -258,7 +265,7 @@ export class TerrainGenerator {
     if (w.desert > 0) {
       const crest = this.duneNoise.ridged(x * 0.0045 + z * 0.0015, z * 0.0075, 2, 2, 0.5, 0.02);
       const small = crest * 8 + this.duneNoise.fbm(x * 0.0012 + 50, z * 0.0012, 2) * 7;
-      dunes = w.desert * (small * (1 - 0.7 * f.erg)) + (f.erg > 0 ? f.erg * this.#greatDunes(x, z) : 0);
+      dunes = w.desert * (small * (1 - 0.85 * f.erg)) + (f.erg > 0 ? f.erg * this.#greatDunes(x, z) : 0);
     }
 
     // Seas where the continent noise dips, and lake basins in the green lowlands.
@@ -281,10 +288,10 @@ export class TerrainGenerator {
 
   /**
    * The great dunes of a dune sea: long sinuous ridges of sand across the
-   * wind, each rising gently on its windward side to a sharp crest and
-   * falling away steeply down its slip face, about 150 m apart and up to
-   * 36 m tall, breaking up along their length into crescents and saddles,
-   * with smaller dunes ridged over them.
+   * wind, each rising gently on its windward side to a rounded crest and
+   * falling away more steeply down its lee, about 160 m apart and up to
+   * 30 m tall, rising and falling along their length into crescents and
+   * saddles. Smooth sand throughout.
    */
   #greatDunes(x, z) {
     // The wind blows from about the west-south-west, veering slowly across the sea.
@@ -293,15 +300,19 @@ export class TerrainGenerator {
     const u0 = x * ca + z * sa; // downwind
     const v = -x * sa + z * ca; // across the wind
     // Crests wander, so the ridges snake rather than run ruler-straight.
-    const u = u0 + this.ergNoise.noise2D(v * 0.004, u0 * 0.0015) * 45 + this.ergNoise.noise2D(x * 0.012 + 7, z * 0.012) * 8;
-    const L = 150;
+    const u = u0 + this.ergNoise.noise2D(v * 0.004, u0 * 0.0015) * 45;
+    const L = 160;
     const t = u / L - Math.floor(u / L);
-    const crestAt = 0.78;
-    const profile = t < crestAt ? Math.pow(t / crestAt, 1.35) : 1 - Math.pow((t - crestAt) / (1 - crestAt), 0.75);
-    // Tall in places, low saddles between: crescents along each ridge.
-    const tall = 0.35 + 0.65 * smoothstep(-0.5, 0.6, this.ergNoise.noise2D(v * 0.006 + 31, Math.floor(u / L) * 1.7));
-    const ripple = this.duneNoise.ridged(x * 0.011 + z * 0.004, z * 0.011 - x * 0.003, 2, 2, 0.5, 0.02) * 3;
-    return profile * 36 * tall + ripple;
+    // Smooth all the way: rounded crests and troughs, a long windward
+    // slope and a shorter, steeper lee (no steeper than dry sand lies).
+    const crestAt = 0.62;
+    const profile = t < crestAt ? 0.5 - 0.5 * Math.cos((Math.PI * t) / crestAt) : 0.5 + 0.5 * Math.cos((Math.PI * (t - crestAt)) / (1 - crestAt));
+    // Tall in places, low saddles between: crescents along each ridge
+    // (blending smoothly from one ridge to the next).
+    const ridge = u / L;
+    const tall = 0.4 + 0.6 * smoothstep(-0.5, 0.6, this.ergNoise.noise2D(v * 0.005 + 31, ridge * 0.9));
+    const swell = this.ergNoise.noise2D(x * 0.0035 + 11, z * 0.0035 - 5) * 2.5;
+    return profile * 30 * tall + swell;
   }
 
   /**
