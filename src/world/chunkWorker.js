@@ -1,0 +1,76 @@
+// Builds chunks off the main thread: the terrain mesh, where rocks lie,
+// and where the far trees stand. It rebuilds its own copy of the world
+// generator from the seed, which makes exactly the same world as the main
+// thread's (whatever order anything is asked for in).
+import { TerrainGenerator } from './TerrainGenerator.js';
+import { chunkDataBuffers, chunkSurface, computeChunkData } from './ChunkMesher.js';
+import { rockCandidates } from './rockCandidates.js';
+import { packFarTrees, placeTrees } from './treePlacement.js';
+import { placeGrass } from './grassPlacement.js';
+import { waterData } from './waterData.js';
+
+let world = null; // { seed, generator }
+const rocks = new Map(); // "cx,cz" -> rock candidates (recently used last)
+
+function rocksAt(cx, cz, config) {
+  const key = `${cx},${cz}`;
+  let list = rocks.get(key);
+  if (list) rocks.delete(key);
+  else list = rockCandidates(world.generator, config, cx, cz);
+  rocks.set(key, list);
+  if (rocks.size > 300) rocks.delete(rocks.keys().next().value);
+  return list;
+}
+
+self.onmessage = (event) => {
+  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarTrees } = event.data;
+  if (!world || world.seed !== seed) {
+    world = { seed, generator: new TerrainGenerator(seed, config) };
+    rocks.clear();
+  }
+  const g = world.generator;
+  const data = computeChunkData(g, config, cx, cz, resolution);
+  const out = { id, data, rocks: null, trees: null, grass: null, farTrees: null, water: null };
+  if (wantRocks) {
+    // This chunk's rocks and its neighbours' (trees keep off boulders across the border).
+    out.rocks = [];
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const list = rocksAt(cx + dx, cz + dz, config);
+        out.rocks.push({ cx: cx + dx, cz: cz + dz, list: Array.from(list), snowLine: list.snowLine });
+      }
+    }
+  }
+  const transfer = [];
+  const { groundHeightAt, heights } = chunkSurface(g, config, cx, cz, resolution, data);
+  // The lake or sea over it, if any.
+  out.water = waterData(g, config, cx, cz, heights);
+  if (out.water) for (const a of Object.values(out.water)) transfer.push(a.buffer);
+  if (wantTrees) {
+    // Where the trees stand, off the boulders (as RockLayer.bouldersNear).
+    const cells = Math.round(config.chunkSize / config.treeSpacing);
+    const margin = config.chunkSize / cells;
+    const size = config.chunkSize;
+    const x0 = cx * size - margin, z0 = cz * size - margin;
+    const x1 = (cx + 1) * size + margin, z1 = (cz + 1) * size + margin;
+    const boulders = [];
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (const c of rocksAt(cx + dx, cz + dz, config)) {
+          if (c.boulder && c.wx > x0 && c.wx < x1 && c.wz > z0 && c.wz < z1) boulders.push(c.wx, c.wz, Math.max(c.sx, c.sz) * 0.93);
+        }
+      }
+    }
+    out.trees = placeTrees(g, config, cx, cz, groundHeightAt, boulders);
+  }
+  if (wantGrass) {
+    out.grass = placeGrass(g, config, cx, cz, groundHeightAt);
+    transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer);
+  }
+  if (wantFarTrees) {
+    out.farTrees = packFarTrees(placeTrees(g, config, cx, cz, groundHeightAt, null), cx, cz, config.chunkSize);
+    for (const a of Object.values(out.farTrees)) transfer.push(a.buffer);
+  }
+  transfer.push(...chunkDataBuffers(data));
+  self.postMessage(out, transfer);
+};

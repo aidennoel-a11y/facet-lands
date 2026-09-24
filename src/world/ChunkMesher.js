@@ -9,7 +9,36 @@ const normal = new Vector3();
 const skirtNormal = new Vector3();
 
 /**
- * Builds the triangle mesh for one chunk.
+ * Builds the triangle mesh for one chunk: works out its data (see
+ * computeChunkData, which a worker can do) and wraps it up (chunkFromData).
+ */
+export function buildChunkGeometry(generator, config, cx, cz, resolution) {
+  return chunkFromData(generator, config, cx, cz, resolution, computeChunkData(generator, config, cx, cz, resolution));
+}
+
+/** The lattice and cell-diagonal helpers every part of a chunk agrees on. */
+function chunkGrid(seed, config, cx, cz, resolution) {
+  const { chunkSize } = config;
+  const finest = config.lods[0].resolution;
+  const step = finest / resolution;
+  return {
+    step,
+    baseGx: cx * finest,
+    baseGz: cz * finest,
+    n: resolution + 1,
+    cellSize: chunkSize / resolution,
+    /** A cell's hash for picking its diagonal (the same as ever on the lattice). */
+    cellHash: (gx, gz, salt) => (step >= 2 ? hash2(gx / 2, gz / 2, seed + salt) : hash2(gx, gz, seed + salt + 1000)),
+  };
+}
+
+/**
+ * Works out the triangle mesh for one chunk, as plain arrays (so it can be
+ * done in a worker and handed over):
+ *   positions, normals, colors  the faces, three vertices each
+ *   gridX, gridY, gridZ         the vertex grid
+ *   fineCells, fineOffsets, fineTris  the refined cells' triangles
+ *   triangles                   surface triangles, for the stats
  *
  * The grid is laid out on the *finest* LOD's vertex indices, so a coarse
  * chunk's vertices land exactly on a fine chunk's vertices (same jitter,
@@ -19,7 +48,7 @@ const skirtNormal = new Vector3();
  * Positions are relative to the chunk's origin to keep float precision
  * good far from the world origin.
  */
-export function buildChunkGeometry(generator, config, cx, cz, resolution) {
+export function computeChunkData(generator, config, cx, cz, resolution) {
   const { chunkSize, vertexJitter, skirtDepth, detailResolution } = config;
   const finest = config.lods[0].resolution;
   const step = finest / resolution; // fine-grid indices per cell at this LOD
@@ -299,71 +328,6 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     }
   }
 
-  // Height of the actual triangle surface at a chunk-local point (x, z).
-  // Differs slightly from generator.getHeight() because the mesh is made of
-  // flat triangles; things standing on the ground (trees) should use this.
-  // If `out` is given, out.normalY receives how flat the triangle is (1 = flat).
-  // Returns NaN over a cave mouth (no ground there) and null outside the chunk.
-  function groundHeightAt(x, z, out) {
-    const ci = Math.floor(x / cellSize);
-    const cj = Math.floor(z / cellSize);
-    // Jitter can push a point into a neighbouring cell's triangles.
-    for (let dj = -1; dj <= 1; dj++) {
-      for (let di = -1; di <= 1; di++) {
-        const i = ci + di;
-        const j = cj + dj;
-        if (i < 0 || j < 0 || i >= resolution || j >= resolution) continue;
-        // Skip cells whose corners' bounding box (plus a hair) can't hold
-        // the point: same answer as testing their triangles, much cheaper.
-        const a = j * n + i;
-        if (
-          x < Math.min(gridX[a], gridX[a + n]) - 0.01 ||
-          x > Math.max(gridX[a + 1], gridX[a + n + 1]) + 0.01 ||
-          z < Math.min(gridZ[a], gridZ[a + 1]) - 0.01 ||
-          z > Math.max(gridZ[a + n], gridZ[a + n + 1]) + 0.01
-        ) continue;
-        const finer = fine && fine.cells.get(j * resolution + i);
-        if (finer) {
-          for (let t = 0; t < finer.length; t += 9) {
-            const y = onTriangle(x, z, finer[t], finer[t + 1], finer[t + 2], finer[t + 3], finer[t + 4], finer[t + 5], finer[t + 6], finer[t + 7], finer[t + 8], out);
-            if (y !== null) return y;
-          }
-          continue;
-        }
-        const tris = cellTriangles(i, j);
-        for (let t = 0; t < 6; t += 3) {
-          const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
-          const y = onTriangle(x, z, gridX[p0], gridY[p0], gridZ[p0], gridX[p1], gridY[p1], gridZ[p1], gridX[p2], gridY[p2], gridZ[p2], out);
-          if (y !== null) {
-            if (holes.length && holes.some((e) => CaveField.inHole(e, x + originX, z + originZ))) return NaN;
-            return y;
-          }
-        }
-      }
-    }
-    return null; // outside this chunk's surface
-  }
-
-  // Height of the triangle (a, b, c) at (x, z), or null if (x, z) isn't on it.
-  function onTriangle(x, z, ax, ay, az, bx, by, bz, cx, cy, cz, out) {
-    const e1x = bx - ax, e1z = bz - az;
-    const e2x = cx - ax, e2z = cz - az;
-    const det = e1x * e2z - e2x * e1z;
-    const px = x - ax, pz = z - az;
-    const u = (px * e2z - e2x * pz) / det;
-    const w = (e1x * pz - px * e1z) / det;
-    if (!(u >= -1e-4 && w >= -1e-4 && u + w <= 1 + 1e-4)) return null;
-    const e1y = by - ay;
-    const e2y = cy - ay;
-    if (out) {
-      const nx = e1y * e2z - e1z * e2y;
-      const ny = e1z * e2x - e1x * e2z;
-      const nz = e1x * e2y - e1y * e2x;
-      out.normalY = Math.abs(ny) / Math.hypot(nx, ny, nz);
-    }
-    return ay + u * e1y + w * e2y;
-  }
-
   // Which cells get finer triangles (see above), and those triangles.
   function refineCells() {
     const sea = config.seaLevel;
@@ -450,21 +414,150 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     return { cells, count, mids, edgeKey, borderSplits };
   }
 
-  const geometry = new BufferGeometry();
-  // Trim any unused space (clipped pieces too thin to keep).
-  geometry.setAttribute('position', new BufferAttribute(v < positions.length ? positions.slice(0, v) : positions, 3));
-  geometry.setAttribute('normal', new BufferAttribute(v < normals.length ? normals.slice(0, v) : normals, 3));
-  geometry.setAttribute('color', new BufferAttribute(v < colors.length ? colors.slice(0, v) : colors, 3));
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
+  // The refined cells, flattened.
+  const fineCells = new Int32Array(fine ? fine.cells.size : 0);
+  const fineOffsets = new Int32Array(fineCells.length + 1);
+  let fineLength = 0;
+  if (fine) for (const tris of fine.cells.values()) fineLength += tris.length;
+  const fineData = new Float32Array(fineLength);
+  if (fine) {
+    let c = 0, o = 0;
+    for (const [cell, tris] of fine.cells) {
+      fineCells[c] = cell;
+      fineOffsets[c] = o;
+      fineData.set(tris, o);
+      o += tris.length;
+      c++;
+    }
+    fineOffsets[c] = o;
+  }
 
   return {
-    geometry,
+    // (Trimmed of any unused space: clipped pieces too thin to keep.)
+    positions: v < positions.length ? positions.slice(0, v) : positions,
+    normals: v < normals.length ? normals.slice(0, v) : normals,
+    colors: v < colors.length ? colors.slice(0, v) : colors,
+    gridX, gridY, gridZ,
+    fineCells, fineOffsets, fineTris: fineData,
     triangles: surfaceTris + (fine ? fine.count - fine.cells.size * 2 : 0),
+  };
+}
+
+/** The typed arrays in a chunk's data, to hand over from a worker without copying. */
+export function chunkDataBuffers(data) {
+  return [data.positions, data.normals, data.colors, data.gridX, data.gridY, data.gridZ, data.fineCells, data.fineOffsets, data.fineTris].map((a) => a.buffer);
+}
+
+/**
+ * Wraps a chunk's data (from computeChunkData) up as a geometry, and a
+ * function giving the height of its actual triangle surface.
+ */
+export function chunkFromData(generator, config, cx, cz, resolution, data) {
+  const { heights, groundHeightAt } = chunkSurface(generator, config, cx, cz, resolution, data);
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(data.positions, 3));
+  geometry.setAttribute('normal', new BufferAttribute(data.normals, 3));
+  geometry.setAttribute('color', new BufferAttribute(data.colors, 3));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return { geometry, triangles: data.triangles, heights, groundHeightAt };
+}
+
+/**
+ * A chunk's actual triangle surface, from its data: { heights (the vertex
+ * grid), groundHeightAt(x, z, out) }.
+ */
+export function chunkSurface(generator, config, cx, cz, resolution, data) {
+  const { chunkSize, detailResolution } = config;
+  const { gridX, gridY, gridZ } = data;
+  const { n, cellSize, step, baseGx, baseGz, cellHash } = chunkGrid(generator.seed, config, cx, cz, resolution);
+  const originX = cx * chunkSize, originZ = cz * chunkSize;
+  const fine = new Map();
+  for (let c = 0; c < data.fineCells.length; c++) fine.set(data.fineCells[c], data.fineTris.subarray(data.fineOffsets[c], data.fineOffsets[c + 1]));
+  const holes = resolution >= detailResolution && generator.caves
+    ? generator.caves
+        .mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize)
+        .filter(({ holeBounds: b }) => b.maxX > originX && b.minX < originX + chunkSize && b.maxZ > originZ && b.minZ < originZ + chunkSize)
+    : [];
+  function cellTriangles(i, j) {
+    const a = j * n + i;
+    const b = a + 1;
+    const c = a + n;
+    const d = c + 1;
+    const flip = cellHash(baseGx + i * step, baseGz + j * step, 7) < 0.5;
+    return flip ? [a, c, d, a, d, b] : [a, c, b, b, c, d];
+  }
+
+  // Height of the actual triangle surface at a chunk-local point (x, z).
+  // Differs slightly from generator.getHeight() because the mesh is made of
+  // flat triangles; things standing on the ground (trees) should use this.
+  // If `out` is given, out.normalY receives how flat the triangle is (1 = flat).
+  // Returns NaN over a cave mouth (no ground there) and null outside the chunk.
+  function groundHeightAt(x, z, out) {
+    const ci = Math.floor(x / cellSize);
+    const cj = Math.floor(z / cellSize);
+    // Jitter can push a point into a neighbouring cell's triangles.
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const i = ci + di;
+        const j = cj + dj;
+        if (i < 0 || j < 0 || i >= resolution || j >= resolution) continue;
+        // Skip cells whose corners' bounding box (plus a hair) can't hold
+        // the point: same answer as testing their triangles, much cheaper.
+        const a = j * n + i;
+        if (
+          x < Math.min(gridX[a], gridX[a + n]) - 0.01 ||
+          x > Math.max(gridX[a + 1], gridX[a + n + 1]) + 0.01 ||
+          z < Math.min(gridZ[a], gridZ[a + 1]) - 0.01 ||
+          z > Math.max(gridZ[a + n], gridZ[a + n + 1]) + 0.01
+        ) continue;
+        const finer = fine.get(j * resolution + i);
+        if (finer) {
+          for (let t = 0; t < finer.length; t += 9) {
+            const y = onTriangle(x, z, finer[t], finer[t + 1], finer[t + 2], finer[t + 3], finer[t + 4], finer[t + 5], finer[t + 6], finer[t + 7], finer[t + 8], out);
+            if (y !== null) return y;
+          }
+          continue;
+        }
+        const tris = cellTriangles(i, j);
+        for (let t = 0; t < 6; t += 3) {
+          const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
+          const y = onTriangle(x, z, gridX[p0], gridY[p0], gridZ[p0], gridX[p1], gridY[p1], gridZ[p1], gridX[p2], gridY[p2], gridZ[p2], out);
+          if (y !== null) {
+            if (holes.length && holes.some((e) => CaveField.inHole(e, x + originX, z + originZ))) return NaN;
+            return y;
+          }
+        }
+      }
+    }
+    return null; // outside this chunk's surface
+  }
+
+  return {
     // Handy for decoration layers (trees, rocks...) that need heights.
     heights: { gridX, gridY, gridZ, size: n },
     groundHeightAt,
   };
+}
+
+// Height of the triangle (a, b, c) at (x, z), or null if (x, z) isn't on it.
+function onTriangle(x, z, ax, ay, az, bx, by, bz, cx, cy, cz, out) {
+  const e1x = bx - ax, e1z = bz - az;
+  const e2x = cx - ax, e2z = cz - az;
+  const det = e1x * e2z - e2x * e1z;
+  const px = x - ax, pz = z - az;
+  const u = (px * e2z - e2x * pz) / det;
+  const w = (e1x * pz - px * e1z) / det;
+  if (!(u >= -1e-4 && w >= -1e-4 && u + w <= 1 + 1e-4)) return null;
+  const e1y = by - ay;
+  const e2y = cy - ay;
+  if (out) {
+    const nx = e1y * e2z - e1z * e2y;
+    const ny = e1z * e2x - e1x * e2z;
+    const nz = e1x * e2y - e1y * e2x;
+    out.normalY = Math.abs(ny) / Math.hypot(nx, ny, nz);
+  }
+  return ay + u * e1y + w * e2y;
 }
 
 /**

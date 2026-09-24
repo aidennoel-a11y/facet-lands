@@ -5,16 +5,16 @@ export const WORLD = {
 
   // Chunking
   chunkSize: 128, // world units per chunk edge
-  viewDistance: 9, // radius in chunks that stays loaded around the camera
+  viewDistance: 14, // radius in chunks that stays loaded around the camera (1.8 km)
   chunkBuildBudgetMs: 6, // max time per frame spent building chunk meshes
 
   // Level of detail: cells per chunk edge, picked by distance (in chunks).
   // Every level must divide the one above it so vertices line up at seams.
   lods: [
     { maxDistance: 1, resolution: 64 }, // 2 m triangles right around you; grass lives here
-    { maxDistance: 2, resolution: 32 }, // 4 m
-    { maxDistance: 5, resolution: 16 },
-    { maxDistance: Infinity, resolution: 8 },
+    { maxDistance: 3, resolution: 32 }, // 4 m
+    { maxDistance: 5, resolution: 16 }, // 8 m (full trees and rocks out to here, 640 m)
+    { maxDistance: Infinity, resolution: 8 }, // 16 m, out to the edge of the view
   ],
 
   // Low-poly look
@@ -29,7 +29,8 @@ export const WORLD = {
 
   // Trees
   treeSpacing: 6, // metres between candidate tree spots (lower = denser)
-  treeMaxLod: 2, // only chunks at this LOD or closer get trees
+  treeMaxLod: 2, // chunks at this LOD or closer get full trees
+  farTreeMaxLod: 3, // and out to this LOD, simple far ones (see FarTreeLayer)
   treeScale: 1.6, // overall tree size multiplier
   leafMaxLod: 0, // leaf clusters only on chunks this close
 

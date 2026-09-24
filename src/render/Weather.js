@@ -54,6 +54,7 @@ export class Weather {
     this.sunsetQuality = 0.4 + Math.random() * 0.6;
     this.sunsetMode = 'auto';
     this._lastHour = null;
+    this.hurry = 0; // seconds left of a quick change
   }
 
   set(kind) {
@@ -64,6 +65,7 @@ export class Weather {
     }
     this.auto = false;
     this.kind = kind;
+    this.hurry = 6; // picked by hand: change over a couple of seconds, not a minute
   }
 
   setSunset(mode) {
@@ -92,11 +94,14 @@ export class Weather {
 
     const target = WEATHER[this.kind];
     // Clouds build up (or break) over tens of seconds; rain only falls from
-    // thick cloud, starting after it and stopping before it clears.
-    this.cover += (target.cover - this.cover) * Math.min(1, dt / 25);
+    // thick cloud, starting after it and stopping before it clears. When
+    // the weather is picked by hand it all happens within a couple of seconds.
+    const pace = this.hurry > 0 ? 20 : 1;
+    this.hurry = Math.max(0, this.hurry - dt);
+    this.cover += (target.cover - this.cover) * Math.min(1, (dt * pace) / 25);
     const rainTarget = target.rain * smoothstep(0.75, 0.9, this.cover);
-    this.rain += (rainTarget - this.rain) * Math.min(1, dt / (rainTarget > this.rain ? 12 : 8));
-    this.storm += (target.storm * smoothstep(0.5, 0.9, this.rain) - this.storm) * Math.min(1, dt / 10);
+    this.rain += (rainTarget - this.rain) * Math.min(1, (dt * pace) / (rainTarget > this.rain ? 12 : 8));
+    this.storm += (target.storm * smoothstep(0.5, 0.9, this.rain) - this.storm) * Math.min(1, (dt * pace) / 10);
     if (this.rain < 1e-3) this.rain = 0;
     if (this.storm < 1e-3) this.storm = 0;
   }

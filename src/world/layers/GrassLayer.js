@@ -1,18 +1,8 @@
-import {
-  BufferAttribute,
-  BufferGeometry,
-  Color,
-  DoubleSide,
-  InstancedBufferAttribute,
-  InstancedMesh,
-  Matrix4,
-  MeshLambertMaterial,
-  Quaternion,
-  Vector3,
-} from 'three';
-import { hash2, mulberry32 } from '../../noise/random.js';
+import { BufferAttribute, BufferGeometry, DoubleSide, InstancedBufferAttribute, InstancedMesh, MeshLambertMaterial } from 'three';
+import { mulberry32 } from '../../noise/random.js';
 import { addWind } from '../../render/wind.js';
 import { seasonalGrass } from '../../render/Seasons.js';
+import { placeGrass } from '../grassPlacement.js';
 
 /**
  * One tuft: a handful of single-triangle blades leaning out from a small
@@ -54,14 +44,6 @@ function tuftGeometry(blades = 7, seed = 5) {
   return g;
 }
 
-const matrix = new Matrix4();
-const position = new Vector3();
-const rotation = new Quaternion();
-const scale = new Vector3();
-const up = new Vector3(0, 1, 0);
-const color = new Color();
-const surface = { normalY: 1 };
-
 /**
  * Grass tufts on the chunks right around the player (LOD `grassMaxLod`).
  * They sway in the wind and shrink away with distance (`grassFade`), so
@@ -92,65 +74,16 @@ export function createGrassLayer(config) {
 
     reuseKey: ({ lod, resolution }) => (lod > config.grassMaxLod ? 'none' : `${resolution}`),
 
-    build({ cx, cz, lod, groundHeightAt, generator }) {
+    build({ cx, cz, lod, groundHeightAt, generator, prepared }) {
       if (lod > config.grassMaxLod) return null;
-      const { chunkSize, grassSpacing, seaLevel } = config;
-      const cells = Math.round(chunkSize / grassSpacing);
-      const spacing = chunkSize / cells;
-      const originX = cx * chunkSize;
-      const originZ = cz * chunkSize;
-      const seed = generator.seed ^ 0x1b873593;
-
-      const matrices = new Float32Array(cells * cells * 16);
-      const colors = new Float32Array(cells * cells * 3);
-      let count = 0;
-      for (let j = 0; j < cells; j++) {
-        for (let i = 0; i < cells; i++) {
-          const gi = cx * cells + i;
-          const gj = cz * cells + j;
-          const lx = (i + hash2(gi, gj, seed + 1)) * spacing;
-          const lz = (j + hash2(gi, gj, seed + 2)) * spacing;
-          const wx = originX + lx;
-          const wz = originZ + lz;
-          // Cheapest tests first (every biome's grass is at most 1, so a spot
-          // failing on density alone fails anyway).
-          const keep = hash2(gi, gj, seed);
-          const density = generator.getGrassDensity(wx, wz);
-          if (keep > density) continue;
-          const ground = groundHeightAt(lx, lz, surface);
-          if (!(ground >= seaLevel + 0.7) || surface.normalY < 0.8) continue; // also skips cave mouths
-          // Near the water only on a lake's grassy shore patches.
-          const shore = ground < seaLevel + 5.5 ? generator.getShore(wx, wz, ground) : null;
-          if (ground < seaLevel + 3.5 && !(shore && shore.kind === 'grass')) continue;
-          if (shore && shore.kind !== 'grass' && shore.fade > 0.5) continue;
-          if (generator.caves?.field.nearEntrance(wx, wz, 0.6)) continue; // nor under an entrance's ledge
-          // Only where the ground itself is green (not sand, rock or snow).
-          const jitter = generator.getColorJitter(wx, wz);
-          const colourHeight = ground + jitter;
-          if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > 140) continue;
-          // How much grass the biome here grows.
-          if (keep > density * generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass) continue;
-          const river = generator.rivers?.at(wx, wz, 3);
-          if (river && river.d < river.water + 2.5) continue; // nor on a river's muddy banks (reeds grow there)
-
-          generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color, jitter);
-          const v = 0.9 + hash2(gi, gj, seed + 3) * 0.22;
-          colors.set([color.r * v, color.g * v, color.b * v], count * 3);
-
-          const s = 0.7 + hash2(gi, gj, seed + 4) * 0.7;
-          position.set(lx, ground - 0.05, lz);
-          rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 5) * Math.PI * 2);
-          scale.set(s, s * (0.8 + hash2(gi, gj, seed + 6) * 0.5), s);
-          matrix.compose(position, rotation, scale).toArray(matrices, count * 16);
-          count++;
-        }
-      }
+      const placed = prepared?.grass ?? placeGrass(generator, config, cx, cz, groundHeightAt);
+      const { matrices, colors, count } = placed;
       if (count === 0) return null;
 
       const mesh = new InstancedMesh(geometry, material, count);
       mesh.name = 'grass';
-      mesh.instanceMatrix.array.set(matrices.subarray(0, count * 16));
-      mesh.instanceColor = new InstancedBufferAttribute(colors.slice(0, count * 3), 3);
+      mesh.instanceMatrix.array.set(matrices);
+      mesh.instanceColor = new InstancedBufferAttribute(colors, 3);
       mesh.computeBoundingSphere();
       mesh.receiveShadow = true; // lies in the shade of trees and hills
       mesh.userData.count = count;

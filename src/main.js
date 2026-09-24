@@ -12,6 +12,7 @@ import { createRiverLayer } from './world/layers/RiverLayer.js';
 import { createReedLayer } from './world/layers/ReedLayer.js';
 import { createLilyLayer } from './world/layers/LilyLayer.js';
 import { createVentLayer } from './world/layers/VentLayer.js';
+import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
 import { PlayerControls } from './controls/PlayerControls.js';
@@ -76,6 +77,9 @@ chunks.addLayer(createReedLayer(WORLD));
 chunks.addLayer(createLilyLayer(WORLD));
 chunks.addLayer(createVentLayer(WORLD));
 chunks.addLayer(trees);
+const farTrees = createFarTreeLayer(WORLD);
+scene.add(farTrees.group);
+chunks.addLayer(farTrees);
 chunks.addLayer(grass);
 const caves = createCaveLayer(WORLD);
 chunks.addLayer(caves);
@@ -230,6 +234,11 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') ui.rays.click();
   if (e.code === 'KeyN') ui.night.click();
   if (e.code === 'KeyM') ui.sound.click();
+  if (e.code === 'KeyL') {
+    const order = ['auto', '0', '1', '2', '3'];
+    ui.season.value = order[(order.indexOf(ui.season.value) + 1) % order.length];
+    seasons.set(ui.season.value);
+  }
   if (e.code === 'KeyK') {
     ui.weather.value = WEATHER_ORDER[(WEATHER_ORDER.indexOf(ui.weather.value) + 1) % WEATHER_ORDER.length];
     weather.set(ui.weather.value);
@@ -327,6 +336,7 @@ function updateVisibility() {
   // Near a mouth you can see down the tunnel beyond it, so show all caves.
   chunks.setVisibility(surface, underground || nearMouth ? 'all' : 'mouths');
   clouds.group.visible = surface;
+  farTrees.group.visible = surface;
   if (!surface) rain.mesh.visible = false;
   sheltered = underground;
 
@@ -453,7 +463,7 @@ function tick(now) {
     ui.chunks.textContent = chunks.pendingCount
       ? `${chunks.loadedCount} +${chunks.pendingCount}`
       : `${chunks.loadedCount}`;
-    ui.trees.textContent = `${(trees.count / 1000).toFixed(1)}k`;
+    ui.trees.textContent = `${((trees.count + farTrees.count) / 1000).toFixed(1)}k`;
     ui.wind.textContent = describeWind(wind);
     ui.weatherAuto.textContent = `Auto · ${weather.label}`;
     ui.seasonAuto.textContent = `Auto · ${seasons.name}`;
@@ -468,4 +478,4 @@ function tick(now) {
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, scene, camera, chunks, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, renderer, scene, camera, chunks, farTrees, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };

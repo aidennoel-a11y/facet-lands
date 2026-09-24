@@ -145,8 +145,11 @@ export function seasonalTerrain(material, seaLevel) {
  * Trees (trunks and crowns) and their leaf clusters. The geometry carries
  * `aSeason`: x = deciduous (leaves turn and fall), y = holds snow.
  * `leaves`: the leaf clusters, which on deciduous trees fade away in winter.
+ * `randFrom`: where a tree's own random number comes from (by default,
+ * its instance's position). Far trees (which give one) keep their crowns in
+ * winter, dark with bare twigs: from far off a leafless wood is a grey-brown haze.
  */
-export function seasonalTrees(material, leaves = false) {
+export function seasonalTrees(material, leaves = false, randFrom = null) {
   return hook(
     material,
     (shader) => {
@@ -160,12 +163,12 @@ export function seasonalTrees(material, leaves = false) {
           /* glsl */ `#include <begin_vertex>
           vSeason = aSeason;
           vSeasonUp = normal.y;
-          #ifdef USE_INSTANCING
+          ${randFrom ? `vTreeRand = ${randFrom};` : `#ifdef USE_INSTANCING
             vTreeRand = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
           #else
             vTreeRand = 0.5;
-          #endif
-          ${leaves ? '' : `// Winter: a deciduous tree's crown (its leaves) shrinks away to
+          #endif`}
+          ${leaves || randFrom ? '' : `// Winter: a deciduous tree's crown (its leaves) shrinks away to
           // nothing, leaving the bare boughs.
           float bare = smoothstep(0.55, 0.95, uWinter) * aSeason.x;
           transformed = mix(transformed, vec3(0.0, transformed.y * 0.85, 0.0), bare);`}
@@ -194,7 +197,7 @@ export function seasonalTrees(material, leaves = false) {
           }`,
         );
     },
-    leaves ? 'season-leaves' : 'season-trees',
+    (leaves ? 'season-leaves' : 'season-trees') + (randFrom ? '-far' : ''),
   );
 }
 

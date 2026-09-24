@@ -1,0 +1,112 @@
+import { Color } from 'three';
+import { hash2 } from '../noise/random.js';
+
+const SHALLOW = new Color(0x4fbfc4);
+const DEEP = new Color(0x2c67b0);
+const color = new Color();
+
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * The lake and sea water over a chunk (see WaterLayer), as arrays:
+ * { positions, colors, waves, foams, freezes }, or null where it's dry.
+ * Only three.js colours, so a worker can do it too.
+ */
+export function waterData(generator, config, cx, cz, heights, resolution = 16) {
+  const { seaLevel, chunkSize, vertexJitter } = config;
+
+  // Skip chunks that are entirely dry.
+  let minGround = Infinity;
+  for (let k = 0; k < heights.gridY.length; k++) minGround = Math.min(minGround, heights.gridY[k]);
+  if (minGround > seaLevel + 1) return null;
+
+  const n = resolution + 1;
+  const cell = chunkSize / resolution;
+  const originX = cx * chunkSize;
+  const originZ = cz * chunkSize;
+  const seed = generator.seed ^ 0x2545f491;
+
+  const xs = new Float32Array(n * n);
+  const zs = new Float32Array(n * n);
+  const ground = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const gi = cx * resolution + i;
+      const gj = cz * resolution + j;
+      const k = j * n + i;
+      xs[k] = i * cell + (hash2(gi, gj, seed) - 0.5) * 2 * vertexJitter * cell;
+      zs[k] = j * cell + (hash2(gi, gj, seed ^ 0x5bd1e995) - 0.5) * 2 * vertexJitter * cell;
+      ground[k] = generator.getHeight(originX + xs[k], originZ + zs[k]);
+    }
+  }
+
+  // Surf along the open coast: in the shallows, strongest under cliffs.
+  const surf = new Float32Array(n * n);
+  // Lakes (not the open sea) in lands with a cold winter freeze over.
+  const freeze = new Float32Array(n * n);
+  for (let k = 0; k < n * n; k++) {
+    if (ground[k] < seaLevel + 1.5) {
+      const x = originX + xs[k], z = originZ + zs[k];
+      freeze[k] = generator.getSeasonality(x, z) * (1 - generator.getOceanness(x, z));
+    }
+    const depth = seaLevel - ground[k];
+    if (depth < -1 || depth > 3.5) continue;
+    const x = originX + xs[k], z = originZ + zs[k];
+    if (generator.getOceanness(x, z) < 0.5) continue;
+    surf[k] = (1 - smoothstep(0.3, 3.5, depth)) * (0.35 + 0.65 * generator.getSeaCliff(x, z));
+  }
+
+  const positions = [];
+  const colors = [];
+  const waves = [];
+  const foams = [];
+  const freezes = [];
+  const addTri = (a, b, c, variation) => {
+    // Keep faces with any corner under water; drop fully dry ones.
+    const wet = seaLevel + 1.5;
+    if (ground[a] > wet && ground[b] > wet && ground[c] > wet) return;
+    const depth = seaLevel - (ground[a] + ground[b] + ground[c]) / 3;
+    const t = smoothstep(-1, 16, depth);
+    color.copy(SHALLOW).lerp(DEEP, t).multiplyScalar(0.96 + variation * 0.08);
+    const alpha = 0.68 + 0.26 * t;
+    for (const k of [a, b, c]) {
+      positions.push(xs[k], seaLevel, zs[k]);
+      colors.push(color.r, color.g, color.b, alpha);
+      waves.push(0.1 + 0.9 * smoothstep(1, 16, seaLevel - ground[k]));
+      foams.push(surf[k]);
+      freezes.push(freeze[k]);
+    }
+  };
+
+  for (let j = 0; j < resolution; j++) {
+    for (let i = 0; i < resolution; i++) {
+      const a = j * n + i;
+      const b = a + 1;
+      const c = a + n;
+      const d = c + 1;
+      const gi = cx * resolution + i;
+      const gj = cz * resolution + j;
+      const v0 = hash2(gi * 2, gj, seed + 3);
+      const v1 = hash2(gi * 2 + 1, gj, seed + 3);
+      if (hash2(gi, gj, seed + 9) < 0.5) {
+        addTri(a, c, d, v0);
+        addTri(a, d, b, v1);
+      } else {
+        addTri(a, c, b, v0);
+        addTri(b, c, d, v1);
+      }
+    }
+  }
+  if (positions.length === 0) return null;
+
+  return {
+    positions: new Float32Array(positions),
+    colors: new Float32Array(colors),
+    waves: new Float32Array(waves),
+    foams: new Float32Array(foams),
+    freezes: new Float32Array(freezes),
+  };
+}
