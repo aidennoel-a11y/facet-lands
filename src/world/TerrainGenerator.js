@@ -32,6 +32,9 @@ export class TerrainGenerator {
     this.aridityNoise = new SimplexNoise(this.seed + 10);
     this.hillRegionNoise = new SimplexNoise(this.seed + 11);
     this.duneNoise = new SimplexNoise(this.seed + 12);
+    this.rangeSizeNoise = new SimplexNoise(this.seed + 13);
+    this.spikeNoise = new SimplexNoise(this.seed + 14);
+    this._range = { value: 0, size: 1, large: 0 };
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
     this._weights = { temperate: 1, savanna: 0, desert: 0 };
@@ -42,11 +45,18 @@ export class TerrainGenerator {
    * How dry the climate is at (x, z), 0 (wet) to 1 (arid). Changes over
    * kilometres, warped so the biome borders wander rather than run straight.
    */
-  getAridity(x, z) {
+  getAridity(x, z, range = this.#rangeField(x, z).value) {
+    // Mountains catch the rain: around a range the land is greener, so a
+    // desert gives way to savanna before it reaches the mountains, rather
+    // than cutting through them.
+    return Math.min(1, Math.max(0, this.#rawAridity(x, z) - 0.55 * smoothstep(-0.12, 0.4, range)));
+  }
+
+  /** The climate's dryness before mountains have their say (can exceed 1 in the driest deserts). */
+  #rawAridity(x, z) {
     const wx = x + this.aridityNoise.noise2D(x * 0.0005 + 31, z * 0.0005 - 17) * 350;
     const wz = z + this.aridityNoise.noise2D(x * 0.0005 - 53, z * 0.0005 + 71) * 350;
-    const n = this.aridityNoise.fbm(wx * 0.00016, wz * 0.00016, 3);
-    return Math.min(1, Math.max(0, 0.43 + n * 1.3));
+    return 0.5 + this.aridityNoise.fbm(wx * 0.00016, wz * 0.00016, 3) * 1.3;
   }
 
   /**
@@ -56,8 +66,8 @@ export class TerrainGenerator {
    * border savanna; near a border both count, and everything blends.
    * Pass `out` to reuse an object.
    */
-  getBiomeWeights(x, z, out = {}) {
-    const a = this.getAridity(x, z);
+  getBiomeWeights(x, z, out = {}, range) {
+    const a = this.getAridity(x, z, range);
     const temperate = 1 - smoothstep(0.3, 0.42, a);
     const desert = smoothstep(0.62, 0.74, a);
     out.temperate = temperate;
@@ -68,19 +78,33 @@ export class TerrainGenerator {
 
   /** Terrain height in metres at a world position. */
   getHeight(x, z) {
-    const w = this.getBiomeWeights(x, z, this._weights);
+    const field = this.#rangeField(x, z);
+    const w = this.getBiomeWeights(x, z, this._weights, field.value);
 
-    // Mountain ranges: wide, well apart, only in the plains and savanna. The
-    // land first builds up into broad foothills (`mask`), and the crested
-    // peaks rise only from the heart of the range (`core`).
-    const range = this.#rangeNoise(x, z);
-    const dry = (1 - w.desert) ** 3;
-    const mask = smoothstep(0.08, 0.56, range) * dry;
+    // Mountain ranges: well apart, from half
+    // to twice the usual size (bigger ones stand taller). The land first
+    // builds up into broad foothills (`mask`), and the crested peaks rise
+    // only from the heart of the range (`core`). Now and then a range has
+    // spiky peaks: narrower, sharper and higher. Ranges only stand in the
+    // plains and savanna: they make the land around them wetter (see
+    // getAridity), so deserts keep their distance.
+    // In the very driest deserts even that isn't enough: there the ranges
+    // fade away, slowly, over a kilometre or so.
+    const { size, large } = field;
+    const range = field.value - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
+    const mask = smoothstep(0.13, 0.6, range);
     let mountains = 0;
     if (mask > 0) {
-      const core = smoothstep(0.3, 0.68, range) * dry;
-      const ridges = core > 0 ? this.ridgeNoise.ridged(x * 0.0008, z * 0.0008, 4, 2, 0.47, 0.012) : 0;
-      mountains = Math.pow(mask, 1.5) * 48 + core * Math.pow(ridges, 1.6) * 190;
+      const core = smoothstep(0.34, 0.72, range);
+      if (core > 0) {
+        // Broader crests on the bigger ranges.
+        let ridges = this.ridgeNoise.ridged(x * 0.0008, z * 0.0008, 4, 2, 0.47, 0.012);
+        if (large > 0) ridges += (this.ridgeNoise.ridged(x * 0.00052 + 91, z * 0.00052 - 37, 4, 2, 0.47, 0.012) - ridges) * large;
+        const spiky = smoothstep(0.3, 0.6, this.spikeNoise.fbm(x * 0.0003, z * 0.0003, 2));
+        const peaks = Math.pow(ridges, 1.6 + 1.3 * spiky) * (1 + 1.0 * spiky);
+        mountains = core * peaks * 205 * (0.65 + 0.5 * size);
+      }
+      mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size);
     }
 
     // Broad rise and fall of the land, lifted in dry country so seas
@@ -106,15 +130,33 @@ export class TerrainGenerator {
     return 14 + continent * 16 + hills + dunes + mountains - sea - lakes;
   }
 
-  /** Where mountain ranges lie: a smooth, slow noise (ranges where it's high). */
-  #rangeNoise(x, z) {
-    return this.mountainMaskNoise.fbm(x * 0.00026, z * 0.00026, 2);
+  /**
+   * Where mountain ranges lie: a smooth, slow noise (ranges where it's
+   * high). A still slower noise picks the scale region by region: ranges
+   * half the usual size, usual, or twice it, blending between. Returns
+   * { value, size (0.5..2), large (0..1, how much of the 2x scale) },
+   * reusing one object.
+   */
+  #rangeField(x, z) {
+    const t = Math.min(1, Math.max(0, 0.5 + this.rangeSizeNoise.fbm(x * 0.00007, z * 0.00007, 2) * 1.3));
+    const small = 1 - smoothstep(0, 0.45, t);
+    const large = smoothstep(0.55, 1, t);
+    const usual = 1 - small - large;
+    const f = 0.00026;
+    let value = 0;
+    if (small > 0) value += small * this.mountainMaskNoise.fbm(x * f * 2 + 311, z * f * 2 - 173, 2);
+    if (usual > 0) value += usual * this.mountainMaskNoise.fbm(x * f, z * f, 2);
+    if (large > 0) value += large * this.mountainMaskNoise.fbm(x * f * 0.5 - 517, z * f * 0.5 + 229, 2);
+    const out = this._range;
+    out.value = value;
+    out.size = 0.5 * small + usual + 2 * large;
+    out.large = large;
+    return out;
   }
 
   /** How mountainous an area is: 0 = lowland, 1 = in a range. Foothills lie in between. */
   getMountainness(x, z) {
-    const w = this.getBiomeWeights(x, z, {});
-    return smoothstep(0.08, 0.56, this.#rangeNoise(x, z)) * (1 - w.desert) ** 3;
+    return smoothstep(0.13, 0.6, this.#rangeField(x, z).value - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z)));
   }
 
   /**

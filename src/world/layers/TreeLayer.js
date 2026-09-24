@@ -11,6 +11,12 @@ const lean = new Vector3();
 const scale = new Vector3();
 const up = new Vector3(0, 1, 0);
 const tint = new Color();
+const surface = { normalY: 1 };
+
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
 
 /**
  * Scatters trees over nearby chunks.
@@ -106,11 +112,18 @@ export function createTreeLayer() {
           const trees = biome.trees;
           if (!trees || keep > (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density) continue;
 
-          const ground = groundHeightAt(lx, lz);
+          const ground = groundHeightAt(lx, lz, surface);
           if (!(ground >= seaLevel + 1.2)) continue; // outside the chunk, in water or over a cave mouth
           if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
           // Nothing but cacti grows on sand (beaches included).
-          if (biome.id !== 'desert' && ground + generator.getColorJitter(wx, wz) < 7) continue;
+          const colourHeight = ground + generator.getColorJitter(wx, wz);
+          if (biome.id !== 'desert' && colourHeight < 7) continue;
+          // Nor on bare rock: the grey band up the mountains, and faces
+          // steep enough to show rock.
+          const r = hash2(gi, gj, seed + 12);
+          if (surface.normalY < 0.8 || r < smoothstep(82, 98, colourHeight)) continue;
+          // And ever fewer the higher you go (the tree line).
+          if (hash2(gi, gj, seed + 13) < smoothstep(50, 100, ground) * 0.9) continue;
 
           // Too steep for roots? (height change per metre)
           const gradX = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
