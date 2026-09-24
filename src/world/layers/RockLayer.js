@@ -145,6 +145,7 @@ export function createRockLayer(config) {
           const boulder = r < 0.1 + 0.15 * foothill;
           if (!boulder && !smallStones) continue;
           if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
+          if (generator.rivers.at(wx, wz, 1)) continue; // and rivers
           const size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.6 * foothill) : 0.25 + hash2(gi, gj, seed + 4) * 0.6;
           const sx = size * (0.8 + hash2(gi, gj, seed + 5) * 0.5);
           const sy = size * (0.55 + hash2(gi, gj, seed + 6) * 0.45);

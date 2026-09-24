@@ -49,8 +49,9 @@ export class Minimap {
         const wx = cx - half + i * s;
         const wz = cz - half + j * s;
         let shade;
-        if (h < seaLevel) {
-          this._color.copy(SHALLOW).lerp(DEEP, Math.min(1, (seaLevel - h) / 16));
+        const river = generator.rivers?.at(wx, wz, 1);
+        if (h < seaLevel || river) {
+          this._color.copy(SHALLOW).lerp(DEEP, Math.min(1, Math.max(0, seaLevel - h) / 16));
           shade = 1;
         } else {
           generator.surfaceColor(wx, wz, h + generator.getColorJitter(wx, wz), upness, this._color);

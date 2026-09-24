@@ -115,6 +115,7 @@ export function createTreeLayer() {
           const ground = groundHeightAt(lx, lz, surface);
           if (!(ground >= seaLevel + 1.2)) continue; // outside the chunk, in water or over a cave mouth
           if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
+          if (generator.rivers.at(wx, wz, 1.5)) continue; // nor in a river or right on its bank
           // Nothing but cacti grows on sand (beaches included).
           const colourHeight = ground + generator.getColorJitter(wx, wz);
           if (biome.id !== 'desert' && colourHeight < 7) continue;

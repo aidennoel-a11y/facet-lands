@@ -2,6 +2,11 @@ import { SimplexNoise } from '../noise/SimplexNoise.js';
 import { hashSeed } from '../noise/random.js';
 import { BIOME_IDS, BIOMES, blendedFaceColor, prepareBiome } from './biomes.js';
 import { CaveSystem } from './caves/CaveSystem.js';
+import { Rivers } from './Rivers.js';
+import { Color } from 'three';
+
+const RIVERBANK = new Color(0x9c9482);
+const RIVERBED = new Color(0x6f6a5c);
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -40,6 +45,7 @@ export class TerrainGenerator {
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
     this._weights = { temperate: 1, savanna: 0, desert: 0 };
+    this.rivers = new Rivers(this, config);
     this.caves = new CaveSystem(this, config);
   }
 
@@ -78,8 +84,13 @@ export class TerrainGenerator {
     return out;
   }
 
-  /** Terrain height in metres at a world position. */
+  /** Terrain height in metres at a world position (rivers carved in). */
   getHeight(x, z) {
+    return this.rivers.carve(x, z, this.getBaseHeight(x, z));
+  }
+
+  /** The land before rivers are carved into it (rivers are traced over this). */
+  getBaseHeight(x, z) {
     const field = this.#rangeField(x, z);
     const w = this.getBiomeWeights(x, z, this._weights, field.value);
 
@@ -94,10 +105,10 @@ export class TerrainGenerator {
     // fade away, slowly, over a kilometre or so.
     const { size, large } = field;
     const range = field.value - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
-    const mask = smoothstep(0.13, 0.6, range);
+    const mask = smoothstep(0.08, 0.55, range);
     let mountains = 0;
     if (mask > 0) {
-      const core = smoothstep(0.34, 0.72, range);
+      const core = smoothstep(0.3, 0.68, range);
       // Bowls and valleys cut into the range, deepest in its heart, so it's
       // not one solid massif: sheltered hollows low enough for forest,
       // between the ridges and peaks.
@@ -150,7 +161,7 @@ export class TerrainGenerator {
     const small = 1 - smoothstep(0, 0.45, t);
     const large = smoothstep(0.55, 1, t);
     const usual = 1 - small - large;
-    const f = 0.00026;
+    const f = 0.00013;
     let value = 0;
     if (small > 0) value += small * this.mountainMaskNoise.fbm(x * f * 2 + 311, z * f * 2 - 173, 2);
     if (usual > 0) value += usual * this.mountainMaskNoise.fbm(x * f, z * f, 2);
@@ -164,7 +175,7 @@ export class TerrainGenerator {
 
   /** How mountainous an area is: 0 = lowland, 1 = in a range. Foothills lie in between. */
   getMountainness(x, z) {
-    return smoothstep(0.13, 0.6, this.#rangeField(x, z).value - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z)));
+    return smoothstep(0.08, 0.55, this.#rangeField(x, z).value - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z)));
   }
 
   /**
@@ -212,6 +223,13 @@ export class TerrainGenerator {
 
   /** Ground colour of a face at (x, z): blended across the biomes there. */
   surfaceColor(x, z, height, upness, out) {
-    return blendedFaceColor(this.biomes, this.getBiomeWeights(x, z, {}), height, upness, out);
+    blendedFaceColor(this.biomes, this.getBiomeWeights(x, z, {}), height, upness, out);
+    // Gravel along river banks, darker on the bed.
+    const river = this.rivers.at(x, z, 2.5);
+    if (river) {
+      const t = 1 - smoothstep(river.half - 0.5, river.half + 2.5, river.d);
+      out.lerp(river.d < river.half - 0.5 ? RIVERBED : RIVERBANK, t * 0.8);
+    }
+    return out;
   }
 }

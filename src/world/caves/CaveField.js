@@ -214,6 +214,8 @@ export class CaveField {
       }
       const inside = ([u, v]) => wx(u, v) > cx * size + 2 && wx(u, v) < (cx + 1) * size - 2 && wz(u, v) > cz * size + 2 && wz(u, v) < (cz + 1) * size - 2;
       if (!outline.every(inside)) continue;
+      // Not in or beside a river.
+      if (outline.some(([u, v]) => g.rivers.at(wx(u, v), wz(u, v), 6))) continue;
       // No natural cave breaking into the built part.
       let clear = true;
       for (let u = 0; u <= E - 3 && clear; u += 2) {
