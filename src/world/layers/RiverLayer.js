@@ -100,7 +100,7 @@ export function createRiverLayer(skyColor) {
           const c = RIVER.clone().multiplyScalar(shade).lerp(FOAM, white * 0.5);
           const edge = (k, s) => {
             const p = points[k];
-            const half = p.width / 2 + 0.5; // its edges over the channel's submerged margin
+            const half = Math.max(p.width / 2 + 0.5, Rivers.channel(p.width / 2) - 0.3); // out over the channel's submerged margin
             return [p.x + side[k][0] * half * s, p.level + 0.03, p.z + side[k][1] * half * s, along[k], s];
           };
           const quad = [edge(i, -1), edge(i + 1, -1), edge(i + 1, 1), edge(i, 1)];

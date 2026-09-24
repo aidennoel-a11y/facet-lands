@@ -24,11 +24,13 @@ const INFLUENCE = 26; // how far past its channel a river still shapes the land 
  *    cliffs, until they join a river or reach open water.
  *
  * Water levels only ever fall along a course. The terrain is carved to
- * match (see carve()): a bed below the water; a channel at least 9 m wide
- * kept just under the water level, so the terrain's ~4 m triangles always
- * have corners in it and never bridge over the water; banks just above the
- * water (raised where the land beside would be lower, so water never
- * floats); and valley sides rising from there. Ponds get a basin and rim.
+ * match (see carve()): rivers run in a trench cut a metre or two into the
+ * land, with a bed below the water; a channel at least ~5 m wide kept under
+ * the water level (the mesh is finer along rivers, so its triangles always
+ * have corners in it and never bridge over the water); a strip of mud at
+ * the water, then a steep cut bank up to the land (raised where the land
+ * beside would be lower, so water never floats), and valley sides rising
+ * from there. Ponds get a basin and banks.
  *
  * Generated region by region from the seed. Streams are only traced once
  * every river that could reach them exists, so any chunk (or worker),
@@ -252,14 +254,20 @@ export class Rivers {
       // down in cascades: a pool dug level into the slope, until the land
       // falls away below it, then a waterfall over the pool's lip into the
       // next pool, and so on down the mountain.
-      const target = b - (stream ? 0.5 : 0.8);
+      // Rivers cut down into the land, deeper as they grow; streams on
+      // gentle ground too.
+      const target = b - (stream ? (slope > 0.15 ? 0.5 : 1.1) : 1.3 + Math.min(1.1, (points.length * STEP) / 700));
       const cascade = stream && slope > 0.15;
       if (cascade && target < level - 0.02) {
         const next = Math.max(this.seaLevel + 0.03, target - (1.5 + rand() * 2));
         if (points.length) points.push({ x: px - dir[0] * 4, z: pz - dir[1] * 4, level: level - 0.02, width: 0, cascade: true });
         level = next;
-      } else {
+      } else if (stream) {
         level = Math.max(this.seaLevel + 0.03, Math.min(level - 0.02, target));
+      } else {
+        // A river eases down into its trench (no sudden step at its source)
+        // but never runs above the land.
+        level = Math.max(this.seaLevel + 0.03, Math.min(level - 0.02, Math.max(target, level - 0.35), b - 0.4));
       }
       points.push({ x: px, z: pz, level, width: 0, cascade });
 
@@ -279,7 +287,7 @@ export class Rivers {
         }
       }
       // Ground rising ahead of it: it would need a gorge.
-      if (b - level > (stream ? 9 : 5)) return kind === 'stream' ? this.#tarn(points, rand, lowland) : null;
+      if (b - level > (stream ? 9 : 6.5)) return kind === 'stream' ? this.#tarn(points, rand, lowland) : null;
       px += dir[0] * STEP;
       pz += dir[1] * STEP;
     }
@@ -388,11 +396,23 @@ export class Rivers {
 
   /**
    * Half-width of the channel kept under water, given half the water's
-   * width: never narrower than 4.5 m, so the terrain's triangles (about
-   * 4 m) always have corners in it and can't bridge over the water.
+   * width: never narrower than 2.4 m, so the terrain's triangles (about
+   * 2 m where the mesh is refined along rivers) always have corners in it
+   * and can't bridge over the water.
    */
   static channel(halfWidth) {
-    return Math.max(halfWidth + 0.8, 4.5);
+    return Math.max(halfWidth + 0.6, 2.4);
+  }
+
+  /**
+   * How far above the water the bank stands, `e` metres out from the
+   * channel's edge: a strip of wet mud at the water, then a steep cut bank
+   * (slope `k`) up to the level of the land, then the valley side.
+   */
+  static bankRise(e, k) {
+    if (e < 0.6) return 0;
+    const top = 0.6 + 3.3 / k;
+    return e < top ? (e - 0.6) * k : 3.3 + (e - top) * 0.45;
   }
 
   /**
@@ -430,20 +450,20 @@ export class Rivers {
     // only reaches it with its end (the pool below a waterfall, say) may
     // lower it just a little, so a pool's sides are never dug down to the
     // pool below it.
-    let bank = -Infinity, inWater = false, wet = Infinity, wetEnd = Infinity;
+    let bank = -Infinity, inWater = false, wet = Infinity, wetEnd = Infinity, k = 0;
     for (const item of near) {
       if (item.pond) {
         const pond = item.pond;
         const d = Math.hypot(x - pond.x, z - pond.z);
         const r = Rivers.pondRadius(pond, x, z);
-        const rr = Math.max(r, 4.5);
+        const rr = Math.max(r, 2.4);
         if (d < rr) {
           const t = d / rr;
-          wet = Math.min(wet, pond.level - 0.1 - (0.5 + pond.r * 0.1) * (1 - t * t));
+          wet = Math.min(wet, pond.level - 0.15 - (0.6 + pond.r * 0.12) * (1 - t * t));
           inWater = true;
         } else {
-          h = Math.min(h, pond.level + 0.2 + Math.max(0, d - rr - 1.5) * 0.45);
-          if (d < rr + 6) bank = Math.max(bank, pond.level + 0.2 - Math.max(0, d - rr - 1.5) * 0.6);
+          h = Math.min(h, pond.level + 0.2 + Rivers.bankRise(d - rr, 0.6));
+          if (d < rr + 6) bank = Math.max(bank, pond.level + 0.2 - Math.max(0, d - rr - 0.6) * 0.6);
         }
         continue;
       }
@@ -453,14 +473,16 @@ export class Rivers {
         // Under the water: the bed, then the channel's margin just below the
         // water level out to its edge.
         const s = d / water;
-        const bed = d < water ? level - 0.2 - (0.3 + water * 0.12) * (1 - s * s) : level - 0.1;
+        const bed = d < water ? level - 0.3 - (0.4 + water * 0.15) * (1 - s * s) : level - 0.15;
         if (m.end) wetEnd = Math.min(wetEnd, bed);
         else wet = Math.min(wet, bed);
         inWater = true;
       } else {
-        // Valley side: from just above the water up to the land.
-        h = Math.min(h, level + 0.2 + Math.max(0, d - half - 1.5) * 0.5);
-        if (d < half + 6) bank = Math.max(bank, level + 0.2 - Math.max(0, d - half - 1.5) * 0.6);
+        // The bank: mud at the water, a steep cut bank (steeper in some
+        // places than others) up to the land, then the valley side.
+        if (k === 0) k = 0.75 + 0.55 * (this.meander.noise2D(x * 0.02 + 40, z * 0.02) + 1);
+        h = Math.min(h, level + 0.2 + Rivers.bankRise(d - half, item.stream ? k * 0.8 : k));
+        if (d < half + 6) bank = Math.max(bank, level + 0.2 - Math.max(0, d - half - 0.6) * 0.6);
       }
     }
     if (inWater) {

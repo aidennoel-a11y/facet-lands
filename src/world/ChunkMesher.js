@@ -103,9 +103,23 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     }
   }
 
+  // Finer triangles along rivers and lake shores (full detail only), so
+  // their trenches and banks can take shape: a cell there is split into
+  // eight triangles around its centre (a 2 m mesh instead of 4 m). A cell
+  // next to one is fanned around its centre too, taking in the midpoints
+  // of the edges it shares with finer cells, so no cracks open between
+  // them. Cells near a cave mouth are left alone (they may be clipped).
+  const fine = resolution === finest ? refineCells() : null;
+  let fineTris = 0;
+  let splitEdges = 0;
+  if (fine) {
+    fineTris = fine.count;
+    splitEdges = fine.borderSplits;
+  }
+
   const surfaceTris = resolution * resolution * 2;
-  const skirtTris = resolution * 4 * 2;
-  const totalVerts = (surfaceTris + skirtTris + clippedTris) * 3;
+  const skirtTris = resolution * 4 * 2 + splitEdges * 2;
+  const totalVerts = (surfaceTris + skirtTris + clippedTris + fineTris) * 3;
   const positions = new Float32Array(totalVerts * 3);
   const normals = new Float32Array(totalVerts * 3);
   const colors = new Float32Array(totalVerts * 3);
@@ -169,6 +183,19 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
       const tris = cellTriangles(i, j);
       const gx = baseGx + i * step;
       const gz = baseGz + j * step;
+      const finer = fine && fine.cells.get(j * resolution + i);
+      if (finer) {
+        const corners = [tris[0], tris[1], tris[2], tris[3], tris[4], tris[5]];
+        for (let t = 0; t < finer.length; t += 9) {
+          pushTri(finer[t], finer[t + 1], finer[t + 2], finer[t + 3], finer[t + 4], finer[t + 5], finer[t + 6], finer[t + 7], finer[t + 8], gx * 8 + t / 9, gz + 100003);
+          for (const p of corners) {
+            vertexNormals[p * 3] += normal.x / 3;
+            vertexNormals[p * 3 + 1] += normal.y / 3;
+            vertexNormals[p * 3 + 2] += normal.z / 3;
+          }
+        }
+        continue;
+      }
       for (let t = 0; t < 6; t += 3) {
         const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
         const pieces = clipped.get((j * resolution + i) * 2 + t / 3);
@@ -206,18 +233,21 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
   // Skirts are shallower than the rock over any cave, and stop short of an
   // entrance ramp running underneath, so they never wall a cave off.
   const ramps = generator.caves ? generator.caves.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
-  const skirtBottom = (k) =>
-    ramps.length
-      ? generator.caves.skirtBottom(ramps, originX + gridX[k], gridY[k], originZ + gridZ[k], skirtDepth)
-      : gridY[k] - skirtDepth;
-  for (const edge of edges) {
+  const skirtBottom = (x, y, z) =>
+    ramps.length ? generator.caves.skirtBottom(ramps, originX + x, y, originZ + z, skirtDepth) : y - skirtDepth;
+  // The edge each skirt segment hangs from, as a key into the midpoints of split edges.
+  const edgeKeys = [
+    (t) => fine?.edgeKey(t, 0, 0),
+    (t) => fine?.edgeKey(resolution, t, 1),
+    (t) => fine?.edgeKey(resolution - t - 1, resolution, 0),
+    (t) => fine?.edgeKey(0, resolution - t - 1, 1),
+  ];
+  for (let e = 0; e < 4; e++) {
+    const edge = edges[e];
     for (let t = 0; t < resolution; t++) {
       const p = edge(t);
       const q = edge(t + 1);
-      const px = gridX[p], py = gridY[p], pz = gridZ[p];
-      const qx = gridX[q], qy = gridY[q], qz = gridZ[q];
-      const pb = skirtBottom(p);
-      const qb = skirtBottom(q);
+      const mid = fine ? fine.mids.get(edgeKeys[e](t)) : undefined;
       skirtNormal
         .set(
           vertexNormals[p * 3] + vertexNormals[q * 3],
@@ -226,9 +256,16 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
         )
         .normalize();
       if (skirtNormal.lengthSq() === 0) skirtNormal.set(0, 1, 0);
-      // Outward-facing (the edges above walk clockwise seen from above).
-      pushTri(px, py, pz, qx, qy, qz, qx, qb, qz, p, q, skirtNormal);
-      pushTri(px, py, pz, qx, qb, qz, px, pb, pz, q, p, skirtNormal);
+      const points = mid ? [[gridX[p], gridY[p], gridZ[p]], mid, [gridX[q], gridY[q], gridZ[q]]] : [[gridX[p], gridY[p], gridZ[p]], [gridX[q], gridY[q], gridZ[q]]];
+      for (let k = 0; k < points.length - 1; k++) {
+        const [px, py, pz] = points[k];
+        const [qx, qy, qz] = points[k + 1];
+        const pb = skirtBottom(px, py, pz);
+        const qb = skirtBottom(qx, qy, qz);
+        // Outward-facing (the edges above walk clockwise seen from above).
+        pushTri(px, py, pz, qx, qy, qz, qx, qb, qz, p, q, skirtNormal);
+        pushTri(px, py, pz, qx, qb, qz, px, pb, pz, q, p, skirtNormal);
+      }
     }
   }
 
@@ -255,32 +292,135 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
           z < Math.min(gridZ[a], gridZ[a + 1]) - 0.01 ||
           z > Math.max(gridZ[a + n], gridZ[a + n + 1]) + 0.01
         ) continue;
+        const finer = fine && fine.cells.get(j * resolution + i);
+        if (finer) {
+          for (let t = 0; t < finer.length; t += 9) {
+            const y = onTriangle(x, z, finer[t], finer[t + 1], finer[t + 2], finer[t + 3], finer[t + 4], finer[t + 5], finer[t + 6], finer[t + 7], finer[t + 8], out);
+            if (y !== null) return y;
+          }
+          continue;
+        }
         const tris = cellTriangles(i, j);
         for (let t = 0; t < 6; t += 3) {
           const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
-          const x0 = gridX[p0], z0 = gridZ[p0];
-          const e1x = gridX[p1] - x0, e1z = gridZ[p1] - z0;
-          const e2x = gridX[p2] - x0, e2z = gridZ[p2] - z0;
-          const det = e1x * e2z - e2x * e1z;
-          const px = x - x0, pz = z - z0;
-          const u = (px * e2z - e2x * pz) / det;
-          const w = (e1x * pz - px * e1z) / det;
-          if (u >= -1e-4 && w >= -1e-4 && u + w <= 1 + 1e-4) {
+          const y = onTriangle(x, z, gridX[p0], gridY[p0], gridZ[p0], gridX[p1], gridY[p1], gridZ[p1], gridX[p2], gridY[p2], gridZ[p2], out);
+          if (y !== null) {
             if (holes.length && holes.some((e) => CaveField.inHole(e, x + originX, z + originZ))) return NaN;
-            const e1y = gridY[p1] - gridY[p0];
-            const e2y = gridY[p2] - gridY[p0];
-            if (out) {
-              const nx = e1y * e2z - e1z * e2y;
-              const ny = e1z * e2x - e1x * e2z;
-              const nz = e1x * e2y - e1y * e2x;
-              out.normalY = Math.abs(ny) / Math.hypot(nx, ny, nz);
-            }
-            return gridY[p0] + u * e1y + w * e2y;
+            return y;
           }
         }
       }
     }
     return null; // outside this chunk's surface
+  }
+
+  // Height of the triangle (a, b, c) at (x, z), or null if (x, z) isn't on it.
+  function onTriangle(x, z, ax, ay, az, bx, by, bz, cx, cy, cz, out) {
+    const e1x = bx - ax, e1z = bz - az;
+    const e2x = cx - ax, e2z = cz - az;
+    const det = e1x * e2z - e2x * e1z;
+    const px = x - ax, pz = z - az;
+    const u = (px * e2z - e2x * pz) / det;
+    const w = (e1x * pz - px * e1z) / det;
+    if (!(u >= -1e-4 && w >= -1e-4 && u + w <= 1 + 1e-4)) return null;
+    const e1y = by - ay;
+    const e2y = cy - ay;
+    if (out) {
+      const nx = e1y * e2z - e1z * e2y;
+      const ny = e1z * e2x - e1x * e2z;
+      const nz = e1x * e2y - e1y * e2x;
+      out.normalY = Math.abs(ny) / Math.hypot(nx, ny, nz);
+    }
+    return ay + u * e1y + w * e2y;
+  }
+
+  // Which cells get finer triangles (see above), and those triangles.
+  function refineCells() {
+    const sea = config.seaLevel;
+    const m = resolution + 2; // cells from -1 to resolution (a ring round the chunk, to match its neighbours)
+    const ring = new Map();
+    const corner = (i, j) => {
+      if (i >= 0 && j >= 0 && i < n && j < n) {
+        const k = j * n + i;
+        return [gridX[k], gridY[k], gridZ[k]];
+      }
+      const key = (j + 1) * (n + 2) + (i + 1);
+      let c = ring.get(key);
+      if (!c) {
+        const gx = baseGx + i * step;
+        const gz = baseGz + j * step;
+        const lx = (gx - baseGx) * fineCell + (hash2(gx, gz, seed) - 0.5) * 2 * jitter;
+        const lz = (gz - baseGz) * fineCell + (hash2(gx, gz, seed ^ 0x9e3779b9) - 0.5) * 2 * jitter;
+        c = [lx, generator.getHeight(originX + lx, originZ + lz), lz];
+        ring.set(key, c);
+      }
+      return c;
+    };
+    const mouths = generator.caves
+      ? generator.caves.mouthsNear(originX - 16, originZ - 16, originX + chunkSize + 16, originZ + chunkSize + 16)
+      : [];
+    const want = new Uint8Array(m * m);
+    for (let j = -1; j <= resolution; j++) {
+      for (let i = -1; i <= resolution; i++) {
+        const cs = [corner(i, j), corner(i + 1, j), corner(i, j + 1), corner(i + 1, j + 1)];
+        let lo = Infinity, hi = -Infinity, minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (const [x, y, z] of cs) {
+          lo = Math.min(lo, y); hi = Math.max(hi, y);
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+        }
+        const shore = lo < sea + 3 && hi > sea - 2.5;
+        let yes = shore || generator.rivers.at(originX + (minX + maxX) / 2, originZ + (minZ + maxZ) / 2, 7) !== null;
+        for (const e of mouths) {
+          const b = e.holeBounds;
+          if (yes && b.maxX > originX + minX - 8 && b.minX < originX + maxX + 8 && b.maxZ > originZ + minZ - 8 && b.minZ < originZ + maxZ + 8) yes = false;
+        }
+        want[(j + 1) * m + (i + 1)] = yes ? 1 : 0;
+      }
+    }
+    const flag = (i, j) => want[(j + 1) * m + (i + 1)] === 1;
+    const edgeKey = (i, j, vertical) => ((j + 1) * m + (i + 1)) * 2 + vertical;
+    const mids = new Map();
+    const mid = (a, b, key) => {
+      let p = mids.get(key);
+      if (!p) {
+        const x = (a[0] + b[0]) / 2, z = (a[2] + b[2]) / 2;
+        p = [x, generator.getHeight(originX + x, originZ + z), z];
+        mids.set(key, p);
+      }
+      return p;
+    };
+    const cells = new Map();
+    let count = 0, borderSplits = 0;
+    for (let j = 0; j < resolution; j++) {
+      for (let i = 0; i < resolution; i++) {
+        const self = flag(i, j);
+        const north = self || flag(i, j - 1), south = self || flag(i, j + 1);
+        const west = self || flag(i - 1, j), east = self || flag(i + 1, j);
+        if (!(north || south || west || east)) continue;
+        const a = corner(i, j), b = corner(i + 1, j), c = corner(i, j + 1), d = corner(i + 1, j + 1);
+        // Round the cell the same way its triangles wind (a, c, d, b).
+        const poly = [a];
+        if (west) poly.push(mid(a, c, edgeKey(i, j, 1)));
+        poly.push(c);
+        if (south) poly.push(mid(c, d, edgeKey(i, j + 1, 0)));
+        poly.push(d);
+        if (east) poly.push(mid(b, d, edgeKey(i + 1, j, 1)));
+        poly.push(b);
+        if (north) poly.push(mid(a, b, edgeKey(i, j, 0)));
+        const cx = (a[0] + b[0] + c[0] + d[0]) / 4, cz = (a[2] + b[2] + c[2] + d[2]) / 4;
+        const centre = [cx, generator.getHeight(originX + cx, originZ + cz), cz];
+        const tris = new Float32Array(poly.length * 9);
+        for (let k = 0; k < poly.length; k++) tris.set([...centre, ...poly[k], ...poly[(k + 1) % poly.length]], k * 9);
+        cells.set(j * resolution + i, tris);
+        count += poly.length;
+        if (j === 0 && north) borderSplits++;
+        if (j === resolution - 1 && south) borderSplits++;
+        if (i === 0 && west) borderSplits++;
+        if (i === resolution - 1 && east) borderSplits++;
+      }
+    }
+    return { cells, count, mids, edgeKey, borderSplits };
   }
 
   const geometry = new BufferGeometry();
@@ -293,7 +433,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
 
   return {
     geometry,
-    triangles: surfaceTris,
+    triangles: surfaceTris + (fine ? fine.count - fine.cells.size * 2 : 0),
     // Handy for decoration layers (trees, rocks...) that need heights.
     heights: { gridX, gridY, gridZ, size: n },
     groundHeightAt,

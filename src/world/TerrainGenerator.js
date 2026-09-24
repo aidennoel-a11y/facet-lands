@@ -239,7 +239,39 @@ export class TerrainGenerator {
         : 0;
 
     const f = this.#features(x, z, dryness, mask, w);
-    return 14 + continent * 16 + hills + dunes + mountains + blackHills + f.mesaHeight + f.escarpHeight - sea - lakes;
+    const height = 14 + continent * 16 + hills + dunes + mountains + blackHills + f.mesaHeight + f.escarpHeight - sea - lakes;
+    // Lake shores (not the open sea's beaches): a real edge rather than
+    // the land just sloping on down under the water.
+    const u = height - this.rivers.seaLevel;
+    if (u > -4.5 && u < 7) {
+      const lake = 1 - smoothstep(-0.02, -0.25, continent);
+      if (lake > 0) return height + (this.#lakeShore(u, x, z) - u) * lake;
+    }
+    return height;
+  }
+
+  /**
+   * The land's height above a lake's water, `u`, reshaped into a shore: a
+   * low shelf of mud and grass at the water, then a bank (up to a couple of
+   * metres high here, barely there in marshy stretches) up to the land;
+   * under the water a shallow shelf, then a drop-off into the deep.
+   */
+  #lakeShore(u, x, z) {
+    if (u >= 0) {
+      const bank = 0.3 + 1.9 * smoothstep(-0.35, 0.45, this.lakeNoise.noise2D(x * 0.012 + 31, z * 0.012 - 17));
+      const shelf = 0.8, steep = 0.3, relax = 2 * bank + 1;
+      if (u < shelf) return u * 0.3; // the shelf, just above the water
+      const low = shelf * 0.3;
+      if (u < shelf + steep) return low + ((u - shelf) / steep) * bank; // the bank
+      const top = low + bank, end = shelf + steep + relax;
+      if (u < end) return top + ((u - shelf - steep) / relax) * (end - top); // back to the land
+      return u;
+    }
+    const d = -u;
+    if (d < 1.4) return -d * 0.3; // shallows
+    if (d < 2.2) return -(0.42 + ((d - 1.4) / 0.8) * 1.6); // the drop-off
+    if (d < 4.5) return -(2.02 + ((d - 2.2) / 2.3) * (4.5 - 2.02)); // back to the lake bed
+    return u;
   }
 
   /**
