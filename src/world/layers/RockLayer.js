@@ -245,6 +245,25 @@ export function createRockLayer(config) {
             rz: (hash2(gi, gj, seed + 10) - 0.5) * 0.5,
             shape: Math.floor(hash2(gi, gj, seed + 11) * ROCK_SHAPES.length) + (dry ? ROCK_SHAPES.length : 0),
           });
+          // Black Hills: now and then a balanced rock, a big boulder resting
+          // on a smaller one (or a stack of three).
+          if (boulder && granite > 0.5 && slope < 0.35 && hash2(gi, gj, seed + 12) < 0.06 * granite) {
+            const base = list[list.length - 1];
+            let under = base;
+            const tiers = hash2(gi, gj, seed + 13) < 0.3 ? 2 : 1;
+            for (let t = 0; t < tiers; t++) {
+              const grow = 1.1 + hash2(gi + t, gj, seed + 14) * 0.5;
+              const top = {
+                ...under,
+                sx: under.sx * grow, sy: under.sy * (0.8 + hash2(gi, gj + t, seed + 15) * 0.4), sz: under.sz * grow,
+                rx: (hash2(gi - t, gj, seed + 16) - 0.5) * 0.3, ry: hash2(gi, gj - t, seed + 17) * Math.PI * 2, rz: (hash2(gi + t, gj + t, seed + 18) - 0.5) * 0.3,
+                shape: Math.floor(hash2(gi, gj, seed + 19 + t) * ROCK_SHAPES.length),
+                on: under, // sits on top of this one
+              };
+              list.push(top);
+              under = top;
+            }
+          }
         }
       }
       list.snowLine = snowLine;
@@ -268,12 +287,16 @@ export function createRockLayer(config) {
       const placed = ALL_SHAPES.map(() => []);
       const boulders = [];
       for (const c of list) {
+        c.y = NaN; // (set once placed, for any rock balanced on this one)
+        if (c.on && Number.isNaN(c.on.y)) continue;
         const ground = groundHeightAt(c.lx, c.lz);
         if (!(ground > seaLevel - 0.6)) continue; // off-chunk, deep water or a cave mouth
         if (ground + c.jitter > snowLine - 15) continue; // snow
         if (!c.boulder && !smallStones) continue;
-        // Sunk deeper on a slope, so the uphill side doesn't float.
-        position.set(c.lx, ground - c.sy * (0.3 + 0.5 * c.slope) - c.slope * Math.max(c.sx, c.sz) * 0.4, c.lz);
+        // Sunk deeper on a slope, so the uphill side doesn't float; a
+        // balanced rock rests on the one below it.
+        position.set(c.lx, c.on ? c.on.y + c.on.sy * 0.72 + c.sy * 0.4 : ground - c.sy * (0.3 + 0.5 * c.slope) - c.slope * Math.max(c.sx, c.sz) * 0.4, c.lz);
+        c.y = position.y;
         euler.set(c.rx, c.ry, c.rz);
         rotation.setFromEuler(euler);
         scale.set(c.sx, c.sy, c.sz);

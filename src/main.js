@@ -143,6 +143,7 @@ const ui = {
   presets: document.querySelectorAll('[data-hour]'),
   alt: document.getElementById('stat-alt'),
   speed: document.getElementById('stat-speed'),
+  biome: document.getElementById('stat-biome'),
 };
 ui.seed.value = WORLD.seed;
 
@@ -408,6 +409,7 @@ function tick(now) {
     if (document.activeElement !== ui.time) ui.time.value = dayNight.hour.toFixed(2);
     ui.alt.textContent = `${Math.round(camera.position.y)} m`;
     ui.speed.textContent = `${Math.round(controls.currentSpeed)} m/s`;
+    ui.biome.textContent = sheltered ? 'Cave' : generator.describe(camera.position.x, camera.position.z);
   }
   requestAnimationFrame(tick);
 }

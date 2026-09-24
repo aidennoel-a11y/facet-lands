@@ -287,11 +287,12 @@ export class TerrainGenerator {
   }
 
   /**
-   * The great dunes of a dune sea: long sinuous ridges of sand across the
-   * wind, each rising gently on its windward side to a rounded crest and
-   * falling away more steeply down its lee, about 160 m apart and up to
-   * 30 m tall, rising and falling along their length into crescents and
-   * saddles. Smooth sand throughout.
+   * The dunes of a dune sea: fields of crescent dunes, each 8 to 18 m tall,
+   * rising gently on the windward side to a rounded crest and dropping
+   * more steeply down the lee, its horns trailing downwind. They stand in
+   * staggered rows about 95 m apart with hollows between them, and
+   * smaller dunes cross them at an angle, so the sand is shaped every way
+   * rather than in long parallel ridges.
    */
   #greatDunes(x, z) {
     // The wind blows from about the west-south-west, veering slowly across the sea.
@@ -299,20 +300,34 @@ export class TerrainGenerator {
     const ca = Math.cos(a), sa = Math.sin(a);
     const u0 = x * ca + z * sa; // downwind
     const v = -x * sa + z * ca; // across the wind
-    // Crests wander, so the ridges snake rather than run ruler-straight.
-    const u = u0 + this.ergNoise.noise2D(v * 0.004, u0 * 0.0015) * 45;
-    const L = 160;
-    const t = u / L - Math.floor(u / L);
-    // Smooth all the way: rounded crests and troughs, a long windward
-    // slope and a shorter, steeper lee (no steeper than dry sand lies).
-    const crestAt = 0.62;
-    const profile = t < crestAt ? 0.5 - 0.5 * Math.cos((Math.PI * t) / crestAt) : 0.5 + 0.5 * Math.cos((Math.PI * (t - crestAt)) / (1 - crestAt));
-    // Tall in places, low saddles between: crescents along each ridge
-    // (blending smoothly from one ridge to the next).
-    const ridge = u / L;
-    const tall = 0.4 + 0.6 * smoothstep(-0.5, 0.6, this.ergNoise.noise2D(v * 0.005 + 31, ridge * 0.9));
+    const u = u0 + this.ergNoise.noise2D(v * 0.006, u0 * 0.002) * 28;
+    const L = 95;
+    const s = this.seed ^ 0xd00e;
+    // Smooth profile: rounded crest (at `crestAt` of the way along) and hollows.
+    const profile = (t, crestAt) => (t < crestAt ? 0.5 - 0.5 * Math.cos((Math.PI * t) / crestAt) : 0.5 + 0.5 * Math.cos((Math.PI * (t - crestAt)) / (1 - crestAt)));
+    let h = 0;
+    const k0 = Math.floor(u / L);
+    for (let k = k0 - 1; k <= k0 + 1; k++) {
+      // Along each row, separate crescents (staggered from row to row).
+      const W = 75;
+      const along = v / W + hash2(k, 0, s);
+      const m = Math.floor(along);
+      const f = along - m - 0.5; // -0.5 .. 0.5 across this crescent
+      const shift = 34 * f * f; // its horns trail downwind
+      const t = (u - shift - k * L) / L;
+      if (t < 0 || t > 1) continue;
+      const mound = Math.pow(Math.cos(Math.PI * f), 1.5);
+      const tall = 8 + 10 * hash2(k, m, s + 1);
+      h = Math.max(h, profile(t, 0.62) * tall * mound);
+    }
+    // Smaller dunes crossing at an angle.
+    const b = a + 1.15;
+    const u2 = x * Math.cos(b) + z * Math.sin(b) + this.ergNoise.noise2D(x * 0.008 + 3, z * 0.008) * 12;
+    const L2 = 58;
+    const t2 = u2 / L2 - Math.floor(u2 / L2);
+    const cross = profile(t2, 0.6) * (2.5 + 2.5 * (this.ergNoise.noise2D(x * 0.01 - 9, z * 0.01 + 4) * 0.5 + 0.5));
     const swell = this.ergNoise.noise2D(x * 0.0035 + 11, z * 0.0035 - 5) * 2.5;
-    return profile * 30 * tall + swell;
+    return h + cross + swell;
   }
 
   /**
@@ -470,9 +485,16 @@ export class TerrainGenerator {
   }
 
   /**
-   * Granite needles: sheer spires, well spread out (one per 70 m cell at
-   * most, only where the hills are high), with steep sides and rounded,
-   * weathered tops.
+   * Granite formations, well spread out (one per 70 m cell at most, only
+   * where the hills are high), each one of:
+   *  - a needle: a sheer spire with a rounded, weathered top;
+   *  - a cluster of spires: a tight crowd of thin pinnacles (like the
+   *    Cathedral Spires);
+   *  - a fin: a long, narrow blade of rock with a ragged crest;
+   *  - a castle: a blocky, sheer-sided tower of jointed granite, stepped
+   *    at the top;
+   *  - a bald dome: a smooth whaleback of bare granite, faintly banded
+   *    where sheets of rock have peeled away.
    */
   #needles(x, z, domes) {
     const C = 70;
@@ -485,12 +507,57 @@ export class TerrainGenerator {
         if (hash2(i, j, s) > 0.8 * domes) continue;
         const px = (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * C;
         const pz = (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * C;
-        const r = 10 + 6 * hash2(i, j, s + 3);
-        const d = Math.hypot(x - px, z - pz);
-        if (d >= r) continue;
-        // A broad rounded cap, then steep sides down to the foot.
-        const t = d / r;
-        best = Math.max(best, (18 + 26 * hash2(i, j, s + 4)) * Math.pow(1 - Math.pow(t, 2.6), 0.5));
+        const dx = x - px, dz = z - pz;
+        if (dx * dx + dz * dz > 45 * 45) continue;
+        const kind = hash2(i, j, s + 5);
+        const size = hash2(i, j, s + 4);
+        let h = 0;
+        if (kind < 0.35) {
+          // A needle.
+          const r = 10 + 6 * hash2(i, j, s + 3);
+          const t = Math.hypot(dx, dz) / r;
+          if (t < 1) h = (18 + 26 * size) * Math.pow(1 - Math.pow(t, 2.6), 0.5);
+        } else if (kind < 0.52) {
+          // A cluster of spires.
+          const count = 4 + Math.floor(hash2(i, j, s + 6) * 4);
+          for (let k = 0; k < count; k++) {
+            const a = hash2(i + k * 13, j, s + 7) * Math.PI * 2, out = k === 0 ? 0 : 5 + 11 * hash2(i, j + k * 13, s + 8);
+            const r = 3.5 + 2.5 * hash2(i - k, j + k, s + 9);
+            const t = Math.hypot(dx - Math.cos(a) * out, dz - Math.sin(a) * out) / r;
+            if (t < 1) h = Math.max(h, (16 + 24 * hash2(i + k, j - k, s + 10)) * (k === 0 ? 1.15 : 1) * Math.pow(1 - Math.pow(t, 2.2), 0.5));
+          }
+        } else if (kind < 0.68) {
+          // A fin: a long narrow blade, turned any way, its crest ragged.
+          const a = hash2(i, j, s + 6) * Math.PI;
+          const u = dx * Math.cos(a) + dz * Math.sin(a), v = -dx * Math.sin(a) + dz * Math.cos(a);
+          const len = 22 + 18 * size, wide = 4 + 3 * hash2(i, j, s + 3);
+          const e = Math.hypot(u / len, v / wide);
+          if (e < 1) {
+            const crest = 1 - 0.35 * Math.abs(u / len) + 0.18 * this.hillsNoise.noise2D(u * 0.12 + i * 7, j * 3.1);
+            h = (14 + 16 * hash2(i, j, s + 7)) * crest * Math.pow(1 - Math.pow(e, 3), 0.45);
+          }
+        } else if (kind < 0.82) {
+          // A castle: a squarish tower (a superellipse), sheer-sided, with
+          // a second, smaller tier standing on its top.
+          const a = hash2(i, j, s + 6) * Math.PI;
+          const u = dx * Math.cos(a) + dz * Math.sin(a), v = -dx * Math.sin(a) + dz * Math.cos(a);
+          const r = 11 + 7 * size, H = 12 + 12 * hash2(i, j, s + 7);
+          const d = Math.pow(Math.pow(Math.abs(u / r), 4) + Math.pow(Math.abs(v / (r * 0.8)), 4), 0.25);
+          if (d < 1) {
+            const ox = r * 0.25 * (hash2(i, j, s + 8) - 0.5), oz = r * 0.25 * (hash2(i, j, s + 9) - 0.5);
+            const d2 = Math.pow(Math.pow(Math.abs((u - ox) / (r * 0.55)), 4) + Math.pow(Math.abs((v - oz) / (r * 0.45)), 4), 0.25);
+            h = smoothstep(1, 0.8, d) * H + smoothstep(1, 0.8, d2) * H * 0.4;
+          }
+        } else {
+          // A bald dome, faintly banded by peeling sheets of rock.
+          const r = 22 + 10 * size;
+          const t = Math.hypot(dx, dz) / r;
+          if (t < 1) {
+            const dome = (18 + 12 * hash2(i, j, s + 7)) * Math.sqrt(1 - t * t);
+            h = dome - 0.6 * (dome / 3 - Math.floor(dome / 3));
+          }
+        }
+        best = Math.max(best, h);
       }
     }
     return best;
@@ -572,6 +639,32 @@ export class TerrainGenerator {
   }
 
   /** Ground colour of a face at (x, z): blended across the biomes there. */
+  /**
+   * What kind of country (x, z) is, in a word or two, for showing where
+   * you are: "Forest", "Rolling hills", "Mountains", "Dune sea", "Lake"...
+   */
+  describe(x, z) {
+    const sea = this.rivers.seaLevel;
+    const height = this.getHeight(x, z);
+    if (height < sea - 0.3) return this.getOceanness(x, z) > 0.5 ? 'Ocean' : 'Lake';
+    const water = this.rivers.at(x, z, 0);
+    if (water) return water.pond ? 'Pond' : water.stream ? 'Mountain stream' : 'River';
+    const w = this.getBiomeWeights(x, z, {});
+    const f = this.getFeatures(x, z);
+    if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return 'Beach';
+    const mountains = this.getMountainness(x, z);
+    if (mountains > 0.45) return height > 185 ? 'Snowy peaks' : 'Mountains';
+    if (mountains > 0.2) return 'Foothills';
+    const top = Object.keys(w).reduce((a, b) => (w[a] >= w[b] ? a : b));
+    if (top === 'blackHills') return 'Black Hills';
+    if (top === 'desert') return f.erg > 0.5 ? 'Dune sea' : f.mesa > 0.4 ? 'Mesas' : 'Desert';
+    if (top === 'savanna') return f.mesa > 0.4 ? 'Mesas' : 'Savanna';
+    if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
+    if (this.getForestDensity(x, z) > 0.55) return 'Forest';
+    if (smoothstep(-0.25, 0.35, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Rolling hills';
+    return 'Plains';
+  }
+
   surfaceColor(x, z, height, upness, out, jitter = this.getColorJitter(x, z)) {
     const w = this.getBiomeWeights(x, z, {});
     blendedFaceColor(this.biomes, w, height, upness, out);
