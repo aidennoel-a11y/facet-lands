@@ -44,7 +44,7 @@ export const WORLD = {
   grassFade: [70, 115], // tufts shrink away between these distances (m)
 
   // Sun, moon and sky
-  dayLengthMinutes: 8, // one full day/night cycle
+  dayLengthMinutes: 24, // one full day/night cycle (real minutes)
   startHour: 9.5,
 
   // Shadows follow the camera and cover a square this many metres across.

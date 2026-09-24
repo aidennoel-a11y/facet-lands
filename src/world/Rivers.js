@@ -271,7 +271,7 @@ export class Rivers {
       }
       points.push({ x: px, z: pz, level, width: 0, cascade });
 
-      if (b < this.seaLevel - 0.3) {
+      if (b < this.seaLevel) {
         // Into a lake or the sea: carry on a little way so the mouth opens out.
         points.push({ x: px + dir[0] * STEP, z: pz + dir[1] * STEP, level, width: 0 });
         return Rivers.#widen(points, kind === 'stream', lowland);
@@ -428,6 +428,11 @@ export class Rivers {
     out.water = (seg.wa + (seg.wb - seg.wa) * t) / 2;
     out.half = Rivers.channel(out.water);
     out.stream = seg.stream;
+    // Which way it flows, and how steeply (level drop per metre).
+    const run = Math.hypot(dx, dz) || 1;
+    out.fx = dx / run;
+    out.fz = dz / run;
+    out.drop = (seg.la - seg.lb) / run;
     return out;
   }
 
@@ -463,7 +468,7 @@ export class Rivers {
           inWater = true;
         } else {
           h = Math.min(h, pond.level + 0.2 + Rivers.bankRise(d - rr, 0.6));
-          if (d < rr + 6) bank = Math.max(bank, pond.level + 0.2 - Math.max(0, d - rr - 0.6) * 0.6);
+          if (d < rr + 8) bank = Math.max(bank, pond.level + 0.2 - Math.max(0, d - rr - 3.2) * 0.6);
         }
         continue;
       }
@@ -482,7 +487,7 @@ export class Rivers {
         // places than others) up to the land, then the valley side.
         if (k === 0) k = 0.75 + 0.55 * (this.meander.noise2D(x * 0.02 + 40, z * 0.02) + 1);
         h = Math.min(h, level + 0.2 + Rivers.bankRise(d - half, item.stream ? k * 0.8 : k));
-        if (d < half + 6) bank = Math.max(bank, level + 0.2 - Math.max(0, d - half - 0.6) * 0.6);
+        if (d < half + 8) bank = Math.max(bank, level + 0.2 - Math.max(0, d - half - 3.2) * 0.6);
       }
     }
     if (inWater) {
@@ -512,7 +517,7 @@ export class Rivers {
         const r = Rivers.pondRadius(pond, x, z);
         const half = Math.max(r, 4.5);
         if (d > half + margin) continue;
-        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true };
+        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, fx: 0, fz: 0, drop: 0 };
         continue;
       }
       Rivers.#measure(item, x, z, m);
@@ -520,6 +525,51 @@ export class Rivers {
       if (!best || m.d - m.half < best.d - best.half) best = { ...m, pond: false };
     }
     return best;
+  }
+
+  /**
+   * The water surface at (x, z), within `margin` metres of a channel:
+   * { level, fx, fz (flow direction), drop (per metre), inset (how far in
+   * from the channel's edge), pond }, or null. Where channels overlap (two
+   * rivers meeting, a stream's pools and falls) the water takes the lowest
+   * of their levels, just as carve() digs the bed under the lowest, so the
+   * two run together as one.
+   */
+  waterAt(x, z, margin = 0) {
+    const near = this.#near(x, z);
+    if (!near) return null;
+    const m = this._w ?? (this._w = {});
+    let best = null, bestGap = Infinity; // nearest channel
+    let low = null, lowEnd = null; // lowest channel we're inside (alongside a stretch, or past its end)
+    for (const item of near) {
+      let d, half, level, fx = 0, fz = 0, drop = 0, end = false, pond = false;
+      if (item.pond) {
+        const p = item.pond;
+        d = Math.hypot(x - p.x, z - p.z);
+        half = Math.max(Rivers.pondRadius(p, x, z), 2.4);
+        level = p.level;
+        pond = true;
+      } else {
+        Rivers.#measure(item, x, z, m);
+        ({ d, half, level, fx, fz, drop, end } = m);
+      }
+      if (d > half + margin) continue;
+      const found = { level, fx, fz, drop, inset: half - d, pond };
+      if (d - half < bestGap) {
+        bestGap = d - half;
+        best = found;
+      }
+      if (d < half) {
+        if (end) {
+          if (!lowEnd || level < lowEnd.level) lowEnd = found;
+        } else if (!low || level < low.level) low = found;
+      }
+    }
+    if (!best) return null;
+    if (!low) return lowEnd ?? best;
+    // (As carve(): a stretch reaching here only with its end lowers it a little at most.)
+    if (lowEnd && lowEnd.level < low.level) return { ...low, level: Math.max(lowEnd.level, low.level - 0.4) };
+    return low;
   }
 
   /** Rivers and streams that pass near a box (for drawing their water). */
