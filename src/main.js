@@ -349,6 +349,33 @@ function updateVisibility() {
 
 let sheltered = false; // underground: no rain or lightning, sounds muffled
 
+// Where the sun's (or moon's) shadow map reaches: only chunks there need
+// sample it (see ChunkManager.setShadowVolume). A little bigger than the
+// shadow camera's box, so nothing at its edge is ever missed as it moves.
+const shadowFrustum = new THREE.Frustum();
+const shadowMatrix = new THREE.Matrix4();
+const shadowCheck = { wait: 0 };
+function shadowReach(dt) {
+  shadowCheck.wait -= dt;
+  if (shadowCheck.wait > 0) return;
+  shadowCheck.wait = 0.25;
+  const light = dayNight.light;
+  if (!light.castShadow || !renderer.shadowMap.enabled) {
+    chunks.setShadowVolume(null);
+    return;
+  }
+  const cam = light.shadow.camera.clone();
+  cam.left *= 1.15; cam.right *= 1.15; cam.top *= 1.15; cam.bottom *= 1.15; cam.far += 100;
+  light.updateMatrixWorld();
+  light.target.updateMatrixWorld();
+  cam.position.copy(light.position);
+  cam.lookAt(light.target.position);
+  cam.updateMatrixWorld();
+  cam.updateProjectionMatrix();
+  shadowFrustum.setFromProjectionMatrix(shadowMatrix.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+  chunks.setShadowVolume(shadowFrustum);
+}
+
 // How much the land under you has a cold winter (so snow rather than rain).
 const cold = { value: 1, wait: 0 };
 function coldHere(dt) {
@@ -426,6 +453,7 @@ function tick(now) {
   // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)
   lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getBaseHeight(x, z), sound, sheltered);
   dayNight.update(dt, camera.position, weather);
+  shadowReach(dt);
   // Rain closes the view in, and so does the mist that lies over the
   // wetlands at dawn.
   const mist = marshMist(dt);

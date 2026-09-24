@@ -1,4 +1,4 @@
-import { Group, Mesh } from 'three';
+import { Box3, Group, Mesh } from 'three';
 import { buildChunkGeometry, chunkFromData } from './ChunkMesher.js';
 
 const NEIGHBOURS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
@@ -373,6 +373,21 @@ export class ChunkManager {
       }
     }
 
+    // What in it can receive shadows, and the box it all lies in (see setShadowVolume).
+    chunk.shadowMeshes = [];
+    group.traverse((o) => {
+      if (!o.isMesh) return;
+      o.userData.shadowReceive ??= o.receiveShadow;
+      if (o.userData.shadowReceive) chunk.shadowMeshes.push(o);
+    });
+    geometry.boundingBox ?? geometry.computeBoundingBox();
+    const b = geometry.boundingBox;
+    chunk.box = new Box3().set(b.min, b.max).translate(group.position);
+    chunk.box.min.y -= 8; // (skirts, and anything sunk in the ground)
+    chunk.box.max.y += 45; // trees, rocks and needles standing on it
+    chunk.shadowed = null;
+    this.#applyShadow(chunk);
+
     // Replace an older LOD of the same chunk only once the new one is ready,
     // so there is never a hole.
     if (previous) this.#unload(previous, sameMesh ? geometry : null, kept);
@@ -381,6 +396,26 @@ export class ChunkManager {
     this.#applyVisibility(chunk);
     this.root.add(group);
     this.triangleCount += triangles;
+  }
+
+  /**
+   * Tells the chunks where the shadow map reaches (a Frustum: the
+   * shadow-casting light's view volume), or null for everywhere. Chunks
+   * wholly outside it can't be in shadow (the shadow map would find them
+   * lit anyway), so they skip sampling it: the picture is exactly the same
+   * but the GPU is spared most of the land in view. Call now and then as
+   * the light and the player move.
+   */
+  setShadowVolume(frustum) {
+    this.shadowVolume = frustum;
+    for (const chunk of this.chunks.values()) this.#applyShadow(chunk);
+  }
+
+  #applyShadow(chunk) {
+    const on = !this.shadowVolume || this.shadowVolume.intersectsBox(chunk.box);
+    if (chunk.shadowed === on) return;
+    chunk.shadowed = on;
+    for (const mesh of chunk.shadowMeshes) mesh.receiveShadow = on;
   }
 
   /** Removes a chunk; `keepGeometry` and `keep` (layer objects) were handed on to its replacement. */
