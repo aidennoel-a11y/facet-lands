@@ -131,11 +131,11 @@ export class TerrainGenerator {
     const a = this.getAridity(x, z, range);
     const temperate = 1 - smoothstep(0.3, 0.42, a);
     const desert = smoothstep(0.62, 0.74, a);
-    // Black Hills country: a kind of mountain range of its own, in the
-    // green lands (see #hillsZone).
-    const hills = this.#hillsZone(x, z, range ?? this.#rangeField(x, z).value) * (1 - desert);
+    // Black Hills country: a rare biome of its own, found now and then in
+    // the rolling hills of the green lands (see #hillsZone).
+    const hills = this.#hillsZone(x, z, range ?? this.#rangeField(x, z).value) * temperate;
     out.temperate = temperate * (1 - hills);
-    out.savanna = Math.max(0, 1 - temperate - desert) * (1 - hills);
+    out.savanna = Math.max(0, 1 - temperate - desert);
     out.desert = desert;
     out.blackHills = hills;
     return out;
@@ -197,18 +197,17 @@ export class TerrainGenerator {
         mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged);
       }
       mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size) * (1 - 0.5 * bowl);
+    }
 
-      // Black Hills country: instead of crested ranges, rounded granite
-      // domes under pine forest, with clusters of sheer granite needles.
-      const hz = w.blackHills;
-      if (hz > 0) {
-        const core2 = smoothstep(0.2, 0.62, range);
-        const domes = Math.pow(smoothstep(-0.45, 0.75, this.hillsNoise.fbm(x * 0.0013, z * 0.0013, 3)), 1.3) * 125;
-        const knobs = this.ruggedNoise.fbm(x * 0.004 + 70, z * 0.004 - 70, 2) * 10;
-        const density = core2 * smoothstep(-0.1, 0.3, this.hillsNoise.fbm(x * 0.0011 + 900, z * 0.0011 - 300, 2));
-        const hillsLand = Math.pow(mask, 1.3) * 55 * (0.8 + 0.3 * size) + core2 * (domes + knobs) + (density > 0 ? this.#needles(x, z, density) : 0);
-        mountains += (hillsLand - mountains) * hz;
-      }
+    // Black Hills country: the land rises into rounded granite domes under
+    // pine forest, crowned with piles of huge boulders (tors), and here and
+    // there a sheer granite needle juts up, its top worn round.
+    const hz = w.blackHills;
+    let blackHills = 0;
+    if (hz > 0) {
+      const domes = Math.pow(smoothstep(-0.2, 0.7, this.hillsNoise.fbm(x * 0.0021, z * 0.0021, 3)), 1.4);
+      const heart = smoothstep(0.35, 0.8, hz);
+      blackHills = hz * (22 + domes * 55) + heart * domes * this.#tors(x, z) + heart * this.#needles(x, z, domes);
     }
 
     // Broad rise and fall of the land, lifted in dry country so seas
@@ -240,7 +239,7 @@ export class TerrainGenerator {
         : 0;
 
     const f = this.#features(x, z, dryness, mask, w);
-    return 14 + continent * 16 + hills + dunes + mountains + f.mesaHeight + f.escarpHeight - sea - lakes;
+    return 14 + continent * 16 + hills + dunes + mountains + blackHills + f.mesaHeight + f.escarpHeight - sea - lakes;
   }
 
   /**
@@ -268,8 +267,11 @@ export class TerrainGenerator {
       out.mesa = mesa;
       out.mesaHeight = mesa * layers;
     }
-    const green = 1 - w.desert;
-    const escarp = smoothstep(0.3, 0.5, this.escarpNoise.fbm(x * 0.0003, z * 0.0003, 2)) * flatland * green;
+    // Escarpments: most often in rolling hills and forest country.
+    const green = w.temperate + 0.5 * w.savanna;
+    const hilly = smoothstep(-0.25, 0.35, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
+    const wooded = smoothstep(-0.2, 0.25, this.forestNoise.fbm(x * 0.0045, z * 0.0045, 3));
+    const escarp = smoothstep(0.32 - 0.22 * Math.max(hilly, wooded), 0.5 - 0.2 * Math.max(hilly, wooded), this.escarpNoise.fbm(x * 0.0003, z * 0.0003, 2)) * flatland * green;
     if (escarp > 0) {
       const e = this.escarpNoise.fbm(x * 0.0011 + 100, z * 0.0011 - 100, 2);
       const tall = 10 + 10 * (this.escarpNoise.noise2D(x * 0.0006 - 20, z * 0.0006) * 0.5 + 0.5);
@@ -324,38 +326,71 @@ export class TerrainGenerator {
    */
   getCliffiness(x, z) {
     const f = this.getFeatures(x, z);
-    return Math.max(this.getMountainness(x, z), f.mesa, f.escarp);
+    return Math.max(this.getMountainness(x, z), f.mesa, f.escarp, this.getBiomeWeights(x, z, {}).blackHills);
   }
 
   /**
-   * Black Hills country (0..1): some ranges in the green lands are rounded
-   * granite domes and needles instead of crested peaks.
+   * Black Hills country (0..1): rare patches of the rolling hills, away
+   * from mountain ranges and the dry country.
    */
   #hillsZone(x, z, range) {
-    const zone = smoothstep(0.18, 0.42, this.hillsNoise.fbm(x * 0.00018 - 250, z * 0.00018 + 610, 2));
+    const zone = smoothstep(0.3, 0.46, this.hillsNoise.fbm(x * 0.00024 - 250, z * 0.00024 + 610, 2));
     if (zone <= 0) return 0;
-    return zone * smoothstep(-0.05, 0.25, range) * (1 - smoothstep(0.5, 0.68, this.#rawAridity(x, z)));
+    const hilly = smoothstep(-0.2, 0.25, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
+    return zone * hilly * (1 - smoothstep(0.02, 0.2, range)) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z)));
   }
 
   /**
-   * Granite needles: sheer pointed spires, one per 26 m cell where the
-   * cell's hash falls under `density` (so they gather in clusters).
+   * Tors: piles of huge rounded granite boulders, a few to each 34 m cell,
+   * each a smooth dome (no sharp edges), stacked where they overlap.
    */
-  #needles(x, z, density) {
-    const C = 26;
+  #tors(x, z) {
+    const C = 34;
+    const ci = Math.floor(x / C), cj = Math.floor(z / C);
+    const s = this.seed ^ 0x70c5;
+    let best = 0;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const i = ci + di, j = cj + dj;
+        if (hash2(i, j, s) > 0.55) continue;
+        const cx = (i + 0.5) * C, cz = (j + 0.5) * C;
+        const count = 2 + Math.floor(hash2(i, j, s + 1) * 3);
+        for (let k = 0; k < count; k++) {
+          const px = cx + (hash2(i + k * 31, j, s + 2) - 0.5) * 20;
+          const pz = cz + (hash2(i, j + k * 31, s + 3) - 0.5) * 20;
+          const r = 6 + 7 * hash2(i + k, j - k, s + 4);
+          const d2 = ((x - px) ** 2 + (z - pz) ** 2) / (r * r);
+          if (d2 >= 1) continue;
+          // A boulder: a squashed dome, sitting a little into the ground.
+          best = Math.max(best, r * (0.55 + 0.35 * hash2(i - k, j + k, s + 5)) * Math.sqrt(1 - d2) - 1.5);
+        }
+      }
+    }
+    return Math.max(0, best);
+  }
+
+  /**
+   * Granite needles: sheer spires, well spread out (one per 70 m cell at
+   * most, only where the hills are high), with steep sides and rounded,
+   * weathered tops.
+   */
+  #needles(x, z, domes) {
+    const C = 70;
     const ci = Math.floor(x / C), cj = Math.floor(z / C);
     const s = this.seed ^ 0x5eed;
     let best = 0;
     for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         const i = ci + di, j = cj + dj;
-        if (hash2(i, j, s) > density * 0.9) continue;
-        const px = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * C;
-        const pz = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * C;
-        const r = 5 + 6 * hash2(i, j, s + 3);
+        if (hash2(i, j, s) > 0.4 * domes) continue;
+        const px = (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * C;
+        const pz = (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * C;
+        const r = 10 + 6 * hash2(i, j, s + 3);
         const d = Math.hypot(x - px, z - pz);
         if (d >= r) continue;
-        best = Math.max(best, (22 + 48 * hash2(i, j, s + 4)) * Math.pow(1 - d / r, 0.55));
+        // A broad rounded cap, then steep sides down to the foot.
+        const t = d / r;
+        best = Math.max(best, (18 + 26 * hash2(i, j, s + 4)) * Math.pow(1 - Math.pow(t, 2.6), 0.5));
       }
     }
     return best;

@@ -112,10 +112,10 @@ export class Rivers {
       const h = g.getBaseHeight(x, z);
       if (h < 45 || h > 240) continue;
       if (g.getBiomeWeights(x, z, {}).desert > 0.1) continue;
-      // Half rise from a small tarn where there's a hollow for one.
-      const pond = rand() < 0.5 ? this.#pond(x, z, 5 + rand() * 6, rand, 0.12) : null;
-      const start = pond ?? { x, z, level: h - 0.5, outlet: null };
-      const course = this.#trace(start, 'stream', rand, siblings);
+      // Every stream rises from a small tarn, where there's a hollow for one.
+      const pond = this.#pond(x, z, 6 + rand() * 7, rand, 0.3);
+      if (!pond) continue;
+      const course = this.#trace(pond, 'stream', rand, siblings);
       if (course) {
         siblings.push(...course);
         this.#add(course, pond, 'stream', course.tarn);
@@ -218,10 +218,21 @@ export class Rivers {
       const l = Math.hypot(dx, dz) || 1;
       dir = [dx / l, dz / l];
 
-      // The water falls steadily, following the land a little below it
-      // (so a stream pours down steep ground and over cliffs).
-      level = Math.max(this.seaLevel + 0.1, Math.min(level - 0.02, b - (stream ? 0.5 : 0.8)));
-      points.push({ x: px, z: pz, level, width: 0 });
+      // The water only ever falls. Rivers, and streams on gentle ground,
+      // follow the land a little below it. On steep ground a stream steps
+      // down in cascades: a pool dug level into the slope, until the land
+      // falls away below it, then a waterfall over the pool's lip into the
+      // next pool, and so on down the mountain.
+      const target = b - (stream ? 0.5 : 0.8);
+      const cascade = stream && slope > 0.15;
+      if (cascade && target < level - 0.02) {
+        const next = Math.max(this.seaLevel + 0.1, target - (1.5 + rand() * 2));
+        if (points.length) points.push({ x: px - dir[0] * 4, z: pz - dir[1] * 4, level: level - 0.02, width: 0, cascade: true });
+        level = next;
+      } else {
+        level = Math.max(this.seaLevel + 0.1, Math.min(level - 0.02, target));
+      }
+      points.push({ x: px, z: pz, level, width: 0, cascade });
 
       if (b < this.seaLevel - 0.3) {
         // Into a lake or the sea: carry on a little way so the mouth opens out.
@@ -279,12 +290,26 @@ export class Rivers {
       points.forEach((p, i) => {
         p.width = start + (end - start) * Math.pow(i / (n - 1), 0.7);
       });
-      return points;
+      return stream ? Rivers.#terraces(points) : points;
     }
     const mid = Math.min(4, Math.max(1.6, 1.2 + (lowland * STEP) / 250));
     const end = Math.min(13, Math.max(mid + 0.5, mid + ((n - lowland) * STEP) / 110));
     points.forEach((p, i) => {
       p.width = i < lowland ? 1 + (mid - 1) * Math.pow(i / lowland, 0.7) : mid + (end - mid) * Math.pow((i - lowland) / Math.max(1, n - 1 - lowland), 0.7);
+    });
+    return Rivers.#terraces(points);
+  }
+
+  /**
+   * Cascades spread out into broad terraces: wide pools stepping down the
+   * slope, the water pouring over each lip across its whole width (easing
+   * in and out over a couple of points).
+   */
+  static #terraces(points) {
+    const wide = points.map((p) => (p.cascade ? 1 : 0));
+    points.forEach((p, i) => {
+      const t = Math.max(wide[i], 0.5 * (wide[i - 1] ?? 0), 0.5 * (wide[i + 1] ?? 0));
+      if (t > 0) p.width = Math.max(p.width, p.width + (7.5 - p.width) * t);
     });
     return points;
   }
@@ -349,6 +374,7 @@ export class Rivers {
     const dx = seg.bx - seg.ax, dz = seg.bz - seg.az;
     const t = Math.max(0, Math.min(1, ((x - seg.ax) * dx + (z - seg.az) * dz) / (dx * dx + dz * dz || 1)));
     out.d = Math.hypot(seg.ax + dx * t - x, seg.az + dz * t - z);
+    out.end = t <= 0 || t >= 1; // beyond the stretch's start or end
     out.level = seg.la + (seg.lb - seg.la) * t;
     out.water = (seg.wa + (seg.wb - seg.wa) * t) / 2;
     out.half = Rivers.channel(out.water);
@@ -368,7 +394,14 @@ export class Rivers {
     if (!near) return base;
     let h = base;
     const m = this._m;
-    let bank = -Infinity, inWater = false;
+    // Under water the bed is set just under the water level (dug down, or
+    // built up where the land dips), so water never hangs above the land.
+    // Where channels overlap (at a bend, or around a waterfall), the bed is
+    // the lowest of the stretches the point lies alongside; a stretch that
+    // only reaches it with its end (the pool below a waterfall, say) may
+    // lower it just a little, so a pool's sides are never dug down to the
+    // pool below it.
+    let bank = -Infinity, inWater = false, wet = Infinity, wetEnd = Infinity;
     for (const item of near) {
       if (item.pond) {
         const pond = item.pond;
@@ -377,7 +410,7 @@ export class Rivers {
         const rr = Math.max(r, 4.5);
         if (d < rr) {
           const t = d / rr;
-          h = Math.min(h, pond.level - 0.1 - (0.5 + pond.r * 0.1) * (1 - t * t));
+          wet = Math.min(wet, pond.level - 0.1 - (0.5 + pond.r * 0.1) * (1 - t * t));
           inWater = true;
         } else {
           h = Math.min(h, pond.level + 0.2 + Math.max(0, d - rr - 1.5) * 0.45);
@@ -390,12 +423,10 @@ export class Rivers {
       if (d < half) {
         // Under the water: the bed, then the channel's margin just below the
         // water level out to its edge.
-        if (d < water) {
-          const s = d / water;
-          h = Math.min(h, level - 0.2 - (0.3 + water * 0.12) * (1 - s * s));
-        } else {
-          h = Math.min(h, level - 0.1);
-        }
+        const s = d / water;
+        const bed = d < water ? level - 0.2 - (0.3 + water * 0.12) * (1 - s * s) : level - 0.1;
+        if (m.end) wetEnd = Math.min(wetEnd, bed);
+        else wet = Math.min(wet, bed);
         inWater = true;
       } else {
         // Valley side: from just above the water up to the land.
@@ -403,8 +434,13 @@ export class Rivers {
         if (d < half + 6) bank = Math.max(bank, level + 0.2 - Math.max(0, d - half - 1.5) * 0.6);
       }
     }
+    if (inWater) {
+      if (wet === Infinity) wet = wetEnd;
+      else if (wetEnd < wet) wet = Math.max(wetEnd, wet - 0.4);
+      return base > this.seaLevel - 0.5 ? wet : Math.min(h, wet);
+    }
     // Banks never lower than the water beside them (except out in a lake or the sea).
-    if (!inWater && bank > h && base > this.seaLevel - 0.5) h = bank;
+    if (bank > h && base > this.seaLevel - 0.5) h = bank;
     return h;
   }
 

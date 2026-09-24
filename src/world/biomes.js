@@ -97,10 +97,10 @@ export const BIOMES = {
       { height: 5, color: 0xd8c690 },
       { height: 8, color: 0x9cc063 }, // meadow
       { height: 40, color: 0x7aa84f },
-      { height: 90, color: 0x5f9446 }, // pine country
-      { height: 150, color: 0x6f8f4c },
-      { height: 200, color: 0xa8959a }, // bare granite
-      { height: 260, color: 0xb39fa0 },
+      { height: 70, color: 0x5f9446 }, // pine country
+      { height: 110, color: 0x6f8f4c },
+      { height: 140, color: 0xa8959a }, // bare granite
+      { height: 200, color: 0xb39fa0 },
     ],
     cliff: 0xb09c9c, // pinkish-grey granite
     cliffSlope: [0.7, 0.48],
