@@ -34,6 +34,8 @@ export class TerrainGenerator {
     this.duneNoise = new SimplexNoise(this.seed + 12);
     this.rangeSizeNoise = new SimplexNoise(this.seed + 13);
     this.spikeNoise = new SimplexNoise(this.seed + 14);
+    this.bowlNoise = new SimplexNoise(this.seed + 15);
+    this.ruggedNoise = new SimplexNoise(this.seed + 16);
     this._range = { value: 0, size: 1, large: 0 };
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
@@ -96,15 +98,21 @@ export class TerrainGenerator {
     let mountains = 0;
     if (mask > 0) {
       const core = smoothstep(0.34, 0.72, range);
+      // Bowls and valleys cut into the range, deepest in its heart, so it's
+      // not one solid massif: sheltered hollows low enough for forest,
+      // between the ridges and peaks.
+      const bowl = core > 0 ? smoothstep(0.02, 0.45, this.bowlNoise.fbm(x * 0.0012, z * 0.0012, 2)) * core : 0;
       if (core > 0) {
         // Broader crests on the bigger ranges.
         let ridges = this.ridgeNoise.ridged(x * 0.0008, z * 0.0008, 4, 2, 0.47, 0.012);
         if (large > 0) ridges += (this.ridgeNoise.ridged(x * 0.00052 + 91, z * 0.00052 - 37, 4, 2, 0.47, 0.012) - ridges) * large;
         const spiky = smoothstep(0.3, 0.6, this.spikeNoise.fbm(x * 0.0003, z * 0.0003, 2));
         const peaks = Math.pow(ridges, 1.6 + 1.3 * spiky) * (1 + 1.0 * spiky);
-        mountains = core * peaks * 205 * (0.65 + 0.5 * size);
+        // Knobbly shoulders and spurs, so high ground is never a flat plateau.
+        const rugged = this.ruggedNoise.fbm(x * 0.0035, z * 0.0035, 2) * 18;
+        mountains = core * (peaks * 205 * (0.65 + 0.5 * size) * (1 - 0.7 * bowl) + rugged);
       }
-      mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size);
+      mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size) * (1 - 0.5 * bowl);
     }
 
     // Broad rise and fall of the land, lifted in dry country so seas

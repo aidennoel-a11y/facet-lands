@@ -27,13 +27,14 @@ export const BIOMES = {
       { height: 8, color: 0xa6c96a }, // meadow
       { height: 30, color: 0x86b858 },
       { height: 60, color: 0x5f9a45 }, // deep grass
-      { height: 85, color: 0x7f9a52 }, // upland scrub
-      { height: 105, color: 0x9391a1 }, // bare rock (violet-grey, Polaris style)
-      { height: 160, color: 0x838198 },
+      { height: 95, color: 0x7f9a52 }, // upland scrub
+      { height: 122, color: 0x8e9868 }, // alpine meadow
+      { height: 148, color: 0x9391a1 }, // bare rock (violet-grey, Polaris style)
+      { height: 210, color: 0x838198 },
     ],
     cliff: 0x908a9e,
     cliffSlope: [0.72, 0.5], // normal.y where cliff blending starts / is full
-    snowLine: 125, // peaks above this get snow caps
+    snowLine: 185, // peaks above this get snow caps
     snow: 0xf1f4f7,
     grass: 1,
     trees: {
@@ -43,11 +44,11 @@ export const BIOMES = {
         { type: 'broadleaf', weight: 1, minHeight: 6, maxHeight: 55 },
         { type: 'poplar', weight: 0.35, minHeight: 5, maxHeight: 35 },
         { type: 'maple', weight: 0.15, minHeight: 8, maxHeight: 50 },
-        { type: 'birch', weight: 0.6, minHeight: 12, maxHeight: 75 },
-        { type: 'pine', weight: 1.2, minHeight: 20, maxHeight: 110 },
-        { type: 'spruce', weight: 0.9, minHeight: 45, maxHeight: 125 },
-        { type: 'bush', weight: 0.5, minHeight: 5, maxHeight: 90 },
-        { type: 'deadPine', weight: 0.06, minHeight: 30, maxHeight: 120 },
+        { type: 'birch', weight: 0.6, minHeight: 12, maxHeight: 95 },
+        { type: 'pine', weight: 1.2, minHeight: 20, maxHeight: 150 },
+        { type: 'spruce', weight: 0.9, minHeight: 45, maxHeight: 165 },
+        { type: 'bush', weight: 0.5, minHeight: 5, maxHeight: 130 },
+        { type: 'deadPine', weight: 0.06, minHeight: 30, maxHeight: 160 },
       ],
     },
   },
@@ -63,21 +64,22 @@ export const BIOMES = {
       { height: 8, color: 0xcdbd6c }, // dry golden grass
       { height: 30, color: 0xc2b05e },
       { height: 60, color: 0xaaa458 }, // greener where it's higher
-      { height: 85, color: 0x9f956a }, // scrub
-      { height: 105, color: 0x9a8f98 }, // bare rock, warmer
-      { height: 160, color: 0x8a8394 },
+      { height: 95, color: 0x9f956a }, // scrub
+      { height: 122, color: 0x9c9670 }, // high grassland
+      { height: 148, color: 0x9a8f98 }, // bare rock, warmer
+      { height: 210, color: 0x8a8394 },
     ],
     cliff: 0x9a8a8e,
     cliffSlope: [0.72, 0.5],
-    snowLine: 125,
+    snowLine: 185,
     snow: 0xf1f4f7,
     grass: 0.75,
     trees: {
       density: 0.3,
       clumped: true,
       species: [
-        { type: 'acacia', weight: 1, minHeight: 5, maxHeight: 110 },
-        { type: 'dryBush', weight: 0.8, minHeight: 5, maxHeight: 110 },
+        { type: 'acacia', weight: 1, minHeight: 5, maxHeight: 140 },
+        { type: 'dryBush', weight: 0.8, minHeight: 5, maxHeight: 140 },
         { type: 'broadleaf', weight: 0.08, minHeight: 6, maxHeight: 60 },
       ],
     },

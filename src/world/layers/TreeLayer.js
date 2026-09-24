@@ -119,16 +119,18 @@ export function createTreeLayer() {
           const colourHeight = ground + generator.getColorJitter(wx, wz);
           if (biome.id !== 'desert' && colourHeight < 7) continue;
           // Nor on bare rock: the grey band up the mountains, and faces
-          // steep enough to show rock.
+          // steep enough to show rock (the same test the ground's colour
+          // uses). Steep slopes that are still green keep their trees.
           const r = hash2(gi, gj, seed + 12);
-          if (surface.normalY < 0.8 || r < smoothstep(82, 98, colourHeight)) continue;
+          const cliff = 1 - smoothstep(0.5, 0.72, surface.normalY);
+          if (r < Math.max(cliff, smoothstep(128, 146, colourHeight))) continue;
           // And ever fewer the higher you go (the tree line).
-          if (hash2(gi, gj, seed + 13) < smoothstep(50, 100, ground) * 0.9) continue;
+          if (hash2(gi, gj, seed + 13) < smoothstep(85, 150, ground) * 0.9) continue;
 
           // Too steep for roots? (height change per metre)
           const gradX = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
           const gradZ = (generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2)) / 4;
-          if (Math.abs(gradX) + Math.abs(gradZ) > 0.95) continue;
+          if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
 
           // Pick a species that is happy at this height (edges blurred a bit).
           const h = ground + (hash2(gi, gj, seed + 3) - 0.5) * 16;

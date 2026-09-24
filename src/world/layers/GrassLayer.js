@@ -117,7 +117,7 @@ export function createGrassLayer(config) {
 
           // Only where the ground itself is green (not sand, rock or snow).
           const colourHeight = ground + generator.getColorJitter(wx, wz);
-          if (colourHeight < 6 || colourHeight > 100) continue;
+          if (colourHeight < 6 || colourHeight > 140) continue;
 
           generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color);
           const v = 0.9 + hash2(gi, gj, seed + 3) * 0.22;
