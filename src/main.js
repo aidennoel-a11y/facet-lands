@@ -17,6 +17,9 @@ import { PlayerBody } from './player/PlayerBody.js';
 import { DayNight } from './render/DayNight.js';
 import { RayEffects } from './render/RayEffects.js';
 import { Clouds } from './world/Clouds.js';
+import { Weather, WEATHER } from './render/Weather.js';
+import { Lightning, Rain } from './render/Storm.js';
+import { Sound } from './render/Sound.js';
 import { describeWind, updateWind } from './render/wind.js';
 import { Minimap } from './ui/Minimap.js';
 
@@ -36,10 +39,15 @@ const camera = new THREE.PerspectiveCamera(60, 1, 0.3, drawDistance * 1.5);
 // Sky dome, sun, moon, stars, lighting and shadows, driven by the time of day.
 const dayNight = new DayNight(scene, WORLD, drawDistance * 1.2);
 const clouds = new Clouds(scene);
+// The weather: cloud cover, rain and thunderstorms, changing by itself.
+const weather = new Weather('fair');
+const rain = new Rain(scene);
+const lightning = new Lightning(scene);
+const sound = new Sound();
 
 // Ray-marched ambient occlusion and light shafts, drawn after the scene.
 const rayEffects = new RayEffects(renderer);
-const light = { direction: dayNight.lightDirection, color: dayNight.light.color, strength: 1 };
+const light = { direction: dayNight.lightDirection, color: dayNight.shaftColor, strength: 1, reach: 1.6 };
 
 // --- Terrain -----------------------------------------------------------------
 // Double-sided so that, from inside a cave, a lip of ground overhanging the
@@ -122,6 +130,10 @@ const ui = {
   shadows: document.getElementById('shadows'),
   rays: document.getElementById('rays'),
   night: document.getElementById('night'),
+  weather: document.getElementById('weather'),
+  weatherAuto: document.querySelector('#weather option[value=auto]'),
+  sunset: document.getElementById('sunset'),
+  sound: document.getElementById('sound'),
   presets: document.querySelectorAll('[data-hour]'),
   alt: document.getElementById('stat-alt'),
   speed: document.getElementById('stat-speed'),
@@ -175,6 +187,11 @@ ui.night.addEventListener('change', () => {
   nightVisionLight.intensity = ui.night.checked ? 1.6 : 0;
   caveNightVision.value = ui.night.checked ? 1 : 0;
 });
+// Weather, for testing: pin a kind of weather, or let it change by itself.
+ui.weather.addEventListener('change', () => weather.set(ui.weather.value));
+ui.sunset.addEventListener('change', () => weather.setSunset(ui.sunset.value));
+ui.sound.addEventListener('change', () => sound.setEnabled(ui.sound.checked));
+const WEATHER_ORDER = ['auto', ...Object.keys(WEATHER)];
 ui.shadows.addEventListener('change', () => {
   dayNight.shadows = ui.shadows.checked;
 });
@@ -195,6 +212,11 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyH') ui.shadows.click();
   if (e.code === 'KeyR') ui.rays.click();
   if (e.code === 'KeyN') ui.night.click();
+  if (e.code === 'KeyM') ui.sound.click();
+  if (e.code === 'KeyK') {
+    ui.weather.value = WEATHER_ORDER[(WEATHER_ORDER.indexOf(ui.weather.value) + 1) % WEATHER_ORDER.length];
+    weather.set(ui.weather.value);
+  }
 });
 
 // --- Hotbar and placing things --------------------------------------------------
@@ -288,6 +310,8 @@ function updateVisibility() {
   // Near a mouth you can see down the tunnel beyond it, so show all caves.
   chunks.setVisibility(surface, underground || nearMouth ? 'all' : 'mouths');
   clouds.group.visible = surface;
+  if (!surface) rain.mesh.visible = false;
+  sheltered = underground;
 
   // Underground, a short dark haze replaces the sky: caves fade into darkness
   // rather than showing gaps where far-off tunnels aren't built yet.
@@ -295,6 +319,7 @@ function updateVisibility() {
   caveHaze.target = underground && !ui.night.checked ? Math.min(1, Math.max(0, (toMouth - 4) / 16)) : 0;
 }
 
+let sheltered = false; // underground: no rain or lightning, sounds muffled
 const caveHaze = { target: 0, amount: 0, color: new THREE.Color(0x07080b) };
 const openFog = { near: scene.fog.near, far: scene.fog.far };
 function applyCaveHaze(dt) {
@@ -320,6 +345,8 @@ window.addEventListener('resize', resize);
 resize();
 
 let lastTime = performance.now();
+// What the clouds need to know about the sky each frame.
+const cloudSky = { cover: 0, storm: 0, glowColor: dayNight.glowColor, get glowStrength() { return dayNight.glowStrength; }, sunDir: dayNight.sunDir, viewMatrix: null };
 const dir = new THREE.Vector3();
 let frames = 0;
 let fpsTime = 0;
@@ -331,18 +358,27 @@ function tick(now) {
   controls.update(dt);
   camera.getWorldDirection(dir);
   chunks.update(camera.position, now / 1000, dir);
-  const wind = updateWind(now / 1000);
-  dayNight.update(dt, camera.position);
-  scene.fog.near = openFog.near;
-  scene.fog.far = openFog.far;
+  weather.update(dt, dayNight.hour);
+  const wind = updateWind(now / 1000, 0.95 * weather.storm + 0.35 * weather.rain);
+  lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getHeight(x, z), sound, sheltered);
+  dayNight.update(dt, camera.position, weather);
+  // Rain closes the view in.
+  scene.fog.near = openFog.near * (1 - 0.75 * weather.rain);
+  scene.fog.far = openFog.far * (1 - 0.5 * weather.rain);
   dayNight.sky.visible = true;
   applyCaveHaze(dt);
-  clouds.update(dt, camera.position, dayNight.horizon, generator, wind);
+  cloudSky.cover = weather.cover;
+  cloudSky.storm = weather.storm;
+  cloudSky.viewMatrix = camera.matrixWorldInverse;
+  clouds.update(dt, camera.position, dayNight.horizon, generator, wind, cloudSky);
+  rain.update(now / 1000, camera.position, weather.rain, clouds.wind, wind, dayNight.horizon);
   body.update(controls, dt);
   torches.update(now / 1000, camera.position);
   updateVisibility();
+  sound.update(weather.rain, sheltered);
   if (ui.rays.checked) {
     light.strength = dayNight.lightStrength;
+    light.reach = dayNight.shaftReach;
     rayEffects.render(scene, camera, light);
   } else {
     renderer.render(scene, camera);
@@ -361,6 +397,7 @@ function tick(now) {
       : `${chunks.loadedCount}`;
     ui.trees.textContent = `${(trees.count / 1000).toFixed(1)}k`;
     ui.wind.textContent = describeWind(wind);
+    ui.weatherAuto.textContent = `Auto · ${weather.label}`;
     ui.clock.textContent = dayNight.clock;
     if (document.activeElement !== ui.time) ui.time.value = dayNight.hour.toFixed(2);
     ui.alt.textContent = `${Math.round(camera.position.y)} m`;
@@ -371,4 +408,4 @@ function tick(now) {
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, scene, camera, chunks, controls, dayNight, clouds, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, scene, camera, chunks, controls, dayNight, clouds, weather, rain, lightning, sound, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };

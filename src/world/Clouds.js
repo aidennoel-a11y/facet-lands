@@ -1,9 +1,10 @@
-import { BufferAttribute, Color, Group, IcosahedronGeometry, Mesh, MeshLambertMaterial } from 'three';
+import { BufferAttribute, Color, Group, IcosahedronGeometry, Mesh, MeshLambertMaterial, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hashSeed, mulberry32 } from '../noise/random.js';
 
 const WHITE = new Color(0xffffff);
 const BELLY = new Color(0xb9c6d8); // shaded underside
+const STORM = new Color(0x5c636e); // dark rain-cloud grey
 
 /**
  * One low-poly cumulus: a row of lumpy icosahedron puffs with their bottoms
@@ -49,6 +50,27 @@ function cloudGeometry(rand) {
 }
 
 /**
+ * Makes a cloud material glow where the low sun lights it: `uniforms.glow`
+ * (colour) times `uniforms.glowStrength`, on the faces turned towards the
+ * sun (`uniforms.sunView`, the sun's direction in view space). At sunset
+ * that lights their undersides orange, red, pink and purple.
+ */
+function addSunsetGlow(material, uniforms) {
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 glow;\nuniform float glowStrength;\nuniform vec3 sunView;')
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        float towardSun = smoothstep(-0.45, 0.65, dot(normal, sunView));
+        totalEmissiveRadiance += glow * glowStrength * (0.12 + 0.88 * towardSun) * (0.55 + 0.45 * diffuseColor.r);`,
+      );
+  };
+  material.customProgramCacheKey = () => 'cloud-glow';
+}
+
+/**
  * A field of drifting low-poly clouds around the camera.
  *
  * Clouds live in a square `range` metres across centred on the camera and
@@ -60,9 +82,14 @@ function cloudGeometry(rand) {
  * Clouds drift faster or slower with the wind, and keep clear of the land:
  * each one checks the ground under its footprint (and a little ahead) and
  * rises smoothly over mountains instead of passing through them.
+ *
+ * The weather decides how many are out: each cloud has a rank, and forms
+ * (or dissolves) as the cover passes it. As the sky clouds over they swell
+ * and sink into a low grey deck, darkest in a storm. At sunset they catch
+ * the low sun (see addSunsetGlow).
  */
 export class Clouds {
-  constructor(scene, { seed = 'clouds', count = 70, range = 2600, minHeight = 170, maxHeight = 310 } = {}) {
+  constructor(scene, { seed = 'clouds', count = 150, range = 2600, minHeight = 170, maxHeight = 310 } = {}) {
     this.range = range;
     this.wind = { x: 5.5, z: 1.8 }; // m/s
 
@@ -74,6 +101,10 @@ export class Clouds {
       opacity: 0.5,
       depthWrite: false,
     });
+    this.glowUniforms = { glow: { value: new Color() }, glowStrength: { value: 0 }, sunView: { value: new Vector3(0, 1, 0) } };
+    addSunsetGlow(this.solid, this.glowUniforms);
+    addSunsetGlow(this.wispy, this.glowUniforms);
+    this.cover = 0.3;
 
     const rand = mulberry32(hashSeed(seed));
     const shapes = Array.from({ length: 10 }, () => cloudGeometry(rand));
@@ -86,6 +117,10 @@ export class Clouds {
       const mesh = new Mesh(shapes[Math.floor(rand() * shapes.length)], wispy ? this.wispy : this.solid);
       const s = 0.8 + rand() * 1.4;
       mesh.scale.set(s * (1 + rand() * 0.6), s * (0.6 + rand() * 0.4), s);
+      mesh.userData.scale = mesh.scale.clone();
+      // Clouds form in order of rank as the sky clouds over (wisps first
+      // and last, so thin cloud comes and goes before the heavy deck).
+      mesh.userData.rank = wispy ? rand() * 0.55 : 0.03 + rand() * 0.95;
       mesh.rotation.y = rand() * Math.PI * 2;
       mesh.position.set((rand() - 0.5) * range, minHeight + rand() * (maxHeight - minHeight), (rand() - 0.5) * range);
       mesh.castShadow = !wispy;
@@ -102,11 +137,15 @@ export class Clouds {
     this.materials = [this.solid, this.wispy];
     this.clearance = 18; // metres between a cloud's base and the ground below it
     this._next = 0;
+    this.overcast = 0;
   }
 
   /** Height a cloud needs so its base clears the land under and just ahead of it. */
   #targetHeight(cloud, generator) {
-    const { baseY, bottom, reach } = cloud.userData;
+    // Heavy cloud hangs lower, and has swollen (see update).
+    const baseY = cloud.userData.baseY - 75 * this.overcast;
+    const reach = cloud.userData.reach * (1 + 1.1 * this.overcast);
+    const bottom = cloud.userData.bottom * (1 + 0.5 * this.overcast);
     const p = cloud.position;
     const ahead = 25; // seconds of drift to look ahead
     let highest = -Infinity;
@@ -125,10 +164,22 @@ export class Clouds {
    * @param focus    camera position (clouds wrap around it)
    * @param skyGlow  colour the clouds pick up from the sky (e.g. the horizon)
    */
-  update(dt, focus, skyGlow, generator, windStrength = 1) {
+  update(dt, focus, skyGlow, generator, windStrength = 1, sky = null) {
     const half = this.range / 2;
     const speed = 0.25 + 0.75 * windStrength; // clouds never stop entirely
+    const cover = sky ? sky.cover : 0.3;
+    const storm = sky ? sky.storm : 0;
+    this.overcast = Math.min(1, Math.max(0, (cover - 0.5) / 0.45));
+    const swell = 1 + 1.1 * this.overcast;
     for (const cloud of this.clouds) {
+      // Form or dissolve with the cover, and swell as it thickens.
+      const grown = Math.min(1, Math.max(0, (cover - cloud.userData.rank) / 0.08 + 0.5));
+      cloud.visible = grown > 0.01;
+      if (cloud.visible) {
+        const base = cloud.userData.scale;
+        const k = (0.35 + 0.65 * grown) * swell;
+        cloud.scale.set(base.x * k, base.y * (0.35 + 0.65 * grown) * (1 + 0.5 * this.overcast), base.z * k);
+      }
       const p = cloud.position;
       p.x += this.wind.x * speed * dt;
       p.z += this.wind.z * speed * dt;
@@ -151,8 +202,18 @@ export class Clouds {
       cloud.userData.targetY = this.#targetHeight(cloud, generator);
       this._next = (this._next + 1) % this.clouds.length;
     }
-    // A little self-light in the sky's colour: soft undersides by day,
-    // pink-orange at sunset, dim blue at night.
-    for (const m of this.materials) m.emissive.copy(skyGlow).multiplyScalar(0.3);
+    // Rain clouds are dark; a little self-light in the sky's colour gives
+    // soft undersides by day, pink-orange at sunset, dim blue at night.
+    const dark = Math.min(1, 0.55 * this.overcast + 0.35 * storm);
+    for (const m of this.materials) {
+      m.color.set(0xffffff).lerp(STORM, dark);
+      m.emissive.copy(skyGlow).multiplyScalar(0.3 * (1 - 0.6 * dark));
+    }
+    // Sunset glow on the faces the sun lights, fading under a lid of cloud.
+    if (sky) {
+      this.glowUniforms.glow.value.copy(sky.glowColor);
+      this.glowUniforms.glowStrength.value = sky.glowStrength * (1 - 0.8 * this.overcast) * 1.3;
+      this.glowUniforms.sunView.value.copy(sky.sunDir).transformDirection(sky.viewMatrix);
+    }
   }
 }

@@ -14,12 +14,12 @@ function smoothstep(a, b, x) {
  * Advances the wind. Its strength wanders slowly between still spells (a
  * few percent) and gusty periods, from three slow, out-of-step waves, so
  * calm and windy stretches last from a few tens of seconds to minutes.
- * Returns the strength, 0..1.
+ * Returns the strength, 0..1. `atLeast` raises it (storms are windy).
  */
-export function updateWind(seconds) {
+export function updateWind(seconds, atLeast = 0) {
   windTime.value = seconds;
   const raw = (Math.sin(seconds * 0.043) + Math.sin(seconds * 0.027 + 2.1) + Math.sin(seconds * 0.011 + 4.2)) / 3;
-  windStrength.value = 0.04 + 0.96 * smoothstep(-0.55, 0.55, raw);
+  windStrength.value = Math.max(atLeast, 0.04 + 0.96 * smoothstep(-0.55, 0.55, raw));
   return windStrength.value;
 }
 

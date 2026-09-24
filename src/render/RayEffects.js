@@ -38,6 +38,7 @@ const fragmentShader = /* glsl */ `
   uniform float sunVisible;
   uniform vec3 sunColor;
   uniform float shaftStrength;
+  uniform float shaftReach;
 
   varying vec2 vUv;
 
@@ -110,7 +111,7 @@ const fragmentShader = /* glsl */ `
       }
       float aspect = resolution.x / resolution.y;
       float distanceToSun = length(toSun * vec2(aspect, 1.0));
-      float glow = pow(max(0.0, 1.0 - distanceToSun / 1.6), 2.2);
+      float glow = pow(max(0.0, 1.0 - distanceToSun / shaftReach), 2.2);
       color += sunColor * (light / total) * glow * shaftStrength * sunVisible;
     }
 
@@ -152,6 +153,7 @@ export class RayEffects {
       sunVisible: { value: 0 },
       sunColor: { value: new Color() },
       shaftStrength: { value: 0.55 },
+      shaftReach: { value: 1.6 },
     };
 
     this.quad = new Mesh(
@@ -175,7 +177,7 @@ export class RayEffects {
   }
 
   /**
-   * @param light  { direction: Vector3 towards the light, color: Color, strength: 0..1 }
+   * @param light  { direction: Vector3 towards the light, color: Color, strength (about 0..1.3), reach (screen heights) }
    */
   render(scene, camera, light) {
     const { renderer, uniforms: u } = this;
@@ -194,7 +196,8 @@ export class RayEffects {
     u.sunUv.value.set(this._sun.x * 0.5 + 0.5, this._sun.y * 0.5 + 0.5);
     u.sunVisible.value = Math.max(0, Math.min(1, facing / 0.35));
     u.sunColor.value.copy(light.color);
-    u.shaftStrength.value = 0.55 * light.strength;
+    u.shaftStrength.value = light.strength;
+    u.shaftReach.value = light.reach ?? 1.6;
 
     renderer.render(this.screen, this.screenCamera);
   }

@@ -49,6 +49,26 @@
           <button type="button" data-hour="17.9">Dusk</button>
           <button type="button" data-hour="0">Night</button>
         </div>
+        <div class="weather">
+          <label>Weather <kbd>K</kbd>
+            <select id="weather">
+              <option value="auto" selected>Auto</option>
+              <option value="clear">Clear</option>
+              <option value="fair">Fair</option>
+              <option value="cloudy">Cloudy</option>
+              <option value="overcast">Overcast</option>
+              <option value="rain">Rain</option>
+              <option value="storm">Storm</option>
+            </select>
+          </label>
+          <label>Sunset
+            <select id="sunset">
+              <option value="auto" selected>Auto</option>
+              <option value="vivid">Vivid</option>
+              <option value="dull">Dull</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div class="toggles">
@@ -58,6 +78,7 @@
         <label><input id="shadows" type="checkbox" checked /> Shadows <kbd>H</kbd></label>
         <label><input id="rays" type="checkbox" checked /> Ray effects <kbd>R</kbd></label>
         <label><input id="night" type="checkbox" /> Night vision <kbd>N</kbd></label>
+        <label><input id="sound" type="checkbox" checked /> Sound <kbd>M</kbd></label>
       </div>
     </section>
 
@@ -76,6 +97,8 @@
       <span><kbd>V</kbd> fly / walk</span>
       <span><kbd>T</kbd> pause time</span>
       <span><kbd>N</kbd> night vision</span>
+      <span><kbd>K</kbd> weather</span>
+      <span><kbd>M</kbd> sound</span>
     </aside>
 
     <nav id="hotbar" class="hotbar" aria-label="Hotbar"></nav>

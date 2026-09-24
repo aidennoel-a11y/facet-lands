@@ -181,6 +181,30 @@ button:hover {
 .time .cycle input {
   accent-color: var(--accent);
 }
+.time .weather {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+.time .weather label {
+  display: grid;
+  gap: 3px;
+  font: 600 11px/1 var(--display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.time .weather select {
+  min-width: 0;
+  padding: 5px 6px;
+  font: 500 13px var(--body);
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
 
 .toggles {
   display: flex;
