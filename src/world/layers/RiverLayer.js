@@ -90,8 +90,8 @@ export function createRiverLayer(skyColor) {
           const a = points[i], b = points[i + 1];
           if (!inChunk((a.x + b.x) / 2, (a.z + b.z) / 2)) continue;
           // Into the sea (or a sea-level lake): its water covers it from here.
-          const g = (p) => generator.getHeight(p.x, p.z);
-          if (g(a) < seaLevel - 0.2 && g(b) < seaLevel - 0.2) continue;
+          const g = (p) => generator.getBaseHeight(p.x, p.z);
+          if (g(a) < seaLevel - 0.6 && g(b) < seaLevel - 0.6) continue;
           const run = Math.hypot(b.x - a.x, b.z - a.z) || 1;
           const drop = (a.level - b.level) / run;
           const white = Math.min(1, Math.max(0, (drop - 0.25) / 0.5)); // rapids and waterfalls

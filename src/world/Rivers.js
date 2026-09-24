@@ -1,7 +1,7 @@
 import { SimplexNoise } from '../noise/SimplexNoise.js';
 import { hash2, mulberry32 } from '../noise/random.js';
 
-const REGION = 768; // up to three rivers (and three streams) rise per region this size
+const REGION = 768; // at most one river and one mountain stream rise per region this size
 const RIVER_REACH = 3; // a river stays within this many regions of where it rises
 const STREAM_REACH = 2; // likewise a stream
 const CELL = 32; // spatial index cell (m)
@@ -74,7 +74,7 @@ export class Rivers {
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     let made = 0;
-    for (let attempt = 0; attempt < 40 && made < 3; attempt++) {
+    for (let attempt = 0; attempt < 40 && made < 2; attempt++) {
       const x = (rx + rand()) * REGION;
       const z = (rz + rand()) * REGION;
       // Rivers rise in the hills and foothills of the plains and savanna
@@ -86,7 +86,7 @@ export class Rivers {
       const pond = this.#pond(x, z, 6 + rand() * 7, rand, 0.12);
       if (!pond) continue;
       const course = this.#trace(pond, 'river');
-      if (course) {
+      if (course && Rivers.#good(course, 'river')) {
         this.#add(course, pond, 'river');
         made++;
       }
@@ -104,7 +104,7 @@ export class Rivers {
     const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x51ab) * 4294967296);
     let made = 0;
     const siblings = []; // points of streams already made here: a new one meeting one joins it
-    for (let attempt = 0; attempt < 70 && made < 4; attempt++) {
+    for (let attempt = 0; attempt < 70 && made < 1; attempt++) {
       const x = (rx + rand()) * REGION;
       const z = (rz + rand()) * REGION;
       // Streams rise high in the ranges.
@@ -116,12 +116,40 @@ export class Rivers {
       const pond = this.#pond(x, z, 6 + rand() * 7, rand, 0.3);
       if (!pond) continue;
       const course = this.#trace(pond, 'stream', rand, siblings);
-      if (course) {
+      if (course && Rivers.#good(course, 'stream')) {
         siblings.push(...course);
         this.#add(course, pond, 'stream', course.tarn);
         made++;
       }
     }
+  }
+
+  /**
+   * Only courses that look right are kept (fewer, but all good ones):
+   *  - long enough to be worth having;
+   *  - a stream mostly runs gently down a valley: its overall fall is
+   *    modest, with a few waterfalls at most, spaced well apart (no
+   *    staircase straight down a mountainside);
+   *  - a river winds a little rather than running dead straight.
+   */
+  static #good(points, kind) {
+    const n = points.length;
+    let length = 0;
+    for (let i = 1; i < n; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
+    const straight = Math.hypot(points[n - 1].x - points[0].x, points[n - 1].z - points[0].z);
+    if (kind === 'river') return length >= 320 && length / Math.max(1, straight) >= 1.04;
+    if (length < 200) return false;
+    if ((points[0].level - points[n - 1].level) / length > 0.14) return false;
+    let falls = 0, last = -99;
+    for (let i = 0; i < n - 1; i++) {
+      const run = Math.hypot(points[i + 1].x - points[i].x, points[i + 1].z - points[i].z) || 1;
+      if ((points[i].level - points[i + 1].level) / run > 0.4) {
+        if (i - last < 5) return false; // falls must be well apart
+        falls++;
+        last = i;
+      }
+    }
+    return falls <= 4;
   }
 
   /**
@@ -147,8 +175,9 @@ export class Rivers {
     if (level < this.seaLevel + 1) return null;
     return {
       x, z, r, level, seed: rand() * 100, outlet,
-      // The course leaves from its outlet.
-      start: { x: x + outlet[0] * r, z: z + outlet[1] * r },
+      // The course leaves from its outlet, starting inside the pond so the
+      // water runs on unbroken.
+      start: { x: x + outlet[0] * r * 0.55, z: z + outlet[1] * r * 0.55 },
     };
   }
 
@@ -226,11 +255,11 @@ export class Rivers {
       const target = b - (stream ? 0.5 : 0.8);
       const cascade = stream && slope > 0.15;
       if (cascade && target < level - 0.02) {
-        const next = Math.max(this.seaLevel + 0.1, target - (1.5 + rand() * 2));
+        const next = Math.max(this.seaLevel + 0.03, target - (1.5 + rand() * 2));
         if (points.length) points.push({ x: px - dir[0] * 4, z: pz - dir[1] * 4, level: level - 0.02, width: 0, cascade: true });
         level = next;
       } else {
-        level = Math.max(this.seaLevel + 0.1, Math.min(level - 0.02, target));
+        level = Math.max(this.seaLevel + 0.03, Math.min(level - 0.02, target));
       }
       points.push({ x: px, z: pz, level, width: 0, cascade });
 

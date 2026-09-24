@@ -14,6 +14,7 @@ import {
 import { hash2, mulberry32 } from '../../noise/random.js';
 
 const STONE = [0x8b8696, 0x7d7888, 0x938e9c, 0x736f7e];
+const SANDSTONE = [0xc08c66, 0xb5825e, 0xc99a70, 0xab7a58];
 const MOSS = new Color(0x6f8f4a);
 
 /**
@@ -21,7 +22,7 @@ const MOSS = new Color(0x6f8f4a);
  * bottom flattened so it sits, and per-face colours (grey-violet stone, with
  * moss on some upward faces).
  */
-function rockGeometry(seed, base = 'dodeca') {
+function rockGeometry(seed, base = 'dodeca', palette = STONE) {
   const rand = mulberry32(seed);
   const g = base === 'dodeca' ? new DodecahedronGeometry(1, 0) : new IcosahedronGeometry(1, 0); // already non-indexed
   g.deleteAttribute('uv');
@@ -37,9 +38,9 @@ function rockGeometry(seed, base = 'dodeca') {
 
   const colors = new Float32Array(pos.count * 3);
   const c = new Color();
-  const mossy = rand() < 0.5;
+  const mossy = palette === STONE && rand() < 0.5;
   for (let f = 0; f < pos.count; f += 3) {
-    c.set(STONE[Math.floor(rand() * STONE.length)]).multiplyScalar(0.9 + rand() * 0.2);
+    c.set(palette[Math.floor(rand() * palette.length)]).multiplyScalar(0.9 + rand() * 0.2);
     const ny = g.attributes.normal.getY(f);
     if (mossy && ny > 0.6 && rand() < 0.7) c.lerp(MOSS, 0.55);
     for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (f + k) * 3);
@@ -55,6 +56,16 @@ export const ROCK_SHAPES = [
   rockGeometry(404, 'ico'),
   rockGeometry(505, 'dodeca'),
 ];
+
+/** The same shapes in sandstone, for the dry country (savanna, desert, mesas). */
+const SAND_SHAPES = [
+  rockGeometry(101, 'dodeca', SANDSTONE),
+  rockGeometry(202, 'ico', SANDSTONE),
+  rockGeometry(303, 'dodeca', SANDSTONE),
+  rockGeometry(404, 'ico', SANDSTONE),
+  rockGeometry(505, 'dodeca', SANDSTONE),
+];
+const ALL_SHAPES = [...ROCK_SHAPES, ...SAND_SHAPES];
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -154,9 +165,13 @@ export function createRockLayer(config) {
           const slope = Math.hypot(gx, gz);
           // Black Hills: granite boulders strewn everywhere among the pines,
           // heaped up the steep granite too.
-          const granite = generator.getBiomeWeights(wx, wz, {}).blackHills;
+          const bw = generator.getBiomeWeights(wx, wz, {});
+          const granite = bw.blackHills;
           if (slope > 0.55 + 0.4 * granite) continue;
           const flat = 1 - smoothstep(0.2, 0.45, slope);
+          // Dry country and mesas: sandstone rocks, not grey stone.
+          const mesa = generator.getFeatures(wx, wz).mesa;
+          const dry = bw.desert + bw.savanna > 0.5 || mesa > 0.1;
           const land = generator.getHeight(wx, wz);
           let foot = 0, cliff = 0;
           if (flat > 0 && (m > 0.05 || generator.getCliffiness(wx, wz) > 0.05)) {
@@ -165,8 +180,10 @@ export function createRockLayer(config) {
               const a = (k / 6) * Math.PI * 2 + 0.3;
               for (const d of [16, 32]) rise = Math.max(rise, (generator.getHeight(wx + Math.cos(a) * d, wz + Math.sin(a) * d) - land) / d);
             }
-            foot = smoothstep(0.3, 0.6, rise) * flat;
-            cliff = smoothstep(0.75, 1.3, rise) * flat; // under a cliff: the biggest heaps
+            // Mesas shed only a scattering of rock, not great heaps.
+            const shed = 1 - 0.8 * mesa;
+            foot = smoothstep(0.3, 0.6, rise) * flat * shed;
+            cliff = smoothstep(0.75, 1.3, rise) * flat * shed; // under a cliff: the biggest heaps
           }
           // Stones along river banks, on the mud just beside the water.
           const river = generator.rivers.at(wx, wz, 3.5);
@@ -196,7 +213,7 @@ export function createRockLayer(config) {
             rx: (hash2(gi, gj, seed + 8) - 0.5) * 0.5,
             ry: hash2(gi, gj, seed + 9) * Math.PI * 2,
             rz: (hash2(gi, gj, seed + 10) - 0.5) * 0.5,
-            shape: Math.floor(hash2(gi, gj, seed + 11) * ROCK_SHAPES.length),
+            shape: Math.floor(hash2(gi, gj, seed + 11) * ROCK_SHAPES.length) + (dry ? ROCK_SHAPES.length : 0),
           });
         }
       }
@@ -218,7 +235,7 @@ export function createRockLayer(config) {
       const list = layer.candidates(cx, cz, generator);
       const snowLine = list.snowLine;
 
-      const placed = ROCK_SHAPES.map(() => []);
+      const placed = ALL_SHAPES.map(() => []);
       const boulders = [];
       for (const c of list) {
         const ground = groundHeightAt(c.lx, c.lz);
@@ -238,7 +255,7 @@ export function createRockLayer(config) {
       group.name = 'rocks';
       placed.forEach((list, s) => {
         if (!list.length) return;
-        const mesh = new InstancedMesh(ROCK_SHAPES[s], material, list.length);
+        const mesh = new InstancedMesh(ALL_SHAPES[s], material, list.length);
         list.forEach((m, k) => mesh.setMatrixAt(k, m));
         mesh.computeBoundingSphere();
         mesh.castShadow = true;
