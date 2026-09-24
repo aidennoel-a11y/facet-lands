@@ -6,6 +6,7 @@ import {
   CylinderGeometry,
   DodecahedronGeometry,
   IcosahedronGeometry,
+  Quaternion,
   Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -99,6 +100,41 @@ function withCrown(wood, crown) {
   return solid;
 }
 
+/** A tapering limb from point `a` to point `b` (radii r0 at a, r1 at b). */
+function limb(a, b, r0, r1, color, colorTip, seed) {
+  const from = new Vector3(...a), to = new Vector3(...b);
+  const dir = to.clone().sub(from);
+  const length = dir.length();
+  const g = new CylinderGeometry(r1, r0, length, 4, 1, true);
+  g.applyQuaternion(new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), dir.normalize()));
+  g.translate((from.x + to.x) / 2, (from.y + to.y) / 2, (from.z + to.z) / 2);
+  return part(g, color, colorTip, { seed });
+}
+
+/**
+ * The boughs inside a crown: from the trunk (between `low` and `top` up it)
+ * out towards each blob of the crown, forking into a couple of twigs. In
+ * summer they're hidden in the leaves; in winter, when a deciduous tree's
+ * crown has gone, they're what's left: a proper bare tree, not a stump.
+ */
+function boughs(blobs, low, top, color, seed, { thick = 1, lean = [0, 0] } = {}) {
+  const rand = mulberry32(seed * 131);
+  const out = [];
+  blobs.forEach(([x, y, z, r], i) => {
+    const h = low + (top - low) * (0.35 + 0.65 * rand());
+    const base = [lean[0] * h, h, lean[1] * h];
+    // Out to the far side of the blob's middle, where it forks.
+    const fork = [x * 1.1 + (rand() - 0.5) * 0.4, y - r * 0.1, z * 1.1 + (rand() - 0.5) * 0.4];
+    out.push(limb(base, fork, 0.1 * thick, 0.055 * thick, color, color, seed + i * 3));
+    for (let k = 0; k < 2; k++) {
+      const a = rand() * Math.PI * 2;
+      const tip = [fork[0] + Math.cos(a) * r * 0.75, fork[1] + r * (0.35 + 0.4 * rand()), fork[2] + Math.sin(a) * r * 0.75];
+      out.push(limb(fork, tip, 0.05 * thick, 0.018 * thick, color, color, seed + i * 3 + k + 1));
+    }
+  });
+  return out;
+}
+
 // Pine tiers: [radius, height, centre y]
 const PINE_TIERS = [
   [2.5, 2.8, 3.0],
@@ -139,6 +175,7 @@ function broadleaf() {
       part(new CylinderGeometry(0.22, 0.38, 3.0, 6), TRUNK, 0x80593f, { y: 1.5, seed: 3 }),
       part(new CylinderGeometry(0.07, 0.13, 1.4, 4), TRUNK, TRUNK, { x: 0.45, y: 3.2, rz: -0.8, seed: 4 }),
       part(new CylinderGeometry(0.07, 0.12, 1.3, 4), TRUNK, TRUNK, { x: -0.4, y: 3.1, rz: 0.75, seed: 5 }),
+      ...boughs(BROADLEAF_BLOBS, 2.4, 3.2, TRUNK, 6),
     ],
     BROADLEAF_BLOBS.map(([x, y, z, r], i) =>
       part(new IcosahedronGeometry(r, 0), 0x3f7f35, 0x7fbd58, { x, y, z, sy: 0.82, lump: 0.2, seed: 30 + i }),
@@ -179,6 +216,7 @@ function birch() {
     [
       part(new CylinderGeometry(0.12, 0.2, 6.4, 6, 4), 0xe9e5da, 0xf4f1ea, { y: 3.2, seed: 60, speckle: [0x38322c, 0.28] }),
       part(new CylinderGeometry(0.04, 0.07, 1.3, 4), 0xe9e5da, 0xe9e5da, { x: 0.35, y: 4.6, rz: -0.9, seed: 61 }),
+      ...boughs(BIRCH_BLOBS, 4.4, 6.2, 0xd9d4c8, 66, { thick: 0.7 }),
     ],
     BIRCH_BLOBS.map(([x, y, z, r], i) =>
       part(new IcosahedronGeometry(r, 0), 0x6f9e3c, 0xb3d56a, { x, y, z, sy: 0.9, lump: 0.22, seed: 62 + i }),
@@ -196,7 +234,12 @@ const POPLAR_BLOBS = [
 
 function poplar() {
   return withCrown(
-    [part(new CylinderGeometry(0.16, 0.3, 3.0, 6), TRUNK, 0x7d5a40, { y: 1.5, seed: 70 })],
+    [
+      part(new CylinderGeometry(0.16, 0.3, 3.0, 6), TRUNK, 0x7d5a40, { y: 1.5, seed: 70 }),
+      // A leader running on up through the column of the crown.
+      limb([0, 2.9, 0], [0, 8.6, 0], 0.16, 0.05, TRUNK, 0x7d5a40, 76),
+      ...boughs(POPLAR_BLOBS, 2.8, 7.5, TRUNK, 77, { thick: 0.8 }),
+    ],
     POPLAR_BLOBS.map(([x, y, z, r], i) =>
       part(new IcosahedronGeometry(r, 0), 0x3d7a33, 0x78b04f, { x, y, z, sy: 1.5, lump: 0.18, seed: 71 + i }),
     ),
@@ -216,6 +259,7 @@ function maple() {
     [
       part(new CylinderGeometry(0.2, 0.36, 2.8, 6), 0x5f4332, 0x6e4c35, { y: 1.4, seed: 80 }),
       part(new CylinderGeometry(0.06, 0.12, 1.4, 4), 0x5f4332, 0x5f4332, { x: -0.45, y: 3.0, rz: 0.8, seed: 81 }),
+      ...boughs(MAPLE_BLOBS, 2.2, 3.0, 0x5f4332, 86),
     ],
     MAPLE_BLOBS.map(([x, y, z, r], i) =>
       part(new IcosahedronGeometry(r, 0), 0xa8401f, 0xf0a13a, { x, y, z, sy: 0.85, lump: 0.2, seed: 82 + i }),
@@ -231,10 +275,77 @@ const BUSH_BLOBS = [
 
 function bush() {
   return withCrown(
-    [],
+    // Twiggy stems, bare in winter.
+    BUSH_BLOBS.flatMap(([x, y, z, r], i) => [
+      limb([x * 0.2, 0, z * 0.2], [x * 1.1, y + r * 0.35, z * 1.1], 0.045, 0.02, 0x5a4636, 0x6e5a48, 44 + i),
+      limb([x * 0.2, 0, z * 0.2], [x * 0.6 - z * 0.5, y + r * 0.5, z * 0.6 + x * 0.5], 0.035, 0.015, 0x5a4636, 0x6e5a48, 47 + i),
+    ]),
     BUSH_BLOBS.map(([x, y, z, r], i) =>
       part(new DodecahedronGeometry(r, 0), 0x4f8c3d, 0x86c05c, { x, y, z, sy: 0.72, lump: 0.18, seed: 40 + i }),
     ),
+  );
+}
+
+// Bald cypress (swamps): a trunk flaring wide at its foot, rising tall and
+// straight to a flat, layered crown of feathery needles, hung with grey
+// Spanish moss. It sheds its needles in winter (rust-red in autumn).
+const CYPRESS_BLOBS = [
+  [0, 7.7, 0, 1.9],
+  [1.2, 7.1, 0.5, 1.35],
+  [-1.1, 7.3, -0.45, 1.4],
+  [0.3, 8.5, -0.25, 1.2],
+  [-0.2, 6.6, 1.1, 1.1],
+];
+
+function cypress() {
+  const moss = [];
+  const rand = mulberry32(911);
+  for (let k = 0; k < 9; k++) {
+    const [x, y, z, r] = CYPRESS_BLOBS[k % CYPRESS_BLOBS.length];
+    const a = rand() * Math.PI * 2;
+    const len = 1.0 + rand() * 1.3;
+    const g = new ConeGeometry(0.16 + rand() * 0.1, len, 3, 1);
+    g.rotateX(Math.PI); // hanging, point down
+    moss.push(part(g, 0x9aa487, 0x7f8c6c, { x: x + Math.cos(a) * r * 0.8, y: y - r * 0.35 - len / 2, z: z + Math.sin(a) * r * 0.8, seed: 920 + k }));
+  }
+  return withCrown(
+    [
+      // The flared foot (buttress), and the trunk.
+      part(new CylinderGeometry(0.3, 0.8, 1.7, 7), 0x5c4b3c, 0x6e5b49, { y: 0.85, lump: 0.12, seed: 900 }),
+      part(new CylinderGeometry(0.17, 0.3, 6.2, 6), 0x6e5b49, 0x7b6752, { y: 4.7, seed: 901 }),
+      ...boughs(CYPRESS_BLOBS, 5.6, 7.4, 0x6e5b49, 902, { thick: 0.9 }),
+      ...moss,
+    ],
+    CYPRESS_BLOBS.map(([x, y, z, r], i) =>
+      part(new DodecahedronGeometry(r, 0), 0x4a6a34, 0x7f9c52, { x, y, z, sy: 0.42, lump: 0.22, seed: 930 + i }),
+    ),
+  );
+}
+
+// Swamp willow: a short, stout, leaning trunk under a rounded crown whose
+// leafy curtains droop almost to the water.
+const WILLOW_BLOBS = [
+  [0.3, 4.6, 0, 2.1],
+  [1.3, 4.2, 0.8, 1.4],
+  [-0.9, 4.3, -0.7, 1.5],
+];
+
+function swampWillow() {
+  const curtain = new CylinderGeometry(1.7, 2.6, 3.2, 9, 1, true);
+  const pos = curtain.attributes.position;
+  // A ragged hem: the curtain hangs lower in some places than others.
+  for (let k = 0; k < pos.count; k++) {
+    if (pos.getY(k) < 0) pos.setY(k, pos.getY(k) - 0.5 * (0.5 + 0.5 * Math.sin(Math.atan2(pos.getZ(k), pos.getX(k)) * 4)));
+  }
+  return withCrown(
+    [
+      part(new CylinderGeometry(0.24, 0.42, 3.4, 6), 0x5a4a38, 0x6b5842, { x: 0.15, y: 1.7, rz: -0.1, seed: 950 }),
+      ...boughs(WILLOW_BLOBS, 2.6, 3.3, 0x5a4a38, 951, { lean: [0.05, 0] }),
+    ],
+    [
+      ...WILLOW_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x5f8a36, 0x9dbd5a, { x, y, z, sy: 0.72, lump: 0.2, seed: 960 + i })),
+      part(curtain, 0x6f9a3e, 0x8fb455, { x: 0.3, y: 3.1, lump: 0.1, seed: 970 }),
+    ],
   );
 }
 
@@ -432,6 +543,8 @@ function onMesh(geometry) {
 
 /** Built once and shared by every chunk. */
 export const TREE_GEOMETRIES = {
+  cypress: cypress(),
+  swampWillow: swampWillow(),
   pine: pine(),
   spruce: spruce(),
   broadleaf: broadleaf(),
@@ -446,26 +559,30 @@ export const TREE_GEOMETRIES = {
   dryBush: dryBush(),
 };
 
-// How each species takes the seasons: [deciduous (leaves turn and fall), holds snow].
+// How each species takes the seasons: [deciduous (leaves turn and fall),
+// holds snow, flowers in spring].
 // (A deciduous tree's crown shrinks away to nothing in winter, leaving bare boughs.)
 const SEASONAL = {
-  pine: [0, 1], spruce: [0, 1], deadPine: [0, 1],
-  broadleaf: [1, 1], birch: [1, 1], poplar: [1, 1], maple: [1, 1], bush: [1, 1],
-  acacia: [0, 0], cactus: [0, 0], smallCactus: [0, 0], dryBush: [0, 0],
+  pine: [0, 1, 0], spruce: [0, 1, 0], deadPine: [0, 1, 0],
+  broadleaf: [1, 1, 0], birch: [1, 1, 0], poplar: [1, 1, 0], maple: [1, 1, 0], bush: [1, 1, 1],
+  cypress: [1, 1, 0], swampWillow: [1, 1, 0],
+  acacia: [0, 0, 0], cactus: [0, 0, 0], smallCactus: [0, 0, 0], dryBush: [0, 0, 0],
 };
 function markSeasons(geometries) {
   for (const [type, g] of Object.entries(geometries)) {
-    const [deciduous, snowy] = SEASONAL[type] ?? [0, 0];
+    const [deciduous, snowy, flowers] = SEASONAL[type] ?? [0, 0, 0];
     const n = g.attributes.position.count;
-    const a = new Float32Array(n * 2);
-    for (let k = 0; k < n; k++) {
-      a[k * 2] = deciduous;
-      a[k * 2 + 1] = snowy;
-    }
-    // The crown of a deciduous tree is its leaves: they turn, and fall in winter.
+    const a = new Float32Array(n * 3);
+    // The crown of a deciduous tree is its leaves: they turn, and fall in
+    // winter; a flowering bush's flowers are on its leaves too.
     const crown = g.attributes.aCrown;
-    if (crown) for (let k = 0; k < n; k++) a[k * 2] = deciduous * crown.getX(k);
-    g.setAttribute('aSeason', new BufferAttribute(a, 2));
+    for (let k = 0; k < n; k++) {
+      const leafy = crown ? crown.getX(k) : 1;
+      a[k * 3] = deciduous * leafy;
+      a[k * 3 + 1] = snowy;
+      a[k * 3 + 2] = flowers * leafy;
+    }
+    g.setAttribute('aSeason', new BufferAttribute(a, 3));
   }
 }
 markSeasons(TREE_GEOMETRIES);
@@ -479,6 +596,8 @@ export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus']);
 const crown = (type) => onMesh(TREE_GEOMETRIES[type].userData.crown);
 
 export const LEAF_GEOMETRIES = {
+  cypress: leaves(40, [0.3, 0.5], [0x4a6a34, 0x5f8040, 0x7f9c52, 0x6a8a44], crown('cypress'), 23),
+  swampWillow: leaves(50, [0.3, 0.55], [0x6f9a3e, 0x8fb455, 0x9dbd5a, 0x7aa344], crown('swampWillow'), 24),
   pine: leaves(40, [0.35, 0.6], [0x3f8a4a, 0x4f9c57, 0x5fae62, 0x376f3f], crown('pine'), 11),
   spruce: leaves(40, [0.3, 0.5], [0x2c5e44, 0x3a7050, 0x478260], crown('spruce'), 14),
   broadleaf: leaves(55, [0.45, 0.8], [0x6aac4a, 0x7fbe55, 0x93cc62, 0x5a9a42, 0xa6d26c], crown('broadleaf'), 12),

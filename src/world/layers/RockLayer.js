@@ -204,11 +204,13 @@ export function createRockLayer(config) {
       const boulders = [];
       for (const c of list) {
         const ground = groundHeightAt(c.lx, c.lz);
-        if (!(ground > seaLevel - 0.6)) continue; // off-chunk, deep water or a cave mouth
+        if (!(ground > seaLevel - (c.surf ? 8 : 0.6))) continue; // off-chunk, deep water or a cave mouth
         if (ground + c.jitter > snowLine - 15) continue; // snow
         if (!c.boulder && !smallStones) continue;
         // Sunk deeper on a slope, so the uphill side doesn't float.
-        position.set(c.lx, ground - c.sy * (0.3 + 0.5 * c.slope) - c.slope * Math.max(c.sx, c.sz) * 0.4, c.lz);
+        // (Boulders in the water at a cliff's foot stand out of it.)
+        const sunk = ground - c.sy * (0.3 + 0.5 * c.slope) - c.slope * Math.max(c.sx, c.sz) * 0.4;
+        position.set(c.lx, c.surf ? Math.max(sunk, Math.min(ground - c.sy * 0.2, seaLevel - c.sy * 0.5)) : sunk, c.lz);
         euler.set(c.rx, c.ry, c.rz);
         rotation.setFromEuler(euler);
         scale.set(c.sx, c.sy, c.sz);

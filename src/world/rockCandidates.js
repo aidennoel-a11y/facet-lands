@@ -52,6 +52,8 @@ export function rockCandidates(generator, config, cx, cz) {
       const { mesa, erg, escarp } = generator.getFeatures(wx, wz);
       if (erg > 0.3) continue; // no rocks in a dune sea, just sand
       const land = generator.getHeight(wx, wz);
+      // Wetlands are soft mud and grass: few stones.
+      const soft = 1 - 0.85 * bw.wetland;
       // Stones along river banks, on the mud just beside the water.
       const river = generator.rivers.at(wx, wz, 3.5);
       const bank = river && river.d > river.water + 0.4 ? 1 : 0;
@@ -62,15 +64,28 @@ export function rockCandidates(generator, config, cx, cz) {
       const bare = smoothstep(132, 150, colourHeight) * (1 - smoothstep(snowLine - 20, snowLine - 8, colourHeight));
       const cliffy = m > 0.05 || Math.max(m, mesa, escarp, granite) > 0.05;
       const shoreMax = land < seaLevel + 5.5 ? 1.4 : 0;
-      if (roll > 0.025 + 0.2 * foothill + (cliffy ? 0.95 : 0) + 0.45 * bank + 0.55 * bare + 0.6 * shoreMax + 0.9 * granite) continue;
+      // Big boulders fallen into the water at the foot of a cliff that
+      // rises straight out of it (sea cliffs, lake cliffs). (Only looked
+      // for where the roll could still win.)
+      let surf = 0;
+      const base = (0.025 + 0.2 * foothill + (cliffy ? 0.95 : 0) + 0.45 * bank + 0.55 * bare + 0.6 * shoreMax + 0.9 * granite) * soft;
+      if (land < seaLevel - 0.2 && land > seaLevel - 7 && roll <= base + 0.7) {
+        let rise = 0;
+        for (let k = 0; k < 6 && rise < 0.9; k++) {
+          const a = (k / 6) * Math.PI * 2 + 0.5;
+          for (const d of [10, 20]) rise = Math.max(rise, (generator.getHeight(wx + Math.cos(a) * d, wz + Math.sin(a) * d) - seaLevel) / d);
+        }
+        surf = smoothstep(0.45, 0.9, rise);
+      }
+      if (roll > (0.025 + 0.2 * foothill + (cliffy ? 0.95 : 0) + 0.45 * bank + 0.55 * bare + 0.6 * shoreMax + 0.9 * granite) * soft + 0.7 * surf) continue;
 
       const gx = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
       const gz = (generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2)) / 4;
       const slope = Math.hypot(gx, gz);
-      if (slope > 0.55 + 0.4 * granite) continue;
+      if (slope > 0.55 + 0.4 * granite + 1.5 * surf) continue;
       const flat = 1 - smoothstep(0.2, 0.45, slope);
       const heap = granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope));
-      if (roll > 0.025 + 0.2 * foothill * flat + (cliffy ? 0.95 * flat : 0) + 0.45 * bank + 0.55 * bare * flat + 0.6 * shoreMax + 0.9 * heap) continue;
+      if (roll > (0.025 + 0.2 * foothill * flat + (cliffy ? 0.95 * flat : 0) + 0.45 * bank + 0.55 * bare * flat + 0.6 * shoreMax + 0.9 * heap) * soft + 0.7 * surf) continue;
       const dry = bw.desert + bw.savanna > 0.5 || mesa > 0.1;
       let foot = 0, cliff = 0;
       if (flat > 0 && cliffy) {
@@ -88,20 +103,22 @@ export function rockCandidates(generator, config, cx, cz) {
       // Shores: rock outcrops on beaches and lake edges, stones along the rest of a lake's edge.
       const shore = land < seaLevel + 5.5 ? generator.getShore(wx, wz, land) : null;
       const shoreRock = shore ? (shore.kind === 'rock' ? (shore.ocean ? 1.4 : 1) : shore.ocean ? 0 : 0.3) * Math.max(shore.fade, 0.6) : 0;
-      const chance = 0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope));
+      const chance = (0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope))) * soft + 0.7 * surf;
       if (roll > chance) continue;
 
       const r = hash2(gi, gj, seed + 3);
-      const boulder = r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite);
+      const boulder = surf > 0 || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite);
       if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
       if (!bank && generator.rivers.at(wx, wz, 1)) continue; // and rivers
-      const size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.2 * foothill + 3.2 * foot + 2.5 * cliff + 2.2 * stony + 2.5 * granite) * (bank ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
+      let size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.2 * foothill + 3.2 * foot + 2.5 * cliff + 2.2 * stony + 2.5 * granite) * (bank ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
+      // (Fallen into the water: big enough to stand out of it.)
+      if (surf > 0) size = Math.max(size, 2.2 + hash2(gi, gj, seed + 12) * 3.2, (seaLevel - land) * 0.9);
       const sx = size * (0.8 + hash2(gi, gj, seed + 5) * 0.5);
       // Big fallen boulders stand chunkier and taller.
       const sy = size * (0.55 + hash2(gi, gj, seed + 6) * 0.45 + (boulder ? 0.35 * Math.max(foot, cliff) : 0));
       const sz = size * (0.8 + hash2(gi, gj, seed + 7) * 0.5);
       list.push({
-        lx, lz, wx, wz, jitter, boulder, slope, sx, sy, sz,
+        lx, lz, wx, wz, jitter, boulder, slope, sx, sy, sz, surf: surf > 0,
         rx: (hash2(gi, gj, seed + 8) - 0.5) * 0.5,
         ry: hash2(gi, gj, seed + 9) * Math.PI * 2,
         rz: (hash2(gi, gj, seed + 10) - 0.5) * 0.5,

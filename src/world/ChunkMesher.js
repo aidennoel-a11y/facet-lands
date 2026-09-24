@@ -168,7 +168,9 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
   // next to one is fanned around its centre too, taking in the midpoints
   // of the edges it shares with finer cells, so no cracks open between
   // them. Cells near a cave mouth are left alone (they may be clipped).
-  const fine = chunkSize / resolution >= 4 && resolution >= detailResolution ? refineCells() : null;
+  // (At the finest level, 2 m, only steep canyon and mesa walls need it.)
+  const coarse = chunkSize / resolution >= 4;
+  const fine = resolution >= detailResolution ? refineCells() : null;
   let fineTris = 0;
   let splitEdges = 0;
   if (fine) {
@@ -351,6 +353,15 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
       ? generator.caves.mouthsNear(originX - 16, originZ - 16, originX + chunkSize + 16, originZ + chunkSize + 16)
       : [];
     const want = new Uint8Array(m * m);
+    // Is there canyon or mesa country here at all? (Checked on a coarse
+    // grid first, so the rest of the world doesn't pay for it.)
+    let walled = false;
+    for (let j = -1; j <= 5 && !walled; j++) {
+      for (let i = -1; i <= 5 && !walled; i++) {
+        const f = generator.getFeatures(originX + (i / 4) * chunkSize, originZ + (j / 4) * chunkSize);
+        walled = f.canyonZone > 0 || f.mesa > 0.02;
+      }
+    }
     for (let j = -1; j <= resolution; j++) {
       for (let i = -1; i <= resolution; i++) {
         const cs = [corner(i, j), corner(i + 1, j), corner(i, j + 1), corner(i + 1, j + 1)];
@@ -360,8 +371,15 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
           minX = Math.min(minX, x); maxX = Math.max(maxX, x);
           minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
         }
+        const cx = originX + (minX + maxX) / 2, cz = originZ + (minZ + maxZ) / 2;
         const shore = lo < sea + 3 && hi > sea - 2.5;
-        let yes = shore || generator.rivers.at(originX + (minX + maxX) / 2, originZ + (minZ + maxZ) / 2, 7) !== null;
+        let yes = coarse && (shore || generator.rivers.at(cx, cz, 7) !== null);
+        // Steep walls of canyons and mesas: more, smaller faces, so a wall
+        // is never one great sheer triangle.
+        if (!yes && walled && hi - lo > (coarse ? 6 : 3.5)) {
+          const f = generator.getFeatures(cx, cz);
+          yes = f.canyon > 0.1 || f.mesa > 0.1;
+        }
         for (const e of mouths) {
           const b = e.holeBounds;
           if (yes && b.maxX > originX + minX - 8 && b.minX < originX + maxX + 8 && b.maxZ > originZ + minZ - 8 && b.minZ < originZ + maxZ + 8) yes = false;

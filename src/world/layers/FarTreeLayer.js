@@ -32,8 +32,11 @@ function farGeometry(type) {
   const avg = new Color(0, 0, 0);
   for (let k = 0; k < colours.count; k++) avg.r += colours.getX(k), avg.g += colours.getY(k), avg.b += colours.getZ(k);
   avg.multiplyScalar(1 / Math.max(1, colours.count));
-  const deciduous = real.attributes.aSeason ? Math.max(...Array.from({ length: real.attributes.aSeason.count }, (_, k) => real.attributes.aSeason.getX(k))) : 0;
-  const snowy = real.attributes.aSeason ? real.attributes.aSeason.getY(0) : 0;
+  const season = real.attributes.aSeason;
+  const most = (get) => (season ? Math.max(...Array.from({ length: season.count }, (_, k) => get(k))) : 0);
+  const deciduous = most((k) => season.getX(k));
+  const snowy = season ? season.getY(0) : 0;
+  const flowers = most((k) => season.getZ(k));
 
   const centre = box.getCenter(new Vector3());
   const half = box.getSize(new Vector3()).multiplyScalar(0.5);
@@ -63,9 +66,9 @@ function farGeometry(type) {
   g.computeVertexNormals();
   const n = positions.length / 3;
   g.setAttribute('color', new BufferAttribute(new Float32Array(n * 3).map((_, i) => [avg.r, avg.g, avg.b][i % 3]), 3));
-  const season = new Float32Array(n * 2);
-  for (let k = 0; k < n; k++) season.set([deciduous, snowy], k * 2);
-  g.setAttribute('aSeason', new BufferAttribute(season, 2));
+  const seasonal = new Float32Array(n * 3);
+  for (let k = 0; k < n; k++) seasonal.set([deciduous, snowy, flowers], k * 3);
+  g.setAttribute('aSeason', new BufferAttribute(seasonal, 3));
   return g;
 }
 

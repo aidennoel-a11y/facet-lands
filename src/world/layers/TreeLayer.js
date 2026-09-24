@@ -21,7 +21,7 @@ const tint = new Color();
  */
 // How thick each kind of trunk is (at chest height, for a tree of size 1),
 // and how far off centre it stands (the acacia leans).
-const TRUNK_RADIUS = { pine: 0.31, spruce: 0.27, broadleaf: 0.34, birch: 0.19, poplar: 0.27, maple: 0.33, acacia: 0.27, deadPine: 0.27, cactus: 0.4 };
+const TRUNK_RADIUS = { pine: 0.31, spruce: 0.27, broadleaf: 0.34, birch: 0.19, poplar: 0.27, maple: 0.33, acacia: 0.27, deadPine: 0.27, cactus: 0.4, cypress: 0.5, swampWillow: 0.38 };
 const TRUNK_OFFSET = { acacia: 0.4 };
 
 /**

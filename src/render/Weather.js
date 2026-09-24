@@ -55,6 +55,7 @@ export class Weather {
     this.sunsetMode = 'auto';
     this._lastHour = null;
     this.hurry = 0; // seconds left of a quick change
+    this.spring = 0; // how much it's spring (0..1): showery weather comes more often
   }
 
   set(kind) {
@@ -84,7 +85,7 @@ export class Weather {
     if (this.auto) {
       this.nextChange -= dt;
       if (this.nextChange <= 0) {
-        this.kind = Weather.#pick(NEXT[this.kind]);
+        this.kind = Weather.#pick(NEXT[this.kind], this.spring);
         this.nextChange = 100 + Math.random() * 140;
       }
     }
@@ -119,12 +120,15 @@ export class Weather {
     return q * clouds * overcast * (1 - this.rain);
   }
 
-  static #pick(weights) {
+  /** A weighted pick of what comes next; in spring, cloud and rain are twice as likely (clear skies less so). */
+  static #pick(weights, spring = 0) {
+    const WETTER = { cloudy: 1.6, overcast: 1.8, rain: 2.2, storm: 1.3, clear: 0.6, fair: 0.8 };
+    const w = (k) => weights[k] * (1 + ((WETTER[k] ?? 1) - 1) * spring);
     let total = 0;
-    for (const k in weights) total += weights[k];
+    for (const k in weights) total += w(k);
     let r = Math.random() * total;
     for (const k in weights) {
-      r -= weights[k];
+      r -= w(k);
       if (r <= 0) return k;
     }
     return Object.keys(weights)[0];

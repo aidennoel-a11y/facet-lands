@@ -136,7 +136,8 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
         }
       }
       species ??= trees.species[trees.species.length - 1];
-      if (marsh && ground < seaLevel + 0.4 && species.type !== 'deadPine') continue;
+      // (Only cypresses, and dead trees, stand out in the water.)
+      if (marsh && ground < seaLevel + 0.4 && species.type !== 'deadPine' && species.type !== 'cypress') continue;
 
       const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale;
       (placed[species.type] ??= []).push({
@@ -160,7 +161,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
 }
 
 /** The kinds of tree, in a fixed order (far trees are packed by index). */
-export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush'];
+export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

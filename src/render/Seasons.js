@@ -143,7 +143,8 @@ export function seasonalTerrain(material, seaLevel) {
 
 /**
  * Trees (trunks and crowns) and their leaf clusters. The geometry carries
- * `aSeason`: x = deciduous (leaves turn and fall), y = holds snow.
+ * `aSeason`: x = deciduous (leaves turn and fall), y = holds snow,
+ * z = flowers in spring (bushes: little flowers dotted over them).
  * `leaves`: the leaf clusters, which on deciduous trees fade away in winter.
  * `randFrom`: where a tree's own random number comes from (by default,
  * its instance's position). Far trees (which give one) keep their crowns in
@@ -156,12 +157,13 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
       shader.vertexShader = shader.vertexShader
         .replace(
           '#include <common>',
-          '#include <common>\nattribute vec2 aSeason;\nvarying vec2 vSeason;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nuniform float uWinter;',
+          '#include <common>\nattribute vec3 aSeason;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nuniform float uWinter;',
         )
         .replace(
           '#include <begin_vertex>',
           /* glsl */ `#include <begin_vertex>
           vSeason = aSeason;
+          vFlowerAt = position;
           vSeasonUp = normal.y;
           ${randFrom ? `vTreeRand = ${randFrom};` : `#ifdef USE_INSTANCING
             vTreeRand = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
@@ -175,17 +177,22 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
 `,
         );
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec2 vSeason;\nvarying float vTreeRand;\nvarying float vSeasonUp;`)
+        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;`)
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
           {
             vec3 c = diffuseColor.rgb;
             float leafy = vSeason.x; // (the crown of a deciduous tree)
-            // Spring: fresh green, and some trees in blossom.
+            // Spring: fresh green, and the bushes dotted with little flowers
+            // (pink, white, yellow or lilac, bush by bush).
             c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * leafy * 0.7);
-            vec3 blossom = mix(vec3(1.0, 0.58, 0.76), vec3(1.0, 0.93, 0.96), step(0.93, vTreeRand));
-            c = mix(c, blossom * (1.1 + 0.3 * dot(c, vec3(0.33))), uSpring * leafy * step(0.8, vTreeRand) * 0.95);
+            if (vSeason.z > 0.0 && uSpring > 0.0) {
+              vec3 cell = floor(vFlowerAt * 4.5);
+              float dot1 = seasonHash(cell.xz + cell.y * 7.13 + vTreeRand * 31.0);
+              vec3 petal = vTreeRand < 0.3 ? vec3(1.0, 0.55, 0.72) : vTreeRand < 0.55 ? vec3(0.98, 0.97, 0.92) : vTreeRand < 0.8 ? vec3(1.0, 0.86, 0.3) : vec3(0.78, 0.6, 0.95);
+              c = mix(c, petal, step(0.8, dot1) * uSpring * vSeason.z);
+            }
             // Autumn: yellow, orange or red, tree by tree.
             vec3 fall = vTreeRand < 0.35 ? vec3(0.85, 0.62, 0.08) : vTreeRand < 0.7 ? vec3(0.9, 0.35, 0.05) : vec3(0.65, 0.1, 0.05);
             c = mix(c, fall * (0.75 + 0.5 * dot(c, vec3(0.33))), uAutumn * leafy * 0.9);

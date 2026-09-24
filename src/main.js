@@ -448,6 +448,7 @@ function tick(now) {
   controls.update(dt);
   camera.getWorldDirection(dir);
   chunks.update(camera.position, now / 1000, dir);
+  weather.spring = seasonUniforms.uSpring.value;
   weather.update(dt, dayNight.hour);
   const wind = updateWind(now / 1000, 0.95 * weather.storm + 0.35 * weather.rain);
   // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)

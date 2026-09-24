@@ -155,8 +155,9 @@ export const BIOMES = {
   },
 
   // Wetlands: low marshes and swamps just above the water, pools and
-  // channels everywhere, mudflats at their edges; willows and poplars on
-  // the drier hummocks, dead trees standing drowned in the pools.
+  // channels everywhere, mudflats at their edges; bald cypresses hung with
+  // moss standing out in the water, swamp willows on the drier hummocks,
+  // dead trees drowned in the pools.
   wetland: {
     id: 'wetland',
     name: 'Wetlands',
@@ -180,11 +181,11 @@ export const BIOMES = {
       density: 0.55,
       clumped: true,
       species: [
-        { type: 'broadleaf', weight: 0.6, minHeight: -99, maxHeight: 60 },
-        { type: 'poplar', weight: 0.7, minHeight: -99, maxHeight: 60 },
-        { type: 'birch', weight: 0.35, minHeight: -99, maxHeight: 60 },
-        { type: 'bush', weight: 1.0, minHeight: -99, maxHeight: 60 },
-        { type: 'deadPine', weight: 0.45, minHeight: -99, maxHeight: 60 },
+        { type: 'cypress', weight: 1.6, minHeight: -99, maxHeight: 60 },
+        { type: 'swampWillow', weight: 1.0, minHeight: -99, maxHeight: 60 },
+        { type: 'bush', weight: 0.8, minHeight: -99, maxHeight: 60 },
+        { type: 'deadPine', weight: 0.4, minHeight: -99, maxHeight: 60 },
+        { type: 'poplar', weight: 0.15, minHeight: -99, maxHeight: 60 },
       ],
     },
   },
