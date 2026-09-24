@@ -1,20 +1,14 @@
 import { BufferAttribute, BufferGeometry, Color, Mesh, MeshPhongMaterial } from 'three';
-import { Rivers } from '../Rivers.js';
 
 const RIVER = new Color(0x4fbfc4).lerp(new Color(0x2c67b0), 0.3);
-const TARN = new Color(0x4fbfc4).lerp(new Color(0x2c67b0), 0.55);
 const FOAM = new Color(0xe8f4f6);
 
 /**
- * Water for rivers and the lakes they make (see Rivers):
- *
- *  - Each river is a ribbon at its water level, a little wider than its bed
- *    so its edges tuck under the banks. Light streaks drift down it in
- *    chevrons pointing downstream (quicker where it's steeper), so you can
- *    see which way it flows. Where it drops steeply it turns to white water:
- *    waterfalls and rapids.
- *  - Source tarns and the lakes rivers pool into are discs at their own
- *    water level (ones at sea level are left to the sea's water).
+ * River water (see Rivers): a ribbon along each river at its water
+ * level, a little wider than its bed so its edges tuck under the banks.
+ * Light streaks drift down it in chevrons pointing downstream (quicker
+ * where it's steeper), so you can see which way it flows; steep stretches
+ * would show as white water.
  *
  * The ribbon stops where the river meets a lake or the sea. Drawn on the
  * chunks near you, whose terrain is detailed enough to hold the riverbed.
@@ -109,25 +103,6 @@ export function createRiverLayer(skyColor) {
           for (const k of [0, 2, 1, 0, 3, 2]) {
             const [x, y, z, u, s] = quad[k];
             vertex(x, y, z, c, 0.84, [u, s, speed, white]);
-          }
-        }
-        // Its source tarn and the lake it pools into, drawn by the chunk
-        // holding their centre.
-        for (const lake of [river.source, river.lake]) {
-          if (!lake || lake.level <= seaLevel + 0.3 || !inChunk(lake.x, lake.z)) continue;
-          const n = 24;
-          const rim = [];
-          for (let k = 0; k < n; k++) {
-            const t = (k / n) * Math.PI * 2;
-            const r = Rivers.lakeRadius(lake, lake.x + Math.cos(t), lake.z + Math.sin(t)) + 1.5;
-            rim.push([lake.x + Math.cos(t) * r, lake.z + Math.sin(t) * r]);
-          }
-          for (let k = 0; k < n; k++) {
-            const p = rim[k], q = rim[(k + 1) % n];
-            const c = TARN.clone().multiplyScalar(0.96 + ((k * 5) % 4) * 0.025);
-            vertex(lake.x, lake.level + 0.05, lake.z, c, 0.86, [0, 0, 0, 0]);
-            vertex(q[0], lake.level + 0.05, q[1], c, 0.86, [0, 0, 0, 0]);
-            vertex(p[0], lake.level + 0.05, p[1], c, 0.86, [0, 0, 0, 0]);
           }
         }
       }

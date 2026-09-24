@@ -5,8 +5,9 @@ import { CaveSystem } from './caves/CaveSystem.js';
 import { Rivers } from './Rivers.js';
 import { Color } from 'three';
 
-const RIVERBANK = new Color(0x9c9482);
-const RIVERBED = new Color(0x6f6a5c);
+const MUD = new Color(0x5f4a36);
+const DIRT = new Color(0x7d6547);
+const RIVERBED = new Color(0x55493b);
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -227,11 +228,13 @@ export class TerrainGenerator {
   /** Ground colour of a face at (x, z): blended across the biomes there. */
   surfaceColor(x, z, height, upness, out) {
     blendedFaceColor(this.biomes, this.getBiomeWeights(x, z, {}), height, upness, out);
-    // Gravel along river banks, darker on the bed.
-    const river = this.rivers.at(x, z, 2.5);
+    // Muddy banks along rivers, fading to dirt and then the land's own colour.
+    const river = this.rivers.at(x, z, 5);
     if (river) {
-      const t = 1 - smoothstep(river.half - 0.5, river.half + 2.5, river.d);
-      out.lerp(river.d < river.half - 0.5 ? RIVERBED : RIVERBANK, t * 0.8);
+      const e = river.d - river.half; // metres from the water's edge
+      if (e < -0.5) out.lerp(RIVERBED, 0.85);
+      else if (e < 1.8) out.lerp(MUD, 0.85);
+      else out.lerp(DIRT, 0.8 * (1 - smoothstep(2.5, 5, e)) * (0.7 + 0.3 * this.detailNoise.noise2D(x * 0.3, z * 0.3)));
     }
     return out;
   }

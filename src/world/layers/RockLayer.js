@@ -68,8 +68,9 @@ const euler = new Euler();
 const scale = new Vector3();
 
 /**
- * Rocks and boulders scattered over the land: a few everywhere, many more in
- * the foothills where mountains meet lowland; none on cliffs or snow. Small
+ * Rocks and boulders scattered over the land: a few everywhere, more in the
+ * foothills, and heaps of big boulders at the foot of steep mountainsides;
+ * none on the mountainsides themselves, on cliffs or on snow. Small
  * stones only appear on the nearest chunks; boulders are visible further out
  * and block you when walking.
  */
@@ -126,29 +127,47 @@ export function createRockLayer(config) {
           const wx = x0 + lx;
           const wz = z0 + lz;
 
-          // Foothills (partly mountainous) get the most rocks. Steep faces
-          // get none (they'd hang off the slope), nor do snow caps.
+          // Boulders pile up at the foot of steep mountainsides (rock that
+          // fell from above): flattish ground with a steep face rising just
+          // uphill. The mountainsides themselves stay clear; a few rocks lie
+          // everywhere else, more in the foothills.
           const m = generator.getMountainness(wx, wz);
           const foothill = Math.max(0, 1 - Math.abs(m - 0.45) / 0.35);
-          const chance = 0.025 + 0.26 * foothill;
-          if (hash2(gi, gj, seed) > chance) continue;
           const gx = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
           const gz = (generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2)) / 4;
           const slope = Math.hypot(gx, gz);
-          if (slope > 0.7) continue;
+          if (slope > 0.55) continue;
+          const flat = 1 - smoothstep(0.2, 0.45, slope);
+          let foot = 0, cliff = 0;
+          if (m > 0.05 && flat > 0) {
+            const here = generator.getHeight(wx, wz);
+            let rise = 0;
+            for (let k = 0; k < 6; k++) {
+              const a = (k / 6) * Math.PI * 2 + 0.3;
+              for (const d of [16, 32]) rise = Math.max(rise, (generator.getHeight(wx + Math.cos(a) * d, wz + Math.sin(a) * d) - here) / d);
+            }
+            foot = smoothstep(0.3, 0.6, rise) * flat;
+            cliff = smoothstep(0.75, 1.3, rise) * flat; // under a cliff: the biggest heaps
+          }
+          // Stones along river banks, on the mud just beside the water.
+          const river = generator.rivers.at(wx, wz, 3.5);
+          const bank = river && river.d > river.half + 0.4 ? 1 : 0;
+          const chance = 0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank;
+          if (hash2(gi, gj, seed) > chance) continue;
 
           const ground = groundHeightAt(lx, lz);
           if (!(ground > seaLevel - 0.6)) continue; // off-chunk, deep water or a cave mouth
           if (ground + generator.getColorJitter(wx, wz) > snowLine - 15) continue; // snow
 
           const r = hash2(gi, gj, seed + 3);
-          const boulder = r < 0.1 + 0.15 * foothill;
+          const boulder = r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff);
           if (!boulder && !smallStones) continue;
           if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
-          if (generator.rivers.at(wx, wz, 1)) continue; // and rivers
-          const size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.6 * foothill) : 0.25 + hash2(gi, gj, seed + 4) * 0.6;
+          if (!bank && generator.rivers.at(wx, wz, 1)) continue; // and rivers
+          const size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.2 * foothill + 3.2 * foot + 2.5 * cliff) * (bank ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
           const sx = size * (0.8 + hash2(gi, gj, seed + 5) * 0.5);
-          const sy = size * (0.55 + hash2(gi, gj, seed + 6) * 0.45);
+          // Big fallen boulders stand chunkier and taller.
+          const sy = size * (0.55 + hash2(gi, gj, seed + 6) * 0.45 + (boulder ? 0.35 * Math.max(foot, cliff) : 0));
           const sz = size * (0.8 + hash2(gi, gj, seed + 7) * 0.5);
 
           // Sunk deeper on a slope, so the uphill side doesn't float.
