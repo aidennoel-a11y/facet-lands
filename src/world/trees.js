@@ -234,6 +234,71 @@ function bush() {
   );
 }
 
+// Acacia: a leaning, forked trunk under a wide, flat-topped crown (savanna).
+const ACACIA_BLOBS = [
+  [0.9, 4.25, 0, 1.9],
+  [-0.6, 4.1, 0.3, 1.6],
+  [0.2, 4.4, -0.9, 1.5],
+  [0.5, 4.35, 1.0, 1.4],
+  [-0.2, 4.55, -0.1, 1.3],
+];
+
+function acacia() {
+  return withCrown(
+    [
+      part(new CylinderGeometry(0.15, 0.3, 3.3, 6), TRUNK, 0x7d6048, { x: 0.25, y: 1.6, rz: -0.18, seed: 60 }),
+      part(new CylinderGeometry(0.07, 0.13, 1.9, 5), TRUNK, TRUNK, { x: 0.95, y: 3.45, rz: -0.75, seed: 61 }),
+      part(new CylinderGeometry(0.07, 0.12, 1.6, 5), TRUNK, TRUNK, { x: -0.25, y: 3.35, rz: 0.8, seed: 62 }),
+    ],
+    ACACIA_BLOBS.map(([x, y, z, r], i) =>
+      part(new DodecahedronGeometry(r, 0), 0x5b7a2f, 0x9aad4e, { x, y, z, sy: 0.3, lump: 0.2, seed: 63 + i }),
+    ),
+  );
+}
+
+// Saguaro cactus: a ribbed column with an arm on each side (desert).
+const CACTUS = 0x3c6e3e;
+const CACTUS_TOP = 0x5f9a52;
+
+function cactus() {
+  const column = (x, y, len, r, seed, rz = 0) => part(new CylinderGeometry(r, r * 1.1, len, 8), CACTUS, CACTUS_TOP, { x, y, rz, seed });
+  const cap = (x, y, r, seed) => part(new IcosahedronGeometry(r, 0), CACTUS_TOP, CACTUS_TOP, { x, y, sy: 0.75, seed });
+  return mergeGeometries([
+    column(0, 2.2, 4.4, 0.36, 70),
+    cap(0, 4.4, 0.37, 71),
+    column(0.6, 1.9, 0.8, 0.21, 72, Math.PI / 2),
+    column(0.98, 2.65, 1.6, 0.21, 73),
+    cap(0.98, 3.45, 0.22, 74),
+    column(-0.55, 2.7, 0.7, 0.2, 75, Math.PI / 2),
+    column(-0.88, 3.2, 1.1, 0.2, 76),
+    cap(-0.88, 3.75, 0.21, 77),
+  ]);
+}
+
+// Barrel cacti: a squat clump, the biggest in flower (desert).
+function smallCactus() {
+  const barrel = (x, z, r, h, seed) => [
+    part(new CylinderGeometry(r, r * 1.08, h, 9), CACTUS, CACTUS_TOP, { x, z, y: h / 2, seed }),
+    part(new IcosahedronGeometry(r, 0), CACTUS_TOP, CACTUS_TOP, { x, z, y: h, sy: 0.45, seed: seed + 1 }),
+  ];
+  return mergeGeometries([
+    ...barrel(0, 0, 0.42, 0.8, 80),
+    ...barrel(0.72, 0.2, 0.28, 0.5, 82),
+    ...barrel(-0.35, 0.6, 0.22, 0.38, 84),
+    part(new IcosahedronGeometry(0.14, 0), 0xe0628a, 0xf08aa8, { y: 0.98, seed: 86 }),
+  ]);
+}
+
+// Dry scrub: a sun-bleached bush (savanna, desert edges).
+function dryBush() {
+  return withCrown(
+    [],
+    BUSH_BLOBS.map(([x, y, z, r], i) =>
+      part(new DodecahedronGeometry(r, 0), 0x7f7a40, 0xb8a85e, { x, y, z, sy: 0.65, lump: 0.22, seed: 90 + i }),
+    ),
+  );
+}
+
 function deadPine() {
   return mergeGeometries([
     part(new CylinderGeometry(0.1, 0.3, 7, 5), BARK_DEAD, 0x938070, { y: 3.5, seed: 6 }),
@@ -371,7 +436,17 @@ export const TREE_GEOMETRIES = {
   maple: maple(),
   bush: bush(),
   deadPine: deadPine(),
+  acacia: acacia(),
+  cactus: cactus(),
+  smallCactus: smallCactus(),
+  dryBush: dryBush(),
 };
+
+/** Species that are stiff (cacti): they don't sway in the wind. */
+export const STIFF = new Set(['cactus', 'smallCactus']);
+
+/** Species too small to bump into. */
+export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus']);
 
 const crown = (type) => onMesh(TREE_GEOMETRIES[type].userData.crown);
 
@@ -383,4 +458,6 @@ export const LEAF_GEOMETRIES = {
   poplar: leaves(40, [0.35, 0.6], [0x5a9a42, 0x6fae4c, 0x84c05a], crown('poplar'), 16),
   maple: leaves(55, [0.45, 0.8], [0xe07a2c, 0xf2a33c, 0xc9502a, 0xf5c04a, 0xb33a22], crown('maple'), 17),
   bush: leaves(16, [0.25, 0.45], [0x78b556, 0x8fc663, 0x9fd06d], crown('bush'), 13),
+  acacia: leaves(55, [0.4, 0.7], [0x7f9a3c, 0x93aa48, 0xa7b858, 0x6f8a34], crown('acacia'), 18),
+  dryBush: leaves(14, [0.25, 0.4], [0xa89d55, 0xbfae62, 0x9a9048], crown('dryBush'), 19),
 };

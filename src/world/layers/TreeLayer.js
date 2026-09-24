@@ -1,7 +1,7 @@
 import { Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../../noise/random.js';
 import { addWind, windDepthMaterial } from '../../render/wind.js';
-import { LEAF_GEOMETRIES, TREE_GEOMETRIES } from '../trees.js';
+import { LEAF_GEOMETRIES, NO_COLLIDE, STIFF, TREE_GEOMETRIES } from '../trees.js';
 
 const matrix = new Matrix4();
 const position = new Vector3();
@@ -46,6 +46,8 @@ export function createTreeLayer() {
     );
   };
   const depthMaterial = windDepthMaterial(WIND);
+  // Cacti stand stiff: no sway.
+  const stiffMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
 
   const layer = {
     name: 'trees',
@@ -99,13 +101,16 @@ export function createTreeLayer() {
           const wx = originX + lx;
           const wz = originZ + lz;
 
-          const biome = generator.getBiome(wx, wz);
+          // Near a biome border, each spot takes one biome or the other at random.
+          const biome = generator.pickBiome(wx, wz, hash2(gi, gj, seed + 11));
           const trees = biome.trees;
-          if (!trees || keep > generator.getForestDensity(wx, wz) * trees.density) continue;
+          if (!trees || keep > (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density) continue;
 
           const ground = groundHeightAt(lx, lz);
           if (!(ground >= seaLevel + 1.2)) continue; // outside the chunk, in water or over a cave mouth
           if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
+          // Nothing but cacti grows on sand (beaches included).
+          if (biome.id !== 'desert' && ground + generator.getColorJitter(wx, wz) < 7) continue;
 
           // Too steep for roots? (height change per metre)
           const gradX = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
@@ -149,7 +154,7 @@ export function createTreeLayer() {
 
       const trunks = [];
       for (const [type, list] of Object.entries(placed)) {
-        if (type === 'bush') continue;
+        if (NO_COLLIDE.has(type)) continue;
         for (const t of list) trunks.push(originX + t.x, originZ + t.z, 0.3 * t.s);
       }
 
@@ -157,7 +162,8 @@ export function createTreeLayer() {
       group.name = 'trees';
       let count = 0;
       for (const [type, list] of Object.entries(placed)) {
-        const mesh = new InstancedMesh(TREE_GEOMETRIES[type], material, list.length);
+        const stiff = STIFF.has(type);
+        const mesh = new InstancedMesh(TREE_GEOMETRIES[type], stiff ? stiffMaterial : material, list.length);
         mesh.name = type;
         list.forEach((t, k) => {
           position.set(t.x, t.y, t.z);
@@ -174,7 +180,7 @@ export function createTreeLayer() {
         mesh.computeBoundingSphere();
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-        mesh.customDepthMaterial = depthMaterial;
+        if (!stiff) mesh.customDepthMaterial = depthMaterial;
         group.add(mesh);
         count += list.length;
 

@@ -1,5 +1,4 @@
 import { Color, SRGBColorSpace } from 'three';
-import { faceColor } from '../world/biomes.js';
 
 const SHALLOW = new Color(0x4fbfc4);
 const DEEP = new Color(0x2c67b0);
@@ -54,9 +53,9 @@ export class Minimap {
           this._color.copy(SHALLOW).lerp(DEEP, Math.min(1, (seaLevel - h) / 16));
           shade = 1;
         } else {
-          faceColor(generator.getBiome(wx, wz), h + generator.getColorJitter(wx, wz), upness, this._color);
+          generator.surfaceColor(wx, wz, h + generator.getColorJitter(wx, wz), upness, this._color);
           // Forests read a touch darker, like the woods on a paper map.
-          if (h < 110) this._color.multiplyScalar(1 - 0.3 * generator.getForestDensity(wx, wz));
+          if (h < 110) this._color.multiplyScalar(1 - 0.3 * generator.getForestDensity(wx, wz) * generator.getBiomeWeights(wx, wz, {}).temperate);
           // Light from the north-west.
           shade = Math.min(1.35, Math.max(0.55, 1 + (-hx - hz) * 0.035));
         }

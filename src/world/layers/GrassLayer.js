@@ -12,7 +12,6 @@ import {
 } from 'three';
 import { hash2, mulberry32 } from '../../noise/random.js';
 import { addWind } from '../../render/wind.js';
-import { faceColor } from '../biomes.js';
 
 /**
  * One tuft: a handful of single-triangle blades leaning out from a small
@@ -109,7 +108,8 @@ export function createGrassLayer(config) {
           const lz = (j + hash2(gi, gj, seed + 2)) * spacing;
           const wx = originX + lx;
           const wz = originZ + lz;
-          if (hash2(gi, gj, seed) > generator.getGrassDensity(wx, wz)) continue;
+          const keep = hash2(gi, gj, seed);
+          if (keep > generator.getGrassDensity(wx, wz) * generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass) continue;
 
           const ground = groundHeightAt(lx, lz, surface);
           if (!(ground >= seaLevel + 3.5) || surface.normalY < 0.8) continue; // also skips cave mouths
@@ -119,7 +119,7 @@ export function createGrassLayer(config) {
           const colourHeight = ground + generator.getColorJitter(wx, wz);
           if (colourHeight < 6 || colourHeight > 100) continue;
 
-          faceColor(generator.getBiome(wx, wz), colourHeight, surface.normalY, color);
+          generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color);
           const v = 0.9 + hash2(gi, gj, seed + 3) * 0.22;
           colors.set([color.r * v, color.g * v, color.b * v], count * 3);
 

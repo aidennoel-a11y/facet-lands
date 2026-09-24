@@ -1,15 +1,19 @@
 import { Color } from 'three';
 
-// A biome decides how the ground looks (and later: what grows on it).
-// Right now there is one biome; add more entries here and teach
-// BiomeMap.pick() when to choose them.
+// A biome decides how the ground looks and what grows on it. Which biome
+// is where comes from TerrainGenerator.getBiomeWeights(): a slow climate
+// field running wet -> dry picks temperate plains and forest, then savanna,
+// then desert, so a desert only ever borders savanna. Near a border both
+// biomes count, and colours, grass and trees blend between them.
 //
 // palette: colour stops by absolute height in metres. Faces between two
 // stops blend between them. Colours are sRGB hex, converted once at load.
 // cliff:   colour steep faces lean towards, whatever their height.
 // snowLine / snow: above snowLine, all but the sheerest faces turn to snow.
-// trees:   what grows here. density scales the whole forest; each species
-//          has a weight and a height range it is happy in (see TreeLayer).
+// trees:   what grows here. density scales the whole forest (clumped by the
+//          forest noise when `clumped`); each species has a weight and a
+//          height range it is happy in (see TreeLayer).
+// grass:   how much grass grows (0..1).
 
 export const BIOMES = {
   temperate: {
@@ -31,8 +35,10 @@ export const BIOMES = {
     cliffSlope: [0.72, 0.5], // normal.y where cliff blending starts / is full
     snowLine: 125, // peaks above this get snow caps
     snow: 0xf1f4f7,
+    grass: 1,
     trees: {
       density: 1,
+      clumped: true,
       species: [
         { type: 'broadleaf', weight: 1, minHeight: 6, maxHeight: 55 },
         { type: 'poplar', weight: 0.35, minHeight: 5, maxHeight: 35 },
@@ -45,7 +51,68 @@ export const BIOMES = {
       ],
     },
   },
+
+  savanna: {
+    id: 'savanna',
+    name: 'Savanna',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xdcc58c }, // beach sand
+      { height: 5, color: 0xdcc58c },
+      { height: 8, color: 0xcdbd6c }, // dry golden grass
+      { height: 30, color: 0xc2b05e },
+      { height: 60, color: 0xaaa458 }, // greener where it's higher
+      { height: 85, color: 0x9f956a }, // scrub
+      { height: 105, color: 0x9a8f98 }, // bare rock, warmer
+      { height: 160, color: 0x8a8394 },
+    ],
+    cliff: 0x9a8a8e,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 125,
+    snow: 0xf1f4f7,
+    grass: 0.75,
+    trees: {
+      density: 0.3,
+      clumped: true,
+      species: [
+        { type: 'acacia', weight: 1, minHeight: 5, maxHeight: 110 },
+        { type: 'dryBush', weight: 0.8, minHeight: 5, maxHeight: 110 },
+        { type: 'broadleaf', weight: 0.08, minHeight: 6, maxHeight: 60 },
+      ],
+    },
+  },
+
+  desert: {
+    id: 'desert',
+    name: 'Desert',
+    palette: [
+      { height: -Infinity, color: 0x8f8a6c },
+      { height: -14, color: 0xb8a574 },
+      { height: 0, color: 0xe6d29c },
+      { height: 14, color: 0xe8cf92 }, // pale sand
+      { height: 32, color: 0xe2c083 },
+      { height: 55, color: 0xd6ad72 }, // deeper, redder sand
+      { height: 90, color: 0xc99a6c },
+    ],
+    cliff: 0xc08c66, // sandstone
+    cliffSlope: [0.7, 0.45],
+    snowLine: 400,
+    snow: 0xf1f4f7,
+    grass: 0,
+    trees: {
+      density: 0.045,
+      clumped: false,
+      species: [
+        { type: 'cactus', weight: 1, minHeight: -99, maxHeight: 999 },
+        { type: 'smallCactus', weight: 1.3, minHeight: -99, maxHeight: 999 },
+        { type: 'dryBush', weight: 0.25, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
 };
+
+export const BIOME_IDS = Object.keys(BIOMES);
 
 /** Converts a biome definition's hex colours to linear THREE.Colors once. */
 export function prepareBiome(def) {
@@ -91,5 +158,26 @@ export function faceColor(biome, height, upness, out) {
   const snow = smoothstep(biome.snowLine - 10, biome.snowLine + 10, height) * smoothstep(0.3, 0.5, upness);
   if (snow > 0) out.lerp(biome.snowColor, snow);
 
+  return out;
+}
+
+const blendTmp = new Color();
+
+/**
+ * faceColor() across several biomes at once: each biome's colour, weighted
+ * by `weights` (biome id -> weight, summing to 1). `biomes` maps id ->
+ * prepared biome.
+ */
+export function blendedFaceColor(biomes, weights, height, upness, out) {
+  out.setRGB(0, 0, 0);
+  for (const id in weights) {
+    const w = weights[id];
+    if (w <= 0.001) continue;
+    if (w >= 0.999) return faceColor(biomes[id], height, upness, out);
+    faceColor(biomes[id], height, upness, blendTmp);
+    out.r += blendTmp.r * w;
+    out.g += blendTmp.g * w;
+    out.b += blendTmp.b * w;
+  }
   return out;
 }

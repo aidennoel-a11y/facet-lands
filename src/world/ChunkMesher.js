@@ -1,6 +1,5 @@
 import { BufferAttribute, BufferGeometry, Color, Vector3 } from 'three';
 import { hash2 } from '../noise/random.js';
-import { faceColor } from './biomes.js';
 import { CaveField } from './caves/CaveField.js';
 
 const color = new Color();
@@ -135,8 +134,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     const mz = colorAt ? colorAt[2] : (az + bz + qz) / 3;
     const wx = originX + mx;
     const wz = originZ + mz;
-    const biome = generator.getBiome(wx, wz);
-    faceColor(biome, my + generator.getColorJitter(wx, wz), normal.y, color);
+    generator.surfaceColor(wx, wz, my + generator.getColorJitter(wx, wz), normal.y, color);
 
     // Tiny per-face brightness shift so neighbouring faces read as facets.
     const shade = 0.93 + hash2(varSeedX, varSeedZ, seed ^ 0x51ed27) * 0.14;
