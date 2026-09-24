@@ -107,6 +107,7 @@ const skyFragment = /* glsl */ `
   uniform float flash; // lightning
   uniform vec3 glowLow;
   uniform vec3 glowHigh;
+  uniform float horizonY; // where the land's edge is (below level when you're up high)
   varying vec3 vDir;
 
   float hash(vec3 p) {
@@ -117,7 +118,8 @@ const skyFragment = /* glsl */ `
 
   void main() {
     vec3 d = normalize(vDir);
-    float t = pow(clamp(d.y, 0.0, 1.0), 0.55);
+    float up = d.y - horizonY; // height above the horizon you can see
+    float t = pow(clamp(up / (1.0 - horizonY), 0.0, 1.0), 0.55);
     vec3 col = mix(horizon, top, t);
 
     // Warm glow around the sun, strongest at sunrise / sunset.
@@ -132,7 +134,7 @@ const skyFragment = /* glsl */ `
       vec2 ground = normalize(d.xz + 1e-5);
       vec2 sunFlat = normalize(sunDir.xz + 1e-5);
       float side = 0.25 + 0.75 * pow(max(dot(ground, sunFlat) * 0.5 + 0.5, 0.0), 2.0);
-      float h = max(d.y, 0.0);
+      float h = max(up, 0.0);
       float band = exp(-h * 9.0);
       float upper = exp(-h * 5.0) - band;
       col += (glowLow * band + glowHigh * upper * 0.8) * side * afterglow;
@@ -140,7 +142,7 @@ const skyFragment = /* glsl */ `
 
     // Sun and moon discs (the moon sits opposite the sun), hidden by thick cloud.
     // (Below the horizon the land would hide it.)
-    col = mix(col, vec3(1.0, 0.97, 0.88), smoothstep(0.99955, 0.99972, s) * clear * smoothstep(-0.012, 0.004, d.y));
+    col = mix(col, vec3(1.0, 0.97, 0.88), smoothstep(0.99955, 0.99972, s) * clear * smoothstep(-0.012, 0.004, up));
     float m = max(dot(d, -sunDir), 0.0);
     col = mix(col, vec3(0.9, 0.93, 1.0), smoothstep(0.99965, 0.9998, m) * night * clear);
 
@@ -150,7 +152,7 @@ const skyFragment = /* glsl */ `
     float h = hash(cell);
     vec3 centre = vec3(hash(cell + 1.3), hash(cell + 2.7), hash(cell + 4.1));
     float star = step(0.9965, h) * smoothstep(0.32, 0.0, length(fract(p) - centre));
-    col += vec3(star) * night * smoothstep(0.0, 0.15, d.y) * (0.6 + 0.4 * hash(cell + 7.0)) * (1.0 - smoothstep(0.35, 0.8, cover));
+    col += vec3(star) * night * smoothstep(0.0, 0.15, up) * (0.6 + 0.4 * hash(cell + 7.0)) * (1.0 - smoothstep(0.35, 0.8, cover));
 
     // Lightning lights up the whole sky.
     col += vec3(0.75, 0.8, 1.0) * flash;
@@ -188,6 +190,14 @@ export class DayNight {
     this.shaftStrength = 0;
     this.shaftReach = 1.6;
     this.flash = 0; // lightning, 0..1 (set by the storm)
+    // Where you see the land meet the sky, as an angle below level (0 on
+    // the ground, a few degrees down from high up). The sun sets there.
+    // Set groundAt to (x, z) => the land's height to have it worked out.
+    this.groundAt = null;
+    this.horizonDistance = radius * 0.75;
+    this.horizonAngle = 0;
+    this._horizonTarget = 0;
+    this._horizonWait = 0;
     this._moonLit = false;
 
     this.sky = new Mesh(
@@ -200,6 +210,7 @@ export class DayNight {
           top: { value: this.top },
           horizon: { value: this.horizon },
           sunDir: { value: this.sunDir },
+          horizonY: { value: 0 },
           sunColor: { value: this.sunColor },
           night: { value: 0 },
           dusk: { value: 0 },
@@ -232,6 +243,7 @@ export class DayNight {
     this.light = light;
 
     this._lightDir = new Vector3();
+    this._shaftDir = new Vector3();
     this._basis = new Matrix4();
     this._inverse = new Matrix4();
     this._focus = new Vector3();
@@ -244,6 +256,11 @@ export class DayNight {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
 
+  /** Towards the sun (or moon) as you see it in the sky: where light shafts stream from. */
+  get shaftDirection() {
+    return this._shaftDir;
+  }
+
   /** Direction towards whichever of sun or moon is lighting the world. */
   get lightDirection() {
     return this._lightDir;
@@ -252,6 +269,30 @@ export class DayNight {
   /** How strong that light's shafts should be, 0..1 (the moon's are faint). */
   get lightStrength() {
     return this.shaftStrength;
+  }
+
+  /**
+   * Looks along the ground towards the sun (every so often, easing
+   * between) for the highest land against the sky, out to the edge of the
+   * view: the angle down to it is where the sun sets. Never above level
+   * (a ridge nearby just shades you; the sky still goes by the far horizon).
+   */
+  #measureHorizon(dt, focus) {
+    if (!this.groundAt) return;
+    this._horizonWait -= dt;
+    if (this._horizonWait <= 0) {
+      this._horizonWait = 0.3;
+      const l = Math.hypot(this.sunDir.x, this.sunDir.z) || 1;
+      const ux = this.sunDir.x / l, uz = this.sunDir.z / l;
+      let best = -Math.PI / 2;
+      for (const f of [0.3, 0.5, 0.7, 0.85, 1]) {
+        const d = this.horizonDistance * f;
+        const h = this.groundAt(focus.x + ux * d, focus.z + uz * d);
+        best = Math.max(best, Math.atan2(h - focus.y, d));
+      }
+      this._horizonTarget = Math.min(0, best);
+    }
+    this.horizonAngle += (this._horizonTarget - this.horizonAngle) * Math.min(1, dt / 0.8);
   }
 
   /**
@@ -270,7 +311,14 @@ export class DayNight {
     const angle = ((this.hour - 6) / 24) * Math.PI * 2;
     const tilt = Math.PI / 6;
     this.sunDir.set(Math.cos(angle), Math.sin(angle) * Math.cos(tilt), Math.sin(angle) * Math.sin(tilt)).normalize();
-    const e = this.sunDir.y;
+
+    // The horizon you can see, towards the sun: from up high the land's
+    // edge lies below level, so the sun stays up (and the evening goes on)
+    // until it reaches that. Everything below goes by the sun's height
+    // above that horizon, `e`, not above level.
+    this.#measureHorizon(dt, focus);
+    const horizonY = Math.sin(this.horizonAngle);
+    const e = this.sunDir.y - horizonY;
 
     // The four moods, by sun height: golden hour lasts until the sun
     // touches the horizon, then twilight glows on until it's well down.
@@ -298,6 +346,7 @@ export class DayNight {
     u.dusk.value = duskF;
     u.cover.value = cover;
     u.flash.value = this.flash * 0.6;
+    u.horizonY.value = horizonY;
     // Afterglow: the evening's sunset, from the sun touching the horizon
     // until it's well below it.
     const lowSun = smoothstep(-0.16, -0.03, e) * (1 - smoothstep(0.03, 0.14, e));
@@ -326,12 +375,20 @@ export class DayNight {
     const clouded = Math.max(0.05, 1 - 0.75 * overcast - 0.1 * rain - 0.1 * storm);
     if (e > -0.06) {
       this._moonLit = false;
-      dir.copy(this.sunDir);
+      // From the sun's height above the horizon you can see (seen from up
+      // high it can be below level and still up; it never lights the land
+      // from underneath).
+      const up = Math.min(0.999, Math.max(0.01, e));
+      const flat = Math.hypot(this.sunDir.x, this.sunDir.z) || 1;
+      const k = Math.sqrt(1 - up * up) / flat;
+      dir.set(this.sunDir.x * k, up, this.sunDir.z * k);
+      this._shaftDir.copy(this.sunDir);
       light.color.copy(this.sunColor);
       light.intensity = 2.6 * sunUp * (0.6 + 0.4 * smoothstep(0.03, 0.25, e)) * clouded;
     } else {
       this._moonLit = true;
       dir.copy(this.sunDir).negate();
+      this._shaftDir.copy(dir);
       light.color.copy(MOON);
       light.intensity = 0.8 * smoothstep(0.12, 0.3, -e) * (1 - 0.85 * overcast);
     }

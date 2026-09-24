@@ -38,6 +38,10 @@ const camera = new THREE.PerspectiveCamera(60, 1, 0.3, drawDistance * 1.5);
 
 // Sky dome, sun, moon, stars, lighting and shadows, driven by the time of day.
 const dayNight = new DayNight(scene, WORLD, drawDistance * 1.2);
+// The sun sets on the horizon you can see (lower, from up high): the land
+// out to where the fog hides it, or the sea.
+dayNight.groundAt = (x, z) => Math.max(generator.getBaseHeight(x, z), WORLD.seaLevel);
+dayNight.horizonDistance = drawDistance * 0.9;
 const clouds = new Clouds(scene);
 // The weather: cloud cover, rain and thunderstorms, changing by itself.
 const weather = new Weather('fair');
@@ -47,7 +51,7 @@ const sound = new Sound();
 
 // Ray-marched ambient occlusion and light shafts, drawn after the scene.
 const rayEffects = new RayEffects(renderer);
-const light = { direction: dayNight.lightDirection, color: dayNight.shaftColor, strength: 1, reach: 1.6 };
+const light = { direction: dayNight.shaftDirection, color: dayNight.shaftColor, strength: 1, reach: 1.6 };
 
 // --- Terrain -----------------------------------------------------------------
 // Double-sided so that, from inside a cave, a lip of ground overhanging the
