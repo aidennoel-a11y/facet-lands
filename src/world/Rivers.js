@@ -7,18 +7,25 @@ const CELL = 32; // spatial index cell (m)
 const STEP = 8; // river path spacing (m)
 const MAX_STEPS = 300; // so a river is at most ~2.4 km long
 const INFLUENCE = 26; // how far past its bank a river still shapes the land (m)
+const FALL_SLOPE = 0.22; // ground steeper than this: the river drops in waterfalls
 
 /**
- * Rivers: springs high in the mountains, each traced downhill over the
- * natural land (steepest descent, with some momentum and a slow meander)
- * until it reaches a lake or the sea. Rivers that can't get there within
- * ~2.4 km, or would need too deep a gorge, are dropped, so every river runs
- * from the mountains into standing water.
+ * Rivers: each rises high in a mountain range, most often from a small
+ * alpine lake (a tarn) sitting in a hollow, otherwise from a spring. From
+ * there it follows the land downhill (steepest descent, with momentum and
+ * a slow meander) until it runs into a lake or the sea. If it can't go on
+ * (flat or hollow ground, or it would circle back on itself) it pools into
+ * a lake of its own right there, so every river runs into standing water.
  *
- * A river's water level only ever falls along it, so it always flows
- * downhill. The terrain is carved to match (see carve()): a riverbed below
- * the water, low banks just above it, and valley sides rising from there.
- * Rivers widen as they go.
+ * A river's water level only ever falls along it. On gentle ground it
+ * follows the land; on steep ground it runs level and then drops in a
+ * waterfall, again and again, stepping down the mountainside. Rivers widen
+ * as they go.
+ *
+ * The terrain is carved to match (see carve()): a riverbed below the
+ * water, banks just above it (raised where the land beside would be lower
+ * than the water, so water never floats over land), and valley sides
+ * rising from there. Lakes get a basin and a rim the same way.
  *
  * Like everything else, rivers are generated on demand, region by region,
  * from the seed, so any chunk (or worker) sees the same rivers.
@@ -31,8 +38,9 @@ export class Rivers {
     this.meander = new SimplexNoise(this.seed);
     this.generated = new Set(); // regions whose rivers exist
     this.covered = new Set(); // regions whose whole neighbourhood is generated
-    this.cells = new Map(); // index cell -> segments passing near it
+    this.cells = new Map(); // index cell -> segments and lakes near it
     this.list = [];
+    this._m = {};
   }
 
   #key(i, j) {
@@ -62,35 +70,101 @@ export class Rivers {
     for (let attempt = 0; attempt < 16 && made < 3; attempt++) {
       const x = (rx + rand()) * REGION;
       const z = (rz + rand()) * REGION;
-      // Springs rise high in the mountains, away from the desert.
+      // Sources lie high in the mountains, away from the desert.
       if (g.getMountainness(x, z) < 0.45) continue;
       const h = g.getBaseHeight(x, z);
-      if (h < 50 || h > 190) continue;
+      if (h < 55 || h > 210) continue;
       if (g.getBiomeWeights(x, z, {}).desert > 0.2) continue;
-      const traced = this.#trace(x, z);
-      if (traced) {
-        this.#add(traced.points, traced.lake);
+      const river = this.#makeRiver(x, z, rand);
+      if (river) {
+        this.#add(river);
         made++;
       }
     }
   }
 
-  /**
-   * Follows the land downhill from a spring. Returns { points, lake } (the
-   * lake it pools into, if it makes its own), or null if it never gets to
-   * standing water.
-   */
-  #trace(x, z) {
+  /** Base height and its slope (gradient) at (x, z). */
+  #ground(x, z) {
     const g = this.generator;
+    const b = g.getBaseHeight(x, z);
+    const gx = (g.getBaseHeight(x + 4, z) - g.getBaseHeight(x - 4, z)) / 8;
+    const gz = (g.getBaseHeight(x, z + 4) - g.getBaseHeight(x, z - 4)) / 8;
+    return { b, gx, gz, slope: Math.hypot(gx, gz) };
+  }
+
+  /**
+   * A lake at (x, z) of about radius r: its water sits just below the
+   * lowest point of the land around it, so it's held in by the land. The
+   * lowest point is where it overflows (its outlet). Returns the lake with
+   * { x, z, r, level, seed, outlet: [dx, dz] }.
+   */
+  #lake(x, z, r, maxLevel, rand) {
+    const g = this.generator;
+    let low = Infinity, outlet = [1, 0];
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      const h = g.getBaseHeight(x + Math.cos(a) * r * 1.1, z + Math.sin(a) * r * 1.1);
+      if (h < low) {
+        low = h;
+        outlet = [Math.cos(a), Math.sin(a)];
+      }
+    }
+    return { x, z, r, level: Math.min(maxLevel, low - 0.4), seed: rand() * 100, outlet };
+  }
+
+  /**
+   * A whole river from a source near (x, z): its source lake (if any), its
+   * course, and the lake it ends in (if it makes its own). Null if it's too
+   * short to count.
+   */
+  #makeRiver(x, z, rand) {
+    let start, source = null, width;
+    const here = this.#ground(x, z);
+    if (here.slope < 0.2 && rand() < 0.8) {
+      // A tarn in a hollow: the river leaves from its lowest side.
+      source = this.#lake(x, z, 12 + rand() * 14, Infinity, rand);
+      if (here.b - source.level > 7) source = null; // no hollow here after all
+    }
+    if (source) {
+      const [ox, oz] = source.outlet;
+      start = { x: x + ox * source.r * 0.8, z: z + oz * source.r * 0.8, level: source.level, dir: source.outlet };
+      width = 3.5;
+    } else {
+      // A spring: a trickle that widens.
+      start = { x, z, level: here.b - 0.6, dir: null };
+      width = 2.2;
+    }
+    const course = this.#trace(start, width, rand);
+    if (!course || course.points.length < 12) return null;
+    return { source, points: course.points, lake: course.lake };
+  }
+
+  /**
+   * Follows the land downhill. Returns { points, lake }: the course, and
+   * the lake it pools into if it makes its own (null when it reaches an
+   * existing lake or the sea).
+   */
+  #trace(start, width0, rand) {
     const points = [];
-    let px = x, pz = z;
-    let dir = null;
-    let level = Infinity;
+    let px = start.x, pz = start.z;
+    let dir = start.dir;
+    let level = start.level;
+    const pool = () => {
+      const last = points[points.length - 1];
+      const d = dir ?? [1, 0];
+      const r = Math.min(45, 14 + last.width * 1.5 + rand() * 18);
+      const lake = this.#lake(last.x + d[0] * r * 0.75, last.z + d[1] * r * 0.75, r, last.level, rand);
+      lake.level = Math.max(lake.level, last.level - 8);
+      // Run on into it (dropping into it, if it lies lower).
+      points.push({ x: last.x + d[0] * r * 0.45, z: last.z + d[1] * r * 0.45, level: lake.level, width: last.width });
+      return { points, lake: lake.level > this.seaLevel + 0.3 ? lake : null };
+    };
+
     for (let i = 0; i < MAX_STEPS; i++) {
-      const b = g.getBaseHeight(px, pz);
-      const gx = (g.getBaseHeight(px + 4, pz) - g.getBaseHeight(px - 4, pz)) / 8;
-      const gz = (g.getBaseHeight(px, pz + 4) - g.getBaseHeight(px, pz - 4)) / 8;
-      const slope = Math.hypot(gx, gz);
+      const { b, gx, gz, slope } = this.#ground(px, pz);
+      // Circling back on itself: it's in a hollow; it pools here.
+      if (i > 10 && points.some((p, k) => k < points.length - 10 && Math.hypot(p.x - px, p.z - pz) < 40)) return pool();
+
       let dx, dz;
       if (slope > 0.004) {
         dx = -gx / slope;
@@ -102,8 +176,8 @@ export class Rivers {
       }
       if (dir) {
         // Momentum, so it bends smoothly instead of zig-zagging.
-        dx = dir[0] * 0.72 + dx * 0.28;
-        dz = dir[1] * 0.72 + dz * 0.28;
+        dx = dir[0] * 0.65 + dx * 0.35;
+        dz = dir[1] * 0.65 + dz * 0.35;
       }
       // A slow meander.
       const a = this.meander.noise2D(px * 0.004, pz * 0.004) * 0.35;
@@ -112,69 +186,76 @@ export class Rivers {
       const l = Math.hypot(dx, dz) || 1;
       dir = [dx / l, dz / l];
 
-      // The water only ever falls: never above the land here, a little
-      // lower each step, never below the sea.
-      level = Math.max(this.seaLevel + 0.1, Math.min(level - 0.03, b - 0.8));
-      const width = 5 + Math.min(9, (i * STEP) / 160);
+      // The water only ever falls. On gentle ground it follows the land;
+      // on steep ground it runs level, then drops in a waterfall into a
+      // pool below and runs level again.
+      const width = width0 + Math.min(10.5, (i * STEP) / 110);
+      const target = b - 0.8;
+      if (target < level - 0.02) {
+        const fall = slope > FALL_SLOPE && i > 0;
+        const next = Math.max(this.seaLevel + 0.1, fall ? target - 2.2 : target);
+        if (fall && level - next > 1.2 && points.length) {
+          // The lip of the fall, just before it.
+          points.push({ x: px - dir[0] * 1.5, z: pz - dir[1] * 1.5, level: level - 0.02, width });
+        }
+        level = next;
+      } else {
+        level = Math.max(this.seaLevel + 0.1, level - 0.02);
+      }
       points.push({ x: px, z: pz, level, width });
+
       if (b < this.seaLevel - 0.3) {
         // Into a lake or the sea: carry on a little way so the mouths merge.
         points.push({ x: px + dir[0] * STEP, z: pz + dir[1] * STEP, level, width });
-        return points.length >= 14 ? { points, lake: null } : null;
+        return { points, lake: null };
       }
-      if (i >= 25 && b < this.seaLevel + 8 && slope < 0.05) {
-        // Down on low, flat land with no water in reach: it pools into a
-        // lake of its own, a little further on.
-        const r = 30 + (hash2(Math.round(px), Math.round(pz), this.seed) * 35);
-        const lake = { x: px + dir[0] * r * 0.8, z: pz + dir[1] * r * 0.8, r, seed: hash2(Math.round(pz), Math.round(px), this.seed) * 100 };
-        points.push({ x: px + dir[0] * r * 0.5, z: pz + dir[1] * r * 0.5, level: this.seaLevel + 0.1, width });
-        return { points, lake };
-      }
-      if (b - level > 12) return null; // it would need too deep a gorge
+      // Ground rising ahead of it (it's in a hollow) or low flat land far
+      // from any water: it pools here.
+      if (b - level > 6) return points.length >= 12 ? pool() : null;
+      if (i >= 25 && b < this.seaLevel + 8 && slope < 0.05) return pool();
       px += dir[0] * STEP;
       pz += dir[1] * STEP;
     }
-    return null;
+    return pool();
   }
 
-  #add(points, lake) {
-    const river = { points, lake, id: this.list.length };
-    if (lake) {
-      // Index the lake like a segment of zero length, with its own reach.
-      const seg = { lake };
-      const r = lake.r * 1.3 + 70;
-      for (let cz = Math.floor((lake.z - r) / CELL); cz <= Math.floor((lake.z + r) / CELL); cz++) {
-        for (let cx = Math.floor((lake.x - r) / CELL); cx <= Math.floor((lake.x + r) / CELL); cx++) {
-          const k = this.#key(cx, cz);
-          let list = this.cells.get(k);
-          if (!list) this.cells.set(k, (list = []));
-          list.push(seg);
-        }
+  #index(item, minX, minZ, maxX, maxZ) {
+    for (let cz = Math.floor(minZ / CELL); cz <= Math.floor(maxZ / CELL); cz++) {
+      for (let cx = Math.floor(minX / CELL); cx <= Math.floor(maxX / CELL); cx++) {
+        const k = this.#key(cx, cz);
+        let list = this.cells.get(k);
+        if (!list) this.cells.set(k, (list = []));
+        list.push(item);
       }
     }
-    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+  }
+
+  #add(river) {
+    const { points } = river;
+    river.id = this.list.length;
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i], b = points[i + 1];
       const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width };
       const r = Math.max(a.width, b.width) / 2 + INFLUENCE;
-      const x0 = Math.floor((Math.min(a.x, b.x) - r) / CELL), x1 = Math.floor((Math.max(a.x, b.x) + r) / CELL);
-      const z0 = Math.floor((Math.min(a.z, b.z) - r) / CELL), z1 = Math.floor((Math.max(a.z, b.z) + r) / CELL);
-      for (let cz = z0; cz <= z1; cz++) {
-        for (let cx = x0; cx <= x1; cx++) {
-          const k = this.#key(cx, cz);
-          let list = this.cells.get(k);
-          if (!list) this.cells.set(k, (list = []));
-          list.push(seg);
-        }
-      }
-      minX = Math.min(minX, a.x); maxX = Math.max(maxX, a.x);
-      minZ = Math.min(minZ, a.z); maxZ = Math.max(maxZ, a.z);
+      this.#index(seg, Math.min(a.x, b.x) - r, Math.min(a.z, b.z) - r, Math.max(a.x, b.x) + r, Math.max(a.z, b.z) + r);
     }
-    river.bounds = { minX: minX - 20, maxX: maxX + 20, minZ: minZ - 20, maxZ: maxZ + 20 };
+    for (const lake of [river.source, river.lake]) {
+      if (!lake) continue;
+      const r = lake.r * 1.35 + 60;
+      this.#index({ lake }, lake.x - r, lake.z - r, lake.x + r, lake.z + r);
+    }
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    const grow = (x, z, m) => {
+      minX = Math.min(minX, x - m); maxX = Math.max(maxX, x + m);
+      minZ = Math.min(minZ, z - m); maxZ = Math.max(maxZ, z + m);
+    };
+    for (const p of points) grow(p.x, p.z, 20);
+    for (const lake of [river.source, river.lake]) if (lake) grow(lake.x, lake.z, lake.r * 1.35 + 2);
+    river.bounds = { minX, maxX, minZ, maxZ };
     this.list.push(river);
   }
 
-  /** River segments that may shape (x, z). */
+  /** River segments and lakes that may shape (x, z). */
   #near(x, z) {
     this.#ensure(x, z);
     return this.cells.get(this.#key(Math.floor(x / CELL), Math.floor(z / CELL)));
@@ -190,65 +271,77 @@ export class Rivers {
     return out;
   }
 
+  /** A lake's (wobbly) radius in the direction of (x, z). */
+  static lakeRadius(lake, x, z) {
+    const a = Math.atan2(z - lake.z, x - lake.x);
+    return lake.r * (1 + 0.16 * Math.sin(a * 3 + lake.seed) + 0.08 * Math.sin(a * 5 + lake.seed * 2));
+  }
+
   /**
-   * The land at (x, z) with rivers carved into it, given the natural height
-   * `base`: a riverbed below the water, low banks just above it (raised a
-   * touch where the land dips, so water never spills), and valley sides
-   * rising to meet the land.
+   * The land at (x, z) with rivers and their lakes carved into it, given
+   * the natural height `base`.
    */
   carve(x, z, base) {
     const near = this.#near(x, z);
     if (!near) return base;
     let h = base;
-    const m = this._m ?? (this._m = {});
-    for (const seg of near) {
-      if (seg.lake) {
-        h = Math.min(h, this.#lakeBed(seg.lake, x, z, base));
+    const m = this._m;
+    // The nearest water, for raising the bank beside it.
+    let bank = -Infinity, inWater = false;
+    for (const item of near) {
+      if (item.lake) {
+        const lake = item.lake;
+        const r = Rivers.lakeRadius(lake, x, z);
+        const d = Math.hypot(x - lake.x, z - lake.z);
+        if (d < r) {
+          const t = d / r;
+          h = Math.min(h, lake.level - (1 + lake.r * 0.12) * (1 - t * t));
+          inWater = true;
+        } else {
+          // Shore: rising gently from the water's edge until it meets the land.
+          h = Math.min(h, lake.level + 0.1 + Math.max(0, d - r - 2) * 0.45);
+          if (d < r + 7) bank = Math.max(bank, lake.level + 0.3 - Math.max(0, d - r - 2) * 0.6);
+        }
         continue;
       }
-      const { d, level, half } = Rivers.#measure(seg, x, z, m);
+      const { d, level, half } = Rivers.#measure(item, x, z, m);
       if (d > half + INFLUENCE) continue;
-      let river;
       if (d < half) {
         const s = d / half;
-        river = Math.min(base, level - (0.9 + half * 0.22) * (1 - s * s));
+        h = Math.min(h, level - (0.7 + half * 0.2) * (1 - s * s));
+        inWater = true;
       } else {
-        river = Math.min(base, level + 0.1 + (d - half - 2) * 0.6);
-        if (d < half + 2.5) river = Math.max(river, level + 0.1);
+        h = Math.min(h, level + 0.25 + Math.max(0, d - half - 2.5) * 0.6);
+        if (d < half + 7) bank = Math.max(bank, level + 0.25 - Math.max(0, d - half - 2.5) * 0.6);
       }
-      h = Math.min(h, river);
     }
+    // Banks never lower than the water beside them (except out at sea).
+    if (!inWater && bank > h && base > this.seaLevel - 0.5) h = bank;
     return h;
   }
 
   /**
-   * A lake a river made for itself: a wobbly round basin dug below sea
-   * level (so the water there fills it), its shore easing into the land.
-   */
-  #lakeBed(lake, x, z, base) {
-    const dx = x - lake.x, dz = z - lake.z;
-    const a = Math.atan2(dz, dx);
-    const r = lake.r * (1 + 0.18 * Math.sin(a * 3 + lake.seed) + 0.1 * Math.sin(a * 5 + lake.seed * 2));
-    const d = Math.hypot(dx, dz);
-    if (d < r) return Math.min(base, this.seaLevel - 3.5 * (1 - (d / r) ** 2));
-    // Shore: rising gently from the water's edge until it meets the land.
-    return Math.min(base, this.seaLevel + (d - r) * 0.45);
-  }
-
-  /**
-   * The river at (x, z), if any within `margin` metres of its water:
-   * { d (from the middle), level, half (half-width) }. Else null.
+   * The river or lake at (x, z), if any within `margin` metres of its
+   * water: { d (from the middle / centre), level, half (half-width or
+   * radius), lake }. Else null.
    */
   at(x, z, margin = 0) {
     const near = this.#near(x, z);
     if (!near) return null;
     let best = null;
     const m = {};
-    for (const seg of near) {
-      if (seg.lake) continue;
-      Rivers.#measure(seg, x, z, m);
+    for (const item of near) {
+      if (item.lake) {
+        const lake = item.lake;
+        const d = Math.hypot(x - lake.x, z - lake.z);
+        const r = Rivers.lakeRadius(lake, x, z);
+        if (d > r + margin) continue;
+        if (!best || d - r < best.d - best.half) best = { d, level: lake.level, half: r, lake: true };
+        continue;
+      }
+      Rivers.#measure(item, x, z, m);
       if (m.d > m.half + margin) continue;
-      if (!best || m.d - m.half < best.d - best.half) best = { ...m };
+      if (!best || m.d - m.half < best.d - best.half) best = { ...m, lake: false };
     }
     return best;
   }
@@ -259,4 +352,3 @@ export class Rivers {
     return this.list.filter(({ bounds: b }) => b.maxX > minX && b.minX < maxX && b.maxZ > minZ && b.minZ < maxZ);
   }
 }
-

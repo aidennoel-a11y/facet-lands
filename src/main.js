@@ -52,7 +52,7 @@ const water = createWaterLayer({ skyColor: dayNight.horizon });
 const trees = createTreeLayer();
 const grass = createGrassLayer(WORLD);
 chunks.addLayer(water);
-chunks.addLayer(createRiverLayer(water));
+chunks.addLayer(createRiverLayer(dayNight.horizon));
 chunks.addLayer(trees);
 chunks.addLayer(grass);
 const caves = createCaveLayer(WORLD);

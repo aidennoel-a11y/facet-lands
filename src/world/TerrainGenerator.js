@@ -94,34 +94,37 @@ export class TerrainGenerator {
     const field = this.#rangeField(x, z);
     const w = this.getBiomeWeights(x, z, this._weights, field.value);
 
-    // Mountain ranges: well apart, from half
-    // to twice the usual size (bigger ones stand taller). The land first
-    // builds up into broad foothills (`mask`), and the crested peaks rise
-    // only from the heart of the range (`core`). Now and then a range has
-    // spiky peaks: narrower, sharper and higher. Ranges only stand in the
-    // plains and savanna: they make the land around them wetter (see
-    // getAridity), so deserts keep their distance.
-    // In the very driest deserts even that isn't enough: there the ranges
-    // fade away, slowly, over a kilometre or so.
+    // Mountain ranges: well apart, from half to twice the usual size
+    // (bigger ones stand taller). The land first builds up into broad
+    // foothills (`mask`), and the crested peaks rise from the range's inner
+    // part (`core`), growing gradually from its edge so a range never
+    // starts with a wall. Deep in the heart of a range (`heart`), where
+    // there are already many mountains, the peaks crowd closer together
+    // and some ranges get spiky ones: narrower, sharper and higher. Ranges
+    // only stand in the plains and savanna: they make the land around them
+    // wetter (see getAridity), so deserts keep their distance; in the very
+    // driest deserts they fade away, slowly, over a kilometre or so.
     const { size, large } = field;
     const range = field.value - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
     const mask = smoothstep(0.08, 0.55, range);
     let mountains = 0;
     if (mask > 0) {
-      const core = smoothstep(0.3, 0.68, range);
-      // Bowls and valleys cut into the range, deepest in its heart, so it's
-      // not one solid massif: sheltered hollows low enough for forest,
-      // between the ridges and peaks.
-      const bowl = core > 0 ? smoothstep(0.02, 0.45, this.bowlNoise.fbm(x * 0.0012, z * 0.0012, 2)) * core : 0;
+      const core = smoothstep(0.3, 0.72, range);
+      // Broad bowls and valleys in the range, so it's not one solid massif:
+      // sheltered hollows low enough for forest, between ridges and peaks.
+      const bowl = core > 0 ? smoothstep(0, 0.6, this.bowlNoise.fbm(x * 0.0007, z * 0.0007, 2)) * core * 0.6 : 0;
       if (core > 0) {
+        const heart = smoothstep(0.52, 0.85, range);
         // Broader crests on the bigger ranges.
         let ridges = this.ridgeNoise.ridged(x * 0.0008, z * 0.0008, 4, 2, 0.47, 0.012);
         if (large > 0) ridges += (this.ridgeNoise.ridged(x * 0.00052 + 91, z * 0.00052 - 37, 4, 2, 0.47, 0.012) - ridges) * large;
-        const spiky = smoothstep(0.3, 0.6, this.spikeNoise.fbm(x * 0.0003, z * 0.0003, 2));
-        const peaks = Math.pow(ridges, 1.6 + 1.3 * spiky) * (1 + 1.0 * spiky);
+        // More, closer peaks in the heart.
+        if (heart > 0) ridges += (this.ridgeNoise.ridged(x * 0.0016 - 211, z * 0.0016 + 157, 3, 2, 0.47, 0.02) - ridges) * 0.4 * heart;
+        const spiky = smoothstep(0.3, 0.6, this.spikeNoise.fbm(x * 0.0003, z * 0.0003, 2)) * heart;
+        const peaks = Math.pow(ridges, 1.7 + 1.1 * spiky) * (1 + 1.0 * spiky);
         // Knobbly shoulders and spurs, so high ground is never a flat plateau.
         const rugged = this.ruggedNoise.fbm(x * 0.0035, z * 0.0035, 2) * 18;
-        mountains = core * (peaks * 205 * (0.65 + 0.5 * size) * (1 - 0.7 * bowl) + rugged);
+        mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged);
       }
       mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size) * (1 - 0.5 * bowl);
     }
@@ -144,7 +147,7 @@ export class TerrainGenerator {
 
     // Seas where the continent noise dips, and lake basins in the green lowlands.
     const sea = smoothstep(-0.05, -0.45, continent) * 34;
-    const lakes = smoothstep(0.35, 0.65, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - smoothstep(0, 0.4, mask)) * (1 - w.desert) * (1 - 0.6 * w.savanna);
+    const lakes = smoothstep(0.28, 0.72, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - smoothstep(0, 0.4, mask)) * (1 - w.desert) * (1 - 0.6 * w.savanna);
 
     return 14 + continent * 16 + hills + dunes + mountains - sea - lakes;
   }
