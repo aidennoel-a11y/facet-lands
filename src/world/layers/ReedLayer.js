@@ -111,11 +111,15 @@ export function createReedLayer(config) {
             // Lake edges: in patches along the muddy water line (not the sea).
             if (!shoreline) continue;
             const ground = groundHeightAt(lx, lz);
-            if (!(ground > sea - 0.7 && ground < sea + 0.45)) continue;
+            // In wetlands reeds crowd the pools and channels, out into the
+            // shallows and up over the wet ground.
+            if (!(ground > sea - 1.1 && ground < sea + 1.3)) continue;
+            const marsh = generator.getBiomeWeights(wx, wz, {}).wetland;
+            if (!(ground > sea - 0.7 - 0.4 * marsh && ground < sea + 0.45 + 0.8 * marsh)) continue;
             const shore = generator.getShore(wx, wz, ground);
             if (!shore || shore.ocean) continue;
             const patch = 0.5 + 0.5 * Math.sin(wx * 0.07 + Math.sin(wz * 0.05) * 3);
-            if (hash2(gi, gj, seed) > patch * 0.8 - 0.15) continue;
+            if (hash2(gi, gj, seed) > patch * (0.8 + 0.5 * marsh) - 0.15 + 0.2 * marsh) continue;
             const s = 0.8 + hash2(gi, gj, seed + 3) * 0.55;
             position.set(lx, ground - 0.1, lz);
             rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 4) * Math.PI * 2);

@@ -120,6 +120,75 @@ export const BIOMES = {
     },
   },
 
+  // Volcanic highlands: dark basalt and cinders, black sand where they
+  // meet the sea, thin grass and scattered hardy pines.
+  volcanic: {
+    id: 'volcanic',
+    name: 'Volcanic highlands',
+    palette: [
+      { height: -Infinity, color: 0x3a3a38 },
+      { height: -14, color: 0x3f3d3b },
+      { height: 0, color: 0x363333 }, // black sand
+      { height: 5, color: 0x3b3837 },
+      { height: 9, color: 0x55603f }, // dark, mossy grass
+      { height: 30, color: 0x5f6a44 },
+      { height: 60, color: 0x626448 }, // thin scrub on old lava
+      { height: 95, color: 0x55524c },
+      { height: 130, color: 0x4a4644 }, // bare basalt and cinders
+      { height: 200, color: 0x5a3f38 }, // reddish cinders up high
+    ],
+    cliff: 0x3b3737, // basalt
+    cliffSlope: [0.74, 0.52],
+    snowLine: 230,
+    snow: 0xeef1f4,
+    grass: 0.4,
+    trees: {
+      density: 0.35,
+      clumped: true,
+      species: [
+        { type: 'pine', weight: 1.4, minHeight: 6, maxHeight: 160 },
+        { type: 'spruce', weight: 0.5, minHeight: 40, maxHeight: 180 },
+        { type: 'bush', weight: 0.8, minHeight: 5, maxHeight: 150 },
+        { type: 'deadPine', weight: 0.35, minHeight: 10, maxHeight: 200 },
+      ],
+    },
+  },
+
+  // Wetlands: low marshes and swamps just above the water, pools and
+  // channels everywhere, mudflats at their edges; willows and poplars on
+  // the drier hummocks, dead trees standing drowned in the pools.
+  wetland: {
+    id: 'wetland',
+    name: 'Wetlands',
+    palette: [
+      { height: -Infinity, color: 0x4a4834 },
+      { height: -3, color: 0x55543a },
+      { height: 1.6, color: 0x6a6341 }, // mudflats
+      { height: 2.6, color: 0x667f40 }, // wet marsh grass
+      { height: 5, color: 0x749448 },
+      { height: 12, color: 0x7fa250 },
+      { height: 30, color: 0x86b858 },
+      { height: 60, color: 0x5f9a45 },
+      { height: 95, color: 0x7f9a52 },
+    ],
+    cliff: 0x7a7258,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 185,
+    snow: 0xf1f4f7,
+    grass: 1,
+    trees: {
+      density: 0.55,
+      clumped: true,
+      species: [
+        { type: 'broadleaf', weight: 0.6, minHeight: -99, maxHeight: 60 },
+        { type: 'poplar', weight: 0.7, minHeight: -99, maxHeight: 60 },
+        { type: 'birch', weight: 0.35, minHeight: -99, maxHeight: 60 },
+        { type: 'bush', weight: 1.0, minHeight: -99, maxHeight: 60 },
+        { type: 'deadPine', weight: 0.45, minHeight: -99, maxHeight: 60 },
+      ],
+    },
+  },
+
   desert: {
     id: 'desert',
     name: 'Desert',

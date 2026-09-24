@@ -1,6 +1,7 @@
 import { Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../../noise/random.js';
 import { addWind, windDepthMaterial } from '../../render/wind.js';
+import { seasonalTrees } from '../../render/Seasons.js';
 import { LEAF_GEOMETRIES, NO_COLLIDE, STIFF, TREE_GEOMETRIES } from '../trees.js';
 
 const matrix = new Matrix4();
@@ -59,6 +60,8 @@ export function createTreeLayer({ rocks = null } = {}) {
       '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal *= faceDirection;\n#endif',
     );
   };
+  seasonalTrees(material);
+  seasonalTrees(leafMaterial, true);
   const depthMaterial = windDepthMaterial(WIND);
   // Cacti stand stiff: no sway.
   const stiffMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
@@ -169,16 +172,20 @@ export function createTreeLayer({ rocks = null } = {}) {
           const likely = (trees ? (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density : 0);
           if (!trees || keep > likely) continue;
           if (biome.id === 'desert' && generator.getFeatures(wx, wz).erg > 0.3) continue; // nothing grows in a dune sea
+          if (biome.id === 'volcanic' && hash2(gi, gj, seed + 15) < 0.92 * generator.getVolcanic(wx, wz).cone) continue; // cinder cones are nearly bare
           if (crowded(gi, gj, likely)) continue;
           if (onRock(wx, wz, i, j)) continue;
 
           const ground = groundHeightAt(lx, lz, surface);
-          if (!(ground >= seaLevel + 1.2)) continue; // outside the chunk, in water or over a cave mouth
+          // (In a wetland trees grow down to the water, and dead ones stand
+          // drowned in the shallows.)
+          const marsh = biome.id === 'wetland';
+          if (!(ground >= seaLevel + (marsh ? -0.8 : 1.2))) continue; // outside the chunk, in water or over a cave mouth
           if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
           if (generator.rivers.at(wx, wz, 1.5)) continue; // nor in a river or right on its bank
           // Nothing but cacti grows on sand (beaches included).
           const colourHeight = ground + generator.getColorJitter(wx, wz);
-          if (biome.id !== 'desert' && colourHeight < 7) continue;
+          if (biome.id !== 'desert' && !marsh && colourHeight < 7) continue;
           // Nor on bare rock: the grey band up the mountains, and faces
           // steep enough to show rock (the same test the ground's colour
           // uses). Steep slopes that are still green keep their trees.
@@ -212,6 +219,7 @@ export function createTreeLayer({ rocks = null } = {}) {
             }
           }
           species ??= trees.species[trees.species.length - 1];
+          if (marsh && ground < seaLevel + 0.4 && species.type !== 'deadPine') continue;
 
           const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale;
           (placed[species.type] ??= []).push({

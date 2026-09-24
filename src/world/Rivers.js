@@ -78,6 +78,7 @@ export class Rivers {
     const k = this.#key(rx, rz);
     if (this.riverRegions.has(k)) return;
     this.riverRegions.add(k);
+    this.#craterLakes(rx, rz);
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     let made = 0;
@@ -367,6 +368,25 @@ export class Rivers {
     }
   }
 
+  /**
+   * Lakes in the craters of the volcanoes whose tops are in this region
+   * (some craters are dry): held in by the crater itself, a third of the
+   * way up from its floor.
+   */
+  #craterLakes(rx, rz) {
+    const g = this.generator;
+    if (!g.volcanoes) return;
+    const x0 = rx * REGION, z0 = rz * REGION;
+    for (const c of g.volcanoes(x0, z0, x0 + REGION, z0 + REGION)) {
+      if (!c.lake || c.x < x0 || c.x >= x0 + REGION || c.z < z0 || c.z >= z0 + REGION) continue;
+      const pond = { x: c.x, z: c.z, r: c.rc * 0.6, level: g.getBaseHeight(c.x, c.z) + c.depth * 0.35, seed: c.seed, natural: true, crater: true };
+      const r = pond.r * 1.3 + 30;
+      this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
+      const m = pond.r * 1.3 + 2;
+      this.list.push({ points: [], pond, tarn: null, kind: 'lake', id: this.list.length, bounds: { minX: pond.x - m, maxX: pond.x + m, minZ: pond.z - m, maxZ: pond.z + m } });
+    }
+  }
+
   #add(points, pond, kind, tarn = null) {
     const river = { points, pond, tarn, kind, id: this.list.length };
     let along = 0; // metres from the source
@@ -481,7 +501,8 @@ export class Rivers {
           wet = Math.min(wet, pond.level - 0.15 - (0.6 + pond.r * 0.12) * (1 - t * t));
           inWater = true;
         } else {
-          h = Math.min(h, pond.level + 0.2 + Rivers.bankRise(d - rr, 0.6));
+          // (A crater's own walls hold its lake: they're left as they are.)
+          if (!pond.natural) h = Math.min(h, pond.level + 0.2 + Rivers.bankRise(d - rr, 0.6));
           if (d < rr + 8) bank = Math.max(bank, pond.level + 0.2 - Math.max(0, d - rr - 3.2) * 0.6);
         }
         continue;
@@ -532,7 +553,7 @@ export class Rivers {
         const r = Rivers.pondRadius(pond, x, z);
         const half = Math.max(r, 4.5);
         if (d > half + margin) continue;
-        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, fx: 0, fz: 0, drop: 0 };
+        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, crater: !!pond.crater, fx: 0, fz: 0, drop: 0 };
         continue;
       }
       Rivers.#measure(item, x, z, m);

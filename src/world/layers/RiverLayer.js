@@ -11,6 +11,7 @@ import {
   MeshPhongMaterial,
 } from 'three';
 import { hash2 } from '../../noise/random.js';
+import { seasonalWater } from '../../render/Seasons.js';
 
 const DEEP = new Color(0x4fbfc4).lerp(new Color(0x2c67b0), 0.45);
 const SHALLOW = new Color(0x4fbfc4).lerp(new Color(0x2c67b0), 0.15);
@@ -76,6 +77,7 @@ export function createRiverLayer(skyColor) {
       );
   };
   material.customProgramCacheKey = () => 'river';
+  seasonalWater(material); // ponds freeze in winter
 
   // Waterfall spray: little cubes, each flying on its own arc (start, velocity,
   // how long it lives, when it starts) and shrinking away as it lands.
@@ -174,6 +176,7 @@ export function createRiverLayer(skyColor) {
       const inset = new Float32Array(n * n);
       const river = new Float32Array(n * n); // 1 in the river, 0 out in the lake it flows into
       const depth = new Float32Array(n * n); // of the water, for the lake's colours
+      const ice = new Float32Array(n * n); // still water in cold lands freezes in winter
       let any = false;
       for (let j = 0; j < n; j++) {
         for (let i = 0; i < n; i++) {
@@ -191,6 +194,7 @@ export function createRiverLayer(skyColor) {
           flow[k * 4 + 2] = w.pond ? 0 : (0.6 + Math.min(2.4, drop * 6)) * river[k];
           flow[k * 4 + 3] = Math.min(1, Math.max(0, (drop - 0.25) / 0.5));
           inset[k] = w.inset;
+          if (w.pond) ice[k] = generator.getSeasonality(x, z);
           any = true;
         }
       }
@@ -200,6 +204,7 @@ export function createRiverLayer(skyColor) {
       const colors = [];
       const flows = [];
       const streaks = [];
+      const freezes = [];
       const seed = generator.seed ^ 0x3c6ef372;
       const tri = (a, b, c, shade) => {
         if (Number.isNaN(level[a]) || Number.isNaN(level[b]) || Number.isNaN(level[c])) return;
@@ -220,6 +225,7 @@ export function createRiverLayer(skyColor) {
           colors.push(color.r, color.g, color.b, alpha);
           flows.push(flow[k * 4], flow[k * 4 + 1], flow[k * 4 + 2], flow[k * 4 + 3]);
           streaks.push(streaky);
+          freezes.push(ice[k]);
         }
       };
       for (let j = 0; j < cells; j++) {
@@ -244,6 +250,7 @@ export function createRiverLayer(skyColor) {
       geometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 4));
       geometry.setAttribute('flow', new BufferAttribute(new Float32Array(flows), 4));
       geometry.setAttribute('streaks', new BufferAttribute(new Float32Array(streaks), 1));
+      geometry.setAttribute('aFreeze', new BufferAttribute(new Float32Array(freezes), 1));
       geometry.computeVertexNormals();
       geometry.computeBoundingSphere();
       const mesh = new Mesh(geometry, material);

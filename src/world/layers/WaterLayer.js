@@ -1,6 +1,7 @@
 import { BufferAttribute, BufferGeometry, Color, Mesh, MeshPhongMaterial } from 'three';
 import { hash2 } from '../../noise/random.js';
 import { windStrength } from '../../render/wind.js';
+import { seasonUniforms } from '../../render/Seasons.js';
 
 const SHALLOW = new Color(0x4fbfc4);
 const DEEP = new Color(0x2c67b0);
@@ -21,6 +22,8 @@ function smoothstep(a, b, x) {
  * driven by world position so the waves flow across chunk borders, and a
  * fresnel term mixes in the sky colour (`skyColor`, kept live by the caller)
  * at grazing angles, so the sea glows orange at sunset and dark at night.
+ * Along the open coast the shallows foam white where the waves break,
+ * most of all at the foot of sea cliffs.
  */
 export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor = new Color(0xd6e8f7) } = {}) {
   const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor } };
@@ -36,25 +39,37 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor 
     shader.uniforms.uTime = uniforms.uTime;
     shader.uniforms.uSky = uniforms.uSky;
     shader.uniforms.uWind = windStrength;
+    shader.uniforms.uWinter = seasonUniforms.uWinter;
     // Fresnel: looking across the water you see the sky reflected in it,
     // looking straight down you see into it.
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uSky;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uSky;\nuniform float uTime;\nvarying float vFoam;\nvarying vec2 vWorld;\nvarying float vIce;')
       .replace(
         '#include <fog_fragment>',
         /* glsl */ `float fresnel = pow(1.0 - clamp(dot(normal, normalize(vViewPosition) * -1.0), 0.0, 1.0), 3.0);
         gl_FragColor.rgb = mix(gl_FragColor.rgb, uSky, fresnel * 0.35);
         gl_FragColor.a = mix(gl_FragColor.a, 1.0, fresnel * 0.4);
+        // Breaking waves: foam rolling in, surging and falling back.
+        float surge = sin(uTime * 1.3 + dot(vWorld, vec2(0.11, 0.07))) * 0.5 + 0.5;
+        float breaking = vFoam * smoothstep(0.25, 0.95, surge + 0.35 * sin(dot(vWorld, vec2(0.6, -0.45)) + uTime * 2.1));
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.95, 0.97, 0.98), breaking * 0.85);
+        gl_FragColor.a = mix(gl_FragColor.a, 1.0, breaking * 0.7);
+        // Winter: lakes freeze over.
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.74, 0.84, 0.9), vIce * 0.85);
+        gl_FragColor.a = mix(gl_FragColor.a, 0.95, vIce);
         #include <fog_fragment>`,
       );
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;\nattribute float waveScale;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;\nuniform float uWinter;\nattribute float waveScale;\nattribute float foam;\nattribute float aFreeze;\nvarying float vFoam;\nvarying vec2 vWorld;\nvarying float vIce;')
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `#include <begin_vertex>
         vec4 wp = modelMatrix * vec4(transformed, 1.0);
+        vIce = aFreeze * smoothstep(0.35, 0.8, uWinter);
+        vFoam = foam * (1.0 - vIce);
+        vWorld = wp.xz;
         // Shallow and small water barely ripples; open, deep water rolls, more so when windy.
-        transformed.y += ${waveHeight.toFixed(3)} * waveScale * (0.25 + 0.75 * uWind) * (
+        transformed.y += (1.0 - vIce) * ${waveHeight.toFixed(3)} * waveScale * (0.25 + 0.75 * uWind) * (
           sin(wp.x * 0.04 + uTime * 0.7) +
           cos(wp.z * 0.034 + uTime * 0.55) +
           0.4 * sin((wp.x + wp.z) * 0.1 + uTime * 1.2));`,
@@ -99,9 +114,27 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor 
         }
       }
 
+      // Surf along the open coast: in the shallows, strongest under cliffs.
+      const surf = new Float32Array(n * n);
+      // Lakes (not the open sea) in lands with a cold winter freeze over.
+      const freeze = new Float32Array(n * n);
+      for (let k = 0; k < n * n; k++) {
+        if (ground[k] < seaLevel + 1.5) {
+          const x = originX + xs[k], z = originZ + zs[k];
+          freeze[k] = generator.getSeasonality(x, z) * (1 - generator.getOceanness(x, z));
+        }
+        const depth = seaLevel - ground[k];
+        if (depth < -1 || depth > 3.5) continue;
+        const x = originX + xs[k], z = originZ + zs[k];
+        if (generator.getOceanness(x, z) < 0.5) continue;
+        surf[k] = (1 - smoothstep(0.3, 3.5, depth)) * (0.35 + 0.65 * generator.getSeaCliff(x, z));
+      }
+
       const positions = [];
       const colors = [];
       const waves = [];
+      const foams = [];
+      const freezes = [];
       const addTri = (a, b, c, variation) => {
         // Keep faces with any corner under water; drop fully dry ones.
         const wet = seaLevel + 1.5;
@@ -114,6 +147,8 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor 
           positions.push(xs[k], seaLevel, zs[k]);
           colors.push(color.r, color.g, color.b, alpha);
           waves.push(0.1 + 0.9 * smoothstep(1, 16, seaLevel - ground[k]));
+          foams.push(surf[k]);
+          freezes.push(freeze[k]);
         }
       };
 
@@ -142,6 +177,8 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor 
       geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
       geometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 4));
       geometry.setAttribute('waveScale', new BufferAttribute(new Float32Array(waves), 1));
+      geometry.setAttribute('foam', new BufferAttribute(new Float32Array(foams), 1));
+      geometry.setAttribute('aFreeze', new BufferAttribute(new Float32Array(freezes), 1));
       geometry.computeBoundingSphere();
       // Waves move vertices a little; pad the bounds so culling stays correct.
       geometry.boundingSphere.radius += waveHeight * 3;

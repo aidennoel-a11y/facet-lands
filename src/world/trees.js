@@ -90,6 +90,10 @@ function part(geometry, colorLow, colorHigh = colorLow, options = {}) {
  * on its faces.
  */
 function withCrown(wood, crown) {
+  // Mark which vertices are crown (1) and which wood (0), for the seasons.
+  const mark = (g, v) => g.setAttribute('aCrown', new BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
+  wood.forEach((g) => mark(g, 0));
+  crown.forEach((g) => mark(g, 1));
   const solid = mergeGeometries([...wood, ...crown]);
   solid.userData.crown = mergeGeometries(crown);
   return solid;
@@ -442,6 +446,30 @@ export const TREE_GEOMETRIES = {
   dryBush: dryBush(),
 };
 
+// How each species takes the seasons: [deciduous (leaves turn and fall), holds snow].
+// (A deciduous tree's crown shrinks away to nothing in winter, leaving bare boughs.)
+const SEASONAL = {
+  pine: [0, 1], spruce: [0, 1], deadPine: [0, 1],
+  broadleaf: [1, 1], birch: [1, 1], poplar: [1, 1], maple: [1, 1], bush: [1, 1],
+  acacia: [0, 0], cactus: [0, 0], smallCactus: [0, 0], dryBush: [0, 0],
+};
+function markSeasons(geometries) {
+  for (const [type, g] of Object.entries(geometries)) {
+    const [deciduous, snowy] = SEASONAL[type] ?? [0, 0];
+    const n = g.attributes.position.count;
+    const a = new Float32Array(n * 2);
+    for (let k = 0; k < n; k++) {
+      a[k * 2] = deciduous;
+      a[k * 2 + 1] = snowy;
+    }
+    // The crown of a deciduous tree is its leaves: they turn, and fall in winter.
+    const crown = g.attributes.aCrown;
+    if (crown) for (let k = 0; k < n; k++) a[k * 2] = deciduous * crown.getX(k);
+    g.setAttribute('aSeason', new BufferAttribute(a, 2));
+  }
+}
+markSeasons(TREE_GEOMETRIES);
+
 /** Species that are stiff (cacti): they don't sway in the wind. */
 export const STIFF = new Set(['cactus', 'smallCactus']);
 
@@ -461,3 +489,4 @@ export const LEAF_GEOMETRIES = {
   acacia: leaves(55, [0.4, 0.7], [0x7f9a3c, 0x93aa48, 0xa7b858, 0x6f8a34], crown('acacia'), 18),
   dryBush: leaves(14, [0.25, 0.4], [0xa89d55, 0xbfae62, 0x9a9048], crown('dryBush'), 19),
 };
+markSeasons(LEAF_GEOMETRIES);

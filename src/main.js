@@ -10,6 +10,8 @@ import { createRockLayer } from './world/layers/RockLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
 import { createRiverLayer } from './world/layers/RiverLayer.js';
 import { createReedLayer } from './world/layers/ReedLayer.js';
+import { createLilyLayer } from './world/layers/LilyLayer.js';
+import { createVentLayer } from './world/layers/VentLayer.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
 import { PlayerControls } from './controls/PlayerControls.js';
@@ -20,6 +22,7 @@ import { Clouds } from './world/Clouds.js';
 import { Weather, WEATHER } from './render/Weather.js';
 import { Lightning, Rain } from './render/Storm.js';
 import { Sound } from './render/Sound.js';
+import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
 import { describeWind, updateWind } from './render/wind.js';
 import { Minimap } from './ui/Minimap.js';
 
@@ -56,7 +59,9 @@ const light = { direction: dayNight.shaftDirection, color: dayNight.shaftColor, 
 // --- Terrain -----------------------------------------------------------------
 // Double-sided so that, from inside a cave, a lip of ground overhanging the
 // mouth shows as ground rather than letting the sky through.
-const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+const terrainMaterial = seasonalTerrain(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), WORLD.seaLevel);
+// The seasons turn over every few game days (see Seasons).
+const seasons = new Seasons(WORLD.daysPerSeason);
 // A heightfield has no back faces, so render its front faces into the shadow map.
 terrainMaterial.shadowSide = THREE.FrontSide;
 let generator = new TerrainGenerator(WORLD.seed, WORLD);
@@ -68,6 +73,8 @@ const grass = createGrassLayer(WORLD);
 chunks.addLayer(water);
 chunks.addLayer(createRiverLayer(dayNight.horizon));
 chunks.addLayer(createReedLayer(WORLD));
+chunks.addLayer(createLilyLayer(WORLD));
+chunks.addLayer(createVentLayer(WORLD));
 chunks.addLayer(trees);
 chunks.addLayer(grass);
 const caves = createCaveLayer(WORLD);
@@ -137,6 +144,8 @@ const ui = {
   rays: document.getElementById('rays'),
   night: document.getElementById('night'),
   weather: document.getElementById('weather'),
+  season: document.getElementById('season'),
+  seasonAuto: document.querySelector('#season option[value=auto]'),
   weatherAuto: document.querySelector('#weather option[value=auto]'),
   sunset: document.getElementById('sunset'),
   sound: document.getElementById('sound'),
@@ -197,6 +206,7 @@ ui.night.addEventListener('change', () => {
 // Weather, for testing: pin a kind of weather, or let it change by itself.
 ui.weather.addEventListener('change', () => weather.set(ui.weather.value));
 ui.sunset.addEventListener('change', () => weather.setSunset(ui.sunset.value));
+ui.season.addEventListener('change', () => seasons.set(ui.season.value));
 ui.sound.addEventListener('change', () => sound.setEnabled(ui.sound.checked));
 const WEATHER_ORDER = ['auto', ...Object.keys(WEATHER)];
 ui.shadows.addEventListener('change', () => {
@@ -327,6 +337,41 @@ function updateVisibility() {
 }
 
 let sheltered = false; // underground: no rain or lightning, sounds muffled
+
+// How much the land under you has a cold winter (so snow rather than rain).
+const cold = { value: 1, wait: 0 };
+function coldHere(dt) {
+  cold.wait -= dt;
+  if (cold.wait <= 0) {
+    cold.wait = 0.5;
+    cold.target = generator.getSeasonality(camera.position.x, camera.position.z);
+  }
+  cold.value += ((cold.target ?? 1) - cold.value) * Math.min(1, dt / 3);
+  return cold.value;
+}
+
+// Dawn mist over the wetlands: thickest around sunrise, gone by mid
+// morning, low down (fly up out of it).
+const MIST = new THREE.Color(0xdfe5e8);
+const mistState = { marsh: 0, wait: 0, value: 0 };
+function marshMist(dt) {
+  mistState.wait -= dt;
+  if (mistState.wait <= 0) {
+    mistState.wait = 0.5;
+    const p = camera.position;
+    mistState.marsh = sheltered ? 0 : generator.getBiomeWeights(p.x, p.z, {}).wetland;
+  }
+  const h = dayNight.hour;
+  const dawn = smooth(4.3, 5.8, h) * (1 - smooth(8, 9.8, h));
+  const low = 1 - smooth(20, 90, camera.position.y);
+  const target = mistState.marsh * dawn * low;
+  mistState.value += (target - mistState.value) * Math.min(1, dt / 2);
+  return mistState.value < 0.002 ? 0 : mistState.value;
+}
+function smooth(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
 const caveHaze = { target: 0, amount: 0, color: new THREE.Color(0x07080b) };
 const openFog = { near: scene.fog.near, far: scene.fog.far };
 function applyCaveHaze(dt) {
@@ -369,20 +414,26 @@ function tick(now) {
   const wind = updateWind(now / 1000, 0.95 * weather.storm + 0.35 * weather.rain);
   lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getHeight(x, z), sound, sheltered);
   dayNight.update(dt, camera.position, weather);
-  // Rain closes the view in.
-  scene.fog.near = openFog.near * (1 - 0.75 * weather.rain);
-  scene.fog.far = openFog.far * (1 - 0.5 * weather.rain);
+  // Rain closes the view in, and so does the mist that lies over the
+  // wetlands at dawn.
+  const mist = marshMist(dt);
+  scene.fog.near = openFog.near * (1 - 0.75 * weather.rain) * (1 - 0.85 * mist);
+  scene.fog.far = openFog.far * (1 - 0.5 * weather.rain) * (1 - 0.75 * mist);
+  if (mist > 0) scene.fog.color.lerp(MIST, 0.45 * mist);
   dayNight.sky.visible = true;
   applyCaveHaze(dt);
   cloudSky.cover = weather.cover;
   cloudSky.storm = weather.storm;
   cloudSky.viewMatrix = camera.matrixWorldInverse;
   clouds.update(dt, camera.position, dayNight.horizon, generator, wind, cloudSky);
-  rain.update(now / 1000, camera.position, weather.rain, clouds.wind, wind, dayNight.horizon);
+  seasons.update(dayNight.playing ? dt / (WORLD.dayLengthMinutes * 60) : 0, dt);
+  // In a cold winter, it snows (over the lands that have one).
+  const snow = seasonUniforms.uWinter.value * coldHere(dt);
+  rain.update(now / 1000, camera.position, weather.rain, clouds.wind, wind, dayNight.horizon, snow);
   body.update(controls, dt);
   torches.update(now / 1000, camera.position);
   updateVisibility();
-  sound.update(weather.rain, sheltered);
+  sound.update(weather.rain * (1 - snow), sheltered);
   if (ui.rays.checked) {
     light.strength = dayNight.lightStrength;
     light.reach = dayNight.shaftReach;
@@ -405,6 +456,7 @@ function tick(now) {
     ui.trees.textContent = `${(trees.count / 1000).toFixed(1)}k`;
     ui.wind.textContent = describeWind(wind);
     ui.weatherAuto.textContent = `Auto · ${weather.label}`;
+    ui.seasonAuto.textContent = `Auto · ${seasons.name}`;
     ui.clock.textContent = dayNight.clock;
     if (document.activeElement !== ui.time) ui.time.value = dayNight.hour.toFixed(2);
     ui.alt.textContent = `${Math.round(camera.position.y)} m`;
@@ -416,4 +468,4 @@ function tick(now) {
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, scene, camera, chunks, controls, dayNight, clouds, weather, rain, lightning, sound, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, scene, camera, chunks, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };

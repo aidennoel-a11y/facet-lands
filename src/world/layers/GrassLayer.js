@@ -12,6 +12,7 @@ import {
 } from 'three';
 import { hash2, mulberry32 } from '../../noise/random.js';
 import { addWind } from '../../render/wind.js';
+import { seasonalGrass } from '../../render/Seasons.js';
 
 /**
  * One tuft: a handful of single-triangle blades leaning out from a small
@@ -82,6 +83,7 @@ export function createGrassLayer(config) {
     speed: 1.9,
     fade: config.grassFade,
   });
+  seasonalGrass(material);
 
   const layer = {
     name: 'grass',

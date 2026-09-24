@@ -11,6 +11,7 @@ import {
 } from 'three';
 
 const DROPS = 7000;
+const WHITE = new Color(0xffffff);
 
 /**
  * Rain: streaks falling through a box around the camera. Each drop is a
@@ -18,6 +19,7 @@ const DROPS = 7000;
  * whole shower costs one draw call and no per-frame updates. Drops are fixed
  * in the world (the box just wraps around you), fall at slightly different
  * speeds, and slant with the wind. Lighter rain shows fewer of them.
+ * In a cold winter it falls as snow: flakes drifting down slowly, swirling.
  */
 export class Rain {
   constructor(scene) {
@@ -40,6 +42,7 @@ export class Rain {
       box: { value: new Vector3(80, 48, 80) },
       fall: { value: new Vector3(0, -22, 0) },
       amount: { value: 0 },
+      snow: { value: 0 },
       colour: { value: new Color(0xb8c4d2) },
     };
     this.material = new ShaderMaterial({
@@ -52,15 +55,18 @@ export class Rain {
         uniform vec3 box;
         uniform vec3 fall;
         uniform float amount;
+        uniform float snow;
         attribute vec4 drop;
         attribute float tail;
         varying float vAlpha;
         void main() {
           // Each drop falls at its own speed; the box wraps around the camera.
-          vec3 velocity = fall * (0.85 + 0.3 * drop.w);
+          // Snow drifts down slowly, swirling; rain streaks.
+          vec3 velocity = mix(fall * (0.85 + 0.3 * drop.w), vec3(fall.x * 0.35, -2.2 - drop.w, fall.z * 0.35), snow);
           vec3 corner = centre - box * 0.5;
           vec3 p = mod(drop.xyz * box + velocity * time - corner, box) + corner;
-          p -= normalize(velocity) * tail * (0.9 + 0.5 * drop.w);
+          p.xz += snow * 0.6 * vec2(sin(time * 1.3 + drop.x * 40.0), cos(time * 1.1 + drop.z * 40.0));
+          p -= normalize(velocity) * tail * mix(0.9 + 0.5 * drop.w, 0.12, snow);
           // Lighter rain: fewer drops.
           vAlpha = step(drop.w, amount) * (1.0 - 0.6 * tail);
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
@@ -88,16 +94,19 @@ export class Rain {
    * @param wind    { x, z } drift of the clouds (m/s), and its strength 0..1
    * @param light   sky colour to tint the drops with
    */
-  update(time, focus, amount, wind, strength, light) {
+  update(time, focus, amount, wind, strength, light, snow = 0) {
     this.mesh.visible = amount > 0.01;
     if (!this.mesh.visible) return;
     const u = this.uniforms;
     u.time.value = time;
     u.centre.value.copy(focus);
     u.amount.value = amount;
+    u.snow.value = snow;
     const gust = 0.6 + 1.6 * strength;
     u.fall.value.set(wind.x * gust, -22, wind.z * gust);
-    u.colour.value.set(0xb8c4d2).lerp(light, 0.35);
+    // Snowflakes are white, and show brighter.
+    u.colour.value.set(0xb8c4d2).lerp(light, 0.35).lerp(WHITE, snow * 0.8);
+    this.material.uniforms.colour.value.multiplyScalar(1 + snow * 0.6);
   }
 }
 
