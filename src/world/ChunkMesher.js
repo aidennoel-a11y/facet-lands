@@ -20,11 +20,45 @@ const skirtNormal = new Vector3();
  * good far from the world origin.
  */
 export function buildChunkGeometry(generator, config, cx, cz, resolution) {
-  const { chunkSize, vertexJitter, skirtDepth } = config;
+  const { chunkSize, vertexJitter, skirtDepth, detailResolution } = config;
   const finest = config.lods[0].resolution;
   const step = finest / resolution; // fine-grid indices per cell at this LOD
   const fineCell = chunkSize / finest;
   const seed = generator.seed;
+  // The lattice every level of detail shares (every other fine vertex, 4 m
+  // apart): its vertices are jittered by up to a third of its cell. The
+  // finest level's extra vertices sit between them, nudged a little.
+  const latticeCell = fineCell * 2;
+  const bigJitter = vertexJitter * latticeCell;
+  const smallJitter = vertexJitter * fineCell * 0.45;
+  const lattice = (li, lj) => [
+    li * latticeCell + (hash2(li, lj, seed) - 0.5) * 2 * bigJitter,
+    lj * latticeCell + (hash2(li, lj, seed ^ 0x9e3779b9) - 0.5) * 2 * bigJitter,
+  ];
+  /** Where fine-grid vertex (gx, gz) sits, relative to this chunk's corner. */
+  function vertexAt(gx, gz) {
+    let x, z;
+    const ox = gx & 1, oz = gz & 1;
+    if (!ox && !oz) {
+      [x, z] = lattice(gx / 2, gz / 2);
+    } else {
+      // Between lattice vertices: their average, nudged.
+      const i0 = (gx - ox) / 2, j0 = (gz - oz) / 2;
+      x = 0;
+      z = 0;
+      const corners = [[i0, j0], [i0 + ox, j0], [i0, j0 + oz], [i0 + ox, j0 + oz]];
+      for (const [i, j] of corners) {
+        const [px, pz] = lattice(i, j);
+        x += px / 4;
+        z += pz / 4;
+      }
+      x += (hash2(gx, gz, seed + 0x51) - 0.5) * 2 * smallJitter;
+      z += (hash2(gx, gz, seed + 0x52) - 0.5) * 2 * smallJitter;
+    }
+    return [x - originX, z - originZ];
+  }
+  /** A cell's hash for picking its diagonal (the same as ever on the lattice). */
+  const cellHash = (gx, gz, salt) => (step >= 2 ? hash2(gx / 2, gz / 2, seed + salt) : hash2(gx, gz, seed + salt + 1000));
 
   const originX = cx * chunkSize;
   const originZ = cz * chunkSize;
@@ -36,13 +70,9 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
   const gridX = new Float32Array(n * n);
   const gridY = new Float32Array(n * n);
   const gridZ = new Float32Array(n * n);
-  const jitter = vertexJitter * fineCell;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const gx = baseGx + i * step;
-      const gz = baseGz + j * step;
-      const lx = (gx - baseGx) * fineCell + (hash2(gx, gz, seed) - 0.5) * 2 * jitter;
-      const lz = (gz - baseGz) * fineCell + (hash2(gx, gz, seed ^ 0x9e3779b9) - 0.5) * 2 * jitter;
+      const [lx, lz] = vertexAt(baseGx + i * step, baseGz + j * step);
       const k = j * n + i;
       gridX[k] = lx;
       gridZ[k] = lz;
@@ -55,7 +85,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
   // they overlap are clipped against them, so the hole's edge follows the
   // pit's winding outline cleanly (EntranceLayer builds the rock that lines
   // it). Worked out first because clipping adds triangles.
-  const caveSystem = resolution === finest ? generator.caves : null;
+  const caveSystem = resolution >= detailResolution ? generator.caves : null;
   const holes = caveSystem
     ? caveSystem
         .mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize)
@@ -109,7 +139,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
   // next to one is fanned around its centre too, taking in the midpoints
   // of the edges it shares with finer cells, so no cracks open between
   // them. Cells near a cave mouth are left alone (they may be clipped).
-  const fine = resolution === finest ? refineCells() : null;
+  const fine = chunkSize / resolution >= 4 && resolution >= detailResolution ? refineCells() : null;
   let fineTris = 0;
   let splitEdges = 0;
   if (fine) {
@@ -175,7 +205,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     const b = a + 1;
     const c = a + n;
     const d = c + 1;
-    const flip = hash2(baseGx + i * step, baseGz + j * step, seed + 7) < 0.5;
+    const flip = cellHash(baseGx + i * step, baseGz + j * step, 7) < 0.5;
     return flip ? [a, c, d, a, d, b] : [a, c, b, b, c, d];
   }
   for (let j = 0; j < resolution; j++) {
@@ -347,10 +377,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
       const key = (j + 1) * (n + 2) + (i + 1);
       let c = ring.get(key);
       if (!c) {
-        const gx = baseGx + i * step;
-        const gz = baseGz + j * step;
-        const lx = (gx - baseGx) * fineCell + (hash2(gx, gz, seed) - 0.5) * 2 * jitter;
-        const lz = (gz - baseGz) * fineCell + (hash2(gx, gz, seed ^ 0x9e3779b9) - 0.5) * 2 * jitter;
+        const [lx, lz] = vertexAt(baseGx + i * step, baseGz + j * step);
         c = [lx, generator.getHeight(originX + lx, originZ + lz), lz];
         ring.set(key, c);
       }

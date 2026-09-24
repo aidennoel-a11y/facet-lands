@@ -10,17 +10,18 @@ export const WORLD = {
 
   // Level of detail: cells per chunk edge, picked by distance (in chunks).
   // Every level must divide the one above it so vertices line up at seams.
-  // The first two share a resolution; level 0 only exists so layers such as
-  // grass can be limited to the chunks right around the player.
   lods: [
-    { maxDistance: 1, resolution: 32 }, // 4 m triangles; grass lives here
-    { maxDistance: 2, resolution: 32 },
+    { maxDistance: 1, resolution: 64 }, // 2 m triangles right around you; grass lives here
+    { maxDistance: 2, resolution: 32 }, // 4 m
     { maxDistance: 5, resolution: 16 },
     { maxDistance: Infinity, resolution: 8 },
   ],
 
   // Low-poly look
   vertexJitter: 0.35, // fraction of a cell each vertex is nudged in x/z
+  // Chunks at least this detailed are "full detail": cave mouths are cut
+  // into them, and they're refined along rivers and shores.
+  detailResolution: 32,
   skirtDepth: 6, // hides cracks where chunks of different LOD meet (less than the rock over caves)
 
   // Water fills everything below this height (seas and lakes).

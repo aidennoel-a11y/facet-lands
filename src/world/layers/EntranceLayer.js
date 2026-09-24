@@ -400,10 +400,10 @@ export function createEntranceLayer(config, material) {
   return {
     name: 'entrances',
 
-    reuseKey: ({ resolution }) => (resolution === config.lods[0].resolution ? 'full' : 'none'),
+    reuseKey: ({ resolution }) => (resolution >= config.detailResolution ? `full:${resolution}` : 'none'),
 
     build({ cx, cz, resolution, groundHeightAt, generator }) {
-      if (resolution !== config.lods[0].resolution || !generator.caves) return null;
+      if (resolution < config.detailResolution || !generator.caves) return null;
       const size = config.chunkSize;
       const x0 = cx * size, z0 = cz * size;
       const entrances = generator.caves

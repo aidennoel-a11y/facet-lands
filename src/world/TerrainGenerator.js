@@ -44,6 +44,7 @@ export class TerrainGenerator {
     this.detailNoise = new SimplexNoise(this.seed + 5);
     this.climateNoise = new SimplexNoise(this.seed + 6);
     this.lakeNoise = new SimplexNoise(this.seed + 7);
+    this.roughNoise = new SimplexNoise(this.seed + 131);
     this.forestNoise = new SimplexNoise(this.seed + 8);
     this.grassNoise = new SimplexNoise(this.seed + 9);
 
@@ -145,7 +146,22 @@ export class TerrainGenerator {
 
   /** Terrain height in metres at a world position (rivers carved in). */
   getHeight(x, z) {
-    return this.rivers.carve(x, z, this.getBaseHeight(x, z));
+    const base = this.getBaseHeight(x, z);
+    return this.rivers.carve(x, z, base, this.#roughness(x, z, base));
+  }
+
+  /**
+   * Small bumps and hollows a few metres across, so the land underfoot is
+   * never smooth: slight in the grass, rougher up in the mountains, gentle
+   * on sand, none at the water's edge. Added after rivers are traced (they
+   * follow the land without these), and faded out along their banks.
+   */
+  #roughness(x, z, base) {
+    const sea = this.rivers.seaLevel;
+    if (base < sea + 0.4) return 0;
+    const shore = smoothstep(sea + 0.4, sea + 2.5, base);
+    const amount = (0.22 + 0.8 * smoothstep(50, 170, base)) * (1 - 0.6 * this._weights.desert) * shore;
+    return (this.roughNoise.noise2D(x * 0.13, z * 0.13) + 0.45 * this.roughNoise.noise2D(x * 0.29 + 17, z * 0.29 - 9)) * amount;
   }
 
   /** The land before rivers are carved into it (rivers are traced over this). */

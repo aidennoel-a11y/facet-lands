@@ -181,15 +181,18 @@ export function createTreeLayer({ rocks = null } = {}) {
           // Nor on bare rock: the grey band up the mountains, and faces
           // steep enough to show rock (the same test the ground's colour
           // uses). Steep slopes that are still green keep their trees.
+          // (How steep, from the land itself rather than this level of
+          // detail's mesh, so trees don't come and go as you approach.)
+          const gradX = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
+          const gradZ = (generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2)) / 4;
+          const upness = 1 / Math.sqrt(1 + gradX * gradX + gradZ * gradZ);
           const r = hash2(gi, gj, seed + 12);
-          const cliff = 1 - smoothstep(0.5, 0.72, surface.normalY);
+          const cliff = 1 - smoothstep(0.5, 0.72, upness);
           if (r < Math.max(cliff, smoothstep(128, 146, colourHeight))) continue;
           // And ever fewer the higher you go (the tree line).
           if (hash2(gi, gj, seed + 13) < smoothstep(85, 150, ground) * 0.9) continue;
 
           // Too steep for roots? (height change per metre)
-          const gradX = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
-          const gradZ = (generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2)) / 4;
           if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
 
           // Pick a species that is happy at this height (edges blurred a bit).

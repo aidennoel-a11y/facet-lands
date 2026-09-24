@@ -1,6 +1,11 @@
 import { SimplexNoise } from '../noise/SimplexNoise.js';
 import { hash2, mulberry32 } from '../noise/random.js';
 
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
 const REGION = 768; // at most one river and one mountain stream rise per region this size
 const RIVER_REACH = 3; // a river stays within this many regions of where it rises
 const STREAM_REACH = 2; // likewise a stream
@@ -445,10 +450,14 @@ export class Rivers {
     return pond.r * (1 + 0.14 * Math.sin(a * 3 + pond.seed) + 0.07 * Math.sin(a * 5 + pond.seed * 2));
   }
 
-  /** The land at (x, z) with rivers, streams and ponds carved into it, given the natural height `base`. */
-  carve(x, z, base) {
+  /**
+   * The land at (x, z) with rivers, streams and ponds carved into it, given
+   * the natural height `base`, and `rough`, small bumps to add where the
+   * water doesn't shape the land (they fade out towards the banks).
+   */
+  carve(x, z, base, rough = 0) {
     const near = this.#near(x, z);
-    if (!near) return base;
+    if (!near) return base + rough;
     let h = base;
     const m = this._m;
     // Under water the bed is set just under the water level (dug down, or
@@ -459,12 +468,14 @@ export class Rivers {
     // lower it just a little, so a pool's sides are never dug down to the
     // pool below it.
     let bank = -Infinity, inWater = false, wet = Infinity, wetEnd = Infinity, k = 0;
+    let edge = Infinity; // metres out from the nearest channel's edge
     for (const item of near) {
       if (item.pond) {
         const pond = item.pond;
         const d = Math.hypot(x - pond.x, z - pond.z);
         const r = Rivers.pondRadius(pond, x, z);
         const rr = Math.max(r, 2.4);
+        edge = Math.min(edge, d - rr);
         if (d < rr) {
           const t = d / rr;
           wet = Math.min(wet, pond.level - 0.15 - (0.6 + pond.r * 0.12) * (1 - t * t));
@@ -477,6 +488,7 @@ export class Rivers {
       }
       const { d, level, half, water } = Rivers.#measure(item, x, z, m);
       if (d > half + INFLUENCE) continue;
+      edge = Math.min(edge, d - half);
       if (d < half) {
         // Under the water: the bed, then the channel's margin just below the
         // water level out to its edge.
@@ -500,7 +512,7 @@ export class Rivers {
     }
     // Banks never lower than the water beside them (except out in a lake or the sea).
     if (bank > h && base > this.seaLevel - 0.5) h = bank;
-    return h;
+    return h + rough * smoothstep(5, 14, edge);
   }
 
   /**
