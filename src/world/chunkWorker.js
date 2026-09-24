@@ -8,6 +8,7 @@ import { rockCandidates } from './rockCandidates.js';
 import { packFarTrees, placeTrees } from './treePlacement.js';
 import { placeGrass } from './grassPlacement.js';
 import { waterData } from './waterData.js';
+import { minimapPixels } from '../ui/minimapPixels.js';
 
 let world = null; // { seed, generator }
 const rocks = new Map(); // "cx,cz" -> rock candidates (recently used last)
@@ -29,6 +30,12 @@ self.onmessage = (event) => {
     rocks.clear();
   }
   const g = world.generator;
+  if (event.data.kind === 'minimap') {
+    const { n, s, seaLevel } = event.data;
+    const result = minimapPixels(g, cx, cz, n, s, seaLevel);
+    self.postMessage({ id, result }, [result.buffer]);
+    return;
+  }
   const data = computeChunkData(g, config, cx, cz, resolution);
   const out = { id, data, rocks: null, trees: null, grass: null, farTrees: null, water: null };
   if (wantRocks) {

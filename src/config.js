@@ -14,7 +14,8 @@ export const WORLD = {
     { maxDistance: 1, resolution: 64 }, // 2 m triangles right around you; grass lives here
     { maxDistance: 3, resolution: 32 }, // 4 m
     { maxDistance: 5, resolution: 16 }, // 8 m (full trees and rocks out to here, 640 m)
-    { maxDistance: Infinity, resolution: 8 }, // 16 m, out to the edge of the view
+    { maxDistance: 8, resolution: 16 }, // 8 m, far trees (to 1 km)
+    { maxDistance: Infinity, resolution: 8 }, // 16 m, far trees, out to the edge of the view
   ],
 
   // Low-poly look
@@ -30,7 +31,7 @@ export const WORLD = {
   // Trees
   treeSpacing: 6, // metres between candidate tree spots (lower = denser)
   treeMaxLod: 2, // chunks at this LOD or closer get full trees
-  farTreeMaxLod: 3, // and out to this LOD, simple far ones (see FarTreeLayer)
+  farTreeMaxLod: 4, // and out to this LOD, simple far ones (see FarTreeLayer)
   treeScale: 1.6, // overall tree size multiplier
   leafMaxLod: 0, // leaf clusters only on chunks this close
 

@@ -73,6 +73,7 @@ export class ChunkManager {
       }
     }
     this.nextId = 1;
+    this.tasks = new Map(); // id -> { resolve, reject } for other work handed to the workers (see task)
     // For tuning: main-thread time spent putting chunks together, per layer.
     this.stats = { builds: 0, ms: 0, terrainMs: 0, layers: {} };
   }
@@ -201,8 +202,7 @@ export class ChunkManager {
     while (built === 0 || performance.now() < deadline) {
       let job = this.ready.shift();
       if (!job) {
-        // Nothing back from the workers: build one that needs no new mesh
-        // (or, without workers, any) right here.
+        // Without workers, build one right here.
         const k = this.#nextLocal();
         if (k < 0) return;
         job = this.queue.splice(k, 1)[0];
@@ -217,32 +217,22 @@ export class ChunkManager {
   }
 
   /**
-   * Hands the most urgent jobs that need a new mesh to the workers (a
-   * few each, so none sits idle between jobs); the rest wait here. Called
-   * every frame and whenever a worker finishes one.
+   * Hands the most urgent jobs to the workers (a few each, so none sits
+   * idle between jobs). Even a chunk keeping its mesh at a new level of
+   * detail goes to one, for the trees, rocks and so on it now needs.
+   * Called every frame and whenever a worker finishes one.
    */
   #dispatch() {
-    if (!this.workers.length) return;
-    for (let k = this.queue.length - 1; k >= 0; k--) {
+    while (this.workers.length && this.queue.length) {
       const worker = this.#idleWorker();
       if (!worker) break;
-      const job = this.queue[k];
-      if (this.#reusesMesh(job)) continue;
-      this.queue.splice(k, 1);
-      this.#send(worker, job);
+      this.#send(worker, this.queue.pop());
     }
   }
 
-  /** Whether a job can keep its chunk's current mesh (same resolution). */
-  #reusesMesh(job) {
-    const previous = this.chunks.get(job.key);
-    return !!previous && previous.resolution === this.config.lods[job.lod].resolution;
-  }
-
-  /** The most urgent queued job to build here, or -1. */
+  /** The most urgent queued job to build here (without workers), or -1. */
   #nextLocal() {
-    for (let k = this.queue.length - 1; k >= 0; k--) if (!this.workers.length || this.#reusesMesh(this.queue[k])) return k;
-    return -1;
+    return this.workers.length ? -1 : this.queue.length - 1;
   }
 
   #idleWorker() {
@@ -273,7 +263,31 @@ export class ChunkManager {
     });
   }
 
+  /**
+   * Hands some other job to the least busy worker (see chunkWorker: e.g.
+   * { kind: 'minimap', ... }): a Promise of its result. Rejects if there
+   * are no workers.
+   */
+  task(message) {
+    const worker = this.workers.reduce((best, w) => (!best || w.busy < best.busy ? w : best), null);
+    if (!worker) return Promise.reject(new Error('no workers'));
+    const id = this.nextId++;
+    worker.busy++;
+    return new Promise((resolve, reject) => {
+      this.tasks.set(id, { resolve, reject });
+      worker.postMessage({ ...message, id, seed: this.generator.seedText, config: this.config });
+    });
+  }
+
   #received(worker, message) {
+    const task = this.tasks.get(message.id);
+    if (task) {
+      worker.busy--;
+      this.tasks.delete(message.id);
+      task.resolve(message.result);
+      this.#dispatch();
+      return;
+    }
     worker.busy--;
     for (const [key, job] of this.inFlight) {
       if (job.id !== message.id) continue;

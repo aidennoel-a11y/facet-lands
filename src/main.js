@@ -129,6 +129,7 @@ torches.loadWorld(WORLD.seed);
 
 // --- HUD -----------------------------------------------------------------------
 const minimap = new Minimap(document.getElementById('minimap'));
+minimap.worker = (message) => chunks.task(message); // redrawn off the main thread
 const ui = {
   seed: document.getElementById('seed'),
   seedForm: document.getElementById('seed-form'),
@@ -422,7 +423,8 @@ function tick(now) {
   chunks.update(camera.position, now / 1000, dir);
   weather.update(dt, dayNight.hour);
   const wind = updateWind(now / 1000, 0.95 * weather.storm + 0.35 * weather.rain);
-  lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getHeight(x, z), sound, sheltered);
+  // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)
+  lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getBaseHeight(x, z), sound, sheltered);
   dayNight.update(dt, camera.position, weather);
   // Rain closes the view in, and so does the mist that lies over the
   // wetlands at dawn.

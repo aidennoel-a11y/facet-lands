@@ -1,7 +1,4 @@
-import { Color, SRGBColorSpace } from 'three';
-
-const SHALLOW = new Color(0x4fbfc4);
-const DEEP = new Color(0x2c67b0);
+import { minimapPixels } from './minimapPixels.js';
 
 /**
  * Top-down, hill-shaded map of the terrain around the camera, drawn
@@ -21,61 +18,50 @@ export class Minimap {
 
     this.center = null; // world x/z the buffer was rendered around
     this.generator = null;
-    this._color = new Color();
-    this._rgb = { r: 0, g: 0, b: 0 };
     this.caveMouths = [];
+    // (message) => Promise of the pixels: a worker to draw the map in (see ChunkManager.task).
+    this.worker = null;
+    this.pending = false;
   }
 
   invalidate() {
     this.center = null;
+    this.pending = false;
   }
 
+  /**
+   * Redraws the map around (cx, cz): in a worker if one's offered (the
+   * old picture stays up, shifted, until the new one's ready), else here.
+   */
   #render(generator, cx, cz, seaLevel) {
-    const { samples: n, metersPerSample: s, image } = this;
-    const half = (n * s) / 2;
-    const heights = new Float32Array((n + 1) * (n + 1));
-    for (let j = 0; j <= n; j++) {
-      for (let i = 0; i <= n; i++) {
-        heights[j * (n + 1) + i] = generator.getHeight(cx - half + i * s, cz - half + j * s);
-      }
-    }
-    const data = image.data;
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        const h = heights[j * (n + 1) + i];
-        const hx = heights[j * (n + 1) + i + 1] - h;
-        const hz = heights[(j + 1) * (n + 1) + i] - h;
-        const upness = s / Math.sqrt(hx * hx + hz * hz + s * s);
-        const wx = cx - half + i * s;
-        const wz = cz - half + j * s;
-        let shade;
-        const river = generator.rivers?.at(wx, wz, 1);
-        if (h < seaLevel || river) {
-          this._color.copy(SHALLOW).lerp(DEEP, Math.min(1, Math.max(0, seaLevel - h) / 16));
-          shade = 1;
-        } else {
-          const jitter = generator.getColorJitter(wx, wz);
-          generator.surfaceColor(wx, wz, h + jitter, upness, this._color, jitter);
-          // Forests read a touch darker, like the woods on a paper map.
-          if (h < 140) this._color.multiplyScalar(1 - 0.3 * generator.getForestDensity(wx, wz) * generator.getBiomeWeights(wx, wz, {}).temperate);
-          // Light from the north-west.
-          shade = Math.min(1.35, Math.max(0.55, 1 + (-hx - hz) * 0.035));
-        }
-        this._color.getRGB(this._rgb, SRGBColorSpace);
-        const o = (j * n + i) * 4;
-        data[o] = Math.min(255, this._rgb.r * 255 * shade);
-        data[o + 1] = Math.min(255, this._rgb.g * 255 * shade);
-        data[o + 2] = Math.min(255, this._rgb.b * 255 * shade);
-        data[o + 3] = 255;
-      }
-    }
-    this.bufferCtx.putImageData(image, 0, 0);
-    // Cave mouths in view, drawn as markers on top.
-    this.caveMouths = generator.caves
-      ? generator.caves.mouthsNear(cx - half, cz - half, cx + half, cz + half).map((e) => e.mouth)
-      : [];
-    this.center = { x: cx, z: cz };
+    const { samples: n, metersPerSample: s } = this;
+    const finish = (pixels) => {
+      this.image.data.set(pixels);
+      this.bufferCtx.putImageData(this.image, 0, 0);
+      const half = (n * s) / 2;
+      // Cave mouths in view, drawn as markers on top.
+      this.caveMouths = generator.caves
+        ? generator.caves.mouthsNear(cx - half, cz - half, cx + half, cz + half).map((e) => e.mouth)
+        : [];
+      this.center = { x: cx, z: cz };
+    };
     this.generator = generator;
+    if (this.worker && this.center) {
+      if (this.pending) return; // one at a time
+      this.pending = true;
+      this.worker({ kind: 'minimap', cx, cz, n, s, seaLevel }).then(
+        (pixels) => {
+          this.pending = false;
+          if (this.generator === generator) finish(pixels);
+        },
+        () => {
+          this.pending = false;
+          finish(minimapPixels(generator, cx, cz, n, s, seaLevel));
+        },
+      );
+      return;
+    }
+    finish(minimapPixels(generator, cx, cz, n, s, seaLevel));
   }
 
   /** Call every frame; re-samples the terrain only after moving a while. */
