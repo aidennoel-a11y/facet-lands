@@ -168,6 +168,7 @@ export function createTreeLayer({ rocks = null } = {}) {
           const trees = biome.trees;
           const likely = (trees ? (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density : 0);
           if (!trees || keep > likely) continue;
+          if (biome.id === 'desert' && generator.getFeatures(wx, wz).erg > 0.3) continue; // nothing grows in a dune sea
           if (crowded(gi, gj, likely)) continue;
           if (onRock(wx, wz, i, j)) continue;
 

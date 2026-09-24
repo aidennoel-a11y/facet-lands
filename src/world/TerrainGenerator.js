@@ -9,6 +9,9 @@ const MUD = new Color(0x5f4a36);
 const DIRT = new Color(0x7d6547);
 const RIVERBED = new Color(0x55493b);
 const ICE = new Color(0x9fcbe0); // glacier ice
+const DUNE = new Color(0xe6b86e); // dune sand
+const DUNE_SLIP = new Color(0xc98a4c); // a dune's steep lee side
+const duneSand = new Color();
 const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
 const GRAVEL = new Color(0x8a8590);
 const SHORE = {
@@ -51,6 +54,7 @@ export class TerrainGenerator {
     this.aridityNoise = new SimplexNoise(this.seed + 10);
     this.hillRegionNoise = new SimplexNoise(this.seed + 11);
     this.duneNoise = new SimplexNoise(this.seed + 12);
+    this.ergNoise = new SimplexNoise(this.seed + 137);
     this.rangeSizeNoise = new SimplexNoise(this.seed + 13);
     this.spikeNoise = new SimplexNoise(this.seed + 14);
     this.bowlNoise = new SimplexNoise(this.seed + 15);
@@ -64,7 +68,8 @@ export class TerrainGenerator {
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
     this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0 };
     this._lastWeights = { x: NaN, z: NaN, range: NaN };
-    this._features = { mesa: 0, mesaTop: 0, escarp: 0, hills: 0 };
+    this._features = { mesa: 0, mesaTop: 0, escarp: 0, hills: 0, erg: 0 };
+    this._erg = 0; // the last point's dune sea, for its roughness
     this.rivers = new Rivers(this, config);
     this.caves = new CaveSystem(this, config);
   }
@@ -160,7 +165,7 @@ export class TerrainGenerator {
     const sea = this.rivers.seaLevel;
     if (base < sea + 0.4) return 0;
     const shore = smoothstep(sea + 0.4, sea + 2.5, base);
-    const amount = (0.22 + 0.8 * smoothstep(50, 170, base)) * (1 - 0.6 * this._weights.desert) * shore;
+    const amount = (0.22 + 0.8 * smoothstep(50, 170, base)) * (1 - 0.6 * this._weights.desert - 0.35 * this._erg) * shore;
     return (this.roughNoise.noise2D(x * 0.13, z * 0.13) + 0.45 * this.roughNoise.noise2D(x * 0.29 + 17, z * 0.29 - 9)) * amount;
   }
 
@@ -227,9 +232,9 @@ export class TerrainGenerator {
     const hz = w.blackHills;
     let blackHills = 0;
     if (hz > 0) {
-      const domes = Math.pow(smoothstep(-0.2, 0.7, this.hillsNoise.fbm(x * 0.00105, z * 0.00105, 3)), 1.4);
+      const domes = Math.pow(smoothstep(-0.2, 0.7, this.hillsNoise.fbm(x * 0.0021, z * 0.0021, 3)), 1.4);
       const heart = smoothstep(0.35, 0.8, hz);
-      blackHills = hz * (38 + domes * 105) + heart * domes * this.#tors(x, z) + heart * this.#needles(x, z, domes);
+      blackHills = hz * (22 + domes * 55) + heart * domes * this.#tors(x, z) + heart * this.#needles(x, z, domes);
     }
 
     // Broad rise and fall of the land, lifted in dry country so seas
@@ -247,10 +252,13 @@ export class TerrainGenerator {
       const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (5 + 17 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
       hills = rolling * (w.temperate + 0.45 * w.savanna) * (1 - 0.6 * mask);
     }
+    const f = this.#features(x, z, dryness, mask, w);
     let dunes = 0;
+    this._erg = f.erg;
     if (w.desert > 0) {
       const crest = this.duneNoise.ridged(x * 0.0045 + z * 0.0015, z * 0.0075, 2, 2, 0.5, 0.02);
-      dunes = w.desert * (crest * 8 + this.duneNoise.fbm(x * 0.0012 + 50, z * 0.0012, 2) * 7);
+      const small = crest * 8 + this.duneNoise.fbm(x * 0.0012 + 50, z * 0.0012, 2) * 7;
+      dunes = w.desert * (small * (1 - 0.7 * f.erg)) + (f.erg > 0 ? f.erg * this.#greatDunes(x, z) : 0);
     }
 
     // Seas where the continent noise dips, and lake basins in the green lowlands.
@@ -260,7 +268,6 @@ export class TerrainGenerator {
         ? smoothstep(0.28, 0.72, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - smoothstep(0, 0.4, mask)) * (1 - w.desert) * (1 - 0.6 * w.savanna)
         : 0;
 
-    const f = this.#features(x, z, dryness, mask, w);
     const height = 14 + continent * 16 + hills + dunes + mountains + blackHills + f.mesaHeight + f.escarpHeight - sea - lakes;
     // Lake shores (not the open sea's beaches): a real edge rather than
     // the land just sloping on down under the water.
@@ -270,6 +277,31 @@ export class TerrainGenerator {
       if (lake > 0) return height + (this.#lakeShore(u, x, z) - u) * lake;
     }
     return height;
+  }
+
+  /**
+   * The great dunes of a dune sea: long sinuous ridges of sand across the
+   * wind, each rising gently on its windward side to a sharp crest and
+   * falling away steeply down its slip face, about 150 m apart and up to
+   * 36 m tall, breaking up along their length into crescents and saddles,
+   * with smaller dunes ridged over them.
+   */
+  #greatDunes(x, z) {
+    // The wind blows from about the west-south-west, veering slowly across the sea.
+    const a = 0.35 + 0.35 * this.ergNoise.noise2D(x * 0.00015 - 40, z * 0.00015 + 90);
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const u0 = x * ca + z * sa; // downwind
+    const v = -x * sa + z * ca; // across the wind
+    // Crests wander, so the ridges snake rather than run ruler-straight.
+    const u = u0 + this.ergNoise.noise2D(v * 0.004, u0 * 0.0015) * 45 + this.ergNoise.noise2D(x * 0.012 + 7, z * 0.012) * 8;
+    const L = 150;
+    const t = u / L - Math.floor(u / L);
+    const crestAt = 0.78;
+    const profile = t < crestAt ? Math.pow(t / crestAt, 1.35) : 1 - Math.pow((t - crestAt) / (1 - crestAt), 0.75);
+    // Tall in places, low saddles between: crescents along each ridge.
+    const tall = 0.35 + 0.65 * smoothstep(-0.5, 0.6, this.ergNoise.noise2D(v * 0.006 + 31, Math.floor(u / L) * 1.7));
+    const ripple = this.duneNoise.ridged(x * 0.011 + z * 0.004, z * 0.011 - x * 0.003, 2, 2, 0.5, 0.02) * 3;
+    return profile * 36 * tall + ripple;
   }
 
   /**
@@ -298,6 +330,7 @@ export class TerrainGenerator {
 
   /**
    * Mesas and escarpments at (x, z) (reusing one object):
+   *  - erg (0..1): a dune sea, in the desert: nothing but great dunes of sand
    *  - mesa (0..1): mesa country, in the dry savanna and desert: flat-topped
    *    hills with sheer sides, stepping up in two or three layers.
    *  - escarp (0..1): escarpment country in the green lowlands: now and
@@ -310,9 +343,11 @@ export class TerrainGenerator {
     out.mesaHeight = 0;
     out.escarp = 0;
     out.escarpHeight = 0;
+    // Dune seas: great stretches of the desert that are nothing but sand.
+    out.erg = w.desert > 0 ? w.desert * smoothstep(0.02, 0.28, this.ergNoise.fbm(x * 0.00022 + 300, z * 0.00022 - 120, 2)) : 0;
     const flatland = 1 - smoothstep(0.02, 0.3, mask);
     if (flatland <= 0) return out;
-    const mesa = smoothstep(0.12, 0.38, this.mesaNoise.fbm(x * 0.00025 + 40, z * 0.00025 - 40, 2)) * smoothstep(0.42, 0.6, dryness) * flatland;
+    const mesa = smoothstep(0.12, 0.38, this.mesaNoise.fbm(x * 0.00025 + 40, z * 0.00025 - 40, 2)) * smoothstep(0.42, 0.6, dryness) * flatland * (1 - out.erg);
     if (mesa > 0) {
       const wx = x + this.mesaNoise.noise2D(x * 0.004, z * 0.004) * 14;
       const wz = z + this.mesaNoise.noise2D(x * 0.004 + 50, z * 0.004) * 14;
@@ -388,14 +423,14 @@ export class TerrainGenerator {
    * from mountain ranges and the dry country.
    */
   #hillsZone(x, z, range) {
-    const zone = smoothstep(0.3, 0.46, this.hillsNoise.fbm(x * 0.00012 - 250, z * 0.00012 + 610, 2));
+    const zone = smoothstep(0.3, 0.46, this.hillsNoise.fbm(x * 0.00024 - 250, z * 0.00024 + 610, 2));
     if (zone <= 0) return 0;
     const hilly = smoothstep(-0.2, 0.25, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
     return zone * hilly * (1 - smoothstep(0.02, 0.2, range)) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z)));
   }
 
   /**
-   * Tors: piles of huge rounded granite boulders, a few to each 34 m cell,
+   * Tors: piles of huge rounded granite boulders, three to five in most 34 m cells,
    * each a smooth dome (no sharp edges), stacked where they overlap.
    */
   #tors(x, z) {
@@ -406,9 +441,9 @@ export class TerrainGenerator {
     for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         const i = ci + di, j = cj + dj;
-        if (hash2(i, j, s) > 0.55) continue;
+        if (hash2(i, j, s) > 0.85) continue;
         const cx = (i + 0.5) * C, cz = (j + 0.5) * C;
-        const count = 2 + Math.floor(hash2(i, j, s + 1) * 3);
+        const count = 3 + Math.floor(hash2(i, j, s + 1) * 3);
         for (let k = 0; k < count; k++) {
           const px = cx + (hash2(i + k * 31, j, s + 2) - 0.5) * 20;
           const pz = cz + (hash2(i, j + k * 31, s + 3) - 0.5) * 20;
@@ -429,22 +464,22 @@ export class TerrainGenerator {
    * weathered tops.
    */
   #needles(x, z, domes) {
-    const C = 110;
+    const C = 70;
     const ci = Math.floor(x / C), cj = Math.floor(z / C);
     const s = this.seed ^ 0x5eed;
     let best = 0;
     for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         const i = ci + di, j = cj + dj;
-        if (hash2(i, j, s) > 0.4 * domes) continue;
+        if (hash2(i, j, s) > 0.8 * domes) continue;
         const px = (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * C;
         const pz = (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * C;
-        const r = 16 + 10 * hash2(i, j, s + 3);
+        const r = 10 + 6 * hash2(i, j, s + 3);
         const d = Math.hypot(x - px, z - pz);
         if (d >= r) continue;
         // A broad rounded cap, then steep sides down to the foot.
         const t = d / r;
-        best = Math.max(best, (30 + 42 * hash2(i, j, s + 4)) * Math.pow(1 - Math.pow(t, 2.6), 0.5));
+        best = Math.max(best, (18 + 26 * hash2(i, j, s + 4)) * Math.pow(1 - Math.pow(t, 2.6), 0.5));
       }
     }
     return best;
@@ -542,9 +577,11 @@ export class TerrainGenerator {
     const ground = height - jitter; // `height` has the colour jitter added
     const shore = ground < 9 ? this.getShore(x, z, ground) : null;
     if (shore) out.lerp(SHORE[shore.kind], 0.85 * shore.fade);
+    // Dune seas: warm golden sand, deeper orange on the steep slip faces.
+    const f = w.desert + w.savanna > 0.2 ? this.getFeatures(x, z) : null;
+    if (f && f.erg > 0) out.lerp(duneSand.copy(DUNE).lerp(DUNE_SLIP, smoothstep(0.93, 0.78, upness)), 0.85 * f.erg);
     // Mesa walls: bands of red and orange sandstone.
-    if (upness < 0.85 && w.desert + w.savanna > 0.2) {
-      const f = this.getFeatures(x, z);
+    if (upness < 0.85 && f) {
       if (f.mesa > 0.05) {
         const band = Math.floor((height + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 0.8) / 2.4);
         stratum.copy(STRATA[((band % STRATA.length) + STRATA.length) % STRATA.length]);

@@ -199,7 +199,8 @@ export function createRockLayer(config) {
           if (slope > 0.55 + 0.4 * granite) continue;
           const flat = 1 - smoothstep(0.2, 0.45, slope);
           // Dry country and mesas: sandstone rocks, not grey stone.
-          const mesa = generator.getFeatures(wx, wz).mesa;
+          const { mesa, erg } = generator.getFeatures(wx, wz);
+          if (erg > 0.3) continue; // no rocks in a dune sea, just sand
           const dry = bw.desert + bw.savanna > 0.5 || mesa > 0.1;
           const land = generator.getHeight(wx, wz);
           let foot = 0, cliff = 0;
@@ -225,7 +226,7 @@ export function createRockLayer(config) {
           // Shores: rock outcrops on beaches and lake edges, stones along the rest of a lake's edge.
           const shore = land < seaLevel + 5.5 ? generator.getShore(wx, wz, land) : null;
           const shoreRock = shore ? (shore.kind === 'rock' ? (shore.ocean ? 1.4 : 1) : shore.ocean ? 0 : 0.3) * Math.max(shore.fade, 0.6) : 0;
-          const chance = 0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.45 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope));
+          const chance = 0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope));
           if (hash2(gi, gj, seed) > chance) continue;
 
           const r = hash2(gi, gj, seed + 3);
