@@ -78,6 +78,8 @@ const scale = new Vector3();
 export function createRockLayer(config) {
   const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
 
+  const cache = { generator: null, map: new Map() }; // chunk -> rock candidates
+
   const layer = {
     name: 'rocks',
     material,
@@ -105,8 +107,25 @@ export function createRockLayer(config) {
       }
     },
 
-    build({ cx, cz, lod, groundHeightAt, generator }) {
-      if (lod > config.rockMaxLod) return null;
+    /**
+     * Where rocks can go in a chunk and how they look: everything that
+     * doesn't depend on the chunk's mesh (the costly part, sampling the
+     * terrain around each spot). Cached, so a chunk changing detail level
+     * only has to set the rocks on its new mesh.
+     */
+    candidates(cx, cz, generator) {
+      const key = `${cx},${cz}`;
+      if (cache.generator !== generator) {
+        cache.generator = generator;
+        cache.map.clear();
+      }
+      let list = cache.map.get(key);
+      if (list) {
+        cache.map.delete(key); // most recently used goes last
+        cache.map.set(key, list);
+        return list;
+      }
+      list = [];
       const { chunkSize, seaLevel } = config;
       const spacing = 5;
       const cells = Math.round(chunkSize / spacing);
@@ -115,10 +134,6 @@ export function createRockLayer(config) {
       const z0 = cz * chunkSize;
       const seed = generator.seed ^ 0x3c6ef372;
       const { snowLine } = generator.getBiome(x0 + chunkSize / 2, z0 + chunkSize / 2);
-      const smallStones = lod <= config.rockMaxLod - 1;
-
-      const placed = ROCK_SHAPES.map(() => []);
-      const boulders = [];
       for (let j = 0; j < cells; j++) {
         for (let i = 0; i < cells; i++) {
           const gi = cx * cells + i;
@@ -139,13 +154,13 @@ export function createRockLayer(config) {
           const slope = Math.hypot(gx, gz);
           if (slope > 0.55) continue;
           const flat = 1 - smoothstep(0.2, 0.45, slope);
+          const land = generator.getHeight(wx, wz);
           let foot = 0, cliff = 0;
           if (flat > 0 && (m > 0.05 || generator.getCliffiness(wx, wz) > 0.05)) {
-            const here = generator.getHeight(wx, wz);
             let rise = 0;
             for (let k = 0; k < 6; k++) {
               const a = (k / 6) * Math.PI * 2 + 0.3;
-              for (const d of [16, 32]) rise = Math.max(rise, (generator.getHeight(wx + Math.cos(a) * d, wz + Math.sin(a) * d) - here) / d);
+              for (const d of [16, 32]) rise = Math.max(rise, (generator.getHeight(wx + Math.cos(a) * d, wz + Math.sin(a) * d) - land) / d);
             }
             foot = smoothstep(0.3, 0.6, rise) * flat;
             cliff = smoothstep(0.75, 1.3, rise) * flat; // under a cliff: the biggest heaps
@@ -155,8 +170,8 @@ export function createRockLayer(config) {
           const bank = river && river.d > river.water + 0.4 ? 1 : 0;
           // Flat, bare stone high in the mountains: strewn with boulders
           // and rubble, so it's never a dead plain.
-          const land = generator.getHeight(wx, wz);
-          const colourHeight = land + generator.getColorJitter(wx, wz);
+          const jitter = generator.getColorJitter(wx, wz);
+          const colourHeight = land + jitter;
           const stony = smoothstep(132, 150, colourHeight) * (1 - smoothstep(snowLine - 20, snowLine - 8, colourHeight)) * flat;
           // Shores: rock outcrops on beaches and lake edges, stones along the rest of a lake's edge.
           const shore = land < seaLevel + 5.5 ? generator.getShore(wx, wz, land) : null;
@@ -164,13 +179,8 @@ export function createRockLayer(config) {
           const chance = 0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock;
           if (hash2(gi, gj, seed) > chance) continue;
 
-          const ground = groundHeightAt(lx, lz);
-          if (!(ground > seaLevel - 0.6)) continue; // off-chunk, deep water or a cave mouth
-          if (ground + generator.getColorJitter(wx, wz) > snowLine - 15) continue; // snow
-
           const r = hash2(gi, gj, seed + 3);
           const boulder = r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0));
-          if (!boulder && !smallStones) continue;
           if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
           if (!bank && generator.rivers.at(wx, wz, 1)) continue; // and rivers
           const size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.2 * foothill + 3.2 * foot + 2.5 * cliff + 2.2 * stony) * (bank ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
@@ -178,16 +188,47 @@ export function createRockLayer(config) {
           // Big fallen boulders stand chunkier and taller.
           const sy = size * (0.55 + hash2(gi, gj, seed + 6) * 0.45 + (boulder ? 0.35 * Math.max(foot, cliff) : 0));
           const sz = size * (0.8 + hash2(gi, gj, seed + 7) * 0.5);
-
-          // Sunk deeper on a slope, so the uphill side doesn't float.
-          position.set(lx, ground - sy * (0.3 + 0.5 * slope) - slope * Math.max(sx, sz) * 0.4, lz);
-          euler.set((hash2(gi, gj, seed + 8) - 0.5) * 0.5, hash2(gi, gj, seed + 9) * Math.PI * 2, (hash2(gi, gj, seed + 10) - 0.5) * 0.5);
-          rotation.setFromEuler(euler);
-          scale.set(sx, sy, sz);
-          const shape = Math.floor(hash2(gi, gj, seed + 11) * ROCK_SHAPES.length);
-          placed[shape].push(matrix.compose(position, rotation, scale).clone());
-          if (boulder) boulders.push(wx, wz, Math.min(sx, sz) * 0.75);
+          list.push({
+            lx, lz, wx, wz, jitter, boulder, slope, sx, sy, sz,
+            rx: (hash2(gi, gj, seed + 8) - 0.5) * 0.5,
+            ry: hash2(gi, gj, seed + 9) * Math.PI * 2,
+            rz: (hash2(gi, gj, seed + 10) - 0.5) * 0.5,
+            shape: Math.floor(hash2(gi, gj, seed + 11) * ROCK_SHAPES.length),
+          });
         }
+      }
+      list.snowLine = snowLine;
+      cache.map.set(key, list);
+      if (cache.map.size > 160) cache.map.delete(cache.map.keys().next().value);
+      return list;
+    },
+
+    /** Output depends on the mesh's resolution and whether small stones are shown. */
+    reuseKey({ lod, resolution }) {
+      return lod > config.rockMaxLod ? 'none' : `${resolution}:${lod <= config.rockMaxLod - 1}`;
+    },
+
+    build({ cx, cz, lod, groundHeightAt, generator }) {
+      if (lod > config.rockMaxLod) return null;
+      const { seaLevel } = config;
+      const smallStones = lod <= config.rockMaxLod - 1;
+      const list = layer.candidates(cx, cz, generator);
+      const snowLine = list.snowLine;
+
+      const placed = ROCK_SHAPES.map(() => []);
+      const boulders = [];
+      for (const c of list) {
+        const ground = groundHeightAt(c.lx, c.lz);
+        if (!(ground > seaLevel - 0.6)) continue; // off-chunk, deep water or a cave mouth
+        if (ground + c.jitter > snowLine - 15) continue; // snow
+        if (!c.boulder && !smallStones) continue;
+        // Sunk deeper on a slope, so the uphill side doesn't float.
+        position.set(c.lx, ground - c.sy * (0.3 + 0.5 * c.slope) - c.slope * Math.max(c.sx, c.sz) * 0.4, c.lz);
+        euler.set(c.rx, c.ry, c.rz);
+        rotation.setFromEuler(euler);
+        scale.set(c.sx, c.sy, c.sz);
+        placed[c.shape].push(matrix.compose(position, rotation, scale).clone());
+        if (c.boulder) boulders.push(c.wx, c.wz, Math.min(c.sx, c.sz) * 0.75);
       }
 
       const group = new Group();

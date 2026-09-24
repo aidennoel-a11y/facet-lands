@@ -47,6 +47,8 @@ export function createCaveLayer(config) {
     name: 'caves',
     material,
 
+    reuseKey: ({ lod }) => (lod > config.caveMaxLod ? 'none' : 'caves'),
+
     build({ cx, cz, lod, generator }) {
       if (lod > config.caveMaxLod || !generator.caves) return null;
       const caves = generator.caves;

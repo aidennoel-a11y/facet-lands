@@ -15,6 +15,9 @@ const NEIGHBOURS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], 
  *   frustum culling), so turning around is instant and costs nothing.
  *
  * Extending: register a layer with `addLayer({ name, build, dispose })`.
+ * A layer may also give `reuseKey(context)`: a string that changes whenever
+ * its output would; when a chunk changes detail level and the key is the
+ * same, its object is kept instead of rebuilt.
  * `build(context)` is called every time a chunk is (re)built and may return
  * an Object3D (trees, water plane, rocks...) that is added to the chunk and
  * removed with it; `update(time)`, if present, runs every frame. See
@@ -165,7 +168,14 @@ export class ChunkManager {
   #build({ key, cx, cz, lod }) {
     const { chunkSize, lods } = this.config;
     const resolution = lods[lod].resolution;
-    const { geometry, triangles, heights, groundHeightAt } = buildChunkGeometry(this.generator, this.config, cx, cz, resolution);
+    // A chunk changing detail level keeps whatever wouldn't change: its
+    // terrain if the resolution is the same, and any layer whose output
+    // depends on nothing that changed (see layer.reuseKey).
+    const previous = this.chunks.get(key);
+    const sameMesh = previous && previous.resolution === resolution;
+    const { geometry, triangles, heights, groundHeightAt } = sameMesh
+      ? previous.terrain
+      : buildChunkGeometry(this.generator, this.config, cx, cz, resolution);
 
     const group = new Group();
     group.name = `chunk ${key}`;
@@ -178,12 +188,25 @@ export class ChunkManager {
     mesh.receiveShadow = true;
     group.add(mesh);
 
-    const chunk = { key, cx, cz, lod, group, mesh, triangles, groundHeightAt, layerObjects: [] };
+    const chunk = {
+      key, cx, cz, lod, resolution, group, mesh, triangles, groundHeightAt,
+      terrain: { geometry, triangles, heights, groundHeightAt },
+      layerObjects: [],
+      reuseKeys: new Map(), // layer -> its reuse key for this build
+    };
+    const kept = new Set(); // objects handed over from `previous`
 
     for (const layer of this.layers) {
-      const object = layer.build({
-        chunk, cx, cz, lod, resolution, heights, groundHeightAt, generator: this.generator, config: this.config,
-      });
+      const context = { chunk, cx, cz, lod, resolution, heights, groundHeightAt, generator: this.generator, config: this.config };
+      const reuseKey = layer.reuseKey?.(context) ?? null;
+      let object;
+      if (reuseKey !== null && previous && previous.reuseKeys.get(layer) === reuseKey) {
+        object = previous.layerObjects.find((o) => o.layer === layer)?.object ?? null;
+        if (object) kept.add(object);
+      } else {
+        object = layer.build(context);
+      }
+      chunk.reuseKeys.set(layer, reuseKey);
       if (object) {
         group.add(object);
         chunk.layerObjects.push({ layer, object });
@@ -192,8 +215,7 @@ export class ChunkManager {
 
     // Replace an older LOD of the same chunk only once the new one is ready,
     // so there is never a hole.
-    const previous = this.chunks.get(key);
-    if (previous) this.#unload(previous);
+    if (previous) this.#unload(previous, sameMesh ? geometry : null, kept);
 
     this.chunks.set(key, chunk);
     this.#applyVisibility(chunk);
@@ -201,10 +223,11 @@ export class ChunkManager {
     this.triangleCount += triangles;
   }
 
-  #unload(chunk) {
+  /** Removes a chunk; `keepGeometry` and `keep` (layer objects) were handed on to its replacement. */
+  #unload(chunk, keepGeometry = null, keep = null) {
     this.root.remove(chunk.group);
-    chunk.mesh.geometry.dispose();
-    for (const { layer, object } of chunk.layerObjects) layer.dispose?.(object);
+    if (chunk.mesh.geometry !== keepGeometry) chunk.mesh.geometry.dispose();
+    for (const { layer, object } of chunk.layerObjects) if (!keep || !keep.has(object)) layer.dispose?.(object);
     this.triangleCount -= chunk.triangles;
   }
 

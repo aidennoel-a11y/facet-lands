@@ -29,18 +29,21 @@ export class SimplexNoise {
       [p[i], p[j]] = [p[j], p[i]];
     }
     this.perm = new Uint8Array(512);
-    this.permMod8 = new Uint8Array(512);
     this.permMod12 = new Uint8Array(512);
+    // Each lattice point's 2D gradient, looked up directly (x and y).
+    this.gradX = new Float64Array(512);
+    this.gradY = new Float64Array(512);
     for (let i = 0; i < 512; i++) {
       this.perm[i] = p[i & 255];
-      this.permMod8[i] = this.perm[i] % 8;
       this.permMod12[i] = this.perm[i] % 12;
+      this.gradX[i] = GRAD[(this.perm[i] % 8) * 2];
+      this.gradY[i] = GRAD[(this.perm[i] % 8) * 2 + 1];
     }
   }
 
   /** Raw simplex noise, roughly in [-1, 1]. */
   noise2D(x, y) {
-    const { perm, permMod8 } = this;
+    const perm = this.perm, gx = this.gradX, gy = this.gradY;
     const s = (x + y) * F2;
     const i = Math.floor(x + s);
     const j = Math.floor(y + s);
@@ -62,21 +65,21 @@ export class SimplexNoise {
     let n = 0;
     let t0 = 0.5 - x0 * x0 - y0 * y0;
     if (t0 > 0) {
-      const g = permMod8[ii + perm[jj]] * 2;
+      const g = ii + perm[jj];
       t0 *= t0;
-      n += t0 * t0 * (GRAD[g] * x0 + GRAD[g + 1] * y0);
+      n += t0 * t0 * (gx[g] * x0 + gy[g] * y0);
     }
     let t1 = 0.5 - x1 * x1 - y1 * y1;
     if (t1 > 0) {
-      const g = permMod8[ii + i1 + perm[jj + j1]] * 2;
+      const g = ii + i1 + perm[jj + j1];
       t1 *= t1;
-      n += t1 * t1 * (GRAD[g] * x1 + GRAD[g + 1] * y1);
+      n += t1 * t1 * (gx[g] * x1 + gy[g] * y1);
     }
     let t2 = 0.5 - x2 * x2 - y2 * y2;
     if (t2 > 0) {
-      const g = permMod8[ii + 1 + perm[jj + 1]] * 2;
+      const g = ii + 1 + perm[jj + 1];
       t2 *= t2;
-      n += t2 * t2 * (GRAD[g] * x2 + GRAD[g + 1] * y2);
+      n += t2 * t2 * (gx[g] * x2 + gy[g] * y2);
     }
     return 70 * n;
   }

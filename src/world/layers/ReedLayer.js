@@ -83,6 +83,8 @@ export function createReedLayer(config) {
   return {
     name: 'reeds',
 
+    reuseKey: ({ lod, resolution }) => (lod > 1 ? 'none' : `${resolution}`),
+
     build({ cx, cz, lod, groundHeightAt, generator, heights }) {
       if (lod > 1 || !generator.rivers) return null;
       const size = config.chunkSize;

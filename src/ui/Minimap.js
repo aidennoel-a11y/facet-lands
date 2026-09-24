@@ -54,7 +54,8 @@ export class Minimap {
           this._color.copy(SHALLOW).lerp(DEEP, Math.min(1, Math.max(0, seaLevel - h) / 16));
           shade = 1;
         } else {
-          generator.surfaceColor(wx, wz, h + generator.getColorJitter(wx, wz), upness, this._color);
+          const jitter = generator.getColorJitter(wx, wz);
+          generator.surfaceColor(wx, wz, h + jitter, upness, this._color, jitter);
           // Forests read a touch darker, like the woods on a paper map.
           if (h < 140) this._color.multiplyScalar(1 - 0.3 * generator.getForestDensity(wx, wz) * generator.getBiomeWeights(wx, wz, {}).temperate);
           // Light from the north-west.

@@ -69,6 +69,8 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor 
       uniforms.uTime.value = time;
     },
 
+    reuseKey: ({ resolution }) => `${resolution}`,
+
     build({ cx, cz, heights, generator, config }) {
       const { seaLevel, chunkSize, vertexJitter } = config;
 

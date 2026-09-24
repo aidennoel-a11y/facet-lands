@@ -60,6 +60,7 @@ export class TerrainGenerator {
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
     this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0 };
+    this._lastWeights = { x: NaN, z: NaN, range: NaN };
     this._features = { mesa: 0, mesaTop: 0, escarp: 0, hills: 0 };
     this.rivers = new Rivers(this, config);
     this.caves = new CaveSystem(this, config);
@@ -105,6 +106,28 @@ export class TerrainGenerator {
    */
   getBiomeWeights(x, z, out = {}, range) {
     if (range === undefined) range = this.#rangeField(x, z).value;
+    // Asked for several times per point (height, colour, grass...): the
+    // last answer is remembered.
+    const m = this._lastWeights;
+    if (m.x === x && m.z === z && m.range === range) {
+      out.temperate = m.temperate;
+      out.savanna = m.savanna;
+      out.desert = m.desert;
+      out.blackHills = m.blackHills;
+      return out;
+    }
+    this.#biomeWeights(x, z, out, range);
+    m.x = x;
+    m.z = z;
+    m.range = range;
+    m.temperate = out.temperate;
+    m.savanna = out.savanna;
+    m.desert = out.desert;
+    m.blackHills = out.blackHills;
+    return out;
+  }
+
+  #biomeWeights(x, z, out, range) {
     const a = this.getAridity(x, z, range);
     const temperate = 1 - smoothstep(0.3, 0.42, a);
     const desert = smoothstep(0.62, 0.74, a);
@@ -196,9 +219,13 @@ export class TerrainGenerator {
 
     // Rolling hills in the plains (bigger in some regions than others),
     // lower swells in the savanna, dunes in the desert.
-    const hilly = smoothstep(-0.25, 0.35, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
-    const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (5 + 17 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
-    const hills = rolling * (w.temperate + 0.45 * w.savanna) * (1 - 0.6 * mask);
+    // (Noise that would only be multiplied by zero isn't evaluated.)
+    let hills = 0;
+    if (w.temperate + 0.45 * w.savanna !== 0 && 1 - 0.6 * mask !== 0) {
+      const hilly = smoothstep(-0.25, 0.35, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
+      const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (5 + 17 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
+      hills = rolling * (w.temperate + 0.45 * w.savanna) * (1 - 0.6 * mask);
+    }
     let dunes = 0;
     if (w.desert > 0) {
       const crest = this.duneNoise.ridged(x * 0.0045 + z * 0.0015, z * 0.0075, 2, 2, 0.5, 0.02);
@@ -207,7 +234,10 @@ export class TerrainGenerator {
 
     // Seas where the continent noise dips, and lake basins in the green lowlands.
     const sea = smoothstep(-0.05, -0.45, continent) * 34;
-    const lakes = smoothstep(0.28, 0.72, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - smoothstep(0, 0.4, mask)) * (1 - w.desert) * (1 - 0.6 * w.savanna);
+    const lakes =
+      1 - smoothstep(0, 0.4, mask) !== 0 && 1 - w.desert !== 0
+        ? smoothstep(0.28, 0.72, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - smoothstep(0, 0.4, mask)) * (1 - w.desert) * (1 - 0.6 * w.savanna)
+        : 0;
 
     const f = this.#features(x, z, dryness, mask, w);
     return 14 + continent * 16 + hills + dunes + mountains + f.mesaHeight + f.escarpHeight - sea - lakes;
@@ -407,11 +437,11 @@ export class TerrainGenerator {
   }
 
   /** Ground colour of a face at (x, z): blended across the biomes there. */
-  surfaceColor(x, z, height, upness, out) {
+  surfaceColor(x, z, height, upness, out, jitter = this.getColorJitter(x, z)) {
     const w = this.getBiomeWeights(x, z, {});
     blendedFaceColor(this.biomes, w, height, upness, out);
     // Lake shores: mud, dirt, grass and rock; rocky outcrops on beaches.
-    const ground = height - this.getColorJitter(x, z); // `height` has colour jitter added
+    const ground = height - jitter; // `height` has the colour jitter added
     const shore = ground < 9 ? this.getShore(x, z, ground) : null;
     if (shore) out.lerp(SHORE[shore.kind], 0.85 * shore.fade);
     // Mesa walls: bands of red and orange sandstone.

@@ -87,6 +87,9 @@ export function createTreeLayer() {
       }
     },
 
+    reuseKey: ({ lod, resolution, config }) =>
+      lod > config.treeMaxLod ? 'none' : `${resolution}:${lod <= config.leafMaxLod}`,
+
     build({ cx, cz, lod, groundHeightAt, generator, config }) {
       if (lod > config.treeMaxLod) return null;
       const { chunkSize, treeSpacing, seaLevel, treeScale } = config;

@@ -88,6 +88,8 @@ export function createGrassLayer(config) {
     material,
     count: 0,
 
+    reuseKey: ({ lod, resolution }) => (lod > config.grassMaxLod ? 'none' : `${resolution}`),
+
     build({ cx, cz, lod, groundHeightAt, generator }) {
       if (lod > config.grassMaxLod) return null;
       const { chunkSize, grassSpacing, seaLevel } = config;
@@ -108,9 +110,11 @@ export function createGrassLayer(config) {
           const lz = (j + hash2(gi, gj, seed + 2)) * spacing;
           const wx = originX + lx;
           const wz = originZ + lz;
+          // Cheapest tests first (every biome's grass is at most 1, so a spot
+          // failing on density alone fails anyway).
           const keep = hash2(gi, gj, seed);
-          if (keep > generator.getGrassDensity(wx, wz) * generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass) continue;
-
+          const density = generator.getGrassDensity(wx, wz);
+          if (keep > density) continue;
           const ground = groundHeightAt(lx, lz, surface);
           if (!(ground >= seaLevel + 0.7) || surface.normalY < 0.8) continue; // also skips cave mouths
           // Near the water only on a lake's grassy shore patches.
@@ -118,14 +122,16 @@ export function createGrassLayer(config) {
           if (ground < seaLevel + 3.5 && !(shore && shore.kind === 'grass')) continue;
           if (shore && shore.kind !== 'grass' && shore.fade > 0.5) continue;
           if (generator.caves?.field.nearEntrance(wx, wz, 0.6)) continue; // nor under an entrance's ledge
+          // Only where the ground itself is green (not sand, rock or snow).
+          const jitter = generator.getColorJitter(wx, wz);
+          const colourHeight = ground + jitter;
+          if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > 140) continue;
+          // How much grass the biome here grows.
+          if (keep > density * generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass) continue;
           const river = generator.rivers?.at(wx, wz, 3);
           if (river && river.d < river.water + 2.5) continue; // nor on a river's muddy banks (reeds grow there)
 
-          // Only where the ground itself is green (not sand, rock or snow).
-          const colourHeight = ground + generator.getColorJitter(wx, wz);
-          if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > 140) continue;
-
-          generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color);
+          generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color, jitter);
           const v = 0.9 + hash2(gi, gj, seed + 3) * 0.22;
           colors.set([color.r * v, color.g * v, color.b * v], count * 3);
 

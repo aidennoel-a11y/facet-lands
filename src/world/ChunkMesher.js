@@ -134,7 +134,8 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
     const mz = colorAt ? colorAt[2] : (az + bz + qz) / 3;
     const wx = originX + mx;
     const wz = originZ + mz;
-    generator.surfaceColor(wx, wz, my + generator.getColorJitter(wx, wz), normal.y, color);
+    const jitter = generator.getColorJitter(wx, wz);
+    generator.surfaceColor(wx, wz, my + jitter, normal.y, color, jitter);
 
     // Tiny per-face brightness shift so neighbouring faces read as facets.
     const shade = 0.93 + hash2(varSeedX, varSeedZ, seed ^ 0x51ed27) * 0.14;
@@ -245,6 +246,15 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
         const i = ci + di;
         const j = cj + dj;
         if (i < 0 || j < 0 || i >= resolution || j >= resolution) continue;
+        // Skip cells whose corners' bounding box (plus a hair) can't hold
+        // the point: same answer as testing their triangles, much cheaper.
+        const a = j * n + i;
+        if (
+          x < Math.min(gridX[a], gridX[a + n]) - 0.01 ||
+          x > Math.max(gridX[a + 1], gridX[a + n + 1]) + 0.01 ||
+          z < Math.min(gridZ[a], gridZ[a + 1]) - 0.01 ||
+          z > Math.max(gridZ[a + n], gridZ[a + n + 1]) + 0.01
+        ) continue;
         const tris = cellTriangles(i, j);
         for (let t = 0; t < 6; t += 3) {
           const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];

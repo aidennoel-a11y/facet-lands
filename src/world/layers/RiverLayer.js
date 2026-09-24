@@ -55,6 +55,8 @@ export function createRiverLayer(skyColor) {
       uniforms.uTime.value = time;
     },
 
+    reuseKey: ({ lod }) => (lod > 1 ? 'none' : 'near'),
+
     build({ cx, cz, lod, generator, config }) {
       if (lod > 1 || !generator.rivers) return null;
       const { chunkSize, seaLevel } = config;
