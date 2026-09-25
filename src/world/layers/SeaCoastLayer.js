@@ -74,7 +74,7 @@ const m4 = new Matrix4(), pos = new Vector3(), rot = new Quaternion(), scl = new
  * urchins on their floors.
  */
 export function createSeaCoastLayer(config, terrainMaterial) {
-  const poolMaterial = new MeshPhongMaterial({ color: 0x2f7d8c, specular: 0x557788, shininess: 90, transparent: true, opacity: 0.72, depthWrite: false });
+  const poolMaterial = new MeshPhongMaterial({ color: 0x1f6f7c, specular: 0x88aabb, shininess: 120, transparent: true, opacity: 0.62, depthWrite: false });
   const creatureMaterial = new MeshLambertMaterial({ flatShading: true });
 
   return {
@@ -144,14 +144,19 @@ export function createSeaCoastLayer(config, terrainMaterial) {
           // The sides, down into the cliff.
           for (const k of [0, across.length - 1]) quad(rows[i][k].bottom, rows[i + 1][k].bottom, rows[i + 1][k].top, rows[i][k].top);
         }
-        // The face over the mouth, and the back (in the rock).
+        // The face over the mouth (bare rock like the cliff's, in a few
+        // knobbled bands), and the back (in the rock).
         for (const i of [0, rows.length - 1]) {
+          const bands = i === 0 ? 3 : 1;
+          const ring = (k, f) => {
+            const t = rows[i][k].top, b = rows[i][k].bottom;
+            const y = b[1] + (t[1] - b[1]) * f;
+            const out = i === 0 && f > 0 && f < 1 ? 0.5 * (hash2(k, Math.round(f * 10), Math.floor(c.x)) - 0.3) : 0;
+            const x = b[0] - c.nx * out, z = b[2] - c.nz * out;
+            return [x, y, z, shade(x, z, y, f >= 1 ? 0.55 : 0.1), f >= 1 ? t[4] : 0];
+          };
           for (let k = 0; k + 1 < across.length; k++) {
-            const t0 = rows[i][k].top, t1 = rows[i][k + 1].top;
-            const b0 = [...rows[i][k].bottom], b1 = [...rows[i][k + 1].bottom];
-            b0[3] = shade(b0[0], b0[2], b0[1], 0.1);
-            b1[3] = shade(b1[0], b1[2], b1[1], 0.1);
-            quad(b0, b1, t1, t0);
+            for (let n = 0; n < bands; n++) quad(ring(k, n / bands), ring(k + 1, n / bands), ring(k + 1, (n + 1) / bands), ring(k, (n + 1) / bands));
           }
         }
       }
@@ -217,14 +222,14 @@ export function createSeaCoastLayer(config, terrainMaterial) {
           const lx = p.x - x0, lz = p.z - z0;
           const centre = groundHeightAt(lx, lz);
           let rim = Infinity;
-          for (let k = 0; k < 12; k++) {
-            const a = (k / 12) * Math.PI * 2;
-            const qx = lx + Math.cos(a) * p.r * 0.85, qz = lz + Math.sin(a) * p.r * 0.85;
+          for (let k = 0; k < 24; k++) {
+            const a = (k / 12) * Math.PI * 2, d = p.r * (k < 12 ? 0.72 : 0.9);
+            const qx = lx + Math.cos(a) * d, qz = lz + Math.sin(a) * d;
             rim = Math.min(rim, qx >= 0 && qz >= 0 && qx < size && qz < size ? groundHeightAt(qx, qz) : generator.getBaseHeight(qx + x0, qz + z0));
           }
           const level = rim - 0.06;
           if (!(level > sea + 0.2 && centre < level - 0.2)) continue;
-          const disc = new CircleGeometry(p.r * 0.85, 10);
+          const disc = new CircleGeometry(p.r * 0.72, 12);
           disc.rotateX(-Math.PI / 2);
           disc.translate(lx, level, lz);
           disc.deleteAttribute('uv');
@@ -232,7 +237,7 @@ export function createSeaCoastLayer(config, terrainMaterial) {
           const n = 2 + Math.floor(p.seed * 5);
           for (let k = 0; k < n; k++) {
             const h = (q) => hash2(Math.floor(p.x * 7) + k * 31, Math.floor(p.z * 7) - q, 0x7a1);
-            const a = h(1) * Math.PI * 2, d = Math.sqrt(h(2)) * p.r * 0.55;
+            const a = h(1) * Math.PI * 2, d = Math.sqrt(h(2)) * p.r * 0.5;
             const qx = lx + Math.cos(a) * d, qz = lz + Math.sin(a) * d;
             const y = groundHeightAt(qx, qz);
             if (!(y < level - 0.08)) continue;

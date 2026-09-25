@@ -120,6 +120,7 @@ export function rockCandidates(generator, config, cx, cz) {
       const r = hash2(gi, gj, seed + 3);
       const boulder = surf > 0 || r < lavaRock || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite);
       if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
+      if (generator.nearTidePool?.(wx, wz)) continue; // and tide pools
       if (!bank && generator.rivers.at(wx, wz, 1)) continue; // and rivers
       let size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.2 * foothill + 3.2 * foot + 2.5 * cliff + 2.2 * stony + 2.5 * granite) * (bank ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
       // (Fallen into the water: big enough to stand out of it.)

@@ -26,6 +26,8 @@ export const TIDE_LEVEL = 0.62;
 const TIDE_LIP = 0.8;
 const CAVE_DARK = new Color(0x3b3842); // the back of a sea cave, out of the light
 const OASIS = new Color(0x7fa84a); // the green round an oasis
+const WET_ROCK = new Color(0x5e5a60); // rock shelves the sea washes over
+const POOL_FLOOR = new Color(0x3f5a3a); // weed on a tide pool's floor
 const SHORE = {
   mud: new Color(0x5f4a36),
   dirt: new Color(0x7d6547),
@@ -694,6 +696,9 @@ export class TerrainGenerator {
     if (ocean > 0 && u > -10 && u < 60) {
       const cliffs = this.#cliffZone(x, z, w) * ocean;
       if (cliffs > 0) height += (this.#seaCliff(x, z, u) - u) * cliffs;
+      // Along some stretches, a broad shelf of rock the waves have planed
+      // off, a few tens of metres out from the cliff, dotted with tide pools.
+      if (cliffs > 0.3 && u < 0) height = seaLevel + this.#shelf(x, z, u, height - seaLevel, smoothstep(0.3, 0.6, cliffs));
     }
     // Coral reefs build up flats of shallow water off the open coast,
     // a metre or three deep (not off cliffs, wetlands or volcanic shores).
@@ -765,30 +770,11 @@ export class TerrainGenerator {
       return Math.max(C * stepped + knobs + Math.max(0, u - 0.7) * 0.5, u);
     }
     let h = u - 2.5 * smoothstep(0, -1, u) * (1 - smoothstep(-5, -10, u));
-    // At the cliff's foot, a ragged ledge of fallen rock, just awash; and
-    // along some stretches a broad shelf of rock the waves have planed off,
-    // a few tens of metres out from the cliff, dotted with tide pools.
-    if (u > -10) {
+    // At the cliff's foot, a ragged ledge of fallen rock, just awash.
+    if (u > -3.5) {
       const rubble = this.coastNoise.ridged(x * 0.16 + 3, z * 0.16 - 7, 2, 2, 0.5, 0.05);
       const ledge = -1.3 + 2.4 * rubble + 0.5 * this.coastNoise.noise2D(x * 0.45 - 8, z * 0.45 + 2);
-      const onLedge = smoothstep(-3.5, -0.8, u);
-      h += Math.max(0, ledge - h) * onLedge;
-      const shelf = smoothstep(-0.15, 0.15, this.coastNoise.noise2D(x * 0.0035 - 40, z * 0.0035 + 25)) * smoothstep(-10, -8, u);
-      if (shelf > 0) {
-        const bench = 0.15 + 0.55 * rubble + 0.25 * this.coastNoise.noise2D(x * 0.12 + 4, z * 0.12 - 6);
-        h += Math.max(0, bench - h) * shelf;
-      }
-      // Tide pools: hollows in the rock, each walled round by a lip of
-      // rock that holds the water in when the sea is below it.
-      if (Math.max(onLedge, shelf) > 0.5 && h > -1.6) {
-        for (const p of this.#poolsNear(x, z)) {
-          const d = Math.hypot(x - p.x, z - p.z) / p.r;
-          if (d >= 1.5) continue;
-          const lip = TIDE_LIP + 0.08 * this.coastNoise.noise2D(x * 0.9, z * 0.9);
-          if (d > 0.6) h = Math.max(h, lip * (1 - smoothstep(1.25, 1.5, d)) + h * smoothstep(1.25, 1.5, d));
-          else h = Math.min(h, TIDE_LEVEL - 0.35 - 0.45 * (1 - (d / 0.6) ** 2));
-        }
-      }
+      h += Math.max(0, ledge - h) * smoothstep(-3.5, -0.8, u);
     }
     // Sea stacks: pillars of rock the sea has cut off, each standing on a
     // broad, ribbed skirt of fallen rock and ledges, awash at its foot.
@@ -825,9 +811,12 @@ export class TerrainGenerator {
             }
           }
           // The skirt: ribs of rock running out from the pillar, rubble between.
+          // (Round each of an arch's legs, leaving the sea open under it.)
           const ribs = 0.5 + 0.5 * Math.cos(Math.atan2(dz, dx) * 7 + hash2(i, j, s + 5) * 6.28 + this.coastNoise.noise2D(x * 0.08, z * 0.08) * 2.5);
           const rubble = this.coastNoise.ridged(x * 0.2 - 11, z * 0.2 + 5, 2, 2, 0.5, 0.05);
-          const skirt = 1 - smoothstep(0.9, 2.5, d);
+          const skirt = arch
+            ? 1 - smoothstep(0.7, 1.5, Math.min(Math.hypot(x - arch.ax, z - arch.az), Math.hypot(x - arch.bx, z - arch.bz)) / (arch.leg * 1.5))
+            : 1 - smoothstep(0.9, 2.5, d);
           stack = Math.max(stack, -4 + (4.2 + 1.8 * ribs + 1.3 * rubble) * skirt);
         }
       }
@@ -866,7 +855,9 @@ export class TerrainGenerator {
         if (!arch) continue;
         // Both legs must stand up out of the sea, with the gap between them open.
         const ha = this.getBaseHeight(arch.ax, arch.az) - sea, hb = this.getBaseHeight(arch.bx, arch.bz) - sea;
-        if (ha < H * 0.75 || hb < H * 0.75 || this.getBaseHeight(px, pz) - sea > H * 0.3) continue;
+        if (ha < H * 0.75 || hb < H * 0.75 || this.getBaseHeight(px, pz) - sea > -0.8) continue;
+        // (Standing out in the sea, not on the shore.)
+        if (this.getOceanness(px, pz) < 0.5) continue;
         arch.top = Math.min(ha, hb) + sea;
         out.push(arch);
       }
@@ -886,6 +877,12 @@ export class TerrainGenerator {
       }
     }
     return out;
+  }
+
+  /** Is (x, z) in or right by a tide pool (for keeping boulders out of them)? */
+  nearTidePool(x, z) {
+    if (this.getSeaCliff(x, z) < 0.5) return false;
+    return this.#poolsNear(x, z).some((p) => Math.hypot(x - p.x, z - p.z) < p.r * 2.2 + 2);
   }
 
   /**
@@ -1100,6 +1097,33 @@ export class TerrainGenerator {
       return { bottom: span.bottom, top: span.top };
     }
     return null;
+  }
+
+  /**
+   * A wave-cut rock shelf and its tide pools, given the land's natural
+   * height above the sea `u` and the coast as shaped so far `h` (both
+   * relative to the sea), `amount` of it (0..1).
+   */
+  #shelf(x, z, u, h, amount) {
+    const shelf = amount * smoothstep(-0.15, 0.15, this.coastNoise.noise2D(x * 0.0035 - 40, z * 0.0035 + 25)) * smoothstep(-10, -8, u);
+    if (shelf > 0) {
+      const rubble = this.coastNoise.ridged(x * 0.16 + 3, z * 0.16 - 7, 2, 2, 0.5, 0.05);
+      const bench = 0.15 + 0.55 * rubble + 0.25 * this.coastNoise.noise2D(x * 0.12 + 4, z * 0.12 - 6);
+      h += Math.max(0, bench - h) * shelf;
+    }
+    // Tide pools: hollows in the rock, each walled round by a lip of rock
+    // that holds the water in when the sea is below it.
+    const rocky = Math.max(shelf, amount * smoothstep(-3.5, -0.8, u));
+    if (rocky > 0.5 && h > -1.6 && h < 2) {
+      for (const p of this.#poolsNear(x, z)) {
+        const d = Math.hypot(x - p.x, z - p.z) / p.r;
+        if (d >= 1.5) continue;
+        const lip = TIDE_LIP + 0.08 * this.coastNoise.noise2D(x * 0.9, z * 0.9);
+        if (d > 0.6) h = Math.max(h, lip * (1 - smoothstep(1.25, 1.5, d)) + h * smoothstep(1.25, 1.5, d));
+        else h = Math.min(Math.max(h, 0.15), TIDE_LEVEL - 0.15 - 0.3 * (1 - (d / 0.6) ** 2));
+      }
+    }
+    return h;
   }
 
   /**
@@ -2017,7 +2041,8 @@ export class TerrainGenerator {
     // (The colour jitter never pulls land well above the water down into
     // the beach-sand band: sand only by the water.)
     const sea = this.rivers.seaLevel;
-    height = Math.max(height, 8.5 * smoothstep(sea + 1.5, sea + 3.5, height - jitter));
+    const ground = height - jitter; // `height` has the colour jitter added
+    height = Math.max(height, 8.5 * smoothstep(sea + 1.5, sea + 3.5, ground));
     blendedFaceColor(this.biomes, w, height, upness, out);
     // Ice up in the snow: the steep faces are icy blue-grey rock, and here
     // and there the snow gives way to blue glacier ice.
@@ -2029,8 +2054,8 @@ export class TerrainGenerator {
       if (glacier > 0) out.lerp(ICE, 0.75 * glacier * up);
     }
     // Coral reefs in the warm shallows: pink, orange, purple, teal, gold.
-    if (height - jitter < this.rivers.seaLevel - 0.6) {
-      const reef = this.getReef(x, z, height - jitter);
+    if (ground < this.rivers.seaLevel - 0.6) {
+      const reef = this.getReef(x, z, ground);
       if (reef > 0) out.lerp(CORALS[Math.floor(hash2(Math.floor(x / 3), Math.floor(z / 3), this.seed ^ 0xc0a1) * CORALS.length)], 0.75 * reef);
     }
     // Round hot springs and geysers: orange mats of heat-loving microbes at
@@ -2044,7 +2069,6 @@ export class TerrainGenerator {
       }
     }
     // Lake shores: mud, dirt, grass and rock; rocky outcrops on beaches.
-    const ground = height - jitter; // `height` has the colour jitter added
     const shore = ground < 9 ? this.getShore(x, z, ground) : null;
     if (shore) out.lerp(SHORE[shore.kind], 0.85 * shore.fade);
     // Fallen rock at the foot of sea cliffs and round sea stacks.
@@ -2052,6 +2076,13 @@ export class TerrainGenerator {
       const cliffs = this.getSeaCliff(x, z);
       if (cliffs > 0.2) {
         out.lerp(SHORE.rock, 0.85 * smoothstep(0.2, 0.5, cliffs) * (1 - smoothstep(4, 7, ground)));
+        // The rock shelves at the cliff's foot: dark, wet rock; weed and
+        // barnacles on the floors of the tide pools.
+        if (ground < sea + 1.4) {
+          const wet = smoothstep(0.4, 0.7, cliffs) * (1 - smoothstep(sea + 0.9, sea + 1.4, ground));
+          out.lerp(WET_ROCK, 0.8 * wet);
+          if (wet > 0 && ground < sea + 0.3 && this.#poolsNear(x, z).some((p) => Math.hypot(x - p.x, z - p.z) < p.r * 0.7)) out.lerp(POOL_FLOOR, 0.85 * wet);
+        }
         // In the gloom under a sea cave's roof.
         if (ground < sea + 3) {
           for (const c of this.#seaCavesNear(x, z)) {
