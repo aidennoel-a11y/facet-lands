@@ -353,13 +353,14 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
       ? generator.caves.mouthsNear(originX - 16, originZ - 16, originX + chunkSize + 16, originZ + chunkSize + 16)
       : [];
     const want = new Uint8Array(m * m);
-    // Is there canyon or mesa country here at all? (Checked on a coarse
-    // grid first, so the rest of the world doesn't pay for it.)
+    // Is there canyon, mesa, Black Hills or sea-cliff country here at all?
+    // (Checked on a coarse grid first, so the rest of the world doesn't pay for it.)
     let walled = false;
     for (let j = -1; j <= 5 && !walled; j++) {
       for (let i = -1; i <= 5 && !walled; i++) {
-        const f = generator.getFeatures(originX + (i / 4) * chunkSize, originZ + (j / 4) * chunkSize);
-        walled = f.canyonZone > 0 || f.mesa > 0.02;
+        const x = originX + (i / 4) * chunkSize, z = originZ + (j / 4) * chunkSize;
+        const f = generator.getFeatures(x, z);
+        walled = f.canyonZone > 0 || f.mesa > 0.02 || generator.getBiomeWeights(x, z, {}).blackHills > 0.05 || generator.getSeaCliff(x, z) > 0.05;
       }
     }
     for (let j = -1; j <= resolution; j++) {
@@ -374,11 +375,12 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
         const cx = originX + (minX + maxX) / 2, cz = originZ + (minZ + maxZ) / 2;
         const shore = lo < sea + 3 && hi > sea - 2.5;
         let yes = coarse && (shore || generator.rivers.at(cx, cz, 7) !== null);
-        // Steep walls of canyons and mesas: more, smaller faces, so a wall
-        // is never one great sheer triangle.
+        // Steep walls of canyons, mesas, Black Hills rock and sea cliffs:
+        // more, smaller faces, so a wall is never one great sheer triangle
+        // and a spire never a single spike.
         if (!yes && walled && hi - lo > (coarse ? 6 : 3.5)) {
           const f = generator.getFeatures(cx, cz);
-          yes = f.canyon > 0.1 || f.mesa > 0.1;
+          yes = f.canyon > 0.1 || f.mesa > 0.1 || generator.getBiomeWeights(cx, cz, {}).blackHills > 0.2 || generator.getSeaCliff(cx, cz) > 0.1;
         }
         for (const e of mouths) {
           const b = e.holeBounds;

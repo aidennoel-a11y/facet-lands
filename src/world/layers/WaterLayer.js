@@ -16,15 +16,15 @@ import { seasonUniforms } from '../../render/Seasons.js';
  * Along the open coast the shallows foam white where the waves break,
  * most of all at the foot of sea cliffs.
  */
-export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor = new Color(0xd6e8f7) } = {}) {
+export function createWaterLayer({ resolution = 16, waveHeight = 0.34, skyColor = new Color(0xd6e8f7) } = {}) {
   const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor } };
 
   const material = new MeshPhongMaterial({
     vertexColors: true,
     transparent: true,
     flatShading: true,
-    shininess: 80,
-    specular: 0x6f8fb0,
+    shininess: 60,
+    specular: 0x4f6378,
   });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
@@ -60,10 +60,18 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor 
         vFoam = foam * (1.0 - vIce);
         vWorld = wp.xz;
         // Shallow and small water barely ripples; open, deep water rolls, more so when windy.
-        transformed.y += (1.0 - vIce) * ${waveHeight.toFixed(3)} * waveScale * (0.25 + 0.75 * uWind) * (
-          sin(wp.x * 0.04 + uTime * 0.7) +
-          cos(wp.z * 0.034 + uTime * 0.55) +
-          0.4 * sin((wp.x + wp.z) * 0.1 + uTime * 1.2));`,
+        // Several trains of waves crossing at odd angles, long swells and
+        // short chop, so the facets tilt every which way and the sun's (or
+        // moon's) glint breaks up into sparkles rather than lining up in stripes.
+        vec2 q = wp.xz;
+        float waves =
+          sin(dot(q, vec2(0.031, 0.012)) + uTime * 0.7) +
+          0.8 * sin(dot(q, vec2(-0.017, 0.036)) + uTime * 0.62 + 1.3) +
+          0.6 * sin(dot(q, vec2(0.052, -0.041)) + uTime * 1.05 + 2.1) +
+          0.45 * sin(dot(q, vec2(-0.083, -0.061)) + uTime * 1.35 + 0.4) +
+          0.4 * sin(dot(q, vec2(0.121, 0.097)) + sin(dot(q, vec2(0.023, -0.031)) + uTime * 0.3) * 2.0 + uTime * 1.7) +
+          0.3 * sin(dot(q, vec2(-0.163, 0.139)) + uTime * 2.1 + 3.7);
+        transformed.y += (1.0 - vIce) * ${waveHeight.toFixed(3)} * waveScale * (0.3 + 0.7 * uWind) * waves;`,
       );
   };
 
@@ -89,7 +97,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.28, skyColor 
       geometry.setAttribute('aFreeze', new BufferAttribute(data.freezes, 1));
       geometry.computeBoundingSphere();
       // Waves move vertices a little; pad the bounds so culling stays correct.
-      geometry.boundingSphere.radius += waveHeight * 3;
+      geometry.boundingSphere.radius += waveHeight * 4;
 
       const mesh = new Mesh(geometry, material);
       mesh.name = 'water';

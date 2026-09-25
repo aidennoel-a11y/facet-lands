@@ -121,23 +121,26 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
 
       // Pick a species that is happy at this height (edges blurred a bit).
+      // In a birch wood (or aspen stand) the `grove` species take over.
       const h = ground + (hash2(gi, gj, seed + 3) - 0.5) * 16;
+      const grove = trees.species.some((s) => s.grove) ? generator.getGrove(wx, wz) : 0;
+      const weight = (s) => s.weight * (s.grove ? 1 + 14 * grove : 1 - 0.85 * grove);
       let total = 0;
-      for (const s of trees.species) if (h >= s.minHeight && h <= s.maxHeight) total += s.weight;
+      for (const s of trees.species) if (h >= s.minHeight && h <= s.maxHeight) total += weight(s);
       if (total === 0) continue;
       let pick = hash2(gi, gj, seed + 4) * total;
       let species = null;
       for (const s of trees.species) {
         if (h < s.minHeight || h > s.maxHeight) continue;
-        pick -= s.weight;
+        pick -= weight(s);
         if (pick <= 0) {
           species = s;
           break;
         }
       }
       species ??= trees.species[trees.species.length - 1];
-      // (Only cypresses, and dead trees, stand out in the water.)
-      if (marsh && ground < seaLevel + 0.4 && species.type !== 'deadPine' && species.type !== 'cypress') continue;
+      // (Only cypresses, mangroves and dead trees stand out in the water.)
+      if (marsh && ground < seaLevel + 0.4 && !IN_WATER.has(species.type)) continue;
 
       const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale;
       (placed[species.type] ??= []).push({
@@ -160,8 +163,11 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
   return placed;
 }
 
+const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
+
 /** The kinds of tree, in a fixed order (far trees are packed by index). */
-export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow'];
+export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
+  'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

@@ -9,6 +9,8 @@ const MUD = new Color(0x5f4a36);
 const DIRT = new Color(0x7d6547);
 const RIVERBED = new Color(0x55493b);
 const ICE = new Color(0x9fcbe0); // glacier ice
+// How much more of the world is mountains than the range noise alone gives.
+const MOUNTAIN_BIAS = 0.06;
 const DUNE = new Color(0xe6b86e); // dune sand
 const WASH = new Color(0xcdb592); // a canyon's dry wash
 const LAVA = new Color(0x2b2827); // old lava
@@ -71,6 +73,7 @@ export class TerrainGenerator {
     this.wetNoise = new SimplexNoise(this.seed + 141); // wetlands
     this.canyonNoise = new SimplexNoise(this.seed + 142);
     this.coastNoise = new SimplexNoise(this.seed + 143); // sea cliffs
+    this.groveNoise = new SimplexNoise(this.seed + 144); // birch woods
     this._cones = new Map(); // volcano cell -> cone (or null)
     this._contX = NaN;
     this._contZ = NaN;
@@ -316,7 +319,7 @@ export class TerrainGenerator {
     // wetter (see getAridity), so deserts keep their distance; in the very
     // driest deserts they fade away, slowly, over a kilometre or so.
     const { size, large } = field;
-    const range = field.value - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
+    const range = field.value + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
     const mask = smoothstep(0.08, 0.55, range);
     let mountains = 0;
     if (mask > 0) {
@@ -400,7 +403,10 @@ export class TerrainGenerator {
     let dunes = 0;
     this._erg = f.erg;
     if (w.desert > 0) {
-      const crest = this.duneNoise.ridged(x * 0.0045 + z * 0.0015, z * 0.0075, 2, 2, 0.5, 0.02);
+      // (The crests' lines bend and wander rather than running straight.)
+      const qx = x + this.duneNoise.noise2D(x * 0.0021 + 7, z * 0.0021) * 70;
+      const qz = z + this.duneNoise.noise2D(x * 0.0021, z * 0.0021 - 7) * 70;
+      const crest = this.duneNoise.ridged(qx * 0.0048 + qz * 0.0012, qz * 0.0068 - qx * 0.001, 2, 2, 0.5, 0.02);
       const small = crest * 8 + this.duneNoise.fbm(x * 0.0012 + 50, z * 0.0012, 2) * 7;
       dunes = w.desert * (small * (1 - 0.85 * f.erg)) + (f.erg > 0 ? f.erg * this.#greatDunes(x, z) : 0);
     }
@@ -465,7 +471,16 @@ export class TerrainGenerator {
    */
   #seaCliff(x, z, u) {
     const C = 14 + 16 * (this.coastNoise.noise2D(x * 0.002, z * 0.002) * 0.5 + 0.5);
-    if (u >= 0) return Math.max(C * smoothstep(0.05, 0.7, u) + Math.max(0, u - 0.7) * 0.5, u);
+    if (u >= 0) {
+      // The cliff's line wanders; its face steps back in a couple of
+      // benches and is knobbled with ledges and bulges.
+      const e = u + 0.25 * this.coastNoise.noise2D(x * 0.045 + 5, z * 0.045 - 5) + 0.12 * this.coastNoise.noise2D(x * 0.15 - 2, z * 0.15 + 2) + 0.07 * this.coastNoise.noise2D(x * 0.42 + 6, z * 0.42 - 1);
+      const t = smoothstep(0.05, 0.7, e);
+      const k = t * 3, i = Math.min(2, Math.floor(k));
+      const stepped = t >= 1 ? 1 : (i + smoothstep(0.35, 1, k - i)) / 3;
+      const knobs = t > 0 && t < 1 ? (this.coastNoise.noise2D(x * 0.3 + 9, z * 0.3 - 9) * 1.6 + this.coastNoise.noise2D(x * 0.75, z * 0.75) * 0.8 + this.coastNoise.noise2D(x * 1.6 - 5, z * 1.6 + 3) * 0.35) * 10 * t * (1 - t) : 0;
+      return Math.max(C * stepped + knobs + Math.max(0, u - 0.7) * 0.5, u);
+    }
     let h = u - 2.5 * smoothstep(0, -1, u) * (1 - smoothstep(-5, -10, u));
     if (u > -6 && u < -0.3) {
       const S = 36;
@@ -491,7 +506,45 @@ export class TerrainGenerator {
    */
   #cone(i, j) {
     const key = (i + 32768) * 65536 + (j + 32768);
-    if (this._cones.has(key)) return this._cones.get(key);
+    if (!this._cones.has(key)) {
+      if (this.#coneAt(i, j)) this.#rankRegion(i, j);
+      else this._cones.set(key, null);
+    }
+    return this._cones.get(key);
+  }
+
+  /**
+   * No more than three volcanoes to a stretch of volcanic country: gathers
+   * every cell of the stretch (from (i0, j0), which has a would-be volcano)
+   * and keeps three of its would-be volcanoes, picked by hash. (The stretch
+   * is the same whichever of its cells it's gathered from, so which three
+   * stand doesn't depend on the order the world is built in.)
+   */
+  #rankRegion(i0, j0) {
+    const C = 1100, s = this.seed ^ 0xc0e5;
+    const key = (i, j) => (i + 32768) * 65536 + (j + 32768);
+    const inside = (i, j) => !!this.#coneAt(i, j) || this.volcanoNoise.fbm((i + 0.5) * C * 0.00005 + 900, (j + 0.5) * C * 0.00005 - 300, 2) > 0.52;
+    const seen = new Set([key(i0, j0)]);
+    const stack = [i0, j0], found = [];
+    while (stack.length) {
+      const j = stack.pop(), i = stack.pop();
+      if (this.#coneAt(i, j)) found.push([i, j]);
+      for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]) {
+        const k = key(a, b);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        if (inside(a, b)) stack.push(a, b);
+      }
+    }
+    found.sort((p, q) => hash2(p[0], p[1], s + 13) - hash2(q[0], q[1], s + 13));
+    found.forEach(([i, j], n) => this._cones.set(key(i, j), n < 3 ? this.#coneAt(i, j) : null));
+  }
+
+  /** The volcano (i, j)'s cell would have, if there were no limit to a stretch. */
+  #coneAt(i, j) {
+    const key = (i + 32768) * 65536 + (j + 32768);
+    const cache = this._coneAt ?? (this._coneAt = new Map());
+    if (cache.has(key)) return cache.get(key);
     let cone = null;
     const s = this.seed ^ 0xc0e5;
     const C = 1100;
@@ -516,7 +569,7 @@ export class TerrainGenerator {
         };
       }
     }
-    this._cones.set(key, cone);
+    cache.set(key, cone);
     return cone;
   }
 
@@ -649,47 +702,69 @@ export class TerrainGenerator {
   }
 
   /**
-   * The dunes of a dune sea: fields of crescent dunes, each 8 to 18 m tall,
+   * The dunes of a dune sea: scattered crescent (barchan) dunes, each
    * rising gently on the windward side to a rounded crest and dropping
-   * more steeply down the lee, its horns trailing downwind. They stand in
-   * staggered rows about 95 m apart with hollows between them, and
-   * smaller dunes cross them at an angle, so the sand is shaped every way
-   * rather than in long parallel ridges.
+   * steeply down the lee, its horns trailing downwind. They stand
+   * wherever they happen to lie, not in rows: big and small, turned a
+   * little this way and that, running together here into chains and
+   * leaving open sand there. In some stretches great star dunes tower
+   * over them, their arms spiralling out from a peak. Between them the
+   * sand swells and is dimpled with small dunes every way.
    */
   #greatDunes(x, z) {
     // The wind blows from about the west-south-west, veering slowly across the sea.
-    const a = 0.35 + 0.35 * this.ergNoise.noise2D(x * 0.00015 - 40, z * 0.00015 + 90);
+    const a = 0.35 + 0.5 * this.ergNoise.noise2D(x * 0.00015 - 40, z * 0.00015 + 90);
     const ca = Math.cos(a), sa = Math.sin(a);
-    const u0 = x * ca + z * sa; // downwind
-    const v = -x * sa + z * ca; // across the wind
-    const u = u0 + this.ergNoise.noise2D(v * 0.006, u0 * 0.002) * 28;
-    const L = 95;
+    const wx = x + this.ergNoise.noise2D(x * 0.004 + 21, z * 0.004) * 22;
+    const wz = z + this.ergNoise.noise2D(x * 0.004, z * 0.004 - 21) * 22;
+    const u = wx * ca + wz * sa; // downwind
+    const v = -wx * sa + wz * ca; // across the wind
     const s = this.seed ^ 0xd00e;
-    // Smooth profile: rounded crest (at `crestAt` of the way along) and hollows.
-    const profile = (t, crestAt) => (t < crestAt ? 0.5 - 0.5 * Math.cos((Math.PI * t) / crestAt) : 0.5 + 0.5 * Math.cos((Math.PI * (t - crestAt)) / (1 - crestAt)));
+    const GU = 120, GV = 100;
+    const stars = smoothstep(0.1, 0.4, this.ergNoise.noise2D(x * 0.0004 + 77, z * 0.0004 - 33));
     let h = 0;
-    const k0 = Math.floor(u / L);
-    for (let k = k0 - 1; k <= k0 + 1; k++) {
-      // Along each row, separate crescents (staggered from row to row).
-      const W = 75;
-      const along = v / W + hash2(k, 0, s);
-      const m = Math.floor(along);
-      const f = along - m - 0.5; // -0.5 .. 0.5 across this crescent
-      const shift = 34 * f * f; // its horns trail downwind
-      const t = (u - shift - k * L) / L;
-      if (t < 0 || t > 1) continue;
-      const mound = Math.pow(Math.cos(Math.PI * f), 1.5);
-      const tall = 8 + 10 * hash2(k, m, s + 1);
-      h = Math.max(h, profile(t, 0.62) * tall * mound);
+    const i0 = Math.floor(u / GU), j0 = Math.floor(v / GV);
+    for (let j = j0 - 1; j <= j0 + 1; j++) {
+      for (let i = i0 - 1; i <= i0 + 1; i++) {
+        const r0 = hash2(i, j, s);
+        if (r0 > 0.86) continue; // open sand
+        const cu = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * GU;
+        const cv = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * GV;
+        const S = 0.6 + 0.8 * hash2(i, j, s + 3);
+        const du0 = u - cu, dv0 = v - cv;
+        if (hash2(i, j, s + 5) < stars * 0.55) {
+          // A star dune: a peak with three to five arms spiralling out.
+          const R = 62 + 48 * S * 0.8;
+          const r = Math.hypot(du0, dv0);
+          if (r >= R) continue;
+          const n = 3 + Math.floor(hash2(i, j, s + 6) * 3);
+          const theta = Math.atan2(dv0, du0) + (r / R) * 1.2 + hash2(i, j, s + 7) * 6.28;
+          const arms = Math.pow(Math.abs(Math.cos((n * theta) / 2)), 2);
+          const fall = Math.pow(1 - r / R, 1.3);
+          const tall = (13 + 10 * hash2(i, j, s + 8)) * S;
+          h = Math.max(h, tall * fall * (0.35 + 0.65 * arms) + tall * 0.25 * Math.pow(1 - r / R, 4));
+          continue;
+        }
+        // A crescent dune, turned a little from the wind.
+        const turn = (hash2(i, j, s + 4) - 0.5) * 0.6;
+        const ct = Math.cos(turn), st = Math.sin(turn);
+        const du = du0 * ct + dv0 * st, dv = -du0 * st + dv0 * ct;
+        const half = 44 * S;
+        if (Math.abs(dv) >= half) continue;
+        const across = dv / half;
+        const q = du - 30 * S * across * across; // past the crest (the horns trail downwind)
+        const windward = 56 * S, lee = 15 * S;
+        if (q <= -windward || q >= lee) continue;
+        const profile = q < 0 ? 0.5 + 0.5 * Math.cos((Math.PI * q) / windward) : 0.5 + 0.5 * Math.cos((Math.PI * q) / lee);
+        const body = Math.pow(Math.cos((Math.PI / 2) * across), 1.3);
+        const tall = (6 + 9 * hash2(i, j, s + 8)) * S;
+        h = Math.max(h, tall * body * profile);
+      }
     }
-    // Smaller dunes crossing at an angle.
-    const b = a + 1.15;
-    const u2 = x * Math.cos(b) + z * Math.sin(b) + this.ergNoise.noise2D(x * 0.008 + 3, z * 0.008) * 12;
-    const L2 = 58;
-    const t2 = u2 / L2 - Math.floor(u2 / L2);
-    const cross = profile(t2, 0.6) * (2.5 + 2.5 * (this.ergNoise.noise2D(x * 0.01 - 9, z * 0.01 + 4) * 0.5 + 0.5));
-    const swell = this.ergNoise.noise2D(x * 0.0035 + 11, z * 0.0035 - 5) * 2.5;
-    return h + cross + swell;
+    // Between them: broad swells, and small dunes dimpling the sand every way.
+    const swell = this.ergNoise.fbm(x * 0.0028 + 11, z * 0.0028 - 5, 2) * 4;
+    const dimples = this.ergNoise.ridged(wx * 0.011 + 3, wz * 0.011 - 8, 2, 2, 0.5, 0.02) * 2.2;
+    return h + swell + dimples;
   }
 
   /**
@@ -747,15 +822,18 @@ export class TerrainGenerator {
     // ledges and bulges, as steep as ever.
     const dryLand = smoothstep(0.5, 0.62, dryness) * flatland * (1 - out.erg);
     if (dryLand > 0) {
-      const zone = smoothstep(0.0, 0.22, this.canyonNoise.fbm(x * 0.00025 - 70, z * 0.00025 + 20, 2)) * dryLand;
+      // (Some stretches of the network die away altogether, so canyons are
+      // a find rather than everywhere.)
+      const reach = smoothstep(-0.2, 0.15, this.canyonNoise.noise2D(x * 0.0006 + 170, z * 0.0006 - 90));
+      const zone = reach > 0 ? smoothstep(0.06, 0.28, this.canyonNoise.fbm(x * 0.00025 - 70, z * 0.00025 + 20, 2)) * dryLand * reach : 0;
       out.canyonZone = zone;
       if (zone > 0) {
         const qx = x + this.canyonNoise.noise2D(x * 0.003 + 5, z * 0.003) * 60;
         const qz = z + this.canyonNoise.noise2D(x * 0.003, z * 0.003 - 9) * 60;
         const n = this.canyonNoise.noise2D(qx * 0.0013, qz * 0.0013);
-        const ragged = this.canyonNoise.noise2D(x * 0.07 + 13, z * 0.07 - 21) * 1.6 + this.canyonNoise.noise2D(x * 0.19 - 7, z * 0.19 + 3) * 0.6;
+        const ragged = this.canyonNoise.noise2D(x * 0.07 + 13, z * 0.07 - 21) * 2.0 + this.canyonNoise.noise2D(x * 0.19 - 7, z * 0.19 + 3) * 0.9 + this.canyonNoise.noise2D(x * 0.45 + 2, z * 0.45 - 6) * 0.4;
         const dist = Math.abs(n) / (0.0013 * 1.7) + ragged; // metres from the canyon's line, roughly
-        const slot = smoothstep(0.3, 0.5, this.canyonNoise.noise2D(x * 0.0022 + 40, z * 0.0022 - 40));
+        const slot = smoothstep(0.5, 0.66, this.canyonNoise.noise2D(x * 0.0022 + 40, z * 0.0022 - 40));
         const half = 6 + (1 - slot) * (10 + 18 * (this.canyonNoise.noise2D(x * 0.0015 - 8, z * 0.0015 + 3) * 0.5 + 0.5));
         const depth = (26 + 26 * (this.canyonNoise.noise2D(x * 0.0009 + 60, z * 0.0009) * 0.5 + 0.5)) * zone;
         const wall = 3 + (1 - slot) * (1.5 + depth * 0.12);
@@ -765,7 +843,7 @@ export class TerrainGenerator {
           const t = Math.max(0, (dist - half) / wall);
           const k = t * 3, i = Math.floor(k);
           const stepped = t >= 1 ? 1 : (i + smoothstep(0.55, 1, k - i)) / 3;
-          const knobs = t > 0 && t < 1 ? this.canyonNoise.noise2D(x * 0.33 + 5, z * 0.33 - 5) * 1.8 * 4 * t * (1 - t) : 0;
+          const knobs = t > 0 && t < 1 ? (this.canyonNoise.noise2D(x * 0.33 + 5, z * 0.33 - 5) * 2.2 + this.canyonNoise.noise2D(x * 0.8 - 11, z * 0.8 + 7) * 0.9) * 4 * t * (1 - t) : 0;
           out.canyonCut = Math.max(0, depth * (1 - stepped) - knobs * zone);
           out.canyonFloor = dist < half ? zone : 0;
         }
@@ -781,7 +859,7 @@ export class TerrainGenerator {
       const m = this.mesaNoise.fbm(wx * 0.0016, wz * 0.0016, 3) + this.mesaNoise.noise2D(x * 0.05 + 3, z * 0.05 - 3) * 0.006;
       const s1 = smoothstep(0.16, 0.2, m), s2 = smoothstep(0.34, 0.375, m), s3 = smoothstep(0.5, 0.53, m);
       const wallness = 4 * (s1 * (1 - s1) + s2 * (1 - s2) + s3 * (1 - s3));
-      const knobs = wallness > 0 ? this.mesaNoise.noise2D(x * 0.3 - 9, z * 0.3 + 9) * 1.6 * Math.min(1, wallness) : 0;
+      const knobs = wallness > 0 ? (this.mesaNoise.noise2D(x * 0.3 - 9, z * 0.3 + 9) * 1.8 + this.mesaNoise.noise2D(x * 0.75 + 4, z * 0.75 - 4) * 0.8) * Math.min(1, wallness) : 0;
       const layers = s1 * 22 + s2 * 16 + s3 * 11 + knobs;
       out.mesa = mesa;
       out.mesaHeight = mesa * layers;
@@ -804,7 +882,7 @@ export class TerrainGenerator {
   getFeatures(x, z) {
     const range = this.#rangeField(x, z).value;
     const w = this.getBiomeWeights(x, z, {}, range);
-    const r = range - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
+    const r = range + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
     return { ...this.#features(x, z, this.#rawAridity(x, z), smoothstep(0.08, 0.55, r), w) };
   }
 
@@ -812,7 +890,7 @@ export class TerrainGenerator {
   getOceanness(x, z) {
     const f = this.#rangeField(x, z);
     const dryness = this.#rawAridity(x, z);
-    const mask = smoothstep(0.08, 0.55, f.value - 0.9 * smoothstep(0.85, 1.25, dryness));
+    const mask = smoothstep(0.08, 0.55, f.value + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, dryness));
     const continent = this.#continentBase(x, z) + 0.34 * smoothstep(0.62, 0.8, dryness) + 0.1 * smoothstep(0.3, 0.5, dryness) + 0.5 * mask;
     return smoothstep(-0.02, -0.25, continent);
   }
@@ -856,10 +934,10 @@ export class TerrainGenerator {
   #hillsZone(x, z, range) {
     // (Never near volcanic country: the volcano noise must be well below
     // where its highlands begin.)
-    const zone = smoothstep(0.3, 0.46, this.hillsNoise.fbm(x * 0.00024 - 250, z * 0.00024 + 610, 2)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
+    const zone = smoothstep(0.3, 0.46, this.hillsNoise.fbm(x * 0.00016 - 250, z * 0.00016 + 610, 2)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
     if (zone <= 0) return 0;
-    const hilly = smoothstep(-0.2, 0.25, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
-    return zone * hilly * (1 - smoothstep(0.02, 0.2, range)) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z)));
+    // (Whole stretches of country, a few kilometres across, not scraps.)
+    return zone * (1 - smoothstep(0.02, 0.2, range)) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z)));
   }
 
   /**
@@ -918,20 +996,22 @@ export class TerrainGenerator {
         if (dx * dx + dz * dz > 45 * 45) continue;
         const kind = hash2(i, j, s + 5);
         const size = hash2(i, j, s + 4);
+        // Ragged outlines: the rock is jointed and weathered, never a clean cylinder.
+        const ragged = 1 + 0.16 * this.hillsNoise.noise2D(x * 0.19 + i * 3.1, z * 0.19 - j * 2.3) + 0.07 * this.hillsNoise.noise2D(x * 0.55 - 4, z * 0.55 + 4);
         let h = 0;
         if (kind < 0.35) {
           // A needle.
           const r = 10 + 6 * hash2(i, j, s + 3);
-          const t = Math.hypot(dx, dz) / r;
+          const t = (Math.hypot(dx, dz) / r) * ragged;
           if (t < 1) h = (18 + 26 * size) * Math.pow(1 - Math.pow(t, 2.6), 0.5);
         } else if (kind < 0.52) {
           // A cluster of spires.
           const count = 4 + Math.floor(hash2(i, j, s + 6) * 4);
           for (let k = 0; k < count; k++) {
             const a = hash2(i + k * 13, j, s + 7) * Math.PI * 2, out = k === 0 ? 0 : 5 + 11 * hash2(i, j + k * 13, s + 8);
-            const r = 3.5 + 2.5 * hash2(i - k, j + k, s + 9);
-            const t = Math.hypot(dx - Math.cos(a) * out, dz - Math.sin(a) * out) / r;
-            if (t < 1) h = Math.max(h, (16 + 24 * hash2(i + k, j - k, s + 10)) * (k === 0 ? 1.15 : 1) * Math.pow(1 - Math.pow(t, 2.2), 0.5));
+            const r = 5.5 + 3 * hash2(i - k, j + k, s + 9);
+            const t = (Math.hypot(dx - Math.cos(a) * out, dz - Math.sin(a) * out) / r) * ragged;
+            if (t < 1) h = Math.max(h, (13 + 17 * hash2(i + k, j - k, s + 10)) * (k === 0 ? 1.15 : 1) * Math.pow(1 - Math.pow(t, 2.2), 0.5));
           }
         } else if (kind < 0.68) {
           // A fin: a long narrow blade, turned any way, its crest ragged.
@@ -964,6 +1044,8 @@ export class TerrainGenerator {
             h = dome - 0.6 * (dome / 3 - Math.floor(dome / 3));
           }
         }
+        // Knobbled faces: ledges, bulges and cracks all over the rock.
+        if (h > 0) h += (this.hillsNoise.noise2D(x * 0.4 + 17, z * 0.4 - 17) * 1.3 + this.hillsNoise.noise2D(x * 0.95 - 3, z * 0.95 + 8) * 0.55) * Math.min(1, h / 6);
         best = Math.max(best, h);
       }
     }
@@ -1001,7 +1083,7 @@ export class TerrainGenerator {
 
   /** How mountainous an area is: 0 = lowland, 1 = in a range. Foothills lie in between. */
   getMountainness(x, z) {
-    return smoothstep(0.08, 0.55, this.#rangeField(x, z).value - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z)));
+    return smoothstep(0.08, 0.55, this.#rangeField(x, z).value + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z)));
   }
 
   /**
@@ -1018,7 +1100,15 @@ export class TerrainGenerator {
    */
   getForestDensity(x, z) {
     const n = this.forestNoise.fbm(x * 0.0045, z * 0.0045, 3);
-    return 0.05 + 0.95 * smoothstep(-0.2, 0.25, n);
+    return 0.05 + 0.95 * smoothstep(-0.3, 0.15, n);
+  }
+
+  /**
+   * Where birches (and, in the Black Hills, aspens) take over the woods
+   * (0..1): stands a kilometre or two across.
+   */
+  getGrove(x, z) {
+    return smoothstep(0.16, 0.36, this.groveNoise.fbm(x * 0.0006 + 13, z * 0.0006 - 57, 2));
   }
 
   /** How grassy a spot is, in [0, 1]: lush meadows and thinner patches. */
@@ -1073,7 +1163,7 @@ export class TerrainGenerator {
     if (top === 'desert') return f.erg > 0.5 ? 'Dune sea' : f.mesa > 0.4 ? 'Mesas' : 'Desert';
     if (top === 'savanna') return f.mesa > 0.4 ? 'Mesas' : 'Savanna';
     if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
-    if (this.getForestDensity(x, z) > 0.55) return 'Forest';
+    if (this.getForestDensity(x, z) > 0.55) return this.getGrove(x, z) > 0.5 && height < 110 ? 'Birch forest' : 'Forest';
     if (smoothstep(-0.25, 0.35, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Rolling hills';
     return 'Plains';
   }

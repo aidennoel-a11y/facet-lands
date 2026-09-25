@@ -12,7 +12,8 @@ import { Color } from 'three';
 // snowLine / snow: above snowLine, all but the sheerest faces turn to snow.
 // trees:   what grows here. density scales the whole forest (clumped by the
 //          forest noise when `clumped`); each species has a weight and a
-//          height range it is happy in (see TreeLayer).
+//          height range it is happy in (see TreeLayer). `grove` species
+//          take over where the grove noise says (birch woods, aspen stands).
 // grass:   how much grass grows (0..1).
 
 export const BIOMES = {
@@ -42,11 +43,15 @@ export const BIOMES = {
       clumped: true,
       species: [
         { type: 'broadleaf', weight: 1, minHeight: 6, maxHeight: 55 },
+        { type: 'oak', weight: 0.5, minHeight: 5, maxHeight: 70 },
         { type: 'poplar', weight: 0.35, minHeight: 5, maxHeight: 35 },
         { type: 'maple', weight: 0.15, minHeight: 8, maxHeight: 50 },
-        { type: 'birch', weight: 0.6, minHeight: 12, maxHeight: 95 },
+        // (Birches take over in birch woods: see `grove`.)
+        { type: 'birch', weight: 0.5, minHeight: 6, maxHeight: 110, grove: true },
+        { type: 'silverBirch', weight: 0.2, minHeight: 6, maxHeight: 90, grove: true },
         { type: 'pine', weight: 1.2, minHeight: 20, maxHeight: 150 },
         { type: 'spruce', weight: 0.9, minHeight: 45, maxHeight: 165 },
+        { type: 'larch', weight: 0.4, minHeight: 60, maxHeight: 165 },
         { type: 'bush', weight: 0.5, minHeight: 5, maxHeight: 130 },
         { type: 'deadPine', weight: 0.06, minHeight: 30, maxHeight: 160 },
       ],
@@ -79,6 +84,7 @@ export const BIOMES = {
       clumped: true,
       species: [
         { type: 'acacia', weight: 1, minHeight: 5, maxHeight: 140 },
+        { type: 'baobab', weight: 0.14, minHeight: 5, maxHeight: 90 },
         { type: 'dryBush', weight: 0.8, minHeight: 5, maxHeight: 140 },
         { type: 'broadleaf', weight: 0.08, minHeight: 6, maxHeight: 60 },
       ],
@@ -113,7 +119,8 @@ export const BIOMES = {
       species: [
         { type: 'pine', weight: 2.4, minHeight: 8, maxHeight: 230 }, // ponderosa
         { type: 'spruce', weight: 0.5, minHeight: 60, maxHeight: 230 },
-        { type: 'birch', weight: 0.35, minHeight: 10, maxHeight: 140 }, // aspen stands
+        { type: 'aspen', weight: 0.4, minHeight: 10, maxHeight: 160, grove: true }, // aspen stands
+        { type: 'oak', weight: 0.2, minHeight: 5, maxHeight: 90 }, // bur oak, low down
         { type: 'bush', weight: 0.3, minHeight: 5, maxHeight: 200 },
         { type: 'deadPine', weight: 0.08, minHeight: 20, maxHeight: 230 },
       ],
@@ -148,8 +155,11 @@ export const BIOMES = {
       species: [
         { type: 'pine', weight: 1.4, minHeight: 6, maxHeight: 160 },
         { type: 'spruce', weight: 0.5, minHeight: 40, maxHeight: 180 },
+        { type: 'larch', weight: 0.4, minHeight: 50, maxHeight: 190 },
+        { type: 'treeFern', weight: 0.7, minHeight: 5, maxHeight: 110 },
         { type: 'bush', weight: 0.8, minHeight: 5, maxHeight: 150 },
-        { type: 'deadPine', weight: 0.35, minHeight: 10, maxHeight: 200 },
+        { type: 'charredSnag', weight: 0.3, minHeight: 10, maxHeight: 200 },
+        { type: 'deadPine', weight: 0.15, minHeight: 10, maxHeight: 200 },
       ],
     },
   },
@@ -181,11 +191,13 @@ export const BIOMES = {
       density: 0.55,
       clumped: true,
       species: [
-        { type: 'cypress', weight: 1.6, minHeight: -99, maxHeight: 60 },
+        { type: 'cypress', weight: 1.4, minHeight: -99, maxHeight: 60 },
         { type: 'swampWillow', weight: 1.0, minHeight: -99, maxHeight: 60 },
-        { type: 'bush', weight: 0.8, minHeight: -99, maxHeight: 60 },
-        { type: 'deadPine', weight: 0.4, minHeight: -99, maxHeight: 60 },
-        { type: 'poplar', weight: 0.15, minHeight: -99, maxHeight: 60 },
+        { type: 'weepingWillow', weight: 0.9, minHeight: -99, maxHeight: 60 },
+        { type: 'mangrove', weight: 0.8, minHeight: -99, maxHeight: 60 },
+        { type: 'bush', weight: 0.6, minHeight: -99, maxHeight: 60 },
+        { type: 'deadPine', weight: 0.35, minHeight: -99, maxHeight: 60 },
+        { type: 'poplar', weight: 0.1, minHeight: -99, maxHeight: 60 },
       ],
     },
   },
@@ -214,6 +226,8 @@ export const BIOMES = {
         { type: 'cactus', weight: 1, minHeight: -99, maxHeight: 999 },
         { type: 'smallCactus', weight: 1.3, minHeight: -99, maxHeight: 999 },
         { type: 'dryBush', weight: 0.25, minHeight: -99, maxHeight: 999 },
+        { type: 'joshuaTree', weight: 0.35, minHeight: -99, maxHeight: 999 },
+        { type: 'ocotillo', weight: 0.4, minHeight: -99, maxHeight: 999 },
       ],
     },
   },

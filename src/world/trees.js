@@ -56,7 +56,7 @@ function lumpy(geometry, amount, seed, centre = new Vector3()) {
  * (top), with a small random shade per face.
  */
 function part(geometry, colorLow, colorHigh = colorLow, options = {}) {
-  const { x = 0, y = 0, z = 0, rx = 0, rz = 0, sx = 1, sy = 1, sz = 1, lump = 0, seed = 1, speckle = null } = options;
+  const { x = 0, y = 0, z = 0, rx = 0, rz = 0, sx = 1, sy = 1, sz = 1, lump = 0, seed = 1 } = options;
   const g = geometry.index ? geometry.toNonIndexed() : geometry;
   g.deleteAttribute('uv');
   g.scale(sx, sy, sz);
@@ -77,8 +77,6 @@ function part(geometry, colorLow, colorHigh = colorLow, options = {}) {
     const cy = (pos.getY(f) + pos.getY(f + 1) + pos.getY(f + 2)) / 3;
     const t = max.y > min.y ? (cy - min.y) / (max.y - min.y) : 0.5;
     tmp.copy(bottom).lerp(top, t).multiplyScalar(0.9 + rand() * 0.2);
-    // Optional random faces in a second colour (birch bark markings).
-    if (speckle && rand() < speckle[1]) tmp.set(speckle[0]);
     for (let k = 0; k < 3; k++) colors.set([tmp.r, tmp.g, tmp.b], (f + k) * 3);
   }
   g.setAttribute('color', new BufferAttribute(colors, 3));
@@ -203,24 +201,153 @@ function spruce() {
   );
 }
 
-// Birch: slim white trunk with dark markings, small airy yellow-green crown.
+/**
+ * Birch-type bark: a chalky trunk ringed with thin dark streaks (lenticels)
+ * that wrap part way round it, more of them low down, and a dark, fissured
+ * foot. `r0` at the foot, `r1` at the top.
+ */
+function birchTrunk(r0, r1, height, seed, { bark, barkTop, marks, foot, count }) {
+  const rand = mulberry32(seed * 17);
+  const radius = (y) => r0 + (r1 - r0) * (y / height);
+  const out = [
+    part(new CylinderGeometry(r1, r0, height, 7, 3), bark, barkTop, { y: height / 2, seed }),
+    // The foot: rough and dark, paling upwards.
+    part(new CylinderGeometry(radius(0.8) + 0.015, r0 + 0.03, 0.8, 7, 1), foot, bark, { y: 0.4, lump: 0.08, seed: seed + 1 }),
+  ];
+  for (let k = 0; k < count; k++) {
+    const y = 0.8 + Math.pow(rand(), 1.4) * (height * 0.9 - 0.8);
+    const r = radius(y) + 0.012;
+    const h = 0.04 + rand() * 0.07;
+    const arc = 0.8 + rand() * 2.2;
+    const g = new CylinderGeometry(r, r, h, 4, 1, true, rand() * Math.PI * 2, arc);
+    out.push(part(g, marks, marks, { y, seed: seed + 2 + k }));
+  }
+  return out;
+}
+
+/**
+ * A birch or aspen: a slim pale trunk with dark streaks, running up into a
+ * light, airy crown of small blobs. `weeping` hangs strands of leaves from
+ * the crown (silver birch).
+ */
+function birchLike({ height, r0, r1, blobs, bark, barkTop, marks, foot, count, crownLow, crownHigh, sy = 0.9, weeping = 0, seed }) {
+  const rand = mulberry32(seed * 29);
+  const strands = [];
+  for (let k = 0; k < weeping; k++) {
+    const [x, y, z, r] = blobs[k % blobs.length];
+    const a = rand() * Math.PI * 2;
+    const len = 1.2 + rand() * 1.4;
+    const g = new ConeGeometry(0.22 + rand() * 0.12, len, 3, 1);
+    g.rotateX(Math.PI); // hanging, point down
+    strands.push(part(g, crownHigh, crownLow, { x: x + Math.cos(a) * r * 0.85, y: y - r * 0.2 - len / 2, z: z + Math.sin(a) * r * 0.85, seed: seed + 40 + k }));
+  }
+  return withCrown(
+    [
+      ...birchTrunk(r0, r1, height, seed, { bark, barkTop, marks, foot, count }),
+      ...boughs(blobs, height * 0.62, height * 0.95, 0x9a8e80, seed + 30, { thick: 0.7 }),
+    ],
+    [
+      ...blobs.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), crownLow, crownHigh, { x, y, z, sy, lump: 0.22, seed: seed + 20 + i })),
+      ...strands,
+    ],
+  );
+}
+
+const BIRCH_BARK = { bark: 0xe6e3da, barkTop: 0xf3f1ea, marks: 0x3a342f, foot: 0x4d453e };
+
+// Birch: slim white trunk, small airy yellow-green crown.
 const BIRCH_BLOBS = [
-  [0, 5.6, 0, 1.35],
-  [0.7, 6.6, 0.3, 1.05],
-  [-0.6, 6.3, -0.4, 1.1],
-  [0.1, 7.5, 0, 0.9],
+  [0, 5.6, 0, 1.3],
+  [0.75, 6.4, 0.35, 1.0],
+  [-0.65, 6.2, -0.4, 1.05],
+  [0.1, 7.4, 0, 0.9],
+  [-0.2, 5.4, 0.8, 0.85],
 ];
 
 function birch() {
+  return birchLike({ height: 6.4, r0: 0.2, r1: 0.1, blobs: BIRCH_BLOBS, ...BIRCH_BARK, count: 16, crownLow: 0x628f37, crownHigh: 0xa9cd62, seed: 60 });
+}
+
+// Silver birch: taller, its crown an upright oval hung with weeping strands.
+const SILVER_BIRCH_BLOBS = [
+  [0, 6.4, 0, 1.2],
+  [0.6, 7.5, 0.2, 1.0],
+  [-0.55, 7.2, -0.35, 1.0],
+  [0.05, 8.6, 0.05, 0.85],
+  [0.2, 5.6, -0.6, 0.8],
+];
+
+function silverBirch() {
+  return birchLike({ height: 8.2, r0: 0.21, r1: 0.09, blobs: SILVER_BIRCH_BLOBS, ...BIRCH_BARK, count: 20, crownLow: 0x5c8a35, crownHigh: 0x9fc85c, sy: 1.25, weeping: 10, seed: 600 });
+}
+
+// Aspen: a tall, straight, greenish-white trunk with dark "eyes", and a
+// small round crown high up.
+const ASPEN_BLOBS = [
+  [0, 7.4, 0, 1.15],
+  [0.6, 8.1, 0.2, 0.9],
+  [-0.5, 7.9, -0.3, 0.95],
+  [0.05, 8.9, 0, 0.75],
+];
+
+function aspen() {
+  return birchLike({
+    height: 8.4, r0: 0.19, r1: 0.1, blobs: ASPEN_BLOBS, bark: 0xd6dac8, barkTop: 0xe4e7d7, marks: 0x2f2d29, foot: 0x55503f,
+    count: 10, crownLow: 0x5f9338, crownHigh: 0xa8cf5e, sy: 1.1, seed: 640,
+  });
+}
+
+// Oak: a thick, short trunk splitting into heavy limbs under a broad,
+// spreading, dark crown.
+const OAK_BLOBS = [
+  [0, 5.0, 0, 2.2],
+  [2.0, 4.5, 0.6, 1.7],
+  [-1.9, 4.6, -0.5, 1.8],
+  [0.5, 4.4, -1.9, 1.6],
+  [-0.6, 4.3, 1.9, 1.6],
+  [0.2, 6.2, 0.1, 1.5],
+];
+
+function oak() {
+  const bark = 0x4d3a2c, barkTop = 0x5e4735;
   return withCrown(
     [
-      part(new CylinderGeometry(0.12, 0.2, 6.4, 6, 4), 0xe9e5da, 0xf4f1ea, { y: 3.2, seed: 60, speckle: [0x38322c, 0.28] }),
-      part(new CylinderGeometry(0.04, 0.07, 1.3, 4), 0xe9e5da, 0xe9e5da, { x: 0.35, y: 4.6, rz: -0.9, seed: 61 }),
-      ...boughs(BIRCH_BLOBS, 4.4, 6.2, 0xd9d4c8, 66, { thick: 0.7 }),
+      part(new CylinderGeometry(0.34, 0.56, 2.8, 7), bark, barkTop, { y: 1.4, lump: 0.08, seed: 1000 }),
+      limb([0, 2.4, 0], [1.7, 4.0, 0.5], 0.26, 0.12, bark, barkTop, 1001),
+      limb([0, 2.5, 0], [-1.6, 4.1, -0.4], 0.25, 0.12, bark, barkTop, 1002),
+      limb([0, 2.6, 0], [0.4, 4.0, -1.6], 0.22, 0.1, bark, barkTop, 1003),
+      limb([0, 2.6, 0], [-0.5, 3.9, 1.6], 0.22, 0.1, bark, barkTop, 1004),
+      ...boughs(OAK_BLOBS, 3.2, 4.2, bark, 1005, { thick: 1.3 }),
     ],
-    BIRCH_BLOBS.map(([x, y, z, r], i) =>
-      part(new IcosahedronGeometry(r, 0), 0x6f9e3c, 0xb3d56a, { x, y, z, sy: 0.9, lump: 0.22, seed: 62 + i }),
-    ),
+    OAK_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x355d2a, 0x6a9a46, { x, y, z, sy: 0.72, lump: 0.22, seed: 1010 + i })),
+  );
+}
+
+// Larch: a slim conifer of soft, bright green tiers that turn gold in
+// autumn and drop their needles for the winter.
+const LARCH_TIERS = [
+  [1.9, 1.7, 3.0],
+  [1.65, 1.6, 4.2],
+  [1.35, 1.5, 5.4],
+  [1.05, 1.45, 6.5],
+  [0.75, 1.4, 7.6],
+  [0.45, 1.4, 8.6],
+];
+
+function larch() {
+  return withCrown(
+    [limb([0, 0, 0], [0, 9.2, 0], 0.26, 0.05, 0x6a4a36, 0x7a5a44, 1100)],
+    LARCH_TIERS.map(([radius, height, cy], i) => {
+      const cone = new ConeGeometry(radius, height, 7, 1);
+      const pos = cone.attributes.position;
+      for (let k = 0; k < pos.count; k++) {
+        if (pos.getY(k) < -height / 2 + 0.01) {
+          const a = Math.atan2(pos.getZ(k), pos.getX(k));
+          pos.setY(k, pos.getY(k) - (0.2 + 0.35 * (0.5 + 0.5 * Math.sin(a * 4 + i * 2))));
+        }
+      }
+      return part(cone, 0x4c8436, 0x92c25c, { y: cy, lump: 0.16, seed: 1110 + i });
+    }),
   );
 }
 
@@ -331,7 +458,7 @@ const WILLOW_BLOBS = [
 ];
 
 function swampWillow() {
-  const curtain = new CylinderGeometry(1.7, 2.6, 3.2, 9, 1, true);
+  const curtain = new CylinderGeometry(1.7, 2.7, 4.1, 9, 1, true);
   const pos = curtain.attributes.position;
   // A ragged hem: the curtain hangs lower in some places than others.
   for (let k = 0; k < pos.count; k++) {
@@ -344,9 +471,138 @@ function swampWillow() {
     ],
     [
       ...WILLOW_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x5f8a36, 0x9dbd5a, { x, y, z, sy: 0.72, lump: 0.2, seed: 960 + i })),
-      part(curtain, 0x6f9a3e, 0x8fb455, { x: 0.3, y: 3.1, lump: 0.1, seed: 970 }),
+      part(curtain, 0x6f9a3e, 0x8fb455, { x: 0.3, y: 2.65, lump: 0.1, seed: 970 }),
     ],
   );
+}
+
+// Weeping willow (swamps): a short, thick trunk under a low dome whose
+// long strands of leaves hang right down to the ground or the water.
+const WEEPING_BLOBS = [
+  [0, 4.3, 0, 2.3],
+  [1.4, 3.9, 0.6, 1.6],
+  [-1.3, 4.0, -0.7, 1.7],
+  [0.3, 4.0, -1.5, 1.5],
+  [-0.4, 3.9, 1.5, 1.5],
+];
+
+function weepingWillow() {
+  const rand = mulberry32(1201);
+  const strands = [];
+  for (let k = 0; k < 24; k++) {
+    const a = (k / 24) * Math.PI * 2 + rand() * 0.2;
+    const d = 2.0 + rand() * 1.1;
+    const len = 2.9 + rand() * 1.0;
+    const top = 4.1 - (d - 2) * 0.5;
+    const g = new ConeGeometry(0.4 + rand() * 0.15, len, 3, 1);
+    g.rotateX(Math.PI);
+    strands.push(part(g, 0x9fbf5c, 0x7ca043, { x: Math.cos(a) * d, y: top - len / 2, z: Math.sin(a) * d, seed: 1210 + k }));
+  }
+  return withCrown(
+    [
+      part(new CylinderGeometry(0.3, 0.46, 2.6, 7), 0x5a4a38, 0x6b5842, { y: 1.3, lump: 0.08, seed: 1200 }),
+      ...boughs(WEEPING_BLOBS, 2.2, 2.8, 0x5a4a38, 1202, { thick: 1.1 }),
+    ],
+    [...WEEPING_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x6f9a3e, 0xa2c35e, { x, y, z, sy: 0.6, lump: 0.2, seed: 1240 + i })), ...strands],
+  );
+}
+
+// Mangrove-like swamp tree: a low, dense, dark crown standing on a cage of
+// arching stilt roots.
+const MANGROVE_BLOBS = [
+  [0, 3.2, 0, 1.7],
+  [1.3, 2.9, 0.4, 1.3],
+  [-1.2, 3.0, -0.5, 1.35],
+  [0.3, 2.8, -1.3, 1.2],
+  [-0.4, 2.9, 1.3, 1.2],
+  [0.1, 3.9, 0, 1.1],
+];
+
+function mangrove() {
+  const rand = mulberry32(1301);
+  const bark = 0x5d5046, barkTip = 0x72655a;
+  const roots = [];
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2 + rand() * 0.3;
+    const y0 = 0.9 + rand() * 0.7;
+    const out = 1.4 + rand() * 0.6;
+    const from = [Math.cos(a) * 0.18, y0, Math.sin(a) * 0.18];
+    const mid = [Math.cos(a) * out * 0.55, y0 + 0.3, Math.sin(a) * out * 0.55];
+    const foot = [Math.cos(a) * out, -0.4, Math.sin(a) * out];
+    roots.push(limb(from, mid, 0.09, 0.075, bark, barkTip, 1310 + k), limb(mid, foot, 0.075, 0.06, barkTip, bark, 1320 + k));
+  }
+  return withCrown(
+    [
+      limb([0, 0.8, 0], [0.05, 2.7, 0], 0.22, 0.17, bark, barkTip, 1300),
+      ...roots,
+      ...boughs(MANGROVE_BLOBS, 2.0, 2.6, bark, 1302),
+    ],
+    MANGROVE_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x2d5628, 0x5f8c45, { x, y, z, sy: 0.68, lump: 0.2, seed: 1340 + i })),
+  );
+}
+
+/**
+ * A frond (fern or palm): a flat, slightly V-shaped strip arching out from
+ * `base` at heading `a`, `len` long, widest part way along, rising by
+ * `lift` then drooping by `droop`. Shaded top and bottom.
+ */
+function frond(base, a, len, w, lift, droop, colorLow, colorHigh, seed) {
+  const n = 5;
+  const cx = Math.cos(a), cz = Math.sin(a), sx = -Math.sin(a), sz = Math.cos(a);
+  const rows = [];
+  for (let k = 0; k <= n; k++) {
+    const t = k / n;
+    const d = len * t;
+    const y = base[1] + lift * t - droop * t * t;
+    const half = w * Math.sin(Math.PI * (0.15 + 0.85 * t));
+    const c = [base[0] + cx * d, y, base[2] + cz * d];
+    rows.push([c, [c[0] + sx * half, y - 0.1 * half, c[2] + sz * half], [c[0] - sx * half, y - 0.1 * half, c[2] - sz * half]]);
+  }
+  const positions = [];
+  const tri = (p, q, r, upward) => {
+    const e1 = new Vector3(q[0] - p[0], q[1] - p[1], q[2] - p[2]), e2 = new Vector3(r[0] - p[0], r[1] - p[1], r[2] - p[2]);
+    const up = e1.cross(e2).y >= 0;
+    if (up === upward) positions.push(...p, ...q, ...r);
+    else positions.push(...p, ...r, ...q);
+  };
+  for (let k = 0; k < n; k++) {
+    const [c0, l0, r0] = rows[k], [c1, l1, r1] = rows[k + 1];
+    for (const upward of [true, false]) {
+      tri(c0, l0, l1, upward);
+      tri(c0, l1, c1, upward);
+      tri(c0, c1, r1, upward);
+      tri(c0, r1, r0, upward);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+  return part(g, colorLow, colorHigh, { seed });
+}
+
+// Tree fern (volcanic highlands): a slim, shaggy trunk topped by a ring of
+// long arching fronds, a couple of young ones still rising in the middle.
+function treeFern() {
+  const rand = mulberry32(1401);
+  const top = [0.15, 3.6, 0.05];
+  const fronds = [];
+  for (let k = 0; k < 10; k++) {
+    const a = (k / 10) * Math.PI * 2 + rand() * 0.3;
+    fronds.push(frond(top, a, 2.4 + rand() * 0.6, 0.42 + rand() * 0.1, 0.8, 2.0 + rand() * 0.5, 0x355f28, 0x78a84a, 1410 + k));
+  }
+  for (let k = 0; k < 3; k++) fronds.push(frond(top, rand() * Math.PI * 2, 1.3, 0.3, 1.5, 0.3, 0x4f8435, 0x8cbc58, 1430 + k));
+  return withCrown([part(new CylinderGeometry(0.17, 0.24, 3.7, 6, 2), 0x3a2c22, 0x4d3a2c, { x: 0.07, y: 1.85, lump: 0.1, seed: 1400 })], fronds);
+}
+
+// Charred snag (volcanic highlands): a dead tree burned black by an old
+// lava flow, its top snapped off.
+function charredSnag() {
+  const bark = 0x221e1b, barkTop = 0x3b332e;
+  return mergeGeometries([
+    part(new CylinderGeometry(0.1, 0.32, 5.6, 5, 2), bark, barkTop, { y: 2.8, lump: 0.1, seed: 1500 }),
+    limb([0, 2.9, 0], [0.8, 3.5, 0.2], 0.08, 0.03, bark, barkTop, 1501),
+    limb([0, 3.8, 0], [-0.6, 4.4, -0.3], 0.07, 0.03, bark, barkTop, 1502),
+    limb([0, 2.1, 0], [0.1, 2.5, 0.7], 0.07, 0.03, bark, barkTop, 1503),
+  ]);
 }
 
 // Acacia: a leaning, forked trunk under a wide, flat-topped crown (savanna).
@@ -412,6 +668,69 @@ function dryBush() {
       part(new DodecahedronGeometry(r, 0), 0x7f7a40, 0xb8a85e, { x, y, z, sy: 0.65, lump: 0.22, seed: 90 + i }),
     ),
   );
+}
+
+// Baobab (savanna): a vast bottle-shaped trunk with stubby branches
+// spreading from its top like roots, and a thin crown.
+function baobab() {
+  const rand = mulberry32(1601);
+  const trunk = new CylinderGeometry(0.7, 1.05, 4.4, 9, 4);
+  const pos = trunk.attributes.position;
+  for (let k = 0; k < pos.count; k++) {
+    const t = pos.getY(k) / 4.4 + 0.5;
+    const bulge = 1 + 0.16 * Math.sin(Math.PI * t);
+    pos.setX(k, pos.getX(k) * bulge);
+    pos.setZ(k, pos.getZ(k) * bulge);
+  }
+  const bark = 0x8a7a6a, barkTop = 0x9c8c7a;
+  const blobs = [];
+  const branches = [];
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + rand() * 0.4;
+    const out = 1.7 + rand() * 0.7;
+    const tip = [Math.cos(a) * out, 5.3 + rand() * 0.7, Math.sin(a) * out];
+    branches.push(limb([Math.cos(a) * 0.3, 4.1, Math.sin(a) * 0.3], tip, 0.3, 0.12, barkTop, bark, 1610 + k));
+    blobs.push([tip[0] * 1.1, tip[1] + 0.35, tip[2] * 1.1, 0.8 + rand() * 0.35]);
+  }
+  return withCrown(
+    [part(trunk, bark, barkTop, { y: 2.2, lump: 0.05, seed: 1600 }), ...branches],
+    blobs.map(([x, y, z, r], i) => part(new DodecahedronGeometry(r, 0), 0x5a7a30, 0x92aa4e, { x, y, z, sy: 0.55, lump: 0.2, seed: 1620 + i })),
+  );
+}
+
+// Joshua tree (desert): a shaggy trunk forking into stout arms, each ending
+// in a spiky tuft of leaves over a skirt of dead ones.
+function joshuaTree() {
+  const bark = 0x5e5140, barkTop = 0x7a6a52;
+  const A = [0.05, 1.9, 0], B = [0.8, 2.7, 0.2], C = [-0.65, 2.9, -0.25];
+  const tips = [[0.15, 3.4, -0.75], [1.35, 3.45, 0.5], [0.75, 3.75, -0.05], [-1.15, 3.6, -0.05], [-0.5, 3.8, -0.55]];
+  const from = [A, B, B, C, C];
+  return mergeGeometries([
+    limb([0, 0, 0], A, 0.28, 0.22, bark, barkTop, 1700),
+    limb(A, B, 0.19, 0.15, barkTop, bark, 1701),
+    limb(A, C, 0.19, 0.15, barkTop, bark, 1702),
+    ...tips.flatMap((t, i) => [
+      limb(from[i], t, 0.14, 0.11, barkTop, bark, 1710 + i),
+      part(new ConeGeometry(0.34, 0.5, 6, 1), 0x8a7b5a, 0x6e6247, { x: t[0], y: t[1] - 0.05, z: t[2], rx: Math.PI, seed: 1720 + i }),
+      part(new IcosahedronGeometry(0.42, 0), 0x4f6b35, 0x86a152, { x: t[0], y: t[1] + 0.28, z: t[2], sy: 1.1, lump: 0.4, seed: 1730 + i }),
+    ]),
+  ]);
+}
+
+// Ocotillo (desert): a fan of long, thin, whippy stems from one root,
+// tipped with red flowers.
+function ocotillo() {
+  const rand = mulberry32(1801);
+  const parts = [];
+  for (let k = 0; k < 11; k++) {
+    const a = rand() * Math.PI * 2;
+    const tilt = 0.12 + rand() * 0.38;
+    const len = 3.0 + rand() * 1.6;
+    const tip = [Math.cos(a) * Math.sin(tilt) * len, Math.cos(tilt) * len, Math.sin(a) * Math.sin(tilt) * len];
+    parts.push(limb([Math.cos(a) * 0.08, 0, Math.sin(a) * 0.08], tip, 0.055, 0.025, 0x5b5a3e, 0x7a8249, 1810 + k));
+    parts.push(part(new ConeGeometry(0.07, 0.35, 4, 1), 0xc8402a, 0xe0603a, { x: tip[0], y: tip[1] + 0.15, z: tip[2], seed: 1830 + k }));
+  }
+  return mergeGeometries(parts);
 }
 
 function deadPine() {
@@ -557,6 +876,17 @@ export const TREE_GEOMETRIES = {
   cactus: cactus(),
   smallCactus: smallCactus(),
   dryBush: dryBush(),
+  oak: oak(),
+  larch: larch(),
+  silverBirch: silverBirch(),
+  aspen: aspen(),
+  baobab: baobab(),
+  joshuaTree: joshuaTree(),
+  ocotillo: ocotillo(),
+  charredSnag: charredSnag(),
+  treeFern: treeFern(),
+  weepingWillow: weepingWillow(),
+  mangrove: mangrove(),
 };
 
 // How each species takes the seasons: [deciduous (leaves turn and fall),
@@ -567,6 +897,9 @@ const SEASONAL = {
   broadleaf: [1, 1, 0], birch: [1, 1, 0], poplar: [1, 1, 0], maple: [1, 1, 0], bush: [1, 1, 1],
   cypress: [1, 1, 0], swampWillow: [1, 1, 0],
   acacia: [0, 0, 0], cactus: [0, 0, 0], smallCactus: [0, 0, 0], dryBush: [0, 0, 0],
+  oak: [1, 1, 0], larch: [1, 1, 0], silverBirch: [1, 1, 0], aspen: [1, 1, 0], weepingWillow: [1, 1, 0],
+  mangrove: [0, 1, 0], treeFern: [0, 1, 0], charredSnag: [0, 1, 0],
+  baobab: [0, 0, 0], joshuaTree: [0, 0, 0], ocotillo: [0, 0, 0],
 };
 function markSeasons(geometries) {
   for (const [type, g] of Object.entries(geometries)) {
@@ -588,10 +921,10 @@ function markSeasons(geometries) {
 markSeasons(TREE_GEOMETRIES);
 
 /** Species that are stiff (cacti): they don't sway in the wind. */
-export const STIFF = new Set(['cactus', 'smallCactus']);
+export const STIFF = new Set(['cactus', 'smallCactus', 'joshuaTree', 'baobab']);
 
 /** Species too small to bump into. */
-export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus']);
+export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus', 'ocotillo']);
 
 const crown = (type) => onMesh(TREE_GEOMETRIES[type].userData.crown);
 
@@ -607,5 +940,12 @@ export const LEAF_GEOMETRIES = {
   bush: leaves(16, [0.25, 0.45], [0x78b556, 0x8fc663, 0x9fd06d], crown('bush'), 13),
   acacia: leaves(55, [0.4, 0.7], [0x7f9a3c, 0x93aa48, 0xa7b858, 0x6f8a34], crown('acacia'), 18),
   dryBush: leaves(14, [0.25, 0.4], [0xa89d55, 0xbfae62, 0x9a9048], crown('dryBush'), 19),
+  oak: leaves(60, [0.45, 0.8], [0x416e31, 0x55853c, 0x679747, 0x4a7a36], crown('oak'), 25),
+  larch: leaves(36, [0.3, 0.5], [0x6aa447, 0x80b855, 0x94c862], crown('larch'), 26),
+  silverBirch: leaves(44, [0.3, 0.5], [0x8fbf52, 0xa9d063, 0x7aaa46, 0xbfdc72], crown('silverBirch'), 27),
+  aspen: leaves(36, [0.3, 0.5], [0x8cc052, 0xa6d064, 0x78ad48], crown('aspen'), 28),
+  baobab: leaves(24, [0.35, 0.6], [0x6f8c3a, 0x86a048, 0x9bb458], crown('baobab'), 29),
+  weepingWillow: leaves(60, [0.3, 0.55], [0x86ab48, 0x9dbd5a, 0xb0cc6c, 0x78a042], crown('weepingWillow'), 30),
+  mangrove: leaves(50, [0.35, 0.6], [0x3a6a33, 0x4d7d3e, 0x5f8f48], crown('mangrove'), 31),
 };
 markSeasons(LEAF_GEOMETRIES);

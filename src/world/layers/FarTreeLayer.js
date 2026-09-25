@@ -14,8 +14,8 @@ import { seasonalTrees } from '../../render/Seasons.js';
 import { TREE_GEOMETRIES } from '../trees.js';
 import { packFarTrees, placeTrees } from '../treePlacement.js';
 
-const CONES = new Set(['pine', 'spruce']);
-const SPIKES = new Set(['deadPine', 'cactus']);
+const CONES = new Set(['pine', 'spruce', 'larch']);
+const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag']);
 
 /**
  * A few-triangle stand-in for each kind of tree, fitted to its real
