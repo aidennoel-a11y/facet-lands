@@ -69,15 +69,19 @@ export function rockCandidates(generator, config, cx, cz) {
       // for where the roll could still win.)
       let surf = 0;
       const base = (0.025 + 0.2 * foothill + (cliffy ? 0.95 : 0) + 0.45 * bank + 0.55 * bare + 0.6 * shoreMax + 0.9 * granite) * soft;
-      if (land < seaLevel - 0.2 && land > seaLevel - 7 && roll <= base + 0.7) {
+      // (Under a sea cliff they always lie there, all along its foot.)
+      if (land < seaLevel + 1 && land > seaLevel - 9 && roll <= base + 1) {
+        // (A quick look first: is there high ground close by at all?)
         let rise = 0;
-        for (let k = 0; k < 6 && rise < 0.9; k++) {
-          const a = (k / 6) * Math.PI * 2 + 0.5;
-          for (const d of [10, 20]) rise = Math.max(rise, (generator.getHeight(wx + Math.cos(a) * d, wz + Math.sin(a) * d) - seaLevel) / d);
+        for (let k = 0; k < 4; k++) rise = Math.max(rise, (generator.getHeight(wx + (k === 0 ? 20 : k === 1 ? -20 : 0), wz + (k === 2 ? 20 : k === 3 ? -20 : 0)) - seaLevel) / 20);
+        if (rise < 0.3) rise = 0;
+        for (let k = 0; k < 8 && rise > 0 && rise < 0.9; k++) {
+          const a = (k / 8) * Math.PI * 2 + 0.5;
+          for (const d of [8, 16, 26]) rise = Math.max(rise, (generator.getHeight(wx + Math.cos(a) * d, wz + Math.sin(a) * d) - seaLevel) / d);
         }
-        surf = smoothstep(0.45, 0.9, rise);
+        surf = rise > 0.45 ? smoothstep(0.45, 0.9, rise) * (0.7 + 0.3 * smoothstep(0.1, 0.4, generator.getSeaCliff(wx, wz))) : 0;
       }
-      if (roll > (0.025 + 0.2 * foothill + (cliffy ? 0.95 : 0) + 0.45 * bank + 0.55 * bare + 0.6 * shoreMax + 0.9 * granite) * soft + 0.7 * surf) continue;
+      if (roll > (0.025 + 0.2 * foothill + (cliffy ? 0.95 : 0) + 0.45 * bank + 0.55 * bare + 0.6 * shoreMax + 0.9 * granite) * soft + surf) continue;
 
       const gx = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
       const gz = (generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2)) / 4;
@@ -85,7 +89,7 @@ export function rockCandidates(generator, config, cx, cz) {
       if (slope > 0.55 + 0.4 * granite + 1.5 * surf) continue;
       const flat = 1 - smoothstep(0.2, 0.45, slope);
       const heap = granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope));
-      if (roll > (0.025 + 0.2 * foothill * flat + (cliffy ? 0.95 * flat : 0) + 0.45 * bank + 0.55 * bare * flat + 0.6 * shoreMax + 0.9 * heap) * soft + 0.7 * surf) continue;
+      if (roll > (0.025 + 0.2 * foothill * flat + (cliffy ? 0.95 * flat : 0) + 0.45 * bank + 0.55 * bare * flat + 0.6 * shoreMax + 0.9 * heap) * soft + surf) continue;
       const dry = bw.desert + bw.savanna > 0.5 || mesa > 0.1;
       let foot = 0, cliff = 0;
       if (flat > 0 && cliffy) {
@@ -103,7 +107,7 @@ export function rockCandidates(generator, config, cx, cz) {
       // Shores: rock outcrops on beaches and lake edges, stones along the rest of a lake's edge.
       const shore = land < seaLevel + 5.5 ? generator.getShore(wx, wz, land) : null;
       const shoreRock = shore ? (shore.kind === 'rock' ? (shore.ocean ? 1.4 : 1) : shore.ocean ? 0 : 0.3) * Math.max(shore.fade, 0.6) : 0;
-      const chance = (0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope))) * soft + 0.7 * surf;
+      const chance = (0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope))) * soft + surf;
       if (roll > chance) continue;
 
       const r = hash2(gi, gj, seed + 3);

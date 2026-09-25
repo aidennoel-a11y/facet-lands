@@ -82,7 +82,7 @@ export class Rivers {
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     let made = 0;
-    for (let attempt = 0; attempt < 40 && made < 2; attempt++) {
+    for (let attempt = 0; attempt < 70 && made < 2; attempt++) {
       const x = (rx + rand()) * REGION;
       const z = (rz + rand()) * REGION;
       // Rivers rise in the hills and foothills of the plains and savanna

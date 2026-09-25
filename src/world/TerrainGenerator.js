@@ -482,20 +482,43 @@ export class TerrainGenerator {
       return Math.max(C * stepped + knobs + Math.max(0, u - 0.7) * 0.5, u);
     }
     let h = u - 2.5 * smoothstep(0, -1, u) * (1 - smoothstep(-5, -10, u));
-    if (u > -6 && u < -0.3) {
+    // At the cliff's foot, a ragged ledge of fallen rock, just awash.
+    if (u > -3.5) {
+      const rubble = this.coastNoise.ridged(x * 0.16 + 3, z * 0.16 - 7, 2, 2, 0.5, 0.05);
+      const ledge = -1.3 + 2.4 * rubble + 0.5 * this.coastNoise.noise2D(x * 0.45 - 8, z * 0.45 + 2);
+      h += Math.max(0, ledge - h) * smoothstep(-3.5, -0.8, u);
+    }
+    // Sea stacks: pillars of rock the sea has cut off, each standing on a
+    // broad, ribbed skirt of fallen rock and ledges, awash at its foot.
+    if (u > -9 && u < 0) {
+      const fade = smoothstep(0, -0.8, u) * (1 - smoothstep(-6, -9, u));
       const S = 36;
       const ci = Math.floor(x / S), cj = Math.floor(z / S);
       const s = this.seed ^ 0x57ac;
+      let stack = -Infinity;
       for (let dj = -1; dj <= 1; dj++) {
         for (let di = -1; di <= 1; di++) {
           const i = ci + di, j = cj + dj;
           if (hash2(i, j, s) > 0.3) continue;
           const px = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * S, pz = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * S;
           const r = 4 + 5 * hash2(i, j, s + 3);
-          const t = Math.hypot(x - px, z - pz) / r;
-          if (t < 1) h = Math.max(h, C * (0.5 + 0.45 * hash2(i, j, s + 4)) * (1 - smoothstep(0.72, 1, t)) - 0.6 * t);
+          const dx = x - px, dz = z - pz;
+          const d = Math.hypot(dx, dz) / r;
+          if (d >= 2.5) continue;
+          // The pillar, its outline ragged and its sides knobbled.
+          const t = d * (1 + 0.14 * this.coastNoise.noise2D(x * 0.22 + i, z * 0.22 - j));
+          if (t < 1) {
+            const knobs = this.coastNoise.noise2D(x * 0.35 - 3, z * 0.35 + 5) * 1.2 * smoothstep(0.5, 0.9, t);
+            stack = Math.max(stack, C * (0.5 + 0.45 * hash2(i, j, s + 4)) * (1 - smoothstep(0.72, 1, t)) - 0.6 * t + knobs);
+          }
+          // The skirt: ribs of rock running out from the pillar, rubble between.
+          const ribs = 0.5 + 0.5 * Math.cos(Math.atan2(dz, dx) * 7 + hash2(i, j, s + 5) * 6.28 + this.coastNoise.noise2D(x * 0.08, z * 0.08) * 2.5);
+          const rubble = this.coastNoise.ridged(x * 0.2 - 11, z * 0.2 + 5, 2, 2, 0.5, 0.05);
+          const skirt = 1 - smoothstep(0.9, 2.5, d);
+          stack = Math.max(stack, -4 + (4.2 + 1.8 * ribs + 1.3 * rubble) * skirt);
         }
       }
+      if (stack > h) h += (stack - h) * fade;
     }
     return h;
   }
@@ -1184,6 +1207,11 @@ export class TerrainGenerator {
     const ground = height - jitter; // `height` has the colour jitter added
     const shore = ground < 9 ? this.getShore(x, z, ground) : null;
     if (shore) out.lerp(SHORE[shore.kind], 0.85 * shore.fade);
+    // Fallen rock at the foot of sea cliffs and round sea stacks.
+    if (ground < 7 && ground > -3) {
+      const cliffs = this.getSeaCliff(x, z);
+      if (cliffs > 0.2) out.lerp(SHORE.rock, 0.85 * smoothstep(0.2, 0.5, cliffs) * (1 - smoothstep(4, 7, ground)));
+    }
     // Dune seas: warm golden sand, deeper orange on the steep slip faces.
     const f = w.desert + w.savanna > 0.2 ? this.getFeatures(x, z) : null;
     if (f && f.erg > 0) out.lerp(duneSand.copy(DUNE).lerp(DUNE_SLIP, smoothstep(0.93, 0.78, upness)), 0.85 * f.erg);
