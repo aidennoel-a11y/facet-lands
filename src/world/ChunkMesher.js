@@ -99,14 +99,22 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
   const gridX = new Float32Array(n * n);
   const gridY = new Float32Array(n * n);
   const gridZ = new Float32Array(n * n);
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const [lx, lz] = vertexAt(baseGx + i * step, baseGz + j * step);
-      const k = j * n + i;
-      gridX[k] = lx;
-      gridZ[k] = lz;
-      gridY[k] = generator.getHeight(originX + lx, originZ + lz);
+  // (At coarse detail each point stands for the land round it: the
+  // generator averages features smaller than that, like dunes, rather
+  // than catching a crest here and a hollow there.)
+  generator.footprint = chunkSize / resolution;
+  try {
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const [lx, lz] = vertexAt(baseGx + i * step, baseGz + j * step);
+        const k = j * n + i;
+        gridX[k] = lx;
+        gridZ[k] = lz;
+        gridY[k] = generator.getHeight(originX + lx, originZ + lz);
+      }
     }
+  } finally {
+    generator.footprint = 0;
   }
 
   // Cave entrances (full detail only): each entrance's pit is cut out of

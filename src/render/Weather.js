@@ -10,9 +10,9 @@ function smoothstep(a, b, x) {
  *   storm  thunderstorm: lightning, dark clouds, strong wind (0..1)
  */
 export const WEATHER = {
-  clear: { label: 'Clear', cover: 0.06, rain: 0, storm: 0 },
-  fair: { label: 'Fair', cover: 0.3, rain: 0, storm: 0 },
-  cloudy: { label: 'Cloudy', cover: 0.58, rain: 0, storm: 0 },
+  clear: { label: 'Clear', cover: 0.12, rain: 0, storm: 0 },
+  fair: { label: 'Fair', cover: 0.42, rain: 0, storm: 0 },
+  cloudy: { label: 'Cloudy', cover: 0.64, rain: 0, storm: 0 },
   overcast: { label: 'Overcast', cover: 0.88, rain: 0, storm: 0 },
   rain: { label: 'Rain', cover: 0.93, rain: 0.75, storm: 0 },
   storm: { label: 'Storm', cover: 1, rain: 1, storm: 1 },
@@ -21,9 +21,9 @@ export const WEATHER = {
 // Which weather can follow which, and how likely (fine weather is commonest;
 // storms build up through cloud and rain, and clear through cloud again).
 const NEXT = {
-  clear: { clear: 2, fair: 3 },
-  fair: { clear: 2, fair: 2, cloudy: 2 },
-  cloudy: { fair: 2, cloudy: 1, overcast: 1.5, rain: 0.6 },
+  clear: { clear: 1.5, fair: 3 },
+  fair: { clear: 1.5, fair: 2, cloudy: 2.5 },
+  cloudy: { fair: 2, cloudy: 1.2, overcast: 1.5, rain: 0.4 },
   overcast: { cloudy: 1.5, overcast: 0.5, rain: 1.5 },
   rain: { overcast: 1.5, rain: 1, storm: 0.8, cloudy: 0.5 },
   storm: { rain: 2, overcast: 1 },

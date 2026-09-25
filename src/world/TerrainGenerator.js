@@ -85,6 +85,7 @@ export class TerrainGenerator {
     this._lastWeights = { x: NaN, z: NaN, range: NaN };
     this._features = { mesa: 0, mesaTop: 0, escarp: 0, hills: 0, erg: 0, canyon: 0, canyonFloor: 0, canyonCut: 0 };
     this._erg = 0; // the last point's dune sea, for its roughness
+    this.footprint = 0; // metres between the points of the mesh being built (see ChunkMesher)
     this.rivers = new Rivers(this, config);
     this.caves = new CaveSystem(this, config);
   }
@@ -163,8 +164,8 @@ export class TerrainGenerator {
   #biomeWeights(x, z, out, range) {
     range ??= this.#rangeField(x, z).value;
     const a = this.getAridity(x, z, range);
-    const temperate = 1 - smoothstep(0.415, 0.535, a);
-    const desert = smoothstep(0.705, 0.825, a);
+    const temperate = 1 - smoothstep(0.375, 0.575, a); // (broad transitions, not a line on the map)
+    const desert = smoothstep(0.665, 0.865, a);
     const savanna = Math.max(0, 1 - temperate - desert);
     // Black Hills country: a rare biome of its own, found now and then in
     // the rolling hills of the green lands (see #hillsZone).
@@ -284,6 +285,38 @@ export class TerrainGenerator {
   }
 
   /**
+   * How much the dry country holds mountain ranges down (0..0.9): they
+   * fade out towards the deserts. Worked out from the broad climate,
+   * averaged over half a kilometre round (on a 64 m grid, remembered, and
+   * blended between its points), so a range rises gradually out of the
+   * dry plains rather than switching on in a wall.
+   */
+  #drySuppress(x, z) {
+    const G = 64;
+    const gx = Math.floor(x / G), gz = Math.floor(z / G);
+    const fx = x / G - gx, fz = z / G - gz;
+    const cache = this._drySup ?? (this._drySup = new Map());
+    const at = (i, j) => {
+      const key = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.get(key);
+      if (v === undefined) {
+        let sum = this.#rawAridityAt(i * G, j * G) * 2;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          sum += this.#rawAridityAt(i * G + Math.cos(a) * 450, j * G + Math.sin(a) * 450);
+        }
+        v = 0.9 * smoothstep(0.8, 1.3, sum / 10);
+        if (cache.size > 60000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
+    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return a + (b - a) * fz;
+  }
+
+  /**
    * The most mountainous the land gets within about 330 m of (x, z) (0..1),
    * measured on a 64 m grid (remembered) and blended between its points:
    * mesas keep well clear of mountain ranges.
@@ -293,7 +326,7 @@ export class TerrainGenerator {
     const gx = Math.floor(x / G), gz = Math.floor(z / G);
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._mtnNear ?? (this._mtnNear = new Map());
-    const m = (px, pz) => smoothstep(0.08, 0.55, this.#rangeField(px, pz, {}).value + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, this.#rawAridityAt(px, pz)));
+    const m = (px, pz) => smoothstep(0.08, 0.55, this.#rangeField(px, pz, {}).value + MOUNTAIN_BIAS - this.#drySuppress(px, pz));
     const at = (i, j) => {
       const key = (i + 32768) * 65536 + (j + 32768);
       let v = cache.get(key);
@@ -316,7 +349,16 @@ export class TerrainGenerator {
   /** Terrain height in metres at a world position (rivers carved in). */
   getHeight(x, z) {
     const base = this.getBaseHeight(x, z);
-    return this.rivers.carve(x, z, base, this.#roughness(x, z, base));
+    const rough = this.#roughness(x, z, base);
+    // (Rivers are traced over the land as it truly is, whatever mesh
+    // asked first: the footprint is set aside while they're found.)
+    const fp = this.footprint;
+    this.footprint = 0;
+    try {
+      return this.rivers.carve(x, z, base, rough);
+    } finally {
+      this.footprint = fp;
+    }
   }
 
   /**
@@ -354,7 +396,7 @@ export class TerrainGenerator {
     // wetter (see getAridity), so deserts keep their distance; in the very
     // driest deserts they fade away, slowly, over a kilometre or so.
     const { size, large } = field;
-    const range = field.value + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
+    const range = field.value + MOUNTAIN_BIAS - this.#drySuppress(x, z);
     const mask = smoothstep(0.08, 0.55, range);
     let mountains = 0;
     if (mask > 0) {
@@ -392,6 +434,10 @@ export class TerrainGenerator {
         const crags = high > 0 ? (this.ruggedNoise.ridged(x * 0.011 + 13, z * 0.011 - 7, 3, 2, 0.5, 0.01) - 0.3) * 22 * high : 0;
         mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged + crags);
       }
+      // Foothills: rolling hills that grow as the land climbs towards the
+      // range, so it never rises straight out of the plain.
+      const foot = mask * (1 - smoothstep(0.1, 0.6, core));
+      if (foot > 0) mountains += foot * (this.hillNoise.fbm(x * 0.0032 + 71, z * 0.0032 - 13, 3) * 0.5 + 0.5) * 26;
       mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size) * (1 - 0.5 * bowl) + Math.pow(core, 2) * 30 * (1 - 0.5 * bowl); // (the heart of a range lifted, so more of its peaks reach the snow)
       // The very tallest peaks are tamed: above 300 m they rise ever more
       // slowly (never past about 460), their tips rounding off a little
@@ -443,7 +489,7 @@ export class TerrainGenerator {
       const qz = z + this.duneNoise.noise2D(x * 0.0021, z * 0.0021 - 7) * 70;
       const crest = this.duneNoise.ridged(qx * 0.0048 + qz * 0.0012, qz * 0.0068 - qx * 0.001, 2, 2, 0.5, 0.02);
       const small = crest * 8 + this.duneNoise.fbm(x * 0.0012 + 50, z * 0.0012, 2) * 7;
-      dunes = w.desert * (small * (1 - 0.85 * f.erg)) + (f.erg > 0 ? f.erg * this.#greatDunes(x, z) : 0);
+      dunes = w.desert * (small * (1 - 0.85 * f.erg)) + (f.erg > 0 ? f.erg * this.#dunesSeen(x, z) : 0);
     }
 
     // Seas where the continent noise dips, and lake basins in the green lowlands.
@@ -760,6 +806,22 @@ export class TerrainGenerator {
   }
 
   /**
+   * The great dunes at (x, z), as a mesh of the current coarseness
+   * (`footprint`, metres between its points) should show them: averaged
+   * over the ground each point stands for when that's coarse, so a far,
+   * coarse mesh shows the dunes' swell rather than a spike on every crest
+   * it happens to hit.
+   */
+  #dunesSeen(x, z) {
+    const fp = this.footprint;
+    if (!(fp >= 6)) return this.#greatDunes(x, z);
+    const o = fp * 0.6;
+    let sum = 0;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) sum += this.#greatDunes(x + i * o, z + j * o);
+    return sum / 9;
+  }
+
+  /**
    * The dunes of a dune sea: scattered crescent (barchan) dunes, each
    * rising gently on the windward side to a rounded crest and dropping
    * steeply down the lee, its horns trailing downwind. They stand
@@ -942,7 +1004,7 @@ export class TerrainGenerator {
   getFeatures(x, z) {
     const range = this.#rangeField(x, z).value;
     const w = this.getBiomeWeights(x, z, {}, range);
-    const r = range + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z));
+    const r = range + MOUNTAIN_BIAS - this.#drySuppress(x, z);
     return { ...this.#features(x, z, this.#rawAridity(x, z), smoothstep(0.08, 0.55, r), w) };
   }
 
@@ -950,7 +1012,7 @@ export class TerrainGenerator {
   getOceanness(x, z) {
     const f = this.#rangeField(x, z);
     const dryness = this.#rawAridity(x, z);
-    const mask = smoothstep(0.08, 0.55, f.value + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, dryness));
+    const mask = smoothstep(0.08, 0.55, f.value + MOUNTAIN_BIAS - this.#drySuppress(x, z));
     const continent = this.#continentBase(x, z) + 0.34 * smoothstep(0.62, 0.8, dryness) + 0.1 * smoothstep(0.3, 0.5, dryness) + 0.5 * mask;
     return smoothstep(-0.02, -0.25, continent);
   }
@@ -1143,7 +1205,7 @@ export class TerrainGenerator {
 
   /** How mountainous an area is: 0 = lowland, 1 = in a range. Foothills lie in between. */
   getMountainness(x, z) {
-    return smoothstep(0.08, 0.55, this.#rangeField(x, z).value + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, this.#rawAridity(x, z)));
+    return smoothstep(0.08, 0.55, this.#rangeField(x, z).value + MOUNTAIN_BIAS - this.#drySuppress(x, z));
   }
 
   /**
