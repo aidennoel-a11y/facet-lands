@@ -108,12 +108,23 @@ const skyFragment = /* glsl */ `
   uniform vec3 glowLow;
   uniform vec3 glowHigh;
   uniform float horizonY; // where the land's edge is (below level when you're up high)
+  uniform float time; // seconds, for twinkling and shooting stars
+  uniform float moonPhase; // 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter
   varying vec3 vDir;
 
   float hash(vec3 p) {
     p = fract(p * 0.3183099 + 0.1);
     p *= 17.0;
     return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+
+  float vnoise(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+      mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
+      f.z);
   }
 
   void main() {
@@ -143,16 +154,56 @@ const skyFragment = /* glsl */ `
     // Sun and moon discs (the moon sits opposite the sun), hidden by thick cloud.
     // (Below the horizon the land would hide it.)
     col = mix(col, vec3(1.0, 0.97, 0.88), smoothstep(0.99955, 0.99972, s) * clear * smoothstep(-0.012, 0.004, up));
-    float m = max(dot(d, -sunDir), 0.0);
-    col = mix(col, vec3(0.9, 0.93, 1.0), smoothstep(0.99965, 0.9998, m) * night * clear);
+    // The moon, waxing and waning (a faint earthshine on its dark part),
+    // with its grey seas.
+    vec3 md = -sunDir;
+    float m = max(dot(d, md), 0.0);
+    float disc = smoothstep(0.99965, 0.9998, m);
+    if (disc > 0.0) {
+      vec3 e1 = normalize(cross(md, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
+      vec3 e2 = cross(e1, md);
+      vec2 uv = vec2(dot(d, e1), dot(d, e2)) / 0.02;
+      float halfW = sqrt(max(0.0, 1.0 - uv.y * uv.y));
+      float term = cos(moonPhase * 6.28318) * halfW; // where light gives way to dark
+      float lit = moonPhase < 0.5 ? smoothstep(term - 0.06, term + 0.06, uv.x) : smoothstep(-term + 0.06, -term - 0.06, uv.x);
+      float seas = 0.8 + 0.2 * vnoise(vec3(uv * 2.2, 3.0));
+      col = mix(col, vec3(0.9, 0.93, 1.0) * mix(0.1, 1.0, lit) * seas, disc * night * clear);
+    }
 
-    // Stars: sparse cells on the sky sphere, only at night and above the horizon.
+    float starsShow = night * smoothstep(0.0, 0.15, up) * (1.0 - smoothstep(0.35, 0.8, cover));
+    // The Milky Way: a faint, patchy band right across the sky, split by dark lanes of dust.
+    vec3 pole = normalize(vec3(0.35, 0.5, -0.79));
+    float band = exp(-pow(dot(d, pole), 2.0) * 26.0);
+    float glow = band * (0.45 + 0.55 * vnoise(d * 7.0)) * (1.0 - 0.7 * smoothstep(0.55, 0.72, vnoise(d * 15.0 + 4.0)));
+    col += vec3(0.5, 0.56, 0.78) * glow * 0.11 * starsShow;
+
+    // Stars: sparse cells on the sky sphere (crowding along the Milky Way),
+    // some bluish, some golden, twinkling.
     vec3 p = d * 240.0;
     vec3 cell = floor(p);
     float h = hash(cell);
     vec3 centre = vec3(hash(cell + 1.3), hash(cell + 2.7), hash(cell + 4.1));
-    float star = step(0.9965, h) * smoothstep(0.32, 0.0, length(fract(p) - centre));
-    col += vec3(star) * night * smoothstep(0.0, 0.15, up) * (0.6 + 0.4 * hash(cell + 7.0)) * (1.0 - smoothstep(0.35, 0.8, cover));
+    float star = step(0.9962 - 0.006 * band, h) * smoothstep(0.32, 0.0, length(fract(p) - centre));
+    float twinkle = 0.75 + 0.25 * sin(time * (2.0 + 3.0 * hash(cell + 5.0)) + hash(cell + 6.0) * 6.28);
+    vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.9, 0.72), hash(cell + 9.0));
+    col += tint * star * starsShow * (0.5 + 0.5 * hash(cell + 7.0)) * twinkle;
+
+    // Now and then a shooting star streaks across.
+    float slot = floor(time / 7.0);
+    float ts = time - slot * 7.0;
+    if (ts < 0.9 && hash(vec3(slot, 3.1, 7.7)) < 0.45) {
+      float a = hash(vec3(slot, 1.0, 2.0)) * 6.283;
+      float el = 0.35 + 0.5 * hash(vec3(slot, 5.0, 1.0));
+      vec3 start = vec3(cos(a) * cos(el), sin(el), sin(a) * cos(el));
+      vec3 way = normalize(cross(start, vec3(hash(vec3(slot, 2.0, 9.0)) - 0.5, 1.0, hash(vec3(slot, 8.0, 4.0)) - 0.5)));
+      float prog = ts / 0.9;
+      vec3 head = normalize(start + way * prog * 0.35);
+      vec3 tail = normalize(start + way * max(0.0, prog - 0.3) * 0.35);
+      vec3 ab = head - tail;
+      float along = clamp(dot(d - tail, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+      float dist = length(d - (tail + ab * along));
+      col += vec3(1.0, 0.95, 0.85) * smoothstep(0.0025, 0.0, dist) * along * (1.0 - prog) * 1.6 * starsShow;
+    }
 
     // Lightning lights up the whole sky.
     col += vec3(0.75, 0.8, 1.0) * flash;
@@ -199,6 +250,9 @@ export class DayNight {
     this._horizonTarget = 0;
     this._horizonWait = 0;
     this._moonLit = false;
+    this.day = 2.8; // (so the first nights have a waxing moon)
+    this.moonPhase = 0.35;
+    this._skyTime = 0;
 
     this.sky = new Mesh(
       new SphereGeometry(radius, 32, 16),
@@ -219,6 +273,8 @@ export class DayNight {
           flash: { value: 0 },
           glowLow: { value: new Color() },
           glowHigh: { value: new Color() },
+          time: { value: 0 },
+          moonPhase: { value: 0.35 },
         },
         vertexShader: skyVertex,
         fragmentShader: skyFragment,
@@ -341,7 +397,14 @@ export class DayNight {
 
     const duskF = Math.max(0, 1 - Math.abs(e - 0.02) / 0.22) * 0.75;
     const night = 1 - smoothstep(-0.2, 0.0, e);
+    // The moon goes through its phases over eight days.
+    if (this._prevHour !== undefined && this.hour < this._prevHour - 12) this.day++;
+    this._prevHour = this.hour;
+    this.moonPhase = (((this.day + this.hour / 24) / 8) % 1 + 1) % 1;
+    this._skyTime += dt;
     const u = this.sky.material.uniforms;
+    u.time.value = this._skyTime % 10000;
+    u.moonPhase.value = this.moonPhase;
     u.night.value = night;
     u.dusk.value = duskF;
     u.cover.value = cover;
@@ -390,7 +453,9 @@ export class DayNight {
       dir.copy(this.sunDir).negate();
       this._shaftDir.copy(dir);
       light.color.copy(MOON);
-      light.intensity = 0.8 * smoothstep(0.12, 0.3, -e) * (1 - 0.85 * overcast);
+      // (A full moon lights the land well; a thin one, barely.)
+      const full = 0.5 - 0.5 * Math.cos(this.moonPhase * Math.PI * 2);
+      light.intensity = 0.8 * (0.3 + 0.7 * full) * smoothstep(0.12, 0.3, -e) * (1 - 0.85 * overcast);
     }
 
     // Clouds catch the low sun: gold, then orange-red, pink and purple as it

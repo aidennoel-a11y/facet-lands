@@ -2,6 +2,11 @@ import { BufferAttribute, BufferGeometry, Color, Vector3 } from 'three';
 import { hash2 } from '../noise/random.js';
 import { CaveField } from './caves/CaveField.js';
 
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
 const color = new Color();
 const ab = new Vector3();
 const ac = new Vector3();
@@ -192,6 +197,7 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
   const positions = new Float32Array(totalVerts * 3);
   const normals = new Float32Array(totalVerts * 3);
   const colors = new Float32Array(totalVerts * 3);
+  const woods = new Float32Array(totalVerts); // how wooded (for autumn's leaf litter)
   let v = 0; // float offset into the arrays
 
   // Per-grid-vertex sum of surface normals, so skirts can borrow the
@@ -222,6 +228,9 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
 
     // Tiny per-face brightness shift so neighbouring faces read as facets.
     const shade = 0.93 + hash2(varSeedX, varSeedZ, seed ^ 0x51ed27) * 0.14;
+    // (Deciduous woods drop their leaves: the green lands' woods.)
+    const wooded = isSkirt ? 0 : smoothstep(0.35, 0.7, generator.getForestDensity(wx, wz)) * generator.getBiomeWeights(wx, wz, {}).temperate;
+    woods[v / 3] = woods[v / 3 + 1] = woods[v / 3 + 2] = wooded;
     const r = color.r * shade;
     const g = color.g * shade;
     const b = color.b * shade;
@@ -465,6 +474,7 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
     positions: v < positions.length ? positions.slice(0, v) : positions,
     normals: v < normals.length ? normals.slice(0, v) : normals,
     colors: v < colors.length ? colors.slice(0, v) : colors,
+    woods: v < colors.length ? woods.slice(0, v / 3) : woods,
     gridX, gridY, gridZ,
     fineCells, fineOffsets, fineTris: fineData,
     triangles: surfaceTris + (fine ? fine.count - fine.cells.size * 2 : 0),
@@ -473,7 +483,7 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
 
 /** The typed arrays in a chunk's data, to hand over from a worker without copying. */
 export function chunkDataBuffers(data) {
-  return [data.positions, data.normals, data.colors, data.gridX, data.gridY, data.gridZ, data.fineCells, data.fineOffsets, data.fineTris].map((a) => a.buffer);
+  return [data.positions, data.normals, data.colors, data.woods, data.gridX, data.gridY, data.gridZ, data.fineCells, data.fineOffsets, data.fineTris].map((a) => a.buffer);
 }
 
 /**
@@ -486,6 +496,7 @@ export function chunkFromData(generator, config, cx, cz, resolution, data) {
   geometry.setAttribute('position', new BufferAttribute(data.positions, 3));
   geometry.setAttribute('normal', new BufferAttribute(data.normals, 3));
   geometry.setAttribute('color', new BufferAttribute(data.colors, 3));
+  geometry.setAttribute('aWoods', new BufferAttribute(data.woods, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return { geometry, triangles: data.triangles, heights, groundHeightAt };

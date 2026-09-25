@@ -22,6 +22,7 @@ export const seasonUniforms = {
   uSpring: { value: 0 },
   uAutumn: { value: 0 },
   uWinter: { value: 0 },
+  uWet: { value: 0 }, // how wet the ground is after rain (puddles), 0..1
 };
 
 function smoothstep(a, b, x) {
@@ -89,6 +90,11 @@ const COMMON = /* glsl */ `
   uniform float uWinter;
   float seasonGreen(vec3 c) { return clamp((c.g - max(c.r, c.b)) * 9.0, 0.0, 1.0); }
   float seasonHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  float seasonNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(seasonHash(i), seasonHash(i + vec2(1.0, 0.0)), f.x), mix(seasonHash(i + vec2(0.0, 1.0)), seasonHash(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
 `;
 
 function hook(material, patch, key) {
@@ -113,10 +119,10 @@ export function seasonalTerrain(material, seaLevel) {
     material,
     (shader) => {
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSeasonWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvSeasonUp = normal.y;');
+        .replace('#include <common>', '#include <common>\nattribute float aWoods;\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;\nvarying float vWoods;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSeasonWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvSeasonUp = normal.y;\nvWoods = aWoods;');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;`)
+        .replace('#include <common>', `#include <common>\n${COMMON}\nuniform float uWet;\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;\nvarying float vWoods;`)
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
@@ -126,6 +132,15 @@ export function seasonalTerrain(material, seaLevel) {
             c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * g * 0.7);
             c = mix(c, vec3(0.5, 0.33, 0.1), uAutumn * g * 0.5);
             c = mix(c, vec3(0.24, 0.22, 0.14), uWinter * g * 0.55);
+            // Fallen leaves in the woods: autumn's litter, lying on into winter.
+            float litter = vWoods * g * max(uAutumn, 0.6 * uWinter) * smoothstep(0.35, 0.6, seasonNoise(vSeasonWorld.xz * 0.9));
+            float leaf = seasonHash(floor(vSeasonWorld.xz * 1.7));
+            vec3 leafColor = leaf < 0.3 ? vec3(0.62, 0.3, 0.09) : leaf < 0.55 ? vec3(0.72, 0.5, 0.14) : leaf < 0.8 ? vec3(0.46, 0.2, 0.1) : vec3(0.36, 0.26, 0.15);
+            c = mix(c, leafColor, litter * 0.85);
+            // Puddles after rain, on flat ground: dark and glassy, drying slowly.
+            float puddle = uWet * (1.0 - uWinter) * smoothstep(0.985, 0.995, abs(vSeasonUp)) * smoothstep(0.66, 0.7, seasonNoise(vSeasonWorld.xz * 0.28 + 7.0))
+              * smoothstep(${(seaLevel + 1.0).toFixed(2)}, ${(seaLevel + 2.0).toFixed(2)}, vSeasonWorld.y);
+            c = mix(c, c * 0.35 + vec3(0.1, 0.13, 0.17), puddle * 0.85);
             // Snow: on flat, cool-coloured ground above the water, patchy
             // as winter comes and goes.
             float cool = 1.0 - smoothstep(0.04, 0.14, c.r - c.b);
@@ -138,6 +153,37 @@ export function seasonalTerrain(material, seaLevel) {
         );
     },
     'season-terrain',
+  );
+}
+
+/**
+ * Rocks: in winter snow caps their tops and drifts against their lee
+ * side, low down (grey rock only: the warm sandstone of the dry lands
+ * sees no snow).
+ */
+export function seasonalRocks(material) {
+  return hook(
+    material,
+    (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vRockLocal;\nvarying vec3 vRockNormal;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRockLocal = position;\nvRockNormal = normalize((modelMatrix * instanceMatrix * vec4(normal, 0.0)).xyz);');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vRockLocal;\nvarying vec3 vRockNormal;`)
+        .replace(
+          '#include <color_fragment>',
+          /* glsl */ `#include <color_fragment>
+          {
+            vec3 c = diffuseColor.rgb;
+            float cool = 1.0 - smoothstep(0.02, 0.1, c.r - c.b);
+            float cap = smoothstep(0.45, 0.75, vRockNormal.y);
+            float drift = (1.0 - smoothstep(-0.35, 0.05, vRockLocal.y)) * smoothstep(-0.2, 0.5, dot(vRockNormal.xz, vec2(0.8, 0.6)));
+            float snow = uWinter * cool * clamp(max(cap, drift), 0.0, 1.0);
+            diffuseColor.rgb = mix(c, vec3(0.86, 0.89, 0.93), snow);
+          }`,
+        );
+    },
+    'season-rocks',
   );
 }
 

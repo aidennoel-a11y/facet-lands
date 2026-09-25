@@ -90,6 +90,9 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (!trees || keep > likely) continue;
       if (biome.id === 'desert' && generator.getFeatures(wx, wz).erg > 0.3) continue; // nothing grows in a dune sea
       if (biome.id === 'volcanic' && hash2(gi, gj, seed + 15) < 0.92 * generator.getVolcanic(wx, wz).cone) continue; // cinder cones are nearly bare
+      if (biome.id === 'volcanic' && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
+      // Open plains are treeless: grass as far as you can see.
+      if (biome.id === 'temperate' && hash2(gi, gj, seed + 16) < smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) continue;
       if (crowded(gi, gj, likely)) continue;
       if (onRock(wx, wz, i, j)) continue;
 
@@ -114,6 +117,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const r = hash2(gi, gj, seed + 12);
       const cliff = 1 - smoothstep(0.5, 0.72, upness);
       if (r < Math.max(cliff, smoothstep(128, 146, colourHeight))) continue;
+      if (ground > 130 && generator.getGlacier(wx, wz, ground) > 0.3) continue; // nor on a glacier
       // And ever fewer the higher you go (the tree line).
       if (hash2(gi, gj, seed + 13) < smoothstep(85, 150, ground) * 0.9) continue;
 

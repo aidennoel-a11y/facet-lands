@@ -12,12 +12,16 @@ const ICE = new Color(0x9fcbe0); // glacier ice
 // How much more of the world is mountains than the range noise alone gives.
 const MOUNTAIN_BIAS = 0.085;
 const DUNE = new Color(0xe6b86e); // dune sand
+const GLACIER = new Color(0xd6eaf3); // glacier ice
+const CORALS = [0xe0708a, 0xe89a4a, 0x9a6ab8, 0x4fb3a0, 0xe6cf5a, 0xd9566a].map((c) => new Color(c));
+const SINTER = new Color(0xe6dcc4); // crusts round hot springs
+const MAT = new Color(0xd2803a); // microbial mats at a hot spring's edge
+const CREVASSE = new Color(0x6f9fc0);
+const glacierIce = new Color();
 const WASH = new Color(0xcdb592); // a canyon's dry wash
 const LAVA = new Color(0x2b2827); // old lava
 const CINDER = new Color(0x6e3b2c); // red cinders
 const SCREE = new Color(0x4b423e); // a cinder cone's dark slopes
-const DUNE_SLIP = new Color(0xc98a4c); // a dune's steep lee side
-const duneSand = new Color();
 const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
 const GRAVEL = new Color(0x8a8590);
 const SHORE = {
@@ -194,7 +198,14 @@ export class TerrainGenerator {
     if (x !== this._contX || z !== this._contZ) {
       this._contX = x;
       this._contZ = z;
-      this._cont = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.015;
+      // (Broad oceans tens of kilometres across, well apart; the smaller
+      // dips of the continent are lakes.)
+      // Away from them the continent stands higher (fewer, smaller
+      // lakes), though the land itself is no higher: `_contLift` is how
+      // much of it is that.
+      const basin = smoothstep(0.22, 0.42, this.continentNoise.fbm(x * 0.000035 + 500, z * 0.000035 - 700, 2));
+      this._contLift = 0.45 * (1 - basin);
+      this._cont = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.015 + this._contLift - 0.8 * basin;
     }
     return this._cont;
   }
@@ -248,7 +259,7 @@ export class TerrainGenerator {
     // (Never near volcanic country.)
     const volcanicNear = 1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z));
     if (volcanicNear <= 0) return 0;
-    const low = 1 - smoothstep(0.45, 0.75, this.#continentBase(x, z));
+    const low = 1 - smoothstep(0.45, 0.75, this.#continentBase(x, z) - this._contLift);
     let wet = zone * low * (1 - smoothstep(0.08, 0.2, raw)) * (1 - smoothstep(0.16, 0.3, aridity)) * (1 - smoothstep(0.02, 0.15, range));
     if (wet <= 0) return 0;
     // And the country all around stays green for the best part of a
@@ -432,7 +443,9 @@ export class TerrainGenerator {
         const high = smoothstep(0.06, 0.35, peaks);
         const rugged = this.ruggedNoise.fbm(x * 0.0035, z * 0.0035, 2) * (18 + 16 * high);
         const crags = high > 0 ? (this.ruggedNoise.ridged(x * 0.011 + 13, z * 0.011 - 7, 3, 2, 0.5, 0.01) - 0.3) * 22 * high : 0;
-        mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged + crags);
+        // Glaciers smooth over the crags beneath them.
+        const ice = this.getGlacier(x, z, 30 + Math.pow(core, 1.5) * peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl));
+        mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + (rugged + crags) * (1 - 0.8 * ice)) + 3 * ice;
       }
       // Foothills: rolling hills that grow as the land climbs towards the
       // range, so it never rises straight out of the plain.
@@ -464,12 +477,14 @@ export class TerrainGenerator {
     let volcanic = 0;
     if (w.volcanic > 0) volcanic = w.volcanic * (16 + 14 * this.volcanoNoise.fbm(x * 0.002 + 7, z * 0.002, 2));
     volcanic += this.#coneHeight(x, z);
+    if (w.volcanic > 0.5) volcanic += this.#springRelief(x, z);
 
     // Broad rise and fall of the land, lifted in dry country so seas
     // rarely reach a desert, and around mountain ranges so they don't
     // drop straight into the sea.
     const dryness = this.#rawAridity(x, z);
     const continent = this.#continentBase(x, z) + 0.34 * smoothstep(0.62, 0.8, dryness) + 0.1 * smoothstep(0.3, 0.5, dryness) + 0.5 * mask;
+    const contLift = this._contLift;
 
     // Rolling hills in the plains (bigger in some regions than others),
     // lower swells in the savanna, dunes in the desert.
@@ -489,7 +504,7 @@ export class TerrainGenerator {
       const qz = z + this.duneNoise.noise2D(x * 0.0021, z * 0.0021 - 7) * 70;
       const crest = this.duneNoise.ridged(qx * 0.0048 + qz * 0.0012, qz * 0.0068 - qx * 0.001, 2, 2, 0.5, 0.02);
       const small = crest * 8 + this.duneNoise.fbm(x * 0.0012 + 50, z * 0.0012, 2) * 7;
-      dunes = w.desert * (small * (1 - 0.85 * f.erg)) + (f.erg > 0 ? f.erg * this.#dunesSeen(x, z) : 0);
+      dunes = w.desert * (small * (1 - f.erg)) + (f.erg > 0 ? f.erg * this.#dunesSeen(x, z) : 0);
     }
 
     // Seas where the continent noise dips, and lake basins in the green lowlands.
@@ -501,7 +516,7 @@ export class TerrainGenerator {
 
     const seaLevel = this.rivers.seaLevel;
     // (Few cliffs drop straight into a lake: escarpments fade out over lake basins.)
-    let height = 14 + continent * 16 + hills + dunes + mountains + blackHills + volcanic + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
+    let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + volcanic + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // Canyons cut down into it (their floors kept above the sea).
     if (f.canyonCut > 0) height -= Math.min(f.canyonCut, Math.max(0, height - (seaLevel + 3)));
     // Wetlands: the land sinks to just above the water, a maze of shallow
@@ -513,15 +528,26 @@ export class TerrainGenerator {
     // Lake shores (not the open sea's beaches, nor marshes): a real edge
     // rather than the land just sloping on down under the water.
     const u = height - seaLevel;
+    // (Only a great stretch of water is the open sea: see #openSea.)
+    const ocean = u > -40 && u < 60 ? smoothstep(-0.02, -0.25, continent) * this.#openSea(x, z) : 0;
     if (u > -4.5 && u < 7) {
-      const lake = (1 - smoothstep(-0.02, -0.25, continent)) * (1 - w.wetland);
+      const lake = (1 - ocean) * (1 - w.wetland);
       if (lake > 0) height += (this.#lakeShore(u, x, z) - u) * lake;
     }
     // Sea cliffs along stretches of the open coast.
-    const ocean = smoothstep(-0.02, -0.25, continent);
     if (ocean > 0 && u > -10 && u < 60) {
       const cliffs = this.#cliffZone(x, z, w) * ocean;
       if (cliffs > 0) height += (this.#seaCliff(x, z, u) - u) * cliffs;
+    }
+    // Coral reefs build up flats of shallow water off the open coast,
+    // a metre or three deep (not off cliffs, wetlands or volcanic shores).
+    if (ocean > 0.3 && u < -1.2 && u > -40) {
+      // (Near the coast only: out in the deep they give way to open sea.)
+      const reef = this.#reefZone(x, z, w) * smoothstep(0.3, 0.7, ocean) * (1 - smoothstep(-0.2, -0.34, continent)) * (1 - this.#cliffZone(x, z, w));
+      if (reef > 0) {
+        const target = -1.6 - 1.6 * (this.coastNoise.noise2D(x * 0.05 - 7, z * 0.05 + 3) * 0.5 + 0.5);
+        if (target > height - seaLevel) height += (target - (height - seaLevel)) * reef;
+      }
     }
     return height;
   }
@@ -580,17 +606,22 @@ export class TerrainGenerator {
       for (let dj = -1; dj <= 1; dj++) {
         for (let di = -1; di <= 1; di++) {
           const i = ci + di, j = cj + dj;
-          if (hash2(i, j, s) > 0.3) continue;
+          if (hash2(i, j, s) > 0.18) continue;
           const px = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * S, pz = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * S;
-          const r = 4 + 5 * hash2(i, j, s + 3);
+          const r = 6 + 6 * hash2(i, j, s + 3);
           const dx = x - px, dz = z - pz;
           const d = Math.hypot(dx, dz) / r;
           if (d >= 2.5) continue;
-          // The pillar, its outline ragged and its sides knobbled.
-          const t = d * (1 + 0.14 * this.coastNoise.noise2D(x * 0.22 + i, z * 0.22 - j));
+          // The stack: a stout, tapering block of rock, no taller than about
+          // twice its width, stepped where layers of it have broken away,
+          // its outline ragged and its sides knobbled.
+          const t = d * (1 + 0.16 * this.coastNoise.noise2D(x * 0.2 + i, z * 0.2 - j));
           if (t < 1) {
-            const knobs = this.coastNoise.noise2D(x * 0.35 - 3, z * 0.35 + 5) * 1.2 * smoothstep(0.5, 0.9, t);
-            stack = Math.max(stack, C * (0.5 + 0.45 * hash2(i, j, s + 4)) * (1 - smoothstep(0.72, 1, t)) - 0.6 * t + knobs);
+            const H = Math.min(C * (0.3 + 0.35 * hash2(i, j, s + 4)), r * 2.2);
+            let top = H * Math.pow(1 - Math.pow(t, 2.4), 0.55);
+            top -= 0.9 * (top / 2.6 - Math.floor(top / 2.6)); // ledges
+            const knobs = this.coastNoise.noise2D(x * 0.35 - 3, z * 0.35 + 5) * 1.2 * smoothstep(0.4, 0.9, t);
+            stack = Math.max(stack, top + knobs);
           }
           // The skirt: ribs of rock running out from the pillar, rubble between.
           const ribs = 0.5 + 0.5 * Math.cos(Math.atan2(dz, dx) * 7 + hash2(i, j, s + 5) * 6.28 + this.coastNoise.noise2D(x * 0.08, z * 0.08) * 2.5);
@@ -772,6 +803,84 @@ export class TerrainGenerator {
   }
 
   /**
+   * The hot spring or geyser in 180 m cell (i, j), or null: only well
+   * inside volcanic country, off the cones and their lava.
+   * { x, z, r (pool radius), geyser, period (s between eruptions), phase, strength }
+   */
+  #springAt(i, j) {
+    const key = (i + 32768) * 65536 + (j + 32768);
+    const cache = this._springs ?? (this._springs = new Map());
+    if (cache.has(key)) return cache.get(key);
+    let spring = null;
+    const s = this.seed ^ 0x5b1e;
+    if (hash2(i, j, s) < 0.3) {
+      const C = 180;
+      const x = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * C, z = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * C;
+      // (Fresh objects: the shared ones may be in use for the point being built.)
+      const w = this.getBiomeWeights(x, z, {}, this.#rangeField(x, z, {}).value);
+      if (w.volcanic > 0.75) {
+        const v = this.getVolcanic(x, z);
+        if (v.cone < 0.2 && v.lava < 0.1) {
+          spring = {
+            x, z,
+            r: 4 + 4 * hash2(i, j, s + 3),
+            geyser: hash2(i, j, s + 4) < 0.35,
+            period: 45 + 60 * hash2(i, j, s + 5),
+            phase: hash2(i, j, s + 6),
+            strength: 0.7 + 0.3 * hash2(i, j, s + 7),
+          };
+        }
+      }
+    }
+    if (cache.size > 20000) cache.clear();
+    cache.set(key, spring);
+    return spring;
+  }
+
+  /** The hot springs and geysers in or near a box. */
+  hotSprings(minX, minZ, maxX, maxZ) {
+    const C = 180, out = [];
+    for (let j = Math.floor((minZ - 20) / C); j <= Math.floor((maxZ + 20) / C); j++) {
+      for (let i = Math.floor((minX - 20) / C); i <= Math.floor((maxX + 20) / C); i++) {
+        const sp = this.#springAt(i, j);
+        if (sp && sp.x > minX - 20 && sp.x < maxX + 20 && sp.z > minZ - 20 && sp.z < maxZ + 20) out.push(sp);
+      }
+    }
+    return out;
+  }
+
+  /** The nearest hot spring or geyser to (x, z) within 40 m, with its distance, or null. */
+  #nearestSpring(x, z) {
+    const C = 180;
+    const ci = Math.floor(x / C), cj = Math.floor(z / C);
+    let best = null, bd = 40;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const sp = this.#springAt(ci + di, cj + dj);
+      if (!sp) continue;
+      const d = Math.hypot(x - sp.x, z - sp.z);
+      if (d < bd) { bd = d; best = sp; }
+    }
+    return best ? { spring: best, d: bd } : null;
+  }
+
+  /**
+   * Whether (x, z) is on the bare crust round a hot spring or geyser (where
+   * nothing grows).
+   */
+  onSinter(x, z) {
+    const n = this.#nearestSpring(x, z);
+    return !!n && n.d < (n.spring.geyser ? 12 : n.spring.r * 2.6);
+  }
+
+  /** A geyser's low mound of sinter, with its vent in the top. */
+  #springRelief(x, z) {
+    const n = this.#nearestSpring(x, z);
+    if (!n || !n.spring.geyser || n.d > 9) return 0;
+    const t = n.d / 9;
+    return 1.8 * Math.pow(1 - t, 1.3) - (n.d < 0.9 ? 0.5 : 0);
+  }
+
+  /**
    * Steam vents around the volcanoes near a box: [{ x, z, strength }] on
    * their crater rims and floors, and a few on their flanks.
    */
@@ -786,6 +895,10 @@ export class TerrainGenerator {
         const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
         if (x >= minX && x < maxX && z >= minZ && z < maxZ) out.push({ x, z, strength: 0.6 + 0.4 * hash2(k, 3, s + 4), lake: c.lake && r < c.rc * 0.62 });
       }
+    }
+    // Hot springs steam gently; geysers breathe steam between eruptions.
+    for (const sp of this.hotSprings(minX, minZ, maxX, maxZ)) {
+      if (sp.x >= minX && sp.x < maxX && sp.z >= minZ && sp.z < maxZ) out.push({ x: sp.x, z: sp.z, strength: sp.geyser ? 0.8 : 0.5, lake: !sp.geyser });
     }
     return out;
   }
@@ -822,69 +935,28 @@ export class TerrainGenerator {
   }
 
   /**
-   * The dunes of a dune sea: scattered crescent (barchan) dunes, each
-   * rising gently on the windward side to a rounded crest and dropping
-   * steeply down the lee, its horns trailing downwind. They stand
-   * wherever they happen to lie, not in rows: big and small, turned a
-   * little this way and that, running together here into chains and
-   * leaving open sand there. In some stretches great star dunes tower
-   * over them, their arms spiralling out from a peak. Between them the
-   * sand swells and is dimpled with small dunes every way.
+   * The dunes of a dune sea: rounded mounds of sand, one after another,
+   * big and small, over a gently swelling sea of sand.
    */
   #greatDunes(x, z) {
-    // The wind blows from about the west-south-west, veering slowly across the sea.
-    const a = 0.35 + 0.5 * this.ergNoise.noise2D(x * 0.00015 - 40, z * 0.00015 + 90);
-    const ca = Math.cos(a), sa = Math.sin(a);
-    const wx = x + this.ergNoise.noise2D(x * 0.004 + 21, z * 0.004) * 22;
-    const wz = z + this.ergNoise.noise2D(x * 0.004, z * 0.004 - 21) * 22;
-    const u = wx * ca + wz * sa; // downwind
-    const v = -wx * sa + wz * ca; // across the wind
     const s = this.seed ^ 0xd00e;
-    const GU = 120, GV = 100;
-    const stars = smoothstep(0.1, 0.4, this.ergNoise.noise2D(x * 0.0004 + 77, z * 0.0004 - 33));
+    const C = 70;
+    const ci = Math.floor(x / C), cj = Math.floor(z / C);
     let h = 0;
-    const i0 = Math.floor(u / GU), j0 = Math.floor(v / GV);
-    for (let j = j0 - 1; j <= j0 + 1; j++) {
-      for (let i = i0 - 1; i <= i0 + 1; i++) {
-        const r0 = hash2(i, j, s);
-        if (r0 > 0.86) continue; // open sand
-        const cu = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * GU;
-        const cv = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * GV;
-        const S = 0.6 + 0.8 * hash2(i, j, s + 3);
-        const du0 = u - cu, dv0 = v - cv;
-        if (hash2(i, j, s + 5) < stars * 0.55) {
-          // A star dune: a peak with three to five arms spiralling out.
-          const R = 62 + 48 * S * 0.8;
-          const r = Math.hypot(du0, dv0);
-          if (r >= R) continue;
-          const n = 3 + Math.floor(hash2(i, j, s + 6) * 3);
-          const theta = Math.atan2(dv0, du0) + (r / R) * 1.2 + hash2(i, j, s + 7) * 6.28;
-          const arms = Math.pow(Math.abs(Math.cos((n * theta) / 2)), 2);
-          const fall = Math.pow(1 - r / R, 1.3);
-          const tall = (13 + 10 * hash2(i, j, s + 8)) * S;
-          h = Math.max(h, tall * fall * (0.35 + 0.65 * arms) + tall * 0.25 * Math.pow(1 - r / R, 4));
-          continue;
-        }
-        // A crescent dune, turned a little from the wind.
-        const turn = (hash2(i, j, s + 4) - 0.5) * 0.6;
-        const ct = Math.cos(turn), st = Math.sin(turn);
-        const du = du0 * ct + dv0 * st, dv = -du0 * st + dv0 * ct;
-        const half = 44 * S;
-        if (Math.abs(dv) >= half) continue;
-        const across = dv / half;
-        const q = du - 30 * S * across * across; // past the crest (the horns trail downwind)
-        const windward = 56 * S, lee = 15 * S;
-        if (q <= -windward || q >= lee) continue;
-        const profile = q < 0 ? 0.5 + 0.5 * Math.cos((Math.PI * q) / windward) : 0.5 + 0.5 * Math.cos((Math.PI * q) / lee);
-        const body = Math.pow(Math.cos((Math.PI / 2) * across), 1.3);
-        const tall = (6 + 9 * hash2(i, j, s + 8)) * S;
-        h = Math.max(h, tall * body * profile);
+    for (let j = cj - 1; j <= cj + 1; j++) {
+      for (let i = ci - 1; i <= ci + 1; i++) {
+        if (hash2(i, j, s) > 0.9) continue; // a gap now and then
+        const px = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * C;
+        const pz = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * C;
+        const size = hash2(i, j, s + 3);
+        const R = 32 + 22 * size;
+        const d2 = ((x - px) ** 2 + (z - pz) ** 2) / (R * R);
+        if (d2 >= 1) continue;
+        const t = 1 - d2;
+        h = Math.max(h, (4 + 9 * size) * t * t);
       }
     }
-    // Between them: broad swells, and small dunes dimpling the sand every way.
-    const swell = this.ergNoise.fbm(x * 0.0028 + 11, z * 0.0028 - 5, 2) * 4;
-    const dimples = this.ergNoise.ridged(wx * 0.011 + 3, wz * 0.011 - 8, 2, 2, 0.5, 0.02) * 2.2;
-    return h + swell + dimples;
+    return h + this.ergNoise.fbm(x * 0.0025 + 11, z * 0.0025 - 5, 2) * 3;
   }
 
   /**
@@ -1010,11 +1082,51 @@ export class TerrainGenerator {
 
   /** How much (x, z) is open sea rather than an inland lake (0..1). */
   getOceanness(x, z) {
-    const f = this.#rangeField(x, z);
-    const dryness = this.#rawAridity(x, z);
-    const mask = smoothstep(0.08, 0.55, f.value + MOUNTAIN_BIAS - this.#drySuppress(x, z));
+    const raw = this.#seaBasin(x, z, this.#rangeField(x, z), this.#rawAridity(x, z));
+    return raw > 0 ? raw * this.#openSea(x, z) : 0;
+  }
+
+  /** How much (x, z) lies where the continent dips under the sea (0..1), whether it's a great sea or not. */
+  #seaBasin(x, z, field, dryness) {
+    const mask = smoothstep(0.08, 0.55, field.value + MOUNTAIN_BIAS - this.#drySuppress(x, z));
     const continent = this.#continentBase(x, z) + 0.34 * smoothstep(0.62, 0.8, dryness) + 0.1 * smoothstep(0.3, 0.5, dryness) + 0.5 * mask;
     return smoothstep(-0.02, -0.25, continent);
+  }
+
+  /**
+   * Whether the water round (x, z) is the open sea (1) or only a lake,
+   * however big (0): the open sea is where a good share of the land for
+   * three kilometres round has dipped under it. Measured on a 256 m grid
+   * (remembered) and blended between its points.
+   */
+  #openSea(x, z) {
+    const G = 256;
+    const gx = Math.floor(x / G), gz = Math.floor(z / G);
+    const fx = x / G - gx, fz = z / G - gz;
+    const cache = this._openSea ?? (this._openSea = new Map());
+    const at = (i, j) => {
+      const key = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.get(key);
+      if (v === undefined) {
+        const cx = i * G, cz = j * G;
+        const wet = (px, pz) => (this.#seaBasin(px, pz, this.#rangeField(px, pz, {}), this.#rawAridityAt(px, pz)) > 0.5 ? 1 : 0);
+        let n = wet(cx, cz), t = 1;
+        for (const [d, k] of [[900, 8], [1800, 12], [3000, 16]]) {
+          for (let q = 0; q < k; q++) {
+            const a = ((q + 0.5) / k) * Math.PI * 2;
+            n += wet(cx + Math.cos(a) * d, cz + Math.sin(a) * d);
+            t++;
+          }
+        }
+        v = smoothstep(0.3, 0.45, n / t);
+        if (cache.size > 20000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
+    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return a + (b - a) * fz;
   }
 
   /**
@@ -1226,6 +1338,61 @@ export class TerrainGenerator {
   }
 
   /**
+   * Glaciers at (x, z), for land `height` metres high (0..1): tongues of
+   * ice lying in the high mountains of the cold green lands, reaching down
+   * below the snow into the valleys.
+   */
+  getGlacier(x, z, height) {
+    if (height < 135) return 0;
+    const range = this.#rangeField(x, z, {}).value + MOUNTAIN_BIAS - this.#drySuppress(x, z);
+    const core = smoothstep(0.45, 0.75, range);
+    if (core <= 0) return 0;
+    const w = this.getBiomeWeights(x, z, {});
+    const cold = smoothstep(0.3, 0.6, w.temperate + w.wetland + w.blackHills);
+    if (cold <= 0) return 0;
+    const qx = x + this.bowlNoise.noise2D(x * 0.002 + 5, z * 0.002) * 140;
+    const qz = z + this.bowlNoise.noise2D(x * 0.002, z * 0.002 - 5) * 140;
+    const tongue = smoothstep(0.05, 0.3, this.bowlNoise.fbm(qx * 0.0021 - 300, qz * 0.0021 + 150, 2));
+    return tongue * core * cold * smoothstep(135, 165, height);
+  }
+
+  /**
+   * Coral reef at (x, z), where the sea bed is `ground` metres high
+   * (0..1): patches in the warm, clear shallows off the desert and savanna
+   * coasts of the open sea.
+   */
+  getReef(x, z, ground) {
+    const sea = this.rivers.seaLevel;
+    if (ground > sea - 0.6 || ground < sea - 8) return 0;
+    const zone = this.#reefZone(x, z, this.getBiomeWeights(x, z, {}));
+    if (zone <= 0) return 0;
+    const patch = smoothstep(-0.1, 0.2, this.coastNoise.fbm(x * 0.012 + 40, z * 0.012 - 40, 2));
+    if (patch <= 0) return 0;
+    const ocean = smoothstep(0.3, 0.6, this.getOceanness(x, z));
+    return zone * patch * ocean * (1 - smoothstep(sea - 6, sea - 8, ground)) * smoothstep(sea - 0.6, sea - 1.2, ground);
+  }
+
+  /** Stretches of the open coast with coral reefs off them (0..1). */
+  #reefZone(x, z, w) {
+    return smoothstep(0.08, 0.3, this.coastNoise.fbm(x * 0.0035 + 140, z * 0.0035 - 60, 2)) * (1 - w.wetland) * (1 - w.volcanic);
+  }
+
+  /**
+   * How much (x, z) is open plains (0..1): the green lowlands away from
+   * the woods, the rolling hills and the mountains. No trees grow there,
+   * and the grass is long.
+   */
+  getPlainness(x, z) {
+    const w = this.getBiomeWeights(x, z, {});
+    if (w.temperate < 0.05) return 0;
+    const open = 1 - smoothstep(0.45, 0.55, this.getForestDensity(x, z));
+    if (open <= 0) return 0;
+    const flat = 1 - smoothstep(0.52, 0.62, smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)));
+    if (flat <= 0) return 0;
+    return w.temperate * open * flat * (1 - smoothstep(0.12, 0.2, this.getMountainness(x, z)));
+  }
+
+  /**
    * Where birches (and, in the Black Hills, aspens) take over the woods
    * (0..1): stands a kilometre or two across.
    */
@@ -1267,9 +1434,9 @@ export class TerrainGenerator {
   describe(x, z) {
     const sea = this.rivers.seaLevel;
     const height = this.getHeight(x, z);
-    if (height < sea - 0.3) return this.getOceanness(x, z) > 0.5 ? 'Ocean' : 'Lake';
+    if (height < sea - 0.3) return this.getOceanness(x, z) > 0.5 ? (this.getReef(x, z, height) > 0.4 ? 'Coral reef' : 'Ocean') : 'Lake';
     const water = this.rivers.at(x, z, 0);
-    if (water) return water.crater ? 'Crater lake' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : 'River';
+    if (water) return water.crater ? 'Crater lake' : water.hot ? 'Hot spring' : water.alpine ? 'Alpine lake' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : 'River';
     const w = this.getBiomeWeights(x, z, {});
     const f = this.getFeatures(x, z);
     if (this.getOceanness(x, z) > 0.5 && height < sea + 34 && this.getSeaCliff(x, z) > 0.5) return 'Sea cliffs';
@@ -1277,6 +1444,7 @@ export class TerrainGenerator {
     const mountains = this.getMountainness(x, z);
     if (mountains > 0.45) {
       if (height > 185) return 'Snowy peaks';
+      if (this.getGlacier(x, z, height) > 0.5) return 'Glacier';
       // Mountains are bare rock: above the trees, or sheer. Wooded slopes
       // lower down are the foothills.
       const steep = Math.abs(this.getHeight(x + 3, z) - this.getHeight(x - 3, z)) / 6 + Math.abs(this.getHeight(x, z + 3) - this.getHeight(x, z - 3)) / 6;
@@ -1285,7 +1453,12 @@ export class TerrainGenerator {
     if (mountains > 0.2) return 'Mountain foothills';
     const top = Object.keys(w).reduce((a, b) => (w[a] >= w[b] ? a : b));
     if (top === 'blackHills') return 'Black Hills';
-    if (top === 'volcanic') return this.getVolcanic(x, z).crater > 0.5 ? 'Volcano' : 'Volcanic highlands';
+    if (top === 'volcanic') {
+      const n = this.#nearestSpring(x, z);
+      if (n && n.spring.geyser && n.d < 12) return 'Geyser';
+      if (n && n.d < n.spring.r * 3) return 'Hot springs';
+      return this.getVolcanic(x, z).cone > 0.5 ? 'Volcano' : 'Volcanic highlands';
+    }
     if (top === 'wetland') return height < sea + 2 ? 'Marsh' : 'Wetlands';
     if (f.canyon > 0.5) return f.canyonFloor > 0.5 ? 'Canyon floor' : 'Canyon';
     if (top === 'desert') return f.erg > 0.5 ? 'Dune sea' : f.mesa > 0.4 ? 'Mesas' : 'Desert';
@@ -1308,6 +1481,30 @@ export class TerrainGenerator {
       if (steep > 0) out.lerp(ICY_ROCK, 0.55 * steep * up);
       if (glacier > 0) out.lerp(ICE, 0.75 * glacier * up);
     }
+    // Coral reefs in the warm shallows: pink, orange, purple, teal, gold.
+    if (height - jitter < this.rivers.seaLevel - 0.6) {
+      const reef = this.getReef(x, z, height - jitter);
+      if (reef > 0) out.lerp(CORALS[Math.floor(hash2(Math.floor(x / 3), Math.floor(z / 3), this.seed ^ 0xc0a1) * CORALS.length)], 0.75 * reef);
+    }
+    // Round hot springs and geysers: orange mats of heat-loving microbes at
+    // the water's edge, then pale crusts of sinter.
+    if (w.volcanic > 0.5) {
+      const n = this.#nearestSpring(x, z);
+      if (n) {
+        const r = n.spring.geyser ? 3 : n.spring.r;
+        const q = n.d / r;
+        if (q < 3) out.lerp(q < 1.5 ? MAT : SINTER, 0.85 * (1 - smoothstep(2.2, 3, q)));
+      }
+    }
+    // Glaciers: blue-white ice, crossed by darker crevasses (the steep
+    // rock around them stays rock).
+    if (height > 130) {
+      const gl = this.getGlacier(x, z, height - jitter);
+      if (gl > 0) {
+        const crevasse = smoothstep(0.82, 0.95, Math.sin(x * 0.21 + z * 0.13 + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 4) * 0.5 + 0.5);
+        out.lerp(crevasse > 0 ? glacierIce.copy(GLACIER).lerp(CREVASSE, crevasse) : GLACIER, 0.9 * gl * smoothstep(0.5, 0.72, upness));
+      }
+    }
     // Lake shores: mud, dirt, grass and rock; rocky outcrops on beaches.
     const ground = height - jitter; // `height` has the colour jitter added
     const shore = ground < 9 ? this.getShore(x, z, ground) : null;
@@ -1317,9 +1514,9 @@ export class TerrainGenerator {
       const cliffs = this.getSeaCliff(x, z);
       if (cliffs > 0.2) out.lerp(SHORE.rock, 0.85 * smoothstep(0.2, 0.5, cliffs) * (1 - smoothstep(4, 7, ground)));
     }
-    // Dune seas: warm golden sand, deeper orange on the steep slip faces.
+    // Dune seas: warm golden sand all over.
     const f = w.desert + w.savanna > 0.2 ? this.getFeatures(x, z) : null;
-    if (f && f.erg > 0) out.lerp(duneSand.copy(DUNE).lerp(DUNE_SLIP, smoothstep(0.93, 0.78, upness)), 0.85 * f.erg);
+    if (f && f.erg > 0) out.lerp(DUNE, 0.85 * f.erg);
     // Canyon floors: a pale, stony dry wash.
     if (f && f.canyonFloor > 0.3 && upness > 0.8) out.lerp(WASH, 0.75 * f.canyonFloor);
     // Volcanoes: black tongues of old lava, reddish cinders round the craters.

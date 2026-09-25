@@ -18,6 +18,8 @@ const SHALLOW = new Color(0x4fbfc4).lerp(new Color(0x2c67b0), 0.15);
 // The lake and sea's colours (as WaterLayer), which a river turns into at its mouth.
 const LAKE_SHALLOW = new Color(0x4fbfc4);
 const LAKE_DEEP = new Color(0x2c67b0);
+// Tinted ponds: alpine lakes (milky turquoise), hot springs (clear blue, bright at the rim).
+const TINTS = [null, [new Color(0x57c9bf), new Color(0x2b98a0)], [new Color(0x7fd6d0), new Color(0x1f86c4)]];
 const color = new Color();
 const lakeColor = new Color();
 const GRID = 2; // metres between the surface's vertices
@@ -38,8 +40,8 @@ function smoothstep(a, b, x) {
  * so the two meet without a seam (it's drawn first, so the lake doesn't
  * show through it twice).
  *
- * The water is see-through, and flows: light streaks in chevrons pointing
- * downstream drift along it (quicker where it's steeper); white water down
+ * The water is see-through, and flows: soft, broken streaks drift
+ * downstream along it (quicker where it's steeper); white water down
  * rapids and falls. Waterfalls
  * throw blocky spray: cubes of water tumbling over the lip and splashing
  * up where it lands (all worked out on the GPU from the time).
@@ -65,10 +67,14 @@ export function createRiverLayer(skyColor) {
         '#include <fog_fragment>',
         /* glsl */ `// flow: x = metres along the river, y = out from its middle (1 at the
         // channel's edge), z = speed, w = white water.
-        float phase = vFlow.x * 0.42 - vFlow.y * 1.6 - uTime * vFlow.z * 2.4;
-        float streak = smoothstep(0.72, 0.97, sin(phase) * 0.5 + 0.5 + 0.35 * sin(vFlow.x * 0.11 + vFlow.y * 2.3));
-        gl_FragColor.rgb += streak * step(0.01, vFlow.z) * (0.13 + 0.25 * vFlow.w) * vStreaks;
-        gl_FragColor.a = min(1.0, gl_FragColor.a + streak * 0.2 * step(0.01, vFlow.z) * vStreaks);
+        // Soft streaks drifting downstream: short and broken, in lanes that
+        // wander across the channel (no stripes straight across it).
+        float phase = vFlow.x * 0.42 - uTime * vFlow.z * 2.4;
+        float lanes = sin(vFlow.y * 5.3 + sin(vFlow.x * 0.09) * 1.7) * 0.5 + 0.5;
+        float along = sin(vFlow.x * 0.31 - uTime * vFlow.z * 1.8 + sin(vFlow.y * 3.1 + vFlow.x * 0.05) * 2.2) * 0.5 + 0.5;
+        float streak = smoothstep(0.55, 0.95, along * lanes);
+        gl_FragColor.rgb += streak * step(0.01, vFlow.z) * (0.07 + 0.22 * vFlow.w) * vStreaks;
+        gl_FragColor.a = min(1.0, gl_FragColor.a + streak * 0.12 * step(0.01, vFlow.z) * vStreaks);
         gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 0.98), vFlow.w * (0.55 + 0.25 * sin(phase * 2.0)));
         gl_FragColor.a = mix(gl_FragColor.a, 1.0, vFlow.w * 0.6);
         float fresnel = pow(1.0 - clamp(dot(normal, normalize(vViewPosition) * -1.0), 0.0, 1.0), 3.0);
@@ -177,6 +183,7 @@ export function createRiverLayer(skyColor) {
       const river = new Float32Array(n * n); // 1 in the river, 0 out in the lake it flows into
       const depth = new Float32Array(n * n); // of the water, for the lake's colours
       const ice = new Float32Array(n * n); // still water in cold lands freezes in winter
+      const tint = new Uint8Array(n * n);
       let any = false;
       for (let j = 0; j < n; j++) {
         for (let i = 0; i < n; i++) {
@@ -194,7 +201,8 @@ export function createRiverLayer(skyColor) {
           flow[k * 4 + 2] = w.pond ? 0 : (0.6 + Math.min(2.4, drop * 6)) * river[k];
           flow[k * 4 + 3] = Math.min(1, Math.max(0, (drop - 0.25) / 0.5));
           inset[k] = w.inset;
-          if (w.pond) ice[k] = generator.getSeasonality(x, z);
+          if (w.pond) ice[k] = w.tint === 2 ? 0 : generator.getSeasonality(x, z); // (hot springs never freeze)
+          tint[k] = w.tint || 0;
           any = true;
         }
       }
@@ -213,7 +221,10 @@ export function createRiverLayer(skyColor) {
         const deep = smoothstep(0, 3, (inset[a] + inset[b] + inset[c]) / 3);
         const t = smoothstep(-1, 16, (depth[a] + depth[b] + depth[c]) / 3);
         lakeColor.copy(LAKE_SHALLOW).lerp(LAKE_DEEP, t);
-        color.copy(SHALLOW).lerp(DEEP, deep).lerp(lakeColor, 1 - r).multiplyScalar(shade);
+        color.copy(SHALLOW).lerp(DEEP, deep).lerp(lakeColor, 1 - r);
+        const tt = Math.max(tint[a], tint[b], tint[c]);
+        if (tt) color.copy(TINTS[tt][0]).lerp(TINTS[tt][1], deep);
+        color.multiplyScalar(shade);
         // Where two rivers meet, their distances along don't match: no
         // streaks on the few faces that straddle the two.
         const spread = Math.max(flow[a * 4], flow[b * 4], flow[c * 4]) - Math.min(flow[a * 4], flow[b * 4], flow[c * 4]);

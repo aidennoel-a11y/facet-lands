@@ -12,6 +12,8 @@ import { createRiverLayer } from './world/layers/RiverLayer.js';
 import { createReedLayer } from './world/layers/ReedLayer.js';
 import { createLilyLayer } from './world/layers/LilyLayer.js';
 import { createVentLayer } from './world/layers/VentLayer.js';
+import { createGeyserLayer } from './world/layers/GeyserLayer.js';
+import { createCoralLayer } from './world/layers/CoralLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
@@ -76,6 +78,8 @@ chunks.addLayer(createRiverLayer(dayNight.horizon));
 chunks.addLayer(createReedLayer(WORLD));
 chunks.addLayer(createLilyLayer(WORLD));
 chunks.addLayer(createVentLayer(WORLD));
+chunks.addLayer(createGeyserLayer(WORLD));
+chunks.addLayer(createCoralLayer(WORLD));
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
 scene.add(farTrees.group);
@@ -388,21 +392,31 @@ function coldHere(dt) {
   return cold.value;
 }
 
-// Dawn mist over the wetlands: thickest around sunrise, gone by mid
-// morning, low down (fly up out of it).
+// Morning fog: on most mornings mist lies over the low country and in
+// the valleys, thickest around sunrise and burnt off by mid-morning (fly
+// up out of it); thinner over dry land, and always there over the
+// wetlands.
 const MIST = new THREE.Color(0xdfe5e8);
-const mistState = { marsh: 0, wait: 0, value: 0 };
+const mistState = { marsh: 0, dry: 0, wait: 0, value: 0, day: 0, lastHour: 0 };
 function marshMist(dt) {
   mistState.wait -= dt;
   if (mistState.wait <= 0) {
     mistState.wait = 0.5;
     const p = camera.position;
-    mistState.marsh = sheltered ? 0 : generator.getBiomeWeights(p.x, p.z, {}).wetland;
+    const w = generator.getBiomeWeights(p.x, p.z, {});
+    mistState.marsh = sheltered ? 0 : w.wetland;
+    mistState.dry = w.desert + 0.5 * w.savanna;
   }
   const h = dayNight.hour;
+  if (h < mistState.lastHour - 12) mistState.day++;
+  mistState.lastHour = h;
+  // Each morning is foggy or not (about three in five are).
+  const roll = Math.abs(Math.sin(mistState.day * 12.9898 + 0.2) * 43758.5453) % 1;
+  const foggy = roll < 0.6 ? 0.45 + roll * 0.6 : 0;
   const dawn = smooth(4.3, 5.8, h) * (1 - smooth(8, 9.8, h));
   const low = 1 - smooth(20, 90, camera.position.y);
-  const target = mistState.marsh * dawn * low;
+  const valley = 1 - smooth(WORLD.seaLevel + 40, WORLD.seaLevel + 150, camera.position.y);
+  const target = Math.max(mistState.marsh * low, sheltered ? 0 : foggy * valley * (1 - 0.8 * mistState.dry)) * dawn;
   mistState.value += (target - mistState.value) * Math.min(1, dt / 2);
   return mistState.value < 0.002 ? 0 : mistState.value;
 }
@@ -454,6 +468,8 @@ function tick(now) {
   // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)
   lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getBaseHeight(x, z), sound, sheltered);
   dayNight.update(dt, camera.position, weather);
+  // The ground gets wet in the rain (puddles), and dries off over a few minutes.
+  seasonUniforms.uWet.value = Math.min(1, Math.max(0, seasonUniforms.uWet.value + (weather.rain > 0.2 ? dt / 20 : -dt / 240)));
   shadowReach(dt);
   // Rain closes the view in, and so does the mist that lies over the
   // wetlands at dawn.

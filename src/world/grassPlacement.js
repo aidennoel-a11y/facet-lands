@@ -50,6 +50,8 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       const jitter = generator.getColorJitter(wx, wz);
       const colourHeight = ground + jitter;
       if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > 140) continue;
+      if (ground > 130 && generator.getGlacier(wx, wz, ground) > 0.3) continue; // nor on the ice
+      if (generator.onSinter && generator.getBiomeWeights(wx, wz, {}).volcanic > 0.5 && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
       // How much grass the biome here grows.
       if (keep > density * generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass) continue;
       const river = generator.rivers?.at(wx, wz, 3);
@@ -60,9 +62,11 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       colors.set([color.r * v, color.g * v, color.b * v], count * 3);
 
       const s = 0.7 + hash2(gi, gj, seed + 4) * 0.7;
+      // On the open plains the grass grows long.
+      const long = 1 + 0.9 * generator.getPlainness(wx, wz);
       position.set(lx, ground - 0.05, lz);
       rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 5) * Math.PI * 2);
-      scale.set(s, s * (0.8 + hash2(gi, gj, seed + 6) * 0.5), s);
+      scale.set(s, s * (0.8 + hash2(gi, gj, seed + 6) * 0.5) * long, s);
       matrix.compose(position, rotation, scale).toArray(matrices, count * 16);
       count++;
     }

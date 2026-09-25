@@ -79,6 +79,8 @@ export class Rivers {
     if (this.riverRegions.has(k)) return;
     this.riverRegions.add(k);
     this.#craterLakes(rx, rz);
+    this.#alpineLakes(rx, rz);
+    this.#hotSprings(rx, rz);
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     let made = 0;
@@ -129,6 +131,54 @@ export class Rivers {
         this.#add(course, pond, 'stream', course.tarn);
         made++;
       }
+    }
+    this.#cliffFalls(rx, rz, rand, siblings);
+  }
+
+  /**
+   * Waterfalls off cliffs: now and then a spring on top of an escarpment
+   * or a sea cliff (never a mesa) feeds a little stream that runs to the
+   * edge and pours over it, into the sea or on down the land below.
+   */
+  #cliffFalls(rx, rz, rand, siblings) {
+    const g = this.generator;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      let x = (rx + rand()) * REGION;
+      let z = (rz + rand()) * REGION;
+      const f = g.getFeatures(x, z);
+      if (f.mesa > 0.05) continue;
+      if (!(f.escarp > 0.5 && f.escarpHeight > 6) && !(g.getSeaCliff(x, z) > 0.5)) continue;
+      const h = g.getBaseHeight(x, z);
+      if (h < this.seaLevel + 8) continue;
+      // Find the nearest edge (where the land drops away sharply), and
+      // put the spring a little way back from it on the top.
+      let edge = null;
+      for (let d = 30; d <= 180 && !edge; d += 30) {
+        for (let k = 0; k < 12; k++) {
+          const a = (k / 12) * Math.PI * 2;
+          if (h - g.getBaseHeight(x + Math.cos(a) * d, z + Math.sin(a) * d) > 8) {
+            edge = { a, d };
+            break;
+          }
+        }
+      }
+      if (!edge) continue;
+      const back = Math.max(0, edge.d - 45);
+      x += Math.cos(edge.a) * back;
+      z += Math.sin(edge.a) * back;
+      if (g.getFeatures(x, z).mesa > 0.05) continue;
+      const pond = this.#pond(x, z, 4 + rand() * 3, rand, 0.3);
+      if (!pond) continue;
+      pond.cliff = true;
+      const course = this.#trace(pond, 'stream', rand, siblings);
+      if (!course || course.length < 4) continue;
+      // It must really go over: one drop of 5 m or more between two points.
+      let fall = 0;
+      for (let i = 0; i < course.length - 1; i++) fall = Math.max(fall, course[i].level - course[i + 1].level);
+      if (fall < 5) continue;
+      siblings.push(...course);
+      this.#add(course, pond, 'stream', course.tarn);
+      return;
     }
   }
 
@@ -216,13 +266,15 @@ export class Rivers {
     let pz = source.start ? source.start.z : source.z;
     let dir = source.outlet ? [...source.outlet] : null;
     let level = source.level;
+    // (A spring on a cliff top stays a stream until it has gone over the edge.)
+    let fell = !source.cliff;
     const steps = stream ? STREAM_STEPS + RIVER_STEPS : RIVER_STEPS;
     for (let i = 0; i < steps; i++) {
       const b = g.getBaseHeight(px, pz);
       const gx = (g.getBaseHeight(px + 4, pz) - g.getBaseHeight(px - 4, pz)) / 8;
       const gz = (g.getBaseHeight(px, pz + 4) - g.getBaseHeight(px, pz - 4)) / 8;
       const slope = Math.hypot(gx, gz);
-      if (stream && i > 8 && slope < 0.15 && g.getMountainness(px, pz) < 0.15) {
+      if (stream && fell && i > 8 && slope < 0.15 && g.getMountainness(px, pz) < 0.15) {
         stream = false;
         lowland = points.length;
       }
@@ -266,6 +318,7 @@ export class Rivers {
       const cascade = stream && slope > 0.15;
       if (cascade && target < level - 0.02) {
         const next = Math.max(this.seaLevel + 0.03, target - (1.5 + rand() * 2));
+        if (level - next > 3) fell = true;
         if (points.length) points.push({ x: px - dir[0] * 4, z: pz - dir[1] * 4, level: level - 0.02, width: 0, cascade: true });
         level = next;
       } else if (stream) {
@@ -380,6 +433,63 @@ export class Rivers {
     for (const c of g.volcanoes(x0, z0, x0 + REGION, z0 + REGION)) {
       if (!c.lake || c.x < x0 || c.x >= x0 + REGION || c.z < z0 || c.z >= z0 + REGION) continue;
       const pond = { x: c.x, z: c.z, r: c.rc * 0.6, level: g.getBaseHeight(c.x, c.z) + c.depth * 0.35, seed: c.seed, natural: true, crater: true };
+      const r = pond.r * 1.3 + 30;
+      this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
+      const m = pond.r * 1.3 + 2;
+      this.list.push({ points: [], pond, tarn: null, kind: 'lake', id: this.list.length, bounds: { minX: pond.x - m, maxX: pond.x + m, minZ: pond.z - m, maxZ: pond.z + m } });
+    }
+  }
+
+  /**
+   * Alpine lakes: now and then a lake a few dozen metres across lies in
+   * a hollow high in the mountains, milky turquoise with rock flour from
+   * the glaciers (at most one per region).
+   */
+  #alpineLakes(rx, rz) {
+    const g = this.generator;
+    const rand = mulberry32(hash2(rx, rz, this.seed ^ 0xa1be) * 4294967296);
+    if (rand() > 0.6) return;
+    for (let attempt = 0; attempt < 25; attempt++) {
+      let x = (rx + rand()) * REGION, z = (rz + rand()) * REGION;
+      if (g.getMountainness(x, z) < 0.85) continue;
+      // Roll on down into the hollow below.
+      for (let k = 0; k < 30; k++) {
+        const gx = (g.getBaseHeight(x + 5, z) - g.getBaseHeight(x - 5, z)) / 10;
+        const gz = (g.getBaseHeight(x, z + 5) - g.getBaseHeight(x, z - 5)) / 10;
+        const slope = Math.hypot(gx, gz);
+        if (slope < 0.02) break;
+        x -= (gx / slope) * 8;
+        z -= (gz / slope) * 8;
+      }
+      // (A hollow belongs to the region it lies in, so two never share one.)
+      if (Math.floor(x / REGION) !== rx || Math.floor(z / REGION) !== rz) continue;
+      const h = g.getBaseHeight(x, z);
+      if (h < 110 || h > 260) continue;
+      if (g.getBiomeWeights(x, z, {}).temperate < 0.5) continue;
+      const pond = this.#pond(x, z, 14 + rand() * 16, rand, 0.35);
+      if (!pond || pond.level < h + 0.3) continue; // it needs a real hollow to hold it
+      pond.tint = 1;
+      pond.alpine = true;
+      const r = pond.r * 1.3 + 30;
+      this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
+      const m = pond.r * 1.3 + 2;
+      this.list.push({ points: [], pond, tarn: null, kind: 'lake', id: this.list.length, bounds: { minX: pond.x - m, maxX: pond.x + m, minZ: pond.z - m, maxZ: pond.z + m } });
+      return;
+    }
+  }
+
+  /** The pools of the hot springs in this region (see TerrainGenerator.hotSprings). */
+  #hotSprings(rx, rz) {
+    const g = this.generator;
+    if (!g.hotSprings) return;
+    const x0 = rx * REGION, z0 = rz * REGION;
+    const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x40c5) * 4294967296);
+    for (const sp of g.hotSprings(x0, z0, x0 + REGION, z0 + REGION)) {
+      if (sp.geyser || sp.x < x0 || sp.x >= x0 + REGION || sp.z < z0 || sp.z >= z0 + REGION) continue;
+      const pond = this.#pond(sp.x, sp.z, sp.r, rand, Infinity);
+      if (!pond) continue;
+      pond.tint = 2;
+      pond.hot = true;
       const r = pond.r * 1.3 + 30;
       this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
       const m = pond.r * 1.3 + 2;
@@ -553,7 +663,7 @@ export class Rivers {
         const r = Rivers.pondRadius(pond, x, z);
         const half = Math.max(r, 4.5);
         if (d > half + margin) continue;
-        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, crater: !!pond.crater, fx: 0, fz: 0, drop: 0 };
+        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, crater: !!pond.crater, alpine: !!pond.alpine, hot: !!pond.hot, fx: 0, fz: 0, drop: 0 };
         continue;
       }
       Rivers.#measure(item, x, z, m);
@@ -591,7 +701,7 @@ export class Rivers {
         ({ d, half, level, fx, fz, drop, along, end } = m);
       }
       if (d > half + margin) continue;
-      const found = { level, fx, fz, drop, along, across: d / half, inset: half - d, pond };
+      const found = { level, fx, fz, drop, along, across: d / half, inset: half - d, pond, tint: pond ? item.pond.tint || 0 : 0 };
       if (d - half < bestGap) {
         bestGap = d - half;
         best = found;

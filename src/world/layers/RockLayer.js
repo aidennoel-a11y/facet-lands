@@ -13,6 +13,7 @@ import {
 } from 'three';
 import { hash2, mulberry32 } from '../../noise/random.js';
 import { ROCK_SHAPE_COUNT, rockCandidates } from '../rockCandidates.js';
+import { seasonalRocks } from '../../render/Seasons.js';
 
 const STONE = [0x8b8696, 0x7d7888, 0x938e9c, 0x736f7e];
 const SANDSTONE = [0xc08c66, 0xb5825e, 0xc99a70, 0xab7a58];
@@ -90,7 +91,7 @@ const scale = new Vector3();
  * onto a big one's top if you jump, and walk into its side as a wall.
  */
 export function createRockLayer(config) {
-  const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const material = seasonalRocks(new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
 
   const cache = { generator: null, map: new Map() }; // chunk -> rock candidates
 
