@@ -15,14 +15,15 @@ function stem() {
   return g;
 }
 
-/** Its head: five petals round a centre, facing up, at the top of the stem. */
+/** Its heads: a little bunch of three, each five petals round a centre, at the top. */
 function head() {
   const pos = [];
-  const R = 0.075;
-  for (let k = 0; k < 5; k++) {
-    const a = (k / 5) * Math.PI * 2, b = a + 0.5, c = a - 0.5;
-    pos.push(0, 0.47, 0, Math.cos(c) * R, 0.45, Math.sin(c) * R, Math.cos(b) * R, 0.45, Math.sin(b) * R);
-    pos.push(0, 0.47, 0, Math.cos(b) * R, 0.45, Math.sin(b) * R, Math.cos(c) * R, 0.45, Math.sin(c) * R);
+  const R = 0.12;
+  for (const [ox, oy, oz, sc] of [[0, 0.47, 0, 1], [0.1, 0.4, 0.06, 0.8], [-0.07, 0.36, -0.09, 0.7]]) {
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * Math.PI * 2, b = a + 0.5, c = a - 0.5, r = R * sc;
+      pos.push(ox, oy + 0.02, oz, ox + Math.cos(c) * r, oy, oz + Math.sin(c) * r, ox + Math.cos(b) * r, oy, oz + Math.sin(b) * r);
+    }
   }
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
@@ -72,7 +73,7 @@ export function createFlowerLayer(config) {
       let any = 0;
       for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, generator.getMeadow(x0 + (i * size) / 4, z0 + (j * size) / 4));
       if (any < 0.05) return null;
-      const G = 1.3, n = Math.round(size / G), seed = generator.seed ^ 0xf10e;
+      const G = 1.0, n = Math.round(size / G), seed = generator.seed ^ 0xf10e;
       const surface = { normalY: 1 };
       const list = [];
       let cell = -1, meadow = 0;
@@ -80,7 +81,7 @@ export function createFlowerLayer(config) {
         for (let i = 0; i < n; i++) {
           const gi = cx * n + i, gj = cz * n + j;
           const keep = hash2(gi, gj, seed);
-          if (keep > 0.55) continue;
+          if (keep > 0.7) continue;
           const lx = (i + hash2(gi, gj, seed + 1)) * G, lz = (j + hash2(gi, gj, seed + 2)) * G;
           // (The meadow looked up once per 8 m patch.)
           const c = Math.floor(lx / 8) * 64 + Math.floor(lz / 8);
@@ -88,7 +89,7 @@ export function createFlowerLayer(config) {
             cell = c;
             meadow = generator.getMeadow(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4);
           }
-          if (keep > 0.55 * meadow) continue;
+          if (keep > 0.7 * meadow) continue;
           const y = groundHeightAt(lx, lz, surface);
           if (!(y > sea + 1.5) || surface.normalY < 0.85 || y > 150) continue;
           // A few colours to a patch.

@@ -206,8 +206,8 @@ export class BiomeMap {
     for (let tz = Math.floor(z0 / span); tz * span < z0 + n * scale; tz++) {
       for (let tx = Math.floor(x0 / span); tx * span < x0 + n * scale; tx++) {
         const tile = this.tiles.get(`${scale}:${tx}:${tz}`);
-        const px = (tx * span - x0) / scale, py = (tz * span - z0) / scale;
-        if (tile && tile !== 'pending') ctx.drawImage(tile.canvas, px, py, TILE, TILE);
+        const px = Math.round((tx * span - x0) / scale), py = Math.round((tz * span - z0) / scale); // (whole pixels: no seams)
+        if (tile && tile !== 'pending') ctx.drawImage(tile.canvas, px, py, TILE + 1, TILE + 1);
         else if (!tile) want.push([tx, tz, Math.hypot(px + TILE / 2 - n / 2, py + TILE / 2 - n / 2)]);
       }
     }

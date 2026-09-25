@@ -201,13 +201,13 @@ const skyFragment = /* glsl */ `
         float fk = float(k);
         float base = 0.1 + 0.12 * fk + 0.05 * sin(az * (2.0 + fk) + time * 0.04 + fk * 2.0) + 0.03 * sin(az * 7.0 - time * 0.09 + fk);
         float above = up - base;
-        float rise = smoothstep(-0.015, 0.01, above) * exp(-max(above, 0.0) * (4.0 - 1.2 * fk));
-        float rays = 0.55 + 0.45 * sin(az * 70.0 + 5.0 * vnoise(vec3(az * 6.0, time * 0.12 + fk * 5.0, 0.0)));
+        float rise = smoothstep(-0.015, 0.01, above) * exp(-max(above, 0.0) * (5.5 - 1.5 * fk));
+        float rays = 0.7 + 0.3 * sin(az * 70.0 + 5.0 * vnoise(vec3(az * 6.0, time * 0.12 + fk * 5.0, 0.0)));
         float ripple = 0.35 + 0.65 * vnoise(vec3(az * 4.0 - time * 0.05, fk * 3.0, time * 0.03));
         float c = rise * rays * ripple;
         auroraCol += mix(vec3(0.18, 1.0, 0.45), vec3(0.75, 0.2, 0.75), smoothstep(0.03, 0.2, above)) * c;
       }
-      col += auroraCol * north * aurora * starsShow * 0.8;
+      col += auroraCol * north * aurora * starsShow * 0.5;
     }
 
     // Now and then a shooting star streaks across.
