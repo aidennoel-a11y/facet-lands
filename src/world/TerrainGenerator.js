@@ -1006,7 +1006,11 @@ export class TerrainGenerator {
         const a = hash2(k, Math.floor(c.x), s + 1) * Math.PI * 2;
         const r = k < 3 ? c.rc * (0.5 + 0.55 * hash2(k, Math.floor(c.z), s + 2)) : c.R * (0.3 + 0.25 * hash2(k, 7, s + 3));
         const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
-        if (x >= minX && x < maxX && z >= minZ && z < maxZ) out.push({ x, z, strength: 0.6 + 0.4 * hash2(k, 3, s + 4), lake: c.lake && r < c.rc * 0.62 });
+        if (x >= minX && x < maxX && z >= minZ && z < maxZ) {
+          const lake = c.lake && r < c.rc * 0.62;
+          // (On a crater lake, at its water: as Rivers lays it, a third of the way up from the crater's floor.)
+          out.push({ x, z, strength: 0.6 + 0.4 * hash2(k, 3, s + 4), lake, level: lake ? this.getBaseHeight(c.x, c.z) + c.depth * 0.35 : undefined });
+        }
       }
     }
     // Hot springs steam gently; geysers breathe steam between eruptions.

@@ -160,7 +160,7 @@ function buildEntrance(e, generator, groundHeightAt, x0, z0) {
   const ground = (u, v) => {
     const [x, z] = CaveField.world(e, u, v);
     const h = groundHeightAt(x - x0, z - z0);
-    return Number.isFinite(h) ? h : generator.getHeight(x, z);
+    return Number.isFinite(h) ? h : generator.getBaseHeight(x, z);
   };
   const jitter = (u, v, k) => hash2(Math.round(u * 13 + v * 3), Math.round(v * 13 - u * 5), generator.seed + k);
   // Faces in the pit look in towards the middle of it.

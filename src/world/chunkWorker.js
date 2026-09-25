@@ -8,6 +8,8 @@ import { rockCandidates } from './rockCandidates.js';
 import { packFarTrees, placeTrees } from './treePlacement.js';
 import { placeGrass } from './grassPlacement.js';
 import { waterData } from './waterData.js';
+import { riverData } from './riverData.js';
+import { reedData } from './reedData.js';
 import { minimapPixels } from '../ui/minimapPixels.js';
 
 let world = null; // { seed, generator }
@@ -24,12 +26,17 @@ function rocksAt(cx, cz, config) {
 }
 
 self.onmessage = (event) => {
-  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarTrees } = event.data;
+  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarTrees, wantRivers } = event.data;
   if (!world || world.seed !== seed) {
     world = { seed, generator: new TerrainGenerator(seed, config) };
     rocks.clear();
   }
   const g = world.generator;
+  if (event.data.kind === 'describe') {
+    // What kind of country the player is in (for the panel).
+    self.postMessage({ id, result: g.describe(event.data.x, event.data.z) });
+    return;
+  }
   if (event.data.kind === 'minimap') {
     const { n, s, seaLevel } = event.data;
     const result = minimapPixels(g, cx, cz, n, s, seaLevel);
@@ -53,6 +60,16 @@ self.onmessage = (event) => {
   // The lake or sea over it, if any.
   out.water = waterData(g, config, cx, cz, heights);
   if (out.water) for (const a of Object.values(out.water)) transfer.push(a.buffer);
+  // River, stream and pond water, and the reeds along their banks.
+  if (wantRivers) {
+    out.river = riverData(g, config, cx, cz);
+    if (out.river) {
+      for (const k of ['positions', 'colors', 'flows', 'streaks', 'freezes']) transfer.push(out.river[k].buffer);
+      if (out.river.spray) for (const a of Object.values(out.river.spray)) transfer.push(a.buffer);
+    }
+    out.reeds = reedData(g, config, cx, cz, groundHeightAt, heights);
+    if (out.reeds) transfer.push(out.reeds.matrices.buffer, out.reeds.shades.buffer);
+  }
   if (wantTrees) {
     // Where the trees stand, off the boulders (as RockLayer.bouldersNear).
     const cells = Math.round(config.chunkSize / config.treeSpacing);

@@ -76,8 +76,8 @@ export function createLavaLayer(config) {
             const px = c.x + ca * d, pz = c.z + sa * d;
             const lx = px - sa * half, lz = pz + ca * half, rx = px + sa * half, rz = pz - ca * half;
             const row = [
-              [lx, generator.getHeight(lx, lz) + 0.35, lz, d, -half],
-              [rx, generator.getHeight(rx, rz) + 0.35, rz, d, half],
+              [lx, generator.getBaseHeight(lx, lz) + 0.35, lz, d, -half],
+              [rx, generator.getBaseHeight(rx, rz) + 0.35, rz, d, half],
             ];
             if (prev) {
               push(...prev[0]); push(...row[0]); push(...prev[1]);

@@ -64,7 +64,7 @@ export function createCoralLayer(config) {
 
     reuseKey: ({ lod }) => (lod > 1 ? 'none' : 'near'),
 
-    build({ cx, cz, lod, heights, generator }) {
+    build({ cx, cz, lod, heights, generator, groundHeightAt }) {
       if (lod > 1) return null;
       const size = config.chunkSize;
       const sea = config.seaLevel;
@@ -82,7 +82,8 @@ export function createCoralLayer(config) {
           const gi = cx * cells + i, gj = cz * cells + j;
           if (hash2(gi, gj, seed) > 0.55) continue;
           const wx = x0 + (i + hash2(gi, gj, seed + 1)) * step, wz = z0 + (j + hash2(gi, gj, seed + 2)) * step;
-          const ground = generator.getHeight(wx, wz);
+          const ground = groundHeightAt(wx - x0, wz - z0);
+          if (!Number.isFinite(ground)) continue;
           const reef = generator.getReef(wx, wz, ground);
           if (hash2(gi, gj, seed + 3) > reef) continue;
           const kind = Math.floor(hash2(gi, gj, seed + 4) * shapes.length);

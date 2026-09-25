@@ -60,10 +60,16 @@ export function createGeyserLayer(config) {
 
     reuseKey: ({ lod }) => (lod > 2 ? 'none' : 'near'),
 
-    build({ cx, cz, lod, generator }) {
+    build({ cx, cz, lod, generator, groundHeightAt }) {
       if (lod > 2 || !generator.hotSprings) return null;
       const size = config.chunkSize;
       const x0 = cx * size, z0 = cz * size;
+      // (The ground from the chunk's own surface where it can; the land
+      // before rivers just past its edge.)
+      const ground = (x, z) => {
+        const h = x >= x0 && z >= z0 && x < x0 + size && z < z0 + size ? groundHeightAt(x - x0, z - z0) : NaN;
+        return Number.isFinite(h) ? h : generator.getBaseHeight(x, z);
+      };
       const springs = generator.hotSprings(x0, z0, x0 + size, z0 + size).filter((g) => g.x >= x0 && g.x < x0 + size && g.z >= z0 && g.z < z0 + size);
       if (!springs.length) return null;
       const group = new Group();
@@ -71,7 +77,7 @@ export function createGeyserLayer(config) {
       const starts = [], drops = [], cycles = [], rims = [], vents = [];
       const seed = generator.seed ^ 0x6e75;
       for (const g of springs) {
-        const y = generator.getHeight(g.x, g.z);
+        const y = ground(g.x, g.z);
         if (y < config.seaLevel + 1) continue;
         const h = (k, n) => hash2(Math.floor(g.x) + k * 13, Math.floor(g.z) - k * 7, seed + n);
         // A rim of sinter slabs round the pool, or round the geyser's vent
@@ -83,13 +89,13 @@ export function createGeyserLayer(config) {
           const d = ring * (0.95 + 0.2 * h(k, 21));
           const px = g.x + Math.cos(a) * d, pz = g.z + Math.sin(a) * d;
           const s = (g.geyser ? 0.6 : 0.8) + 0.7 * h(k, 22);
-          rims.push([px - x0, generator.getHeight(px, pz) + 0.05, pz - z0, s, h(k, 23)]);
+          rims.push([px - x0, ground(px, pz) + 0.05, pz - z0, s, h(k, 23)]);
         }
         const apron = g.geyser ? 14 : Math.round(6 + g.r);
         for (let k = 0; k < apron; k++) {
           const a = h(k, 30) * Math.PI * 2, d = ring * (1.3 + 1.4 * h(k, 31));
           const px = g.x + Math.cos(a) * d, pz = g.z + Math.sin(a) * d;
-          rims.push([px - x0, generator.getHeight(px, pz) - 0.05, pz - z0, 0.7 + 0.9 * h(k, 32), h(k, 33)]);
+          rims.push([px - x0, ground(px, pz) - 0.05, pz - z0, 0.7 + 0.9 * h(k, 32), h(k, 33)]);
         }
         if (!g.geyser) continue;
         vents.push([g.x - x0, y, g.z - z0]);

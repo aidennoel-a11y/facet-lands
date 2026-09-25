@@ -153,7 +153,7 @@ export class Clouds {
       for (const t of [0, ahead]) {
         const x = p.x + ox * reach + this.wind.x * t;
         const z = p.z + oz * reach + this.wind.z * t;
-        highest = Math.max(highest, generator.getHeight(x, z));
+        highest = Math.max(highest, generator.getBaseHeight(x, z));
       }
     }
     return Math.max(baseY, highest + this.clearance - bottom);

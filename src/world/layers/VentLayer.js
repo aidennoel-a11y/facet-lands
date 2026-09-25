@@ -52,7 +52,8 @@ export function createVentLayer(config) {
       const starts = [], puffs = [];
       const seed = generator.seed ^ 0x5eab;
       for (const v of vents) {
-        const y = v.lake ? generator.rivers.at(v.x, v.z, 0)?.level ?? generator.getHeight(v.x, v.z) : generator.getHeight(v.x, v.z);
+        // (The land before rivers: a hot spring's steam rises from about its water.)
+        const y = v.level ?? generator.getBaseHeight(v.x, v.z);
         const count = Math.round(14 + 14 * v.strength);
         for (let k = 0; k < count; k++) {
           const h = (n) => hash2(Math.floor(v.x) + k * 17, Math.floor(v.z) - k * 11, seed + n);

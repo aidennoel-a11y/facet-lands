@@ -112,13 +112,13 @@ function placeCamera() {
   for (let i = 0; i < 400; i++) {
     const x = (i % 20) * 160 - 1600;
     const z = Math.floor(i / 20) * 160 - 1600;
-    const h = generator.getHeight(x, z);
+    const h = generator.getBaseHeight(x, z); // (the land before rivers: quick, and near enough)
     if (h > best.h) best = { x, z, h };
   }
   // Stand off to the south-east of the peak, looking at it.
   const x = best.x + 300;
   const z = best.z + 360;
-  camera.position.set(x, Math.max(generator.getHeight(x, z) + 50, 70), z);
+  camera.position.set(x, Math.max(generator.getBaseHeight(x, z) + 50, 70), z);
   controls.lookAt(new THREE.Vector3(best.x, best.h * 0.5, best.z));
 }
 
@@ -338,7 +338,8 @@ function useItem(clientX, clientY, item) {
 // the rock hides.
 function updateVisibility() {
   const p = camera.position;
-  const underground = p.y < generator.getHeight(p.x, p.z) - 1.5;
+  const here = chunks.groundHeightAt(p.x, p.z);
+  const underground = p.y < (Number.isFinite(here) ? here : generator.getBaseHeight(p.x, p.z)) - 1.5;
   const mouths = generator.caves.mouthsNear(p.x - 70, p.z - 70, p.x + 70, p.z + 70);
   const nearMouth = mouths.some((e) => Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z) < 60);
   const surface = !underground || nearMouth;
@@ -525,10 +526,24 @@ function tick(now) {
     if (document.activeElement !== ui.time) ui.time.value = dayNight.hour.toFixed(2);
     ui.alt.textContent = `${Math.round(camera.position.y)} m`;
     ui.speed.textContent = `${Math.round(controls.currentSpeed)} m/s`;
-    ui.biome.textContent = sheltered ? 'Cave' : generator.describe(camera.position.x, camera.position.z);
+    // (Worked out by a chunk worker, which knows the rivers already: the
+    // main thread never has to.)
+    if (sheltered) ui.biome.textContent = 'Cave';
+    else if (!describing) {
+      describing = true;
+      const { x, z } = camera.position;
+      chunks
+        .task({ kind: 'describe', x, z })
+        .catch(() => generator.describe(x, z))
+        .then((label) => {
+          if (!sheltered) ui.biome.textContent = label;
+        })
+        .finally(() => (describing = false));
+    }
   }
   requestAnimationFrame(tick);
 }
+let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.

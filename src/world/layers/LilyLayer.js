@@ -62,7 +62,7 @@ export function createLilyLayer(config) {
 
     reuseKey: ({ lod }) => (lod > 1 ? 'none' : 'near'),
 
-    build({ cx, cz, lod, heights, generator }) {
+    build({ cx, cz, lod, heights, generator, groundHeightAt }) {
       if (lod > 1) return null;
       const size = config.chunkSize;
       const sea = config.seaLevel;
@@ -83,7 +83,7 @@ export function createLilyLayer(config) {
           // In clusters.
           const patch = Math.sin(wx * 0.11 + Math.sin(wz * 0.08) * 2.5) * Math.sin(wz * 0.09 - Math.sin(wx * 0.06) * 2);
           if (hash2(gi, gj, seed) > patch * 1.4 - 0.35) continue;
-          const ground = generator.getHeight(wx, wz);
+          const ground = groundHeightAt(wx - x0, wz - z0);
           if (!(ground > sea - 1.8 && ground < sea - 0.25)) continue; // shallow, still water
           if (generator.getBiomeWeights(wx, wz, {}).wetland < 0.5) continue;
           const s = 0.45 + hash2(gi, gj, seed + 3) * 0.5;

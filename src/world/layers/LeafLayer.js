@@ -71,7 +71,7 @@ export function createLeafLayer() {
             const lx = t.x + Math.cos(a) * d, lz = t.z + Math.sin(a) * d;
             if (lx < 0 || lz < 0 || lx >= size || lz >= size) continue;
             const y = groundHeightAt(lx, lz);
-            if (!(y > generator.rivers.seaLevel + 0.5)) continue;
+            if (!(y > config.seaLevel + 0.5)) continue;
             const s = 0.6 + h(7 + k) * 0.9;
             position.set(lx, y, lz);
             rotation.setFromAxisAngle(up, h(10 + k) * Math.PI * 2);

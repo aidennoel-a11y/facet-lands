@@ -260,6 +260,7 @@ export class ChunkManager {
       wantTrees: job.lod <= config.treeMaxLod,
       wantGrass: job.lod <= config.grassMaxLod,
       wantFarTrees: job.lod > config.treeMaxLod && job.lod <= (config.farTreeMaxLod ?? -1),
+      wantRivers: job.lod <= 1,
     });
   }
 
@@ -444,7 +445,7 @@ export class ChunkManager {
       if (h !== null) return h;
     }
     if (this.generator.caves?.isHole(x, z)) return NaN; // a cave mouth
-    return this.generator.getHeight(x, z);
+    return this.generator.getBaseHeight(x, z); // (no chunk here yet: roughly, without working out the rivers)
   }
 
   get loadedCount() {
