@@ -1858,12 +1858,12 @@ export class TerrainGenerator {
   #hillsZoneRaw(x, z, range) {
     // (Never near volcanic country: the volcano noise must be well below
     // where its highlands begin.)
-    const zone = smoothstep(0.27, 0.43, this.hillsNoise.fbm(x * 0.00016 - 250, z * 0.00016 + 610, 2)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
+    const zone = smoothstep(0.07, 0.23, this.hillsNoise.fbm(x * 0.00016 - 250, z * 0.00016 + 610, 2)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
     if (zone <= 0) return 0;
     // (Whole stretches of country, a few kilometres across, not scraps.)
     // (And fading out gradually, well before the savanna: the country
     // within the best part of a kilometre must be green.)
-    const dryNear = 1 - smoothstep(0.38, 0.5, this.#aridAround(x, z));
+    const dryNear = 1 - smoothstep(0.43, 0.52, this.#aridAround(x, z));
     return zone * dryNear * (1 - smoothstep(0.02, 0.2, range)) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z)));
   }
 
