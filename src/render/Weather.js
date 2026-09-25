@@ -56,6 +56,7 @@ export class Weather {
     this._lastHour = null;
     this.hurry = 0; // seconds left of a quick change
     this.spring = 0; // how much it's spring (0..1): showery weather comes more often
+    this.upcoming = null; // the kind of weather that comes next, once it's decided
   }
 
   set(kind) {
@@ -73,6 +74,22 @@ export class Weather {
     this.sunsetMode = mode;
   }
 
+  /**
+   * The weather on its way, if it changes within the minute: { kind, in }
+   * (seconds until it starts to set in), else null.
+   */
+  get coming() {
+    return this.upcoming && this.upcoming !== this.kind ? { kind: this.upcoming, in: Math.max(0, this.nextChange) } : null;
+  }
+
+  /** How wet the weather on its way is (0..1), growing as it nears: rain showers, a storm's lightning. */
+  get approaching() {
+    const c = this.coming;
+    if (!c) return { rain: 0, storm: 0 };
+    const near = 1 - c.in / 60;
+    return { rain: WEATHER[c.kind].rain * near, storm: WEATHER[c.kind].storm * near };
+  }
+
   get label() {
     return WEATHER[this.kind].label;
   }
@@ -84,10 +101,16 @@ export class Weather {
   update(dt, hour) {
     if (this.auto) {
       this.nextChange -= dt;
+      // What's coming is decided a minute ahead, so it can be seen coming
+      // (see `coming`): showers and far-off lightning out on the horizon.
+      if (!this.upcoming && this.nextChange < 60) this.upcoming = Weather.#pick(NEXT[this.kind], this.spring);
       if (this.nextChange <= 0) {
-        this.kind = Weather.#pick(NEXT[this.kind], this.spring);
+        this.kind = this.upcoming ?? Weather.#pick(NEXT[this.kind], this.spring);
+        this.upcoming = null;
         this.nextChange = 100 + Math.random() * 140;
       }
+    } else {
+      this.upcoming = null;
     }
     // Roll the evening's sunset as the afternoon begins.
     if (this._lastHour !== null && this._lastHour < 14 && hour >= 14) this.sunsetQuality = Math.random();

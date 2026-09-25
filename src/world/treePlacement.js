@@ -91,8 +91,11 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const lake = trees && biome.id === 'temperate' ? generator.rivers.at(wx, wz, 30) : null;
       const lakeside = !!(lake && lake.alpine && lake.level < 170);
       if (lakeside) likely = Math.max(likely, 0.6);
+      // Palms round an oasis.
+      const oasis = biome.id === 'desert' && generator.oasisAt ? generator.oasisAt(wx, wz) : 0;
+      if (oasis > 0.2) likely = Math.max(likely, 0.45 * oasis);
       if (!trees || keep > likely) continue;
-      if (biome.id === 'desert' && generator.getFeatures(wx, wz).erg > 0.3) continue; // nothing grows in a dune sea
+      if (biome.id === 'desert' && oasis <= 0.2 && generator.getFeatures(wx, wz).erg > 0.3) continue; // nothing grows in a dune sea
       if (biome.id === 'volcanic' && hash2(gi, gj, seed + 15) < 0.92 * generator.getVolcanic(wx, wz).cone) continue; // cinder cones are nearly bare
       if (biome.id === 'volcanic' && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
       if (biome.id === 'blackHills' && generator.getFormation(wx, wz) > 3) continue; // nor up on the granite spires and domes
@@ -147,6 +150,12 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
         }
       }
       species ??= trees.species[trees.species.length - 1];
+      if (oasis > 0.2) species = { type: hash2(gi, gj, seed + 17) < 0.8 ? 'junglePalm' : 'dryBush' };
+      // Thickets of bamboo along the jungle's edges.
+      if (biome.id === 'jungle' || biome.id === 'temperate' || biome.id === 'wetland') {
+        const j = generator.getBiomeWeights(wx, wz, {}).jungle;
+        if (j > 0.05 && j < 0.75 && hash2(gi, gj, seed + 18) < 0.8 * Math.sin(Math.PI * (j - 0.05) / 0.7)) species = { type: 'bamboo' };
+      }
       // (Only cypresses, mangroves and dead trees stand out in the water.)
       if (marsh && ground < seaLevel + 0.4 && !IN_WATER.has(species.type)) continue;
 
@@ -175,7 +184,7 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 
 /** The kinds of tree, in a fixed order (far trees are packed by index). */
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
-  'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm'];
+  'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm', 'bamboo'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

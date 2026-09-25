@@ -140,6 +140,8 @@ export function seasonalTerrain(material, seaLevel) {
             float puddle = uWet * (1.0 - uWinter) * smoothstep(0.985, 0.995, abs(vSeasonUp)) * smoothstep(0.66, 0.7, seasonNoise(vSeasonWorld.xz * 0.28 + 7.0))
               * smoothstep(${(seaLevel + 1.0).toFixed(2)}, ${(seaLevel + 2.0).toFixed(2)}, vSeasonWorld.y);
             c = mix(c, c * 0.35 + vec3(0.1, 0.13, 0.17), puddle * 0.85);
+            // And all of it a shade darker while it's wet.
+            c *= 1.0 - 0.16 * uWet * (1.0 - uWinter);
             // Snow: on flat ground above the water in the lands with a cold
             // winter (sand and all; not the deserts), patchy as winter comes
             // and goes; and after a snowfall a thin layer over nearly
@@ -185,6 +187,30 @@ export function seasonalRocks(material) {
         );
     },
     'season-rocks',
+  );
+}
+
+/**
+ * Fallen logs and stumps: snow settles on their tops in winter and after a
+ * snowfall.
+ */
+export function seasonalWood(material) {
+  return hook(
+    material,
+    (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying float vWoodUp;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWoodUp = normalize((modelMatrix * instanceMatrix * vec4(normal, 0.0)).xyz).y;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying float vWoodUp;`)
+        .replace(
+          '#include <color_fragment>',
+          /* glsl */ `#include <color_fragment>
+          float snow = clamp(max(uWinter * 0.9, uSnowfall) * smoothstep(0.35, 0.75, vWoodUp), 0.0, 1.0);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.93), snow);`,
+        );
+    },
+    'season-wood',
   );
 }
 

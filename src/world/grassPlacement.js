@@ -52,7 +52,8 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > 140) continue;
       if (generator.onSinter && generator.getBiomeWeights(wx, wz, {}).volcanic > 0.5 && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
       // How much grass the biome here grows.
-      if (keep > density * generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass) continue;
+      const oasis = generator.oasisAt ? generator.oasisAt(wx, wz) : 0;
+      if (keep > density * Math.max(generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass, oasis)) continue;
       const river = generator.rivers?.at(wx, wz, 3);
       if (river && river.d < river.water + 2.5) continue; // nor on a river's muddy banks (reeds grow there)
 

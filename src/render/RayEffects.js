@@ -39,6 +39,8 @@ const fragmentShader = /* glsl */ `
   uniform vec3 sunColor;
   uniform float shaftStrength;
   uniform float shaftReach;
+  uniform float haze; // heat haze, 0..1
+  uniform float time;
 
   varying vec2 vUv;
 
@@ -61,7 +63,16 @@ const fragmentShader = /* glsl */ `
   }
 
   void main() {
-    vec3 color = texture2D(tColor, vUv).rgb;
+    // Heat haze: over hot ground the view shimmers, the more the further
+    // off, and a mirage wavers along the horizon.
+    vec2 cuv = vUv;
+    if (haze > 0.0) {
+      float d0 = texture2D(tDepth, vUv).x;
+      float far = d0 < 1.0 ? smoothstep(30.0, 320.0, -viewPosition(vUv).z) : step(texture2D(tDepth, vUv - vec2(0.0, 0.015)).x, 0.9999);
+      vec2 wob = vec2(sin(vUv.y * 420.0 + time * 7.0 + sin(vUv.x * 30.0 + time * 1.3) * 3.0), 0.6 * sin(vUv.y * 260.0 - time * 5.0 + vUv.x * 24.0));
+      cuv += wob * haze * far * 0.0011;
+    }
+    vec3 color = texture2D(tColor, cuv).rgb;
     float depth = texture2D(tDepth, vUv).x;
     float jitter = noise(gl_FragCoord.xy);
 
@@ -154,6 +165,8 @@ export class RayEffects {
       sunColor: { value: new Color() },
       shaftStrength: { value: 0.55 },
       shaftReach: { value: 1.6 },
+      haze: { value: 0 },
+      time: { value: 0 },
     };
 
     this.quad = new Mesh(
@@ -198,6 +211,8 @@ export class RayEffects {
     u.sunColor.value.copy(light.color);
     u.shaftStrength.value = light.strength;
     u.shaftReach.value = light.reach ?? 1.6;
+    u.haze.value = light.haze ?? 0;
+    u.time.value = (performance.now() / 1000) % 1000;
 
     renderer.render(this.screen, this.screenCamera);
   }

@@ -1,7 +1,12 @@
 /**
- * Weather sounds, made on the fly with the Web Audio API (no sound files):
- * the hiss and patter of rain, and thunder, a sharp crack for a close strike
- * and a long low rumble for a distant one.
+ * Sounds, made on the fly with the Web Audio API (no sound files):
+ *  - weather: the hiss and patter of rain, and thunder, a sharp crack for
+ *    a close strike and a long low rumble for a distant one;
+ *  - the country round you (see ambience): wind, stronger up high; surf
+ *    on the coast; birdsong in the woods by day (a dawn chorus at
+ *    sunrise); insects buzzing in the jungle and the savanna heat;
+ *    crickets in the grass at night; frogs in the wetlands of an evening;
+ *    the low roar of molten lava; and the hush of snow.
  *
  * Browsers only allow sound after the page has been clicked or a key
  * pressed, so it starts on the first one. Underground, everything is muffled.
@@ -66,6 +71,165 @@ export class Sound {
     roarGain.gain.value = 0.6;
     roar.connect(roarGain).connect(this.rainGain);
     roar.start();
+
+    this.#initAmbience();
+  }
+
+  // Continuous beds of sound, each a looped noise through a filter into its own gain.
+  #bed(buffer, type, frequency, q = 1) {
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+    src.playbackRate.value = 0.9 + Math.random() * 0.2;
+    const filter = ctx.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(filter).connect(gain).connect(this.muffle);
+    src.start(0, Math.random() * 3);
+    return { gain, filter };
+  }
+
+  #initAmbience() {
+    const ctx = this.ctx;
+    this.beds = {
+      wind: this.#bed(this.brownNoise, 'bandpass', 420, 0.6),
+      gust: this.#bed(this.noise, 'bandpass', 900, 0.8),
+      surf: this.#bed(this.brownNoise, 'lowpass', 520, 0.7),
+      lava: this.#bed(this.brownNoise, 'lowpass', 110, 0.9),
+      insects: this.#bed(this.noise, 'bandpass', 5200, 6),
+    };
+    // Insects buzz: their hiss throbbing twenty-odd times a second.
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 23;
+    const depth = ctx.createGain();
+    depth.gain.value = 0;
+    lfo.connect(depth).connect(this.beds.insects.gain.gain);
+    lfo.start();
+    this.insectDepth = depth;
+    this.env = null;
+    this.nextBird = 0;
+    this.nextCricket = 0;
+    this.nextFrog = 0;
+  }
+
+  /**
+   * What's around you (each 0..1): { woods, jungle, grass, wetland, ocean,
+   * lava, high, snowy, day, dawn, dusk, wind, rain }. Call every frame; the
+   * mix eases towards it.
+   */
+  ambience(env) {
+    if (!this.ctx || !this.beds) return;
+    this.env = env;
+    const t = this.ctx.currentTime;
+    const e = env, quiet = 1 - 0.6 * e.snowy; // snow deadens everything
+    const set = (bed, v, lag = 1.5) => bed.gain.gain.setTargetAtTime(v, t, lag);
+    set(this.beds.wind, (0.025 + 0.09 * e.high + 0.05 * e.wind) * (0.7 + 0.3 * quiet));
+    set(this.beds.gust, (0.006 + 0.03 * e.high * e.wind + 0.015 * e.wind) * quiet);
+    this.beds.wind.filter.frequency.setTargetAtTime(300 + 260 * e.wind + 120 * Math.sin(t * 0.13), t, 2);
+    // The surf: waves rolling in every seven seconds or so.
+    const swell = 0.55 + 0.45 * Math.sin(t * 0.9 + Math.sin(t * 0.23) * 1.5);
+    set(this.beds.surf, 0.12 * e.ocean * swell * quiet, 0.8);
+    set(this.beds.lava, 0.2 * e.lava);
+    const buzz = (0.018 * e.jungle + 0.012 * e.grass * (1 - e.woods)) * e.day * (1 - e.rain) * quiet;
+    set(this.beds.insects, buzz);
+    this.insectDepth.gain.setTargetAtTime(buzz * 0.8, t, 1.5);
+
+    // Birds sing in the woods by day, most at dawn; crickets chirp in the
+    // grass at night; frogs croak in the wetlands, from dusk on.
+    const birds = (e.woods * 0.7 + e.jungle + 0.25 * e.grass) * Math.max(e.day * 0.6, e.dawn * 1.6) * (1 - e.rain) * quiet;
+    if (birds > 0.05 && t > this.nextBird) {
+      this.#chirp(birds, e.jungle);
+      this.nextBird = t + (0.4 + Math.random() * 3.5) / Math.min(2, birds);
+    }
+    const crickets = (e.grass + 0.6 * e.woods + 0.5 * e.jungle) * (1 - e.day) * (1 - e.rain) * quiet;
+    if (crickets > 0.08 && t > this.nextCricket) {
+      this.#cricket(crickets);
+      this.nextCricket = t + 0.25 + Math.random() * 1.2 / crickets;
+    }
+    const frogs = e.wetland * Math.max(1 - e.day, e.dusk) * quiet;
+    if (frogs > 0.08 && t > this.nextFrog) {
+      this.#croak(frogs);
+      this.nextFrog = t + 0.3 + Math.random() * 2.2 / frogs;
+    }
+  }
+
+  // A few notes of birdsong: quick whistled sweeps, from somewhere nearby.
+  #chirp(amount, tropical) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.02;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (pan) pan.pan.value = Math.random() * 1.6 - 0.8;
+    const out = ctx.createGain();
+    out.gain.value = (0.02 + 0.03 * Math.random()) * Math.min(1, amount);
+    (pan ? out.connect(pan).connect(this.muffle) : out.connect(this.muffle));
+    const base = tropical > 0.5 && Math.random() < 0.5 ? 900 + Math.random() * 700 : 2200 + Math.random() * 2400;
+    const notes = 2 + Math.floor(Math.random() * 5);
+    for (let k = 0; k < notes; k++) {
+      const start = t + k * (0.09 + Math.random() * 0.08);
+      const len = 0.05 + Math.random() * 0.1;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      const f = base * (0.8 + Math.random() * 0.5);
+      osc.frequency.setValueAtTime(f, start);
+      osc.frequency.exponentialRampToValueAtTime(f * (Math.random() < 0.5 ? 1.5 : 0.7), start + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(1, start + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+      osc.connect(g).connect(out);
+      osc.start(start);
+      osc.stop(start + len + 0.02);
+    }
+  }
+
+  // A cricket's chirp: three quick pulses of a high tone.
+  #cricket(amount) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.02;
+    const f = 4200 + Math.random() * 900;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    const osc = ctx.createOscillator();
+    osc.frequency.value = f;
+    osc.connect(g).connect(this.muffle);
+    const v = (0.006 + 0.008 * Math.random()) * Math.min(1, amount);
+    for (let k = 0; k < 3; k++) {
+      const s = t + k * 0.05;
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(v, s + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.035);
+    }
+    osc.start(t);
+    osc.stop(t + 0.2);
+  }
+
+  // A frog's croak: a low, buzzing, rising-and-falling note.
+  #croak(amount) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.02;
+    const len = 0.18 + Math.random() * 0.25;
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    const f = 110 + Math.random() * 160;
+    osc.frequency.setValueAtTime(f, t);
+    osc.frequency.linearRampToValueAtTime(f * 1.25, t + len * 0.4);
+    osc.frequency.linearRampToValueAtTime(f * 0.9, t + len);
+    const low = ctx.createBiquadFilter();
+    low.type = 'lowpass';
+    low.frequency.value = 700;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime((0.015 + 0.02 * Math.random()) * Math.min(1, amount), t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    osc.connect(low).connect(g).connect(this.muffle);
+    osc.start(t);
+    osc.stop(t + len + 0.05);
+    // Often a second croak straight after.
+    if (Math.random() < 0.4) setTimeout(() => this.ctx && this.#croak(amount * 0.8), (len + 0.08) * 1000);
   }
 
   setEnabled(on) {

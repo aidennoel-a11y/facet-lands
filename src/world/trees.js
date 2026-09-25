@@ -650,6 +650,37 @@ function junglePalm() {
   return withCrown(wood, fronds);
 }
 
+// Bamboo (on the jungle's edges): a thicket of tall, slender, jointed
+// canes leaning out a little from the clump, sprays of narrow leaves on
+// their upper halves.
+function bamboo() {
+  const rand = mulberry32(2101);
+  const cane = 0x6f8f3a, caneTop = 0x9aae4c, node = 0x4f6a2a;
+  const wood = [], sprays = [];
+  for (let k = 0; k < 9; k++) {
+    const a = rand() * Math.PI * 2, d = 0.15 + rand() * 0.9;
+    const h = 8.5 + rand() * 5, lean = 0.04 + rand() * 0.06;
+    const base = [Math.cos(a) * d, 0, Math.sin(a) * d];
+    const tip = [base[0] + Math.cos(a) * h * lean * 2, h, base[2] + Math.sin(a) * h * lean * 2];
+    const r = 0.07 + rand() * 0.035;
+    // The cane in lengths, with a darker ring at each joint.
+    const joints = 5;
+    for (let j = 0; j < joints; j++) {
+      const t0 = j / joints, t1 = (j + 1) / joints;
+      const p0 = base.map((v, i) => v + (tip[i] - v) * t0), p1 = base.map((v, i) => v + (tip[i] - v) * t1);
+      wood.push(limb(p0, p1, r * (1 - 0.3 * t0), r * (1 - 0.3 * t1), cane, caneTop, 2110 + k * 10 + j));
+      if (j) wood.push(part(new CylinderGeometry(r * 1.25, r * 1.25, 0.12, 5), node, node, { x: p0[0], y: p0[1], z: p0[2], seed: 2200 + k * 10 + j }));
+    }
+    // Leaf sprays up the top half.
+    for (let j = 0; j < 4; j++) {
+      const t = 0.5 + 0.13 * j + rand() * 0.05;
+      const at = base.map((v, i) => v + (tip[i] - v) * t);
+      sprays.push(frond(at, rand() * Math.PI * 2, 1.3 + rand() * 0.5, 0.2, 0.25, 0.7, 0x4f8a34, 0x86b454, 2300 + k * 10 + j));
+    }
+  }
+  return withCrown(wood, sprays);
+}
+
 // Charred snag (volcanic highlands): a dead tree burned black by an old
 // lava flow, its top snapped off.
 function charredSnag() {
@@ -946,6 +977,7 @@ export const TREE_GEOMETRIES = {
   mangrove: mangrove(),
   jungleGiant: jungleGiant(),
   junglePalm: junglePalm(),
+  bamboo: bamboo(),
 };
 
 // How each species takes the seasons: [deciduous (leaves turn and fall),
@@ -959,7 +991,7 @@ const SEASONAL = {
   oak: [1, 1, 0], larch: [1, 1, 0], silverBirch: [1, 1, 0], aspen: [1, 1, 0], weepingWillow: [1, 1, 0],
   mangrove: [0, 1, 0], treeFern: [0, 1, 0], charredSnag: [0, 1, 0],
   baobab: [0, 0, 0], joshuaTree: [0, 0, 0], ocotillo: [0, 0, 0],
-  jungleGiant: [0, 0, 0], junglePalm: [0, 0, 0], // (evergreen, and never snowed on)
+  jungleGiant: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
 };
 function markSeasons(geometries) {
   for (const [type, g] of Object.entries(geometries)) {

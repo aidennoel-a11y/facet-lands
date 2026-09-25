@@ -81,6 +81,7 @@ export class Rivers {
     this.#craterLakes(rx, rz);
     this.#alpineLakes(rx, rz);
     this.#hotSprings(rx, rz);
+    this.#oases(rx, rz);
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     let made = 0;
@@ -512,6 +513,23 @@ export class Rivers {
     }
   }
 
+  /** The pools of the oases in this region (see TerrainGenerator.oases). */
+  #oases(rx, rz) {
+    const g = this.generator;
+    if (!g.oases) return;
+    const x0 = rx * REGION, z0 = rz * REGION;
+    const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x0a51) * 4294967296);
+    for (const o of g.oases(x0, z0, x0 + REGION, z0 + REGION)) {
+      const pond = this.#pond(o.x, o.z, o.r, rand, Infinity);
+      if (!pond) continue;
+      pond.oasis = true;
+      const r = pond.r * 1.3 + 30;
+      this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
+      const m = pond.r * 1.3 + 2;
+      this.list.push({ points: [], pond, tarn: null, kind: 'lake', id: this.list.length, bounds: { minX: pond.x - m, maxX: pond.x + m, minZ: pond.z - m, maxZ: pond.z + m } });
+    }
+  }
+
   #add(points, pond, kind, tarn = null) {
     const river = { points, pond, tarn, kind, id: this.list.length };
     let along = 0; // metres from the source
@@ -678,7 +696,7 @@ export class Rivers {
         const r = Rivers.pondRadius(pond, x, z);
         const half = Math.max(r, 4.5);
         if (d > half + margin) continue;
-        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, crater: !!pond.crater, alpine: !!pond.alpine, hot: !!pond.hot, fx: 0, fz: 0, drop: 0 };
+        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, crater: !!pond.crater, alpine: !!pond.alpine, hot: !!pond.hot, oasis: !!pond.oasis, fx: 0, fz: 0, drop: 0 };
         continue;
       }
       Rivers.#measure(item, x, z, m);

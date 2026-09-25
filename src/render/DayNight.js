@@ -110,6 +110,8 @@ const skyFragment = /* glsl */ `
   uniform float horizonY; // where the land's edge is (below level when you're up high)
   uniform float time; // seconds, for twinkling and shooting stars
   uniform float moonPhase; // 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter
+  uniform float aurora; // northern lights, 0..1
+  uniform float rainbow; // after rain, 0..1
   varying vec3 vDir;
 
   float hash(vec3 p) {
@@ -188,6 +190,27 @@ const skyFragment = /* glsl */ `
     vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.9, 0.72), hash(cell + 9.0));
     col += tint * star * starsShow * (0.5 + 0.5 * hash(cell + 7.0)) * twinkle;
 
+    // The northern lights: curtains of green light hanging in the northern
+    // sky (-z), rippling and drifting, fringed with red and violet above,
+    // bright rays running up them.
+    if (aurora > 0.0 && starsShow > 0.0) {
+      float az = atan(d.x, -d.z); // 0 due north
+      float north = 1.0 - smoothstep(0.9, 2.2, abs(az));
+      float lights = 0.0;
+      vec3 auroraCol = vec3(0.0);
+      for (int k = 0; k < 2; k++) {
+        float fk = float(k);
+        float base = 0.12 + 0.1 * fk + 0.05 * sin(az * (2.0 + fk) + time * 0.04 + fk * 2.0) + 0.03 * sin(az * 7.0 - time * 0.09 + fk);
+        float above = up - base;
+        float rise = smoothstep(-0.015, 0.01, above) * exp(-max(above, 0.0) * (7.0 - 2.0 * fk));
+        float rays = 0.55 + 0.45 * sin(az * 70.0 + 5.0 * vnoise(vec3(az * 6.0, time * 0.12 + fk * 5.0, 0.0)));
+        float ripple = 0.35 + 0.65 * vnoise(vec3(az * 4.0 - time * 0.05, fk * 3.0, time * 0.03));
+        float c = rise * rays * ripple;
+        auroraCol += mix(vec3(0.18, 1.0, 0.45), vec3(0.75, 0.2, 0.75), smoothstep(0.03, 0.2, above)) * c;
+      }
+      col += auroraCol * north * aurora * starsShow * 0.55;
+    }
+
     // Now and then a shooting star streaks across.
     float slot = floor(time / 7.0);
     float ts = time - slot * 7.0;
@@ -203,6 +226,19 @@ const skyFragment = /* glsl */ `
       float along = clamp(dot(d - tail, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
       float dist = length(d - (tail + ab * along));
       col += vec3(1.0, 0.95, 0.85) * smoothstep(0.0025, 0.0, dist) * along * (1.0 - prog) * 1.6 * starsShow;
+    }
+
+    // A rainbow after rain: an arc 42 degrees round the point opposite the
+    // sun, red outside to violet inside, the sky a shade brighter within
+    // it, and a fainter second bow outside with its colours the other way.
+    if (rainbow > 0.0 && up > -0.01) {
+      float ang = degrees(acos(clamp(dot(d, -sunDir), -1.0, 1.0)));
+      float t1 = (ang - 40.4) / 2.2, t2 = (53.4 - ang) / 3.2;
+      vec3 bow = vec3(0.0);
+      if (t1 > 0.0 && t1 < 1.0) bow += clamp(vec3(smoothstep(0.35, 0.9, t1), 1.0 - abs(t1 - 0.5) * 2.2, 1.0 - smoothstep(0.1, 0.55, t1)), 0.0, 1.0) * sin(3.14159 * t1);
+      if (t2 > 0.0 && t2 < 1.0) bow += 0.35 * clamp(vec3(smoothstep(0.35, 0.9, t2), 1.0 - abs(t2 - 0.5) * 2.2, 1.0 - smoothstep(0.1, 0.55, t2)), 0.0, 1.0) * sin(3.14159 * t2);
+      float inside = 0.06 * (1.0 - smoothstep(38.0, 40.5, ang));
+      col += (bow * 0.32 + inside) * rainbow * smoothstep(-0.01, 0.05, up);
     }
 
     // Lightning lights up the whole sky.
@@ -241,6 +277,8 @@ export class DayNight {
     this.shaftStrength = 0;
     this.shaftReach = 1.6;
     this.flash = 0; // lightning, 0..1 (set by the storm)
+    this.aurora = 0; // the northern lights, 0..1 (set from outside: on clear winter nights)
+    this.rainbow = 0; // a rainbow, 0..1 (set from outside: as rain clears with the sun out)
     // Where you see the land meet the sky, as an angle below level (0 on
     // the ground, a few degrees down from high up). The sun sets there.
     // Set groundAt to (x, z) => the land's height to have it worked out.
@@ -275,6 +313,8 @@ export class DayNight {
           glowHigh: { value: new Color() },
           time: { value: 0 },
           moonPhase: { value: 0.35 },
+          aurora: { value: 0 },
+          rainbow: { value: 0 },
         },
         vertexShader: skyVertex,
         fragmentShader: skyFragment,
@@ -405,6 +445,8 @@ export class DayNight {
     const u = this.sky.material.uniforms;
     u.time.value = this._skyTime % 10000;
     u.moonPhase.value = this.moonPhase;
+    u.aurora.value = this.aurora;
+    u.rainbow.value = this.rainbow;
     u.night.value = night;
     u.dusk.value = duskF;
     u.cover.value = cover;

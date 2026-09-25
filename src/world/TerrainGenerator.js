@@ -21,6 +21,11 @@ const SCREE = new Color(0x4b423e); // a cinder cone's dark slopes
 const ICE = new Color(0x9fcbe0); // glacier ice
 const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
 const GRAVEL = new Color(0x8a8590);
+// Tide pools: the water held in them, and the rock lip round them, in metres above the sea.
+export const TIDE_LEVEL = 0.62;
+const TIDE_LIP = 0.8;
+const CAVE_DARK = new Color(0x3b3842); // the back of a sea cave, out of the light
+const OASIS = new Color(0x7fa84a); // the green round an oasis
 const SHORE = {
   mud: new Color(0x5f4a36),
   dirt: new Color(0x7d6547),
@@ -37,6 +42,25 @@ function smoothstep(a, b, x) {
 }
 
 /**
+ * A sea cave's roof over the water, in metres above the sea, `a` metres
+ * back into the cliff and `b` across the mouth: an arch, lower towards the
+ * back (and down into the rock beyond the mouth's sides).
+ */
+export function caveRoof(c, a, b) {
+  const q = Math.min(1, Math.abs(b) / c.w);
+  return c.A * Math.sqrt(1 - q * q) * (1 - 0.45 * smoothstep(c.d * 0.4, c.d, a)) - 0.4;
+}
+
+/** A sea arch's span at `t` (0..1) from one leg to the other: its top and underside heights. */
+export function archSpan(arch, t) {
+  const open = Math.sin(Math.PI * t);
+  const top = arch.top - 0.3 - 0.4 * open;
+  const base = arch.top - arch.H * 0.9; // down near the sea, inside the legs
+  const under = top - Math.max(2, arch.r * 0.3);
+  return { top, bottom: base + (under - base) * Math.sqrt(open) };
+}
+
+/**
  * The single source of truth for "what is at world position (x, z)".
  * Chunks, the minimap and (later) trees/water all ask this object, so the
  * world stays consistent no matter who builds what, or in which order.
@@ -45,6 +69,7 @@ export class TerrainGenerator {
   constructor(seed, config = { seaLevel: 2, chunkSize: 128 }) {
     this.seedText = String(seed); // as given, so a worker can rebuild the same world
     this.seed = hashSeed(seed);
+    this._config = config;
     // Separate noise fields so each layer is independent of the others.
     this.continentNoise = new SimplexNoise(this.seed);
     this.mountainMaskNoise = new SimplexNoise(this.seed + 1);
@@ -169,7 +194,10 @@ export class TerrainGenerator {
     range ??= this.#rangeField(x, z).value;
     const a = this.getAridity(x, z, range);
     const temperate = 1 - smoothstep(0.375, 0.575, a); // (broad transitions, not a line on the map)
-    const desert = smoothstep(0.665, 0.865, a);
+    // (A desert keeps a wide band of savanna between it and any green
+    // country: none where the land within 600 m or so turns green.)
+    let desert = smoothstep(0.665, 0.865, a);
+    if (desert > 0) desert *= smoothstep(0.47, 0.6, this.#greenAround(x, z));
     const savanna = Math.max(0, 1 - temperate - desert);
     // Black Hills country: a rare biome of its own, found now and then in
     // the rolling hills of the green lands (see #hillsZone).
@@ -308,6 +336,16 @@ export class TerrainGenerator {
    * blended between its points.
    */
   #aridAround(x, z) {
+    return this.#aridRange(x, z, 0);
+  }
+
+  /** The wettest the climate gets within about 600 m of (x, z) (as #aridAround). */
+  #greenAround(x, z) {
+    return this.#aridRange(x, z, 1);
+  }
+
+  // (Both at once: [driest, wettest], from the point and rings 300 m and 600 m out.)
+  #aridRange(x, z, which) {
     const G = 64;
     const gx = Math.floor(x / G), gz = Math.floor(z / G);
     const fx = x / G - gx, fz = z / G - gz;
@@ -317,15 +355,17 @@ export class TerrainGenerator {
       let v = cache.get(key);
       if (v === undefined) {
         const ar = (px, pz) => this.getAridity(px, pz, this.#rangeField(px, pz, {}).value);
-        v = ar(i * G, j * G);
+        let hi = ar(i * G, j * G), lo = hi;
         for (const d of [300, 600]) for (let k = 0; k < 8; k++) {
           const a = ((k + (d > 300 ? 0.5 : 0)) / 8) * Math.PI * 2;
-          v = Math.max(v, ar(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d));
+          const q = ar(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d);
+          if (q > hi) hi = q;
+          if (q < lo) lo = q;
         }
         if (cache.size > 60000) cache.clear();
-        cache.set(key, v);
+        cache.set(key, (v = [hi, lo]));
       }
-      return v;
+      return v[which];
     };
     const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
     const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
@@ -613,6 +653,14 @@ export class TerrainGenerator {
       const crest = this.duneNoise.ridged(qx * 0.0048 + qz * 0.0012, qz * 0.0068 - qx * 0.001, 2, 2, 0.5, 0.02);
       const small = crest * 8 + this.duneNoise.fbm(x * 0.0012 + 50, z * 0.0012, 2) * 7;
       dunes = w.desert * (small * (1 - f.erg)) + (f.erg > 0 ? f.erg * this.#dunesSeen(x, z) : 0);
+      // An oasis lies in a broad hollow among the dunes.
+      if (f.erg > 0 && !this._probing) {
+        const n = this.#oasisNear(x, z);
+        if (n) {
+          const r = n.oasis.r;
+          dunes = dunes * smoothstep(r * 1.8, r * 3.6, n.d) - 3 * (1 - smoothstep(r * 0.8, r * 2.6, n.d)) * f.erg;
+        }
+      }
     }
 
     // Seas where the continent noise dips, and lake basins in the green lowlands.
@@ -685,6 +733,26 @@ export class TerrainGenerator {
    * sea stacks, pillars of rock the sea has cut off, stand in it.
    */
   #seaCliff(x, z, u) {
+    const h = this.#seaCliffRock(x, z, u);
+    // Sea caves: narrow inlets running back into the cliff under a roof of
+    // rock (the roof is SeaCaveLayer's), their floor awash, rising to a
+    // shingle beach at the back.
+    if (this._probing || h < -2) return h;
+    let out = h;
+    for (const c of this.#seaCavesNear(x, z)) {
+      const a = (x - c.x) * c.nx + (z - c.z) * c.nz;
+      if (a < -4 || a > c.d + 1) continue;
+      const b = Math.abs((x - c.x) * -c.nz + (z - c.z) * c.nx);
+      const half = c.w * (1 - smoothstep(c.d * 0.6, c.d, a));
+      if (b > half + 1) continue;
+      const floor = -1.6 + 2.6 * smoothstep(c.d * 0.45, c.d * 0.95, a) + 0.3 * this.coastNoise.noise2D(x * 0.4, z * 0.4);
+      const wall = smoothstep(half - 1.2, half + 0.6, b);
+      if (out > floor) out = floor + (out - floor) * wall;
+    }
+    return out;
+  }
+
+  #seaCliffRock(x, z, u) {
     const C = 14 + 16 * (this.coastNoise.noise2D(x * 0.002, z * 0.002) * 0.5 + 0.5);
     if (u >= 0) {
       // The cliff's line wanders; its face steps back in a couple of
@@ -697,11 +765,30 @@ export class TerrainGenerator {
       return Math.max(C * stepped + knobs + Math.max(0, u - 0.7) * 0.5, u);
     }
     let h = u - 2.5 * smoothstep(0, -1, u) * (1 - smoothstep(-5, -10, u));
-    // At the cliff's foot, a ragged ledge of fallen rock, just awash.
-    if (u > -3.5) {
+    // At the cliff's foot, a ragged ledge of fallen rock, just awash; and
+    // along some stretches a broad shelf of rock the waves have planed off,
+    // a few tens of metres out from the cliff, dotted with tide pools.
+    if (u > -10) {
       const rubble = this.coastNoise.ridged(x * 0.16 + 3, z * 0.16 - 7, 2, 2, 0.5, 0.05);
       const ledge = -1.3 + 2.4 * rubble + 0.5 * this.coastNoise.noise2D(x * 0.45 - 8, z * 0.45 + 2);
-      h += Math.max(0, ledge - h) * smoothstep(-3.5, -0.8, u);
+      const onLedge = smoothstep(-3.5, -0.8, u);
+      h += Math.max(0, ledge - h) * onLedge;
+      const shelf = smoothstep(-0.15, 0.15, this.coastNoise.noise2D(x * 0.0035 - 40, z * 0.0035 + 25)) * smoothstep(-10, -8, u);
+      if (shelf > 0) {
+        const bench = 0.15 + 0.55 * rubble + 0.25 * this.coastNoise.noise2D(x * 0.12 + 4, z * 0.12 - 6);
+        h += Math.max(0, bench - h) * shelf;
+      }
+      // Tide pools: hollows in the rock, each walled round by a lip of
+      // rock that holds the water in when the sea is below it.
+      if (Math.max(onLedge, shelf) > 0.5 && h > -1.6) {
+        for (const p of this.#poolsNear(x, z)) {
+          const d = Math.hypot(x - p.x, z - p.z) / p.r;
+          if (d >= 1.5) continue;
+          const lip = TIDE_LIP + 0.08 * this.coastNoise.noise2D(x * 0.9, z * 0.9);
+          if (d > 0.6) h = Math.max(h, lip * (1 - smoothstep(1.25, 1.5, d)) + h * smoothstep(1.25, 1.5, d));
+          else h = Math.min(h, TIDE_LEVEL - 0.35 - 0.45 * (1 - (d / 0.6) ** 2));
+        }
+      }
     }
     // Sea stacks: pillars of rock the sea has cut off, each standing on a
     // broad, ribbed skirt of fallen rock and ledges, awash at its foot.
@@ -722,14 +809,20 @@ export class TerrainGenerator {
           if (d >= 2.5) continue;
           // The stack: a stout, tapering block of rock, no taller than about
           // twice its width, stepped where layers of it have broken away,
-          // its outline ragged and its sides knobbled.
-          const t = d * (1 + 0.16 * this.coastNoise.noise2D(x * 0.2 + i, z * 0.2 - j));
-          if (t < 1) {
-            const H = Math.min(C * (0.3 + 0.35 * hash2(i, j, s + 4)), r * 2.2);
-            let top = H * Math.pow(1 - Math.pow(t, 2.4), 0.55);
-            top -= 0.9 * (top / 2.6 - Math.floor(top / 2.6)); // ledges
-            const knobs = this.coastNoise.noise2D(x * 0.35 - 3, z * 0.35 + 5) * 1.2 * smoothstep(0.4, 0.9, t);
-            stack = Math.max(stack, top + knobs);
+          // its outline ragged and its sides knobbled. Some are arches: two
+          // legs, the rock between them worn through (the span over the gap
+          // is SeaCaveLayer's).
+          const H = Math.min(C * (0.3 + 0.35 * hash2(i, j, s + 4)), r * 2.2);
+          const arch = this.#archAt(i, j, px, pz, r, H);
+          const legs = arch ? [[arch.ax, arch.az, arch.leg], [arch.bx, arch.bz, arch.leg]] : [[px, pz, r]];
+          for (const [lx, lz, lr] of legs) {
+            const t = (Math.hypot(x - lx, z - lz) / lr) * (1 + 0.16 * this.coastNoise.noise2D(x * 0.2 + i, z * 0.2 - j));
+            if (t < 1) {
+              let top = H * Math.pow(1 - Math.pow(t, 2.4), 0.55);
+              top -= 0.9 * (top / 2.6 - Math.floor(top / 2.6)); // ledges
+              const knobs = this.coastNoise.noise2D(x * 0.35 - 3, z * 0.35 + 5) * 1.2 * smoothstep(0.4, 0.9, t);
+              stack = Math.max(stack, top + knobs);
+            }
           }
           // The skirt: ribs of rock running out from the pillar, rubble between.
           const ribs = 0.5 + 0.5 * Math.cos(Math.atan2(dz, dx) * 7 + hash2(i, j, s + 5) * 6.28 + this.coastNoise.noise2D(x * 0.08, z * 0.08) * 2.5);
@@ -741,6 +834,272 @@ export class TerrainGenerator {
       if (stack > h) h += (stack - h) * fade;
     }
     return h;
+  }
+
+  /**
+   * The sea stack of cell (i, j) (centre px, pz, radius r, height H), if
+   * it's an arch: two legs, `leg` in radius, either side of the centre,
+   * the rock worn through between them. Else null.
+   */
+  #archAt(i, j, px, pz, r, H) {
+    const s = this.seed ^ 0x57ac;
+    if (H < 7 || hash2(i, j, s + 6) > 0.4) return null;
+    const a = hash2(i, j, s + 7) * Math.PI, L = r * 1.2;
+    const ca = Math.cos(a) * L, sa = Math.sin(a) * L;
+    return { x: px, z: pz, r, H, ax: px - ca, az: pz - sa, bx: px + ca, bz: pz + sa, leg: r * 0.55 };
+  }
+
+  /** Sea arches whose centre lies in a box, standing in the sea (see #archAt). */
+  seaArches(minX, minZ, maxX, maxZ) {
+    const S = 36, s = this.seed ^ 0x57ac, sea = this.rivers.seaLevel;
+    const out = [];
+    for (let j = Math.floor(minZ / S) - 1; j <= Math.floor(maxZ / S); j++) {
+      for (let i = Math.floor(minX / S) - 1; i <= Math.floor(maxX / S); i++) {
+        if (hash2(i, j, s) > 0.18 || hash2(i, j, s + 6) > 0.4) continue;
+        const px = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * S, pz = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * S;
+        if (px < minX || pz < minZ || px >= maxX || pz >= maxZ) continue;
+        if (this.getSeaCliff(px, pz) < 0.3) continue;
+        const C = 14 + 16 * (this.coastNoise.noise2D(px * 0.002, pz * 0.002) * 0.5 + 0.5);
+        const r = 6 + 6 * hash2(i, j, s + 3);
+        const H = Math.min(C * (0.3 + 0.35 * hash2(i, j, s + 4)), r * 2.2);
+        const arch = this.#archAt(i, j, px, pz, r, H);
+        if (!arch) continue;
+        // Both legs must stand up out of the sea, with the gap between them open.
+        const ha = this.getBaseHeight(arch.ax, arch.az) - sea, hb = this.getBaseHeight(arch.bx, arch.bz) - sea;
+        if (ha < H * 0.75 || hb < H * 0.75 || this.getBaseHeight(px, pz) - sea > H * 0.3) continue;
+        arch.top = Math.min(ha, hb) + sea;
+        out.push(arch);
+      }
+    }
+    return out;
+  }
+
+  /** Tide pool sites around (x, z): hollows in the rock ledges at the foot of sea cliffs. */
+  #poolsNear(x, z) {
+    const T = 12, s = this.seed ^ 0x71de;
+    const ci = Math.floor(x / T), cj = Math.floor(z / T);
+    const out = [];
+    for (let j = cj - 1; j <= cj + 1; j++) {
+      for (let i = ci - 1; i <= ci + 1; i++) {
+        if (hash2(i, j, s) > 0.45) continue;
+        out.push({ x: (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * T, z: (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * T, r: 2.5 + 2.5 * hash2(i, j, s + 3) });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Tide pools with their centre in a box that may hold water: sites on a
+   * cliffed coast. (Whether one really formed, walled all round above its
+   * water, is for whoever draws it to check against the ground.)
+   */
+  tidePools(minX, minZ, maxX, maxZ) {
+    const T = 12, s = this.seed ^ 0x71de;
+    const out = [];
+    for (let j = Math.floor(minZ / T); j <= Math.floor(maxZ / T); j++) {
+      for (let i = Math.floor(minX / T); i <= Math.floor(maxX / T); i++) {
+        if (hash2(i, j, s) > 0.45) continue;
+        const x = (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * T, z = (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * T;
+        if (x < minX || z < minZ || x >= maxX || z >= maxZ) continue;
+        if (this.getSeaCliff(x, z) < 0.6) continue;
+        out.push({ x, z, r: 2.5 + 2.5 * hash2(i, j, s + 3), level: this.rivers.seaLevel + TIDE_LEVEL, seed: hash2(i, j, s + 4) });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * A second generator for the same world, asked things this one may need
+   * to know in the middle of working out a height (where asking itself
+   * would upset the working). It makes no sea caves, nor hollows for oases.
+   */
+  #probe() {
+    return this._probe ?? (this._probe = Object.assign(new TerrainGenerator(this.seedText, this._config), { _probing: true }));
+  }
+
+  /**
+   * The oasis of 600 m cell (i, j), or null: deep in a dune sea, a
+   * spring-fed pool (radius r) in a hollow among the dunes, ringed with
+   * grass and palms.
+   */
+  #oasis(i, j) {
+    const cache = this._oases ?? (this._oases = new Map());
+    const key = (i + 32768) * 65536 + (j + 32768);
+    if (cache.has(key)) return cache.get(key);
+    const s = this.seed ^ 0x0a515, G = 600;
+    let oasis = null;
+    if (hash2(i, j, s) < 0.55) {
+      const x = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * G, z = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * G;
+      const probe = this.#probe();
+      // (Well inland: dry sand all round, the sea and any lake well away.)
+      const dry = (px, pz) => probe.getBaseHeight(px, pz) > this.rivers.seaLevel + 6;
+      if (probe.getFeatures(x, z).erg > 0.75 && dry(x, z) && [0, 1, 2, 3, 4, 5].every((k) => dry(x + Math.cos(k * 1.05) * 90, z + Math.sin(k * 1.05) * 90))) {
+        oasis = { x, z, r: 14 + 12 * hash2(i, j, s + 3) };
+      }
+    }
+    if (cache.size > 4000) cache.clear();
+    cache.set(key, oasis);
+    return oasis;
+  }
+
+  /** The nearest oasis to (x, z) within a few hundred metres: { oasis, d }, or null. */
+  #oasisNear(x, z) {
+    const G = 600;
+    const ci = Math.floor(x / G), cj = Math.floor(z / G);
+    let best = null;
+    for (let j = cj - 1; j <= cj + 1; j++) {
+      for (let i = ci - 1; i <= ci + 1; i++) {
+        const o = this.#oasis(i, j);
+        if (!o) continue;
+        const d = Math.hypot(x - o.x, z - o.z);
+        if (d < o.r * 4 && (!best || d < best.d)) best = { oasis: o, d };
+      }
+    }
+    return best;
+  }
+
+  /** Oases whose pool lies in a box. */
+  oases(minX, minZ, maxX, maxZ) {
+    const G = 600, out = [];
+    for (let j = Math.floor(minZ / G); j <= Math.floor(maxZ / G); j++) {
+      for (let i = Math.floor(minX / G); i <= Math.floor(maxX / G); i++) {
+        const o = this.#oasis(i, j);
+        if (o && o.x >= minX && o.z >= minZ && o.x < maxX && o.z < maxZ) out.push(o);
+      }
+    }
+    return out;
+  }
+
+  /** How much (x, z) is an oasis's green ring (0..1): grass and palms round its pool. */
+  oasisAt(x, z) {
+    if (this.getBiomeWeights(x, z, {}).desert < 0.3) return 0;
+    const n = this.#oasisNear(x, z);
+    if (!n) return 0;
+    const edge = n.oasis.r * (2.4 + 0.5 * this.detailNoise.noise2D(x * 0.03 + 9, z * 0.03 - 9));
+    return 1 - smoothstep(edge - 8, edge, n.d);
+  }
+
+  /** Sea caves whose cells are round (x, z) (see #seaCave). */
+  #seaCavesNear(x, z) {
+    const G = 120;
+    const ci = Math.floor(x / G), cj = Math.floor(z / G);
+    const out = this._cavesNear ?? (this._cavesNear = []);
+    out.length = 0;
+    for (let j = cj - 1; j <= cj + 1; j++) {
+      for (let i = ci - 1; i <= ci + 1; i++) {
+        const c = this.#seaCave(i, j);
+        if (c) out.push(c);
+      }
+    }
+    return out;
+  }
+
+  /** Sea caves whose mouth lies in a box. */
+  seaCaves(minX, minZ, maxX, maxZ) {
+    const G = 120, out = [];
+    for (let j = Math.floor(minZ / G) - 1; j <= Math.floor(maxZ / G) + 1; j++) {
+      for (let i = Math.floor(minX / G) - 1; i <= Math.floor(maxX / G) + 1; i++) {
+        const c = this.#seaCave(i, j);
+        if (c && c.x >= minX && c.z >= minZ && c.x < maxX && c.z < maxZ) out.push(c);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The sea cave of 120 m cell (i, j), or null: where a tall cliff rises
+   * straight from the sea, a mouth `w` metres (half-width) across and `A`
+   * high at the foot of the cliff, the cave running `d` metres back into it
+   * along (nx, nz). Found on the land as it is without caves (a second
+   * generator that makes none), so it's the same whoever asks first.
+   */
+  #seaCave(i, j) {
+    const cache = this._seaCaves ?? (this._seaCaves = new Map());
+    const key = (i + 32768) * 65536 + (j + 32768);
+    if (cache.has(key)) return cache.get(key);
+    let cave = null;
+    const s = this.seed ^ 0x5eca;
+    const G = 120;
+    if (hash2(i, j, s) < 0.7) {
+      // (All of it asked of the probe: this may be in the middle of working
+      // out a height, and mustn't have its working disturbed.)
+      const probe = this.#probe();
+      // A few tries at a spot on a cliffed coast.
+      for (let k = 0; k < 3 && !cave; k++) {
+        const px = (i + 0.1 + 0.8 * hash2(i, j, s + 1 + k * 10)) * G, pz = (j + 0.1 + 0.8 * hash2(i, j, s + 2 + k * 10)) * G;
+        if (probe.getSeaCliff(px, pz) > 0.4) cave = probe.#findCave(px, pz, i, j, s);
+      }
+    }
+    if (cache.size > 4000) cache.clear();
+    cache.set(key, cave);
+    return cave;
+  }
+
+  // (On the probe generator: find the cliff's foot near (px, pz), and check it's a good one.)
+  #findCave(px, pz, i, j, s) {
+    const sea = this.rivers.seaLevel;
+    const h = (x, z) => this.getBaseHeight(x, z) - sea;
+    // Which way the land rises (up the cliff).
+    let gx = h(px + 20, pz) - h(px - 20, pz), gz = h(px, pz + 20) - h(px, pz - 20);
+    let g = Math.hypot(gx, gz);
+    if (g < 1e-3) return null;
+    let nx = gx / g, nz = gz / g;
+    // March in from the sea to the foot of the cliff.
+    let face = null;
+    for (let t = -60; t < 60; t += 1.5) {
+      const x = px + nx * t, z = pz + nz * t;
+      if (h(x, z) < -0.5 && h(x + nx * 4, z + nz * 4) > 6) {
+        face = [x + nx * 1.5, z + nz * 1.5];
+        break;
+      }
+    }
+    if (!face) return null;
+    const [fx, fz] = face;
+    // Square up to the cliff there.
+    gx = h(fx + nx * 2 + 3, fz + nz * 2) - h(fx + nx * 2 - 3, fz + nz * 2);
+    gz = h(fx + nx * 2, fz + nz * 2 + 3) - h(fx + nx * 2, fz + nz * 2 - 3);
+    g = Math.hypot(gx, gz);
+    if (g < 1e-3) return null;
+    nx = gx / g;
+    nz = gz / g;
+    const w = 2.8 + 1.8 * hash2(i, j, s + 3), d = 16 + 12 * hash2(i, j, s + 4);
+    // Sea in front; a tall cliff above and all the way back; cliff on both sides.
+    if (h(fx - nx * 6, fz - nz * 6) > -0.8) return null;
+    let top = Infinity;
+    for (const t of [4, d * 0.5, d + 2]) top = Math.min(top, h(fx + nx * t, fz + nz * t));
+    for (const side of [-1, 1]) {
+      const sx = -nz * side * (w + 3), sz = nx * side * (w + 3);
+      for (const t of [3, d * 0.5]) top = Math.min(top, h(fx + nx * t + sx, fz + nz * t + sz));
+    }
+    const A = Math.min(3.5 + 3.5 * hash2(i, j, s + 5), top - 6);
+    if (A < 3) return null;
+    return { x: fx, z: fz, nx, nz, w, d, A, top: top + sea };
+  }
+
+  /**
+   * Rock overhead at (x, z): the roof of a sea cave or the span of a sea
+   * arch, as { bottom, top } heights, or null. (For standing on them.)
+   */
+  overhangAt(x, z) {
+    const sea = this.rivers.seaLevel;
+    for (const c of this.#seaCavesNear(x, z)) {
+      const a = (x - c.x) * c.nx + (z - c.z) * c.nz;
+      const b = (x - c.x) * -c.nz + (z - c.z) * c.nx;
+      if (a < -1 || a > c.d + 1 || Math.abs(b) > c.w) continue;
+      const roof = caveRoof(c, a, b);
+      return { cave: true, bottom: sea + roof, top: this.getBaseHeight(c.x + c.nx * a - c.nz * (c.w + 1.5), c.z + c.nz * a + c.nx * (c.w + 1.5)) };
+    }
+    const S = 36;
+    for (const arch of this.seaArches(x - S * 1.5, z - S * 1.5, x + S * 1.5, z + S * 1.5)) {
+      const vx = arch.bx - arch.ax, vz = arch.bz - arch.az, L2 = vx * vx + vz * vz;
+      const t = ((x - arch.ax) * vx + (z - arch.az) * vz) / L2;
+      if (t < 0 || t > 1) continue;
+      const off = Math.abs((x - arch.ax) * vz - (z - arch.az) * vx) / Math.sqrt(L2);
+      if (off > arch.leg * 0.8) continue;
+      const span = archSpan(arch, t);
+      return { bottom: span.bottom, top: span.top };
+    }
+    return null;
   }
 
   /**
@@ -1522,6 +1881,24 @@ export class TerrainGenerator {
     return zone * patch * ocean * (1 - smoothstep(sea - 6, sea - 8, ground)) * smoothstep(sea - 0.6, sea - 1.2, ground);
   }
 
+  /**
+   * Kelp forest (0..1) at (x, z) with the sea floor at `ground`: great
+   * beds of it in the cool, open sea off the green lands, rooted three to
+   * sixteen metres down (not where coral reefs grow).
+   */
+  getKelp(x, z, ground) {
+    const sea = this.rivers.seaLevel;
+    if (ground > sea - 2.5 || ground < sea - 16) return 0;
+    const beds = smoothstep(0.0, 0.25, this.coastNoise.fbm(x * 0.004 - 70, z * 0.004 + 35, 2));
+    if (beds <= 0) return 0;
+    const w = this.getBiomeWeights(x, z, {});
+    const cool = smoothstep(0.45, 0.7, w.temperate + w.wetland + w.blackHills + w.volcanic);
+    if (cool <= 0) return 0;
+    const ocean = smoothstep(0.4, 0.7, this.getOceanness(x, z));
+    const depth = smoothstep(sea - 2.5, sea - 4, ground) * (1 - smoothstep(sea - 13, sea - 16, ground));
+    return beds * cool * ocean * depth * (1 - this.#reefZone(x, z, w));
+  }
+
   /** Stretches of the open coast with coral reefs off them (0..1). */
   #reefZone(x, z, w) {
     return smoothstep(0.08, 0.3, this.coastNoise.fbm(x * 0.0035 + 140, z * 0.0035 - 60, 2)) * (1 - w.wetland) * (1 - w.volcanic);
@@ -1584,12 +1961,25 @@ export class TerrainGenerator {
   describe(x, z) {
     const sea = this.rivers.seaLevel;
     const height = this.getHeight(x, z);
-    if (height < sea - 0.3) return this.getOceanness(x, z) > 0.5 ? (this.getReef(x, z, height) > 0.4 ? 'Coral reef' : 'Ocean') : 'Lake';
+    if (height < sea - 0.3) {
+      if (this.getOceanness(x, z) <= 0.5) return 'Lake';
+      if (height > sea - 3 && this.getSeaCliff(x, z) > 0.5) {
+        const over = this.overhangAt(x, z);
+        if (over) return over.cave ? 'Sea cave' : 'Sea arch';
+      }
+      if (this.getKelp(x, z, height) > 0.35) return 'Kelp forest';
+      return this.getReef(x, z, height) > 0.4 ? 'Coral reef' : 'Ocean';
+    }
     const water = this.rivers.at(x, z, 0);
-    if (water) return water.crater ? 'Crater lake' : water.hot ? 'Hot spring' : water.alpine ? 'Alpine lake' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : 'River';
+    if (water) return water.crater ? 'Crater lake' : water.hot ? 'Hot spring' : water.alpine ? 'Alpine lake' : water.oasis ? 'Oasis' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : 'River';
     const w = this.getBiomeWeights(x, z, {});
     const f = this.getFeatures(x, z);
-    if (this.getOceanness(x, z) > 0.5 && height < sea + 34 && this.getSeaCliff(x, z) > 0.5) return 'Sea cliffs';
+    if (this.getOceanness(x, z) > 0.5 && height < sea + 34 && this.getSeaCliff(x, z) > 0.5) {
+      const over = this.overhangAt(x, z);
+      if (over) return over.cave ? 'Sea cave' : 'Sea arch';
+      if (height < sea + 1.5 && this.#poolsNear(x, z).some((p) => Math.hypot(x - p.x, z - p.z) < p.r * 1.5)) return 'Tide pools';
+      return 'Sea cliffs';
+    }
     if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return w.volcanic > 0.5 ? 'Black sand beach' : 'Beach';
     if (f.canyon > 0.5) return f.canyonFloor > 0.5 ? 'Canyon floor' : 'Canyon';
     const mountains = this.getMountainness(x, z);
@@ -1613,6 +2003,7 @@ export class TerrainGenerator {
     }
     if (top === 'wetland') return height < sea + 2 ? 'Marsh' : 'Wetlands';
     if (top === 'jungle') return 'Jungle';
+    if (top === 'desert' && this.oasisAt(x, z) > 0.3) return 'Oasis';
     if (top === 'desert') return f.erg > 0.5 ? 'Dune sea' : f.mesa > 0.28 ? 'Mesas' : 'Desert';
     if (top === 'savanna') return f.mesa > 0.28 ? 'Mesas' : 'Savanna';
     if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
@@ -1659,11 +2050,25 @@ export class TerrainGenerator {
     // Fallen rock at the foot of sea cliffs and round sea stacks.
     if (ground < 7 && ground > -3) {
       const cliffs = this.getSeaCliff(x, z);
-      if (cliffs > 0.2) out.lerp(SHORE.rock, 0.85 * smoothstep(0.2, 0.5, cliffs) * (1 - smoothstep(4, 7, ground)));
+      if (cliffs > 0.2) {
+        out.lerp(SHORE.rock, 0.85 * smoothstep(0.2, 0.5, cliffs) * (1 - smoothstep(4, 7, ground)));
+        // In the gloom under a sea cave's roof.
+        if (ground < sea + 3) {
+          for (const c of this.#seaCavesNear(x, z)) {
+            const a = (x - c.x) * c.nx + (z - c.z) * c.nz;
+            const b = Math.abs((x - c.x) * -c.nz + (z - c.z) * c.nx);
+            if (a > 0 && a < c.d + 1 && b < c.w + 1) out.lerp(CAVE_DARK, 0.4 + 0.5 * smoothstep(0, c.d * 0.7, a));
+          }
+        }
+      }
     }
     // Dune seas: warm golden sand all over.
     const f = w.desert + w.savanna > 0.2 ? this.getFeatures(x, z) : null;
-    if (f && f.erg > 0) out.lerp(DUNE, 0.85 * f.erg);
+    if (f && f.erg > 0) {
+      out.lerp(DUNE, 0.85 * f.erg);
+      const oasis = this.oasisAt(x, z);
+      if (oasis > 0) out.lerp(OASIS, 0.9 * oasis);
+    }
     // Canyon floors: a pale, stony dry wash.
     if (f && f.canyonFloor > 0.3 && upness > 0.8) out.lerp(WASH, 0.75 * f.canyonFloor);
     // Volcanoes: black tongues of old lava, reddish cinders round the craters.

@@ -15,6 +15,9 @@ import { createVentLayer } from './world/layers/VentLayer.js';
 import { createGeyserLayer } from './world/layers/GeyserLayer.js';
 import { createCoralLayer } from './world/layers/CoralLayer.js';
 import { createLeafLayer } from './world/layers/LeafLayer.js';
+import { createSeaCoastLayer } from './world/layers/SeaCoastLayer.js';
+import { createKelpLayer } from './world/layers/KelpLayer.js';
+import { createLogLayer } from './world/layers/LogLayer.js';
 import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
 import { Torches } from './items/Torches.js';
@@ -27,8 +30,9 @@ import { Clouds } from './world/Clouds.js';
 import { Weather, WEATHER } from './render/Weather.js';
 import { Lightning, Rain } from './render/Storm.js';
 import { Sound } from './render/Sound.js';
+import { Showers } from './render/Showers.js';
 import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
-import { describeWind, updateWind } from './render/wind.js';
+import { describeWind, updateWind, windStrength } from './render/wind.js';
 import { Minimap } from './ui/Minimap.js';
 
 // --- Renderer, scene, camera -------------------------------------------------
@@ -84,6 +88,10 @@ chunks.addLayer(createGeyserLayer(WORLD));
 chunks.addLayer(createCoralLayer(WORLD));
 chunks.addLayer(createLeafLayer());
 chunks.addLayer(createLavaLayer(WORLD));
+chunks.addLayer(createSeaCoastLayer(WORLD, terrainMaterial));
+chunks.addLayer(createKelpLayer(WORLD));
+const logs = createLogLayer(WORLD);
+chunks.addLayer(logs);
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
 scene.add(farTrees.group);
@@ -102,7 +110,11 @@ chunks.addLayer(rocks);
 function groundAt(x, feetY, z) {
   const g = generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
   // Boulders are solid: you stand on their tops (and walk into their sides as walls).
-  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z));
+  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), logs.surfaceAt(x, z));
+  // The roofs of sea caves and spans of sea arches: stood on from above,
+  // swum or walked under from below.
+  const over = g.height < WORLD.seaLevel + 40 ? generator.overhangAt(x, z) : null;
+  if (over && feetY > over.bottom) g.height = Math.max(g.height, over.top);
   return g;
 }
 
@@ -397,6 +409,123 @@ function coldHere(dt) {
   return cold.value;
 }
 
+// What's around you, for the sounds of the place (see Sound.ambience):
+// sampled every second from the land round about.
+const around = { wait: 0, env: { woods: 0, jungle: 0, grass: 0, wetland: 0, ocean: 0, lava: 0, high: 0, snowy: 0, day: 1, dawn: 0, dusk: 0, wind: 0, rain: 0 } };
+function surroundings(dt, snow) {
+  const e = around.env;
+  around.wait -= dt;
+  if (around.wait <= 0) {
+    around.wait = 1;
+    const { x, z } = camera.position;
+    let woods = 0, jungle = 0, grass = 0, wetland = 0, ocean = 0;
+    const pts = [[0, 0], [60, 0], [-60, 0], [0, 60], [0, -60]];
+    for (const [dx, dz] of pts) {
+      const w = generator.getBiomeWeights(x + dx, z + dz, {});
+      const forest = generator.getForestDensity(x + dx, z + dz);
+      woods += (w.temperate * smoothstep(0.35, 0.7, forest) + w.blackHills * 0.7) / pts.length;
+      grass += (w.temperate * (1 - smoothstep(0.35, 0.7, forest)) + w.savanna) / pts.length;
+      jungle += w.jungle / pts.length;
+      wetland += w.wetland / pts.length;
+    }
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      for (const d of [40, 120]) {
+        const px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
+        if (generator.getBaseHeight(px, pz) < WORLD.seaLevel - 0.5 && generator.getOceanness(px, pz) > 0.5) ocean = Math.max(ocean, d < 100 ? 1 : 0.6);
+      }
+    }
+    Object.assign(e, { woods, jungle, grass, wetland, ocean: ocean * (1 - smoothstep(30, 90, camera.position.y - WORLD.seaLevel)), lava: heat.lava });
+  }
+  const sun = dayNight.sunDir.y;
+  e.day = smoothstep(-0.05, 0.12, sun);
+  e.dawn = dayNight.hour < 12 ? smoothstep(-0.08, 0.02, sun) * (1 - smoothstep(0.12, 0.3, sun)) : 0;
+  e.dusk = dayNight.hour > 12 ? (1 - smoothstep(0.02, 0.2, sun)) * smoothstep(-0.35, -0.1, sun) : 0;
+  e.high = smoothstep(90, 220, camera.position.y);
+  e.snowy = Math.max(snow, seasonUniforms.uSnowfall.value * 0.7);
+  e.wind = Math.min(1, windStrength.value / 1.6);
+  e.rain = weather.rain;
+  return e;
+}
+
+// Heat haze: the view shimmers over the desert and the savanna in the
+// heat of a clear summer day, and over molten lava at any hour.
+const heat = { wait: 0, hot: 0, lava: 0, value: 0 };
+function heatHaze(dt) {
+  heat.wait -= dt;
+  if (heat.wait <= 0) {
+    heat.wait = 0.5;
+    const { x, z } = camera.position;
+    const w = generator.getBiomeWeights(x, z, {});
+    heat.hot = w.desert + 0.5 * w.savanna;
+    heat.lava = 0;
+    for (const c of generator.volcanoes?.(x - 400, z - 400, x + 400, z + 400) ?? []) {
+      if (c.lava) heat.lava = Math.max(heat.lava, 1 - Math.hypot(c.x - x, c.z - z) / 400);
+    }
+  }
+  const midday = smoothstep(0.2, 0.6, dayNight.sunDir.y);
+  const sunny = (1 - smoothstep(0.5, 0.9, weather.cover)) * (1 - weather.rain);
+  const target = sheltered ? 0 : Math.max(heat.hot * midday * sunny * (1 - 0.85 * seasonUniforms.uWinter.value), heat.lava * 0.9);
+  heat.value += (target - heat.value) * Math.min(1, dt / 3);
+  return heat.value;
+}
+
+// Weather you can see coming: showers out on the horizon (see Showers),
+// and before a storm, lightning flickering inside them far off, the
+// thunder a long, low rumble arriving seconds later.
+const showers = new Showers(scene);
+const far = { wait: 3 };
+function farLightning(dt) {
+  showers.flash = Math.max(0, showers.flash - dt * 6);
+  const storm = weather.approaching.storm;
+  if (storm > 0.1 && !sheltered) {
+    far.wait -= dt * storm;
+    if (far.wait <= 0) {
+      far.wait = 2 + Math.random() * 7;
+      const s = showers.pick();
+      if (s) {
+        showers.flash = 1;
+        showers.flashAt = s;
+        const d = Math.hypot(s.x - camera.position.x, s.z - camera.position.z);
+        setTimeout(() => sound.thunder(d), (d / 343) * 1000);
+      }
+    }
+  }
+  dayNight.flash = Math.max(dayNight.flash, showers.flash * 0.12);
+}
+
+// A rainbow: as the rain clears, with the sun out and not too high, for a
+// minute or so.
+const bow = { rained: 0, value: 0 };
+function afterRain(dt) {
+  if (weather.rain > 0.3) bow.rained = 1;
+  else bow.rained = Math.max(0, bow.rained - dt / 90);
+  const sunUp = dayNight.sunDir.y;
+  const clearing = weather.rain < 0.12 && weather.cover < 0.93 && seasonUniforms.uWinter.value < 0.6;
+  const target = bow.rained > 0 && clearing && sunUp > 0.03 && sunUp < 0.65 ? Math.min(1, bow.rained * 1.5) * (1 - smoothstep(0.45, 0.65, sunUp)) : 0;
+  bow.value += (target - bow.value) * Math.min(1, dt / 6);
+  dayNight.rainbow = sheltered ? 0 : bow.value;
+}
+
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+// The northern lights: out on some clear nights, most often in winter
+// (a night in three otherwise, two in three in deep winter), and
+// strongest over cold, snowy country and high up.
+const aurora = { value: 0 };
+function northernLights(dt) {
+  const winter = seasonUniforms.uWinter.value;
+  const h = Math.sin(dayNight.day * 12.9898 + 4.1) * 43758.5453;
+  const tonight = h - Math.floor(h) < 0.3 + 0.35 * winter;
+  const high = THREE.MathUtils.smoothstep(camera.position.y, 110, 220);
+  const target = tonight ? Math.min(1, (0.3 + 0.7 * winter) * (0.4 + 0.6 * Math.max(cold.value * (0.5 + 0.5 * winter), high))) : 0;
+  aurora.value += ((aurora.force ?? target) - aurora.value) * Math.min(1, dt / 8);
+  dayNight.aurora = aurora.value;
+}
+
 // Morning fog: on most mornings mist lies over the low country and in
 // the valleys, thickest around sunrise and burnt off by mid-morning (fly
 // up out of it); thinner over dry land, and always there over the
@@ -472,13 +601,17 @@ function tick(now) {
   const wind = updateWind(now / 1000, 0.95 * weather.storm + 0.35 * weather.rain);
   // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)
   lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getBaseHeight(x, z), sound, sheltered);
+  farLightning(dt);
+  afterRain(dt);
   dayNight.update(dt, camera.position, weather);
+  showers.update(dt, camera, weather, clouds.wind, dayNight.horizon, scene.fog);
   // The ground gets wet in the rain (puddles), and dries off over a few minutes.
   seasonUniforms.uWet.value = Math.min(1, Math.max(0, seasonUniforms.uWet.value + (weather.rain > 0.2 ? dt / 20 : -dt / 240)));
   // Snow lies fresh over everything after a snowfall, melting off over a few minutes (and with the winter).
   const snowing = weather.rain > 0.2 && seasonUniforms.uWinter.value > 0.5;
   seasonUniforms.uSnowfall.value = Math.min(seasonUniforms.uWinter.value, Math.max(0, seasonUniforms.uSnowfall.value + (snowing ? dt / 60 : -dt / 300)));
   shadowReach(dt);
+  northernLights(dt);
   // Rain closes the view in, and so does the mist that lies over the
   // wetlands at dawn.
   const mist = marshMist(dt);
@@ -498,10 +631,13 @@ function tick(now) {
   body.update(controls, dt);
   torches.update(now / 1000, camera.position);
   updateVisibility();
+  const haze = heatHaze(dt);
   sound.update(weather.rain * (1 - snow), sheltered);
+  sound.ambience(surroundings(dt, snow));
   if (ui.rays.checked) {
     light.strength = dayNight.lightStrength;
     light.reach = dayNight.shaftReach;
+    light.haze = haze;
     rayEffects.render(scene, camera, light);
   } else {
     renderer.render(scene, camera);
@@ -547,4 +683,4 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, renderer, scene, camera, chunks, farTrees, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, renderer, scene, camera, chunks, farTrees, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };

@@ -189,13 +189,13 @@ export class CaveSystem {
    * ground). Returns { height, inCave, ceiling }.
    */
   groundAt(x, feetY, z, terrainHeight) {
-    const H = this.generator.getHeight(x, z);
-    const surface = Number.isFinite(terrainHeight) ? terrainHeight : H;
     // Fast path: nowhere near a cave.
     const entrances = this.mouthsNear(x, z, x, z);
     if (!entrances.length && this.field.regionRock(x, z) > 10 && Number.isFinite(terrainHeight)) {
       return { height: terrainHeight, inCave: false, ceiling: Infinity };
     }
+    const H = this.generator.getHeight(x, z);
+    const surface = Number.isFinite(terrainHeight) ? terrainHeight : H;
 
     const solid = (y) => Math.min(surface - y, this.caveDensity(x, y, z, entrances)) > 0;
     const top = feetY + 1.2;
