@@ -23,6 +23,7 @@ export const seasonUniforms = {
   uAutumn: { value: 0 },
   uWinter: { value: 0 },
   uWet: { value: 0 }, // how wet the ground is after rain (puddles), 0..1
+  uSnowfall: { value: 0 }, // fresh snow lying on everything after it has snowed, 0..1
 };
 
 function smoothstep(a, b, x) {
@@ -88,6 +89,7 @@ const COMMON = /* glsl */ `
   uniform float uSpring;
   uniform float uAutumn;
   uniform float uWinter;
+  uniform float uSnowfall;
   float seasonGreen(vec3 c) { return clamp((c.g - max(c.r, c.b)) * 9.0, 0.0, 1.0); }
   float seasonHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   float seasonNoise(vec2 p) {
@@ -119,10 +121,10 @@ export function seasonalTerrain(material, seaLevel) {
     material,
     (shader) => {
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aWoods;\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;\nvarying float vWoods;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSeasonWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvSeasonUp = normal.y;\nvWoods = aWoods;');
+        .replace('#include <common>', '#include <common>\nattribute float aCold;\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;\nvarying float vCold;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSeasonWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvSeasonUp = normal.y;\nvCold = aCold;');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${COMMON}\nuniform float uWet;\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;\nvarying float vWoods;`)
+        .replace('#include <common>', `#include <common>\n${COMMON}\nuniform float uWet;\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;\nvarying float vCold;`)
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
@@ -130,24 +132,23 @@ export function seasonalTerrain(material, seaLevel) {
             vec3 c = diffuseColor.rgb;
             float g = seasonGreen(c);
             c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * g * 0.7);
-            c = mix(c, vec3(0.5, 0.33, 0.1), uAutumn * g * 0.5);
-            c = mix(c, vec3(0.24, 0.22, 0.14), uWinter * g * 0.55);
-            // Fallen leaves in the woods: autumn's litter, lying on into winter.
-            float litter = vWoods * g * max(uAutumn, 0.6 * uWinter) * smoothstep(0.35, 0.6, seasonNoise(vSeasonWorld.xz * 0.9));
-            float leaf = seasonHash(floor(vSeasonWorld.xz * 1.7));
-            vec3 leafColor = leaf < 0.3 ? vec3(0.62, 0.3, 0.09) : leaf < 0.55 ? vec3(0.72, 0.5, 0.14) : leaf < 0.8 ? vec3(0.46, 0.2, 0.1) : vec3(0.36, 0.26, 0.15);
-            c = mix(c, leafColor, litter * 0.85);
+            // (Only where there's a real winter: the jungles stay green.)
+            float seasonal = smoothstep(0.3, 0.6, vCold);
+            c = mix(c, vec3(0.5, 0.33, 0.1), uAutumn * g * 0.5 * seasonal);
+            c = mix(c, vec3(0.24, 0.22, 0.14), uWinter * g * 0.55 * seasonal);
             // Puddles after rain, on flat ground: dark and glassy, drying slowly.
             float puddle = uWet * (1.0 - uWinter) * smoothstep(0.985, 0.995, abs(vSeasonUp)) * smoothstep(0.66, 0.7, seasonNoise(vSeasonWorld.xz * 0.28 + 7.0))
               * smoothstep(${(seaLevel + 1.0).toFixed(2)}, ${(seaLevel + 2.0).toFixed(2)}, vSeasonWorld.y);
             c = mix(c, c * 0.35 + vec3(0.1, 0.13, 0.17), puddle * 0.85);
-            // Snow: on flat, cool-coloured ground above the water, patchy
-            // as winter comes and goes.
-            float cool = 1.0 - smoothstep(0.04, 0.14, c.r - c.b);
+            // Snow: on flat ground above the water in the lands with a cold
+            // winter (sand and all; not the deserts), patchy as winter comes
+            // and goes; and after a snowfall a thin layer over nearly
+            // everything, slopes too.
             float patchy = seasonHash(floor(vSeasonWorld.xz / 5.0));
-            float snow = uWinter * max(cool, g) * smoothstep(0.6, 0.85, abs(vSeasonUp))
-              * smoothstep(${(seaLevel + 0.4).toFixed(2)}, ${(seaLevel + 1.2).toFixed(2)}, vSeasonWorld.y)
-              * smoothstep(patchy - 0.15, patchy + 0.05, uWinter * 1.25 - 0.1);
+            float above = smoothstep(${(seaLevel + 0.4).toFixed(2)}, ${(seaLevel + 1.2).toFixed(2)}, vSeasonWorld.y);
+            float settled = uWinter * smoothstep(0.6, 0.85, abs(vSeasonUp)) * smoothstep(patchy - 0.15, patchy + 0.05, uWinter * 1.25 - 0.1);
+            float fresh = uSnowfall * smoothstep(0.35, 0.6, abs(vSeasonUp));
+            float snow = smoothstep(0.3, 0.6, vCold) * above * max(settled, fresh);
             diffuseColor.rgb = mix(c, vec3(0.86, 0.89, 0.93), snow);
           }`,
         );
@@ -178,7 +179,7 @@ export function seasonalRocks(material) {
             float cool = 1.0 - smoothstep(0.02, 0.1, c.r - c.b);
             float cap = smoothstep(0.45, 0.75, vRockNormal.y);
             float drift = (1.0 - smoothstep(-0.35, 0.05, vRockLocal.y)) * smoothstep(-0.2, 0.5, dot(vRockNormal.xz, vec2(0.8, 0.6)));
-            float snow = uWinter * cool * clamp(max(cap, drift), 0.0, 1.0);
+            float snow = cool * clamp(max(uWinter * max(cap, drift), uSnowfall * smoothstep(0.1, 0.5, vRockNormal.y)), 0.0, 1.0);
             diffuseColor.rgb = mix(c, vec3(0.86, 0.89, 0.93), snow);
           }`,
         );
@@ -244,7 +245,7 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
             c = mix(c, fall * (0.75 + 0.5 * dot(c, vec3(0.33))), uAutumn * leafy * 0.9);
             // Winter: bare grey-brown twigs, and snow on the upward faces.
             c = mix(c, vec3(0.13, 0.1, 0.08), uWinter * leafy * 0.85);
-            c = mix(c, vec3(0.86, 0.89, 0.93), uWinter * vSeason.y * smoothstep(0.3, 0.75, vSeasonUp) * 0.85);
+            c = mix(c, vec3(0.86, 0.89, 0.93), max(uWinter, uSnowfall) * vSeason.y * smoothstep(0.3 - 0.2 * uSnowfall, 0.75, vSeasonUp) * 0.85);
             diffuseColor.rgb = c;
             ${leaves ? 'diffuseColor.a *= 1.0 - uWinter * vSeason.x; // the leaves have fallen' : ''}
           }`,
@@ -278,6 +279,7 @@ export function seasonalGrass(material) {
           c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * g * 0.7);
           c = mix(c, vec3(0.55, 0.38, 0.12), uAutumn * g * 0.6);
           c = mix(c, vec3(0.7, 0.72, 0.74), uWinter * g * 0.8);
+          c = mix(c, vec3(0.86, 0.89, 0.93), uSnowfall * g * 0.75); // dusted with fresh snow
           diffuseColor.rgb = c;
         }`,
       );

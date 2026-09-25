@@ -14,6 +14,8 @@ import { createLilyLayer } from './world/layers/LilyLayer.js';
 import { createVentLayer } from './world/layers/VentLayer.js';
 import { createGeyserLayer } from './world/layers/GeyserLayer.js';
 import { createCoralLayer } from './world/layers/CoralLayer.js';
+import { createLeafLayer } from './world/layers/LeafLayer.js';
+import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
@@ -80,6 +82,8 @@ chunks.addLayer(createLilyLayer(WORLD));
 chunks.addLayer(createVentLayer(WORLD));
 chunks.addLayer(createGeyserLayer(WORLD));
 chunks.addLayer(createCoralLayer(WORLD));
+chunks.addLayer(createLeafLayer());
+chunks.addLayer(createLavaLayer(WORLD));
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
 scene.add(farTrees.group);
@@ -470,6 +474,9 @@ function tick(now) {
   dayNight.update(dt, camera.position, weather);
   // The ground gets wet in the rain (puddles), and dries off over a few minutes.
   seasonUniforms.uWet.value = Math.min(1, Math.max(0, seasonUniforms.uWet.value + (weather.rain > 0.2 ? dt / 20 : -dt / 240)));
+  // Snow lies fresh over everything after a snowfall, melting off over a few minutes (and with the winter).
+  const snowing = weather.rain > 0.2 && seasonUniforms.uWinter.value > 0.5;
+  seasonUniforms.uSnowfall.value = Math.min(seasonUniforms.uWinter.value, Math.max(0, seasonUniforms.uSnowfall.value + (snowing ? dt / 60 : -dt / 300)));
   shadowReach(dt);
   // Rain closes the view in, and so does the mist that lies over the
   // wetlands at dawn.

@@ -7,11 +7,11 @@ function smoothstep(a, b, x) {
 }
 
 const REGION = 768; // at most one river and one mountain stream rise per region this size
-const RIVER_REACH = 3; // a river stays within this many regions of where it rises
+const RIVER_REACH = 4; // a river stays within this many regions of where it rises
 const STREAM_REACH = 2; // likewise a stream
 const CELL = 32; // spatial index cell (m)
 const STEP = 8; // path spacing (m)
-const RIVER_STEPS = 260; // a river is at most ~2 km long
+const RIVER_STEPS = 400; // a river is at most ~3 km long
 const STREAM_STEPS = 170; // a stream at most ~1.4 km
 const INFLUENCE = 26; // how far past its channel a river still shapes the land (m)
 
@@ -84,19 +84,21 @@ export class Rivers {
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     let made = 0;
-    for (let attempt = 0; attempt < 70 && made < 2; attempt++) {
+    for (let attempt = 0; attempt < 90 && made < 3; attempt++) {
       const x = (rx + rand()) * REGION;
       const z = (rz + rand()) * REGION;
       // Rivers rise in the hills and foothills of the plains and savanna
       // (where mountain streams come down to meet them), not in the desert.
-      if (g.getMountainness(x, z) > 0.35) continue;
+      if (g.getMountainness(x, z) > 0.45) continue;
       const h = g.getBaseHeight(x, z);
-      if (h < 10 || h > 110) continue;
+      if (h < 14 || h > 140) continue;
       if (g.getBiomeWeights(x, z, {}).desert > 0.2) continue;
       const pond = this.#pond(x, z, 6 + rand() * 7, rand, 0.12);
       if (!pond) continue;
       const course = this.#trace(pond, 'river');
-      if (course && Rivers.#good(course, 'river')) {
+      // (Long rivers first: at the start only a course of about half a
+      // kilometre or more will do.)
+      if (course && Rivers.#good(course, 'river') && (attempt >= 25 || course.length * STEP >= 480)) {
         this.#add(course, pond, 'river');
         made++;
       }
@@ -202,12 +204,12 @@ export class Rivers {
     for (let i = 0; i < n - 1; i++) {
       const run = Math.hypot(points[i + 1].x - points[i].x, points[i + 1].z - points[i].z) || 1;
       if ((points[i].level - points[i + 1].level) / run > 0.4) {
-        if (i - last < 5) return false; // falls must be well apart
+        if (i - last < 3) return false; // falls must be well apart
         falls++;
         last = i;
       }
     }
-    return falls <= 4;
+    return falls <= 6;
   }
 
   /**
@@ -268,6 +270,9 @@ export class Rivers {
     let level = source.level;
     // (A spring on a cliff top stays a stream until it has gone over the edge.)
     let fell = !source.cliff;
+    // How far the land must fall below a pool before the stream drops out
+    // of it: real falls, not a staircase of little steps.
+    let dropNeeded = stream ? 3 + rand() * 3 : 0;
     const steps = stream ? STREAM_STEPS + RIVER_STEPS : RIVER_STEPS;
     for (let i = 0; i < steps; i++) {
       const b = g.getBaseHeight(px, pz);
@@ -316,11 +321,19 @@ export class Rivers {
       // gentle ground too.
       const target = b - (stream ? (slope > 0.15 ? 0.5 : 1.1) : 1.3 + Math.min(1.1, (points.length * STEP) / 700));
       const cascade = stream && slope > 0.15;
-      if (cascade && target < level - 0.02) {
-        const next = Math.max(this.seaLevel + 0.03, target - (1.5 + rand() * 2));
-        if (level - next > 3) fell = true;
-        if (points.length) points.push({ x: px - dir[0] * 4, z: pz - dir[1] * 4, level: level - 0.02, width: 0, cascade: true });
-        level = next;
+      if (cascade) {
+        // Steep ground: a pool held level behind its rock lip, until the
+        // land has fallen well away below it; then the water pours over
+        // in one fall into the next pool, dug a little into the slope.
+        if (target < level - dropNeeded) {
+          const next = Math.max(this.seaLevel + 0.03, target - 0.8);
+          if (level - next > 3) fell = true;
+          if (points.length) points.push({ x: px - dir[0] * 4, z: pz - dir[1] * 4, level: level - 0.02, width: 0, cascade: true, lip: true });
+          level = next;
+          dropNeeded = 3 + rand() * 3;
+        } else {
+          level = Math.max(this.seaLevel + 0.03, level - 0.02);
+        }
       } else if (stream) {
         level = Math.max(this.seaLevel + 0.03, Math.min(level - 0.02, target));
       } else {
@@ -406,6 +419,8 @@ export class Rivers {
     points.forEach((p, i) => {
       const t = Math.max(wide[i], 0.5 * (wide[i - 1] ?? 0), 0.5 * (wide[i + 1] ?? 0));
       if (t > 0) p.width = Math.max(p.width, p.width + (7.5 - p.width) * t);
+      // (The water pours over a lip narrower than the pools either side.)
+      if (p.lip) p.width = Math.min(p.width, 2.2 + p.width * 0.25);
     });
     return points;
   }
@@ -448,10 +463,10 @@ export class Rivers {
   #alpineLakes(rx, rz) {
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed ^ 0xa1be) * 4294967296);
-    if (rand() > 0.6) return;
+    if (rand() > 0.65) return;
     for (let attempt = 0; attempt < 25; attempt++) {
       let x = (rx + rand()) * REGION, z = (rz + rand()) * REGION;
-      if (g.getMountainness(x, z) < 0.85) continue;
+      if (g.getMountainness(x, z) < 0.3) continue; // (up in the ranges, or down in their foothills)
       // Roll on down into the hollow below.
       for (let k = 0; k < 30; k++) {
         const gx = (g.getBaseHeight(x + 5, z) - g.getBaseHeight(x - 5, z)) / 10;
@@ -464,9 +479,9 @@ export class Rivers {
       // (A hollow belongs to the region it lies in, so two never share one.)
       if (Math.floor(x / REGION) !== rx || Math.floor(z / REGION) !== rz) continue;
       const h = g.getBaseHeight(x, z);
-      if (h < 110 || h > 260) continue;
+      if (h < 60 || h > 260) continue;
       if (g.getBiomeWeights(x, z, {}).temperate < 0.5) continue;
-      const pond = this.#pond(x, z, 14 + rand() * 16, rand, 0.35);
+      const pond = this.#pond(x, z, 20 + rand() * 25, rand, 0.35);
       if (!pond || pond.level < h + 0.3) continue; // it needs a real hollow to hold it
       pond.tint = 1;
       pond.alpine = true;

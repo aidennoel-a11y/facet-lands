@@ -593,6 +593,63 @@ function treeFern() {
   return withCrown([part(new CylinderGeometry(0.17, 0.24, 3.7, 6, 2), 0x3a2c22, 0x4d3a2c, { x: 0.07, y: 1.85, lump: 0.1, seed: 1400 })], fronds);
 }
 
+// Jungle giant: a pale, straight trunk standing on buttress roots, rising
+// far above the rest to a broad umbrella of a canopy, hung with vines.
+const GIANT_BLOBS = [
+  [0, 20.2, 0, 3.0],
+  [3.4, 19.6, 1.0, 2.6],
+  [-3.2, 19.8, -1.2, 2.7],
+  [0.9, 19.4, -3.4, 2.5],
+  [-1.2, 19.5, 3.3, 2.5],
+  [2.4, 20.6, -2.2, 2.1],
+  [-2.3, 20.5, 2.1, 2.1],
+];
+
+function jungleGiant() {
+  const rand = mulberry32(1901);
+  const bark = 0x7a6b58, barkTop = 0x8e7f6a;
+  const wood = [part(new CylinderGeometry(0.42, 0.72, 18.5, 7, 3), bark, barkTop, { y: 9.25, lump: 0.05, seed: 1900 })];
+  // Buttress roots: flared fins round the foot.
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI * 2 + rand() * 0.4;
+    wood.push(limb([Math.cos(a) * 1.9, -0.2, Math.sin(a) * 1.9], [Math.cos(a) * 0.3, 3.2, Math.sin(a) * 0.3], 0.2, 0.28, bark, barkTop, 1910 + k));
+  }
+  // Great limbs out to the canopy.
+  GIANT_BLOBS.slice(1, 5).forEach(([x, y, z], k) => wood.push(limb([0, 16.5, 0], [x * 0.8, y - 1.2, z * 0.8], 0.3, 0.14, barkTop, bark, 1920 + k)));
+  // Vines trailing down from under the canopy.
+  const vines = [];
+  for (let k = 0; k < 16; k++) {
+    const [x, y, z, r] = GIANT_BLOBS[k % GIANT_BLOBS.length];
+    const a = rand() * Math.PI * 2, len = 4 + rand() * 7;
+    const g = new ConeGeometry(0.09 + rand() * 0.05, len, 3, 1);
+    g.rotateX(Math.PI);
+    vines.push(part(g, 0x5c8a3e, 0x35602a, { x: x + Math.cos(a) * r * 0.7, y: y - r * 0.35 - len / 2, z: z + Math.sin(a) * r * 0.7, seed: 1930 + k }));
+  }
+  return withCrown(wood, [
+    ...GIANT_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x2c6327, 0x5a9a3a, { x, y, z, sy: 0.5, lump: 0.22, seed: 1950 + i })),
+    ...vines,
+  ]);
+}
+
+// Jungle palm: a slender trunk curving up to a crown of long, drooping fronds.
+function junglePalm() {
+  const rand = mulberry32(2001);
+  const bark = 0x76654e, barkTop = 0x8a7a60;
+  const pts = [[0, 0, 0], [0.35, 3, 0.05], [1.0, 6, 0.15], [1.7, 8.6, 0.25]];
+  const wood = pts.slice(1).map((p, k) => limb(pts[k], p, 0.24 - k * 0.03, 0.2 - k * 0.03, bark, barkTop, 2010 + k));
+  const top = pts[3];
+  const fronds = [];
+  for (let k = 0; k < 11; k++) {
+    const a = (k / 11) * Math.PI * 2 + rand() * 0.3;
+    fronds.push(frond(top, a, 3.2 + rand() * 0.8, 0.5, 0.7, 2.6 + rand() * 0.6, 0x3a742c, 0x78ad4a, 2020 + k));
+  }
+  for (let k = 0; k < 4; k++) {
+    const a = rand() * Math.PI * 2;
+    wood.push(part(new IcosahedronGeometry(0.2, 0), 0x6b5231, 0x7d6038, { x: top[0] + Math.cos(a) * 0.3, y: top[1] - 0.35, z: top[2] + Math.sin(a) * 0.3, seed: 2040 + k }));
+  }
+  return withCrown(wood, fronds);
+}
+
 // Charred snag (volcanic highlands): a dead tree burned black by an old
 // lava flow, its top snapped off.
 function charredSnag() {
@@ -887,6 +944,8 @@ export const TREE_GEOMETRIES = {
   treeFern: treeFern(),
   weepingWillow: weepingWillow(),
   mangrove: mangrove(),
+  jungleGiant: jungleGiant(),
+  junglePalm: junglePalm(),
 };
 
 // How each species takes the seasons: [deciduous (leaves turn and fall),
@@ -900,6 +959,7 @@ const SEASONAL = {
   oak: [1, 1, 0], larch: [1, 1, 0], silverBirch: [1, 1, 0], aspen: [1, 1, 0], weepingWillow: [1, 1, 0],
   mangrove: [0, 1, 0], treeFern: [0, 1, 0], charredSnag: [0, 1, 0],
   baobab: [0, 0, 0], joshuaTree: [0, 0, 0], ocotillo: [0, 0, 0],
+  jungleGiant: [0, 0, 0], junglePalm: [0, 0, 0], // (evergreen, and never snowed on)
 };
 function markSeasons(geometries) {
   for (const [type, g] of Object.entries(geometries)) {
@@ -947,5 +1007,6 @@ export const LEAF_GEOMETRIES = {
   baobab: leaves(24, [0.35, 0.6], [0x6f8c3a, 0x86a048, 0x9bb458], crown('baobab'), 29),
   weepingWillow: leaves(60, [0.3, 0.55], [0x86ab48, 0x9dbd5a, 0xb0cc6c, 0x78a042], crown('weepingWillow'), 30),
   mangrove: leaves(50, [0.35, 0.6], [0x3a6a33, 0x4d7d3e, 0x5f8f48], crown('mangrove'), 31),
+  jungleGiant: leaves(70, [0.6, 1.0], [0x2f6b2a, 0x3f7d33, 0x4f8f3c, 0x5a9a3a], crown('jungleGiant'), 32),
 };
 markSeasons(LEAF_GEOMETRIES);

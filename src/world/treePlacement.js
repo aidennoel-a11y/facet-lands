@@ -86,11 +86,16 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // Near a biome border, each spot takes one biome or the other at random.
       const biome = generator.pickBiome(wx, wz, hash2(gi, gj, seed + 11));
       const trees = biome.trees;
-      const likely = (trees ? (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density : 0);
+      let likely = (trees ? (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density : 0);
+      // Round an alpine lake below the snow, a ring of trees.
+      const lake = trees && biome.id === 'temperate' ? generator.rivers.at(wx, wz, 30) : null;
+      const lakeside = !!(lake && lake.alpine && lake.level < 170);
+      if (lakeside) likely = Math.max(likely, 0.6);
       if (!trees || keep > likely) continue;
       if (biome.id === 'desert' && generator.getFeatures(wx, wz).erg > 0.3) continue; // nothing grows in a dune sea
       if (biome.id === 'volcanic' && hash2(gi, gj, seed + 15) < 0.92 * generator.getVolcanic(wx, wz).cone) continue; // cinder cones are nearly bare
       if (biome.id === 'volcanic' && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
+      if (biome.id === 'blackHills' && generator.getFormation(wx, wz) > 3) continue; // nor up on the granite spires and domes
       // Open plains are treeless: grass as far as you can see.
       if (biome.id === 'temperate' && hash2(gi, gj, seed + 16) < smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) continue;
       if (crowded(gi, gj, likely)) continue;
@@ -116,9 +121,9 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const upness = 1 / Math.sqrt(1 + gradX * gradX + gradZ * gradZ);
       const r = hash2(gi, gj, seed + 12);
       const cliff = 1 - smoothstep(0.5, 0.72, upness);
-      if (r < Math.max(cliff, smoothstep(128, 146, colourHeight))) continue;
+      if (r < Math.max(cliff, lakeside ? 0 : smoothstep(128, 146, colourHeight))) continue;
       // And ever fewer the higher you go (the tree line).
-      if (hash2(gi, gj, seed + 13) < smoothstep(85, 150, ground) * 0.9) continue;
+      if (!lakeside && hash2(gi, gj, seed + 13) < smoothstep(85, 150, ground) * 0.9) continue;
 
       // Too steep for roots? (height change per metre)
       if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
@@ -170,7 +175,7 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 
 /** The kinds of tree, in a fixed order (far trees are packed by index). */
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
-  'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove'];
+  'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

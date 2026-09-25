@@ -202,6 +202,38 @@ export const BIOMES = {
     },
   },
 
+  // Jungles: steaming lowland rainforest, a dense, dark green floor under
+  // giant trees whose canopies close overhead and trail vines, with palms
+  // and tree ferns beneath. Warm all year (no autumn, no snow).
+  jungle: {
+    id: 'jungle',
+    name: 'Jungle',
+    palette: [
+      { height: -Infinity, color: 0x5d6a4a },
+      { height: -3, color: 0x65703f },
+      { height: 0, color: 0x8d8a55 }, // muddy shore
+      { height: 3, color: 0x4c7a30 },
+      { height: 12, color: 0x3f7228 }, // dark, lush undergrowth
+      { height: 40, color: 0x46802e },
+      { height: 90, color: 0x557f38 },
+    ],
+    cliff: 0x5f6a4c, // mossy rock
+    cliffSlope: [0.72, 0.5],
+    snowLine: 999,
+    snow: 0xf1f4f7,
+    grass: 0.6,
+    trees: {
+      density: 1.5,
+      clumped: false,
+      species: [
+        { type: 'jungleGiant', weight: 1.2, minHeight: -99, maxHeight: 999 },
+        { type: 'junglePalm', weight: 0.9, minHeight: -99, maxHeight: 999 },
+        { type: 'treeFern', weight: 0.8, minHeight: -99, maxHeight: 999 },
+        { type: 'mangrove', weight: 0.35, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
   desert: {
     id: 'desert',
     name: 'Desert',

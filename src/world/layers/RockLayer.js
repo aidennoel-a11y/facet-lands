@@ -17,6 +17,7 @@ import { seasonalRocks } from '../../render/Seasons.js';
 
 const STONE = [0x8b8696, 0x7d7888, 0x938e9c, 0x736f7e];
 const SANDSTONE = [0xc08c66, 0xb5825e, 0xc99a70, 0xab7a58];
+const BASALT = [0x2b2828, 0x353131, 0x3f3a39, 0x242222];
 const MOSS = new Color(0x6f8f4a);
 
 /**
@@ -67,7 +68,15 @@ const SAND_SHAPES = [
   rockGeometry(404, 'ico', SANDSTONE),
   rockGeometry(505, 'dodeca', SANDSTONE),
 ];
-const ALL_SHAPES = [...ROCK_SHAPES, ...SAND_SHAPES];
+/** And in black basalt, round the volcanoes. */
+const BASALT_SHAPES = [
+  rockGeometry(101, 'dodeca', BASALT),
+  rockGeometry(202, 'ico', BASALT),
+  rockGeometry(303, 'dodeca', BASALT),
+  rockGeometry(404, 'ico', BASALT),
+  rockGeometry(505, 'dodeca', BASALT),
+];
+const ALL_SHAPES = [...ROCK_SHAPES, ...SAND_SHAPES, ...BASALT_SHAPES];
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
