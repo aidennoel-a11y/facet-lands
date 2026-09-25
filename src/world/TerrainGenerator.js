@@ -8,20 +8,17 @@ import { Color } from 'three';
 const MUD = new Color(0x5f4a36);
 const DIRT = new Color(0x7d6547);
 const RIVERBED = new Color(0x55493b);
-const ICE = new Color(0x9fcbe0); // glacier ice
 // How much more of the world is mountains than the range noise alone gives.
 const MOUNTAIN_BIAS = 0.085;
 const DUNE = new Color(0xe6b86e); // dune sand
-const GLACIER = new Color(0xd6eaf3); // glacier ice
 const CORALS = [0xe0708a, 0xe89a4a, 0x9a6ab8, 0x4fb3a0, 0xe6cf5a, 0xd9566a].map((c) => new Color(c));
 const SINTER = new Color(0xe6dcc4); // crusts round hot springs
 const MAT = new Color(0xd2803a); // microbial mats at a hot spring's edge
-const CREVASSE = new Color(0x6f9fc0);
-const glacierIce = new Color();
 const WASH = new Color(0xcdb592); // a canyon's dry wash
 const LAVA = new Color(0x2b2827); // old lava
 const CINDER = new Color(0x6e3b2c); // red cinders
 const SCREE = new Color(0x4b423e); // a cinder cone's dark slopes
+const ICE = new Color(0x9fcbe0); // glacier ice
 const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
 const GRAVEL = new Color(0x8a8590);
 const SHORE = {
@@ -443,9 +440,7 @@ export class TerrainGenerator {
         const high = smoothstep(0.06, 0.35, peaks);
         const rugged = this.ruggedNoise.fbm(x * 0.0035, z * 0.0035, 2) * (18 + 16 * high);
         const crags = high > 0 ? (this.ruggedNoise.ridged(x * 0.011 + 13, z * 0.011 - 7, 3, 2, 0.5, 0.01) - 0.3) * 22 * high : 0;
-        // Glaciers smooth over the crags beneath them.
-        const ice = this.getGlacier(x, z, 30 + Math.pow(core, 1.5) * peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl));
-        mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + (rugged + crags) * (1 - 0.8 * ice)) + 3 * ice;
+        mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged + crags);
       }
       // Foothills: rolling hills that grow as the land climbs towards the
       // range, so it never rises straight out of the plain.
@@ -1338,25 +1333,6 @@ export class TerrainGenerator {
   }
 
   /**
-   * Glaciers at (x, z), for land `height` metres high (0..1): tongues of
-   * ice lying in the high mountains of the cold green lands, reaching down
-   * below the snow into the valleys.
-   */
-  getGlacier(x, z, height) {
-    if (height < 135) return 0;
-    const range = this.#rangeField(x, z, {}).value + MOUNTAIN_BIAS - this.#drySuppress(x, z);
-    const core = smoothstep(0.45, 0.75, range);
-    if (core <= 0) return 0;
-    const w = this.getBiomeWeights(x, z, {});
-    const cold = smoothstep(0.3, 0.6, w.temperate + w.wetland + w.blackHills);
-    if (cold <= 0) return 0;
-    const qx = x + this.bowlNoise.noise2D(x * 0.002 + 5, z * 0.002) * 140;
-    const qz = z + this.bowlNoise.noise2D(x * 0.002, z * 0.002 - 5) * 140;
-    const tongue = smoothstep(0.05, 0.3, this.bowlNoise.fbm(qx * 0.0021 - 300, qz * 0.0021 + 150, 2));
-    return tongue * core * cold * smoothstep(135, 165, height);
-  }
-
-  /**
    * Coral reef at (x, z), where the sea bed is `ground` metres high
    * (0..1): patches in the warm, clear shallows off the desert and savanna
    * coasts of the open sea.
@@ -1444,7 +1420,6 @@ export class TerrainGenerator {
     const mountains = this.getMountainness(x, z);
     if (mountains > 0.45) {
       if (height > 185) return 'Snowy peaks';
-      if (this.getGlacier(x, z, height) > 0.5) return 'Glacier';
       // Mountains are bare rock: above the trees, or sheer. Wooded slopes
       // lower down are the foothills.
       const steep = Math.abs(this.getHeight(x + 3, z) - this.getHeight(x - 3, z)) / 6 + Math.abs(this.getHeight(x, z + 3) - this.getHeight(x, z - 3)) / 6;
@@ -1494,15 +1469,6 @@ export class TerrainGenerator {
         const r = n.spring.geyser ? 3 : n.spring.r;
         const q = n.d / r;
         if (q < 3) out.lerp(q < 1.5 ? MAT : SINTER, 0.85 * (1 - smoothstep(2.2, 3, q)));
-      }
-    }
-    // Glaciers: blue-white ice, crossed by darker crevasses (the steep
-    // rock around them stays rock).
-    if (height > 130) {
-      const gl = this.getGlacier(x, z, height - jitter);
-      if (gl > 0) {
-        const crevasse = smoothstep(0.82, 0.95, Math.sin(x * 0.21 + z * 0.13 + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 4) * 0.5 + 0.5);
-        out.lerp(crevasse > 0 ? glacierIce.copy(GLACIER).lerp(CREVASSE, crevasse) : GLACIER, 0.9 * gl * smoothstep(0.5, 0.72, upness));
       }
     }
     // Lake shores: mud, dirt, grass and rock; rocky outcrops on beaches.

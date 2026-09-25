@@ -50,7 +50,6 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       const jitter = generator.getColorJitter(wx, wz);
       const colourHeight = ground + jitter;
       if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > 140) continue;
-      if (ground > 130 && generator.getGlacier(wx, wz, ground) > 0.3) continue; // nor on the ice
       if (generator.onSinter && generator.getBiomeWeights(wx, wz, {}).volcanic > 0.5 && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
       // How much grass the biome here grows.
       if (keep > density * generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass) continue;

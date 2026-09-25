@@ -117,7 +117,6 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const r = hash2(gi, gj, seed + 12);
       const cliff = 1 - smoothstep(0.5, 0.72, upness);
       if (r < Math.max(cliff, smoothstep(128, 146, colourHeight))) continue;
-      if (ground > 130 && generator.getGlacier(wx, wz, ground) > 0.3) continue; // nor on a glacier
       // And ever fewer the higher you go (the tree line).
       if (hash2(gi, gj, seed + 13) < smoothstep(85, 150, ground) * 0.9) continue;
 
