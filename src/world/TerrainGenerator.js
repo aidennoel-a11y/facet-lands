@@ -10,7 +10,7 @@ const DIRT = new Color(0x7d6547);
 const RIVERBED = new Color(0x55493b);
 const ICE = new Color(0x9fcbe0); // glacier ice
 // How much more of the world is mountains than the range noise alone gives.
-const MOUNTAIN_BIAS = 0.06;
+const MOUNTAIN_BIAS = 0.085;
 const DUNE = new Color(0xe6b86e); // dune sand
 const WASH = new Color(0xcdb592); // a canyon's dry wash
 const LAVA = new Color(0x2b2827); // old lava
@@ -163,8 +163,8 @@ export class TerrainGenerator {
   #biomeWeights(x, z, out, range) {
     range ??= this.#rangeField(x, z).value;
     const a = this.getAridity(x, z, range);
-    const temperate = 1 - smoothstep(0.3, 0.42, a);
-    const desert = smoothstep(0.62, 0.74, a);
+    const temperate = 1 - smoothstep(0.4, 0.52, a);
+    const desert = smoothstep(0.705, 0.825, a);
     const savanna = Math.max(0, 1 - temperate - desert);
     // Black Hills country: a rare biome of its own, found now and then in
     // the rolling hills of the green lands (see #hillsZone).
@@ -193,7 +193,7 @@ export class TerrainGenerator {
     if (x !== this._contX || z !== this._contZ) {
       this._contX = x;
       this._contZ = z;
-      this._cont = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3);
+      this._cont = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.015;
     }
     return this._cont;
   }
@@ -242,17 +242,17 @@ export class TerrainGenerator {
     // always the whole savanna's width from any desert.)
     const raw = this.#rawAridity(x, z);
     if (raw > 0.2 || aridity > 0.3 || range > 0.15) return 0;
-    const zone = smoothstep(-0.2, 0.05, this.wetNoise.fbm(x * 0.00028 + 50, z * 0.00028 - 80, 2));
+    const zone = smoothstep(-0.45, -0.2, this.wetNoise.fbm(x * 0.00028 + 50, z * 0.00028 - 80, 2));
     if (zone <= 0) return 0;
     // (Never near volcanic country.)
     const volcanicNear = 1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z));
     if (volcanicNear <= 0) return 0;
-    const low = 1 - smoothstep(0.15, 0.45, this.#continentBase(x, z));
+    const low = 1 - smoothstep(0.45, 0.75, this.#continentBase(x, z));
     let wet = zone * low * (1 - smoothstep(0.08, 0.2, raw)) * (1 - smoothstep(0.16, 0.3, aridity)) * (1 - smoothstep(0.02, 0.15, range));
     if (wet <= 0) return 0;
     // And the country all around stays green for the best part of a
     // kilometre: no dry land creeping close.
-    return wet * volcanicNear * (1 - smoothstep(0.22, 0.32, this.#dryAround(x, z)));
+    return wet * volcanicNear * (1 - smoothstep(0.32, 0.42, this.#dryAround(x, z)));
   }
 
   /**
@@ -357,7 +357,7 @@ export class TerrainGenerator {
         const crags = high > 0 ? (this.ruggedNoise.ridged(x * 0.011 + 13, z * 0.011 - 7, 3, 2, 0.5, 0.01) - 0.3) * 22 * high : 0;
         mountains = Math.pow(core, 1.5) * (peaks * 260 * (0.65 + 0.5 * size) * (1 - bowl) + rugged + crags);
       }
-      mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size) * (1 - 0.5 * bowl);
+      mountains += Math.pow(mask, 1.5) * 48 * (0.75 + 0.3 * size) * (1 - 0.5 * bowl) + Math.pow(core, 2) * 85 * (1 - 0.5 * bowl); // (the heart of a range lifted, so more of its peaks reach the snow)
       // The very tallest peaks are tamed: above 300 m they rise ever more
       // slowly (never past about 460), their tips rounding off a little
       // rather than shooting up into needles.
@@ -395,7 +395,7 @@ export class TerrainGenerator {
     // (Noise that would only be multiplied by zero isn't evaluated.)
     let hills = 0;
     if (w.temperate + 0.45 * w.savanna !== 0 && 1 - 0.6 * mask !== 0) {
-      const hilly = smoothstep(-0.25, 0.35, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
+      const hilly = smoothstep(-0.45, 0.15, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
       const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (5 + 17 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
       hills = rolling * (w.temperate + 0.45 * w.savanna) * (1 - 0.6 * mask);
     }
@@ -807,7 +807,7 @@ export class TerrainGenerator {
     out.escarp = 0;
     out.escarpHeight = 0;
     // Dune seas: great stretches of the desert that are nothing but sand.
-    out.erg = w.desert > 0 ? w.desert * smoothstep(0.02, 0.28, this.ergNoise.fbm(x * 0.00022 + 300, z * 0.00022 - 120, 2)) : 0;
+    out.erg = w.desert > 0 ? w.desert * smoothstep(0, 0.26, this.ergNoise.fbm(x * 0.00022 + 300, z * 0.00022 - 120, 2)) : 0;
     out.canyon = 0;
     out.canyonZone = 0;
     out.canyonFloor = 0;
@@ -866,7 +866,7 @@ export class TerrainGenerator {
     }
     // Escarpments: most often in rolling hills and forest country.
     const green = w.temperate + 0.5 * w.savanna;
-    const hilly = smoothstep(-0.25, 0.35, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
+    const hilly = smoothstep(-0.45, 0.15, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
     const wooded = smoothstep(-0.2, 0.25, this.forestNoise.fbm(x * 0.0045, z * 0.0045, 3));
     const escarp = smoothstep(0.32 - 0.22 * Math.max(hilly, wooded), 0.5 - 0.2 * Math.max(hilly, wooded), this.escarpNoise.fbm(x * 0.0003, z * 0.0003, 2)) * flatland * green;
     if (escarp > 0) {
@@ -934,7 +934,7 @@ export class TerrainGenerator {
   #hillsZone(x, z, range) {
     // (Never near volcanic country: the volcano noise must be well below
     // where its highlands begin.)
-    const zone = smoothstep(0.3, 0.46, this.hillsNoise.fbm(x * 0.00016 - 250, z * 0.00016 + 610, 2)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
+    const zone = smoothstep(0.27, 0.43, this.hillsNoise.fbm(x * 0.00016 - 250, z * 0.00016 + 610, 2)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
     if (zone <= 0) return 0;
     // (Whole stretches of country, a few kilometres across, not scraps.)
     return zone * (1 - smoothstep(0.02, 0.2, range)) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z)));
@@ -1164,7 +1164,7 @@ export class TerrainGenerator {
     if (top === 'savanna') return f.mesa > 0.4 ? 'Mesas' : 'Savanna';
     if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
     if (this.getForestDensity(x, z) > 0.55) return this.getGrove(x, z) > 0.5 && height < 110 ? 'Birch forest' : 'Forest';
-    if (smoothstep(-0.25, 0.35, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Rolling hills';
+    if (smoothstep(-0.45, 0.15, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Rolling hills';
     return 'Plains';
   }
 
