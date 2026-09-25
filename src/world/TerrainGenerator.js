@@ -283,6 +283,36 @@ export class TerrainGenerator {
     return a + (b - a) * fz;
   }
 
+  /**
+   * The most mountainous the land gets within about 330 m of (x, z) (0..1),
+   * measured on a 64 m grid (remembered) and blended between its points:
+   * mesas keep well clear of mountain ranges.
+   */
+  #mountainsAround(x, z) {
+    const G = 64;
+    const gx = Math.floor(x / G), gz = Math.floor(z / G);
+    const fx = x / G - gx, fz = z / G - gz;
+    const cache = this._mtnNear ?? (this._mtnNear = new Map());
+    const m = (px, pz) => smoothstep(0.08, 0.55, this.#rangeField(px, pz, {}).value + MOUNTAIN_BIAS - 0.9 * smoothstep(0.85, 1.25, this.#rawAridityAt(px, pz)));
+    const at = (i, j) => {
+      const key = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.get(key);
+      if (v === undefined) {
+        v = m(i * G, j * G);
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          for (const d of [170, 380]) v = Math.max(v, m(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d));
+        }
+        if (cache.size > 60000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
+    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return a + (b - a) * fz;
+  }
+
   /** Terrain height in metres at a world position (rivers carved in). */
   getHeight(x, z) {
     const base = this.getBaseHeight(x, z);
@@ -878,7 +908,9 @@ export class TerrainGenerator {
         out.canyon = zone * (1 - smoothstep(half + wall, half + wall + 4, dist));
       }
     }
-    const mesa = smoothstep(0.12, 0.38, this.mesaNoise.fbm(x * 0.00025 + 40, z * 0.00025 - 40, 2)) * smoothstep(0.42, 0.6, dryness) * flatland * (1 - out.erg);
+    let mesa = smoothstep(0.12, 0.38, this.mesaNoise.fbm(x * 0.00025 + 40, z * 0.00025 - 40, 2)) * smoothstep(0.42, 0.6, dryness) * flatland * (1 - out.erg);
+    // (Never within a few hundred metres of a mountain range.)
+    if (mesa > 0) mesa *= 1 - smoothstep(0.3, 0.45, this.#mountainsAround(x, z));
     if (mesa > 0) {
       const wx = x + this.mesaNoise.noise2D(x * 0.004, z * 0.004) * 14;
       const wz = z + this.mesaNoise.noise2D(x * 0.004 + 50, z * 0.004) * 14;
@@ -1181,7 +1213,13 @@ export class TerrainGenerator {
     if (this.getOceanness(x, z) > 0.5 && height < sea + 34 && this.getSeaCliff(x, z) > 0.5) return 'Sea cliffs';
     if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return w.volcanic > 0.5 ? 'Black sand beach' : 'Beach';
     const mountains = this.getMountainness(x, z);
-    if (mountains > 0.45) return height > 185 ? 'Snowy peaks' : 'Mountains';
+    if (mountains > 0.45) {
+      if (height > 185) return 'Snowy peaks';
+      // Mountains are bare rock: above the trees, or sheer. Wooded slopes
+      // lower down are the foothills.
+      const steep = Math.abs(this.getHeight(x + 3, z) - this.getHeight(x - 3, z)) / 6 + Math.abs(this.getHeight(x, z + 3) - this.getHeight(x, z - 3)) / 6;
+      return height + this.getColorJitter(x, z) > 132 || steep > 0.9 ? 'Mountains' : 'Mountain foothills';
+    }
     if (mountains > 0.2) return 'Mountain foothills';
     const top = Object.keys(w).reduce((a, b) => (w[a] >= w[b] ? a : b));
     if (top === 'blackHills') return 'Black Hills';
