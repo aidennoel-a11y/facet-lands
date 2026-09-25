@@ -5,7 +5,7 @@ export const WORLD = {
 
   // Chunking
   chunkSize: 128, // world units per chunk edge
-  viewDistance: 14, // radius in chunks that stays loaded around the camera (1.8 km)
+  viewDistance: 18, // radius in chunks that stays loaded around the camera (2.3 km)
   chunkBuildBudgetMs: 6, // max time per frame spent building chunk meshes
 
   // Level of detail: cells per chunk edge, picked by distance (in chunks).
@@ -13,9 +13,10 @@ export const WORLD = {
   lods: [
     { maxDistance: 1, resolution: 64 }, // 2 m triangles right around you; grass lives here
     { maxDistance: 3, resolution: 32 }, // 4 m
-    { maxDistance: 5, resolution: 16 }, // 8 m (full trees and rocks out to here, 640 m)
+    { maxDistance: 5, resolution: 16 }, // 8 m (rocks out to here, 640 m)
     { maxDistance: 8, resolution: 16 }, // 8 m, far trees (to 1 km)
-    { maxDistance: Infinity, resolution: 8 }, // 16 m, far trees, out to the edge of the view
+    { maxDistance: 12, resolution: 8 }, // 16 m, far trees (to 1.5 km)
+    { maxDistance: Infinity, resolution: 4 }, // 32 m, far trees, out to the edge of the view
   ],
 
   // Low-poly look
@@ -23,6 +24,10 @@ export const WORLD = {
   // Chunks at least this detailed are "full detail": cave mouths are cut
   // into them, and they're refined along rivers and shores.
   detailResolution: 32,
+  // Far chunks (this LOD and beyond) have their ground merged into tiles of
+  // this many chunks a side, one draw call a tile rather than one a chunk.
+  groundMergeLod: 4,
+  groundTile: 4,
   skirtDepth: 6, // hides cracks where chunks of different LOD meet (less than the rock over caves)
 
   // Water fills everything below this height (seas and lakes).
@@ -30,8 +35,8 @@ export const WORLD = {
 
   // Trees
   treeSpacing: 6, // metres between candidate tree spots (lower = denser)
-  treeMaxLod: 2, // chunks at this LOD or closer get full trees
-  farTreeMaxLod: 4, // and out to this LOD, simple far ones (see FarTreeLayer)
+  treeMaxLod: 1, // chunks at this LOD or closer get full trees (beyond, the far trees: a few hundred metres off they look the same)
+  farTreeMaxLod: 5, // and out to this LOD, simple far ones (see FarTreeLayer)
   treeScale: 1.6, // overall tree size multiplier
   leafMaxLod: 0, // leaf clusters only on chunks this close
 

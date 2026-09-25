@@ -1,0 +1,247 @@
+import { MAP_LABELS } from './mapLabels.js';
+
+const TILE = 64; // samples per tile edge
+const SCALES = [4, 8, 16, 32, 64]; // metres per sample (per map pixel)
+const RGB = MAP_LABELS.map(([, c]) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]);
+
+const STYLE = `
+.biome-map { position: fixed; inset: 0; z-index: 50; display: none; background: rgba(12, 18, 28, 0.82); color: #fff;
+  font: 13px/1.3 system-ui, sans-serif; align-items: center; justify-content: center; gap: 18px; padding: 16px; box-sizing: border-box; }
+.biome-map.open { display: flex; }
+.biome-map canvas { border-radius: 12px; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5); cursor: crosshair; touch-action: none; max-width: 100%; }
+.biome-map .side { display: flex; flex-direction: column; gap: 8px; max-height: 100%; overflow: auto; min-width: 190px; }
+.biome-map .title { font-size: 18px; font-weight: 700; }
+.biome-map .hint { opacity: 0.75; font-size: 12px; }
+.biome-map .where { font-weight: 600; min-height: 1.3em; }
+.biome-map .legend { display: grid; grid-template-columns: 1fr; gap: 2px; }
+.biome-map .legend button { all: unset; display: flex; align-items: center; gap: 7px; padding: 2px 4px; border-radius: 5px; cursor: pointer; }
+.biome-map .legend button:hover, .biome-map .legend button.on { background: rgba(255, 255, 255, 0.14); }
+.biome-map .legend i { width: 14px; height: 14px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3); }
+.biome-map .close { all: unset; position: absolute; top: 14px; right: 18px; font-size: 22px; cursor: pointer; opacity: 0.8; }
+@media (max-width: 760px) { .biome-map { flex-direction: column; } .biome-map .side { max-height: 32vh; } }
+`;
+
+/**
+ * The big map, for finding your way (and testing): the land for kilometres
+ * round, coloured by the kind of country (as the biome readout names it)
+ * and hill-shaded, drawn tile by tile by the chunk workers. Drag to look
+ * around, scroll to zoom, click anywhere to fly there; pick a kind of
+ * country in the legend to light up where it is. B or Esc closes it.
+ *
+ * @param task      (message) => Promise of a worker's result (ChunkManager.task)
+ * @param where     () => { x, z, heading } where you are
+ * @param teleport  (x, z) => take you there
+ */
+export class BiomeMap {
+  constructor({ task, where, teleport }) {
+    this.task = task;
+    this.where = where;
+    this.teleport = teleport;
+    this.tiles = new Map(); // "scale:tx:tz" -> { canvas } | 'pending'
+    this.pending = 0;
+    this.scale = 16;
+    this.centre = { x: 0, z: 0 };
+    this.highlight = -1;
+
+    const style = document.createElement('style');
+    style.textContent = STYLE;
+    document.head.append(style);
+    this.root = document.createElement('div');
+    this.root.className = 'biome-map';
+    this.root.innerHTML = `<button class="close" aria-label="Close map">✕</button><canvas></canvas><div class="side"><div class="title">Map</div>
+      <div class="hint">Drag to look around · scroll to zoom · click to fly there · <b>B</b> closes</div><div class="where"></div><div class="legend"></div></div>`;
+    document.body.append(this.root);
+    this.canvas = this.root.querySelector('canvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.whereEl = this.root.querySelector('.where');
+    const legend = this.root.querySelector('.legend');
+    MAP_LABELS.forEach(([name, colour], k) => {
+      const b = document.createElement('button');
+      b.innerHTML = `<i style="background:${colour}"></i>${name}`;
+      b.addEventListener('click', () => {
+        this.highlight = this.highlight === k ? -1 : k;
+        legend.querySelectorAll('button').forEach((el, n) => el.classList.toggle('on', n === this.highlight));
+        for (const tile of this.tiles.values()) if (tile !== 'pending') this.#paint(tile);
+        this.draw();
+      });
+      legend.append(b);
+    });
+    this.root.querySelector('.close').addEventListener('click', () => this.close());
+    this.#input();
+  }
+
+  get isOpen() {
+    return this.root.classList.contains('open');
+  }
+
+  toggle() {
+    if (this.isOpen) this.close();
+    else this.open();
+  }
+
+  open() {
+    const p = this.where();
+    this.centre = { x: p.x, z: p.z };
+    this.root.classList.add('open');
+    const size = Math.floor(Math.min(window.innerWidth - 260, window.innerHeight - 40, 900));
+    this.canvas.width = this.canvas.height = Math.max(240, size);
+    this.draw();
+  }
+
+  close() {
+    this.root.classList.remove('open');
+  }
+
+  /** World position under canvas pixel (px, py). */
+  #toWorld(px, py) {
+    const n = this.canvas.width;
+    return { x: this.centre.x + (px - n / 2) * this.scale, z: this.centre.z + (py - n / 2) * this.scale };
+  }
+
+  #input() {
+    let drag = null;
+    const c = this.canvas;
+    const pixel = (e) => {
+      const r = c.getBoundingClientRect();
+      return [((e.clientX - r.left) / r.width) * c.width, ((e.clientY - r.top) / r.height) * c.height];
+    };
+    c.addEventListener('pointerdown', (e) => {
+      drag = { start: pixel(e), centre: { ...this.centre }, moved: false };
+      c.setPointerCapture(e.pointerId);
+    });
+    c.addEventListener('pointermove', (e) => {
+      const [px, py] = pixel(e);
+      const w = this.#toWorld(px, py);
+      this.whereEl.textContent = `${this.#labelAt(px, py) ?? '…'} · ${Math.round(w.x)}, ${Math.round(w.z)}`;
+      if (!drag) return;
+      const dx = px - drag.start[0], dy = py - drag.start[1];
+      if (Math.hypot(dx, dy) > 4) drag.moved = true;
+      if (drag.moved) {
+        this.centre = { x: drag.centre.x - dx * this.scale, z: drag.centre.z - dy * this.scale };
+        this.draw();
+      }
+    });
+    c.addEventListener('pointerup', (e) => {
+      if (drag && !drag.moved) {
+        const w = this.#toWorld(...pixel(e));
+        this.close();
+        this.teleport(w.x, w.z);
+      }
+      drag = null;
+    });
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const k = SCALES.indexOf(this.scale) + (e.deltaY > 0 ? 1 : -1);
+      if (k < 0 || k >= SCALES.length) return;
+      // Zoom about the point under the cursor.
+      const [px, py] = pixel(e);
+      const before = this.#toWorld(px, py);
+      this.scale = SCALES[k];
+      const after = this.#toWorld(px, py);
+      this.centre.x += before.x - after.x;
+      this.centre.z += before.z - after.z;
+      this.draw();
+    }, { passive: false });
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape' && this.isOpen) this.close();
+    });
+  }
+
+  // (The label under a canvas pixel, if its tile is drawn.)
+  #labelAt(px, py) {
+    const w = this.#toWorld(px, py);
+    const span = TILE * this.scale;
+    const tx = Math.floor(w.x / span), tz = Math.floor(w.z / span);
+    const tile = this.tiles.get(`${this.scale}:${tx}:${tz}`);
+    if (!tile || tile === 'pending') return null;
+    const i = Math.floor((w.x - tx * span) / this.scale), j = Math.floor((w.z - tz * span) / this.scale);
+    const k = tile.labels[j * TILE + i];
+    return MAP_LABELS[k]?.[0] ?? null;
+  }
+
+  #request(tx, tz, scale) {
+    const key = `${scale}:${tx}:${tz}`;
+    this.tiles.set(key, 'pending');
+    this.pending++;
+    this.task({ kind: 'map', x0: tx * TILE * scale, z0: tz * TILE * scale, n: TILE, s: scale })
+      .then(({ labels, shade }) => {
+        const tile = { labels, shade, canvas: document.createElement('canvas') };
+        tile.canvas.width = tile.canvas.height = TILE;
+        this.#paint(tile);
+        this.tiles.set(key, tile);
+      })
+      .catch(() => this.tiles.delete(key))
+      .finally(() => {
+        this.pending--;
+        if (this.isOpen) this.draw();
+      });
+  }
+
+  // Colours a tile's picture (dimming all but the highlighted kind of country).
+  #paint(tile) {
+    const ctx = tile.canvas.getContext('2d');
+    const img = ctx.createImageData(TILE, TILE);
+    for (let k = 0; k < TILE * TILE; k++) {
+      const c = RGB[tile.labels[k]] ?? [120, 120, 120];
+      const lit = 0.72 + (tile.shade[k] / 255) * 0.56;
+      const dim = this.highlight >= 0 && tile.labels[k] !== this.highlight ? 0.3 : 1;
+      img.data[k * 4] = Math.min(255, c[0] * lit * dim);
+      img.data[k * 4 + 1] = Math.min(255, c[1] * lit * dim);
+      img.data[k * 4 + 2] = Math.min(255, c[2] * lit * dim);
+      img.data[k * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  draw() {
+    if (!this.isOpen) return;
+    const { ctx, canvas, scale } = this;
+    const n = canvas.width;
+    ctx.fillStyle = '#1b2433';
+    ctx.fillRect(0, 0, n, n);
+    ctx.imageSmoothingEnabled = false;
+    const span = TILE * scale;
+    const x0 = this.centre.x - (n / 2) * scale, z0 = this.centre.z - (n / 2) * scale;
+    const want = [];
+    for (let tz = Math.floor(z0 / span); tz * span < z0 + n * scale; tz++) {
+      for (let tx = Math.floor(x0 / span); tx * span < x0 + n * scale; tx++) {
+        const tile = this.tiles.get(`${scale}:${tx}:${tz}`);
+        const px = (tx * span - x0) / scale, py = (tz * span - z0) / scale;
+        if (tile && tile !== 'pending') ctx.drawImage(tile.canvas, px, py, TILE, TILE);
+        else if (!tile) want.push([tx, tz, Math.hypot(px + TILE / 2 - n / 2, py + TILE / 2 - n / 2)]);
+      }
+    }
+    // Nearest the middle first, a few at a time.
+    want.sort((a, b) => a[2] - b[2]);
+    for (const [tx, tz] of want) {
+      if (this.pending >= 8) break;
+      this.#request(tx, tz, scale);
+    }
+    // You, as an arrow.
+    const p = this.where();
+    const mx = (p.x - x0) / scale, my = (p.z - z0) / scale;
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(p.heading);
+    ctx.beginPath();
+    ctx.moveTo(0, -11);
+    ctx.lineTo(7, 8);
+    ctx.lineTo(0, 4);
+    ctx.lineTo(-7, 8);
+    ctx.closePath();
+    ctx.fillStyle = '#ff3b4a';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    // A scale bar.
+    const metres = scale * 100;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(10, n - 30, 120, 22);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(16, n - 16, 100, 3);
+    ctx.font = '11px system-ui';
+    ctx.fillText(metres >= 1000 ? `${metres / 1000} km` : `${metres} m`, 16, n - 20);
+  }
+}

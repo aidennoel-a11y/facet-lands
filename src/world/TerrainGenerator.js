@@ -26,6 +26,8 @@ export const TIDE_LEVEL = 0.62;
 const TIDE_LIP = 0.8;
 const CAVE_DARK = new Color(0x3b3842); // the back of a sea cave, out of the light
 const OASIS = new Color(0x7fa84a); // the green round an oasis
+const BASALT = new Color(0x1c1a1b); // fresh black basalt
+const EMBER = new Color(0x6a1e0c); // rock glowing beside molten lava
 const WET_ROCK = new Color(0x5e5a60); // rock shelves the sea washes over
 const POOL_FLOOR = new Color(0x3f5a3a); // weed on a tide pool's floor
 const SHORE = {
@@ -103,6 +105,8 @@ export class TerrainGenerator {
     this.coastNoise = new SimplexNoise(this.seed + 143); // sea cliffs
     this.groveNoise = new SimplexNoise(this.seed + 144); // birch woods
     this.jungleNoise = new SimplexNoise(this.seed + 145); // jungles
+    this.redwoodNoise = new SimplexNoise(this.seed + 146); // redwood groves
+    this.meadowNoise = new SimplexNoise(this.seed + 147); // wildflower meadows
     this._cones = new Map(); // volcano cell -> cone (or null)
     this._contX = NaN;
     this._contZ = NaN;
@@ -242,7 +246,7 @@ export class TerrainGenerator {
       // Away from them the continent stands higher (fewer, smaller
       // lakes), though the land itself is no higher: `_contLift` is how
       // much of it is that.
-      const basin = smoothstep(0.22, 0.42, this.continentNoise.fbm(x * 0.000035 + 500, z * 0.000035 - 700, 2));
+      const basin = smoothstep(0.15, 0.35, this.continentNoise.fbm(x * 0.00005 + 500, z * 0.00005 - 700, 2));
       this._contLift = 0.45 * (1 - basin);
       this._cont = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.015 + this._contLift - 0.8 * basin;
     }
@@ -277,14 +281,14 @@ export class TerrainGenerator {
    * country between them and anything else).
    */
   #volcanoZone(x, z, range) {
-    const zone = smoothstep(0.6, 0.7, this.#volcanoNoise(x, z));
+    const zone = smoothstep(0.51, 0.61, this.#volcanoNoise(x, z));
     if (zone <= 0) return 0;
     let ring = Infinity;
     for (let k = 0; k < 10; k++) {
       const a = (k / 10) * Math.PI * 2;
       for (const d of [700, 1400]) ring = Math.min(ring, this.volcanoNoise.fbm((x + Math.cos(a) * d) * 0.00005 + 900, (z + Math.sin(a) * d) * 0.00005 - 300, 2));
     }
-    return zone * smoothstep(0.48, 0.54, ring) * (1 - smoothstep(0.02, 0.2, range));
+    return zone * smoothstep(0.4, 0.46, ring) * (1 - smoothstep(0.02, 0.2, range));
   }
 
   /**
@@ -334,7 +338,7 @@ export class TerrainGenerator {
     return zone * this.#minSize('jungle', x, z, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       return this.#jungleZoneRaw(px, pz, r, this.getAridity(px, pz, r));
-    }, 0.7);
+    }, 0.6);
   }
 
   /**
@@ -375,17 +379,17 @@ export class TerrainGenerator {
   }
 
   #jungleZoneRaw(x, z, range, aridity) {
-    if (aridity > 0.34) return 0;
-    const zone = smoothstep(-0.12, 0.1, this.jungleNoise.fbm(x * 0.00018 + 70, z * 0.00018 - 30, 2));
+    if (aridity > 0.44) return 0;
+    const zone = smoothstep(-0.62, -0.36, this.jungleNoise.fbm(x * 0.00018 + 70, z * 0.00018 - 30, 2));
     if (zone <= 0) return 0;
-    const volcanicNear = 1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z));
+    const volcanicNear = 1 - smoothstep(0.4, 0.5, this.#volcanoNoise(x, z));
     if (volcanicNear <= 0) return 0;
     // (Well clear of the Black Hills: their noise must be well below where they begin.)
-    const hillsClear = 1 - smoothstep(-0.05, 0.05, this.hillsNoise.fbm(x * 0.00016 - 250, z * 0.00016 + 610, 2));
+    const hillsClear = 1 - smoothstep(0.08, 0.18, this.hillsNoise.fbm(x * 0.00016 - 250, z * 0.00016 + 610, 2));
     if (hillsClear <= 0) return 0;
-    const wet = 1 - smoothstep(0.2, 0.34, aridity);
+    const wet = 1 - smoothstep(0.3, 0.44, aridity);
     // (No mountains within a few hundred metres, no dry country within the best part of a kilometre.)
-    const clear = (1 - smoothstep(0.34, 0.4, this.#aridAround(x, z))) * (1 - smoothstep(0.02, 0.1, this.#mountainsAround(x, z)));
+    const clear = (1 - smoothstep(0.42, 0.47, this.#aridAround(x, z))) * (1 - smoothstep(0.05, 0.16, this.#mountainsAround(x, z)));
     return smoothstep(0.25, 0.6, zone * volcanicNear * hillsClear * wet * clear);
   }
 
@@ -710,6 +714,11 @@ export class TerrainGenerator {
         if (target > height - seaLevel) height += (target - (height - seaLevel)) * reef;
       }
     }
+    // The legs of sandstone arches in mesa country (their spans are SeaCoastLayer's).
+    if (f.mesa > 0.2 && !this._probing) {
+      const legs = this.#archLegs(x, z);
+      if (legs > height) height = legs;
+    }
     return height;
   }
 
@@ -863,6 +872,74 @@ export class TerrainGenerator {
       }
     }
     return out;
+  }
+
+  /**
+   * The sandstone arch of 260 m cell (i, j) in mesa country, or null: on
+   * the flats between the mesas, two stout legs of layered sandstone with
+   * a span of rock between them, worn through (as in Arches National
+   * Park). Found on the land as it is without arches (the probe).
+   */
+  #mesaArch(i, j) {
+    const cache = this._mesaArches ?? (this._mesaArches = new Map());
+    const key = (i + 32768) * 65536 + (j + 32768);
+    if (cache.has(key)) return cache.get(key);
+    const s = this.seed ^ 0xa4c2, G = 260;
+    let arch = null;
+    if (hash2(i, j, s) < 0.5) {
+      const px = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * G, pz = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * G;
+      const probe = this.#probe();
+      const f = probe.getFeatures(px, pz);
+      if (f.mesa > 0.35 && f.erg < 0.1 && f.canyon < 0.05) {
+        const a = hash2(i, j, s + 3) * Math.PI, L = 8 + 6 * hash2(i, j, s + 4);
+        const ca = Math.cos(a) * L, sa = Math.sin(a) * L;
+        const h0 = probe.getBaseHeight(px, pz), ha = probe.getBaseHeight(px - ca, pz - sa), hb = probe.getBaseHeight(px + ca, pz + sa);
+        const low = Math.min(h0, ha, hb);
+        if (Math.max(h0, ha, hb) - low < 2.5 && low > this.rivers.seaLevel + 4) {
+          const H = 15 + 12 * hash2(i, j, s + 5);
+          arch = { x: px, z: pz, ax: px - ca, az: pz - sa, bx: px + ca, bz: pz + sa, angle: a, leg: 3.4 + 1.6 * hash2(i, j, s + 6), H, r: L * 0.5, base: low, top: low + H, sandstone: true };
+        }
+      }
+    }
+    if (cache.size > 4000) cache.clear();
+    cache.set(key, arch);
+    return arch;
+  }
+
+  /** Sandstone arches whose centre lies in a box (see #mesaArch). */
+  mesaArches(minX, minZ, maxX, maxZ) {
+    const G = 260, out = [];
+    for (let j = Math.floor(minZ / G); j <= Math.floor(maxZ / G); j++) {
+      for (let i = Math.floor(minX / G); i <= Math.floor(maxX / G); i++) {
+        const a = this.#mesaArch(i, j);
+        if (a && a.x >= minX && a.z >= minZ && a.x < maxX && a.z < maxZ) out.push(a);
+      }
+    }
+    return out;
+  }
+
+  // The height of any sandstone arch's legs at (x, z), or -Infinity.
+  #archLegs(x, z) {
+    const G = 260;
+    const ci = Math.floor(x / G), cj = Math.floor(z / G);
+    let best = -Infinity;
+    for (let j = cj - 1; j <= cj + 1; j++) {
+      for (let i = ci - 1; i <= ci + 1; i++) {
+        const a = this.#mesaArch(i, j);
+        if (!a || Math.abs(x - a.x) > 30 || Math.abs(z - a.z) > 30) continue;
+        const ca = Math.cos(a.angle), sa = Math.sin(a.angle);
+        for (const [lx, lz] of [[a.ax, a.az], [a.bx, a.bz]]) {
+          const dx = x - lx, dz = z - lz;
+          const u = dx * ca + dz * sa, v = -dx * sa + dz * ca;
+          const e = Math.hypot(u / (a.leg * 1.3), v / (a.leg * 0.95)) * (1 + 0.1 * this.mesaNoise.noise2D(x * 0.3, z * 0.3));
+          if (e >= 1) continue;
+          let top = a.H * Math.pow(1 - Math.pow(e, 5), 0.3);
+          top -= 0.7 * (top / 2.4 - Math.floor(top / 2.4)); // ledges, layer by layer
+          best = Math.max(best, a.base + top);
+        }
+      }
+    }
+    return best;
   }
 
   /** Tide pool sites around (x, z): hollows in the rock ledges at the foot of sea cliffs. */
@@ -1087,7 +1164,7 @@ export class TerrainGenerator {
       return { cave: true, bottom: sea + roof, top: this.getBaseHeight(c.x + c.nx * a - c.nz * (c.w + 1.5), c.z + c.nz * a + c.nx * (c.w + 1.5)) };
     }
     const S = 36;
-    for (const arch of this.seaArches(x - S * 1.5, z - S * 1.5, x + S * 1.5, z + S * 1.5)) {
+    for (const arch of [...this.seaArches(x - S * 1.5, z - S * 1.5, x + S * 1.5, z + S * 1.5), ...this.mesaArches(x - 300, z - 300, x + 300, z + 300)]) {
       const vx = arch.bx - arch.ax, vz = arch.bz - arch.az, L2 = vx * vx + vz * vz;
       const t = ((x - arch.ax) * vx + (z - arch.az) * vz) / L2;
       if (t < 0 || t > 1) continue;
@@ -1224,8 +1301,10 @@ export class TerrainGenerator {
    * slopes) }, reusing one object.
    */
   getVolcanic(x, z) {
-    const out = this._volc ?? (this._volc = { height: 0, lava: 0, crater: 0, cone: 0 });
+    const out = this._volc ?? (this._volc = { height: 0, lava: 0, crater: 0, cone: 0, channel: 0, blocks: 0 });
     out.height = 0;
+    out.channel = 0;
+    out.blocks = 0;
     out.lava = 0;
     out.crater = 0;
     out.cone = 0;
@@ -1249,6 +1328,17 @@ export class TerrainGenerator {
             out.crater = Math.max(out.crater, 1 - smoothstep(c.rc, c.rc * 1.6, d));
           }
         }
+        // A live flow: a channel down the flank, walled by blocky basalt,
+        // in places roofed over into a lava tube (skylights here and there).
+        if (c.active && c.flows.length) {
+          const ch = this.#lavaChannel(c, d, angle);
+          if (ch) {
+            h += ch.dh;
+            if (ch.open) out.lava = Math.max(out.lava, 1);
+            out.channel = Math.max(out.channel, ch.open);
+            out.blocks = Math.max(out.blocks, ch.block);
+          }
+        }
         // Tongues of old lava down the flanks and out over the land.
         for (const f of c.flows) {
           if (d < c.R * 0.3 || d > f.len) continue;
@@ -1266,6 +1356,70 @@ export class TerrainGenerator {
       }
     }
     return out;
+  }
+
+  /**
+   * A live lava flow's path (volcano `c`'s first tongue): from the crater's
+   * rim down the flank, wandering a little. For a distance `d` from the
+   * summit: { angle (of its middle line), half (its channel's half-width),
+   * tube (0..1, roofed over there) }, or null past its ends.
+   */
+  lavaPath(c, d) {
+    const f = c.flows[0];
+    const d0 = c.rc * 1.02, d1 = f.len * 0.85;
+    if (d < d0 || d > d1) return null;
+    const u = (d - d0) / (d1 - d0);
+    const angle = f.a + 0.07 * Math.sin(d * 0.018 + c.seed) + 0.04 * Math.sin(d * 0.047 - c.seed * 2);
+    // Two stretches roofed over into tubes, a skylight every so often.
+    const t1 = 0.3 + 0.15 * ((c.seed * 7.3) % 1), t2 = 0.62 + 0.12 * ((c.seed * 3.1) % 1);
+    const inTube = (u > t1 && u < t1 + 0.14) || (u > t2 && u < t2 + 0.1);
+    const skylight = ((d * 0.07 + c.seed) % 1) < 0.28;
+    return { angle, half: 3.2 + d * 0.012, tube: inTube && !skylight ? 1 : 0, d0, d1 };
+  }
+
+  // The live flow's channel at (distance d, angle) from volcano c's summit:
+  // { dh (height change), open (0..1, open lava there), block (0..1, on a basalt block) }.
+  #lavaChannel(c, d, angle) {
+    const p = this.lavaPath(c, d);
+    if (!p) return null;
+    let da = angle - p.angle;
+    da = Math.atan2(Math.sin(da), Math.cos(da));
+    const lateral = da * d;
+    if (Math.abs(lateral) > p.half + 14) return null;
+    const across = Math.abs(lateral) / p.half;
+    let dh = 0, open = 0, block = 0;
+    // The channel, cut three metres down with steep sides (or roofed over).
+    if (across < 1.25) {
+      const cut = 3 * (1 - smoothstep(0.8, 1.25, across));
+      if (!p.tube) {
+        dh -= cut;
+        open = 1 - smoothstep(0.75, 1, across);
+      } else {
+        dh += 0.6 * (1 - smoothstep(0.9, 1.25, across)); // (the tube's roof, a low hump)
+      }
+    }
+    // Blocks of basalt standing along both banks: squarish, flat-topped,
+    // two to ten metres high, set square to the flow.
+    const B = 7, s = this.seed ^ 0xb1c5;
+    const k0 = Math.floor(d / B);
+    for (let k = k0 - 1; k <= k0 + 1; k++) {
+      for (const side of [-1, 1]) {
+        const hh = hash2(k, side, s + Math.floor(c.seed * 1000));
+        if (hh > 0.75) continue;
+        const bd = (k + 0.5) * B, bl = side * (p.half + 1.6 + 3 * hash2(k, side + 5, s));
+        const size = 1.6 + 1.5 * hash2(k, side + 9, s);
+        const u = (d - bd) / size, v = (lateral - bl) / (size * (0.8 + 0.4 * hh));
+        const q = Math.pow(Math.abs(u), 6) + Math.pow(Math.abs(v), 6);
+        if (q >= 1) continue;
+        const H = (2 + 8 * hash2(k, side + 13, s)) * (1 - 0.4 * ((d - p.d0) / (p.d1 - p.d0)));
+        const top = H * (1 - Math.pow(q, 4)) * (1 - 0.12 * u); // (tops tilted a touch)
+        if (top > dh) {
+          dh = Math.max(dh, top);
+          block = 1;
+        }
+      }
+    }
+    return { dh, open, block };
   }
 
   /** The volcanoes that could reach into (x, z)'s 1.1 km cell (remembered per cell). */
@@ -1707,7 +1861,10 @@ export class TerrainGenerator {
     const zone = smoothstep(0.27, 0.43, this.hillsNoise.fbm(x * 0.00016 - 250, z * 0.00016 + 610, 2)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
     if (zone <= 0) return 0;
     // (Whole stretches of country, a few kilometres across, not scraps.)
-    return zone * (1 - smoothstep(0.02, 0.2, range)) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z)));
+    // (And fading out gradually, well before the savanna: the country
+    // within the best part of a kilometre must be green.)
+    const dryNear = 1 - smoothstep(0.38, 0.5, this.#aridAround(x, z));
+    return zone * dryNear * (1 - smoothstep(0.02, 0.2, range)) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z)));
   }
 
   /**
@@ -1781,20 +1938,40 @@ export class TerrainGenerator {
         // Ragged outlines: the rock is jointed and weathered, never a clean cylinder.
         const ragged = 1 + 0.16 * this.hillsNoise.noise2D(x * 0.19 + i * 3.1, z * 0.19 - j * 2.3) + 0.07 * this.hillsNoise.noise2D(x * 0.55 - 4, z * 0.55 + 4);
         let h = 0;
-        if (kind < 0.35) {
-          // A needle.
-          const r = 10 + 6 * hash2(i, j, s + 3);
-          const t = (Math.hypot(dx, dz) / r) * ragged;
-          if (t < 1) h = (18 + 26 * size) * Math.pow(1 - Math.pow(t, 2.6), 0.5);
-        } else if (kind < 0.52) {
-          // A cluster of spires.
-          const count = 4 + Math.floor(hash2(i, j, s + 6) * 4);
-          for (let k = 0; k < count; k++) {
-            const a = hash2(i + k * 13, j, s + 7) * Math.PI * 2, out = k === 0 ? 0 : 5 + 11 * hash2(i, j + k * 13, s + 8);
-            const r = 5.5 + 3 * hash2(i - k, j + k, s + 9);
-            const t = (Math.hypot(dx - Math.cos(a) * out, dz - Math.sin(a) * out) / r) * ragged;
-            if (t < 1) h = Math.max(h, (13 + 17 * hash2(i + k, j - k, s + 10)) * (k === 0 ? 1.15 : 1) * Math.pow(1 - Math.pow(t, 2.2), 0.5));
+        // Rock faces worn like a mountain's: ribs and gullies, not smooth sides.
+        const rib = (px, pz) => 0.72 + 0.4 * this.hillsNoise.ridged(px * 0.11 + i * 5.3, pz * 0.11 - j * 4.1, 3, 2, 0.5, 0.05);
+        if (kind < 0.18) {
+          // A lone needle: stout, a broad foot tapering to a worn point
+          // (never a thin spike standing alone).
+          const r = 11 + 6 * hash2(i, j, s + 3);
+          const H = Math.min(16 + 14 * size, r * 1.7);
+          const lean = 0.25 * hash2(i, j, s + 11), la = hash2(i, j, s + 12) * Math.PI * 2;
+          const t0 = (Math.hypot(dx, dz) / r) * ragged;
+          if (t0 < 1.4) {
+            const up = H * Math.max(0, 1 - t0);
+            const t = (Math.hypot(dx - Math.cos(la) * lean * up, dz - Math.sin(la) * lean * up) / r) * ragged;
+            if (t < 1) h = H * Math.pow(1 - t, 1.2) * rib(x, z);
           }
+        } else if (kind < 0.55) {
+          // A cluster of spires (like the Cathedral Spires): a crowd of
+          // pointed pinnacles, the middle ones tallest, leaning this way
+          // and that.
+          const count = 4 + Math.floor(hash2(i, j, s + 6) * 5);
+          for (let k = 0; k < count; k++) {
+            const a = hash2(i + k * 13, j, s + 7) * Math.PI * 2, out = k === 0 ? 0 : 5 + 12 * hash2(i, j + k * 13, s + 8);
+            const r = 6 + 3.5 * hash2(i - k, j + k, s + 9);
+            const H = Math.min((12 + 16 * hash2(i + k, j - k, s + 10)) * (1 - 0.35 * out / 17), r * 2.4);
+            const lean = 0.35 * hash2(i + k, j + k, s + 13), la = hash2(i - k, j - k, s + 14) * Math.PI * 2;
+            const cxk = dx - Math.cos(a) * out, czk = dz - Math.sin(a) * out;
+            const t0 = (Math.hypot(cxk, czk) / r) * ragged;
+            if (t0 >= 1.5) continue;
+            const up = H * Math.max(0, 1 - t0);
+            const t = (Math.hypot(cxk - Math.cos(la) * lean * up, czk - Math.sin(la) * lean * up) / r) * ragged;
+            if (t < 1) h = Math.max(h, H * Math.pow(1 - t, 1.15) * rib(x + k * 7, z - k * 5));
+          }
+          // A rubbly, rocky base binding them together.
+          const base = 1 - smoothstep(10, 24, Math.hypot(dx, dz) * ragged);
+          if (base > 0) h = Math.max(h, base * (4 + 3 * rib(x, z)));
         } else if (kind < 0.68) {
           // A fin: a long narrow blade, turned any way, its crest ragged.
           const a = hash2(i, j, s + 6) * Math.PI;
@@ -1827,7 +2004,7 @@ export class TerrainGenerator {
           }
         }
         // Knobbled faces: ledges, bulges and cracks all over the rock.
-        if (h > 0) h += (this.hillsNoise.noise2D(x * 0.4 + 17, z * 0.4 - 17) * 1.3 + this.hillsNoise.noise2D(x * 0.95 - 3, z * 0.95 + 8) * 0.55) * Math.min(1, h / 6);
+        if (h > 0) h += (this.hillsNoise.noise2D(x * 0.3 + 17, z * 0.3 - 17) * 1.6 + this.hillsNoise.noise2D(x * 0.8 - 3, z * 0.8 + 8) * 0.6) * Math.min(1, h / 6);
         best = Math.max(best, h);
       }
     }
@@ -1947,6 +2124,29 @@ export class TerrainGenerator {
    * Where birches (and, in the Black Hills, aspens) take over the woods
    * (0..1): stands a kilometre or two across.
    */
+  /**
+   * Wildflower meadows (0..1): patches of the open plains and the grassy
+   * foothills below the mountains where flowers crowd the grass.
+   */
+  getMeadow(x, z) {
+    const patch = smoothstep(0.1, 0.35, this.meadowNoise.fbm(x * 0.0022 + 11, z * 0.0022 - 19, 2));
+    if (patch <= 0) return 0;
+    const plain = this.getPlainness(x, z);
+    const m = this.getMountainness(x, z);
+    const foothill = smoothstep(0.28, 0.42, m) * (1 - smoothstep(0.6, 0.72, m));
+    const open = foothill > 0 ? (1 - smoothstep(0.45, 0.6, this.getForestDensity(x, z))) * this.getBiomeWeights(x, z, {}).temperate : 0;
+    return patch * Math.max(plain, foothill * open);
+  }
+
+  /**
+   * Where redwoods take over the woods (0..1): great groves of them a
+   * kilometre or two across in the low forest country (not among the birches).
+   */
+  getRedwood(x, z) {
+    const r = smoothstep(0.2, 0.36, this.redwoodNoise.fbm(x * 0.0005 - 40, z * 0.0005 + 70, 2));
+    return r > 0 ? r * (1 - smoothstep(0.35, 0.5, this.getGrove(x, z))) : 0;
+  }
+
   getGrove(x, z) {
     return smoothstep(0.16, 0.36, this.groveNoise.fbm(x * 0.0006 + 13, z * 0.0006 - 57, 2));
   }
@@ -1982,26 +2182,29 @@ export class TerrainGenerator {
    * What kind of country (x, z) is, in a word or two, for showing where
    * you are: "Forest", "Rolling hills", "Mountains", "Dune sea", "Lake"...
    */
-  describe(x, z) {
+  describe(x, z, quick = false) {
     const sea = this.rivers.seaLevel;
-    const height = this.getHeight(x, z);
+    // (`quick`, for the big map: the land before rivers, and none of the
+    // small features, so a whole map's worth is quick to work out.)
+    const heightAt = quick ? (px, pz) => this.getBaseHeight(px, pz) : (px, pz) => this.getHeight(px, pz);
+    const height = heightAt(x, z);
     if (height < sea - 0.3) {
       if (this.getOceanness(x, z) <= 0.5) return 'Lake';
-      if (height > sea - 3 && this.getSeaCliff(x, z) > 0.5) {
+      if (!quick && height > sea - 3 && this.getSeaCliff(x, z) > 0.5) {
         const over = this.overhangAt(x, z);
         if (over) return over.cave ? 'Sea cave' : 'Sea arch';
       }
       if (this.getKelp(x, z, height) > 0.35) return 'Kelp forest';
       return this.getReef(x, z, height) > 0.4 ? 'Coral reef' : 'Ocean';
     }
-    const water = this.rivers.at(x, z, 0);
+    const water = quick ? null : this.rivers.at(x, z, 0);
     if (water) return water.crater ? 'Crater lake' : water.hot ? 'Hot spring' : water.alpine ? 'Alpine lake' : water.oasis ? 'Oasis' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : 'River';
     const w = this.getBiomeWeights(x, z, {});
     const f = this.getFeatures(x, z);
     if (this.getOceanness(x, z) > 0.5 && height < sea + 34 && this.getSeaCliff(x, z) > 0.5) {
-      const over = this.overhangAt(x, z);
+      const over = quick ? null : this.overhangAt(x, z);
       if (over) return over.cave ? 'Sea cave' : 'Sea arch';
-      if (height < sea + 1.5 && this.#poolsNear(x, z).some((p) => Math.hypot(x - p.x, z - p.z) < p.r * 1.5)) return 'Tide pools';
+      if (!quick && height < sea + 1.5 && this.#poolsNear(x, z).some((p) => Math.hypot(x - p.x, z - p.z) < p.r * 1.5)) return 'Tide pools';
       return 'Sea cliffs';
     }
     if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return w.volcanic > 0.5 ? 'Black sand beach' : 'Beach';
@@ -2011,7 +2214,7 @@ export class TerrainGenerator {
       if (height > 181) return 'Snowy peaks';
       // Mountains are bare rock: above the trees, or sheer. Wooded slopes
       // lower down are the foothills.
-      const steep = Math.abs(this.getHeight(x + 3, z) - this.getHeight(x - 3, z)) / 6 + Math.abs(this.getHeight(x, z + 3) - this.getHeight(x, z - 3)) / 6;
+      const steep = Math.abs(heightAt(x + 3, z) - heightAt(x - 3, z)) / 6 + Math.abs(heightAt(x, z + 3) - heightAt(x, z - 3)) / 6;
       if (height + this.getColorJitter(x, z) > 120 || steep > 0.72) return 'Mountains';
       // (The lower slopes of a range read as the country they are: hills,
       // plains, woods.)
@@ -2031,9 +2234,9 @@ export class TerrainGenerator {
     if (top === 'desert') return f.erg > 0.5 ? 'Dune sea' : f.mesa > 0.28 ? 'Mesas' : 'Desert';
     if (top === 'savanna') return f.mesa > 0.28 ? 'Mesas' : 'Savanna';
     if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
-    if (this.getForestDensity(x, z) > 0.55) return this.getGrove(x, z) > 0.5 && height < 110 ? 'Birch forest' : 'Forest';
+    if (this.getForestDensity(x, z) > 0.55) return this.getGrove(x, z) > 0.5 && height < 110 ? 'Birch forest' : this.getRedwood(x, z) > 0.5 && height < 120 ? 'Redwood forest' : 'Forest';
     if (smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Rolling hills';
-    return 'Plains';
+    return this.getMeadow(x, z) > 0.5 ? 'Wildflower meadow' : 'Plains';
   }
 
   surfaceColor(x, z, height, upness, out, jitter = this.getColorJitter(x, z)) {
@@ -2107,14 +2310,23 @@ export class TerrainGenerator {
       const v = this.getVolcanic(x, z);
       if (v.cone > 0) out.lerp(SCREE, 0.8 * v.cone); // bare cinder slopes
       if (v.lava > 0) out.lerp(LAVA, 0.85 * v.lava);
+      // Beside a live flow: black blocks of fresh basalt, the channel's
+      // walls glowing dull red from the lava in it.
+      if (v.blocks > 0) out.lerp(BASALT, 0.9);
+      if (v.channel > 0) out.lerp(EMBER, 0.8 * Math.min(1, v.channel * 1.5));
       if (v.crater > 0) out.lerp(CINDER, 0.6 * v.crater);
     }
     // Mesa and canyon walls: bands of red and orange sandstone.
+    // (Fading gradually into the rock round about: an escarpment's walls
+    // turn to sandstone as the country dries out towards mesa country.)
     if (upness < 0.85 && f) {
-      if (f.mesa > 0.05 || f.canyon > 0.05) {
+      const dry = f.escarp > 0.05 ? smoothstep(0.38, 0.62, this.#rawAridity(x, z)) : 0;
+      const sand = Math.max(smoothstep(0.02, 0.45, f.mesa), f.canyon, f.escarp * dry);
+      if (sand > 0.02) {
         const band = Math.floor((height + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 0.8) / 2.4);
         stratum.copy(STRATA[((band % STRATA.length) + STRATA.length) % STRATA.length]);
-        out.lerp(stratum, Math.max(Math.min(1, f.mesa * 1.5), f.canyon) * (1 - smoothstep(0.6, 0.85, upness)));
+        const patchy = sand < 1 ? 0.75 + 0.25 * this.detailNoise.noise2D(x * 0.05 + 3, z * 0.05 - 3) : 1;
+        out.lerp(stratum, Math.min(1, sand * patchy) * (1 - smoothstep(0.6, 0.85, upness)));
       }
     }
     // Muddy banks along rivers and ponds (gravel along mountain streams),

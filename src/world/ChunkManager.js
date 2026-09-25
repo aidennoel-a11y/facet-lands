@@ -1,4 +1,4 @@
-import { Box3, Group, Mesh } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { buildChunkGeometry, chunkFromData } from './ChunkMesher.js';
 
 const NEIGHBOURS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
@@ -47,6 +47,10 @@ export class ChunkManager {
     //   surface  terrain and every non-cave layer (trees, grass, water...)
     //   caves    'all', or 'mouths' for only the chunks with a cave mouth
     this.visibility = { surface: true, caves: 'all' };
+    // Far chunks' ground is drawn in tiles of several chunks merged into one
+    // mesh (they're only a few dozen triangles each, and a draw call apiece
+    // would cost far more than drawing them): "tx,tz" -> { members, mesh, dirty }.
+    this.tiles = new Map();
 
     // Workers, if there can be any.
     this.workers = [];
@@ -87,7 +91,8 @@ export class ChunkManager {
 
   #applyVisibility(chunk) {
     const { surface, caves } = this.visibility;
-    chunk.mesh.visible = surface;
+    chunk.mesh.visible = surface && !chunk.merged;
+    for (const tile of this.tiles.values()) if (tile.mesh) tile.mesh.visible = surface;
     for (const { layer, object } of chunk.layerObjects) {
       object.visible = layer.name === 'caves' ? caves === 'all' || object.userData.hasMouth === true : surface;
     }
@@ -139,6 +144,7 @@ export class ChunkManager {
     }
     if (this.queue.length && forward) this.#prioritise(position, forward);
     this.#processQueue();
+    this.#rebuildTiles(); // (after this frame's chunks are in, so none is ever missing)
   }
 
   /** Re-order pending chunks: near first, and chunks behind you count double. */
@@ -347,8 +353,10 @@ export class ChunkManager {
     mesh.receiveShadow = true;
     group.add(mesh);
 
+    const merged = lod >= (this.config.groundMergeLod ?? Infinity);
+    if (merged) mesh.castShadow = mesh.receiveShadow = false;
     const chunk = {
-      key, cx, cz, lod, resolution, group, mesh, triangles, groundHeightAt,
+      key, cx, cz, lod, resolution, group, mesh, triangles, groundHeightAt, merged,
       terrain: { geometry, triangles, heights, groundHeightAt },
       layerObjects: [],
       reuseKeys: new Map(), // layer -> its reuse key for this build
@@ -394,6 +402,7 @@ export class ChunkManager {
     if (previous) this.#unload(previous, sameMesh ? geometry : null, kept);
 
     this.chunks.set(key, chunk);
+    if (merged) this.#tileOf(chunk, true);
     this.#applyVisibility(chunk);
     this.root.add(group);
     this.triangleCount += triangles;
@@ -422,9 +431,76 @@ export class ChunkManager {
   /** Removes a chunk; `keepGeometry` and `keep` (layer objects) were handed on to its replacement. */
   #unload(chunk, keepGeometry = null, keep = null) {
     this.root.remove(chunk.group);
+    if (chunk.merged) this.#tileOf(chunk, false);
     if (chunk.mesh.geometry !== keepGeometry) chunk.mesh.geometry.dispose();
     for (const { layer, object } of chunk.layerObjects) if (!keep || !keep.has(object)) layer.dispose?.(object);
     this.triangleCount -= chunk.triangles;
+  }
+
+  // Adds a far chunk's ground to its tile (or takes it out).
+  #tileOf(chunk, add) {
+    const T = this.config.groundTile ?? 4;
+    const tkey = `${Math.floor(chunk.cx / T)},${Math.floor(chunk.cz / T)}`;
+    let tile = this.tiles.get(tkey);
+    if (!tile) {
+      if (!add) return;
+      tile = { tx: Math.floor(chunk.cx / T), tz: Math.floor(chunk.cz / T), members: new Map(), mesh: null, dirty: true };
+      this.tiles.set(tkey, tile);
+    }
+    if (add) tile.members.set(chunk.key, chunk);
+    else if (tile.members.get(chunk.key) === chunk) tile.members.delete(chunk.key);
+    else return;
+    tile.dirty = true;
+  }
+
+  // Rebuilds the merged meshes of tiles whose chunks have changed.
+  #rebuildTiles() {
+    const { chunkSize } = this.config;
+    const T = this.config.groundTile ?? 4;
+    for (const [tkey, tile] of this.tiles) {
+      if (!tile.dirty) continue;
+      tile.dirty = false;
+      if (tile.mesh) {
+        this.root.remove(tile.mesh);
+        tile.mesh.geometry.dispose();
+        tile.mesh = null;
+      }
+      if (!tile.members.size) {
+        this.tiles.delete(tkey);
+        continue;
+      }
+      const ox = tile.tx * T * chunkSize, oz = tile.tz * T * chunkSize;
+      let count = 0;
+      for (const c of tile.members.values()) count += c.mesh.geometry.attributes.position.count;
+      const pos = new Float32Array(count * 3), nor = new Float32Array(count * 3), col = new Float32Array(count * 3), cold = new Float32Array(count);
+      let at = 0;
+      for (const c of tile.members.values()) {
+        const g = c.mesh.geometry;
+        const p = g.attributes.position.array, n = g.attributes.position.count;
+        const dx = c.cx * chunkSize - ox, dz = c.cz * chunkSize - oz;
+        for (let i = 0; i < n; i++) {
+          pos[(at + i) * 3] = p[i * 3] + dx;
+          pos[(at + i) * 3 + 1] = p[i * 3 + 1];
+          pos[(at + i) * 3 + 2] = p[i * 3 + 2] + dz;
+        }
+        nor.set(g.attributes.normal.array, at * 3);
+        col.set(g.attributes.color.array, at * 3);
+        cold.set(g.attributes.aCold.array, at);
+        at += n;
+      }
+      const geometry = new BufferGeometry();
+      geometry.setAttribute('position', new BufferAttribute(pos, 3));
+      geometry.setAttribute('normal', new BufferAttribute(nor, 3));
+      geometry.setAttribute('color', new BufferAttribute(col, 3));
+      geometry.setAttribute('aCold', new BufferAttribute(cold, 1));
+      geometry.computeBoundingSphere();
+      const mesh = new Mesh(geometry, this.material);
+      mesh.name = 'ground';
+      mesh.position.set(ox, 0, oz);
+      mesh.visible = this.visibility.surface;
+      tile.mesh = mesh;
+      this.root.add(mesh);
+    }
   }
 
   /**

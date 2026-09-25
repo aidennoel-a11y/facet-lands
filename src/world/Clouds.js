@@ -1,10 +1,11 @@
-import { BufferAttribute, Color, Group, IcosahedronGeometry, Mesh, MeshLambertMaterial, Vector3 } from 'three';
+import { BufferAttribute, Color, Group, IcosahedronGeometry, InstancedMesh, Matrix4, MeshLambertMaterial, Object3D, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hashSeed, mulberry32 } from '../noise/random.js';
 
 const WHITE = new Color(0xffffff);
 const BELLY = new Color(0xb9c6d8); // shaded underside
 const STORM = new Color(0x5c636e); // dark rain-cloud grey
+const HIDDEN = new Matrix4().makeScale(0, 0, 0);
 
 /**
  * One low-poly cumulus: a row of lumpy icosahedron puffs with their bottoms
@@ -112,26 +113,42 @@ export class Clouds {
     this.group = new Group();
     this.group.name = 'clouds';
     this.clouds = [];
+    // (Drawn as instanced meshes, one for each shape and material: each
+    // cloud is a placeholder whose matrix is copied in every frame.)
+    const kinds = new Map();
     for (let i = 0; i < count; i++) {
       const wispy = rand() < 0.35;
-      const mesh = new Mesh(shapes[Math.floor(rand() * shapes.length)], wispy ? this.wispy : this.solid);
+      const shape = Math.floor(rand() * shapes.length);
+      const cloud = new Object3D();
       const s = 0.8 + rand() * 1.4;
-      mesh.scale.set(s * (1 + rand() * 0.6), s * (0.6 + rand() * 0.4), s);
-      mesh.userData.scale = mesh.scale.clone();
+      cloud.scale.set(s * (1 + rand() * 0.6), s * (0.6 + rand() * 0.4), s);
+      cloud.userData.scale = cloud.scale.clone();
       // Clouds form in order of rank as the sky clouds over (wisps first
       // and last, so thin cloud comes and goes before the heavy deck).
-      mesh.userData.rank = wispy ? rand() * 0.55 : 0.03 + rand() * 0.95;
-      mesh.rotation.y = rand() * Math.PI * 2;
-      mesh.position.set((rand() - 0.5) * range, minHeight + rand() * (maxHeight - minHeight), (rand() - 0.5) * range);
+      cloud.userData.rank = wispy ? rand() * 0.55 : 0.03 + rand() * 0.95;
+      cloud.rotation.y = rand() * Math.PI * 2;
+      cloud.position.set((rand() - 0.5) * range, minHeight + rand() * (maxHeight - minHeight), (rand() - 0.5) * range);
+      const box = shapes[shape].boundingBox;
+      cloud.userData.baseY = cloud.position.y;
+      cloud.userData.bottom = box.min.y * cloud.scale.y; // flat base, below the centre
+      cloud.userData.reach = Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) * Math.max(cloud.scale.x, cloud.scale.z);
+      cloud.userData.targetY = cloud.position.y;
+      const key = `${shape}:${wispy}`;
+      if (!kinds.has(key)) kinds.set(key, { shape, wispy, list: [] });
+      cloud.userData.slot = kinds.get(key).list.length;
+      kinds.get(key).list.push(cloud);
+      this.clouds.push(cloud);
+    }
+    this.meshes = [];
+    for (const { shape, wispy, list } of kinds.values()) {
+      const mesh = new InstancedMesh(shapes[shape], wispy ? this.wispy : this.solid, list.length);
       mesh.castShadow = !wispy;
-      const box = mesh.geometry.boundingBox;
-      mesh.userData.baseY = mesh.position.y;
-      mesh.userData.bottom = box.min.y * mesh.scale.y; // flat base, below the centre
-      mesh.userData.reach = Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) * Math.max(mesh.scale.x, mesh.scale.z);
-      mesh.userData.targetY = mesh.position.y;
+      mesh.frustumCulled = false; // (spread right across the sky)
       mesh.renderOrder = wispy ? 2 : 0;
+      mesh.name = 'clouds';
+      for (const cloud of list) cloud.userData.mesh = mesh;
+      this.meshes.push(mesh);
       this.group.add(mesh);
-      this.clouds.push(mesh);
     }
     scene.add(this.group);
     this.materials = [this.solid, this.wispy];
@@ -202,6 +219,12 @@ export class Clouds {
       cloud.userData.targetY = this.#targetHeight(cloud, generator);
       this._next = (this._next + 1) % this.clouds.length;
     }
+    // Into the instanced meshes (a cloud not formed yet shrinks to nothing).
+    for (const cloud of this.clouds) {
+      if (cloud.visible) cloud.updateMatrix();
+      cloud.userData.mesh.setMatrixAt(cloud.userData.slot, cloud.visible ? cloud.matrix : HIDDEN);
+    }
+    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
     // Rain clouds are dark; a little self-light in the sky's colour gives
     // soft undersides by day, pink-orange at sunset, dim blue at night.
     const dark = Math.min(1, 0.55 * this.overcast + 0.35 * storm);

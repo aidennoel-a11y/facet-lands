@@ -63,14 +63,20 @@ const fragmentShader = /* glsl */ `
   }
 
   void main() {
-    // Heat haze: over hot ground the view shimmers, the more the further
-    // off, and a mirage wavers along the horizon.
+    // Heat haze: over hot sand the air just above the ground shimmers, in
+    // wavering columns rising off it, more the further off the ground is
+    // (none on the sky, nor close by).
     vec2 cuv = vUv;
     if (haze > 0.0) {
       float d0 = texture2D(tDepth, vUv).x;
-      float far = d0 < 1.0 ? smoothstep(30.0, 320.0, -viewPosition(vUv).z) : step(texture2D(tDepth, vUv - vec2(0.0, 0.015)).x, 0.9999);
-      vec2 wob = vec2(sin(vUv.y * 420.0 + time * 7.0 + sin(vUv.x * 30.0 + time * 1.3) * 3.0), 0.6 * sin(vUv.y * 260.0 - time * 5.0 + vUv.x * 24.0));
-      cuv += wob * haze * far * 0.0011;
+      if (d0 < 1.0) {
+        float dist = -viewPosition(vUv).z;
+        float far = smoothstep(25.0, 140.0, dist) * (1.0 - smoothstep(600.0, 1100.0, dist));
+        float rise = vUv.y * 180.0 - time * 3.2;
+        float wob = sin(rise + sin(vUv.x * 70.0 + time * 0.7) * 2.2) * (0.5 + 0.5 * sin(vUv.x * 23.0 - time * 0.4));
+        cuv.x += wob * haze * far * 0.00045;
+        cuv.y += sin(rise * 0.7 + vUv.x * 40.0) * haze * far * 0.00015;
+      }
     }
     vec3 color = texture2D(tColor, cuv).rgb;
     float depth = texture2D(tDepth, vUv).x;

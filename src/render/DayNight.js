@@ -156,36 +156,35 @@ const skyFragment = /* glsl */ `
     // Sun and moon discs (the moon sits opposite the sun), hidden by thick cloud.
     // (Below the horizon the land would hide it.)
     col = mix(col, vec3(1.0, 0.97, 0.88), smoothstep(0.99955, 0.99972, s) * clear * smoothstep(-0.012, 0.004, up));
-    // The moon, waxing and waning (a faint earthshine on its dark part),
-    // with its grey seas.
+    // The moon: a ball lit from the side the sun is on, so it waxes and
+    // wanes with a curved terminator (its dark part faint with earthshine),
+    // its grey seas on the lit part.
     vec3 md = -sunDir;
     float m = max(dot(d, md), 0.0);
     float disc = smoothstep(0.99965, 0.9998, m);
     if (disc > 0.0) {
       vec3 e1 = normalize(cross(md, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
       vec3 e2 = cross(e1, md);
-      vec2 uv = vec2(dot(d, e1), dot(d, e2)) / 0.02;
-      float halfW = sqrt(max(0.0, 1.0 - uv.y * uv.y));
-      float term = cos(moonPhase * 6.28318) * halfW; // where light gives way to dark
-      float lit = moonPhase < 0.5 ? smoothstep(term - 0.06, term + 0.06, uv.x) : smoothstep(-term + 0.06, -term - 0.06, uv.x);
-      float seas = 0.8 + 0.2 * vnoise(vec3(uv * 2.2, 3.0));
-      col = mix(col, vec3(0.9, 0.93, 1.0) * mix(0.1, 1.0, lit) * seas, disc * night * clear);
+      vec2 uv = vec2(dot(d, e1), dot(d, e2)) / 0.0235;
+      vec3 n = vec3(uv, sqrt(max(0.0, 1.0 - dot(uv, uv))));
+      float ph = moonPhase * 6.28318;
+      vec3 L = vec3(sin(ph), 0.0, -cos(ph));
+      float lit = smoothstep(-0.04, 0.12, dot(n, L));
+      float seas = 0.78 + 0.22 * vnoise(vec3(uv * 2.2, 3.0));
+      vec3 moonCol = vec3(0.92, 0.94, 1.0) * seas * (0.55 + 0.45 * n.z) * lit;
+      moonCol += vec3(0.05, 0.06, 0.08) * (1.0 - lit); // earthshine
+      col = mix(col, moonCol + col * 0.25 * (1.0 - lit), disc * night * clear);
     }
 
     float starsShow = night * smoothstep(0.0, 0.15, up) * (1.0 - smoothstep(0.35, 0.8, cover));
-    // The Milky Way: a faint, patchy band right across the sky, split by dark lanes of dust.
-    vec3 pole = normalize(vec3(0.35, 0.5, -0.79));
-    float band = exp(-pow(dot(d, pole), 2.0) * 26.0);
-    float glow = band * (0.45 + 0.55 * vnoise(d * 7.0)) * (1.0 - 0.7 * smoothstep(0.55, 0.72, vnoise(d * 15.0 + 4.0)));
-    col += vec3(0.5, 0.56, 0.78) * glow * 0.11 * starsShow;
 
-    // Stars: sparse cells on the sky sphere (crowding along the Milky Way),
+    // Stars: sparse cells on the sky sphere,
     // some bluish, some golden, twinkling.
     vec3 p = d * 240.0;
     vec3 cell = floor(p);
     float h = hash(cell);
     vec3 centre = vec3(hash(cell + 1.3), hash(cell + 2.7), hash(cell + 4.1));
-    float star = step(0.9962 - 0.006 * band, h) * smoothstep(0.32, 0.0, length(fract(p) - centre));
+    float star = step(0.9962, h) * smoothstep(0.32, 0.0, length(fract(p) - centre));
     float twinkle = 0.75 + 0.25 * sin(time * (2.0 + 3.0 * hash(cell + 5.0)) + hash(cell + 6.0) * 6.28);
     vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.9, 0.72), hash(cell + 9.0));
     col += tint * star * starsShow * (0.5 + 0.5 * hash(cell + 7.0)) * twinkle;
@@ -195,20 +194,20 @@ const skyFragment = /* glsl */ `
     // bright rays running up them.
     if (aurora > 0.0 && starsShow > 0.0) {
       float az = atan(d.x, -d.z); // 0 due north
-      float north = 1.0 - smoothstep(0.9, 2.2, abs(az));
+      float north = 1.0 - 0.75 * smoothstep(1.0, 2.6, abs(az));
       float lights = 0.0;
       vec3 auroraCol = vec3(0.0);
       for (int k = 0; k < 2; k++) {
         float fk = float(k);
-        float base = 0.12 + 0.1 * fk + 0.05 * sin(az * (2.0 + fk) + time * 0.04 + fk * 2.0) + 0.03 * sin(az * 7.0 - time * 0.09 + fk);
+        float base = 0.1 + 0.12 * fk + 0.05 * sin(az * (2.0 + fk) + time * 0.04 + fk * 2.0) + 0.03 * sin(az * 7.0 - time * 0.09 + fk);
         float above = up - base;
-        float rise = smoothstep(-0.015, 0.01, above) * exp(-max(above, 0.0) * (7.0 - 2.0 * fk));
+        float rise = smoothstep(-0.015, 0.01, above) * exp(-max(above, 0.0) * (4.0 - 1.2 * fk));
         float rays = 0.55 + 0.45 * sin(az * 70.0 + 5.0 * vnoise(vec3(az * 6.0, time * 0.12 + fk * 5.0, 0.0)));
         float ripple = 0.35 + 0.65 * vnoise(vec3(az * 4.0 - time * 0.05, fk * 3.0, time * 0.03));
         float c = rise * rays * ripple;
         auroraCol += mix(vec3(0.18, 1.0, 0.45), vec3(0.75, 0.2, 0.75), smoothstep(0.03, 0.2, above)) * c;
       }
-      col += auroraCol * north * aurora * starsShow * 0.55;
+      col += auroraCol * north * aurora * starsShow * 0.8;
     }
 
     // Now and then a shooting star streaks across.

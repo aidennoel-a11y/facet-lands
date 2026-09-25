@@ -74,7 +74,7 @@ const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), s = new Vecto
  * chunks near you.
  */
 export function createLogLayer(config) {
-  const shapes = [log(11), log(23), stump(31), stump(47)];
+  const shapes = [log(11), stump(31)]; // (one of each: their sizes and turns vary them, and it's half the draw calls)
   const material = seasonalWood(new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
   const solids = new Map(); // "cx,cz" -> [kind (0 log, 1 stump), x, y, z, length, radius, heading, slope, ...]
 
@@ -137,7 +137,7 @@ export function createLogLayer(config) {
           const a = hash2(gi, gj, seed + 4) * Math.PI * 2;
           if (isStump) {
             const r = 0.35 + 0.25 * hash2(gi, gj, seed + 5);
-            const k = 2 + (hash2(gi, gj, seed + 6) < 0.5 ? 0 : 1);
+            const k = 1;
             p.set(lx, y - 0.1, lz);
             q.setFromAxisAngle(new Vector3(0, 1, 0), a);
             const sy = (0.6 + 0.8 * hash2(gi, gj, seed + 7)) * r / 0.5;
@@ -159,7 +159,7 @@ export function createLogLayer(config) {
           q.setFromEuler(e);
           p.set(lx, mid - r * 0.35, lz);
           s.set(len, r * 2, r * 2);
-          placed[hash2(gi, gj, seed + 8) < 0.5 ? 0 : 1].push(m4.compose(p, q, s).clone());
+          placed[0].push(m4.compose(p, q, s).clone());
           solid.push(0, wx, mid - r * 0.35, wz, len, r, a, (ya - yb) / len);
         }
       }

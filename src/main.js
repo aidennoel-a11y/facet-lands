@@ -18,6 +18,7 @@ import { createLeafLayer } from './world/layers/LeafLayer.js';
 import { createSeaCoastLayer } from './world/layers/SeaCoastLayer.js';
 import { createKelpLayer } from './world/layers/KelpLayer.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
+import { createFlowerLayer } from './world/layers/FlowerLayer.js';
 import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
 import { Torches } from './items/Torches.js';
@@ -34,6 +35,7 @@ import { Showers } from './render/Showers.js';
 import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
 import { describeWind, updateWind, windStrength } from './render/wind.js';
 import { Minimap } from './ui/Minimap.js';
+import { BiomeMap } from './ui/BiomeMap.js';
 
 // --- Renderer, scene, camera -------------------------------------------------
 const canvas = document.getElementById('scene');
@@ -92,6 +94,7 @@ chunks.addLayer(createSeaCoastLayer(WORLD, terrainMaterial));
 chunks.addLayer(createKelpLayer(WORLD));
 const logs = createLogLayer(WORLD);
 chunks.addLayer(logs);
+chunks.addLayer(createFlowerLayer(WORLD));
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
 scene.add(farTrees.group);
@@ -150,6 +153,20 @@ torches.loadWorld(WORLD.seed);
 // --- HUD -----------------------------------------------------------------------
 const minimap = new Minimap(document.getElementById('minimap'));
 minimap.worker = (message) => chunks.task(message); // redrawn off the main thread
+
+// The big map (B): the country for kilometres round; click to fly there.
+const bigMap = new BiomeMap({
+  task: (message) => chunks.task(message),
+  where: () => {
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    return { x: camera.position.x, z: camera.position.z, heading: Math.atan2(dir.x, -dir.z) };
+  },
+  teleport: (x, z) => {
+    if (!ui.fly.checked) ui.fly.click();
+    camera.position.set(x, Math.max(generator.getBaseHeight(x, z), WORLD.seaLevel) + 45, z);
+  },
+});
 const ui = {
   seed: document.getElementById('seed'),
   seedForm: document.getElementById('seed-form'),
@@ -247,6 +264,7 @@ ui.fly.addEventListener('change', () => {
 });
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
+  if (e.code === 'KeyB') bigMap.toggle();
   if (e.code === 'KeyV') ui.fly.click();
   if (e.code === 'KeyF') ui.automove.click();
   if (e.code === 'KeyG') ui.wireframe.click();
@@ -448,24 +466,25 @@ function surroundings(dt, snow) {
   return e;
 }
 
-// Heat haze: the view shimmers over the desert and the savanna in the
-// heat of a clear summer day, and over molten lava at any hour.
+// Heat haze: in the desert and the dune seas, in the heat of a clear
+// summer day, the air shimmers off the sand (see RayEffects). (Also keeps
+// track of how near molten lava is, for its sound.)
 const heat = { wait: 0, hot: 0, lava: 0, value: 0 };
 function heatHaze(dt) {
   heat.wait -= dt;
   if (heat.wait <= 0) {
     heat.wait = 0.5;
     const { x, z } = camera.position;
-    const w = generator.getBiomeWeights(x, z, {});
-    heat.hot = w.desert + 0.5 * w.savanna;
+    heat.hot = smoothstep(0.4, 0.8, generator.getBiomeWeights(x, z, {}).desert);
     heat.lava = 0;
     for (const c of generator.volcanoes?.(x - 400, z - 400, x + 400, z + 400) ?? []) {
       if (c.lava) heat.lava = Math.max(heat.lava, 1 - Math.hypot(c.x - x, c.z - z) / 400);
     }
   }
-  const midday = smoothstep(0.2, 0.6, dayNight.sunDir.y);
-  const sunny = (1 - smoothstep(0.5, 0.9, weather.cover)) * (1 - weather.rain);
-  const target = sheltered ? 0 : Math.max(heat.hot * midday * sunny * (1 - 0.85 * seasonUniforms.uWinter.value), heat.lava * 0.9);
+  const midday = smoothstep(0.25, 0.65, dayNight.sunDir.y);
+  const sunny = (1 - smoothstep(0.4, 0.8, weather.cover)) * (1 - weather.rain);
+  const low = 1 - smoothstep(60, 160, camera.position.y); // (not from high above)
+  const target = sheltered ? 0 : heat.hot * midday * sunny * low * (1 - seasonUniforms.uWinter.value) * (1 - 0.5 * seasonUniforms.uAutumn.value);
   heat.value += (target - heat.value) * Math.min(1, dt / 3);
   return heat.value;
 }
@@ -512,16 +531,16 @@ function smoothstep(a, b, x) {
   return t * t * (3 - 2 * t);
 }
 
-// The northern lights: out on some clear nights, most often in winter
-// (a night in three otherwise, two in three in deep winter), and
-// strongest over cold, snowy country and high up.
+// The northern lights: out on every clear winter night, and on about one
+// night in three the rest of the year; strongest over cold, snowy country
+// and high up.
 const aurora = { value: 0 };
 function northernLights(dt) {
   const winter = seasonUniforms.uWinter.value;
   const h = Math.sin(dayNight.day * 12.9898 + 4.1) * 43758.5453;
-  const tonight = h - Math.floor(h) < 0.3 + 0.35 * winter;
+  const tonight = winter > 0.5 || h - Math.floor(h) < 0.35;
   const high = THREE.MathUtils.smoothstep(camera.position.y, 110, 220);
-  const target = tonight ? Math.min(1, (0.3 + 0.7 * winter) * (0.4 + 0.6 * Math.max(cold.value * (0.5 + 0.5 * winter), high))) : 0;
+  const target = tonight ? Math.min(1, (0.55 + 0.45 * winter) * (0.6 + 0.4 * Math.max(cold.value, high))) : 0;
   aurora.value += ((aurora.force ?? target) - aurora.value) * Math.min(1, dt / 8);
   dayNight.aurora = aurora.value;
 }

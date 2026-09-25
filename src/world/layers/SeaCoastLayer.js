@@ -162,7 +162,7 @@ export function createSeaCoastLayer(config, terrainMaterial) {
       }
 
       // Sea arches: a bridge of rock from one leg to the other.
-      for (const arch of generator.seaArches(x0, z0, x0 + size, z0 + size)) {
+      for (const arch of [...generator.seaArches(x0, z0, x0 + size, z0 + size), ...(generator.mesaArches?.(x0, z0, x0 + size, z0 + size) ?? [])]) {
         const vx = arch.bx - arch.ax, vz = arch.bz - arch.az, L = Math.hypot(vx, vz);
         const ux = vx / L, uz = vz / L, px = -uz, pz = ux;
         const seed = generator.seed ^ 0xa4c;

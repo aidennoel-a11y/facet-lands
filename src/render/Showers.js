@@ -133,10 +133,12 @@ export class Showers {
       m.scale.set(s.width, top + 10, 1);
       m.rotation.y = Math.atan2(-dx, -dz);
       const u = m.material.uniforms;
-      u.opacity.value = 0.5 * s.fade * smoothstep(600, 900, dist);
+      u.opacity.value = 0.5 * s.fade * smoothstep(600, 900, dist) * (0.3 + 0.7 * Math.min(1, (horizon.r + horizon.g + horizon.b) * 1.2));
       u.haze.value = smoothstep(fog.near, fog.far * 1.3, dist);
       u.horizon.value.copy(horizon);
-      u.colour.value.setRGB(grey, grey * 1.04, grey * 1.1);
+      // (As dark as the sky behind them: grey by day, gone into the dark at night.)
+      const lum = Math.min(1, (0.3 * horizon.r + 0.59 * horizon.g + 0.11 * horizon.b) * 1.5);
+      u.colour.value.setRGB(grey * lum, grey * 1.04 * lum, grey * 1.1 * lum);
       u.time.value = this.time;
       u.flash.value = this.flashAt && Math.hypot(this.flashAt.x - s.x, this.flashAt.z - s.z) < s.width ? this.flash : 0;
     }

@@ -11,6 +11,7 @@ import { waterData } from './waterData.js';
 import { riverData } from './riverData.js';
 import { reedData } from './reedData.js';
 import { minimapPixels } from '../ui/minimapPixels.js';
+import { mapTile } from '../ui/mapLabels.js';
 
 let world = null; // { seed, generator }
 const rocks = new Map(); // "cx,cz" -> rock candidates (recently used last)
@@ -35,6 +36,13 @@ self.onmessage = (event) => {
   if (event.data.kind === 'describe') {
     // What kind of country the player is in (for the panel).
     self.postMessage({ id, result: g.describe(event.data.x, event.data.z) });
+    return;
+  }
+  if (event.data.kind === 'map') {
+    // A tile of the big map.
+    const { x0, z0, n, s } = event.data;
+    const result = mapTile(g, x0, z0, n, s);
+    self.postMessage({ id, result }, [result.labels.buffer, result.shade.buffer]);
     return;
   }
   if (event.data.kind === 'minimap') {

@@ -1,4 +1,4 @@
-import { BoxGeometry, Color, CylinderGeometry, DodecahedronGeometry, Group, InstancedBufferAttribute, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, DodecahedronGeometry, Group, InstancedBufferAttribute, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../../noise/random.js';
 
 // Sinter: the pale, crusted rock that builds up round hot springs and geysers.
@@ -8,6 +8,46 @@ slab.scale(1, 0.35, 1);
 slab.computeVertexNormals();
 const vent = new CylinderGeometry(0.55, 0.7, 0.3, 7);
 const m4 = new Matrix4(), pos = new Vector3(), rot = new Quaternion(), scl = new Vector3(), yAxis = new Vector3(0, 1, 0);
+
+/**
+ * A geyser's cone: a lumpy mound of sinter built up round its vent over
+ * the years, layered and knobbly, with a little crater at the top; pale
+ * grey-white, streaked orange and brown where the hot water runs down.
+ * Radius 1 at the base, height 1 (scaled per geyser), base at y = 0.
+ */
+function geyserCone(seed) {
+  const profile = [[1.0, 0.0], [0.82, 0.16], [0.62, 0.38], [0.44, 0.62], [0.3, 0.86], [0.2, 1.0], [0.1, 0.9], [0.0, 0.84]];
+  const around = 11;
+  const rings = profile.map(([r, y], k) => Array.from({ length: around }, (_, a) => {
+    const ang = (a / around) * Math.PI * 2;
+    const lump = k > 0 && k < profile.length - 1 ? 1 + 0.18 * (hash2(a, k, seed) - 0.5) : 1;
+    const shelf = 0.03 * Math.sin(y * 22 + a); // (the layers of it)
+    return [Math.cos(ang) * r * lump + shelf * Math.cos(ang), y + 0.05 * (hash2(a, k + 9, seed) - 0.5) * (k ? 1 : 0), Math.sin(ang) * r * lump + shelf * Math.sin(ang)];
+  }));
+  const pos = [], col = [];
+  const c = new Color();
+  for (let k = 0; k + 1 < rings.length; k++) {
+    for (let a = 0; a < around; a++) {
+      const b = (a + 1) % around;
+      const quad = [rings[k][a], rings[k + 1][a], rings[k + 1][b], rings[k][a], rings[k + 1][b], rings[k][b]];
+      // Streaks of colour running down from the crater.
+      const streak = hash2(a, 3, seed) < 0.35;
+      c.copy(SINTER[Math.floor(hash2(a, k, seed + 5) * SINTER.length)]);
+      if (streak) c.lerp(new Color(k < 2 ? 0x8a5a32 : 0xd2803a), 0.55);
+      if (k >= profile.length - 3) c.lerp(new Color(0x9a9186), 0.4); // wet round the crater
+      for (const p of quad) {
+        pos.push(...p);
+        col.push(c.r, c.g, c.b);
+      }
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
+  g.computeVertexNormals();
+  return g;
+}
+const CONES = [geyserCone(3), geyserCone(8), geyserCone(13)];
 
 /**
  * Geysers erupting (see TerrainGenerator.hotSprings): every minute or two
@@ -23,6 +63,7 @@ export function createGeyserLayer(config) {
   const material = new MeshLambertMaterial({ color: 0xf4f8fa, emissive: 0x55626a, transparent: true, depthWrite: false });
   const sinterMaterial = new MeshLambertMaterial({ flatShading: true });
   const ventMaterial = new MeshLambertMaterial({ color: 0x2a2622 });
+  const coneMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
     shader.vertexShader = shader.vertexShader
@@ -74,7 +115,7 @@ export function createGeyserLayer(config) {
       if (!springs.length) return null;
       const group = new Group();
       group.name = 'geysers';
-      const starts = [], drops = [], cycles = [], rims = [], vents = [];
+      const starts = [], drops = [], cycles = [], rims = [], vents = [], cones = [];
       const seed = generator.seed ^ 0x6e75;
       for (const g of springs) {
         const y = ground(g.x, g.z);
@@ -82,7 +123,7 @@ export function createGeyserLayer(config) {
         const h = (k, n) => hash2(Math.floor(g.x) + k * 13, Math.floor(g.z) - k * 7, seed + n);
         // A rim of sinter slabs round the pool, or round the geyser's vent
         // with a crusted apron spreading out from it.
-        const ring = g.geyser ? 1.3 : g.r * 1.05;
+        const ring = g.geyser ? 3.4 : g.r * 1.05;
         const count = g.geyser ? 9 : Math.round(8 + g.r * 2.2);
         for (let k = 0; k < count; k++) {
           const a = (k / count) * Math.PI * 2 + h(k, 20) * 0.4;
@@ -98,9 +139,14 @@ export function createGeyserLayer(config) {
           rims.push([px - x0, ground(px, pz) - 0.05, pz - z0, 0.7 + 0.9 * h(k, 32), h(k, 33)]);
         }
         if (!g.geyser) continue;
-        vents.push([g.x - x0, y, g.z - z0]);
+        // Its cone, and the vent in the crater at the top.
+        const coneR = 2.6 + 2.2 * h(0, 40), coneH = 1.2 + 1.4 * h(0, 41);
+        const low = Math.min(y, ground(g.x + coneR, g.z), ground(g.x - coneR, g.z), ground(g.x, g.z + coneR), ground(g.x, g.z - coneR));
+        cones.push([g.x - x0, low - 0.15, g.z - z0, coneR, coneH + (y - low), Math.floor(h(0, 42) * CONES.length), h(0, 43)]);
+        const top = low - 0.15 + (coneH + (y - low)) * 0.86;
+        vents.push([g.x - x0, top, g.z - z0]);
         for (let k = 0; k < 160; k++) {
-          starts.push(g.x - x0 + (h(k, 1) - 0.5) * 0.8, y, g.z - z0 + (h(k, 2) - 0.5) * 0.8);
+          starts.push(g.x - x0 + (h(k, 1) - 0.5) * 0.5, top + 0.1, g.z - z0 + (h(k, 2) - 0.5) * 0.5);
           drops.push(h(k, 3), h(k, 4) * g.strength, h(k, 5) * Math.PI * 2, 0.35 + 0.6 * h(k, 6));
           cycles.push(g.period, g.phase);
         }
@@ -118,9 +164,19 @@ export function createGeyserLayer(config) {
         mesh.receiveShadow = true;
         group.add(mesh);
       }
+      for (const [x, y, z, r, hgt, k, turn] of cones) {
+        const cone = new Mesh(CONES[k], coneMaterial);
+        cone.position.set(x, y, z);
+        cone.scale.set(r, hgt, r);
+        cone.rotation.y = turn * Math.PI * 2;
+        cone.castShadow = true;
+        cone.receiveShadow = true;
+        group.add(cone);
+      }
       for (const [x, y, z] of vents) {
         const v = new Mesh(vent, ventMaterial);
         v.position.set(x, y - 0.05, z);
+        v.scale.set(0.6, 1, 0.6);
         group.add(v);
       }
       if (starts.length) {
