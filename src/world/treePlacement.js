@@ -94,9 +94,6 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // Palms round an oasis.
       const oasis = biome.id === 'desert' && generator.oasisAt ? generator.oasisAt(wx, wz) : 0;
       if (oasis > 0.2) likely = Math.max(likely, 0.45 * oasis);
-      // Redwood groves: tall and close-set.
-      const redwoods = biome.id === 'temperate' && generator.getRedwood ? generator.getRedwood(wx, wz) : 0;
-      if (redwoods > 0.3) likely = Math.max(likely, 0.55 * redwoods * Math.min(1, generator.getForestDensity(wx, wz) * 1.6));
       if (!trees || keep > likely) continue;
       if (biome.id === 'desert' && oasis <= 0.2 && generator.getFeatures(wx, wz).erg > 0.3) continue; // nothing grows in a dune sea
       if (biome.id === 'volcanic' && hash2(gi, gj, seed + 15) < 0.92 * generator.getVolcanic(wx, wz).cone) continue; // cinder cones are nearly bare
@@ -154,7 +151,6 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       }
       species ??= trees.species[trees.species.length - 1];
       if (oasis > 0.2) species = { type: hash2(gi, gj, seed + 17) < 0.8 ? 'junglePalm' : 'dryBush' };
-      if (redwoods > 0.3 && h < 125) species = { type: hash2(gi, gj, seed + 19) < 0.8 * redwoods ? 'redwood' : hash2(gi, gj, seed + 20) < 0.5 ? 'treeFern' : 'spruce' };
       // Thickets of bamboo along the jungle's edges.
       if (biome.id === 'jungle' || biome.id === 'temperate' || biome.id === 'wetland') {
         const j = generator.getBiomeWeights(wx, wz, {}).jungle;

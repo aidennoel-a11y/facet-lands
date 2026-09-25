@@ -127,7 +127,7 @@ export function createLogLayer(config) {
           const lx = (i + 0.15 + 0.7 * hash2(gi, gj, seed + 1)) * G, lz = (j + 0.15 + 0.7 * hash2(gi, gj, seed + 2)) * G;
           const wx = x0 + lx, wz = z0 + lz;
           const w = generator.getBiomeWeights(wx, wz, {});
-          const woods = w.temperate * generator.getForestDensity(wx, wz) * (1 - 0.8 * smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) + w.blackHills * 0.6 + w.jungle * 0.9 + w.wetland * 0.3;
+          const woods = w.temperate * generator.getForestDensity(wx, wz) * (1 - 0.8 * smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) + w.blackHills * 0.6 + w.jungle * 0.9 + w.wetland * 0.3 + w.pine * 0.8 + w.redwood;
           if (keep > 0.2 * smoothstep(0.35, 0.7, woods)) continue;
           const y = groundHeightAt(lx, lz);
           if (!(y > sea + 1.2) || y > 150) continue;

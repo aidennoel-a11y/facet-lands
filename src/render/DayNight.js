@@ -277,6 +277,8 @@ export class DayNight {
     this.shaftReach = 1.6;
     this.flash = 0; // lightning, 0..1 (set by the storm)
     this.aurora = 0; // the northern lights, 0..1 (set from outside: on clear winter nights)
+    this.viewDir = null; // which way you're looking (the shadows reach mostly ahead of you)
+    this._ahead = new Vector3();
     this.rainbow = 0; // a rainbow, 0..1 (set from outside: as rain clears with the sun out)
     // Where you see the land meet the sky, as an angle below level (0 on
     // the ground, a few degrees down from high up). The sun sets there.
@@ -523,11 +525,17 @@ export class DayNight {
     // Shadows switch changes it (not the dim moments at dawn and dusk).
     light.castShadow = this.shadows;
 
-    // Centre the shadow box on the player, snapped to whole texels.
+    // Centre the shadow box a little ahead of the player, where they're
+    // looking (shadows behind them are never seen), snapped to whole texels.
     const texel = this.config.shadowExtent / this.config.shadowMapSize;
     this._basis.lookAt(dir, new Vector3(0, 0, 0), new Vector3(0, 1, 0));
     this._inverse.copy(this._basis).transpose();
-    const f = this._focus.copy(focus).applyMatrix4(this._inverse);
+    const f = this._focus.copy(focus);
+    if (this.viewDir) {
+      const l = Math.hypot(this.viewDir.x, this.viewDir.z);
+      if (l > 1e-3) f.addScaledVector(this._ahead.set(this.viewDir.x / l, 0, this.viewDir.z / l), this.config.shadowExtent * 0.25);
+    }
+    f.applyMatrix4(this._inverse);
     f.x = Math.round(f.x / texel) * texel;
     f.y = Math.round(f.y / texel) * texel;
     f.applyMatrix4(this._basis);

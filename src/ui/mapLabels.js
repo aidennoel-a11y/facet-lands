@@ -13,6 +13,7 @@ export const MAP_LABELS = [
   ['Rolling hills', '#86b456'],
   ['Forest', '#3f7d33'],
   ['Birch forest', '#8fbf52'],
+  ['Pine forest', '#2f5a36'],
   ['Redwood forest', '#8a3b24'],
   ['Wildflower meadow', '#d98ac9'],
   ['Escarpment', '#6f7f5a'],

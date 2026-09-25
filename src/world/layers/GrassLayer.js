@@ -45,12 +45,45 @@ function tuftGeometry(blades = 7, seed = 5) {
 }
 
 /**
+ * Tall grass gone to seed (plains, savanna): a few long, thin stalks, each
+ * topped with a pale seed head.
+ */
+function tallGeometry(seed = 9) {
+  const rand = mulberry32(seed);
+  const pos = [], col = [], nor = [];
+  const blade = (a, b, c, ca, cb, cc) => {
+    pos.push(...a, ...b, ...c);
+    col.push(...ca, ...cb, ...cc);
+    nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+  };
+  for (let k = 0; k < 6; k++) {
+    const angle = rand() * Math.PI * 2, r = Math.sqrt(rand()) * 0.3;
+    const bx = Math.cos(angle) * r, bz = Math.sin(angle) * r;
+    const facing = rand() * Math.PI * 2, half = 0.03 + rand() * 0.02;
+    const h = 0.9 + rand() * 0.6, lean = 0.1 + rand() * 0.25;
+    const tx = bx + Math.cos(angle) * lean, tz = bz + Math.sin(angle) * lean;
+    const dark = [0.6, 0.6, 0.6], bright = [1.2, 1.2, 1.2], seedHead = [1.55, 1.42, 1.05];
+    blade([bx + Math.cos(facing) * half, 0, bz + Math.sin(facing) * half], [bx - Math.cos(facing) * half, 0, bz - Math.sin(facing) * half], [tx, h, tz], dark, dark, bright);
+    // The seed head: a narrow spindle at the top.
+    const hx = tx + Math.cos(angle) * 0.04, hz = tz + Math.sin(angle) * 0.04;
+    blade([tx + Math.cos(facing) * 0.04, h - 0.18, tz + Math.sin(facing) * 0.04], [tx - Math.cos(facing) * 0.04, h - 0.18, tz - Math.sin(facing) * 0.04], [hx, h + 0.12, hz], seedHead, seedHead, seedHead);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(nor), 3));
+  g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
+  return g;
+}
+
+/**
  * Grass tufts on the chunks right around the player (LOD `grassMaxLod`).
  * They sway in the wind and shrink away with distance (`grassFade`), so
  * the edge of the grassy area is never visible.
  */
 export function createGrassLayer(config) {
-  const geometry = tuftGeometry();
+  // Ordinary tufts, tall seeding stalks, and broad, many-bladed clumps.
+  const geometries = [tuftGeometry(), tallGeometry(), tuftGeometry(14, 23)];
+  geometries[2].scale(1.6, 0.8, 1.6);
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
   // Double-sided materials flip the normal on back faces, which would turn
   // the far side of every blade black. Undo the flip: both sides face up.
@@ -79,20 +112,38 @@ export function createGrassLayer(config) {
       const placed = prepared?.grass ?? placeGrass(generator, config, cx, cz, groundHeightAt);
       const { matrices, colors, count } = placed;
       if (count === 0) return null;
-
-      const mesh = new InstancedMesh(geometry, material, count);
-      mesh.name = 'grass';
-      mesh.instanceMatrix.array.set(matrices);
-      mesh.instanceColor = new InstancedBufferAttribute(colors, 3);
-      mesh.computeBoundingSphere();
-      mesh.receiveShadow = true; // lies in the shade of trees and hills
-      mesh.userData.count = count;
+      const kinds = placed.kinds ?? new Uint8Array(count);
+      // Sorted into one instanced mesh per kind.
+      const meshes = geometries.map((geometry, kind) => {
+        let n = 0;
+        for (let k = 0; k < count; k++) if (kinds[k] === kind) n++;
+        if (!n) return null;
+        const m = new Float32Array(n * 16), c = new Float32Array(n * 3);
+        let at = 0;
+        for (let k = 0; k < count; k++) {
+          if (kinds[k] !== kind) continue;
+          m.set(matrices.subarray(k * 16, k * 16 + 16), at * 16);
+          c.set(colors.subarray(k * 3, k * 3 + 3), at * 3);
+          at++;
+        }
+        const mesh = new InstancedMesh(geometry, material, n);
+        mesh.name = 'grass';
+        mesh.instanceMatrix.array.set(m);
+        mesh.instanceColor = new InstancedBufferAttribute(c, 3);
+        mesh.computeBoundingSphere();
+        mesh.receiveShadow = true; // lies in the shade of trees and hills
+        return mesh;
+      }).filter(Boolean);
+      const root = meshes[0];
+      for (const m of meshes.slice(1)) root.add(m);
+      root.userData.count = count;
       layer.count += count;
-      return mesh;
+      return root;
     },
 
     dispose(mesh) {
       layer.count -= mesh.userData.count;
+      for (const child of mesh.children) child.dispose();
       mesh.dispose();
     },
   };

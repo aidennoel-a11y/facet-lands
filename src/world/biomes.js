@@ -202,6 +202,78 @@ export const BIOMES = {
     },
   },
 
+  // Pine forest: dark, close-set conifers (pine, spruce, larch) over a floor
+  // of needles, moss and the odd fern, in the hills leading up to the
+  // mountains; cold winters.
+  pine: {
+    id: 'pine',
+    name: 'Pine forest',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xc9b98a }, // shore
+      { height: 5, color: 0xa7a070 },
+      { height: 8, color: 0x6d7f42 }, // needles and moss
+      { height: 30, color: 0x5f7a3c },
+      { height: 60, color: 0x566f38 },
+      { height: 95, color: 0x6a7448 },
+      { height: 122, color: 0x7f8660 },
+      { height: 148, color: 0x9391a1 }, // bare rock
+      { height: 210, color: 0x838198 },
+    ],
+    cliff: 0x8a8696,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 185,
+    snow: 0xf1f4f7,
+    grass: 0.35,
+    trees: {
+      density: 0.95,
+      clumped: false,
+      species: [
+        { type: 'pine', weight: 1.3, minHeight: -99, maxHeight: 160 },
+        { type: 'spruce', weight: 1, minHeight: -99, maxHeight: 170 },
+        { type: 'larch', weight: 0.35, minHeight: 20, maxHeight: 170 },
+        { type: 'deadPine', weight: 0.05, minHeight: -99, maxHeight: 170 },
+        { type: 'bush', weight: 0.15, minHeight: -99, maxHeight: 130 },
+      ],
+    },
+  },
+
+  // Redwood forest: groves of giant redwoods in the heart of the pine
+  // country, their trunks soaring bare to far-off crowns, the floor
+  // beneath deep in shade, rust-brown litter and ferns.
+  redwood: {
+    id: 'redwood',
+    name: 'Redwood forest',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xc9b98a },
+      { height: 5, color: 0x8d7a58 },
+      { height: 8, color: 0x6f5a3c }, // rust-brown litter
+      { height: 30, color: 0x6a6038 },
+      { height: 60, color: 0x5d6436 },
+      { height: 95, color: 0x6a7448 },
+      { height: 122, color: 0x7f8660 },
+      { height: 148, color: 0x9391a1 },
+      { height: 210, color: 0x838198 },
+    ],
+    cliff: 0x86808e,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 185,
+    snow: 0xf1f4f7,
+    grass: 0.2,
+    trees: {
+      density: 0.8,
+      clumped: false,
+      species: [
+        { type: 'redwood', weight: 1.4, minHeight: -99, maxHeight: 140 },
+        { type: 'treeFern', weight: 0.35, minHeight: -99, maxHeight: 120 },
+        { type: 'spruce', weight: 0.25, minHeight: -99, maxHeight: 170 },
+      ],
+    },
+  },
+
   // Jungles: steaming lowland rainforest, a dense, dark green floor under
   // giant trees whose canopies close overhead and trail vines, with palms
   // and tree ferns beneath. Warm all year (no autumn, no snow).

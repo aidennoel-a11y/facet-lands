@@ -25,6 +25,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
 
   const matrices = new Float32Array(cells * cells * 16);
   const colors = new Float32Array(cells * cells * 3);
+  const kinds = new Uint8Array(cells * cells); // 0 tuft, 1 tall seeding stalks, 2 broad clump (see GrassLayer)
   let count = 0;
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
@@ -62,14 +63,20 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       colors.set([color.r * v, color.g * v, color.b * v], count * 3);
 
       const s = 0.7 + hash2(gi, gj, seed + 4) * 0.7;
-      // On the open plains the grass grows long.
-      const long = 1 + 0.9 * generator.getPlainness(wx, wz);
+      // On the open plains and the savanna the grass grows long, with tall
+      // seeding stalks and broad clumps among the tufts.
+      const plain = generator.getPlainness(wx, wz);
+      const tallLand = Math.max(plain, 0.9 * generator.getBiomeWeights(wx, wz, {}).savanna);
+      const long = 1 + 0.9 * tallLand;
+      const pick = hash2(gi, gj, seed + 8);
+      const kind = pick < 0.35 * tallLand ? 1 : pick < 0.35 * tallLand + 0.12 + 0.15 * tallLand ? 2 : 0;
+      kinds[count] = kind;
       position.set(lx, ground - 0.05, lz);
       rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 5) * Math.PI * 2);
-      scale.set(s, s * (0.8 + hash2(gi, gj, seed + 6) * 0.5) * long, s);
+      scale.set(s, s * (0.8 + hash2(gi, gj, seed + 6) * 0.5) * (kind === 1 ? 1 : long), s);
       matrix.compose(position, rotation, scale).toArray(matrices, count * 16);
       count++;
     }
   }
-  return { matrices: matrices.slice(0, count * 16), colors: colors.slice(0, count * 3), count };
+  return { matrices: matrices.slice(0, count * 16), colors: colors.slice(0, count * 3), kinds: kinds.slice(0, count), count };
 }

@@ -34,24 +34,39 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.34, skyColor 
     // Fresnel: looking across the water you see the sky reflected in it,
     // looking straight down you see into it.
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uSky;\nuniform float uTime;\nvarying float vFoam;\nvarying vec2 vWorld;\nvarying float vIce;')
+      .replace('#include <common>', `#include <common>
+        uniform vec3 uSky;
+        uniform float uTime;
+        varying float vFoam;
+        varying float vCrest;
+        varying vec2 vWorld;
+        varying float vIce;
+        float waterHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float waterNoise(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(waterHash(i), waterHash(i + vec2(1.0, 0.0)), f.x), mix(waterHash(i + vec2(0.0, 1.0)), waterHash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }`)
       .replace(
         '#include <fog_fragment>',
         /* glsl */ `float fresnel = pow(1.0 - clamp(dot(normal, normalize(vViewPosition) * -1.0), 0.0, 1.0), 3.0);
         gl_FragColor.rgb = mix(gl_FragColor.rgb, uSky, fresnel * 0.35);
         gl_FragColor.a = mix(gl_FragColor.a, 1.0, fresnel * 0.4);
-        // Breaking waves: foam rolling in, surging and falling back.
-        float surge = sin(uTime * 1.3 + dot(vWorld, vec2(0.11, 0.07))) * 0.5 + 0.5;
-        float breaking = vFoam * smoothstep(0.25, 0.95, surge + 0.35 * sin(dot(vWorld, vec2(0.6, -0.45)) + uTime * 2.1));
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.95, 0.97, 0.98), breaking * 0.85);
-        gl_FragColor.a = mix(gl_FragColor.a, 1.0, breaking * 0.7);
+        // Breaking waves: patches of foam at the water's edge, coming and going.
+        float froth = waterNoise(vWorld * 0.18 + vec2(uTime * 0.25, -uTime * 0.18)) * 0.6 + waterNoise(vWorld * 0.47 - uTime * 0.4) * 0.4;
+        float breaking = vFoam * smoothstep(0.45, 0.75, froth + 0.25 * sin(uTime * 1.1 + froth * 5.0));
+        // Out at sea, whitecaps where the highest waves crest and spill over.
+        float cap = vCrest * smoothstep(0.5, 0.75, waterNoise(vWorld * 0.09 + uTime * 0.12));
+        float white = max(breaking, cap);
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.95, 0.97, 0.98), white * 0.85);
+        gl_FragColor.a = mix(gl_FragColor.a, 1.0, white * 0.7);
         // Winter: lakes freeze over.
         gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.74, 0.84, 0.9), vIce * 0.85);
         gl_FragColor.a = mix(gl_FragColor.a, 0.95, vIce);
         #include <fog_fragment>`,
       );
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;\nuniform float uWinter;\nattribute float waveScale;\nattribute float foam;\nattribute float aFreeze;\nvarying float vFoam;\nvarying vec2 vWorld;\nvarying float vIce;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;\nuniform float uWinter;\nattribute float waveScale;\nattribute float foam;\nattribute float aFreeze;\nvarying float vFoam;\nvarying float vCrest;\nvarying vec2 vWorld;\nvarying float vIce;')
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `#include <begin_vertex>
@@ -71,7 +86,9 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.34, skyColor 
           0.45 * sin(dot(q, vec2(-0.083, -0.061)) + uTime * 1.35 + 0.4) +
           0.4 * sin(dot(q, vec2(0.121, 0.097)) + sin(dot(q, vec2(0.023, -0.031)) + uTime * 0.3) * 2.0 + uTime * 1.7) +
           0.3 * sin(dot(q, vec2(-0.163, 0.139)) + uTime * 2.1 + 3.7);
-        transformed.y += (1.0 - vIce) * ${waveHeight.toFixed(3)} * waveScale * (0.3 + 0.7 * uWind) * waves;`,
+        transformed.y += (1.0 - vIce) * ${waveHeight.toFixed(3)} * waveScale * (0.3 + 0.7 * uWind) * waves;
+        // (How near a big wave's crest this is: whitecaps, out in the open sea, most in a wind.)
+        vCrest = smoothstep(1.4, 2.6, waveScale) * smoothstep(1.6, 2.8, waves) * (0.4 + 0.6 * uWind);`,
       );
   };
 
@@ -97,7 +114,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.34, skyColor 
       geometry.setAttribute('aFreeze', new BufferAttribute(data.freezes, 1));
       geometry.computeBoundingSphere();
       // Waves move vertices a little; pad the bounds so culling stays correct.
-      geometry.boundingSphere.radius += waveHeight * 4;
+      geometry.boundingSphere.radius += waveHeight * 12;
 
       const mesh = new Mesh(geometry, material);
       mesh.name = 'water';

@@ -274,6 +274,7 @@ export class Rivers {
     // How far the land must fall below a pool before the stream drops out
     // of it: real falls, not a staircase of little steps.
     let dropNeeded = stream ? 3 + rand() * 3 : 0;
+    let poolStart = 0; // (where the pool now forming began)
     const steps = stream ? STREAM_STEPS + RIVER_STEPS : RIVER_STEPS;
     for (let i = 0; i < steps; i++) {
       const b = g.getBaseHeight(px, pz);
@@ -327,9 +328,18 @@ export class Rivers {
         // land has fallen well away below it; then the water pours over
         // in one fall into the next pool, dug a little into the slope.
         if (target < level - dropNeeded) {
+          // (The pool behind this lip lies no higher than the land at the
+          // lip: it's dug down into the slope, never dammed up above it.)
+          let low = level;
+          for (let k = poolStart; k < points.length; k++) if (points[k].base !== undefined) low = Math.min(low, points[k].base - 0.3);
+          if (low < level) {
+            for (let k = poolStart; k < points.length; k++) if (points[k].cascade) points[k].level = Math.min(points[k].level, low);
+            level = Math.max(this.seaLevel + 0.03, low);
+          }
           const next = Math.max(this.seaLevel + 0.03, target - 0.8);
           if (level - next > 3) fell = true;
           if (points.length) points.push({ x: px - dir[0] * 4, z: pz - dir[1] * 4, level: level - 0.02, width: 0, cascade: true, lip: true });
+          poolStart = points.length;
           level = next;
           dropNeeded = 3 + rand() * 3;
         } else {
@@ -342,7 +352,7 @@ export class Rivers {
         // but never runs above the land.
         level = Math.max(this.seaLevel + 0.03, Math.min(level - 0.02, Math.max(target, level - 0.35), b - 0.4));
       }
-      points.push({ x: px, z: pz, level, width: 0, cascade });
+      points.push({ x: px, z: pz, level, width: 0, cascade, base: b });
 
       if (b < this.seaLevel) {
         // Into a lake or the sea: carry on a little way so the mouth opens out.
@@ -481,7 +491,8 @@ export class Rivers {
       if (Math.floor(x / REGION) !== rx || Math.floor(z / REGION) !== rz) continue;
       const h = g.getBaseHeight(x, z);
       if (h < 60 || h > 260) continue;
-      if (g.getBiomeWeights(x, z, {}).temperate < 0.5) continue;
+      const bw = g.getBiomeWeights(x, z, {});
+      if (bw.temperate + bw.pine + bw.redwood < 0.5) continue;
       const pond = this.#pond(x, z, 20 + rand() * 25, rand, 0.35);
       if (!pond || pond.level < h + 0.3) continue; // it needs a real hollow to hold it
       pond.tint = 1;
@@ -645,7 +656,12 @@ export class Rivers {
           inWater = true;
         } else {
           // (A crater's own walls hold its lake: they're left as they are.)
-          if (!pond.natural) h = Math.min(h, pond.level + 0.2 + Rivers.bankRise(d - rr, 0.6));
+          // (Further out the bank steepens and steepens, so it meets rising
+          // land as a slope, never leaving a wall cut into a mountainside.)
+          if (!pond.natural) {
+            const e = d - rr;
+            h = Math.min(h, pond.level + 0.2 + Rivers.bankRise(e, 0.6) + 0.07 * Math.max(0, e - 8) ** 2);
+          }
           if (d < rr + 8) bank = Math.max(bank, pond.level + 0.2 - Math.max(0, d - rr - 3.2) * 0.6);
         }
         continue;
@@ -672,10 +688,16 @@ export class Rivers {
     if (inWater) {
       if (wet === Infinity) wet = wetEnd;
       else if (wetEnd < wet) wet = Math.max(wetEnd, wet - 0.4);
-      return base > this.seaLevel - 0.5 ? wet : Math.min(h, wet);
+      if (base <= this.seaLevel - 0.5) return Math.min(h, wet);
+      // The bed is dug down, or built up a little over a dip; but where the
+      // land falls well away below the water (over a cliff, down a fall),
+      // it's left as it is: the water falls through the air there, rather
+      // than on a channel built out from the rock.
+      return wet < base + 1.5 ? wet : h;
     }
-    // Banks never lower than the water beside them (except out in a lake or the sea).
-    if (bank > h && base > this.seaLevel - 0.5) h = bank;
+    // Banks never lower than the water beside them (except out in a lake or
+    // the sea, or where the land drops away under a fall).
+    if (bank > h && base > this.seaLevel - 0.5 && bank - base < 1.5) h = bank;
     return h + rough * smoothstep(5, 14, edge);
   }
 

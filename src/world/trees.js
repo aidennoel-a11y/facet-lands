@@ -449,29 +449,42 @@ function cypress() {
   );
 }
 
-// Swamp willow: a short, stout, leaning trunk under a rounded crown whose
-// leafy curtains droop almost to the water.
+// Swamp willow: a short, stout, leaning trunk with knobbly knees round
+// its foot, under a lumpy, spreading crown hung all round with separate
+// strands of leaves, long and short, trailing down towards the water.
 const WILLOW_BLOBS = [
-  [0.3, 4.6, 0, 2.1],
-  [1.3, 4.2, 0.8, 1.4],
-  [-0.9, 4.3, -0.7, 1.5],
+  [0.3, 4.7, 0, 1.9],
+  [1.5, 4.3, 0.8, 1.35],
+  [-1.1, 4.4, -0.8, 1.45],
+  [-0.4, 4.2, 1.3, 1.2],
+  [0.9, 4.9, -1.2, 1.2],
 ];
 
 function swampWillow() {
-  const curtain = new CylinderGeometry(1.7, 2.7, 4.1, 9, 1, true);
-  const pos = curtain.attributes.position;
-  // A ragged hem: the curtain hangs lower in some places than others.
-  for (let k = 0; k < pos.count; k++) {
-    if (pos.getY(k) < 0) pos.setY(k, pos.getY(k) - 0.5 * (0.5 + 0.5 * Math.sin(Math.atan2(pos.getZ(k), pos.getX(k)) * 4)));
+  const rand = mulberry32(955);
+  const strands = [];
+  for (let k = 0; k < 30; k++) {
+    const [x, y, z, r] = WILLOW_BLOBS[k % WILLOW_BLOBS.length];
+    const a = rand() * Math.PI * 2, out = r * (0.75 + 0.3 * rand());
+    const len = 1.4 + rand() * 2.6;
+    const g = new ConeGeometry(0.14 + rand() * 0.1, len, 3, 1);
+    g.rotateX(Math.PI); // hanging, point down
+    strands.push(part(g, 0x6f9a3e, 0x9dbd5a, { x: x + Math.cos(a) * out, y: y - r * 0.2 - len / 2, z: z + Math.sin(a) * out, seed: 975 + k }));
+  }
+  const knees = [];
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI * 2 + rand() * 0.6, d = 0.9 + rand() * 0.9;
+    knees.push(part(new ConeGeometry(0.12 + rand() * 0.08, 0.5 + rand() * 0.5, 5, 1), 0x5a4a38, 0x6b5842, { x: Math.cos(a) * d, y: 0.25, z: Math.sin(a) * d, lump: 0.15, seed: 990 + k }));
   }
   return withCrown(
     [
-      part(new CylinderGeometry(0.24, 0.42, 3.4, 6), 0x5a4a38, 0x6b5842, { x: 0.15, y: 1.7, rz: -0.1, seed: 950 }),
-      ...boughs(WILLOW_BLOBS, 2.6, 3.3, 0x5a4a38, 951, { lean: [0.05, 0] }),
+      part(new CylinderGeometry(0.26, 0.5, 3.4, 6), 0x5a4a38, 0x6b5842, { x: 0.15, y: 1.7, rz: -0.1, lump: 0.08, seed: 950 }),
+      ...boughs(WILLOW_BLOBS, 2.6, 3.4, 0x5a4a38, 951, { lean: [0.05, 0] }),
+      ...knees,
     ],
     [
-      ...WILLOW_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x5f8a36, 0x9dbd5a, { x, y, z, sy: 0.72, lump: 0.2, seed: 960 + i })),
-      part(curtain, 0x6f9a3e, 0x8fb455, { x: 0.3, y: 2.65, lump: 0.1, seed: 970 }),
+      ...WILLOW_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x5f8a36, 0x9dbd5a, { x, y, z, sy: 0.6, lump: 0.25, seed: 960 + i })),
+      ...strands,
     ],
   );
 }

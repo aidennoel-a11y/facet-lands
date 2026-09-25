@@ -167,21 +167,24 @@ export function createSeaCoastLayer(config, terrainMaterial) {
         const ux = vx / L, uz = vz / L, px = -uz, pz = ux;
         const seed = generator.seed ^ 0xa4c;
         const rings = [];
-        for (let k = 0; k <= 14; k++) {
-          const t = -0.15 + (1.3 * k) / 14;
-          const span = archSpan(arch, Math.min(1, Math.max(0, t)));
-          const inside = Math.min(1, Math.max(0, t));
-          const hw = arch.leg * (0.78 - 0.18 * Math.sin(Math.PI * inside)) * (t < 0 || t > 1 ? 0.75 : 1);
+        // From the middle of one leg to the middle of the other, as wide as
+        // the legs at its ends (running into them), a little narrower and
+        // rougher over the gap.
+        for (let k = 0; k <= 16; k++) {
+          const t = k / 16;
+          const span = archSpan(arch, t);
+          const open = Math.sin(Math.PI * t);
+          const hw = arch.leg * (0.95 - 0.25 * open);
           const cxw = arch.ax + vx * t, czw = arch.az + vz * t;
           const mid = (span.top + span.bottom) / 2;
-          const j = (n) => (hash2(k, n, seed + Math.floor(arch.x)) - 0.5) * 0.6;
+          const j = (n) => (hash2(k, n, seed + Math.floor(arch.x)) - 0.5) * 0.9;
           const pts = [
-            [-hw, span.top + j(1)], [hw, span.top + j(2)], [hw * 1.08 + j(3), mid], [hw * 0.8, span.bottom + j(4)], [-hw * 0.8, span.bottom + j(5)], [-hw * 1.08 + j(6), mid],
+            [-hw * 0.9, span.top + j(1)], [hw * 0.9, span.top + j(2)], [hw * 1.05 + j(3), mid + j(7)], [hw * 0.75, span.bottom + j(4) * 0.4], [-hw * 0.75, span.bottom + j(5) * 0.4], [-hw * 1.05 + j(6), mid + j(8)],
           ];
-          const ups = [1, 1, 0.1, -1, -1, 0.1];
+          const ups = [1, 1, 0.15, -1, -1, 0.15];
           rings.push(pts.map(([o, y], n) => {
             const x = cxw + px * o, z = czw + pz * o;
-            return [x, y, z, shade(x, z, y, Math.max(0, ups[n]), ups[n] < 0 ? 0.6 : 1), ups[n] > 0 ? generator.getSeasonality(x, z) : 0];
+            return [x, y, z, shade(x, z, y, Math.max(0, ups[n]) * (n < 2 ? 1 : 0.2), ups[n] < 0 ? 0.62 : 1), ups[n] > 0 ? generator.getSeasonality(x, z) : 0];
           }));
         }
         for (let k = 0; k + 1 < rings.length; k++) {

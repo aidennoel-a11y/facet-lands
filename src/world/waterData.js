@@ -45,6 +45,14 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
 
   // Surf along the open coast: in the shallows, strongest under cliffs.
   const surf = new Float32Array(n * n);
+  // The open sea: waves build the further out (the deeper) it is.
+  const swell = new Float32Array(n * n);
+  for (let k = 0; k < n * n; k++) {
+    const depth = seaLevel - ground[k];
+    if (depth < 6) continue;
+    const x = originX + xs[k], z = originZ + zs[k];
+    swell[k] = smoothstep(6, 30, depth) * smoothstep(0.4, 0.8, generator.getOceanness(x, z));
+  }
   // Lakes (not the open sea) in lands with a cold winter freeze over.
   const freeze = new Float32Array(n * n);
   for (let k = 0; k < n * n; k++) {
@@ -56,7 +64,7 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     if (depth < -1 || depth > 3.5) continue;
     const x = originX + xs[k], z = originZ + zs[k];
     if (generator.getOceanness(x, z) < 0.5) continue;
-    surf[k] = (1 - smoothstep(0.3, 3.5, depth)) * (0.35 + 0.65 * generator.getSeaCliff(x, z));
+    surf[k] = (1 - smoothstep(0.2, 1.8, depth)) * (0.35 + 0.65 * generator.getSeaCliff(x, z));
   }
 
   const positions = [];
@@ -75,7 +83,7 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     for (const k of [a, b, c]) {
       positions.push(xs[k], seaLevel, zs[k]);
       colors.push(color.r, color.g, color.b, alpha);
-      waves.push(0.1 + 0.9 * smoothstep(1, 16, seaLevel - ground[k]));
+      waves.push(0.1 + 0.9 * smoothstep(1, 16, seaLevel - ground[k]) + 2.4 * swell[k]);
       foams.push(surf[k]);
       freezes.push(freeze[k]);
     }

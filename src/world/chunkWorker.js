@@ -97,7 +97,7 @@ self.onmessage = (event) => {
   }
   if (wantGrass) {
     out.grass = placeGrass(g, config, cx, cz, groundHeightAt);
-    transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer);
+    transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer, out.grass.kinds.buffer);
   }
   if (wantFarTrees) {
     out.farTrees = packFarTrees(placeTrees(g, config, cx, cz, groundHeightAt, null), cx, cz, config.chunkSize);

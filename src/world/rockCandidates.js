@@ -114,7 +114,9 @@ export function rockCandidates(generator, config, cx, cz) {
       // Shores: rock outcrops on beaches and lake edges, stones along the rest of a lake's edge.
       const shore = land < seaLevel + 5.5 ? generator.getShore(wx, wz, land) : null;
       const shoreRock = shore ? (shore.kind === 'rock' ? (shore.ocean ? 1.4 : 1) : shore.ocean ? 0 : 0.3) * Math.max(shore.fade, 0.6) : 0;
-      const chance = (0.025 + 0.2 * foothill * flat + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope)) + lavaRock) * soft + surf;
+      // Open grassy plains: only the odd stone.
+      const plain = generator.getPlainness(wx, wz);
+      const chance = ((0.025 + 0.2 * foothill * flat) * (1 - 0.8 * plain) + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope)) + lavaRock) * soft + surf;
       if (roll > chance) continue;
 
       const r = hash2(gi, gj, seed + 3);

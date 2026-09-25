@@ -19,6 +19,7 @@ import { createSeaCoastLayer } from './world/layers/SeaCoastLayer.js';
 import { createKelpLayer } from './world/layers/KelpLayer.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
 import { createFlowerLayer } from './world/layers/FlowerLayer.js';
+import { createUnderstoryLayer } from './world/layers/UnderstoryLayer.js';
 import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
 import { Torches } from './items/Torches.js';
@@ -95,6 +96,7 @@ chunks.addLayer(createKelpLayer(WORLD));
 const logs = createLogLayer(WORLD);
 chunks.addLayer(logs);
 chunks.addLayer(createFlowerLayer(WORLD));
+chunks.addLayer(createUnderstoryLayer(WORLD));
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
 scene.add(farTrees.group);
@@ -441,7 +443,7 @@ function surroundings(dt, snow) {
     for (const [dx, dz] of pts) {
       const w = generator.getBiomeWeights(x + dx, z + dz, {});
       const forest = generator.getForestDensity(x + dx, z + dz);
-      woods += (w.temperate * smoothstep(0.35, 0.7, forest) + w.blackHills * 0.7) / pts.length;
+      woods += (w.temperate * smoothstep(0.35, 0.7, forest) + w.blackHills * 0.7 + w.pine + w.redwood) / pts.length;
       grass += (w.temperate * (1 - smoothstep(0.35, 0.7, forest)) + w.savanna) / pts.length;
       jungle += w.jungle / pts.length;
       wetland += w.wetland / pts.length;
@@ -622,6 +624,7 @@ function tick(now) {
   lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getBaseHeight(x, z), sound, sheltered);
   farLightning(dt);
   afterRain(dt);
+  dayNight.viewDir = dir;
   dayNight.update(dt, camera.position, weather);
   showers.update(dt, camera, weather, clouds.wind, dayNight.horizon, scene.fog);
   // The ground gets wet in the rain (puddles), and dries off over a few minutes.

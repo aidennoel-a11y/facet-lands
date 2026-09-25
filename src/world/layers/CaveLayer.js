@@ -68,7 +68,7 @@ export function createCaveLayer(config) {
         if (data.rock) {
           const rock = new Mesh(data.rock, material);
           rock.name = 'cave rock';
-          rock.castShadow = true;
+          rock.castShadow = false; // (underground: the land over it already shades it from the sun)
           rock.receiveShadow = true;
           rock.userData.solid = true; // torches can be placed on it
           group.add(rock);
@@ -76,7 +76,7 @@ export function createCaveLayer(config) {
         if (data.deco) {
           const stones = new Mesh(data.deco, material);
           stones.name = 'cave stalagmites';
-          stones.castShadow = true;
+          stones.castShadow = false;
           stones.receiveShadow = true;
           stones.userData.solid = true;
           group.add(stones);

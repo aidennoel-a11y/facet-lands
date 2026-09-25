@@ -93,8 +93,11 @@ export class ChunkManager {
     const { surface, caves } = this.visibility;
     chunk.mesh.visible = surface && !chunk.merged;
     for (const tile of this.tiles.values()) if (tile.mesh) tile.mesh.visible = surface;
+    // (From the surface, only the caves behind the mouths close by: past
+    // a couple of chunks the opening is too small to see into.)
+    const near = this.centre && Math.max(Math.abs(chunk.cx - this.centre[0]), Math.abs(chunk.cz - this.centre[1])) <= 2;
     for (const { layer, object } of chunk.layerObjects) {
-      object.visible = layer.name === 'caves' ? caves === 'all' || object.userData.hasMouth === true : surface;
+      object.visible = layer.name === 'caves' ? caves === 'all' || (object.userData.hasMouth === true && near) : surface;
     }
   }
 
@@ -140,7 +143,9 @@ export class ChunkManager {
     const key = `${ccx},${ccz}`;
     if (key !== this.centerKey) {
       this.centerKey = key;
+      this.centre = [ccx, ccz];
       this.#refreshWanted(ccx, ccz);
+      for (const chunk of this.chunks.values()) this.#applyVisibility(chunk);
     }
     if (this.queue.length && forward) this.#prioritise(position, forward);
     this.#processQueue();

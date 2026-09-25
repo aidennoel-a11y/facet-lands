@@ -106,6 +106,7 @@ export class TerrainGenerator {
     this.groveNoise = new SimplexNoise(this.seed + 144); // birch woods
     this.jungleNoise = new SimplexNoise(this.seed + 145); // jungles
     this.redwoodNoise = new SimplexNoise(this.seed + 146); // redwood groves
+    this.pineNoise = new SimplexNoise(this.seed + 148); // pine forests
     this.meadowNoise = new SimplexNoise(this.seed + 147); // wildflower meadows
     this._cones = new Map(); // volcano cell -> cone (or null)
     this._contX = NaN;
@@ -114,7 +115,7 @@ export class TerrainGenerator {
     this._range = { value: 0, size: 1, large: 0 };
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
-    this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0, volcanic: 0, wetland: 0 };
+    this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0, volcanic: 0, wetland: 0, jungle: 0, pine: 0, redwood: 0 };
     this._lastWeights = { x: NaN, z: NaN, range: NaN };
     this._features = { mesa: 0, mesaTop: 0, escarp: 0, hills: 0, erg: 0, canyon: 0, canyonFloor: 0, canyonCut: 0 };
     this._erg = 0; // the last point's dune sea, for its roughness
@@ -188,6 +189,8 @@ export class TerrainGenerator {
       out.volcanic = m.volcanic;
       out.wetland = m.wetland;
       out.jungle = m.jungle;
+      out.pine = m.pine;
+      out.redwood = m.redwood;
       return out;
     }
     this.#biomeWeights(x, z, out, range);
@@ -201,6 +204,8 @@ export class TerrainGenerator {
     m.volcanic = out.volcanic;
     m.wetland = out.wetland;
     m.jungle = out.jungle;
+    m.pine = out.pine;
+    m.redwood = out.redwood;
     return out;
   }
 
@@ -225,10 +230,18 @@ export class TerrainGenerator {
     const green = temperate * (1 - hz) * (1 - vz);
     // Jungles: in the warmest, wettest lowlands, well away from dry
     // country and mountains (see #jungleZone).
-    const jz = green > 0 && wz < 1 ? this.#jungleZone(x, z, range, a) : 0;
-    out.temperate = green * (1 - wz) * (1 - jz);
-    out.wetland = green * wz;
-    out.jungle = green * (1 - wz) * jz;
+    // (A jungle is jungle right through: wetlands, forest and plains give way to it.)
+    const jz = green > 0 ? this.#jungleZone(x, z, range, a) : 0;
+    // Pine forests: in the hill country leading up to the mountain ranges;
+    // and redwood forests in the heart of some of them (see #pineZone).
+    const rest = green * (1 - wz) * (1 - jz);
+    const pz = rest > 0 ? this.#pineZone(x, z, range, a) : 0;
+    const rz = pz > 0 ? this.#redwoodZone(x, z) * smoothstep(0.4, 0.85, pz) : 0;
+    out.temperate = rest * (1 - pz);
+    out.pine = rest * pz * (1 - rz);
+    out.redwood = rest * pz * rz;
+    out.wetland = green * wz * (1 - jz);
+    out.jungle = green * jz;
     out.savanna = savanna;
     out.desert = desert;
     out.blackHills = hills;
@@ -327,18 +340,112 @@ export class TerrainGenerator {
   }
 
   /**
+   * Where pine forests lie (0..1): broad stretches of the green hill
+   * country towards the mountains, kept whole (no scraps).
+   */
+  #pineZone(x, z, range, aridity) {
+    const raw = this.#pineZoneRaw(x, z, range, aridity);
+    if (raw <= 0) return 0;
+    return raw * this.#minSize('pine', x, z, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      return this.#pineZoneRaw(px, pz, r, this.getAridity(px, pz, r));
+    }, 0.8);
+  }
+
+  #pineZoneRaw(x, z, range, aridity) {
+    // A cool country: on the flanks of the mountains (with a range within
+    // a few hundred metres: jungles, which keep well away from mountains,
+    // never meet them), and with no dry country, savanna or hotter, for the
+    // best part of a kilometre round.
+    if (aridity > 0.45) return 0;
+    const zone = smoothstep(-0.22, -0.04, this.pineNoise.fbm(x * 0.00019 - 410, z * 0.00019 + 230, 2));
+    if (zone <= 0) return 0;
+    const cool = smoothstep(0.15, 0.3, this.#mountainsAround(x, z));
+    if (cool <= 0) return 0;
+    const noJungle = 1 - smoothstep(0.05, 0.3, this.#jungleNear(x, z));
+    return zone * cool * noJungle * (1 - smoothstep(0.36, 0.44, this.#aridAround(x, z)));
+  }
+
+  /**
+   * How much jungle there could be within about 550 m of (x, z) (the most
+   * of its raw zone there), on a 64 m grid (remembered) and blended
+   * between its points: for keeping the cool forests well away.
+   */
+  #jungleNear(x, z) {
+    const G = 64;
+    const gx = Math.floor(x / G), gz = Math.floor(z / G);
+    const fx = x / G - gx, fz = z / G - gz;
+    const cache = this._jungleNear ?? (this._jungleNear = new Map());
+    const at = (i, j) => {
+      const key = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.get(key);
+      if (v === undefined) {
+        const jz = (px, pz) => {
+          const r = this.#rangeField(px, pz, {}).value;
+          return this.#jungleZoneRaw(px, pz, r, this.getAridity(px, pz, r));
+        };
+        v = jz(i * G, j * G);
+        for (const d of [300, 550]) for (let k = 0; k < 8 && v < 1; k++) {
+          const a = ((k + (d > 300 ? 0.5 : 0)) / 8) * Math.PI * 2;
+          v = Math.max(v, jz(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d));
+        }
+        if (cache.size > 60000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
+    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return a + (b - a) * fz;
+  }
+
+  /** Where redwoods take over inside a pine forest (0..1): groves a kilometre or two across. */
+  #redwoodZone(x, z) {
+    return smoothstep(-0.08, 0.1, this.redwoodNoise.fbm(x * 0.0005 - 40, z * 0.0005 + 70, 2));
+  }
+
+  /**
    * Where jungles lie (0..1): broad stretches of the warmest, wettest
    * lowlands, deep in the green country: forests, plains, wetlands and the
    * sea may border them, but never dry country, mountains, the Black Hills
    * or volcanic highlands.
    */
   #jungleZone(x, z, range, aridity) {
-    const zone = this.#jungleZoneRaw(x, z, range, aridity);
-    if (zone <= 0) return 0;
-    return zone * this.#minSize('jungle', x, z, (px, pz) => {
-      const r = this.#rangeField(px, pz, {}).value;
-      return this.#jungleZoneRaw(px, pz, r, this.getAridity(px, pz, r));
-    }, 0.6);
+    if (aridity > 0.5) return 0;
+    // (Smoothed over a few hundred metres: a jungle is one rounded stretch
+    // of country, never a strip or a scatter of patches.)
+    return smoothstep(0.24, 0.44, this.#jungleSuit(x, z));
+  }
+
+  // How suited to jungle the country round (x, z) is: its raw zone averaged
+  // over 250 m round, on a 64 m grid (remembered) and blended between its points.
+  #jungleSuit(x, z) {
+    const G = 64;
+    const gx = Math.floor(x / G), gz = Math.floor(z / G);
+    const fx = x / G - gx, fz = z / G - gz;
+    const cache = this._jungleSuit ?? (this._jungleSuit = new Map());
+    const at = (i, j) => {
+      const key = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.get(key);
+      if (v === undefined) {
+        const jz = (px, pz) => {
+          const r = this.#rangeField(px, pz, {}).value;
+          return this.#jungleZoneRaw(px, pz, r, this.getAridity(px, pz, r));
+        };
+        v = jz(i * G, j * G) * 2;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          v += jz(i * G + Math.cos(a) * 250, j * G + Math.sin(a) * 250);
+        }
+        v /= 10;
+        if (cache.size > 60000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
+    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return a + (b - a) * fz;
   }
 
   /**
@@ -390,7 +497,9 @@ export class TerrainGenerator {
     const wet = 1 - smoothstep(0.3, 0.44, aridity);
     // (No mountains within a few hundred metres, no dry country within the best part of a kilometre.)
     const clear = (1 - smoothstep(0.42, 0.47, this.#aridAround(x, z))) * (1 - smoothstep(0.05, 0.16, this.#mountainsAround(x, z)));
-    return smoothstep(0.25, 0.6, zone * volcanicNear * hillsClear * wet * clear);
+    // (Not where the land lies low and waterlogged: that's wetland.)
+    const marshy = this.#wetZoneRaw(x, z, range, aridity);
+    return smoothstep(0.25, 0.6, zone * volcanicNear * hillsClear * wet * clear) * (1 - smoothstep(0.1, 0.5, marshy));
   }
 
 
@@ -644,10 +753,11 @@ export class TerrainGenerator {
     // lower swells in the savanna, dunes in the desert.
     // (Noise that would only be multiplied by zero isn't evaluated.)
     let hills = 0;
-    if (w.temperate + 0.45 * w.savanna !== 0 && 1 - 0.6 * mask !== 0) {
+    const greenLand = w.temperate + (w.pine || 0) + (w.redwood || 0);
+    if (greenLand + 0.45 * w.savanna !== 0 && 1 - 0.6 * mask !== 0) {
       const hilly = smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
       const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (5 + 17 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
-      hills = rolling * (w.temperate + 0.45 * w.savanna) * (1 - 0.6 * mask);
+      hills = rolling * (greenLand + 0.45 * w.savanna) * (1 - 0.6 * mask);
     }
     const f = this.#features(x, z, dryness, mask, w);
     let dunes = 0;
@@ -813,7 +923,9 @@ export class TerrainGenerator {
           for (const [lx, lz, lr] of legs) {
             const t = (Math.hypot(x - lx, z - lz) / lr) * (1 + 0.16 * this.coastNoise.noise2D(x * 0.2 + i, z * 0.2 - j));
             if (t < 1) {
-              let top = H * Math.pow(1 - Math.pow(t, 2.4), 0.55);
+              // (An arch's legs are square-shouldered columns, their tops level
+              // with its span, so the whole arch is one piece of rock.)
+              let top = arch ? H * (1 - smoothstep(0.72, 1, t)) : H * Math.pow(1 - Math.pow(t, 2.4), 0.55);
               top -= 0.9 * (top / 2.6 - Math.floor(top / 2.6)); // ledges
               const knobs = this.coastNoise.noise2D(x * 0.35 - 3, z * 0.35 + 5) * 1.2 * smoothstep(0.4, 0.9, t);
               stack = Math.max(stack, top + knobs);
@@ -1255,7 +1367,9 @@ export class TerrainGenerator {
       const x = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * C, z = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * C;
       // (A fresh object: the shared one may be in use for the point being built.)
       const range = this.#rangeField(x, z, {}).value;
-      if (this.#volcanoZone(x, z, range) > 0.45 && this.#hillsZone(x, z, range) < 0.1) {
+      // (Deep inside the volcanic highlands: the country all round it volcanic too.)
+      const deep = (px, pz) => this.#volcanoZone(px, pz, this.#rangeField(px, pz, {}).value);
+      if (this.#volcanoZone(x, z, range) > 0.85 && this.#hillsZone(x, z, range) < 0.1 && [0, 1, 2, 3, 4, 5].every((k) => deep(x + Math.cos(k * 1.047) * 420, z + Math.sin(k * 1.047) * 420) > 0.55)) {
         const R = 240 + 150 * hash2(i, j, s + 3);
         const flows = [];
         const count = 4 + Math.floor(hash2(i, j, s + 4) * 4);
@@ -1563,7 +1677,7 @@ export class TerrainGenerator {
    */
   getSeasonality(x, z) {
     const w = this.getBiomeWeights(x, z, {});
-    return w.temperate + w.wetland + w.blackHills + 0.85 * w.volcanic + 0.15 * w.savanna;
+    return w.temperate + w.pine + 0.9 * w.redwood + w.wetland + w.blackHills + 0.85 * w.volcanic + 0.15 * w.savanna;
   }
 
   /** How much (x, z) is a cliffed stretch of the open coast (0..1). */
@@ -1719,7 +1833,7 @@ export class TerrainGenerator {
       out.mesaHeight = mesa * layers;
     }
     // Escarpments: most often in rolling hills and forest country.
-    const green = w.temperate + 0.5 * w.savanna;
+    const green = w.temperate + w.pine + w.redwood + 0.5 * w.savanna;
     const hilly = smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
     const wooded = smoothstep(-0.2, 0.25, this.forestNoise.fbm(x * 0.0045, z * 0.0045, 3));
     const escarp = smoothstep(0.32 - 0.22 * Math.max(hilly, wooded), 0.5 - 0.2 * Math.max(hilly, wooded), this.escarpNoise.fbm(x * 0.0003, z * 0.0003, 2)) * flatland * green;
@@ -2093,7 +2207,7 @@ export class TerrainGenerator {
     const beds = smoothstep(0.0, 0.25, this.coastNoise.fbm(x * 0.004 - 70, z * 0.004 + 35, 2));
     if (beds <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
-    const cool = smoothstep(0.45, 0.7, w.temperate + w.wetland + w.blackHills + w.volcanic);
+    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.redwood + w.wetland + w.blackHills + w.volcanic);
     if (cool <= 0) return 0;
     const ocean = smoothstep(0.4, 0.7, this.getOceanness(x, z));
     const depth = smoothstep(sea - 2.5, sea - 4, ground) * (1 - smoothstep(sea - 13, sea - 16, ground));
@@ -2136,15 +2250,6 @@ export class TerrainGenerator {
     const foothill = smoothstep(0.28, 0.42, m) * (1 - smoothstep(0.6, 0.72, m));
     const open = foothill > 0 ? (1 - smoothstep(0.45, 0.6, this.getForestDensity(x, z))) * this.getBiomeWeights(x, z, {}).temperate : 0;
     return patch * Math.max(plain, foothill * open);
-  }
-
-  /**
-   * Where redwoods take over the woods (0..1): great groves of them a
-   * kilometre or two across in the low forest country (not among the birches).
-   */
-  getRedwood(x, z) {
-    const r = smoothstep(0.2, 0.36, this.redwoodNoise.fbm(x * 0.0005 - 40, z * 0.0005 + 70, 2));
-    return r > 0 ? r * (1 - smoothstep(0.35, 0.5, this.getGrove(x, z))) : 0;
   }
 
   getGrove(x, z) {
@@ -2218,7 +2323,12 @@ export class TerrainGenerator {
       if (height + this.getColorJitter(x, z) > 120 || steep > 0.72) return 'Mountains';
       // (The lower slopes of a range read as the country they are: hills,
       // plains, woods.)
-      if (mountains > 0.62) return 'Mountain foothills';
+      if (mountains > 0.62) {
+        // (Forest on the flanks of the range: pine or redwood country.)
+        if (w.redwood > 0.5) return 'Redwood forest';
+        if (w.pine > 0.5) return 'Pine forest';
+        return 'Mountain foothills';
+      }
     }
     const top = Object.keys(w).reduce((a, b) => (w[a] >= w[b] ? a : b));
     if (top === 'blackHills') return 'Black Hills';
@@ -2230,11 +2340,13 @@ export class TerrainGenerator {
     }
     if (top === 'wetland') return height < sea + 2 ? 'Marsh' : 'Wetlands';
     if (top === 'jungle') return 'Jungle';
+    if (top === 'pine') return 'Pine forest';
+    if (top === 'redwood') return 'Redwood forest';
     if (top === 'desert' && this.oasisAt(x, z) > 0.3) return 'Oasis';
     if (top === 'desert') return f.erg > 0.5 ? 'Dune sea' : f.mesa > 0.28 ? 'Mesas' : 'Desert';
     if (top === 'savanna') return f.mesa > 0.28 ? 'Mesas' : 'Savanna';
     if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
-    if (this.getForestDensity(x, z) > 0.55) return this.getGrove(x, z) > 0.5 && height < 110 ? 'Birch forest' : this.getRedwood(x, z) > 0.5 && height < 120 ? 'Redwood forest' : 'Forest';
+    if (this.getForestDensity(x, z) > 0.55) return this.getGrove(x, z) > 0.5 && height < 110 ? 'Birch forest' : 'Forest';
     if (smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Rolling hills';
     return this.getMeadow(x, z) > 0.5 ? 'Wildflower meadow' : 'Plains';
   }
@@ -2249,7 +2361,7 @@ export class TerrainGenerator {
     blendedFaceColor(this.biomes, w, height, upness, out);
     // Ice up in the snow: the steep faces are icy blue-grey rock, and here
     // and there the snow gives way to blue glacier ice.
-    if (height > 170 && w.temperate + w.savanna > 0.5) {
+    if (height > 170 && w.temperate + w.pine + w.redwood + w.savanna > 0.5) {
       const up = smoothstep(175, 205, height);
       const steep = 1 - smoothstep(0.35, 0.6, upness);
       const glacier = smoothstep(0.15, 0.45, this.detailNoise.noise2D(x * 0.012 + 90, z * 0.012 - 40)) * smoothstep(0.45, 0.6, upness) * (1 - smoothstep(0.85, 0.95, upness));

@@ -39,8 +39,9 @@ const DESERT = {
 /** The colour set for an entrance at (x, z): its most prevalent biome. */
 function coloursAt(generator, x, z) {
   const w = generator.getBiomeWeights(x, z, {});
-  if (w.desert >= w.savanna && w.desert >= w.temperate) return DESERT;
-  return w.savanna > w.temperate ? SAVANNA : TEMPERATE;
+  const green = 1 - w.desert - w.savanna; // (every other biome is green country)
+  if (w.desert >= w.savanna && w.desert >= green) return DESERT;
+  return w.savanna > green ? SAVANNA : TEMPERATE;
 }
 
 const tint = new Color();
