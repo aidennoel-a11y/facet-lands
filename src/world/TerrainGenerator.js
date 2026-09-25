@@ -1182,7 +1182,7 @@ export class TerrainGenerator {
     if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return w.volcanic > 0.5 ? 'Black sand beach' : 'Beach';
     const mountains = this.getMountainness(x, z);
     if (mountains > 0.45) return height > 185 ? 'Snowy peaks' : 'Mountains';
-    if (mountains > 0.2) return 'Foothills';
+    if (mountains > 0.2) return 'Mountain foothills';
     const top = Object.keys(w).reduce((a, b) => (w[a] >= w[b] ? a : b));
     if (top === 'blackHills') return 'Black Hills';
     if (top === 'volcanic') return this.getVolcanic(x, z).crater > 0.5 ? 'Volcano' : 'Volcanic highlands';
