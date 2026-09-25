@@ -122,6 +122,14 @@ export class TerrainGenerator {
    * kilometres, warped so the biome borders wander rather than run straight.
    */
   getAridity(x, z, range = this.#rangeField(x, z).value) {
+    // A desert always has a wide band of savanna round it: within a few
+    // hundred metres of desert country the land is never greener than savanna.
+    const a = this.#baseAridity(x, z, range);
+    if (a >= 0.52) return a;
+    return Math.max(a, 0.52 * smoothstep(0.62, 0.7, this.#aridRange(x, z, 1)));
+  }
+
+  #baseAridity(x, z, range) {
     // Mountains catch the rain: around a range the land is greener, so a
     // desert gives way to savanna before it reaches the mountains, rather
     // than cutting through them.
@@ -194,10 +202,7 @@ export class TerrainGenerator {
     range ??= this.#rangeField(x, z).value;
     const a = this.getAridity(x, z, range);
     const temperate = 1 - smoothstep(0.375, 0.575, a); // (broad transitions, not a line on the map)
-    // (A desert keeps a wide band of savanna between it and any green
-    // country: none where the land within 600 m or so turns green.)
-    let desert = smoothstep(0.665, 0.865, a);
-    if (desert > 0) desert *= smoothstep(0.47, 0.6, this.#greenAround(x, z));
+    const desert = smoothstep(0.665, 0.865, a);
     const savanna = Math.max(0, 1 - temperate - desert);
     // Black Hills country: a rare biome of its own, found now and then in
     // the rolling hills of the green lands (see #hillsZone).
@@ -332,19 +337,14 @@ export class TerrainGenerator {
 
   /**
    * The driest the climate gets within about 600 m of (x, z) (as
-   * getAridity, the biomes' own measure), on a 64 m grid (remembered) and
-   * blended between its points.
+   * getAridity, the biomes' own measure, before the savanna round deserts
+   * is added), on a 64 m grid (remembered) and blended between its points.
    */
   #aridAround(x, z) {
     return this.#aridRange(x, z, 0);
   }
 
-  /** The wettest the climate gets within about 600 m of (x, z) (as #aridAround). */
-  #greenAround(x, z) {
-    return this.#aridRange(x, z, 1);
-  }
-
-  // (Both at once: [driest, wettest], from the point and rings 300 m and 600 m out.)
+  // (Both at once: [driest within 600 m, driest within 300 m], from the point and rings 300 m and 600 m out.)
   #aridRange(x, z, which) {
     const G = 64;
     const gx = Math.floor(x / G), gz = Math.floor(z / G);
@@ -354,16 +354,16 @@ export class TerrainGenerator {
       const key = (i + 32768) * 65536 + (j + 32768);
       let v = cache.get(key);
       if (v === undefined) {
-        const ar = (px, pz) => this.getAridity(px, pz, this.#rangeField(px, pz, {}).value);
-        let hi = ar(i * G, j * G), lo = hi;
+        const ar = (px, pz) => this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value);
+        let hi = ar(i * G, j * G), near = hi;
         for (const d of [300, 600]) for (let k = 0; k < 8; k++) {
           const a = ((k + (d > 300 ? 0.5 : 0)) / 8) * Math.PI * 2;
           const q = ar(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d);
           if (q > hi) hi = q;
-          if (q < lo) lo = q;
+          if (d === 300 && q > near) near = q;
         }
         if (cache.size > 60000) cache.clear();
-        cache.set(key, (v = [hi, lo]));
+        cache.set(key, (v = [hi, near]));
       }
       return v[which];
     };
