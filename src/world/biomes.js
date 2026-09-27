@@ -239,41 +239,6 @@ export const BIOMES = {
     },
   },
 
-  // Redwood forest: groves of giant redwoods in the heart of the pine
-  // country, their trunks soaring bare to far-off crowns, the floor
-  // beneath deep in shade, rust-brown litter and ferns.
-  redwood: {
-    id: 'redwood',
-    name: 'Redwood forest',
-    palette: [
-      { height: -Infinity, color: 0x7d8466 },
-      { height: -14, color: 0xa99c72 },
-      { height: 0, color: 0xc9b98a },
-      { height: 5, color: 0x8d7a58 },
-      { height: 8, color: 0x6f5a3c }, // rust-brown litter
-      { height: 30, color: 0x6a6038 },
-      { height: 60, color: 0x5d6436 },
-      { height: 95, color: 0x6a7448 },
-      { height: 122, color: 0x7f8660 },
-      { height: 148, color: 0x9391a1 },
-      { height: 210, color: 0x838198 },
-    ],
-    cliff: 0x86808e,
-    cliffSlope: [0.72, 0.5],
-    snowLine: 185,
-    snow: 0xf1f4f7,
-    grass: 0.2,
-    trees: {
-      density: 0.8,
-      clumped: false,
-      species: [
-        { type: 'redwood', weight: 1.4, minHeight: -99, maxHeight: 140 },
-        { type: 'treeFern', weight: 0.35, minHeight: -99, maxHeight: 120 },
-        { type: 'spruce', weight: 0.25, minHeight: -99, maxHeight: 170 },
-      ],
-    },
-  },
-
   // Jungles: steaming lowland rainforest, a dense, dark green floor under
   // giant trees whose canopies close overhead and trail vines, with palms
   // and tree ferns beneath. Warm all year (no autumn, no snow).
@@ -298,10 +263,11 @@ export const BIOMES = {
       density: 1.5,
       clumped: false,
       species: [
-        { type: 'jungleGiant', weight: 1.2, minHeight: -99, maxHeight: 999 },
-        { type: 'junglePalm', weight: 0.9, minHeight: -99, maxHeight: 999 },
-        { type: 'treeFern', weight: 0.8, minHeight: -99, maxHeight: 999 },
-        { type: 'mangrove', weight: 0.35, minHeight: -99, maxHeight: 999 },
+        { type: 'jungleCanopy', weight: 1.8, minHeight: -99, maxHeight: 999 },
+        { type: 'jungleGiant', weight: 0.55, minHeight: -99, maxHeight: 999 },
+        { type: 'junglePalm', weight: 0.7, minHeight: -99, maxHeight: 999 },
+        { type: 'treeFern', weight: 0.6, minHeight: -99, maxHeight: 999 },
+        { type: 'mangrove', weight: 0.25, minHeight: -99, maxHeight: 999 },
       ],
     },
   },

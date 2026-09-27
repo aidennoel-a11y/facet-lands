@@ -57,6 +57,6 @@ export const WORLD = {
   startHour: 9.5,
 
   // Shadows follow the camera and cover a square this many metres across.
-  shadowExtent: 360,
+  shadowExtent: 440,
   shadowMapSize: 4096,
 };

@@ -1,7 +1,7 @@
 import { BufferAttribute, BufferGeometry, CircleGeometry, Color, ConeGeometry, CylinderGeometry, Group, IcosahedronGeometry, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, MeshPhongMaterial, Quaternion, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
-import { archSpan, caveRoof } from '../TerrainGenerator.js';
+import { archSpan, caveRoof, mesaArchAt } from '../TerrainGenerator.js';
 
 /** A little flat five-armed starfish, base at y = 0, arms reaching out ~1. */
 function starfish() {
@@ -161,8 +161,35 @@ export function createSeaCoastLayer(config, terrainMaterial) {
         }
       }
 
+      // Sandstone arches in the mesas: one band of rock bowed over from foot
+      // to foot (see mesaArchAt), lumpy all round.
+      for (const arch of generator.mesaArches?.(x0, z0, x0 + size, z0 + size) ?? []) {
+        const K = 30, M = 10;
+        const rings = [];
+        for (let k = 0; k <= K; k++) {
+          const b = mesaArchAt(arch, (k / K) * Math.PI);
+          const ring = [];
+          for (let n = 0; n < M; n++) {
+            const f = (n / M) * Math.PI * 2;
+            const lump = 1 + 0.22 * (hash2(k, n, arch.seed) - 0.5) + 0.1 * Math.sin(k * 0.9 + n * 2.1 + arch.seed);
+            const cn = Math.cos(f) * b.th * lump, cs = Math.sin(f) * b.wd * lump;
+            const dx = b.n[0] * cn + b.side[0] * cs, dy = b.n[1] * cn, dz = b.n[2] * cn + b.side[2] * cs;
+            const x = b.x + dx, y = b.y + dy, z = b.z + dz;
+            const up = dy / (Math.hypot(dx, dy, dz) || 1);
+            ring.push([x, y, z, shade(x, z, y, Math.max(0, up), up < -0.3 ? 0.7 : 1), up > 0.5 ? generator.getSeasonality(x, z) : 0]);
+          }
+          rings.push(ring);
+        }
+        for (let k = 0; k < K; k++) {
+          for (let n = 0; n < M; n++) {
+            const m = (n + 1) % M;
+            quad(rings[k][n], rings[k][m], rings[k + 1][m], rings[k + 1][n]);
+          }
+        }
+      }
+
       // Sea arches: a bridge of rock from one leg to the other.
-      for (const arch of [...generator.seaArches(x0, z0, x0 + size, z0 + size), ...(generator.mesaArches?.(x0, z0, x0 + size, z0 + size) ?? [])]) {
+      for (const arch of generator.seaArches(x0, z0, x0 + size, z0 + size)) {
         const vx = arch.bx - arch.ax, vz = arch.bz - arch.az, L = Math.hypot(vx, vz);
         const ux = vx / L, uz = vz / L, px = -uz, pz = ux;
         const seed = generator.seed ^ 0xa4c;

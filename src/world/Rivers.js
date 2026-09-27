@@ -492,7 +492,7 @@ export class Rivers {
       const h = g.getBaseHeight(x, z);
       if (h < 60 || h > 260) continue;
       const bw = g.getBiomeWeights(x, z, {});
-      if (bw.temperate + bw.pine + bw.redwood < 0.5) continue;
+      if (bw.temperate + bw.pine < 0.5) continue;
       const pond = this.#pond(x, z, 20 + rand() * 25, rand, 0.35);
       if (!pond || pond.level < h + 0.3) continue; // it needs a real hollow to hold it
       pond.tint = 1;

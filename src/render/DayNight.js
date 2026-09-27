@@ -533,7 +533,7 @@ export class DayNight {
     const f = this._focus.copy(focus);
     if (this.viewDir) {
       const l = Math.hypot(this.viewDir.x, this.viewDir.z);
-      if (l > 1e-3) f.addScaledVector(this._ahead.set(this.viewDir.x / l, 0, this.viewDir.z / l), this.config.shadowExtent * 0.25);
+      if (l > 1e-3) f.addScaledVector(this._ahead.set(this.viewDir.x / l, 0, this.viewDir.z / l), this.config.shadowExtent * 0.32);
     }
     f.applyMatrix4(this._inverse);
     f.x = Math.round(f.x / texel) * texel;

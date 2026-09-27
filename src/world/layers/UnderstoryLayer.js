@@ -72,8 +72,7 @@ const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), s = new Vecto
 
 /**
  * The forest floor's plants: thick in the jungle (big-leaved plants and
- * ferns everywhere under the trees), ferns in the shade of the redwoods,
- * a few in the pine woods. They sway a little in the wind. On the chunks
+ * ferns everywhere under the trees), and a few ferns in the pine woods. They sway a little in the wind. On the chunks
  * right around you.
  */
 export function createUnderstoryLayer(config) {
@@ -92,7 +91,7 @@ export function createUnderstoryLayer(config) {
       // (A quick look first: any of the forests that have an understory?)
       const cover = (x, z) => {
         const w = generator.getBiomeWeights(x, z, {});
-        return [w.jungle, w.redwood * 0.5, w.pine * 0.12];
+        return [w.jungle, w.pine * 0.12];
       };
       let any = 0;
       for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, ...cover(x0 + (i * size) / 4, z0 + (j * size) / 4));
@@ -115,7 +114,7 @@ export function createUnderstoryLayer(config) {
           }
           const r = hash2(gi, gj, seed + 3);
           // Jungle: all three kinds; elsewhere, ferns.
-          const jungle = here[0] * 0.6, ferns = Math.max(here[1], here[2]);
+          const jungle = here[0] * 0.6, ferns = here[1];
           if (keep > Math.max(jungle, ferns * 0.6)) continue;
           const kind = keep < jungle ? Math.floor(r * 3) : 2;
           const y = groundHeightAt(lx, lz, surface);

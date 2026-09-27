@@ -16,11 +16,16 @@ import { packFarTrees, placeTrees } from '../treePlacement.js';
 
 const CONES = new Set(['pine', 'spruce', 'larch']);
 const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag']);
+const CLUMPS = new Set(['bamboo']);
+// Crowns held high on a bare trunk (and its bark colour).
+const UMBRELLAS = { jungleGiant: 0x857560, jungleCanopy: 0x6e604c, junglePalm: 0x7d6a52, treeFern: 0x44342a };
 
 /**
  * A few-triangle stand-in for each kind of tree, fitted to its real
- * model: conifers a cone, dead trees and cacti a spike, everything else a
- * diamond the size of its crown, all in the crown's average colour.
+ * model: conifers a cone, dead trees and cacti a spike, bamboo a tall
+ * clump, the jungle's giants, palms and tree ferns a flat crown up on a
+ * trunk, everything else a diamond the size of its crown, all in the
+ * crown's average colour.
  */
 function farGeometry(type) {
   const real = TREE_GEOMETRIES[type];
@@ -48,7 +53,35 @@ function farGeometry(type) {
       return [centre.x + Math.cos(a) * radius, y, centre.z + Math.sin(a) * radius];
     });
   const tri = (a, b, c) => positions.push(...a, ...b, ...c);
-  if (CONES.has(type) || SPIKES.has(type)) {
+  let crownVerts = Infinity; // (the rest are trunk)
+  if (UMBRELLAS[type]) {
+    // The crown's bulk (not the vines or fronds trailing below it): from
+    // under its middle, to its top.
+    const ys = Array.from({ length: crown.attributes.position.count }, (_, k) => crown.attributes.position.getY(k)).sort((a, b) => a - b);
+    const mid = ys[Math.floor(ys.length * 0.6)];
+    const low = Math.max(box.min.y, mid - (box.max.y - mid) * 1.1);
+    const ringY = low + (box.max.y - low) * 0.35;
+    const edge = ring(ringY, r * 0.95, 6, Math.PI / 6);
+    const top = [centre.x, box.max.y, centre.z], under = [centre.x, low, centre.z];
+    for (let k = 0; k < 6; k++) {
+      tri(edge[(k + 1) % 6], edge[k], top);
+      tri(edge[k], edge[(k + 1) % 6], under);
+    }
+    // The trunk: a slim three-sided post from the ground up into the crown.
+    crownVerts = positions.length / 3;
+    const tw = Math.max(0.25, r * 0.07);
+    const foot = Array.from({ length: 3 }, (_, k) => [Math.cos((k / 3) * Math.PI * 2) * tw * 1.4, 0, Math.sin((k / 3) * Math.PI * 2) * tw * 1.4]);
+    const head = Array.from({ length: 3 }, (_, k) => [centre.x + Math.cos((k / 3) * Math.PI * 2) * tw, ringY, centre.z + Math.sin((k / 3) * Math.PI * 2) * tw]);
+    for (let k = 0; k < 3; k++) {
+      const m = (k + 1) % 3;
+      tri(foot[k], head[m], foot[m]);
+      tri(foot[k], head[k], head[m]);
+    }
+  } else if (CLUMPS.has(type)) {
+    const base = ring(0, r * 0.7, 5);
+    const top = [centre.x, box.max.y, centre.z];
+    for (let k = 0; k < 5; k++) tri(base[(k + 1) % 5], base[k], top);
+  } else if (CONES.has(type) || SPIKES.has(type)) {
     const sides = SPIKES.has(type) ? 3 : 5;
     const base = ring(SPIKES.has(type) ? 0 : box.min.y, SPIKES.has(type) ? Math.min(r, 0.45) : r * 0.95, sides);
     const top = [centre.x, box.max.y, centre.z];
@@ -65,7 +98,8 @@ function farGeometry(type) {
   g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
   g.computeVertexNormals();
   const n = positions.length / 3;
-  g.setAttribute('color', new BufferAttribute(new Float32Array(n * 3).map((_, i) => [avg.r, avg.g, avg.b][i % 3]), 3));
+  const bark = new Color(UMBRELLAS[type] ?? 0);
+  g.setAttribute('color', new BufferAttribute(new Float32Array(n * 3).map((_, i) => (Math.floor(i / 3) < crownVerts ? avg : bark).toArray()[i % 3]), 3));
   const seasonal = new Float32Array(n * 3);
   for (let k = 0; k < n; k++) seasonal.set([deciduous, snowy, flowers], k * 3);
   g.setAttribute('aSeason', new BufferAttribute(seasonal, 3));

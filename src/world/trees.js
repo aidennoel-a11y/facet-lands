@@ -609,13 +609,14 @@ function treeFern() {
 // Jungle giant: a pale, straight trunk standing on buttress roots, rising
 // far above the rest to a broad umbrella of a canopy, hung with vines.
 const GIANT_BLOBS = [
-  [0, 20.2, 0, 3.0],
-  [3.4, 19.6, 1.0, 2.6],
-  [-3.2, 19.8, -1.2, 2.7],
-  [0.9, 19.4, -3.4, 2.5],
-  [-1.2, 19.5, 3.3, 2.5],
-  [2.4, 20.6, -2.2, 2.1],
-  [-2.3, 20.5, 2.1, 2.1],
+  [0, 20.4, 0, 3.8],
+  [4.3, 19.6, 1.3, 3.3],
+  [-4.0, 19.8, -1.5, 3.4],
+  [1.1, 19.4, -4.3, 3.1],
+  [-1.5, 19.5, 4.1, 3.1],
+  [3.0, 20.9, -2.8, 2.7],
+  [-2.9, 20.8, 2.6, 2.7],
+  [0.4, 21.6, 0.3, 2.6],
 ];
 
 function jungleGiant() {
@@ -639,7 +640,44 @@ function jungleGiant() {
     vines.push(part(g, 0x5c8a3e, 0x35602a, { x: x + Math.cos(a) * r * 0.7, y: y - r * 0.35 - len / 2, z: z + Math.sin(a) * r * 0.7, seed: 1930 + k }));
   }
   return withCrown(wood, [
-    ...GIANT_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x2c6327, 0x5a9a3a, { x, y, z, sy: 0.5, lump: 0.22, seed: 1950 + i })),
+    ...GIANT_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x2c6327, 0x5a9a3a, { x, y, z, sy: 0.62, lump: 0.22, seed: 1950 + i })),
+    ...vines,
+  ]);
+}
+
+// Jungle canopy tree: the jungle's main storey (the giants stand out above
+// it), a stout trunk on small buttresses forking into a broad, deep,
+// rounded crown that closes with its neighbours', vines hanging from it.
+const CANOPY_BLOBS = [
+  [0, 10.4, 0, 3.4],
+  [3.1, 9.8, 1.2, 2.9],
+  [-3.0, 9.9, -1.0, 3.0],
+  [0.8, 9.7, -3.1, 2.8],
+  [-1.1, 9.8, 3.0, 2.8],
+  [2.1, 11.4, -1.7, 2.4],
+  [-1.9, 11.3, 1.8, 2.4],
+  [0.3, 12.1, 0.2, 2.3],
+];
+
+function jungleCanopy() {
+  const rand = mulberry32(2401);
+  const bark = 0x6e604c, barkTop = 0x857661;
+  const wood = [part(new CylinderGeometry(0.3, 0.5, 9, 7, 2), bark, barkTop, { y: 4.5, lump: 0.06, seed: 2400 })];
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + rand() * 0.5;
+    wood.push(limb([Math.cos(a) * 1.1, -0.2, Math.sin(a) * 1.1], [Math.cos(a) * 0.2, 1.8, Math.sin(a) * 0.2], 0.13, 0.2, bark, barkTop, 2410 + k));
+  }
+  CANOPY_BLOBS.slice(1, 5).forEach(([x, y, z], k) => wood.push(limb([0, 7.4, 0], [x * 0.75, y - 1, z * 0.75], 0.22, 0.1, barkTop, bark, 2420 + k)));
+  const vines = [];
+  for (let k = 0; k < 8; k++) {
+    const [x, y, z, r] = CANOPY_BLOBS[1 + (k % 4)];
+    const a = rand() * Math.PI * 2, len = 2 + rand() * 3.5;
+    const g = new ConeGeometry(0.08 + rand() * 0.04, len, 3, 1);
+    g.rotateX(Math.PI);
+    vines.push(part(g, 0x5c8a3e, 0x35602a, { x: x + Math.cos(a) * r * 0.7, y: y - r * 0.4 - len / 2, z: z + Math.sin(a) * r * 0.7, seed: 2430 + k }));
+  }
+  return withCrown(wood, [
+    ...CANOPY_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x285c26, 0x4f8f38, { x, y, z, sy: 0.72, lump: 0.22, seed: 2450 + i })),
     ...vines,
   ]);
 }
@@ -692,31 +730,6 @@ function bamboo() {
     }
   }
   return withCrown(wood, sprays);
-}
-
-// Redwood: a giant, its thick, fluted, rust-red trunk rising bare a long
-// way before the first branches, then a narrow spire of dark, dense
-// foliage in ragged tiers.
-function redwood() {
-  const rand = mulberry32(2201);
-  const bark = 0x7a3420, barkTop = 0x9a4a2c;
-  const wood = [part(new CylinderGeometry(0.5, 1.15, 26, 9, 4), bark, barkTop, { y: 13, lump: 0.06, seed: 2200 })];
-  // A flared foot.
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * Math.PI * 2 + rand() * 0.3;
-    wood.push(limb([Math.cos(a) * 1.5, -0.2, Math.sin(a) * 1.5], [Math.cos(a) * 0.4, 2.6, Math.sin(a) * 0.4], 0.28, 0.35, bark, bark, 2210 + k));
-  }
-  // A few short, drooping limbs up the top half.
-  for (let k = 0; k < 8; k++) {
-    const a = rand() * Math.PI * 2, y = 14 + k * 1.4;
-    wood.push(limb([0, y, 0], [Math.cos(a) * 2.2, y - 0.8, Math.sin(a) * 2.2], 0.12, 0.05, barkTop, bark, 2220 + k));
-  }
-  const crown = [];
-  const tiers = [[3.2, 5, 15.5], [2.9, 4.6, 18.5], [2.5, 4.2, 21.2], [2.0, 3.8, 23.8], [1.4, 3.4, 26.2], [0.8, 2.8, 28.4]];
-  tiers.forEach(([r, h, y], i) => {
-    crown.push(part(new ConeGeometry(r, h, 7, 1), 0x1f4a2a, 0x2f5f34, { y, lump: 0.18, seed: 2240 + i }));
-  });
-  return withCrown(wood, crown);
 }
 
 // Charred snag (volcanic highlands): a dead tree burned black by an old
@@ -1014,9 +1027,9 @@ export const TREE_GEOMETRIES = {
   weepingWillow: weepingWillow(),
   mangrove: mangrove(),
   jungleGiant: jungleGiant(),
+  jungleCanopy: jungleCanopy(),
   junglePalm: junglePalm(),
   bamboo: bamboo(),
-  redwood: redwood(),
 };
 
 // How each species takes the seasons: [deciduous (leaves turn and fall),
@@ -1030,8 +1043,7 @@ const SEASONAL = {
   oak: [1, 1, 0], larch: [1, 1, 0], silverBirch: [1, 1, 0], aspen: [1, 1, 0], weepingWillow: [1, 1, 0],
   mangrove: [0, 1, 0], treeFern: [0, 1, 0], charredSnag: [0, 1, 0],
   baobab: [0, 0, 0], joshuaTree: [0, 0, 0], ocotillo: [0, 0, 0],
-  jungleGiant: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
-  redwood: [0, 1, 0],
+  jungleGiant: [0, 0, 0], jungleCanopy: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
 };
 function markSeasons(geometries) {
   for (const [type, g] of Object.entries(geometries)) {
@@ -1080,5 +1092,6 @@ export const LEAF_GEOMETRIES = {
   weepingWillow: leaves(60, [0.3, 0.55], [0x86ab48, 0x9dbd5a, 0xb0cc6c, 0x78a042], crown('weepingWillow'), 30),
   mangrove: leaves(50, [0.35, 0.6], [0x3a6a33, 0x4d7d3e, 0x5f8f48], crown('mangrove'), 31),
   jungleGiant: leaves(70, [0.6, 1.0], [0x2f6b2a, 0x3f7d33, 0x4f8f3c, 0x5a9a3a], crown('jungleGiant'), 32),
+  jungleCanopy: leaves(60, [0.5, 0.9], [0x2a5e27, 0x3a7431, 0x4a863a, 0x55923c], crown('jungleCanopy'), 33),
 };
 markSeasons(LEAF_GEOMETRIES);

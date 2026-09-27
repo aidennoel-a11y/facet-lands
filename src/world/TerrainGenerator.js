@@ -65,6 +65,43 @@ export function archSpan(arch, t) {
 }
 
 /**
+ * A sandstone arch (see TerrainGenerator.mesaArches) is one band of rock
+ * bowed over from one foot to the other, like Delicate Arch: thick where it
+ * rises out of the ground, thinning over the crown, bending a little out
+ * of line. Its middle line at `a` (0 at foot A, up over the crown at π/2,
+ * to foot B at π): { x, y, z }, the direction across the band in the arch's
+ * plane `n` ([x, y, z], out from the opening), the sideways direction
+ * `side` ([x, 0, z]), and the band's half-thickness `th` (along n) and
+ * half-width `wd` (sideways).
+ */
+export function mesaArchAt(arch, a) {
+  const centre = (q) => {
+    const s = (1 - Math.cos(q)) / 2, sin = Math.max(0, Math.sin(q));
+    const along = s + arch.lean * 0.08 * sin; // (the crown off to one side: one leg stands steeper)
+    const off = arch.bend * sin * arch.H * 0.12; // (bowed a little out of line)
+    const y = arch.base - 1.5 + (arch.top - arch.leg * 0.5 - arch.base + 1.5) * Math.pow(sin, 0.72);
+    return [along, off, y];
+  };
+  const vx = arch.bx - arch.ax, vz = arch.bz - arch.az, L = Math.hypot(vx, vz);
+  const ux = vx / L, uz = vz / L;
+  const [s, off, y] = centre(a);
+  const e = 0.004, p0 = centre(Math.max(0, a - e)), p1 = centre(Math.min(Math.PI, a + e));
+  // The tangent (along the axis, up), and across it, pointing out (up at the crown).
+  const tl = (p1[0] - p0[0]) * L, ty = p1[2] - p0[2], tn = Math.hypot(tl, ty) || 1;
+  const nl = -ty / tn, ny = tl / tn;
+  const thin = Math.sin(a);
+  return {
+    x: arch.ax + ux * s * L - uz * off,
+    z: arch.az + uz * s * L + ux * off,
+    y,
+    n: [ux * nl, ny, uz * nl],
+    side: [-uz, 0, ux],
+    th: arch.leg * (0.5 + 0.55 * Math.pow(1 - thin, 1.5)) * (a < Math.PI / 2 ? 1 + 0.12 * arch.lean : 1 - 0.12 * arch.lean),
+    wd: arch.leg * (0.6 + 0.45 * (1 - thin)),
+  };
+}
+
+/**
  * The single source of truth for "what is at world position (x, z)".
  * Chunks, the minimap and (later) trees/water all ask this object, so the
  * world stays consistent no matter who builds what, or in which order.
@@ -105,7 +142,6 @@ export class TerrainGenerator {
     this.coastNoise = new SimplexNoise(this.seed + 143); // sea cliffs
     this.groveNoise = new SimplexNoise(this.seed + 144); // birch woods
     this.jungleNoise = new SimplexNoise(this.seed + 145); // jungles
-    this.redwoodNoise = new SimplexNoise(this.seed + 146); // redwood groves
     this.pineNoise = new SimplexNoise(this.seed + 148); // pine forests
     this.meadowNoise = new SimplexNoise(this.seed + 147); // wildflower meadows
     this._cones = new Map(); // volcano cell -> cone (or null)
@@ -115,7 +151,7 @@ export class TerrainGenerator {
     this._range = { value: 0, size: 1, large: 0 };
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
-    this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0, volcanic: 0, wetland: 0, jungle: 0, pine: 0, redwood: 0 };
+    this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0, volcanic: 0, wetland: 0, jungle: 0, pine: 0 };
     this._lastWeights = { x: NaN, z: NaN, range: NaN };
     this._features = { mesa: 0, mesaTop: 0, escarp: 0, hills: 0, erg: 0, canyon: 0, canyonFloor: 0, canyonCut: 0 };
     this._erg = 0; // the last point's dune sea, for its roughness
@@ -190,7 +226,6 @@ export class TerrainGenerator {
       out.wetland = m.wetland;
       out.jungle = m.jungle;
       out.pine = m.pine;
-      out.redwood = m.redwood;
       return out;
     }
     this.#biomeWeights(x, z, out, range);
@@ -205,7 +240,6 @@ export class TerrainGenerator {
     m.wetland = out.wetland;
     m.jungle = out.jungle;
     m.pine = out.pine;
-    m.redwood = out.redwood;
     return out;
   }
 
@@ -232,14 +266,12 @@ export class TerrainGenerator {
     // country and mountains (see #jungleZone).
     // (A jungle is jungle right through: wetlands, forest and plains give way to it.)
     const jz = green > 0 ? this.#jungleZone(x, z, range, a) : 0;
-    // Pine forests: in the hill country leading up to the mountain ranges;
-    // and redwood forests in the heart of some of them (see #pineZone).
+    // Pine forests: in the hill country leading up to the mountain ranges
+    // (see #pineZone).
     const rest = green * (1 - wz) * (1 - jz);
     const pz = rest > 0 ? this.#pineZone(x, z, range, a) : 0;
-    const rz = pz > 0 ? this.#redwoodZone(x, z) * smoothstep(0.4, 0.85, pz) : 0;
     out.temperate = rest * (1 - pz);
-    out.pine = rest * pz * (1 - rz);
-    out.redwood = rest * pz * rz;
+    out.pine = rest * pz;
     out.wetland = green * wz * (1 - jz);
     out.jungle = green * jz;
     out.savanna = savanna;
@@ -397,11 +429,6 @@ export class TerrainGenerator {
     const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
     const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
     return a + (b - a) * fz;
-  }
-
-  /** Where redwoods take over inside a pine forest (0..1): groves a kilometre or two across. */
-  #redwoodZone(x, z) {
-    return smoothstep(-0.08, 0.1, this.redwoodNoise.fbm(x * 0.0005 - 40, z * 0.0005 + 70, 2));
   }
 
   /**
@@ -753,7 +780,7 @@ export class TerrainGenerator {
     // lower swells in the savanna, dunes in the desert.
     // (Noise that would only be multiplied by zero isn't evaluated.)
     let hills = 0;
-    const greenLand = w.temperate + (w.pine || 0) + (w.redwood || 0);
+    const greenLand = w.temperate + (w.pine || 0);
     if (greenLand + 0.45 * w.savanna !== 0 && 1 - 0.6 * mask !== 0) {
       const hilly = smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
       const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (5 + 17 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
@@ -1009,7 +1036,8 @@ export class TerrainGenerator {
         const low = Math.min(h0, ha, hb);
         if (Math.max(h0, ha, hb) - low < 2.5 && low > this.rivers.seaLevel + 4) {
           const H = 15 + 12 * hash2(i, j, s + 5);
-          arch = { x: px, z: pz, ax: px - ca, az: pz - sa, bx: px + ca, bz: pz + sa, angle: a, leg: 3.4 + 1.6 * hash2(i, j, s + 6), H, r: L * 0.5, base: low, top: low + H, sandstone: true };
+          arch = { x: px, z: pz, ax: px - ca, az: pz - sa, bx: px + ca, bz: pz + sa, angle: a, leg: 3.4 + 1.6 * hash2(i, j, s + 6), H, r: L * 0.5, base: low, top: low + H, sandstone: true,
+            lean: hash2(i, j, s + 7) * 2 - 1, bend: hash2(i, j, s + 8) * 2 - 1, seed: Math.floor(hash2(i, j, s + 9) * 1e6) };
         }
       }
     }
@@ -1030,7 +1058,8 @@ export class TerrainGenerator {
     return out;
   }
 
-  // The height of any sandstone arch's legs at (x, z), or -Infinity.
+  // The height of the rock the feet of any sandstone arch stand in at
+  // (x, z) (a low, ledged apron of it, spreading out round each foot), or -Infinity.
   #archLegs(x, z) {
     const G = 260;
     const ci = Math.floor(x / G), cj = Math.floor(z / G);
@@ -1043,10 +1072,10 @@ export class TerrainGenerator {
         for (const [lx, lz] of [[a.ax, a.az], [a.bx, a.bz]]) {
           const dx = x - lx, dz = z - lz;
           const u = dx * ca + dz * sa, v = -dx * sa + dz * ca;
-          const e = Math.hypot(u / (a.leg * 1.3), v / (a.leg * 0.95)) * (1 + 0.1 * this.mesaNoise.noise2D(x * 0.3, z * 0.3));
+          const e = Math.hypot(u / (a.leg * 2.1), v / (a.leg * 1.7)) * (1 + 0.14 * this.mesaNoise.noise2D(x * 0.3, z * 0.3));
           if (e >= 1) continue;
-          let top = a.H * Math.pow(1 - Math.pow(e, 5), 0.3);
-          top -= 0.7 * (top / 2.4 - Math.floor(top / 2.4)); // ledges, layer by layer
+          let top = Math.min(7, a.H * 0.3) * Math.pow(1 - e, 1.4);
+          top -= 0.5 * (top / 1.6 - Math.floor(top / 1.6)); // ledges, layer by layer
           best = Math.max(best, a.base + top);
         }
       }
@@ -1280,6 +1309,13 @@ export class TerrainGenerator {
       const vx = arch.bx - arch.ax, vz = arch.bz - arch.az, L2 = vx * vx + vz * vz;
       const t = ((x - arch.ax) * vx + (z - arch.az) * vz) / L2;
       if (t < 0 || t > 1) continue;
+      if (arch.sandstone) {
+        // (Over the band where it passes: its underside and top here.)
+        const b = mesaArchAt(arch, Math.acos(1 - 2 * t));
+        if (Math.hypot(x - b.x, z - b.z) > b.wd * 0.8 + Math.abs(b.n[0] * vx + b.n[2] * vz) / Math.sqrt(L2) * b.th) continue;
+        const reach = b.th / Math.max(0.3, Math.abs(b.n[1]));
+        return { bottom: b.y - reach, top: Math.min(arch.top, b.y + reach) };
+      }
       const off = Math.abs((x - arch.ax) * vz - (z - arch.az) * vx) / Math.sqrt(L2);
       if (off > arch.leg * 0.8) continue;
       const span = archSpan(arch, t);
@@ -1677,7 +1713,7 @@ export class TerrainGenerator {
    */
   getSeasonality(x, z) {
     const w = this.getBiomeWeights(x, z, {});
-    return w.temperate + w.pine + 0.9 * w.redwood + w.wetland + w.blackHills + 0.85 * w.volcanic + 0.15 * w.savanna;
+    return w.temperate + w.pine + w.wetland + w.blackHills + 0.85 * w.volcanic + 0.15 * w.savanna;
   }
 
   /** How much (x, z) is a cliffed stretch of the open coast (0..1). */
@@ -1833,7 +1869,7 @@ export class TerrainGenerator {
       out.mesaHeight = mesa * layers;
     }
     // Escarpments: most often in rolling hills and forest country.
-    const green = w.temperate + w.pine + w.redwood + 0.5 * w.savanna;
+    const green = w.temperate + w.pine + 0.5 * w.savanna;
     const hilly = smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
     const wooded = smoothstep(-0.2, 0.25, this.forestNoise.fbm(x * 0.0045, z * 0.0045, 3));
     const escarp = smoothstep(0.32 - 0.22 * Math.max(hilly, wooded), 0.5 - 0.2 * Math.max(hilly, wooded), this.escarpNoise.fbm(x * 0.0003, z * 0.0003, 2)) * flatland * green;
@@ -2207,7 +2243,7 @@ export class TerrainGenerator {
     const beds = smoothstep(0.0, 0.25, this.coastNoise.fbm(x * 0.004 - 70, z * 0.004 + 35, 2));
     if (beds <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
-    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.redwood + w.wetland + w.blackHills + w.volcanic);
+    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.wetland + w.blackHills + w.volcanic);
     if (cool <= 0) return 0;
     const ocean = smoothstep(0.4, 0.7, this.getOceanness(x, z));
     const depth = smoothstep(sea - 2.5, sea - 4, ground) * (1 - smoothstep(sea - 13, sea - 16, ground));
@@ -2324,8 +2360,7 @@ export class TerrainGenerator {
       // (The lower slopes of a range read as the country they are: hills,
       // plains, woods.)
       if (mountains > 0.62) {
-        // (Forest on the flanks of the range: pine or redwood country.)
-        if (w.redwood > 0.5) return 'Redwood forest';
+        // (Forest on the flanks of the range: pine country.)
         if (w.pine > 0.5) return 'Pine forest';
         return 'Mountain foothills';
       }
@@ -2341,7 +2376,6 @@ export class TerrainGenerator {
     if (top === 'wetland') return height < sea + 2 ? 'Marsh' : 'Wetlands';
     if (top === 'jungle') return 'Jungle';
     if (top === 'pine') return 'Pine forest';
-    if (top === 'redwood') return 'Redwood forest';
     if (top === 'desert' && this.oasisAt(x, z) > 0.3) return 'Oasis';
     if (top === 'desert') return f.erg > 0.5 ? 'Dune sea' : f.mesa > 0.28 ? 'Mesas' : 'Desert';
     if (top === 'savanna') return f.mesa > 0.28 ? 'Mesas' : 'Savanna';
@@ -2361,7 +2395,7 @@ export class TerrainGenerator {
     blendedFaceColor(this.biomes, w, height, upness, out);
     // Ice up in the snow: the steep faces are icy blue-grey rock, and here
     // and there the snow gives way to blue glacier ice.
-    if (height > 170 && w.temperate + w.pine + w.redwood + w.savanna > 0.5) {
+    if (height > 170 && w.temperate + w.pine + w.savanna > 0.5) {
       const up = smoothstep(175, 205, height);
       const steep = 1 - smoothstep(0.35, 0.6, upness);
       const glacier = smoothstep(0.15, 0.45, this.detailNoise.noise2D(x * 0.012 + 90, z * 0.012 - 40)) * smoothstep(0.45, 0.6, upness) * (1 - smoothstep(0.85, 0.95, upness));
@@ -2431,9 +2465,15 @@ export class TerrainGenerator {
     // Mesa and canyon walls: bands of red and orange sandstone.
     // (Fading gradually into the rock round about: an escarpment's walls
     // turn to sandstone as the country dries out towards mesa country.)
-    if (upness < 0.85 && f) {
-      const dry = f.escarp > 0.05 ? smoothstep(0.38, 0.62, this.#rawAridity(x, z)) : 0;
-      const sand = Math.max(smoothstep(0.02, 0.45, f.mesa), f.canyon, f.escarp * dry);
+    // (Looked up on any steep face, not just in the dry country: otherwise
+    // the sandstone would stop dead where the dry country's share drops.)
+    const fw = f ?? (upness < 0.85 ? this.getFeatures(x, z) : null);
+    if (upness < 0.85 && fw) {
+      const f = fw;
+      // (Canyons and escarpments are sandstone only in the dry country,
+      // turning so gradually from the grey rock of the green country.)
+      const arid = f.escarp > 0.05 || f.canyon > 0 ? this.#rawAridity(x, z) : 0;
+      const sand = Math.max(smoothstep(0.02, 0.45, f.mesa), f.canyon * smoothstep(0.3, 0.55, arid), f.escarp * smoothstep(0.38, 0.62, arid));
       if (sand > 0.02) {
         const band = Math.floor((height + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 0.8) / 2.4);
         stratum.copy(STRATA[((band % STRATA.length) + STRATA.length) % STRATA.length]);

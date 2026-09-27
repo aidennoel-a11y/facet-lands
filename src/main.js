@@ -44,6 +44,12 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
+// Shadows fade out over the outer edge of the sun's shadow map, rather
+// than stopping on a line across the land.
+THREE.ShaderChunk.shadowmap_pars_fragment = THREE.ShaderChunk.shadowmap_pars_fragment.replaceAll(
+  '\t\t\treturn mix( 1.0, shadow, shadowIntensity );',
+  '\t\t\tvec2 shadowEdge = abs( shadowCoord.xy * 2.0 - 1.0 );\n\t\t\treturn mix( 1.0, shadow, shadowIntensity * ( 1.0 - smoothstep( 0.78, 0.97, max( shadowEdge.x, shadowEdge.y ) ) ) );',
+);
 
 const scene = new THREE.Scene();
 const drawDistance = WORLD.viewDistance * WORLD.chunkSize;
@@ -443,7 +449,7 @@ function surroundings(dt, snow) {
     for (const [dx, dz] of pts) {
       const w = generator.getBiomeWeights(x + dx, z + dz, {});
       const forest = generator.getForestDensity(x + dx, z + dz);
-      woods += (w.temperate * smoothstep(0.35, 0.7, forest) + w.blackHills * 0.7 + w.pine + w.redwood) / pts.length;
+      woods += (w.temperate * smoothstep(0.35, 0.7, forest) + w.blackHills * 0.7 + w.pine) / pts.length;
       grass += (w.temperate * (1 - smoothstep(0.35, 0.7, forest)) + w.savanna) / pts.length;
       jungle += w.jungle / pts.length;
       wetland += w.wetland / pts.length;
