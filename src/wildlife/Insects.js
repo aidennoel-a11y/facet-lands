@@ -1,5 +1,6 @@
 import { AdditiveBlending, Color, DynamicDrawUsage, Euler, InstancedMesh, Matrix4, MeshBasicMaterial, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../noise/random.js';
+import { gustAt, windDirection, windStrength, windTime } from '../render/wind.js';
 import * as Models from './models.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -21,8 +22,8 @@ export class Insects {
     const lambert = materialHook(new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
     this.hiveMesh = new InstancedMesh(Models.hive(), lambert, 64);
     this.beeMesh = new InstancedMesh(Models.bee(), lambert, 400);
-    this.flyMesh = new InstancedMesh(Models.firefly(), new MeshBasicMaterial({ color: 0xffffff }), 200);
-    this.haloMesh = new InstancedMesh(Models.firefly(), new MeshBasicMaterial({ color: 0xb8ff50, transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false }), 200);
+    this.flyMesh = new InstancedMesh(Models.firefly(), new MeshBasicMaterial({ color: 0xffffff }), 260);
+    this.haloMesh = new InstancedMesh(Models.firefly(), new MeshBasicMaterial({ color: 0xb8ff50, transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false }), 260);
     for (const m of [this.hiveMesh, this.beeMesh, this.flyMesh, this.haloMesh]) {
       m.instanceMatrix.setUsage(DynamicDrawUsage);
       m.frustumCulled = false;
@@ -67,7 +68,7 @@ export class Insects {
           const ix = Math.round(x * 10), iz = Math.round(z * 10);
           if (hash2(ix, iz, seed ^ 0xbee5) > 0.004) continue;
           const a = hash2(ix, iz, seed ^ 0x51de) * TAU;
-          found.set(`${ix},${iz}`, { x: x + Math.cos(a) * r * 0.3, y: bottom + 0.25, z: z + Math.sin(a) * r * 0.3 });
+          found.set(`${ix},${iz}`, { x: x + Math.cos(a) * r * 0.3, y: bottom + 0.25, z: z + Math.sin(a) * r * 0.3, tx: x, tz: z });
         }
       }
     }
@@ -90,14 +91,23 @@ export class Insects {
       this.wait = 2;
       const found = this.hivesNear(ctx);
       for (const key of this.hives.keys()) if (!found.has(key)) this.hives.delete(key);
-      for (const [key, h] of found) if (!this.hives.has(key)) this.hives.set(key, { ...h, bees: [] });
+      for (const [key, h] of found) if (!this.hives.has(key)) this.hives.set(key, { ...h, base: ctx.ground(h.tx, h.tz), bees: [] });
     }
     // Bees: out by day in the warm and dry.
     const busy = ctx.day * (1 - ctx.rain) * (1 - ctx.winter) * (1 - 0.5 * Math.max(0, ctx.wind - 0.6));
     let n = 0, b = 0, level = 0, panSum = 0;
     for (const h of this.hives.values()) {
       if (n < this.hiveMesh.instanceMatrix.count) {
-        m4.compose(p.set(h.x, h.y, h.z), q.identity(), s.setScalar(1));
+        // Swaying with its tree's bough, in the wind and the gusts (as the
+        // trees' shader moves them: see addWind).
+        // (The shader bends by height in the tree's own units; a tree's about 1.8 times its model's size.)
+        const up = Math.max(0, (h.y - h.base) / 1.8), bend = 1.8 * Math.pow(up, 1.5);
+        const phase = windTime.value * 1.1 + h.tx * 0.045 + h.tz * 0.037;
+        const gust = gustAt(h.tx, h.tz) * 0.004 * bend, d = windDirection.value;
+        h.sx = (Math.sin(phase) + 0.35 * Math.sin(phase * 2.7)) * 0.012 * windStrength.value * bend + d.x * gust;
+        h.sz = 0.6 * Math.cos(phase * 0.8) * 0.012 * windStrength.value * bend + d.y * gust;
+        e.set(h.sz * 0.08, 0, -h.sx * 0.08);
+        m4.compose(p.set(h.x + h.sx, h.y, h.z + h.sz), q.setFromEuler(e), s.setScalar(1));
         this.hiveMesh.setMatrixAt(n++, m4);
       }
       const d = Math.hypot(h.x - cam.x, h.y - cam.y, h.z - cam.z);
@@ -125,10 +135,11 @@ export class Insects {
 
     // Fireflies: warm, still nights, over the grass and the marshes.
     const warm = Math.max(ctx.summer, ctx.spring * 0.35) * (1 - ctx.winter);
-    const want = Math.round(160 * ctx.night * warm * (1 - ctx.rain) * (1 - 0.6 * ctx.wind) * ctx.meadow);
-    this.flies = this.flies.filter((f) => Math.hypot(f.x - cam.x, f.z - cam.z) < 60);
-    for (let k = 0; this.flies.length < want && k < 6; k++) {
-      const a = rnd(0, TAU), d = rnd(6, 48);
+    const want = Math.round(220 * ctx.night * warm * (1 - ctx.rain) * (1 - 0.6 * ctx.wind) * ctx.meadow);
+    this.flies = this.flies.filter((f) => Math.hypot(f.x - cam.x, f.z - cam.z) < 110);
+    for (let k = 0; this.flies.length < want && k < 8; k++) {
+      // (Spread evenly over the ground round you, out to 90 m, none right by you.)
+      const a = rnd(0, TAU), d = Math.sqrt(rnd(12 * 12, 90 * 90));
       const x = cam.x + Math.sin(a) * d, z = cam.z + Math.cos(a) * d, g = ctx.ground(x, z);
       if (!(g > ctx.seaLevel - 0.5)) continue;
       this.flies.push({ x, z, y: g + rnd(0.3, 2.2), hover: g, vx: 0, vz: 0, period: rnd(1.8, 4.5), offset: rnd(0, 5), seed: rnd(0, 100) });
@@ -162,11 +173,12 @@ export class Insects {
   #bee(bee, h, dt, ctx) {
     bee.t -= dt;
     let tx, ty, tz;
+    const hx = h.x + (h.sx ?? 0), hz = h.z + (h.sz ?? 0); // (the nest, as it sways)
     if (bee.mode === 'mill') {
       bee.a += bee.w * dt;
-      tx = h.x + Math.cos(bee.a) * bee.r;
+      tx = hx + Math.cos(bee.a) * bee.r;
       ty = h.y - 0.35 + Math.sin(bee.a * 1.7) * 0.35;
-      tz = h.z + Math.sin(bee.a) * bee.r;
+      tz = hz + Math.sin(bee.a) * bee.r;
       if (bee.t <= 0) {
         const a = rnd(0, TAU), d = rnd(3, 14);
         const x = h.x + Math.cos(a) * d, z = h.z + Math.sin(a) * d, g = ctx.ground(x, z);
@@ -175,11 +187,11 @@ export class Insects {
       }
     } else {
       const home = bee.mode === 'back';
-      tx = home ? h.x : bee.to.x + Math.sin(this.time * 3 + bee.a) * 0.3;
+      tx = home ? hx : bee.to.x + Math.sin(this.time * 3 + bee.a) * 0.3;
       ty = home ? h.y - 0.4 : bee.to.y + Math.sin(this.time * 5 + bee.a) * 0.1;
-      tz = home ? h.z : bee.to.z + Math.cos(this.time * 3.3 + bee.a) * 0.3;
+      tz = home ? hz : bee.to.z + Math.cos(this.time * 3.3 + bee.a) * 0.3;
       if (!home && bee.t <= 0) bee.mode = 'back';
-      if (home && Math.hypot(bee.x - h.x, bee.z - h.z) < 0.6) (bee.mode = 'mill'), (bee.t = rnd(4, 15));
+      if (home && Math.hypot(bee.x - hx, bee.z - hz) < 0.6) (bee.mode = 'mill'), (bee.t = rnd(4, 15));
     }
     const dx = tx - bee.x, dy = ty - bee.y, dz = tz - bee.z, d = Math.hypot(dx, dy, dz) || 1;
     const speed = Math.min(d / dt, bee.mode === 'mill' ? 4 : 3.2);

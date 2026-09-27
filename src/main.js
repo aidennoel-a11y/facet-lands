@@ -761,7 +761,7 @@ function tick(now) {
     camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
     rain: weather.rain, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
-    sheltered, sound, pan: (x, z) => panTowards(camera, x, z),
+    sheltered, sound, pan: (x, z) => panTowards(camera, x, z), tame: WORLD.tameWildlife,
   };
   wildlife.update(dt, life);
   insects.update(dt, life);

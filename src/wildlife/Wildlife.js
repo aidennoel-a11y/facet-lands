@@ -1,4 +1,5 @@
 import { Color, DynamicDrawUsage, Euler, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
+import { hash2, mulberry32 } from '../noise/random.js';
 import * as Models from './models.js';
 
 function smoothstep(a, b, x) {
@@ -17,14 +18,18 @@ const rnd = (a, b) => a + Math.random() * (b - a);
  * big they're drawn (`scale`) and how near you can come (`flee`).
  */
 const SPECIES = {
-  deer: { ground: true, model: Models.deer, max: 24, walk: 1.3, run: 11, flee: 45, calm: 130, radius: 0.5, height: 1.4, health: 60, stride: 1.6, turn: 2.5 },
-  bison: { ground: true, model: Models.bison, max: 40, walk: 1.0, run: 8.5, flee: 30, calm: 85, radius: 1.0, height: 2.0, health: 200, stride: 2.2, turn: 1.4 },
-  rabbit: { ground: true, model: Models.rabbit, max: 16, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.2, height: 0.35, health: 10, stride: 0.7, turn: 5 },
-  songbird: { bird: true, model: Models.songbird, max: 30, scale: 1.25, flee: 9, radius: 0.25, health: 2 },
-  starling: { bird: true, model: Models.starling, max: 60, scale: 1.1, flee: 22, radius: 0.25, health: 2 },
-  crow: { bird: true, model: Models.crow, max: 40, scale: 1.8, flee: 25, radius: 0.35, health: 4 },
-  gull: { bird: true, model: Models.gull, max: 12, scale: 2.4, flee: 15, radius: 0.5, health: 6 },
-  hawk: { bird: true, model: Models.hawk, max: 4, scale: 3.4, flee: 30, radius: 0.7, health: 12 },
+  deer: { ground: true, model: Models.deer, max: 60, walk: 1.3, run: 11, flee: 45, calm: 130, radius: 0.5, height: 1.4, health: 60, stride: 1.6, turn: 2.5, size: 1.3 },
+  bison: { ground: true, model: Models.bison, max: 70, walk: 1.0, run: 8.5, flee: 30, calm: 85, radius: 1.0, height: 2.0, health: 200, stride: 2.2, turn: 1.4, size: 1.5 },
+  // Bears (in the mountain foothills): a black bear shies away; a grizzly
+  // stands its ground (`aggressive`: one day it will come for you).
+  blackBear: { ground: true, model: Models.blackBear, max: 16, walk: 0.9, run: 9, flee: 35, calm: 100, radius: 0.7, height: 1.3, health: 150, stride: 1.4, turn: 1.8, size: 1.3, forager: true },
+  grizzly: { ground: true, model: Models.grizzly, max: 10, walk: 0.9, run: 10, flee: 10, calm: 40, radius: 0.8, height: 1.5, health: 260, stride: 1.6, turn: 1.6, size: 1.6, forager: true, aggressive: true },
+  rabbit: { ground: true, model: Models.rabbit, max: 40, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.3, height: 0.55, health: 10, stride: 1.0, turn: 5, size: 1.8 },
+  songbird: { bird: true, model: Models.songbird, max: 60, scale: 1.6, flee: 9, radius: 0.25, health: 2 },
+  starling: { bird: true, model: Models.starling, max: 60, scale: 1.45, flee: 22, radius: 0.25, health: 2 },
+  crow: { bird: true, model: Models.crow, max: 40, scale: 2.3, flee: 25, radius: 0.35, health: 4 },
+  gull: { bird: true, model: Models.gull, max: 12, scale: 3.0, flee: 15, radius: 0.5, health: 6 },
+  hawk: { bird: true, model: Models.hawk, max: 4, scale: 4.2, flee: 30, radius: 0.7, health: 12 },
 };
 // Songbirds come in colours: robins, finches, jays, wrens, sparrows.
 const SONGBIRD_TINTS = [0xc0703a, 0xd8b040, 0x5a7ab8, 0x8a6a4a, 0xa89878, 0xb04030];
@@ -83,6 +88,10 @@ export class Wildlife {
     this.wait = 0;
     this.crowCooldown = 0;
     this.time = 0;
+    // What lives in each chunk of the land (see #settle): "cx,cz" -> { animals, herds, birds }.
+    this.homes = new Map();
+    this.last = null; // where you were, and which way you're heading
+    this.heading = null;
   }
 
   /** Forgets every creature (a new world). */
@@ -90,6 +99,7 @@ export class Wildlife {
     this.animals = [];
     this.herds = [];
     this.flocks = [];
+    this.homes.clear();
   }
 
   // --- Hunting --------------------------------------------------------------
@@ -148,7 +158,8 @@ export class Wildlife {
    * @param dt   seconds
    * @param ctx  { camera, forward (which way you look), generator, ground(x, z),
    *              trees (TreeLayer), chunkSize, seaLevel, day, dawn, dusk,
-   *              winter, rain, sheltered, sound, pan(x, z) (-1 left .. 1 right) }
+   *              winter, rain, sheltered, sound, pan(x, z) (-1 left .. 1 right),
+   *              seed, tame (for testing: they pay you no mind) }
    */
   update(dt, ctx) {
     this.time += dt;
@@ -159,7 +170,7 @@ export class Wildlife {
     this.wait -= dt;
     this.crowCooldown -= dt;
     if (this.wait <= 0) {
-      this.wait = 1.5;
+      this.wait = 0.5;
       this.#populate(ctx);
     }
     for (const herd of this.herds) this.#herd(herd, dt);
@@ -178,11 +189,20 @@ export class Wildlife {
   #populate(ctx) {
     const { camera, generator: g, seaLevel } = ctx;
     const cx = camera.position.x, cz = camera.position.z;
-    // Gone out of range (and the long dead): away.
+    // Which way you're going (fast, the mobile birds are found ahead of you).
+    if (this.last) {
+      const dx = cx - this.last.x, dz = cz - this.last.z;
+      this.heading = Math.hypot(dx, dz) > 4 ? Math.atan2(dx, dz) : null;
+    }
+    this.last = { x: cx, z: cz };
+    // The land's own animals, chunk by chunk, as it comes into range.
+    this.#settleAround(ctx);
+    // Gone out of range (the wanderers: the land's own go with their
+    // chunk), and the long dead: away.
     this.animals = this.animals.filter((a) => {
-      const far = Math.hypot(a.x - cx, a.z - cz) > (SPECIES[a.kind].bird ? 520 : 430);
+      const far = !a.chunk && Math.hypot(a.x - cx, a.z - cz) > (SPECIES[a.kind].bird ? 520 : 430);
       const rotted = !a.alive && a.deadTime > 180;
-      return !(far || rotted);
+      return !(far || rotted || a.gone);
     });
     const alive = new Set(this.animals);
     for (const h of this.herds) h.members = h.members.filter((a) => alive.has(a));
@@ -191,13 +211,15 @@ export class Wildlife {
     this.flocks = this.flocks.filter((f) => f.birds.length && !f.done);
     const count = (kind) => this.animals.filter((a) => a.kind === kind).length;
 
-    // Somewhere suitable, out of sight: behind you or well off.
+    // Somewhere suitable, out of sight: behind you or well off (or, on
+    // the move, ahead of you where you're going).
     const view = Math.atan2(ctx.forward.x, ctx.forward.z);
     const spot = (near, farther, ok, tries = 14) => {
       for (let k = 0; k < tries; k++) {
-        const behind = k < tries / 2;
-        const a = behind ? view + Math.PI + rnd(-1.6, 1.6) : rnd(0, TAU);
-        const d = behind ? rnd(near, farther) : rnd(Math.max(near, 240), farther + 40);
+        const ahead = this.heading !== null;
+        const behind = !ahead && k < tries / 2;
+        const a = ahead ? this.heading + rnd(-0.9, 0.9) : behind ? view + Math.PI + rnd(-1.6, 1.6) : rnd(0, TAU);
+        const d = ahead || behind ? rnd(near, farther) : rnd(Math.max(near, 240), farther + 40);
         const x = cx + Math.sin(a) * d, z = cz + Math.cos(a) * d;
         const y = g.getBaseHeight(x, z);
         if (y > seaLevel + 1 && ok(x, z, y)) return { x, z, y };
@@ -206,45 +228,6 @@ export class Wildlife {
     };
     const day = ctx.day, winter = ctx.winter;
 
-    // Herds of deer, at the edges of the woods and in the clearings.
-    const deerland = (x, z, y) => {
-      const w = g.getBiomeWeights(x, z, {});
-      const f = g.getForestDensity(x, z);
-      return w.temperate + w.pine > 0.6 && f > 0.1 && f < 0.85 && g.getMountainness(x, z) < 0.5 && y < 150;
-    };
-    if (this.herds.filter((h) => h.kind === 'deer').length < 2 && count('deer') < SPECIES.deer.max - 7) {
-      const s = spot(170, 320, deerland);
-      if (s) this.#spawnHerd('deer', s, Math.round(rnd(3, 7)));
-    }
-    // Bison out on the open plains and the savanna.
-    const grassland = (x, z) => {
-      const w = g.getBiomeWeights(x, z, {});
-      return ((w.temperate > 0.6 && g.getPlainness(x, z) > 0.35) || w.savanna > 0.65) && g.getMountainness(x, z) < 0.3;
-    };
-    if (this.herds.filter((h) => h.kind === 'bison').length < 1 && count('bison') < SPECIES.bison.max - 16) {
-      const s = spot(200, 340, grassland);
-      if (s) this.#spawnHerd('bison', s, Math.round(rnd(7, 16)));
-    }
-    // Rabbits in the grass and at the woods' edges (fewer in the dead of night).
-    const warren = (x, z) => {
-      const w = g.getBiomeWeights(x, z, {});
-      return w.temperate + w.pine + w.savanna * 0.6 > 0.6 && g.getForestDensity(x, z) < 0.75 && g.getMountainness(x, z) < 0.45;
-    };
-    if (count('rabbit') < Math.round(8 * (0.5 + 0.5 * Math.max(day, ctx.dawn, ctx.dusk)))) {
-      const s = spot(60, 160, warren, 8);
-      if (s) this.#spawnWalker('rabbit', s.x, s.z, null);
-    }
-    // Songbirds on the broad-leaved trees round about, by day.
-    const crowns = this.#crownsNear(ctx, 110);
-    if (day > 0.3 && count('songbird') < Math.round(12 * day * (1 - 0.6 * winter)) && crowns.length) {
-      for (let k = 0; k < 3; k++) {
-        const c = crowns[Math.floor(Math.random() * crowns.length)];
-        const d = Math.hypot(c[0] - cx, c[1] - cz);
-        if (d < 25) continue;
-        this.#spawnSongbird(c);
-        break;
-      }
-    }
     // Flocks wheeling over the woods and fields, by day.
     if (day > 0.4 && this.flocks.filter((f) => f.kind === 'starling').length < (winter > 0.5 ? 1 : 2)) {
       const s = spot(260, 380, (x, z) => { const w = g.getBiomeWeights(x, z, {}); return w.temperate + w.savanna + w.pine > 0.6; }, 6);
@@ -269,6 +252,134 @@ export class Wildlife {
       const to = { x: cx + Math.sin(b) * 420, z: cz + Math.cos(b) * 420 };
       this.#spawnFlock('crow', { ...from, y: g.getBaseHeight(from.x, from.z) }, Math.round(rnd(6, 14)), to);
     }
+  }
+
+  // The chunks within about 400 m: each settled once as it comes into
+  // range; those left well behind take their animals with them.
+  #settleAround(ctx) {
+    const C = ctx.chunkSize, R = 3;
+    const ccx = Math.floor(ctx.camera.position.x / C), ccz = Math.floor(ctx.camera.position.z / C);
+    for (const [key, home] of this.homes) {
+      if (Math.hypot(home.cx - ccx, home.cz - ccz) <= R + 1.5) continue;
+      for (const a of home.animals) a.gone = true;
+      const herds = new Set(home.herds);
+      this.herds = this.herds.filter((h) => !herds.has(h));
+      this.homes.delete(key);
+    }
+    for (let dz = -R; dz <= R; dz++) {
+      for (let dx = -R; dx <= R; dx++) {
+        if (Math.hypot(dx, dz) > R + 0.5) continue;
+        const cx = ccx + dx, cz = ccz + dz, key = `${cx},${cz}`;
+        let home = this.homes.get(key);
+        if (!home) this.homes.set(key, (home = this.#settle(cx, cz, ctx)));
+        // Songbirds on its trees, once they're there (the trees near you).
+        if (!home.birds && ctx.day > 0.3 && ctx.trees.crowns.get(key)) {
+          home.birds = true;
+          const list = ctx.trees.crowns.get(key), n = Math.round(home.rand() * 4 * (1 - 0.6 * ctx.winter));
+          for (let k = 0; k < n && list.length; k++) {
+            const i = Math.floor(home.rand() * (list.length / 5)) * 5;
+            if (list[i + 3] - list[i + 2] < 2.5) continue;
+            const a = this.#spawnSongbird(list.slice(i, i + 5));
+            a.chunk = key;
+            home.animals.push(a);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * What lives in chunk (cx, cz), from the lie of its land (the same each
+   * time you come back): perhaps a herd of deer at the woods' edge, bison
+   * out on the open grass, rabbits.
+   */
+  #settle(cx, cz, ctx) {
+    const g = ctx.generator, C = ctx.chunkSize;
+    const rand = mulberry32(Math.floor(hash2(cx, cz, ctx.seed ^ 0xdee7) * 4294967296));
+    const home = { cx, cz, animals: [], herds: [], birds: false, rand };
+    const at = () => {
+      const x = (cx + 0.1 + 0.8 * rand()) * C, z = (cz + 0.1 + 0.8 * rand()) * C;
+      return { x, z, y: g.getBaseHeight(x, z) };
+    };
+    const own = (from) => {
+      for (const a of this.animals.slice(from)) (a.chunk = `${cx},${cz}`), home.animals.push(a);
+    };
+    // Deer, at the edges of the woods and in the clearings.
+    for (let k = 0; k < 3; k++) {
+      const p = at();
+      if (p.y < ctx.seaLevel + 1 || p.y > 150) continue;
+      const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
+      if (w.temperate + w.pine > 0.6 && f > 0.08 && f < 0.95 && g.getMountainness(p.x, p.z) < 0.55) {
+        if (rand() < 0.28) {
+          const from = this.animals.length;
+          const herd = this.#spawnHerd('deer', p, 2 + Math.floor(rand() * 5));
+          if (herd) home.herds.push(herd);
+          own(from);
+        }
+        break;
+      }
+    }
+    // Bison out on the open plains and the savanna.
+    for (let k = 0; k < 3; k++) {
+      const p = at();
+      if (p.y < ctx.seaLevel + 1) continue;
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if (((w.temperate > 0.6 && g.getPlainness(p.x, p.z) > 0.3) || w.savanna > 0.6) && g.getMountainness(p.x, p.z) < 0.3) {
+        if (rand() < 0.14) {
+          const from = this.animals.length;
+          const herd = this.#spawnHerd('bison', p, 7 + Math.floor(rand() * 10));
+          if (herd) home.herds.push(herd);
+          own(from);
+        }
+        break;
+      }
+    }
+    // Bears in the wooded foothills of the mountains: a black bear (now and
+    // then a mother with her cubs), or, higher up, a grizzly.
+    for (let k = 0; k < 2; k++) {
+      const p = at();
+      if (p.y < ctx.seaLevel + 1) continue;
+      const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
+      if (m > 0.18 && m < 0.65 && w.temperate + w.pine > 0.5 && g.getForestDensity(p.x, p.z) > 0.05) {
+        if (rand() < 0.22) {
+          const from = this.animals.length;
+          const kind = rand() < 0.35 + 0.5 * (m - 0.18) ? 'grizzly' : 'blackBear';
+          this.#spawnWalker(kind, p.x, p.z, null);
+          if (kind === 'blackBear' && rand() < 0.35) {
+            // (Cubs: small, and never far from her.)
+            const mother = this.animals[this.animals.length - 1];
+            if (mother?.kind === kind) {
+              const herd = { kind, goal: { x: p.x, z: p.z }, goalWait: rnd(15, 40), members: [mother], fear: null, fleeTime: 0 };
+              mother.herd = herd;
+              mother.offset = { x: 0, z: 0 };
+              const cubs = 1 + Math.floor(rand() * 2);
+              for (let c = 0; c < cubs; c++) {
+                this.#spawnWalker(kind, p.x + rnd(-2, 2), p.z + rnd(-2, 2), herd);
+                const cub = this.animals[this.animals.length - 1];
+                if (cub?.herd === herd) (cub.scale *= 0.45), (cub.offset = { x: rnd(-2, 2), z: rnd(-2, 2) });
+              }
+              this.herds.push(herd);
+              home.herds.push(herd);
+            }
+          }
+          own(from);
+        }
+        break;
+      }
+    }
+    // Rabbits in the grass and at the woods' edges.
+    const bunnies = Math.floor(rand() * 4.5);
+    for (let k = 0; k < bunnies; k++) {
+      const p = at();
+      if (p.y < ctx.seaLevel + 1) continue;
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if (w.temperate + w.pine + w.savanna * 0.6 > 0.6 && g.getForestDensity(p.x, p.z) < 0.8 && g.getMountainness(p.x, p.z) < 0.45) {
+        const from = this.animals.length;
+        this.#spawnWalker('rabbit', p.x, p.z, null);
+        own(from);
+      }
+    }
+    return home;
   }
 
   #coastSpot(ctx) {
@@ -305,7 +416,9 @@ export class Wildlife {
       const a = rnd(0, TAU), d = rnd(1, kind === 'bison' ? 16 : 9);
       this.#spawnWalker(kind, s.x + Math.sin(a) * d, s.z + Math.cos(a) * d, herd);
     }
-    if (herd.members.length) this.herds.push(herd);
+    if (!herd.members.length) return null;
+    this.herds.push(herd);
+    return herd;
   }
 
   #spawnWalker(kind, x, z, herd) {
@@ -314,10 +427,11 @@ export class Wildlife {
     if (!(y > this.ctx.seaLevel + 0.5)) return;
     const a = {
       kind, x, z, y, heading: rnd(0, TAU), pitch: 0, roll: 0, speed: 0,
-      scale: kind === 'bison' ? rnd(0.9, 1.1) : rnd(0.85, 1.1),
+      scale: (sp.size ?? 1) * (kind === 'bison' ? rnd(0.9, 1.1) : rnd(0.85, 1.1)),
       alive: true, health: sp.health, state: 'graze', timer: rnd(2, 10), phase: rnd(0, TAU), headDown: 0,
       herd, offset: { x: rnd(-1, 1) * (kind === 'bison' ? 12 : 7), z: rnd(-1, 1) * (kind === 'bison' ? 12 : 7) },
       antlers: kind === 'deer' && Math.random() < 0.4, fear: 0, home: { x, z },
+      aggressive: !!sp.aggressive, // (for later: a grizzly will charge)
     };
     this.animals.push(a);
     herd?.members.push(a);
@@ -330,6 +444,7 @@ export class Wildlife {
       state: 'perch', timer: rnd(3, 15), flap: 0, tint: SONGBIRD_TINTS[Math.floor(Math.random() * SONGBIRD_TINTS.length)],
     };
     this.animals.push(a);
+    return a;
   }
 
   #spawnFlock(kind, s, n, to = null) {
@@ -400,7 +515,7 @@ export class Wildlife {
     const t = this.#threat(a, ctx);
     // Too close (on the ground, or flying low over them): they bolt.
     const reach = sp.flee * (t.above > 25 ? 0.5 : 1);
-    if (t.d < reach && t.above < 50) {
+    if (!ctx.tame && t.d < reach && t.above < 50) {
       if (herd) {
         if (herd.fleeTime <= 0 && a.kind === 'bison') ctx.sound?.call('grunt', ctx.pan(a.x, a.z), 0.6);
         if (herd.fleeTime <= 0 && a.kind === 'deer') ctx.sound?.call('snort', ctx.pan(a.x, a.z), 0.5);
@@ -476,7 +591,7 @@ export class Wildlife {
   #songbird(a, dt, ctx) {
     if (this.#falling(a, dt, ctx)) return;
     const t = this.#threat(a, ctx);
-    const scared = t.d3 < SPECIES.songbird.flee;
+    const scared = !ctx.tame && t.d3 < SPECIES.songbird.flee;
     a.timer -= dt;
     if (a.state === 'perch' || a.state === 'ground') {
       // Look about; on the ground, hop and peck.
@@ -555,7 +670,7 @@ export class Wildlife {
       f.centre.z = f.anchor.z + Math.sin(f.angle * 2) * f.radius * 0.5;
       f.groundY += (g.getBaseHeight(f.centre.x, f.centre.z) - f.groundY) * Math.min(1, dt * 0.5);
       f.centre.y = Math.max(f.groundY, ctx.seaLevel) + f.alt + Math.sin(this.time * 0.3) * 5;
-      if (d < 20 && Math.abs(cam.y - f.centre.y) < 20) this.#scatter(f, ctx);
+      if (!ctx.tame && d < 20 && Math.abs(cam.y - f.centre.y) < 20) this.#scatter(f, ctx);
       // Now and then, down to feed in an open field.
       if (f.timer <= 0) {
         f.timer = rnd(25, 50);
@@ -573,7 +688,7 @@ export class Wildlife {
       }
     } else if (f.mode === 'land') {
       f.centre.x = f.spot.x; f.centre.z = f.spot.z; f.centre.y = f.spot.y;
-      if (d < SPECIES[f.kind].flee) this.#scatter(f, ctx);
+      if (!ctx.tame && d < SPECIES[f.kind].flee) this.#scatter(f, ctx);
       else if (f.timer <= 0) (f.mode = 'fly'), (f.timer = rnd(25, 50)), (f.anchor = { x: f.spot.x - Math.cos(f.angle) * f.radius, z: f.spot.z - Math.sin(f.angle * 2) * f.radius * 0.5 });
     } else if (f.mode === 'scatter') {
       if (f.timer <= 0) (f.mode = 'fly'), (f.timer = rnd(30, 60));
@@ -680,7 +795,7 @@ export class Wildlife {
     }
     // Drifting over its patch; out to sea or away if you come close.
     const t = this.#threat(a, ctx);
-    if (t.d3 < SPECIES[a.kind].flee) {
+    if (!ctx.tame && t.d3 < SPECIES[a.kind].flee) {
       const dx = a.x - ctx.camera.position.x, dz = a.z - ctx.camera.position.z, l = Math.hypot(dx, dz) || 1;
       a.centre.x += (dx / l) * 12 * dt;
       a.centre.z += (dz / l) * 12 * dt;
@@ -730,7 +845,7 @@ export class Wildlife {
         const bob = a.kind === 'rabbit' ? Math.abs(Math.sin(a.phase * 0.5)) * 0.28 * moving : Math.abs(Math.sin(a.phase)) * 0.04 * moving;
         base.elements[13] += bob; // (the body bobs as it goes; a rabbit bounds)
         put(M.body, [0, 0, 0], 0, 0, 0);
-        const headRx = a.alive ? a.headDown * (a.kind === 'bison' ? 0.5 : a.kind === 'rabbit' ? 0.4 : 1.05) + Math.sin(a.phase * 2) * 0.05 * moving : 0.3;
+        const headRx = a.alive ? a.headDown * (a.kind === 'bison' ? 0.5 : a.kind === 'rabbit' ? 0.4 : SPECIES[a.kind].forager ? 0.6 : 1.05) + Math.sin(a.phase * 2) * 0.05 * moving : 0.3;
         put(M.head, rig.model.headPivot, headRx, a.alive && a.state === 'graze' ? Math.sin(this.time * 0.7 + a.phase) * 0.15 : 0, 0);
         if (M.antlers && a.antlers) put(M.antlers, rig.model.headPivot, headRx, 0, 0);
         // Legs: a walk (diagonal pairs), breaking into a gallop (pairs

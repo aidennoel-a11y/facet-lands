@@ -43,6 +43,9 @@ export const WORLD = {
   treeScale: 1.6, // overall tree size multiplier
   leafMaxLod: 0, // leaf clusters only on chunks this close
 
+  // Wildlife: for testing, the animals pay you no mind (no bolting or scattering).
+  tameWildlife: true,
+
   // Caves (their mouths are cut into full-detail terrain only)
   caveMaxLod: 1,
 
