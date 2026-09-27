@@ -431,8 +431,10 @@ export class Wildlife {
       alive: true, health: sp.health, state: 'graze', timer: rnd(2, 10), phase: rnd(0, TAU), headDown: 0,
       herd, offset: { x: rnd(-1, 1) * (kind === 'bison' ? 12 : 7), z: rnd(-1, 1) * (kind === 'bison' ? 12 : 7) },
       antlers: kind === 'deer' && Math.random() < 0.4, fear: 0, home: { x, z },
+      alertCool: rnd(0, 10), step: rnd(1, 6), stepHeading: 0, headYaw: 0, lie: 0, rear: 0,
       aggressive: !!sp.aggressive, // (for later: a grizzly will charge)
     };
+    a.stepHeading = a.heading;
     this.animals.push(a);
     herd?.members.push(a);
   }
@@ -510,6 +512,8 @@ export class Wildlife {
     herd.fleeTime -= dt;
     herd.goalWait -= dt;
     // The herd drifts to fresh grazing now and then.
+    // (Not while most of it is lying down.)
+    if (herd.goalWait <= 0 && herd.members.filter((m) => m.state === 'rest').length * 2 > herd.members.length) herd.goalWait = rnd(8, 20);
     if (herd.goalWait <= 0 && herd.fleeTime <= 0) {
       herd.goalWait = rnd(20, 50);
       const a = rnd(0, TAU), d = rnd(15, 45);
@@ -562,19 +566,75 @@ export class Wildlife {
       a.timer -= dt;
       const goal = herd ? { x: herd.goal.x + a.offset.x, z: herd.goal.z + a.offset.z } : a.goal ?? a.home;
       const far = Math.hypot(goal.x - a.x, goal.z - a.z);
-      if (a.state === 'flee') (a.state = 'graze'), (a.timer = rnd(1, 3));
+      // Safe again: it stops and looks back the way it came.
+      if (a.state === 'flee') (a.state = 'alert'), (a.timer = rnd(3, 6)), (a.alertCool = rnd(10, 20));
+      // You coming near catch its eye: it stops, head up, and watches you
+      // a while (a rabbit sits up), then goes back to what it was doing.
+      a.alertCool = Math.max(0, a.alertCool - dt);
+      if (t.d < sp.flee * (ctx.tame ? 1.3 : 1.8) && a.alertCool <= 0 && a.state !== 'alert' && a.state !== 'rest') {
+        a.state = 'alert';
+        a.timer = rnd(2.5, 6);
+        a.alertCool = rnd(15, 35);
+      }
       if (a.timer <= 0) {
-        // Graze a while, then wander on a few steps (on to the herd's
-        // grazing if it's moved off).
-        if (a.state === 'graze') (a.state = 'walk'), (a.timer = far > 6 ? rnd(6, 14) : rnd(2, 5));
-        else (a.state = 'graze'), (a.timer = rnd(4, 14));
+        if (a.state === 'graze') {
+          // After grazing a while: wander on a few steps (on to the herd's
+          // grazing if it's moved off), lift its head to look about, or lie
+          // down to rest (more in the heat of the day and at night; at dawn
+          // and dusk they're up and about).
+          const lull = a.kind === 'rabbit' ? 0 : Math.min(0.55, 0.08 + 0.35 * ctx.night + 0.15 * ctx.day * (1 - ctx.dawn - ctx.dusk));
+          const r = Math.random();
+          if (r < lull && far < 16) (a.state = 'rest'), (a.timer = rnd(25, 80));
+          else if (r < lull + 0.2) (a.state = 'look'), (a.timer = rnd(2, 5));
+          else (a.state = 'walk'), (a.timer = far > 6 ? rnd(6, 14) : rnd(2, 5));
+        } else (a.state = 'graze'), (a.timer = rnd(4, 14));
         if (!herd && a.state === 'walk') a.goal = { x: a.home.x + rnd(-15, 15), z: a.home.z + rnd(-15, 15) };
         // (Which way to wander, set once: not turning on the spot.)
         a.wanderHeading = a.heading + rnd(-0.8, 0.8);
       }
+      // A resting one gets up as the herd moves off.
+      if (a.state === 'rest' && far > 22) (a.state = 'walk'), (a.timer = rnd(6, 12));
       if (a.state === 'walk') {
         want = far > 3 ? Math.atan2(goal.x - a.x, goal.z - a.z) : a.wanderHeading ?? a.heading;
         speed = sp.walk * (far > 25 ? 1.6 : 1);
+        // A rabbit goes in bursts: a few hops, a pause, a few more.
+        if (a.kind === 'rabbit') speed = (this.time + a.phase * 0.3) % 1.7 < 0.8 ? sp.walk * 1.8 : 0;
+      } else if (a.state === 'graze') {
+        // Grazing, it steps slowly along now and then, nose down (a bear,
+        // foraging, is always on the move).
+        a.step -= dt;
+        if (a.step <= 0) {
+          want = a.stepHeading;
+          speed = sp.walk * (sp.forager ? 0.5 : 0.3);
+          if (a.step < -rnd(0.8, 1.6)) (a.step = sp.forager ? rnd(1, 3) : rnd(3, 9)), (a.stepHeading = a.heading + rnd(-0.6, 0.6));
+        }
+      } else if (a.state === 'alert') {
+        // Turning to face you if you're round behind it.
+        const c = ctx.camera.position;
+        const off = angleTo(a.heading, Math.atan2(c.x - a.x, c.z - a.z));
+        if (Math.abs(off) > 1.1) want = a.heading + off - Math.sign(off) * 0.9;
+      }
+    }
+    // Where it looks: at you when alert, about it when looking round, a
+    // little from side to side as it grazes, and the way it's turning.
+    let yaw = 0;
+    if (!fleeing && a.state === 'alert') {
+      const c = ctx.camera.position;
+      yaw = Math.max(-1.1, Math.min(1.1, angleTo(a.heading, Math.atan2(c.x - a.x, c.z - a.z))));
+    } else if (a.state === 'look') yaw = Math.sin(this.time * 0.8 + a.phase) * 0.9;
+    else if (a.state === 'graze') yaw = Math.sin(this.time * 0.7 + a.phase) * 0.15;
+    else yaw = Math.max(-0.5, Math.min(0.5, angleTo(a.heading, want) * 0.7));
+    a.headYaw += (yaw - a.headYaw) * Math.min(1, dt * 3);
+    // Lying down (and getting up again before it moves off).
+    a.lie += ((a.state === 'rest' && !fleeing ? 1 : 0) - a.lie) * Math.min(1, dt * (fleeing ? 4 : 0.9));
+    speed *= 1 - smoothstep(0.1, 0.5, a.lie);
+    a.rear += ((a.kind === 'rabbit' && a.state === 'alert' && !fleeing ? 1 : 0) - a.rear) * Math.min(1, dt * 5);
+    // A herd keeps its spacing: none stands right on top of another.
+    if (herd) {
+      for (const m of herd.members) {
+        if (m === a || !m.alive) continue;
+        const dx = a.x - m.x, dz = a.z - m.z, d = Math.hypot(dx, dz), r = (sp.radius * a.scale + SPECIES[m.kind].radius * m.scale) * 1.6;
+        if (d > 0 && d < r) (a.x += (dx / d) * (r - d) * Math.min(1, dt * 1.5)), (a.z += (dz / d) * (r - d) * Math.min(1, dt * 1.5));
       }
     }
     // A detour round water or a cliff ahead: a steady turn one way for a while.
@@ -606,7 +666,7 @@ export class Wildlife {
     a.heading += Math.max(-rate * dt, Math.min(rate * dt, angleTo(a.heading, want)));
     // (Slowing to take a sharp turn.)
     const sharp = Math.abs(angleTo(a.heading, want));
-    a.speed += (speed * (1 - 0.6 * smoothstep(0.6, 1.6, sharp)) - a.speed) * Math.min(1, dt * (fleeing ? 3 : 1.5));
+    a.speed += (speed * (1 - 0.6 * smoothstep(0.6, 1.6, sharp)) - a.speed) * Math.min(1, dt * (fleeing ? 3 : a.kind === 'rabbit' ? 8 : 1.5));
     // Step, over ground it can walk (not into the water, or off a cliff).
     if (a.speed > 0.01) {
       const sx = Math.sin(a.heading), sz = Math.cos(a.heading);
@@ -641,7 +701,7 @@ export class Wildlife {
     const up = ctx.ground(a.x + sx * L, a.z + sz * L), down = ctx.ground(a.x - sx * L, a.z - sz * L);
     if (up === up && down === down) a.pitch += (-Math.atan2(up - down, 2 * L) * 0.8 - a.pitch) * Math.min(1, dt * 6);
     // Head down to graze, up when alarmed.
-    const headWant = a.state === 'graze' ? 1 : fleeing ? -0.15 : 0.1;
+    const headWant = fleeing ? -0.15 : { graze: 1, alert: -0.25, look: -0.05, rest: 0.35 }[a.state] ?? 0.1;
     a.headDown += (headWant - a.headDown) * Math.min(1, dt * 3);
   }
 
@@ -893,9 +953,10 @@ export class Wildlife {
       const rig = this.rigs[a.kind], sp = SPECIES[a.kind], M = rig.meshes;
       if (counts[a.kind] >= sp.max) continue;
       const i = counts[a.kind]++;
-      euler.set(a.pitch, a.heading, a.roll, 'YXZ');
+      euler.set(a.pitch - (a.rear ?? 0) * 0.55, a.heading, a.roll, 'YXZ');
       quat.setFromEuler(euler);
       base.compose(pos.set(a.x, a.y, a.z), quat, scl.setScalar(a.scale));
+      if (a.alive && a.lie > 0.001) base.elements[13] -= a.lie * rig.model.legs[0][1] * 0.78 * a.scale; // (lying down, its legs folded under it)
       const put = (mesh, pivot, rx, ry, rz) => {
         euler.set(rx, ry, rz, 'YXZ');
         quat.setFromEuler(euler);
@@ -910,8 +971,8 @@ export class Wildlife {
         base.elements[13] += bob; // (the body bobs as it goes; a rabbit bounds)
         put(M.body, [0, 0, 0], 0, 0, 0);
         const headRx = a.alive ? a.headDown * (a.kind === 'bison' ? 0.5 : a.kind === 'rabbit' ? 0.4 : SPECIES[a.kind].forager ? 0.6 : 1.05) + Math.sin(a.phase * 2) * 0.05 * moving : 0.3;
-        put(M.head, rig.model.headPivot, headRx, a.alive && a.state === 'graze' ? Math.sin(this.time * 0.7 + a.phase) * 0.15 : 0, 0);
-        if (M.antlers && a.antlers) put(M.antlers, rig.model.headPivot, headRx, 0, 0);
+        put(M.head, rig.model.headPivot, headRx, a.alive ? a.headYaw : 0, 0);
+        if (M.antlers && a.antlers) put(M.antlers, rig.model.headPivot, headRx, a.alive ? a.headYaw : 0, 0);
         // Legs: a walk (diagonal pairs), breaking into a gallop (pairs
         // together, front then back); a rabbit's hind legs push together.
         rig.model.legs.forEach((p, k) => {
@@ -921,6 +982,7 @@ export class Wildlife {
           const amp = a.alive ? (0.35 + 0.5 * running) * moving : 0;
           let swing = Math.sin(phase) * amp;
           if (a.kind === 'rabbit') swing = (front ? -1 : 1) * Math.max(0, Math.sin(a.phase * 0.5)) * 0.9 * moving;
+          if (a.alive && a.lie > 0.001) swing += ((front ? 1.45 : -1.45) - swing) * a.lie; // (folded under)
           put(M.legs, p, swing + (a.alive ? 0 : (front ? -0.6 : 0.6)), 0, 0);
         });
       } else {
