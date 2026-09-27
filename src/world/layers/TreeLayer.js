@@ -89,7 +89,7 @@ export function createTreeLayer({ rocks = null } = {}) {
     },
 
     reuseKey: ({ lod, resolution, config }) =>
-      lod > config.treeMaxLod ? 'none' : `${resolution}:${lod <= config.leafMaxLod}`,
+      lod > config.treeMaxLod ? 'none' : `${resolution}:${lod <= config.leafMaxLod}:${lod <= (config.treeShadowLod ?? Infinity)}`,
 
     build({ cx, cz, lod, groundHeightAt, generator, config, prepared }) {
       if (lod > config.treeMaxLod) return null;
@@ -129,7 +129,7 @@ export function createTreeLayer({ rocks = null } = {}) {
           mesh.setColorAt(k, tint.setRGB(v * (0.96 + t.shade * 0.08), v, v * 0.95));
         });
         mesh.computeBoundingSphere();
-        mesh.castShadow = true;
+        mesh.castShadow = lod <= (config.treeShadowLod ?? Infinity); // (out past the shadows' reach, none to cast)
         mesh.receiveShadow = true;
         if (!stiff) mesh.customDepthMaterial = depthMaterial;
         group.add(mesh);

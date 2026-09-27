@@ -35,8 +35,11 @@ export const WORLD = {
 
   // Trees
   treeSpacing: 6, // metres between candidate tree spots (lower = denser)
-  treeMaxLod: 1, // chunks at this LOD or closer get full trees (beyond, the far trees: a few hundred metres off they look the same)
+  treeDensity: 0.92, // and the chance of a tree at each, overall
+  treeMaxLod: 2, // chunks at this LOD or closer get full trees (out to 640 m; the leaf clusters only near)
+  treeShadowLod: 1, // and cast shadows out to this LOD (the shadows reach no further)
   farTreeMaxLod: 5, // and out to this LOD, simple far ones (see FarTreeLayer)
+  farTreeDetailLod: 4, // the far ones with their character (trunk, tiers, round crowns) to here (1.5 km); plainer beyond
   treeScale: 1.6, // overall tree size multiplier
   leafMaxLod: 0, // leaf clusters only on chunks this close
 

@@ -275,6 +275,18 @@ export class Rivers {
     // of it: real falls, not a staircase of little steps.
     let dropNeeded = stream ? 3 + rand() * 3 : 0;
     let poolStart = 0; // (where the pool now forming began)
+    // The pool now forming lies no higher than the land anywhere along it
+    // or across its breadth: it's dug down into the slope as a trench,
+    // never held up above the land. (Only so far, though: a deep hollow it
+    // passes over is just deeper water.)
+    const settle = () => {
+      let low = level;
+      for (let k = poolStart; k < points.length; k++) if (points[k].cascade && points[k].low !== undefined) low = Math.min(low, points[k].low - 0.3);
+      low = Math.max(low, level - 8);
+      if (low >= level) return;
+      for (let k = poolStart; k < points.length; k++) if (points[k].cascade) points[k].level = Math.min(points[k].level, low);
+      level = Math.max(this.seaLevel + 0.03, low);
+    };
     const steps = stream ? STREAM_STEPS + RIVER_STEPS : RIVER_STEPS;
     for (let i = 0; i < steps; i++) {
       const b = g.getBaseHeight(px, pz);
@@ -328,16 +340,7 @@ export class Rivers {
         // land has fallen well away below it; then the water pours over
         // in one fall into the next pool, dug a little into the slope.
         if (target < level - dropNeeded) {
-          // (The pool behind this lip lies no higher than the land at the
-          // lip: it's dug down into the slope, never dammed up above it.)
-          // (Only so far, though: a hollow it passes over is just deeper water.)
-          let low = level;
-          for (let k = poolStart; k < points.length; k++) if (points[k].base !== undefined) low = Math.min(low, points[k].base - 0.3);
-          low = Math.max(low, level - 2.5);
-          if (low < level) {
-            for (let k = poolStart; k < points.length; k++) if (points[k].cascade) points[k].level = Math.min(points[k].level, low);
-            level = Math.max(this.seaLevel + 0.03, low);
-          }
+          settle();
           const next = Math.max(this.seaLevel + 0.03, Math.min(target - 0.8, level - 0.3));
           if (level - next > 3) fell = true;
           if (points.length) points.push({ x: px - dir[0] * 4, z: pz - dir[1] * 4, level: level - 0.02, width: 0, cascade: true, lip: true });
@@ -348,15 +351,19 @@ export class Rivers {
           level = Math.max(this.seaLevel + 0.03, level - 0.02);
         }
       } else if (stream) {
+        settle(); // (the pool it has left, if any)
         level = Math.max(this.seaLevel + 0.03, Math.min(level - 0.02, target));
         poolStart = points.length + 1; // (any pool starts after this)
       } else {
+        settle();
         poolStart = points.length + 1;
         // A river eases down into its trench (no sudden step at its source)
         // but never runs above the land.
         level = Math.max(this.seaLevel + 0.03, Math.min(level - 0.02, Math.max(target, level - 0.35), b - 0.4));
       }
-      points.push({ x: px, z: pz, level, width: 0, cascade, base: b });
+      // (The lowest of the land here, across a pool's breadth.)
+      const low = cascade ? Math.min(b, g.getBaseHeight(px - dir[1] * 3.6, pz + dir[0] * 3.6), g.getBaseHeight(px + dir[1] * 3.6, pz - dir[0] * 3.6)) : b;
+      points.push({ x: px, z: pz, level, width: 0, cascade, base: b, low });
 
       if (b < this.seaLevel) {
         // Into a lake or the sea: carry on a little way so the mouth opens out.
@@ -375,8 +382,12 @@ export class Rivers {
           return points.length >= 10 ? Rivers.#widen(points, true, lowland) : null;
         }
       }
-      // Ground rising ahead of it: it would need a gorge.
-      if (b - level > (stream ? 9 : 6.5)) return kind === 'stream' ? this.#tarn(points, rand, lowland) : null;
+      // Ground rising ahead of it: it would need a gorge. (A stream pools
+      // in the hollow short of it, rather than dug into the rise.)
+      if (b - level > (stream ? 9 : 6.5)) {
+        points.pop();
+        return kind === 'stream' ? this.#tarn(points, rand, lowland) : null;
+      }
       px += dir[0] * STEP;
       pz += dir[1] * STEP;
     }

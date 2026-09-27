@@ -86,7 +86,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // Near a biome border, each spot takes one biome or the other at random.
       const biome = generator.pickBiome(wx, wz, hash2(gi, gj, seed + 11));
       const trees = biome.trees;
-      let likely = (trees ? (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density : 0);
+      let likely = (trees ? (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density * (config.treeDensity ?? 1) : 0);
       // Round an alpine lake below the snow, a ring of trees.
       const lake = trees && biome.id === 'temperate' ? generator.rivers.at(wx, wz, 30) : null;
       const lakeside = !!(lake && lake.alpine && lake.level < 170);

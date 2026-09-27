@@ -19,15 +19,19 @@ const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag']);
 const CLUMPS = new Set(['bamboo']);
 // Crowns held high on a bare trunk (and its bark colour).
 const UMBRELLAS = { jungleGiant: 0x857560, jungleCanopy: 0x6e604c, junglePalm: 0x7d6a52, treeFern: 0x44342a };
+const BARK = { ...UMBRELLAS, birch: 0xd9d6cc, silverBirch: 0xe0ddd2, aspen: 0xcfd0c4, baobab: 0x8a7a66, acacia: 0x6a5240 };
 
 /**
  * A few-triangle stand-in for each kind of tree, fitted to its real
- * model: conifers a cone, dead trees and cacti a spike, bamboo a tall
- * clump, the jungle's giants, palms and tree ferns a flat crown up on a
- * trunk, everything else a diamond the size of its crown, all in the
- * crown's average colour.
+ * model, in its crown's colours. The `detailed` ones (for the middle
+ * distance) keep each tree's character: a conifer two tiers of boughs on a
+ * trunk, a broad-leaved tree a lumpy round crown on its trunk (white for
+ * the birches), shaded darker underneath; the jungle's giants, palms and
+ * tree ferns a flat crown up on a trunk. Further off, the simplest shapes:
+ * conifers a cone, dead trees and cacti a spike, bamboo a tall clump,
+ * everything else a diamond.
  */
-function farGeometry(type) {
+function farGeometry(type, detailed) {
   const real = TREE_GEOMETRIES[type];
   const crown = real.userData.crown ?? real;
   crown.computeBoundingBox();
@@ -42,18 +46,36 @@ function farGeometry(type) {
   const deciduous = most((k) => season.getX(k));
   const snowy = season ? season.getY(0) : 0;
   const flowers = most((k) => season.getZ(k));
+  const leafy = [deciduous, snowy, flowers], woody = [0, snowy, 0];
 
   const centre = box.getCenter(new Vector3());
   const half = box.getSize(new Vector3()).multiplyScalar(0.5);
   const r = (half.x + half.z) / 2;
-  const positions = [];
-  const ring = (y, radius, sides, turn = 0) =>
+  const y0 = box.min.y, h = box.max.y - box.min.y;
+  const positions = [], cols = [], seasons = [];
+  const shade = (k) => avg.clone().multiplyScalar(k);
+  const bark = new Color(BARK[type] ?? 0x5e4a38);
+  const ring = (y, radius, sides, turn = 0, lumpy = 0) =>
     Array.from({ length: sides }, (_, k) => {
       const a = (k / sides) * Math.PI * 2 + turn;
-      return [centre.x + Math.cos(a) * radius, y, centre.z + Math.sin(a) * radius];
+      const q = radius * (1 + lumpy * (Math.sin(k * 12.9898 + y * 78.233 + type.length * 3.1) * 0.5));
+      return [centre.x + Math.cos(a) * q, y, centre.z + Math.sin(a) * q];
     });
-  const tri = (a, b, c) => positions.push(...a, ...b, ...c);
-  let crownVerts = Infinity; // (the rest are trunk)
+  const tri = (a, b, c, ca = avg, cb = ca, cc = ca, sea = leafy) => {
+    positions.push(...a, ...b, ...c);
+    for (const col of [ca, cb, cc]) cols.push(col.r, col.g, col.b);
+    for (let k = 0; k < 3; k++) seasons.push(...sea);
+  };
+  // A slim three-sided trunk from the ground up to `top` under the crown.
+  const trunk = (top, tw) => {
+    const foot = Array.from({ length: 3 }, (_, k) => [Math.cos((k / 3) * Math.PI * 2) * tw * 1.4, 0, Math.sin((k / 3) * Math.PI * 2) * tw * 1.4]);
+    const head = Array.from({ length: 3 }, (_, k) => [centre.x + Math.cos((k / 3) * Math.PI * 2) * tw, top, centre.z + Math.sin((k / 3) * Math.PI * 2) * tw]);
+    for (let k = 0; k < 3; k++) {
+      const m = (k + 1) % 3;
+      tri(foot[k], head[m], foot[m], bark, bark, bark, woody);
+      tri(foot[k], head[k], head[m], bark, bark, bark, woody);
+    }
+  };
   if (UMBRELLAS[type]) {
     // The crown's bulk (not the vines or fronds trailing below it): from
     // under its middle, to its top.
@@ -63,29 +85,42 @@ function farGeometry(type) {
     const ringY = low + (box.max.y - low) * 0.35;
     const edge = ring(ringY, r * 0.95, 6, Math.PI / 6);
     const top = [centre.x, box.max.y, centre.z], under = [centre.x, low, centre.z];
+    const dark = shade(0.8), light = shade(1.12);
     for (let k = 0; k < 6; k++) {
-      tri(edge[(k + 1) % 6], edge[k], top);
-      tri(edge[k], edge[(k + 1) % 6], under);
+      tri(edge[(k + 1) % 6], edge[k], top, avg, avg, light);
+      tri(edge[k], edge[(k + 1) % 6], under, avg, avg, dark);
     }
-    // The trunk: a slim three-sided post from the ground up into the crown.
-    crownVerts = positions.length / 3;
-    const tw = Math.max(0.25, r * 0.07);
-    const foot = Array.from({ length: 3 }, (_, k) => [Math.cos((k / 3) * Math.PI * 2) * tw * 1.4, 0, Math.sin((k / 3) * Math.PI * 2) * tw * 1.4]);
-    const head = Array.from({ length: 3 }, (_, k) => [centre.x + Math.cos((k / 3) * Math.PI * 2) * tw, ringY, centre.z + Math.sin((k / 3) * Math.PI * 2) * tw]);
-    for (let k = 0; k < 3; k++) {
-      const m = (k + 1) % 3;
-      tri(foot[k], head[m], foot[m]);
-      tri(foot[k], head[k], head[m]);
-    }
-  } else if (CLUMPS.has(type)) {
-    const base = ring(0, r * 0.7, 5);
-    const top = [centre.x, box.max.y, centre.z];
-    for (let k = 0; k < 5; k++) tri(base[(k + 1) % 5], base[k], top);
-  } else if (CONES.has(type) || SPIKES.has(type)) {
-    const sides = SPIKES.has(type) ? 3 : 5;
-    const base = ring(SPIKES.has(type) ? 0 : box.min.y, SPIKES.has(type) ? Math.min(r, 0.45) : r * 0.95, sides);
+    trunk(ringY, Math.max(0.25, r * 0.07));
+  } else if (CLUMPS.has(type) || SPIKES.has(type) || (CONES.has(type) && !detailed)) {
+    const spike = SPIKES.has(type), clump = CLUMPS.has(type);
+    const sides = spike ? 3 : 5;
+    const base = ring(spike || clump ? 0 : y0, spike ? Math.min(r, 0.45) : r * (clump ? 0.7 : 0.95), sides);
     const top = [centre.x, box.max.y, centre.z];
     for (let k = 0; k < sides; k++) tri(base[(k + 1) % sides], base[k], top);
+  } else if (CONES.has(type)) {
+    // Two tiers of boughs, darker at their skirts, on a short trunk.
+    const dark = shade(0.78), light = shade(1.15);
+    const tier = (yb, yt, rad, turn) => {
+      const base = ring(yb, rad, 6, turn);
+      const top = [centre.x, yt, centre.z];
+      for (let k = 0; k < 6; k++) tri(base[(k + 1) % 6], base[k], top, dark, dark, light);
+    };
+    tier(y0, y0 + h * 0.7, r * 0.95, 0);
+    tier(y0 + h * 0.42, box.max.y, r * 0.62, Math.PI / 6);
+    trunk(y0 + h * 0.1, Math.max(0.2, r * 0.09));
+  } else if (detailed) {
+    // A lumpy, rounded crown, dark underneath and bright on top, on its trunk.
+    const lo = ring(y0 + h * 0.3, r * 0.88, 6, 0, 0.25), hi = ring(y0 + h * 0.66, r * 0.9, 6, Math.PI / 6, 0.25);
+    const top = [centre.x, box.max.y, centre.z], bottom = [centre.x, y0, centre.z];
+    const under = shade(0.7), low = shade(0.9), high = shade(1.05), crest = shade(1.18);
+    for (let k = 0; k < 6; k++) {
+      const m = (k + 1) % 6;
+      tri(lo[k], lo[m], bottom, low, low, under);
+      tri(lo[m], lo[k], hi[k], low, low, high);
+      tri(hi[k], hi[m], lo[m], high, high, low);
+      tri(hi[m], hi[k], top, high, high, crest);
+    }
+    trunk(y0 + h * 0.35, Math.max(0.18, r * 0.08));
   } else {
     const mid = ring(centre.y, r, 4, Math.PI / 4);
     const top = [centre.x, box.max.y, centre.z], bottom = [centre.x, box.min.y, centre.z];
@@ -97,12 +132,8 @@ function farGeometry(type) {
   const g = new InstancedBufferGeometry();
   g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
   g.computeVertexNormals();
-  const n = positions.length / 3;
-  const bark = new Color(UMBRELLAS[type] ?? 0);
-  g.setAttribute('color', new BufferAttribute(new Float32Array(n * 3).map((_, i) => (Math.floor(i / 3) < crownVerts ? avg : bark).toArray()[i % 3]), 3));
-  const seasonal = new Float32Array(n * 3);
-  for (let k = 0; k < n; k++) seasonal.set([deciduous, snowy, flowers], k * 3);
-  g.setAttribute('aSeason', new BufferAttribute(seasonal, 3));
+  g.setAttribute('color', new BufferAttribute(new Float32Array(cols), 3));
+  g.setAttribute('aSeason', new BufferAttribute(new Float32Array(seasons), 3));
   return g;
 }
 
@@ -144,17 +175,18 @@ export function createFarTreeLayer(config) {
   // One pool per kind of tree: instances packed at the front, a chunk's
   // handle knowing which slots are its own.
   const pools = new Map();
-  function pool(type) {
-    let p = pools.get(type);
+  function pool(type, detailed) {
+    const key = `${type}:${detailed ? 1 : 0}`;
+    let p = pools.get(key);
     if (!p) {
-      const geometry = farGeometry(type);
+      const geometry = farGeometry(type, detailed);
       p = { geometry, mesh: null, capacity: 0, count: 0, spot: null, shape: null, owner: [], slot: [], lo: Infinity, hi: -1 };
       grow(p, 4096);
       p.mesh = new Mesh(geometry, material);
       p.mesh.frustumCulled = false; // spread over the whole world
       p.mesh.name = `far ${type}`;
       group.add(p.mesh);
-      pools.set(type, p);
+      pools.set(key, p);
     }
     return p;
   }
@@ -176,8 +208,8 @@ export function createFarTreeLayer(config) {
     p.lo = Math.min(p.lo, i);
     p.hi = Math.max(p.hi, i);
   };
-  function add(handle, type, data) {
-    const p = pool(type);
+  function add(handle, type, detailed, data) {
+    const p = pool(type, detailed);
     const n = data.length / 7;
     if (p.count + n > p.capacity) grow(p, Math.max(p.capacity * 2, p.count + n));
     const slots = [];
@@ -233,7 +265,7 @@ export function createFarTreeLayer(config) {
       }
     },
 
-    reuseKey: ({ lod, resolution, config }) => (lod > config.treeMaxLod && lod <= config.farTreeMaxLod ? `far:${resolution}` : 'none'),
+    reuseKey: ({ lod, resolution, config }) => (lod > config.treeMaxLod && lod <= config.farTreeMaxLod ? `far:${resolution}:${lod <= config.farTreeDetailLod}` : 'none'),
 
     build({ cx, cz, lod, groundHeightAt, generator, config, prepared }) {
       if (lod <= config.treeMaxLod || lod > config.farTreeMaxLod) return null;
@@ -241,9 +273,11 @@ export function createFarTreeLayer(config) {
       const trees = prepared?.farTrees ?? packFarTrees(placeTrees(generator, config, cx, cz, groundHeightAt, null), cx, cz, config.chunkSize);
       const handle = [];
       let count = 0;
+      // (Their character out to the middle distance; the simplest shapes beyond.)
+      const detailed = lod <= config.farTreeDetailLod;
       for (const [type, data] of Object.entries(trees)) {
         if (!data.length) continue;
-        add(handle, type, data);
+        add(handle, type, detailed, data);
         count += data.length / 7;
       }
       if (!count) return null;
