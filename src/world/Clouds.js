@@ -5,8 +5,10 @@ import { paintCloudShadows } from '../render/cloudShadow.js';
 
 const WHITE = new Color(0xffffff);
 const BELLY = new Color(0xb9c6d8); // shaded underside
-const STORM = new Color(0x5c636e); // dark rain-cloud grey
+const STORM = new Color(0x464c56); // dark rain-cloud grey
 const HIDDEN = new Matrix4().makeScale(0, 0, 0);
+const here = { cover: 0, rain: 0, storm: 0 };
+const tint = new Color();
 
 /**
  * One low-poly cumulus: a row of lumpy icosahedron puffs with their bottoms
@@ -66,6 +68,7 @@ function addSunsetGlow(material, uniforms) {
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
         float towardSun = smoothstep(-0.45, 0.65, dot(normal, sunView));
+        totalEmissiveRadiance *= vColor.r; // (a dark rain cloud glows less)
         totalEmissiveRadiance += glow * glowStrength * (0.12 + 0.88 * towardSun) * (0.55 + 0.45 * diffuseColor.r);`,
       );
   };
@@ -89,8 +92,11 @@ function addSunsetGlow(material, uniforms) {
  *
  * The weather decides how many are out: each cloud has a rank, and forms
  * (or dissolves) as the cover passes it. As the sky clouds over they swell
- * and sink into a low grey deck, darkest in a storm. At sunset they catch
- * the low sun (see addSunsetGlow).
+ * and sink into a low grey deck, darkest in a storm. The weather drifts in
+ * with them: out upwind the clouds already show what's coming (see
+ * Weather.at), so a change rolls in across the sky as a front, and the
+ * rain hangs under the clouds that bring it (see Showers). At sunset they
+ * catch the low sun (see addSunsetGlow).
  */
 export class Clouds {
   constructor(scene, { seed = 'clouds', count = 150, range = 2600, minHeight = 170, maxHeight = 310 } = {}) {
@@ -137,6 +143,12 @@ export class Clouds {
       cloud.userData.reach = Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) * Math.max(cloud.scale.x, cloud.scale.z);
       cloud.userData.targetY = cloud.position.y;
       cloud.userData.wispy = wispy;
+      // The weather this cloud brings (see update).
+      cloud.userData.cover = 0.3;
+      cloud.userData.rain = 0;
+      cloud.userData.storm = 0;
+      cloud.userData.overcast = 0;
+      cloud.userData.ground = 0; // the land under it
       const key = `${shape}:${wispy}`;
       if (!kinds.has(key)) kinds.set(key, { shape, wispy, list: [] });
       cloud.userData.slot = kinds.get(key).list.length;
@@ -151,6 +163,7 @@ export class Clouds {
       mesh.renderOrder = wispy ? 2 : 0;
       mesh.name = 'clouds';
       for (const cloud of list) cloud.userData.mesh = mesh;
+      for (let k = 0; k < list.length; k++) mesh.setColorAt(k, WHITE); // (each cloud greys with its own weather)
       this.meshes.push(mesh);
       this.group.add(mesh);
     }
@@ -164,9 +177,10 @@ export class Clouds {
   /** Height a cloud needs so its base clears the land under and just ahead of it. */
   #targetHeight(cloud, generator) {
     // Heavy cloud hangs lower, and has swollen (see update).
-    const baseY = cloud.userData.baseY - 75 * this.overcast;
-    const reach = cloud.userData.reach * (1 + 1.1 * this.overcast);
-    const bottom = cloud.userData.bottom * (1 + 0.5 * this.overcast);
+    const overcast = cloud.userData.overcast;
+    const baseY = cloud.userData.baseY - 75 * overcast;
+    const reach = cloud.userData.reach * (1 + 1.1 * overcast);
+    const bottom = cloud.userData.bottom * (1 + 0.5 * overcast);
     const p = cloud.position;
     const ahead = 25; // seconds of drift to look ahead
     let highest = -Infinity;
@@ -174,7 +188,9 @@ export class Clouds {
       for (const t of [0, ahead]) {
         const x = p.x + ox * reach + this.wind.x * t;
         const z = p.z + oz * reach + this.wind.z * t;
-        highest = Math.max(highest, generator.getBaseHeight(x, z));
+        const h = generator.getBaseHeight(x, z);
+        if (ox === 0 && oz === 0 && t === 0) cloud.userData.ground = h;
+        highest = Math.max(highest, h);
       }
     }
     return Math.max(baseY, highest + this.clearance - bottom);
@@ -191,15 +207,32 @@ export class Clouds {
     const cover = sky ? sky.cover : 0.3;
     const storm = sky ? sky.storm : 0;
     this.overcast = Math.min(1, Math.max(0, (cover - 0.5) / 0.45));
-    const swell = 1 + 1.1 * this.overcast;
+    // The weather rides in on the clouds: each carries what it will be
+    // like here once it has drifted overhead (or what it was like, once
+    // it's gone by), so a front comes in from upwind as a wall of cloud,
+    // swelling, sinking and darkening, the rain hanging under it.
+    const wind = Math.hypot(this.wind.x, this.wind.z) || 1;
+    const drift = wind * speed;
+    const ease = Math.min(1, dt / 6); // (and no cloud changes in a blink as you move about)
     for (const cloud of this.clouds) {
+      const d = cloud.userData;
+      if (sky?.weather) {
+        const upwind = -((cloud.position.x - focus.x) * this.wind.x + (cloud.position.z - focus.z) * this.wind.z) / wind;
+        sky.weather.at(upwind / drift, here);
+      } else Object.assign(here, { cover, rain: 0, storm });
+      const k = d.generator === generator && !d.snap ? ease : 1; // (just wrapped round, out in the fog: no need to ease)
+      d.snap = false;
+      d.cover += (here.cover - d.cover) * k;
+      d.rain += (here.rain - d.rain) * k;
+      d.storm += (here.storm - d.storm) * k;
+      d.overcast = Math.min(1, Math.max(0, (d.cover - 0.5) / 0.45));
       // Form or dissolve with the cover, and swell as it thickens.
-      const grown = Math.min(1, Math.max(0, (cover - cloud.userData.rank) / 0.08 + 0.5));
+      const grown = Math.min(1, Math.max(0, (d.cover - d.rank) / 0.08 + 0.5));
       cloud.visible = grown > 0.01;
       if (cloud.visible) {
-        const base = cloud.userData.scale;
-        const k = (0.35 + 0.65 * grown) * swell;
-        cloud.scale.set(base.x * k, base.y * (0.35 + 0.65 * grown) * (1 + 0.5 * this.overcast), base.z * k);
+        const base = d.scale;
+        const k = (0.35 + 0.65 * grown) * (1 + 1.1 * d.overcast) * (1 + 0.45 * d.storm); // (a storm's clouds run together into a wall)
+        cloud.scale.set(base.x * k, base.y * (0.35 + 0.65 * grown) * (1 + 0.5 * d.overcast), base.z * k);
       }
       const p = cloud.position;
       p.x += this.wind.x * speed * dt;
@@ -209,6 +242,7 @@ export class Clouds {
       else if (p.x - focus.x < -half) (p.x += this.range), (wrapped = true);
       if (p.z - focus.z > half) (p.z -= this.range), (wrapped = true);
       else if (p.z - focus.z < -half) (p.z += this.range), (wrapped = true);
+      if (wrapped) cloud.userData.snap = true;
       if (wrapped || cloud.userData.generator !== generator) {
         cloud.userData.targetY = this.#targetHeight(cloud, generator);
         cloud.userData.generator = generator;
@@ -224,18 +258,24 @@ export class Clouds {
       this._next = (this._next + 1) % this.clouds.length;
     }
     // Into the instanced meshes (a cloud not formed yet shrinks to nothing).
+    // Rain clouds are dark, each by its own weather.
     for (const cloud of this.clouds) {
-      if (cloud.visible) cloud.updateMatrix();
-      cloud.userData.mesh.setMatrixAt(cloud.userData.slot, cloud.visible ? cloud.matrix : HIDDEN);
+      const d = cloud.userData;
+      if (cloud.visible) {
+        cloud.updateMatrix();
+        tint.copy(WHITE).lerp(STORM, Math.min(1, 0.6 * d.overcast + 0.5 * d.storm));
+        d.mesh.setColorAt(d.slot, tint);
+      }
+      d.mesh.setMatrixAt(d.slot, cloud.visible ? cloud.matrix : HIDDEN);
     }
-    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
-    // Rain clouds are dark; a little self-light in the sky's colour gives
-    // soft undersides by day, pink-orange at sunset, dim blue at night.
+    for (const mesh of this.meshes) {
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.instanceColor.needsUpdate = true;
+    }
+    // A little self-light in the sky's colour gives soft undersides by
+    // day, pink-orange at sunset, dim blue at night.
     const dark = Math.min(1, 0.55 * this.overcast + 0.35 * storm);
-    for (const m of this.materials) {
-      m.color.set(0xffffff).lerp(STORM, dark);
-      m.emissive.copy(skyGlow).multiplyScalar(0.3 * (1 - 0.6 * dark));
-    }
+    for (const m of this.materials) m.emissive.copy(skyGlow).multiplyScalar(0.3 * (1 - 0.6 * dark));
     // Their shadows on the land: sharp-edged in sunshine, gone under a lid of cloud.
     if (sky?.lightDir) {
       const strength = 0.7 * Math.min(1, sky.lightStrength) * (1 - 0.9 * this.overcast);

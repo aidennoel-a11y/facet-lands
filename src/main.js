@@ -595,10 +595,10 @@ function heatHaze(dt) {
   return heat.value;
 }
 
-// Weather you can see coming: showers out on the horizon (see Showers),
-// and before a storm, lightning flickering inside them far off, the
-// thunder a long, low rumble arriving seconds later.
-const showers = new Showers(scene);
+// Weather you can see coming: rain hanging under the clouds that bring it
+// (see Showers), and before a storm, lightning flickering inside it far
+// off, the thunder a long, low rumble arriving seconds later.
+const showers = new Showers(scene, clouds);
 const far = { wait: 3 };
 function farLightning(dt) {
   showers.flash = Math.max(0, showers.flash - dt * 6);
@@ -607,7 +607,7 @@ function farLightning(dt) {
     far.wait -= dt * storm;
     if (far.wait <= 0) {
       far.wait = 2 + Math.random() * 7;
-      const s = showers.pick();
+      const s = showers.pick(camera.position);
       if (s) {
         showers.flash = 1;
         showers.flashAt = s;
@@ -751,7 +751,6 @@ function tick(now) {
   afterRain(dt);
   dayNight.viewDir = dir;
   dayNight.update(dt, camera.position, weather);
-  showers.update(dt, camera, weather, clouds.wind, dayNight.horizon, scene.fog);
   // The ground gets wet in the rain (puddles), and dries off over a few minutes.
   seasonUniforms.uWet.value = Math.min(1, Math.max(0, seasonUniforms.uWet.value + (weather.rain > 0.2 ? dt / 20 : -dt / 240)));
   // Snow lies fresh over everything after a snowfall, melting off over a few minutes (and with the winter).
@@ -770,8 +769,10 @@ function tick(now) {
   applyUnderwater();
   cloudSky.cover = weather.cover;
   cloudSky.storm = weather.storm;
+  cloudSky.weather = weather;
   cloudSky.viewMatrix = camera.matrixWorldInverse;
   clouds.update(dt, camera.position, dayNight.horizon, generator, wind, cloudSky);
+  showers.update(dt, camera, clouds.wind, wind, dayNight.horizon, scene.fog);
   seasons.update(dayNight.playing ? dt / (WORLD.dayLengthMinutes * 60) : 0, dt);
   // In a cold winter, it snows (over the lands that have one).
   const snow = seasonUniforms.uWinter.value * coldHere(dt);

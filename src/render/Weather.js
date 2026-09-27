@@ -3,6 +3,10 @@ function smoothstep(a, b, x) {
   return t * t * (3 - 2 * t);
 }
 
+const STEP = 0.5; // seconds between the history's entries
+const HISTORY = 800; // (so it goes back nearly seven minutes)
+const EASE = 25; // seconds for the cloud to build or break (see update)
+
 /**
  * Kinds of weather, from fine to foul, and what each one means:
  *   cover  how much of the sky the clouds fill (0..1)
@@ -57,6 +61,13 @@ export class Weather {
     this.hurry = 0; // seconds left of a quick change
     this.spring = 0; // how much it's spring (0..1): showery weather comes more often
     this.upcoming = null; // the kind of weather that comes next, once it's decided
+    // What the weather has been over the last few minutes (cover, rain,
+    // storm every half second, newest at `head`): the clouds that have
+    // drifted past still carry it (see at).
+    this.history = new Float32Array(HISTORY * 3);
+    this.head = 0;
+    this.filled = 0;
+    this.tick = 0;
   }
 
   set(kind) {
@@ -79,7 +90,45 @@ export class Weather {
    * (seconds until it starts to set in), else null.
    */
   get coming() {
-    return this.upcoming && this.upcoming !== this.kind ? { kind: this.upcoming, in: Math.max(0, this.nextChange) } : null;
+    return this.upcoming && this.upcoming !== this.kind && this.nextChange < 60 ? { kind: this.upcoming, in: Math.max(0, this.nextChange) } : null;
+  }
+
+  /**
+   * The weather `tau` seconds from now (or ago, if negative), as it is
+   * here: { cover, rain, storm } into `out`. The weather travels with the
+   * clouds, so this is also the weather out upwind (what's coming) or
+   * downwind (what's gone by) at the distance the clouds drift in that
+   * time. Behind: what it was; ahead: what it will be, as far as that's
+   * decided (the next change is known in advance).
+   */
+  at(tau, out) {
+    if (tau <= 0) {
+      if (this.filled === 0) return Object.assign(out, { cover: this.cover, rain: this.rain, storm: this.storm });
+      const back = Math.min(this.filled - 1, -tau / STEP);
+      const i0 = Math.floor(back), f = back - i0, i1 = Math.min(this.filled - 1, i0 + 1);
+      const h = this.history, a = ((this.head - i0 + HISTORY) % HISTORY) * 3, b = ((this.head - i1 + HISTORY) % HISTORY) * 3;
+      out.cover = h[a] + (h[b] - h[a]) * f;
+      out.rain = h[a + 1] + (h[b + 1] - h[a + 1]) * f;
+      out.storm = h[a + 2] + (h[b + 2] - h[a + 2]) * f;
+      return out;
+    }
+    // Ahead: the cover eases towards this weather's, then (once it
+    // changes) the next one's; rain and storm follow the cover as in update.
+    const now = WEATHER[this.kind];
+    const change = this.auto && this.upcoming ? Math.max(0, this.nextChange) : Infinity;
+    const then = tau > change ? WEATHER[this.upcoming] : now;
+    let cover;
+    if (tau <= change) cover = now.cover + (this.cover - now.cover) * Math.exp(-tau / EASE);
+    else {
+      const c1 = now.cover + (this.cover - now.cover) * Math.exp(-change / EASE);
+      cover = then.cover + (c1 - then.cover) * Math.exp(-(tau - change) / EASE);
+    }
+    const settle = 1 - Math.exp(-tau / 10); // (from how it is now)
+    const rain = then.rain * smoothstep(0.75, 0.9, cover);
+    out.cover = cover;
+    out.rain = this.rain + (rain - this.rain) * settle;
+    out.storm = this.storm + (then.storm * smoothstep(0.5, 0.9, rain) - this.storm) * settle;
+    return out;
   }
 
   /** How wet the weather on its way is (0..1), growing as it nears: rain showers, a storm's lightning. */
@@ -103,10 +152,12 @@ export class Weather {
       this.nextChange -= dt;
       // What's coming is decided a minute ahead, so it can be seen coming
       // (see `coming`): showers and far-off lightning out on the horizon.
-      if (!this.upcoming && this.nextChange < 60) this.upcoming = Weather.#pick(NEXT[this.kind], this.spring);
+      // (Decided a change ahead, so the clouds bringing it can be seen
+      // coming from far upwind: see at.)
+      if (!this.upcoming) this.upcoming = Weather.#pick(NEXT[this.kind], this.spring);
       if (this.nextChange <= 0) {
-        this.kind = this.upcoming ?? Weather.#pick(NEXT[this.kind], this.spring);
-        this.upcoming = null;
+        this.kind = this.upcoming;
+        this.upcoming = Weather.#pick(NEXT[this.kind], this.spring);
         this.nextChange = 100 + Math.random() * 140;
       }
     } else {
@@ -128,6 +179,21 @@ export class Weather {
     this.storm += (target.storm * smoothstep(0.5, 0.9, this.rain) - this.storm) * Math.min(1, (dt * pace) / 10);
     if (this.rain < 1e-3) this.rain = 0;
     if (this.storm < 1e-3) this.storm = 0;
+
+    // Into the history; picked by hand, it's that weather everywhere at once.
+    this.tick += dt;
+    const h = this.history;
+    if (this.hurry > 0) {
+      for (let k = 0; k < HISTORY; k++) h.set([this.cover, this.rain, this.storm], k * 3);
+      this.filled = HISTORY;
+    } else if (this.tick >= STEP) {
+      this.tick %= STEP;
+      this.head = (this.head + 1) % HISTORY;
+      this.filled = Math.min(HISTORY, this.filled + 1);
+    }
+    h[this.head * 3] = this.cover;
+    h[this.head * 3 + 1] = this.rain;
+    h[this.head * 3 + 2] = this.storm;
   }
 
   /**
