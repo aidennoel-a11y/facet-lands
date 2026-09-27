@@ -7,8 +7,11 @@ import { Euler, Vector3 } from 'three';
  *       Ctrl / Q down, Shift fast, mouse wheel changes cruising speed.
  * Walk: you're a person on the ground. WASD moves along the ground, Space
  *       jumps, Shift sprints. Gravity pulls you down, slopes that are too
- *       steep can't be climbed, tree trunks block you, and deep water makes
- *       you swim (float, slower).
+ *       steep can't be climbed, tree trunks block you. In deep water (the
+ *       sea, lakes, rivers and ponds) you swim: you float with your head
+ *       above the surface; Space swims up, Ctrl / Q / C dives, and under
+ *       the water you swim the way you look. A river's current carries you
+ *       downstream; swim to a low bank and you climb out.
  *
  * Both: drag (mouse or touch) to look; auto-move walks/flies forward on its own.
  *
@@ -20,6 +23,9 @@ import { Euler, Vector3 } from 'three';
  *                              stand on from feet height feetY (terrain or
  *                              cave floor)
  *   seaLevel                   water surface height
+ *   waterAt(x, z)              { level, fx, fz, speed }: the water's surface
+ *                              there (sea, lake, river or pond) and its
+ *                              current, or null (optional)
  *   collide(position, radius)  pushes position out of solid things (optional)
  */
 export class PlayerControls {
@@ -52,6 +58,7 @@ export class PlayerControls {
     this.velocityY = 0;
     this.grounded = false;
     this.swimming = false;
+    this.underwater = false; // your eyes are under the surface
 
     this.euler = new Euler(0, 0, 0, 'YXZ');
     this.euler.setFromQuaternion(camera.quaternion);
@@ -139,7 +146,7 @@ export class PlayerControls {
     return {
       forward: (k.has('KeyW') || k.has('ArrowUp') || this.autoMove ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0),
       strafe: (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0),
-      up: (k.has('Space') || k.has('KeyE') ? 1 : 0) - (k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyQ') ? 1 : 0),
+      up: (k.has('Space') || k.has('KeyE') ? 1 : 0) - (k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyQ') || k.has('KeyC') ? 1 : 0),
     };
   }
 
@@ -161,7 +168,10 @@ export class PlayerControls {
 
     const pos = this.camera.position;
     const ground = this.#ground(pos.x, pos.y - this.eyeHeight, pos.z);
-    const floor = ground.stand + (ground.inCave ? 0.4 : this.flyClearance);
+    // (Down into the water, if you like, to near its bottom.)
+    const floor = ground.inCave ? ground.stand + 0.4 : ground.swim ? ground.height + 1 : ground.stand + this.flyClearance;
+    const water = ground.swim ? this.#water(pos.x, pos.z) : null;
+    this.underwater = water !== null && pos.y < water.level - 0.05;
     if (pos.y < floor) pos.y = floor;
     if (ground.inCave && pos.y > ground.ceiling - 0.2) pos.y = Math.max(floor, ground.ceiling - 0.2);
   }
@@ -175,18 +185,37 @@ export class PlayerControls {
    */
   #ground(x, feetY, z) {
     const g = this.world.groundAt(x, feetY, z);
-    const deepWater = !g.inCave && g.height < this.world.seaLevel - this.swimDepth;
+    const water = this.#water(x, z);
+    const deepWater = !g.inCave && water !== null && g.height < water.level - this.swimDepth;
     return {
-      stand: deepWater ? this.world.seaLevel - this.swimDepth : g.height,
+      height: g.height,
+      stand: deepWater ? water.level - this.swimDepth : g.height,
       inCave: g.inCave,
       ceiling: g.ceiling,
       swim: deepWater,
     };
   }
 
+  // The water's surface at (x, z) (and its current), or null.
+  #water(x, z) {
+    if (this.world.waterAt) return this.world.waterAt(x, z);
+    return { level: this.world.seaLevel, fx: 0, fz: 0, speed: 0 };
+  }
+
   #updateWalk(dt) {
     const pos = this.camera.position;
     const input = this.#input();
+    // In deep water, swimming.
+    const water = this.#water(pos.x, pos.z);
+    const under = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z);
+    const deep = water !== null && !under.inCave && water.level - under.height > this.swimDepth;
+    this.underwater = water !== null && pos.y < water.level - 0.05;
+    if (deep && pos.y - this.eyeHeight < water.level - 0.25) {
+      this.swimming = true;
+      this.grounded = false;
+      this.#updateSwim(dt, input, water, under);
+      return;
+    }
 
     // Horizontal: move along the ground in the direction you face (ignoring pitch).
     const yaw = this.euler.y;
@@ -208,7 +237,7 @@ export class PlayerControls {
     const feetNow = pos.y - this.eyeHeight;
     const ground = this.#ground(pos.x, feetNow, pos.z);
     const floor = ground.stand;
-    this.swimming = ground.swim;
+    this.swimming = false;
     const wasGrounded = this.grounded;
     this.velocityY = Math.max(-this.maxFallSpeed, this.velocityY - this.gravity * dt);
     let feet = feetNow + this.velocityY * dt;
@@ -226,6 +255,51 @@ export class PlayerControls {
       this.velocityY = Math.min(this.velocityY, 0);
     }
     pos.y = feet + this.eyeHeight;
+  }
+
+  /**
+   * Swimming: along the way you look under the water (level at the
+   * surface, where your head stays above it), Space up and Ctrl / Q / C
+   * down; floating back up to the surface when you stop; carried along by
+   * a river's current; never down through the bottom; out onto a bank low
+   * enough to reach.
+   */
+  #updateSwim(dt, input, water, under) {
+    const pos = this.camera.position;
+    const fast = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+    const speed = this.swimSpeed * (fast ? 1.7 : 1);
+    const yaw = this.euler.y, pitch = this.euler.x;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const float = water.level + 0.3; // (eyes just above the surface)
+    const atSurface = pos.y > water.level - 0.4;
+    // Looking down, swimming forward takes you down; up, back up (no higher than floating).
+    const tilt = atSurface && pitch > 0 ? 0 : Math.sin(pitch);
+    const level = Math.cos(atSurface && pitch > 0 ? 0 : pitch);
+    let mx = (fx * input.forward * level - fz * input.strafe) * speed;
+    let mz = (fz * input.forward * level + fx * input.strafe) * speed;
+    let vy = (input.up + tilt * input.forward) * speed;
+    // Floating back up, unless diving.
+    if (input.up === 0 && !(input.forward && tilt < -0.1)) vy += Math.max(-1, Math.min(1.2, (float - pos.y) * 1.5));
+    // The current.
+    mx += (water.fx ?? 0) * (water.speed ?? 0) * 0.7;
+    mz += (water.fz ?? 0) * (water.speed ?? 0) * 0.7;
+    const dx = mx * dt, dz = mz * dt;
+    if (dx || dz) {
+      const next = this.world.groundAt(pos.x + dx, pos.y - this.eyeHeight, pos.z + dz);
+      // (Rock or a bank rising above your head: no further; a low bank: climb out onto it.)
+      if (next.height < pos.y - 0.2 || next.inCave) {
+        pos.x += dx;
+        pos.z += dz;
+        if (next.height > pos.y - this.eyeHeight) pos.y = next.height + this.eyeHeight;
+      }
+    }
+    this.world.collide?.(pos, this.radius);
+    pos.y = Math.min(float + 0.05, pos.y + vy * dt);
+    // Never down through the bottom.
+    const floor = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z).height + 0.45;
+    if (pos.y < floor) pos.y = floor;
+    this.velocityY = 0;
+    this.underwater = pos.y < water.level - 0.05;
   }
 
   /**

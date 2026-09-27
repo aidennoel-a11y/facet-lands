@@ -68,8 +68,9 @@ export function deer() {
       .build(),
     headPivot: [0, 1.2, 0.52],
     head: new Blocks()
-      .box(0.2, 0.62, 0.24, coat, [0, 0.26, 0.1], [-0.45, 0, 0], [0.8, 0.8]) // neck
-      .box(0.16, 0.34, 0.1, belly, [0, 0.2, 0.2], [-0.45, 0, 0]) // throat
+      .box(0.26, 0.3, 0.32, coat, [0, 0.02, -0.02], [0.2, 0, 0], [0.9, 0.9]) // the base of the neck, into the shoulders
+      .box(0.2, 0.5, 0.22, coat, [0, 0.3, 0.1], [0.45, 0, 0], [0.8, 0.85]) // neck, leaning forward up to the head
+      .box(0.14, 0.36, 0.08, belly, [0, 0.24, 0.2], [0.45, 0, 0]) // pale throat
       .box(0.22, 0.2, 0.26, coat, [0, 0.58, 0.22]) // skull
       .box(0.16, 0.16, 0.22, coat, [0, 0.54, 0.44], [0, 0, 0], [0.85, 1]) // face
       .box(0.12, 0.09, 0.08, nose, [0, 0.52, 0.56]) // nose

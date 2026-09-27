@@ -1,8 +1,8 @@
 import { Color } from 'three';
 import { hash2 } from '../noise/random.js';
 
-const SHALLOW = new Color(0x4fbfc4);
-const DEEP = new Color(0x2c67b0);
+const SHALLOW = new Color(0x39a9b2);
+const DEEP = new Color(0x1b4a8c);
 const color = new Color();
 
 function smoothstep(a, b, x) {
@@ -12,7 +12,10 @@ function smoothstep(a, b, x) {
 
 /**
  * The lake and sea water over a chunk (see WaterLayer), as arrays:
- * { positions, colors, waves, foams, freezes }, or null where it's dry.
+ * { positions, colors, waves, foams, freezes, depths }, or null where it's
+ * dry. The colours shade smoothly from the turquoise shallows to the deep
+ * blue, and are see-through where it's shallow; `depths` is how deep the
+ * water is at each corner (for the foam washing up the shore).
  * Only three.js colours, so a worker can do it too.
  */
 export function waterData(generator, config, cx, cz, heights, resolution = 16) {
@@ -72,17 +75,18 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
   const waves = [];
   const foams = [];
   const freezes = [];
-  const addTri = (a, b, c, variation) => {
+  const depths = [];
+  const addTri = (a, b, c) => {
     // Keep faces with any corner under water; drop fully dry ones.
     const wet = seaLevel + 1.5;
     if (ground[a] > wet && ground[b] > wet && ground[c] > wet) return;
-    const depth = seaLevel - (ground[a] + ground[b] + ground[c]) / 3;
-    const t = smoothstep(-1, 16, depth);
-    color.copy(SHALLOW).lerp(DEEP, t).multiplyScalar(0.96 + variation * 0.08);
-    const alpha = 0.68 + 0.26 * t;
     for (const k of [a, b, c]) {
+      const depth = seaLevel - ground[k];
+      const t = smoothstep(-1, 16, depth);
+      color.copy(SHALLOW).lerp(DEEP, t);
       positions.push(xs[k], seaLevel, zs[k]);
-      colors.push(color.r, color.g, color.b, alpha);
+      colors.push(color.r, color.g, color.b, 0.6 + 0.38 * smoothstep(-0.5, 8, depth));
+      depths.push(Math.max(-2, Math.min(40, depth)));
       waves.push(0.1 + 0.9 * smoothstep(1, 16, seaLevel - ground[k]) + 2.4 * swell[k]);
       foams.push(surf[k]);
       freezes.push(freeze[k]);
@@ -97,14 +101,12 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
       const d = c + 1;
       const gi = cx * resolution + i;
       const gj = cz * resolution + j;
-      const v0 = hash2(gi * 2, gj, seed + 3);
-      const v1 = hash2(gi * 2 + 1, gj, seed + 3);
       if (hash2(gi, gj, seed + 9) < 0.5) {
-        addTri(a, c, d, v0);
-        addTri(a, d, b, v1);
+        addTri(a, c, d);
+        addTri(a, d, b);
       } else {
-        addTri(a, c, b, v0);
-        addTri(b, c, d, v1);
+        addTri(a, c, b);
+        addTri(b, c, d);
       }
     }
   }
@@ -116,5 +118,6 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     waves: new Float32Array(waves),
     foams: new Float32Array(foams),
     freezes: new Float32Array(freezes),
+    depths: new Float32Array(depths),
   };
 }

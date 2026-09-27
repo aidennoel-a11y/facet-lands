@@ -450,8 +450,8 @@ export class Wildlife {
   #spawnFlock(kind, s, n, to = null) {
     const g = this.ctx.generator;
     const flock = {
-      kind, anchor: { x: s.x, z: s.z }, angle: rnd(0, TAU), radius: rnd(60, 110), alt: rnd(28, 45),
-      centre: { x: s.x, y: s.y + 40, z: s.z }, mode: to ? 'travel' : 'fly', timer: rnd(20, 45), to, birds: [], spin: Math.random() < 0.5 ? 1 : -1,
+      kind, anchor: { x: s.x, z: s.z }, angle: rnd(0, TAU), radius: rnd(60, 110), alt: rnd(42, 60), // (well above the tallest trees)
+      centre: { x: s.x, y: s.y + 50, z: s.z }, mode: to ? 'travel' : 'fly', timer: rnd(20, 45), to, birds: [], spin: Math.random() < 0.5 ? 1 : -1,
       groundY: g.getBaseHeight(s.x, s.z),
     };
     for (let k = 0; k < n; k++) {
@@ -479,6 +479,27 @@ export class Wildlife {
   }
 
   // --- Behaviour ------------------------------------------------------------
+
+  // Tree trunks and boulders within `reach` of (x, z): [x, z, radius, ...].
+  #obstacles(x, z, reach, ctx) {
+    const out = [];
+    const C = ctx.chunkSize, cx = Math.floor(x / C), cz = Math.floor(z / C);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const key = `${cx + dx},${cz + dz}`;
+        const trunks = ctx.trees.trunks.get(key);
+        if (trunks) for (let k = 0; k < trunks.length; k += 3) {
+          if (Math.abs(trunks[k] - x) < reach && Math.abs(trunks[k + 1] - z) < reach) out.push(trunks[k], trunks[k + 1], trunks[k + 2] + 0.15);
+        }
+        const rocks = ctx.rocks?.boulders.get(key);
+        if (rocks) for (let k = 0; k < rocks.length; k += 7) {
+          if (rocks[k + 4] < 0.35) continue; // (pebbles are stepped over)
+          if (Math.abs(rocks[k] - x) < reach && Math.abs(rocks[k + 1] - z) < reach) out.push(rocks[k], rocks[k + 1], Math.max(rocks[k + 3], rocks[k + 5]) * 0.9);
+        }
+      }
+    }
+    return out;
+  }
 
   #threat(a, ctx) {
     const c = ctx.camera.position;
@@ -548,34 +569,70 @@ export class Wildlife {
         if (a.state === 'graze') (a.state = 'walk'), (a.timer = far > 6 ? rnd(6, 14) : rnd(2, 5));
         else (a.state = 'graze'), (a.timer = rnd(4, 14));
         if (!herd && a.state === 'walk') a.goal = { x: a.home.x + rnd(-15, 15), z: a.home.z + rnd(-15, 15) };
-        a.wander = rnd(-0.8, 0.8);
+        // (Which way to wander, set once: not turning on the spot.)
+        a.wanderHeading = a.heading + rnd(-0.8, 0.8);
       }
       if (a.state === 'walk') {
-        want = far > 3 ? Math.atan2(goal.x - a.x, goal.z - a.z) : a.heading + (a.wander ?? 0);
+        want = far > 3 ? Math.atan2(goal.x - a.x, goal.z - a.z) : a.wanderHeading ?? a.heading;
         speed = sp.walk * (far > 25 ? 1.6 : 1);
       }
     }
-    // Turn, speed up or slow down.
-    a.heading += Math.max(-sp.turn * dt, Math.min(sp.turn * dt, angleTo(a.heading, want))) * (fleeing ? 1.6 : 1);
-    a.speed += (speed - a.speed) * Math.min(1, dt * (fleeing ? 4 : 2));
-    // Step, over ground it can walk (not into the water, or off a cliff),
-    // and round the trees.
+    // A detour round water or a cliff ahead: a steady turn one way for a while.
+    if (a.detour) {
+      a.detour.time -= dt;
+      want = a.detour.heading;
+      if (a.detour.time <= 0) a.detour = null;
+    }
+    // Steering round the tree trunks and boulders ahead, before it reaches them.
+    const body = sp.height * a.scale * 0.6, me = sp.radius * a.scale;
+    if (speed > 0) {
+      const look = body + 1 + a.speed * 0.8;
+      const fx = Math.sin(want), fz = Math.cos(want);
+      const obs = this.#obstacles(a.x, a.z, look + 2, ctx);
+      let steer = 0;
+      for (let k = 0; k < obs.length; k += 3) {
+        const ox = obs[k] - a.x, oz = obs[k + 1] - a.z, r = obs[k + 2] + me + 0.3;
+        const along = ox * fx + oz * fz;
+        if (along < -0.5 || along > look + r) continue;
+        const side = ox * fz - oz * fx; // (+: the obstacle's to the right)
+        if (Math.abs(side) > r) continue;
+        steer += (side >= 0 ? -1 : 1) * (1 - Math.max(0, along) / (look + r)) * (1.2 - Math.abs(side) / r);
+      }
+      want += Math.max(-1.3, Math.min(1.3, steer));
+    }
+    // Turn (slowly from a standstill, as it sets off; not spinning on the
+    // spot), speed up or slow down.
+    const rate = sp.turn * (fleeing ? 1.5 : 1) * (0.3 + 0.7 * Math.min(1, a.speed / sp.walk));
+    a.heading += Math.max(-rate * dt, Math.min(rate * dt, angleTo(a.heading, want)));
+    // (Slowing to take a sharp turn.)
+    const sharp = Math.abs(angleTo(a.heading, want));
+    a.speed += (speed * (1 - 0.6 * smoothstep(0.6, 1.6, sharp)) - a.speed) * Math.min(1, dt * (fleeing ? 3 : 1.5));
+    // Step, over ground it can walk (not into the water, or off a cliff).
     if (a.speed > 0.01) {
       const sx = Math.sin(a.heading), sz = Math.cos(a.heading);
       const nx = a.x + sx * a.speed * dt, nz = a.z + sz * a.speed * dt;
       const ny = ctx.ground(nx, nz);
-      const probe = ctx.ground(a.x + sx * 2, a.z + sz * 2);
-      if (!(ny > ctx.seaLevel + 0.4) || !(probe > ctx.seaLevel + 0.3) || Math.abs(probe - a.y) > 2.2) {
-        a.heading += (Math.random() < 0.5 ? 1 : -1) * rnd(0.8, 1.6);
-        a.speed *= 0.5;
+      const probe = ctx.ground(a.x + sx * (body + 1.5), a.z + sz * (body + 1.5));
+      if (!(ny > ctx.seaLevel + 0.4) || !(probe > ctx.seaLevel + 0.3) || Math.abs(probe - a.y) > 2.5) {
+        if (!a.detour) a.detour = { heading: a.heading + (Math.random() < 0.5 ? 1 : -1) * rnd(1.4, 2.2), time: rnd(1.5, 3) };
+        a.speed *= Math.max(0, 1 - dt * 3);
         if (herd && herd.fleeTime <= 0) herd.goal = { x: a.x - sx * 20, z: a.z - sz * 20 };
       } else {
-        push.set(nx, 0, nz);
-        ctx.trees.collide(push, sp.radius * a.scale, ctx.chunkSize);
-        a.x = push.x;
-        a.z = push.z;
+        a.x = nx;
+        a.z = nz;
       }
       a.phase += (a.speed / sp.stride) * TAU * dt;
+    }
+    // Never inside a trunk or a boulder (its middle, nor its chest).
+    for (const reach of [0, body * 0.7]) {
+      const px = a.x + Math.sin(a.heading) * reach, pz = a.z + Math.cos(a.heading) * reach;
+      const obs = this.#obstacles(px, pz, me + 3, ctx);
+      for (let k = 0; k < obs.length; k += 3) {
+        const ox = px - obs[k], oz = pz - obs[k + 1], r = obs[k + 2] + me * (reach ? 0.6 : 1), d = Math.hypot(ox, oz);
+        if (d >= r || d === 0) continue;
+        a.x += (ox / d) * (r - d);
+        a.z += (oz / d) * (r - d);
+      }
     }
     const y = ctx.ground(a.x, a.z);
     if (y === y) a.y = y;
@@ -622,7 +679,9 @@ export class Wildlife {
         if (scared && !to) to = { x: a.x + (a.x - ctx.camera.position.x) * 4, y: a.y + 20, z: a.z + (a.z - ctx.camera.position.z) * 4, state: 'gone' };
         if (to) {
           const d = Math.hypot(to.x - a.x, to.y - a.y, to.z - a.z);
-          a.path = { from: { x: a.x, y: a.y, z: a.z }, to, p: 0, dur: Math.max(0.6, d / (scared ? 9 : 6)), arc: Math.min(6, 1 + d * 0.15) };
+          // (Up over the treetops between, not through them.)
+          const over = Math.max(a.y, to.y) + 3 + d * 0.06 - (a.y + to.y) / 2;
+          a.path = { from: { x: a.x, y: a.y, z: a.z }, to, p: 0, dur: Math.max(0.6, (d + over) / (scared ? 9 : 6)), arc: Math.max(1 + d * 0.15, over) };
           a.state = 'fly';
           a.timer = rnd(5, 20);
           if (scared) ctx.sound?.call('flutter', ctx.pan(a.x, a.z), 0.3);
@@ -756,6 +815,11 @@ export class Wildlife {
       b.z += (dz / l) * 9 * dt;
     }
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+    // (Never down through the treetops, but over them.)
+    if (f.mode !== 'land') {
+      const floor = ctx.ground(b.x, b.z) + 34;
+      if (b.y < floor) (b.y += (floor - b.y) * Math.min(1, dt * 3)), (b.vy = Math.max(b.vy, 0));
+    }
     const fx = b.vx + (f.mode === 'travel' ? (f.to.x - f.centre.x) : 0), fz = b.vz + (f.mode === 'travel' ? (f.to.z - f.centre.z) : 0);
     this.#bank(b, fx, b.vy, fz, dt);
     b.flap += dt * (b.vy > 0.5 || f.mode === 'land' ? 26 : 16);

@@ -1,7 +1,7 @@
-import { BufferAttribute, BufferGeometry, CircleGeometry, Color, ConeGeometry, CylinderGeometry, Group, IcosahedronGeometry, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, MeshPhongMaterial, Quaternion, Vector3 } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, CircleGeometry, Color, ConeGeometry, CylinderGeometry, Group, IcosahedronGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, MeshPhongMaterial, Quaternion, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
-import { archSpan, caveRoof, mesaArchAt } from '../TerrainGenerator.js';
+import { caveRoof, mesaArchAt } from '../TerrainGenerator.js';
 
 /** A little flat five-armed starfish, base at y = 0, arms reaching out ~1. */
 function starfish() {
@@ -77,9 +77,92 @@ export function createSeaCoastLayer(config, terrainMaterial) {
   const poolMaterial = new MeshPhongMaterial({ color: 0x1f6f7c, specular: 0x88aabb, shininess: 120, transparent: true, opacity: 0.62, depthWrite: false });
   const creatureMaterial = new MeshLambertMaterial({ flatShading: true });
 
+  // Surf: as each wave comes in, it bursts against the foot of the cliffs
+  // and over the rock ledges (and their tide pools), throwing up spray:
+  // blocks of white water flung up the rock, falling back. Each spot's burst
+  // comes when the wave reaches it, so they run along the coast. (All worked
+  // out on the GPU from the time.)
+  const time = { value: 0 };
+  const surfMaterial = new MeshLambertMaterial({ color: 0xf2f8fa, emissive: 0x506a72 });
+  surfMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = time;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec3 aStart;\nattribute vec3 aVelocity;\nattribute vec4 aLife;')
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `// aLife: x = the waves' period (s), y = when this spot's comes (0..1 of it), z = size, w = delay within the burst.
+        float age = mod(uTime - (aLife.y * aLife.x + aLife.w), aLife.x);
+        float fly = 2.0 * aVelocity.y / 9.8;
+        float k = age / fly;
+        float spin = aLife.y * 50.0 + age * 4.0;
+        vec3 p = position;
+        p.xz = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * p.xz;
+        vec3 transformed = p * aLife.z * (1.0 - k * k) * step(age, fly) + aStart + aVelocity * age + vec3(0.0, -4.9 * age * age, 0.0);`,
+      );
+  };
+  surfMaterial.customProgramCacheKey = () => 'surf';
+  const block = new BoxGeometry(1, 1, 1);
+
+  // Where the waves meet rock in this chunk: the foot of the cliffs, the
+  // edges of the ledges; each with the way out to sea and how much of a
+  // cliff there is.
+  function surfSpots(generator, x0, z0, size, sea) {
+    const spots = [];
+    const S = 6;
+    for (let j = 0; j < size / S; j++) {
+      for (let i = 0; i < size / S; i++) {
+        const x = x0 + (i + 0.5) * S, z = z0 + (j + 0.5) * S;
+        const h = generator.getBaseHeight(x, z);
+        if (h < sea - 0.4 || h > sea + 3.5) continue;
+        let out = null;
+        for (let k = 0; k < 8 && !out; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          if (generator.getBaseHeight(x + Math.cos(a) * 5, z + Math.sin(a) * 5) < sea - 1) out = [Math.cos(a), Math.sin(a)];
+        }
+        if (!out || generator.getOceanness(x, z) < 0.5) continue;
+        const rock = Math.max(generator.getSeaCliff(x, z), 0.3);
+        if (hash2(Math.floor(x), Math.floor(z), 0x5a1f) > 0.35 + 0.5 * rock) continue;
+        spots.push({ x, z, out, rock });
+      }
+    }
+    return spots;
+  }
+
+  function surf(spots, x0, z0, sea) {
+    const starts = [], velocities = [], lives = [];
+    for (const s of spots) {
+      let seed = Math.floor(s.x * 13 + s.z * 7) >>> 0;
+      const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+      const period = 7.5;
+      const when = ((s.x * 0.8 + s.z * 0.45) / 55) % 1; // (the wave rolling along the coast)
+      const n = Math.round(8 + 10 * s.rock);
+      for (let k = 0; k < n; k++) {
+        const along = (rand() - 0.5) * 5;
+        starts.push(s.x - x0 - s.out[1] * along + s.out[0] * 0.8, sea + 0.2, s.z - z0 + s.out[0] * along + s.out[1] * 0.8);
+        const up = (3 + rand() * 4) * (0.6 + 0.8 * s.rock);
+        const back = 0.8 + rand() * 2.2; // (thrown up the rock face, landward)
+        velocities.push(-s.out[0] * back + (rand() - 0.5) * 1.5, up, -s.out[1] * back + (rand() - 0.5) * 1.5);
+        lives.push(period, ((when % 1) + 1) % 1, 0.25 + rand() * 0.35, rand() * 0.5);
+      }
+    }
+    if (!starts.length) return null;
+    const geometry = block.clone();
+    geometry.setAttribute('aStart', new InstancedBufferAttribute(new Float32Array(starts), 3));
+    geometry.setAttribute('aVelocity', new InstancedBufferAttribute(new Float32Array(velocities), 3));
+    geometry.setAttribute('aLife', new InstancedBufferAttribute(new Float32Array(lives), 4));
+    const mesh = new InstancedMesh(geometry, surfMaterial, starts.length / 3);
+    mesh.frustumCulled = false; // (it moves on the GPU)
+    mesh.name = 'surf';
+    return mesh;
+  }
+
   return {
     name: 'seaCoast',
     material: terrainMaterial,
+
+    update(t) {
+      time.value = t;
+    },
 
     reuseKey: ({ lod }) => (lod > 3 ? 'none' : lod <= 1 ? 'near' : 'far'),
 
@@ -161,9 +244,9 @@ export function createSeaCoastLayer(config, terrainMaterial) {
         }
       }
 
-      // Sandstone arches in the mesas: one band of rock bowed over from foot
-      // to foot (see mesaArchAt), lumpy all round.
-      for (const arch of generator.mesaArches?.(x0, z0, x0 + size, z0 + size) ?? []) {
+      // Arches, in the mesas and out in the sea: one band of rock bowed over
+      // from foot to foot (see mesaArchAt), lumpy all round.
+      for (const arch of [...generator.seaArches(x0, z0, x0 + size, z0 + size), ...(generator.mesaArches?.(x0, z0, x0 + size, z0 + size) ?? [])]) {
         const K = 30, M = 10;
         const rings = [];
         for (let k = 0; k <= K; k++) {
@@ -184,46 +267,6 @@ export function createSeaCoastLayer(config, terrainMaterial) {
           for (let n = 0; n < M; n++) {
             const m = (n + 1) % M;
             quad(rings[k][n], rings[k][m], rings[k + 1][m], rings[k + 1][n]);
-          }
-        }
-      }
-
-      // Sea arches: a bridge of rock from one leg to the other.
-      for (const arch of generator.seaArches(x0, z0, x0 + size, z0 + size)) {
-        const vx = arch.bx - arch.ax, vz = arch.bz - arch.az, L = Math.hypot(vx, vz);
-        const ux = vx / L, uz = vz / L, px = -uz, pz = ux;
-        const seed = generator.seed ^ 0xa4c;
-        const rings = [];
-        // From the middle of one leg to the middle of the other, as wide as
-        // the legs at its ends (running into them), a little narrower and
-        // rougher over the gap.
-        for (let k = 0; k <= 16; k++) {
-          const t = k / 16;
-          const span = archSpan(arch, t);
-          const open = Math.sin(Math.PI * t);
-          const hw = arch.leg * (0.95 - 0.25 * open);
-          const cxw = arch.ax + vx * t, czw = arch.az + vz * t;
-          const mid = (span.top + span.bottom) / 2;
-          const j = (n) => (hash2(k, n, seed + Math.floor(arch.x)) - 0.5) * 0.9;
-          const pts = [
-            [-hw * 0.9, span.top + j(1)], [hw * 0.9, span.top + j(2)], [hw * 1.05 + j(3), mid + j(7)], [hw * 0.75, span.bottom + j(4) * 0.4], [-hw * 0.75, span.bottom + j(5) * 0.4], [-hw * 1.05 + j(6), mid + j(8)],
-          ];
-          const ups = [1, 1, 0.15, -1, -1, 0.15];
-          rings.push(pts.map(([o, y], n) => {
-            const x = cxw + px * o, z = czw + pz * o;
-            return [x, y, z, shade(x, z, y, Math.max(0, ups[n]) * (n < 2 ? 1 : 0.2), ups[n] < 0 ? 0.62 : 1), ups[n] > 0 ? generator.getSeasonality(x, z) : 0];
-          }));
-        }
-        for (let k = 0; k + 1 < rings.length; k++) {
-          for (let n = 0; n < 6; n++) {
-            const m = (n + 1) % 6;
-            quad(rings[k][n], rings[k][m], rings[k + 1][m], rings[k + 1][n]);
-          }
-        }
-        for (const [ring, flip] of [[rings[0], true], [rings[rings.length - 1], false]]) {
-          for (let n = 1; n + 1 < 6; n++) {
-            const tri = flip ? [ring[0], ring[n + 1], ring[n]] : [ring[0], ring[n], ring[n + 1]];
-            for (const v of tri) vertex(...v);
           }
         }
       }
@@ -298,12 +341,19 @@ export function createSeaCoastLayer(config, terrainMaterial) {
           });
         }
       }
+      // The surf, near you.
+      const seaside = [[0.5, 0.5], [0, 0], [1, 0], [0, 1], [1, 1]].some(([u, v]) => generator.getBaseHeight(x0 + u * size, z0 + v * size) < sea - 0.5);
+      if (lod <= 1 && seaside) {
+        const mesh = surf(surfSpots(generator, x0, z0, size, sea), x0, z0, sea);
+        if (mesh) group.add(mesh);
+      }
       return group.children.length ? group : null;
     },
 
     dispose(group) {
       for (const child of group.children) {
         if (child.name === 'creatures') child.dispose(); // (the shapes are shared)
+        else if (child.name === 'surf') (child.geometry.dispose(), child.dispose());
         else child.geometry.dispose();
       }
     },

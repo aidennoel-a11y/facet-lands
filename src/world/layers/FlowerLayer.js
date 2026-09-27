@@ -92,6 +92,7 @@ export function createFlowerLayer(config) {
           if (keep > 0.7 * meadow) continue;
           const y = groundHeightAt(lx, lz, surface);
           if (!(y > sea + 1.5) || surface.normalY < 0.85 || y > 150) continue;
+          if (generator.rivers?.at(x0 + lx, z0 + lz, 1.5)) continue; // (not in a stream, nor right on its bank)
           // A few colours to a patch.
           const tone = generator.meadowNoise.noise2D((x0 + lx) * 0.03, (z0 + lz) * 0.03) * 0.5 + 0.5;
           const pick = Math.floor((tone * 3 + hash2(gi, gj, seed + 3) * 1.6) % COLOURS.length);

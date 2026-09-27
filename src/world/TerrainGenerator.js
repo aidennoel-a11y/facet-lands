@@ -55,15 +55,6 @@ export function caveRoof(c, a, b) {
   return c.A * Math.sqrt(1 - q * q) * (1 - 0.45 * smoothstep(c.d * 0.4, c.d, a)) - 0.4;
 }
 
-/** A sea arch's span at `t` (0..1) from one leg to the other: its top and underside heights. */
-export function archSpan(arch, t) {
-  const open = Math.sin(Math.PI * t);
-  const top = arch.top - 0.3 - 0.4 * open;
-  const base = arch.top - arch.H * 0.9; // down near the sea, inside the legs
-  const under = top - Math.max(2, arch.r * 0.3);
-  return { top, bottom: base + (under - base) * Math.sqrt(open) };
-}
-
 /**
  * A sandstone arch (see TerrainGenerator.mesaArches) is one band of rock
  * bowed over from one foot to the other, like Delicate Arch: thick where it
@@ -942,17 +933,16 @@ export class TerrainGenerator {
           // The stack: a stout, tapering block of rock, no taller than about
           // twice its width, stepped where layers of it have broken away,
           // its outline ragged and its sides knobbled. Some are arches: two
-          // legs, the rock between them worn through (the span over the gap
-          // is SeaCaveLayer's).
+          // legs, the rock between them worn through (the span over the gap,
+          // one band of rock bowed from foot to foot, is SeaCoastLayer's;
+          // here, the ledged rock its feet stand in).
           const H = Math.min(C * (0.3 + 0.35 * hash2(i, j, s + 4)), r * 2.2);
           const arch = this.#archAt(i, j, px, pz, r, H);
           const legs = arch ? [[arch.ax, arch.az, arch.leg], [arch.bx, arch.bz, arch.leg]] : [[px, pz, r]];
           for (const [lx, lz, lr] of legs) {
             const t = (Math.hypot(x - lx, z - lz) / lr) * (1 + 0.16 * this.coastNoise.noise2D(x * 0.2 + i, z * 0.2 - j));
             if (t < 1) {
-              // (An arch's legs are square-shouldered columns, their tops level
-              // with its span, so the whole arch is one piece of rock.)
-              let top = arch ? H * (1 - smoothstep(0.72, 1, t)) : H * Math.pow(1 - Math.pow(t, 2.4), 0.55);
+              let top = arch ? Math.min(H * 0.35, 6) * Math.pow(1 - t, 1.2) + 1.5 : H * Math.pow(1 - Math.pow(t, 2.4), 0.55);
               top -= 0.9 * (top / 2.6 - Math.floor(top / 2.6)); // ledges
               const knobs = this.coastNoise.noise2D(x * 0.35 - 3, z * 0.35 + 5) * 1.2 * smoothstep(0.4, 0.9, t);
               stack = Math.max(stack, top + knobs);
@@ -1001,12 +991,16 @@ export class TerrainGenerator {
         const H = Math.min(C * (0.3 + 0.35 * hash2(i, j, s + 4)), r * 2.2);
         const arch = this.#archAt(i, j, px, pz, r, H);
         if (!arch) continue;
-        // Both legs must stand up out of the sea, with the gap between them open.
+        // Both feet must stand on rock out of the sea, with the gap between them open.
         const ha = this.getBaseHeight(arch.ax, arch.az) - sea, hb = this.getBaseHeight(arch.bx, arch.bz) - sea;
-        if (ha < H * 0.75 || hb < H * 0.75 || this.getBaseHeight(px, pz) - sea > -0.8) continue;
+        if (ha < 0.8 || hb < 0.8 || this.getBaseHeight(px, pz) - sea > -0.8) continue;
         // (Standing out in the sea, not on the shore.)
         if (this.getOceanness(px, pz) < 0.5) continue;
-        arch.top = Math.min(ha, hb) + sea;
+        // One band of rock bowed over the gap (see mesaArchAt), its feet in the surf.
+        Object.assign(arch, {
+          base: sea - 2, top: sea + H, band: true,
+          lean: hash2(i, j, s + 11) * 2 - 1, bend: hash2(i, j, s + 12) * 2 - 1, seed: Math.floor(hash2(i, j, s + 13) * 1e6),
+        });
         out.push(arch);
       }
     }
@@ -1037,7 +1031,7 @@ export class TerrainGenerator {
         if (Math.max(h0, ha, hb) - low < 2.5 && low > this.rivers.seaLevel + 4) {
           const H = 15 + 12 * hash2(i, j, s + 5);
           arch = { x: px, z: pz, ax: px - ca, az: pz - sa, bx: px + ca, bz: pz + sa, angle: a, leg: 3.4 + 1.6 * hash2(i, j, s + 6), H, r: L * 0.5, base: low, top: low + H, sandstone: true,
-            lean: hash2(i, j, s + 7) * 2 - 1, bend: hash2(i, j, s + 8) * 2 - 1, seed: Math.floor(hash2(i, j, s + 9) * 1e6) };
+            lean: hash2(i, j, s + 7) * 2 - 1, bend: hash2(i, j, s + 8) * 2 - 1, seed: Math.floor(hash2(i, j, s + 9) * 1e6), band: true };
         }
       }
     }
@@ -1309,17 +1303,13 @@ export class TerrainGenerator {
       const vx = arch.bx - arch.ax, vz = arch.bz - arch.az, L2 = vx * vx + vz * vz;
       const t = ((x - arch.ax) * vx + (z - arch.az) * vz) / L2;
       if (t < 0 || t > 1) continue;
-      if (arch.sandstone) {
+      if (arch.band) {
         // (Over the band where it passes: its underside and top here.)
         const b = mesaArchAt(arch, Math.acos(1 - 2 * t));
         if (Math.hypot(x - b.x, z - b.z) > b.wd * 0.8 + Math.abs(b.n[0] * vx + b.n[2] * vz) / Math.sqrt(L2) * b.th) continue;
         const reach = b.th / Math.max(0.3, Math.abs(b.n[1]));
         return { bottom: b.y - reach, top: Math.min(arch.top, b.y + reach) };
       }
-      const off = Math.abs((x - arch.ax) * vz - (z - arch.az) * vx) / Math.sqrt(L2);
-      if (off > arch.leg * 0.8) continue;
-      const span = archSpan(arch, t);
-      return { bottom: span.bottom, top: span.top };
     }
     return null;
   }

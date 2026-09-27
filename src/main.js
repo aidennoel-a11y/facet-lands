@@ -90,12 +90,12 @@ const seasons = new Seasons(WORLD.daysPerSeason);
 terrainMaterial.shadowSide = THREE.FrontSide;
 let generator = new TerrainGenerator(WORLD.seed, WORLD);
 const chunks = new ChunkManager(scene, generator, WORLD, terrainMaterial);
-const water = createWaterLayer({ skyColor: dayNight.horizon });
+const water = createWaterLayer({ skyColor: dayNight.horizon, skyTop: dayNight.top });
 const rocks = createRockLayer(WORLD);
 const trees = createTreeLayer({ rocks });
 const grass = createGrassLayer(WORLD);
 chunks.addLayer(water);
-const rivers = createRiverLayer(dayNight.horizon);
+const rivers = createRiverLayer(dayNight.horizon, dayNight.top);
 // Leaves drifting down from the trees round about (see FallingLeaves).
 const fallingLeaves = new FallingLeaves(scene);
 // The animals (deer, bison, rabbits, birds), and the bees, their nests and the fireflies.
@@ -143,6 +143,19 @@ function groundAt(x, feetY, z) {
   return g;
 }
 
+/**
+ * The water's surface at (x, z) and its current: { level, fx, fz, speed },
+ * or null on dry land. The sea or a lake where the land dips under it; a
+ * river, stream or pond where one runs (the higher of the two).
+ */
+function waterAt(x, z) {
+  const ground = chunks.groundHeightAt(x, z);
+  let found = ground < WORLD.seaLevel ? { level: WORLD.seaLevel, fx: 0, fz: 0, speed: 0 } : null;
+  const r = generator.rivers.waterAt(x, z, 0);
+  if (r && (!found || r.level > found.level)) found = { level: r.level, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : 0.6 + Math.min(2.4, Math.max(0, r.drop) * 6) };
+  return found;
+}
+
 // Start somewhere with mountains in view: scan a few spots for a tall one.
 function placeCamera() {
   let best = { x: 0, z: 0, h: -Infinity };
@@ -162,6 +175,7 @@ function placeCamera() {
 const controls = new PlayerControls(camera, canvas, {
   groundAt,
   seaLevel: WORLD.seaLevel,
+  waterAt,
   collide: (position, radius) => {
     trees.collide(position, radius, WORLD.chunkSize);
     generator.caves.collide(position, radius, position.y - controls.eyeHeight);
@@ -671,6 +685,26 @@ function smooth(a, b, x) {
 }
 const caveHaze = { target: 0, amount: 0, color: new THREE.Color(0x07080b) };
 const openFog = { near: scene.fog.near, far: scene.fog.far };
+// Under the water: a murky blue-green haze closing in (darker at night and
+// in the depths), the sky gone, the sounds muffled.
+const UNDERWATER = new THREE.Color(0x14505c);
+let underwater = false;
+function applyUnderwater() {
+  const w = sheltered ? null : waterAt(camera.position.x, camera.position.z);
+  underwater = !!w && camera.position.y < w.level - 0.02;
+  if (!underwater) {
+    scene.background = null;
+    return;
+  }
+  const depth = w.level - camera.position.y;
+  const light = (0.25 + 0.75 * smoothstep(-0.1, 0.3, dayNight.sunDir.y)) * (1 - 0.5 * smoothstep(2, 25, depth));
+  scene.fog.color.copy(UNDERWATER).multiplyScalar(light);
+  scene.fog.near = 0.5;
+  scene.fog.far = 38 - 14 * smoothstep(5, 30, depth);
+  dayNight.sky.visible = false;
+  scene.background = scene.fog.color;
+}
+
 function applyCaveHaze(dt) {
   caveHaze.amount += (caveHaze.target - caveHaze.amount) * Math.min(1, dt * 3);
   const a = caveHaze.amount;
@@ -733,6 +767,7 @@ function tick(now) {
   if (mist > 0) scene.fog.color.lerp(MIST, 0.45 * mist);
   dayNight.sky.visible = true;
   applyCaveHaze(dt);
+  applyUnderwater();
   cloudSky.cover = weather.cover;
   cloudSky.storm = weather.storm;
   cloudSky.viewMatrix = camera.matrixWorldInverse;
@@ -754,11 +789,11 @@ function tick(now) {
   torches.update(now / 1000, camera.position);
   updateVisibility();
   const haze = heatHaze(dt);
-  sound.update(weather.rain * (1 - snow), sheltered);
+  sound.update(underwater ? 0 : weather.rain * (1 - snow), sheltered || underwater);
   const env = surroundings(dt, snow);
   // The wildlife round you.
   const life = {
-    camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
+    camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, rocks, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
     rain: weather.rain, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
     sheltered, sound, pan: (x, z) => panTowards(camera, x, z), tame: WORLD.tameWildlife,
@@ -819,4 +854,4 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
