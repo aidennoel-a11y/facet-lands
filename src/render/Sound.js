@@ -116,6 +116,26 @@ export class Sound {
       lava: this.#bed(this.brownNoise, 'lowpass', 110, 0.9),
       insects: this.#bed(this.noise, 'bandpass', 5200, 6),
     };
+    // A bees' nest: a low, beating hum (a few saw tones a little out of tune).
+    const hum = ctx.createBiquadFilter();
+    hum.type = 'lowpass';
+    hum.frequency.value = 900;
+    for (const [f, v] of [[196, 0.5], [203.5, 0.5], [392, 0.25]]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = v;
+      o.connect(g).connect(hum);
+      o.start();
+    }
+    const humGain = ctx.createGain();
+    humGain.gain.value = 0;
+    const humPan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    hum.connect(humGain);
+    if (humPan) humGain.connect(humPan).connect(this.muffle);
+    else humGain.connect(this.muffle);
+    this.beds.buzz = { gain: humGain, filter: hum, pan: humPan };
     // Insects buzz: their hiss throbbing twenty-odd times a second.
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 23;
@@ -169,6 +189,8 @@ export class Sound {
     set(this.beds.river, 0.1 * (e.river ?? 0), 0.5);
     pan(this.beds.river, e.riverPan);
     pan(this.beds.surf, e.surfPan);
+    set(this.beds.buzz, 0.035 * (e.buzz ?? 0), 0.3);
+    pan(this.beds.buzz, e.buzzPan);
     // The surf: waves rolling in every seven seconds or so.
     const swell = 0.55 + 0.45 * Math.sin(t * 0.9 + Math.sin(t * 0.23) * 1.5);
     set(this.beds.surf, 0.12 * e.ocean * swell * quiet, 0.8);
@@ -269,6 +291,90 @@ export class Sound {
     osc.stop(t + len + 0.05);
     // Often a second croak straight after.
     if (Math.random() < 0.4) setTimeout(() => this.ctx && this.#croak(amount * 0.8), (len + 0.08) * 1000);
+  }
+
+  /**
+   * A creature's call, from off to one side (`pan`, -1 left .. 1 right), as
+   * loud as `volume` (0..1): 'caw' (a crow), 'gull', 'hawk' (a long
+   * screech), 'snort' (a startled deer), 'grunt' (a bison), 'flutter' (birds
+   * taking off).
+   */
+  call(kind, pan = 0, volume = 1) {
+    if (!this.ctx || !this.enabled || volume < 0.02) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.02;
+    const out = ctx.createGain();
+    out.gain.value = volume;
+    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (panner) {
+      panner.pan.value = Math.max(-1, Math.min(1, pan));
+      out.connect(panner).connect(this.muffle);
+    } else out.connect(this.muffle);
+    // A tone sweeping from f0 to f1 over `len`, through a band-pass at `band`.
+    const tone = (start, len, type, f0, f1, band, q, peak, wobble = 0) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, start);
+      o.frequency.exponentialRampToValueAtTime(f1, start + len);
+      if (wobble) {
+        const lfo = ctx.createOscillator(), depth = ctx.createGain();
+        lfo.frequency.value = wobble;
+        depth.gain.value = f0 * 0.04;
+        lfo.connect(depth).connect(o.frequency);
+        lfo.start(start);
+        lfo.stop(start + len + 0.05);
+      }
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = band;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start + Math.min(0.03, len * 0.2));
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+      o.connect(f).connect(g).connect(out);
+      o.start(start);
+      o.stop(start + len + 0.05);
+    };
+    const noise = (start, len, band, q, peak, flutter = 0) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = band;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+      if (flutter) {
+        const lfo = ctx.createOscillator(), depth = ctx.createGain();
+        lfo.frequency.value = flutter;
+        depth.gain.value = peak * 0.8;
+        lfo.connect(depth).connect(g.gain);
+        lfo.start(start);
+        lfo.stop(start + len);
+      }
+      src.connect(f).connect(g).connect(out);
+      src.start(start, Math.random() * 2);
+      src.stop(start + len + 0.05);
+    };
+    if (kind === 'caw') {
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) tone(t + k * 0.32, 0.22, 'sawtooth', 560 + Math.random() * 80, 430, 1100, 1.5, 0.09);
+    } else if (kind === 'gull') {
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) tone(t + k * 0.42, 0.34, 'sawtooth', 1500 + Math.random() * 200, 950, 1700, 1.2, 0.05, 28);
+    } else if (kind === 'hawk') {
+      tone(t, 1.1, 'sawtooth', 2700, 1800, 2400, 2.5, 0.06, 18);
+      noise(t, 1.0, 2600, 3, 0.02);
+    } else if (kind === 'snort') {
+      noise(t, 0.28, 900, 1.2, 0.12);
+    } else if (kind === 'grunt') {
+      tone(t, 0.7, 'sawtooth', 85, 65, 220, 1, 0.2);
+    } else if (kind === 'flutter') {
+      noise(t, 0.9, 1400, 0.8, 0.07, 22);
+    }
   }
 
   setEnabled(on) {

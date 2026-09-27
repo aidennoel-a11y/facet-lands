@@ -36,6 +36,8 @@ import { Showers } from './render/Showers.js';
 import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
 import { describeWind, gustAt, updateWind, windDirection, windStrength } from './render/wind.js';
 import { FallingLeaves } from './render/FallingLeaves.js';
+import { Wildlife } from './wildlife/Wildlife.js';
+import { Insects } from './wildlife/Insects.js';
 import { sparkleUniforms } from './render/waterSparkle.js';
 import { addCloudShadow, cloudShadowUniforms } from './render/cloudShadow.js';
 import { Minimap } from './ui/Minimap.js';
@@ -96,6 +98,9 @@ chunks.addLayer(water);
 const rivers = createRiverLayer(dayNight.horizon);
 // Leaves drifting down from the trees round about (see FallingLeaves).
 const fallingLeaves = new FallingLeaves(scene);
+// The animals (deer, bison, rabbits, birds), and the bees, their nests and the fireflies.
+const wildlife = new Wildlife(scene, addCloudShadow);
+const insects = new Insects(scene, addCloudShadow);
 chunks.addLayer(rivers);
 chunks.addLayer(createReedLayer(WORLD));
 chunks.addLayer(createLilyLayer(WORLD));
@@ -222,6 +227,8 @@ function setSeed(seed) {
   chunks.setGenerator(generator);
   minimap.invalidate();
   torches.loadWorld(seed);
+  wildlife.clear();
+  insects.clear();
   placeCamera();
 }
 
@@ -748,7 +755,19 @@ function tick(now) {
   updateVisibility();
   const haze = heatHaze(dt);
   sound.update(weather.rain * (1 - snow), sheltered);
-  sound.ambience(surroundings(dt, snow));
+  const env = surroundings(dt, snow);
+  // The wildlife round you.
+  const life = {
+    camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
+    day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
+    rain: weather.rain, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
+    sheltered, sound, pan: (x, z) => panTowards(camera, x, z),
+  };
+  wildlife.update(dt, life);
+  insects.update(dt, life);
+  env.buzz = insects.buzz.level;
+  env.buzzPan = insects.buzz.pan;
+  sound.ambience(env);
   if (ui.rays.checked) {
     light.strength = dayNight.lightStrength;
     light.reach = dayNight.shaftReach;
@@ -800,4 +819,4 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
