@@ -330,13 +330,15 @@ export class Rivers {
         if (target < level - dropNeeded) {
           // (The pool behind this lip lies no higher than the land at the
           // lip: it's dug down into the slope, never dammed up above it.)
+          // (Only so far, though: a hollow it passes over is just deeper water.)
           let low = level;
           for (let k = poolStart; k < points.length; k++) if (points[k].base !== undefined) low = Math.min(low, points[k].base - 0.3);
+          low = Math.max(low, level - 2.5);
           if (low < level) {
             for (let k = poolStart; k < points.length; k++) if (points[k].cascade) points[k].level = Math.min(points[k].level, low);
             level = Math.max(this.seaLevel + 0.03, low);
           }
-          const next = Math.max(this.seaLevel + 0.03, target - 0.8);
+          const next = Math.max(this.seaLevel + 0.03, Math.min(target - 0.8, level - 0.3));
           if (level - next > 3) fell = true;
           if (points.length) points.push({ x: px - dir[0] * 4, z: pz - dir[1] * 4, level: level - 0.02, width: 0, cascade: true, lip: true });
           poolStart = points.length;
@@ -347,7 +349,9 @@ export class Rivers {
         }
       } else if (stream) {
         level = Math.max(this.seaLevel + 0.03, Math.min(level - 0.02, target));
+        poolStart = points.length + 1; // (any pool starts after this)
       } else {
+        poolStart = points.length + 1;
         // A river eases down into its trench (no sudden step at its source)
         // but never runs above the land.
         level = Math.max(this.seaLevel + 0.03, Math.min(level - 0.02, Math.max(target, level - 0.35), b - 0.4));
@@ -362,7 +366,9 @@ export class Rivers {
       if (kind === 'stream' && i > 3) {
         // Reaching a river (or another stream from here): it joins it.
         const sibling = siblings && siblings.find((p) => Math.hypot(p.x - px, p.z - pz) < 7 && p.level <= level + 0.3);
-        const river = sibling ? { level: sibling.level } : this.#riverAt(px, pz);
+        const found = sibling ? { level: sibling.level } : this.#riverAt(px, pz);
+        // (Only into water no higher than its own: never up into a river.)
+        const river = found && found.level <= level + 0.3 ? found : null;
         if (river) {
           const last = points[points.length - 1];
           last.level = Math.max(river.level, Math.min(last.level, river.level + 0.05));
@@ -403,6 +409,8 @@ export class Rivers {
   static #widen(points, stream, lowland = 0) {
     if (points.length < (stream ? 10 : 15)) return null;
     const n = points.length;
+    // Water never runs uphill.
+    for (let i = 1; i < n; i++) points[i].level = Math.min(points[i].level, points[i - 1].level);
     const length = n * STEP;
     if (!stream || lowland === 0) {
       const end = stream ? Math.min(4, Math.max(1.6, 1.2 + length / 250)) : Math.min(13, Math.max(2.2, 1.4 + length / 110));

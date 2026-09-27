@@ -138,7 +138,11 @@ const skyFragment = /* glsl */ `
     // Warm glow around the sun, strongest at sunrise / sunset.
     float s = max(dot(d, sunDir), 0.0);
     float clear = 1.0 - smoothstep(0.7, 1.0, cover);
-    col += sunColor * (pow(s, 6.0) * 0.45 * dusk + pow(s, 90.0) * 0.35 * (1.0 - night)) * (0.35 + 0.65 * clear);
+    // (The discs, and the sun's tight halo, are gone behind thick cloud:
+    // there's only a soft brightening in the cloud where the sun is.)
+    float veiled = 1.0 - smoothstep(0.45, 0.78, cover);
+    col += sunColor * (pow(s, 6.0) * 0.45 * dusk + pow(s, 90.0) * 0.35 * (1.0 - night) * veiled) * (0.35 + 0.65 * clear);
+    col += vec3(1.0, 0.98, 0.94) * pow(s, 14.0) * 0.16 * (1.0 - veiled) * (1.0 - night) * (1.0 - 0.6 * smoothstep(0.9, 1.0, cover));
 
     // Sunset afterglow: bands of colour along the horizon, burning orange
     // low down and fading up through pink into purple, strongest on the
@@ -155,7 +159,7 @@ const skyFragment = /* glsl */ `
 
     // Sun and moon discs (the moon sits opposite the sun), hidden by thick cloud.
     // (Below the horizon the land would hide it.)
-    col = mix(col, vec3(1.0, 0.97, 0.88), smoothstep(0.99955, 0.99972, s) * clear * smoothstep(-0.012, 0.004, up));
+    col = mix(col, vec3(1.0, 0.97, 0.88), smoothstep(0.99955, 0.99972, s) * veiled * smoothstep(-0.012, 0.004, up));
     // The moon: a ball lit from the side the sun is on, so it waxes and
     // wanes with a curved terminator (its dark part faint with earthshine),
     // its grey seas on the lit part.
@@ -173,7 +177,7 @@ const skyFragment = /* glsl */ `
       float seas = 0.78 + 0.22 * vnoise(vec3(uv * 2.2, 3.0));
       vec3 moonCol = vec3(0.92, 0.94, 1.0) * seas * (0.55 + 0.45 * n.z) * lit;
       moonCol += vec3(0.05, 0.06, 0.08) * (1.0 - lit); // earthshine
-      col = mix(col, moonCol + col * 0.25 * (1.0 - lit), disc * night * clear);
+      col = mix(col, moonCol + col * 0.25 * (1.0 - lit), disc * night * veiled);
     }
 
     float starsShow = night * smoothstep(0.0, 0.15, up) * (1.0 - smoothstep(0.35, 0.8, cover));
@@ -517,7 +521,7 @@ export class DayNight {
     } else {
       this.shaftColor.copy(this.sunColor).lerp(tmp.set(0xffc060), golden * 0.5);
       const broken = 1 + 0.4 * smoothstep(0.15, 0.45, cover) * (1 - overcast);
-      this.shaftStrength = sunUp * (0.55 + 0.75 * golden) * broken * (1 - 0.85 * overcast) * (1 - 0.7 * rain);
+      this.shaftStrength = sunUp * (0.55 + 0.75 * golden) * broken * (1 - overcast) * (1 - 0.7 * rain);
       this.shaftReach = 1.6 + 0.9 * golden;
     }
 
