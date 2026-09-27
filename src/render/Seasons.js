@@ -169,8 +169,19 @@ export function seasonalRocks(material) {
     material,
     (shader) => {
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vRockLocal;\nvarying vec3 vRockNormal;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRockLocal = position;\nvRockNormal = normalize((modelMatrix * instanceMatrix * vec4(normal, 0.0)).xyz);');
+        .replace('#include <common>', '#include <common>\nvarying vec3 vRockLocal;\nvarying vec3 vRockNormal;\n#ifndef USE_INSTANCING\nattribute vec3 rockLocal;\n#endif')
+        // (Instanced, or baked together into one mesh a chunk: see RockLayer.)
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          #ifdef USE_INSTANCING
+          vRockLocal = position;
+          vRockNormal = normalize((modelMatrix * instanceMatrix * vec4(normal, 0.0)).xyz);
+          #else
+          vRockLocal = rockLocal;
+          vRockNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+          #endif`,
+        );
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vRockLocal;\nvarying vec3 vRockNormal;`)
         .replace(

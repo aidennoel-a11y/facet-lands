@@ -4,8 +4,10 @@ import {
   DodecahedronGeometry,
   Group,
   IcosahedronGeometry,
-  InstancedMesh,
+  BufferGeometry,
+  Matrix3,
   Matrix4,
+  Mesh,
   MeshLambertMaterial,
   Quaternion,
   Euler,
@@ -88,6 +90,8 @@ const position = new Vector3();
 const rotation = new Quaternion();
 const euler = new Euler();
 const scale = new Vector3();
+const normalMatrix = new Matrix3();
+const v = new Vector3();
 
 /**
  * Rocks and boulders scattered over the land: a few everywhere, more in the
@@ -229,19 +233,45 @@ export function createRockLayer(config) {
         if (c.boulder) boulders.push(c.wx, c.wz, position.y, c.sx * 0.93, c.sy * 0.93, c.sz * 0.93, c.ry);
       }
 
+      // All baked together into one mesh (one draw, where there'd be one
+      // for each shape), each vertex keeping where it sits on its rock's
+      // own shape (see seasonalRocks: snow drifts against their feet).
+      let count = 0;
+      placed.forEach((list, s) => (count += list.length * ALL_SHAPES[s].attributes.position.count));
+      if (!count) return null;
+      const positions = new Float32Array(count * 3), normals = new Float32Array(count * 3), colors = new Float32Array(count * 3), locals = new Float32Array(count * 3);
+      let o = 0;
+      placed.forEach((list, s) => {
+        const shape = ALL_SHAPES[s].attributes;
+        for (const m of list) {
+          normalMatrix.getNormalMatrix(m);
+          locals.set(shape.position.array, o);
+          colors.set(shape.color.array, o);
+          for (let i = 0; i < shape.position.count; i++, o += 3) {
+            v.fromBufferAttribute(shape.position, i).applyMatrix4(m);
+            positions[o] = v.x;
+            positions[o + 1] = v.y;
+            positions[o + 2] = v.z;
+            v.fromBufferAttribute(shape.normal, i).applyMatrix3(normalMatrix).normalize();
+            normals[o] = v.x;
+            normals[o + 1] = v.y;
+            normals[o + 2] = v.z;
+          }
+        }
+      });
+      const geometry = new BufferGeometry();
+      geometry.setAttribute('position', new BufferAttribute(positions, 3));
+      geometry.setAttribute('normal', new BufferAttribute(normals, 3));
+      geometry.setAttribute('color', new BufferAttribute(colors, 3));
+      geometry.setAttribute('rockLocal', new BufferAttribute(locals, 3));
+      geometry.computeBoundingSphere();
+      const mesh = new Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData.solid = true; // torches can go on rocks too
       const group = new Group();
       group.name = 'rocks';
-      placed.forEach((list, s) => {
-        if (!list.length) return;
-        const mesh = new InstancedMesh(ALL_SHAPES[s], material, list.length);
-        list.forEach((m, k) => mesh.setMatrixAt(k, m));
-        mesh.computeBoundingSphere();
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.userData.solid = true; // torches can go on rocks too
-        group.add(mesh);
-      });
-      if (!group.children.length) return null;
+      group.add(mesh);
       group.userData.key = `${cx},${cz}`;
       group.userData.boulders = boulders;
       layer.boulders.set(group.userData.key, boulders);
@@ -250,7 +280,7 @@ export function createRockLayer(config) {
 
     dispose(group) {
       if (layer.boulders.get(group.userData.key) === group.userData.boulders) layer.boulders.delete(group.userData.key);
-      for (const mesh of group.children) mesh.dispose(); // shapes are shared
+      for (const mesh of group.children) mesh.geometry.dispose();
     },
   };
   return layer;

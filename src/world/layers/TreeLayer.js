@@ -1,7 +1,7 @@
 import { Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { addWind, windDepthMaterial } from '../../render/wind.js';
-import { seasonalTrees } from '../../render/Seasons.js';
-import { LEAF_GEOMETRIES, NO_COLLIDE, STIFF, TREE_GEOMETRIES } from '../trees.js';
+import { seasonalTrees, seasonUniforms } from '../../render/Seasons.js';
+import { LEAF_GEOMETRIES, NO_COLLIDE, STIFF, TREE_GEOMETRIES, treeGeometry } from '../trees.js';
 import { placeTrees } from '../treePlacement.js';
 
 const matrix = new Matrix4();
@@ -76,8 +76,23 @@ export function createTreeLayer({ rocks = null } = {}) {
   // Cacti stand stiff: no sway.
   const stiffMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
 
+  // The trees' meshes, to swap their shapes as the seasons turn (bare
+  // boughs showing, or hidden in the leaves: see treeGeometry).
+  const meshes = new Set();
+  let bare = false;
+
   const layer = {
     name: 'trees',
+
+    update() {
+      // (Before the crowns start to fall, which is at 0.55 of winter; and
+      // not flickering back and forth about it.)
+      const w = seasonUniforms.uWinter.value;
+      const now = bare ? w > 0.4 : w > 0.5;
+      if (now === bare) return;
+      bare = now;
+      for (const mesh of meshes) mesh.geometry = treeGeometry(mesh.name, bare);
+    },
     material,
     leafMaterial,
     count: 0, // trees currently loaded, for the HUD
@@ -145,8 +160,9 @@ export function createTreeLayer({ rocks = null } = {}) {
       let count = 0;
       for (const [type, list] of Object.entries(placed)) {
         const stiff = STIFF.has(type);
-        const mesh = new InstancedMesh(TREE_GEOMETRIES[type], stiff ? stiffMaterial : material, list.length);
+        const mesh = new InstancedMesh(treeGeometry(type, bare), stiff ? stiffMaterial : material, list.length);
         mesh.name = type;
+        meshes.add(mesh);
         list.forEach((t, k) => {
           position.set(t.x, t.y, t.z);
           // Spin about the trunk, then tip over by the lean.
@@ -196,7 +212,10 @@ export function createTreeLayer({ rocks = null } = {}) {
       // A rebuilt chunk (new LOD) may already have registered its trunks.
       if (layer.trunks.get(group.userData.key) === group.userData.trunks) layer.trunks.delete(group.userData.key);
       if (layer.crowns.get(group.userData.key) === group.userData.crowns) layer.crowns.delete(group.userData.key);
-      for (const mesh of group.children) mesh.dispose(); // geometry is shared
+      for (const mesh of group.children) {
+        meshes.delete(mesh);
+        mesh.dispose(); // geometry is shared
+      }
     },
   };
   return layer;

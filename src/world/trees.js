@@ -95,6 +95,9 @@ function withCrown(wood, crown) {
   crown.forEach((g) => mark(g, 1));
   const solid = mergeGeometries([...wood, ...crown]);
   solid.userData.crown = mergeGeometries(crown);
+  // And the tree without the boughs inside its crown, for whenever they're
+  // hidden in the leaves (fewer faces to draw): see TreeLayer.
+  if (wood.some((g) => g.userData.bough)) solid.userData.lean = mergeGeometries([...wood.filter((g) => !g.userData.bough), ...crown]);
   return solid;
 }
 
@@ -130,6 +133,7 @@ function boughs(blobs, low, top, color, seed, { thick = 1, lean = [0, 0] } = {})
       out.push(limb(fork, tip, 0.05 * thick, 0.018 * thick, color, color, seed + i * 3 + k + 1));
     }
   });
+  for (const g of out) g.userData.bough = true; // (see withCrown: left out while they're hidden)
   return out;
 }
 
@@ -1046,7 +1050,7 @@ const SEASONAL = {
   jungleGiant: [0, 0, 0], jungleCanopy: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
 };
 function markSeasons(geometries) {
-  for (const [type, g] of Object.entries(geometries)) {
+  for (const [type, full] of Object.entries(geometries)) for (const g of [full, full.userData.lean].filter(Boolean)) {
     const [deciduous, snowy, flowers] = SEASONAL[type] ?? [0, 0, 0];
     const n = g.attributes.position.count;
     const a = new Float32Array(n * 3);
@@ -1063,6 +1067,17 @@ function markSeasons(geometries) {
   }
 }
 markSeasons(TREE_GEOMETRIES);
+
+/**
+ * The shape to draw a species with: without the boughs inside its crown
+ * while they're hidden in the leaves (always, for an evergreen; for a
+ * broad-leaved tree, until its crown falls in winter: `bare`).
+ */
+export function treeGeometry(type, bare) {
+  const g = TREE_GEOMETRIES[type];
+  if (!g.userData.lean) return g;
+  return bare && SEASONAL[type]?.[0] ? g : g.userData.lean;
+}
 
 /** Species that are stiff (cacti): they don't sway in the wind. */
 export const STIFF = new Set(['cactus', 'smallCactus', 'joshuaTree', 'baobab']);

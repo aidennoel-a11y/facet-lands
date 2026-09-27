@@ -251,8 +251,9 @@ export class Clouds {
       // Ease towards the height that clears the land.
       p.y += (cloud.userData.targetY - p.y) * Math.min(1, dt * 0.6);
     }
-    // Re-check the land under a few clouds each frame.
-    for (let k = 0; k < 6; k++) {
+    // Re-check the land under a couple of clouds each frame (all of them
+    // every second or two: the land's height is slow to work out).
+    for (let k = 0; k < 2; k++) {
       const cloud = this.clouds[this._next];
       cloud.userData.targetY = this.#targetHeight(cloud, generator);
       this._next = (this._next + 1) % this.clouds.length;
@@ -277,7 +278,10 @@ export class Clouds {
     const dark = Math.min(1, 0.55 * this.overcast + 0.35 * storm);
     for (const m of this.materials) m.emissive.copy(skyGlow).multiplyScalar(0.3 * (1 - 0.6 * dark));
     // Their shadows on the land: sharp-edged in sunshine, gone under a lid of cloud.
-    if (sky?.lightDir) {
+    // (Every third frame: they drift a few centimetres a frame, over a map
+    // of 20 m texels.)
+    this._shadowFrame = ((this._shadowFrame ?? 0) + 1) % 3;
+    if (sky?.lightDir && this._shadowFrame === 0) {
       const strength = 0.7 * Math.min(1, sky.lightStrength) * (1 - 0.9 * this.overcast);
       paintCloudShadows(this.clouds, focus, sky.lightDir, generator.getBaseHeight(focus.x, focus.z), this.range, strength);
     }
