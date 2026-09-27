@@ -2,8 +2,12 @@
  * Sounds, made on the fly with the Web Audio API (no sound files):
  *  - weather: the hiss and patter of rain, and thunder, a sharp crack for
  *    a close strike and a long low rumble for a distant one;
- *  - the country round you (see ambience): wind, stronger up high; surf
- *    on the coast; birdsong in the woods by day (a dawn chorus at
+ *  - the country round you (see ambience): wind, stronger up high and on
+ *    ridges (where it whistles), hushed in valleys and under the trees
+ *    (whose leaves rustle as the gusts come through); surf on the coast,
+ *    and the roar of waterfalls, the babble of streams and the rush of
+ *    rivers, each from where it is (louder as you come near, off to the
+ *    side it's on); birdsong in the woods by day (a dawn chorus at
  *    sunrise); insects buzzing in the jungle and the savanna heat;
  *    crickets in the grass at night; frogs in the wetlands of an evening;
  *    the low roar of molten lava; and the hush of snow.
@@ -75,8 +79,9 @@ export class Sound {
     this.#initAmbience();
   }
 
-  // Continuous beds of sound, each a looped noise through a filter into its own gain.
-  #bed(buffer, type, frequency, q = 1) {
+  // Continuous beds of sound, each a looped noise through a filter into its
+  // own gain (and a panner, for those that come from somewhere).
+  #bed(buffer, type, frequency, q = 1, panned = false) {
     const ctx = this.ctx;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
@@ -88,9 +93,12 @@ export class Sound {
     filter.Q.value = q;
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    src.connect(filter).connect(gain).connect(this.muffle);
+    const pan = panned && ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    src.connect(filter).connect(gain);
+    if (pan) gain.connect(pan).connect(this.muffle);
+    else gain.connect(this.muffle);
     src.start(0, Math.random() * 3);
-    return { gain, filter };
+    return { gain, filter, pan };
   }
 
   #initAmbience() {
@@ -98,7 +106,13 @@ export class Sound {
     this.beds = {
       wind: this.#bed(this.brownNoise, 'bandpass', 420, 0.6),
       gust: this.#bed(this.noise, 'bandpass', 900, 0.8),
-      surf: this.#bed(this.brownNoise, 'lowpass', 520, 0.7),
+      surf: this.#bed(this.brownNoise, 'lowpass', 520, 0.7, true),
+      whistle: this.#bed(this.noise, 'bandpass', 900, 12),
+      rustle: this.#bed(this.noise, 'bandpass', 3400, 0.7),
+      fall: this.#bed(this.brownNoise, 'lowpass', 1100, 0.5, true),
+      fallHiss: this.#bed(this.noise, 'bandpass', 1600, 0.6, true),
+      brook: this.#bed(this.noise, 'bandpass', 2400, 1.4, true),
+      river: this.#bed(this.brownNoise, 'lowpass', 480, 0.7, true),
       lava: this.#bed(this.brownNoise, 'lowpass', 110, 0.9),
       insects: this.#bed(this.noise, 'bandpass', 5200, 6),
     };
@@ -118,8 +132,12 @@ export class Sound {
 
   /**
    * What's around you (each 0..1): { woods, jungle, grass, wetland, ocean,
-   * lava, high, snowy, day, dawn, dusk, wind, rain }. Call every frame; the
-   * mix eases towards it.
+   * lava, high, snowy, day, dawn, dusk, wind, rain }; and the lie of the
+   * land and the air: exposure (on a ridge or peak), hollow (down in a
+   * valley), canopy (under the trees), bare (their leaves fallen), gust
+   * (one passing now); and the water: fall, brook and river (how loud) and
+   * fallPan, brookPan, riverPan and surfPan (-1 left .. 1 right). Call every
+   * frame; the mix eases towards it.
    */
   ambience(env) {
     if (!this.ctx || !this.beds) return;
@@ -127,9 +145,30 @@ export class Sound {
     const t = this.ctx.currentTime;
     const e = env, quiet = 1 - 0.6 * e.snowy; // snow deadens everything
     const set = (bed, v, lag = 1.5) => bed.gain.gain.setTargetAtTime(v, t, lag);
-    set(this.beds.wind, (0.025 + 0.09 * e.high + 0.05 * e.wind) * (0.7 + 0.3 * quiet));
-    set(this.beds.gust, (0.006 + 0.03 * e.high * e.wind + 0.015 * e.wind) * quiet);
-    this.beds.wind.filter.frequency.setTargetAtTime(300 + 260 * e.wind + 120 * Math.sin(t * 0.13), t, 2);
+    // The wind: up on a ridge it blows harder, and whistles; down in a
+    // valley or in among the trees it's hushed, and there the leaves rustle
+    // as each gust comes through.
+    const lie = (1 + 0.9 * (e.exposure ?? 0)) * (1 - 0.5 * (e.hollow ?? 0)) * (1 - 0.45 * (e.canopy ?? 0));
+    const gust = e.gust ?? 0;
+    set(this.beds.wind, (0.025 + 0.09 * e.high + 0.05 * e.wind * (0.7 + 0.6 * gust)) * (0.7 + 0.3 * quiet) * lie, 0.8);
+    set(this.beds.gust, (0.006 + 0.03 * e.high * e.wind + 0.015 * e.wind) * (0.4 + 1.3 * gust) * quiet * lie, 0.6);
+    this.beds.wind.filter.frequency.setTargetAtTime(300 + 260 * e.wind + 160 * gust + 120 * Math.sin(t * 0.13), t, 1);
+    set(this.beds.whistle, 0.022 * (e.exposure ?? 0) * e.wind * (0.45 + 0.9 * gust) * quiet, 0.8);
+    this.beds.whistle.filter.frequency.setTargetAtTime(700 + 450 * gust + 180 * Math.sin(t * 0.61) + 90 * Math.sin(t * 1.7), t, 0.4);
+    set(this.beds.rustle, 0.05 * (e.canopy ?? 0) * (1 - 0.75 * (e.bare ?? 0)) * (0.15 + e.wind) * (0.25 + 1.1 * gust) * quiet, 0.5);
+    // Running water, from where it is: the roar of a waterfall, the babble
+    // of a stream (its note jumping about), the steady rush of a river.
+    const pan = (bed, v) => bed.pan && bed.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, v ?? 0)), t, 0.3);
+    set(this.beds.fall, 0.2 * (e.fall ?? 0), 0.4);
+    set(this.beds.fallHiss, 0.09 * (e.fall ?? 0), 0.4);
+    pan(this.beds.fall, e.fallPan);
+    pan(this.beds.fallHiss, e.fallPan);
+    set(this.beds.brook, 0.07 * (e.brook ?? 0) * (0.75 + 0.25 * Math.random()), 0.08);
+    this.beds.brook.filter.frequency.setTargetAtTime(1700 + Math.random() * 1700, t, 0.06);
+    pan(this.beds.brook, e.brookPan);
+    set(this.beds.river, 0.1 * (e.river ?? 0), 0.5);
+    pan(this.beds.river, e.riverPan);
+    pan(this.beds.surf, e.surfPan);
     // The surf: waves rolling in every seven seconds or so.
     const swell = 0.55 + 0.45 * Math.sin(t * 0.9 + Math.sin(t * 0.23) * 1.5);
     set(this.beds.surf, 0.12 * e.ocean * swell * quiet, 0.8);
@@ -245,12 +284,25 @@ export class Sound {
     this.muffle.frequency.setTargetAtTime(sheltered ? 500 : 20000, t, 0.3);
   }
 
-  /** A roll of thunder from `distance` metres away. */
-  thunder(distance) {
+  /**
+   * A roll of thunder from `distance` metres away, off to the side `pan`
+   * (-1 left .. 1 right): a strike right by you cracks like a gunshot; far
+   * off, only a low grumble reaches you, and quieter.
+   */
+  thunder(distance, pan = 0) {
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
-    const near = Math.max(0, 1 - (distance - 250) / 1300); // 1 close .. 0 far
+    const near = Math.max(0, Math.min(1, 1 - (distance - 250) / 1300)); // 1 close .. 0 far
+    const faint = Math.min(1, 2400 / Math.max(2400, distance)); // (and quieter still, well beyond)
+    const out = ctx.createGain();
+    out.gain.value = faint;
+    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (panner) {
+      // (The nearer, the more it comes from its own side; far off it rolls all round.)
+      panner.pan.value = Math.max(-1, Math.min(1, pan * (0.35 + 0.5 * near)));
+      out.connect(panner).connect(this.muffle);
+    } else out.connect(this.muffle);
 
     // The rumble: deep noise, swelling and dying away over several seconds.
     const rumble = ctx.createBufferSource();
@@ -267,11 +319,12 @@ export class Sound {
     gain.gain.exponentialRampToValueAtTime(peak * 0.4, t + length * 0.3);
     gain.gain.exponentialRampToValueAtTime(peak * 0.7, t + length * 0.42);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + length);
-    rumble.connect(low).connect(gain).connect(this.muffle);
+    rumble.connect(low).connect(gain).connect(out);
     rumble.start(t, Math.random() * 2);
     rumble.stop(t + length + 0.1);
 
-    // A close strike cracks first.
+    // A close strike cracks first (right by you, a deafening one).
+    const close = 1 - Math.min(1, Math.max(0, (distance - 80) / 220));
     if (near > 0.5) {
       const crack = ctx.createBufferSource();
       crack.buffer = this.noise;
@@ -280,9 +333,9 @@ export class Sound {
       high.frequency.value = 900;
       const cg = ctx.createGain();
       cg.gain.setValueAtTime(0.0001, t);
-      cg.gain.exponentialRampToValueAtTime(0.5 * near, t + 0.01);
-      cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
-      crack.connect(high).connect(cg).connect(this.muffle);
+      cg.gain.exponentialRampToValueAtTime(0.5 * near + 0.5 * close, t + 0.01);
+      cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.45 + 0.3 * close);
+      crack.connect(high).connect(cg).connect(out);
       crack.start(t);
       crack.stop(t + 0.5);
     }

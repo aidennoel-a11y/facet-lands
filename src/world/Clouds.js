@@ -1,6 +1,7 @@
 import { BufferAttribute, Color, Group, IcosahedronGeometry, InstancedMesh, Matrix4, MeshLambertMaterial, Object3D, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hashSeed, mulberry32 } from '../noise/random.js';
+import { paintCloudShadows } from '../render/cloudShadow.js';
 
 const WHITE = new Color(0xffffff);
 const BELLY = new Color(0xb9c6d8); // shaded underside
@@ -77,8 +78,10 @@ function addSunsetGlow(material, uniforms) {
  * Clouds live in a square `range` metres across centred on the camera and
  * wrap around when they drift off one side, so the sky never runs out.
  * Fog swallows them near the wrap distance, so you never see one pop.
- * About a third are wispy and see-through; the solid ones cast moving
- * shadows on the land and block the sun (so light shafts form around them).
+ * About a third are wispy and see-through. Their shadows slide across the
+ * land out to the edge of the view (see cloudShadow: soft and dark under the
+ * solid ones, faint under the wisps), and the solid ones block the sun (so
+ * light shafts form around them).
  *
  * Clouds drift faster or slower with the wind, and keep clear of the land:
  * each one checks the ground under its footprint (and a little ahead) and
@@ -133,6 +136,7 @@ export class Clouds {
       cloud.userData.bottom = box.min.y * cloud.scale.y; // flat base, below the centre
       cloud.userData.reach = Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) * Math.max(cloud.scale.x, cloud.scale.z);
       cloud.userData.targetY = cloud.position.y;
+      cloud.userData.wispy = wispy;
       const key = `${shape}:${wispy}`;
       if (!kinds.has(key)) kinds.set(key, { shape, wispy, list: [] });
       cloud.userData.slot = kinds.get(key).list.length;
@@ -142,7 +146,7 @@ export class Clouds {
     this.meshes = [];
     for (const { shape, wispy, list } of kinds.values()) {
       const mesh = new InstancedMesh(shapes[shape], wispy ? this.wispy : this.solid, list.length);
-      mesh.castShadow = !wispy;
+      mesh.castShadow = false; // (their shadows are painted: see cloudShadow)
       mesh.frustumCulled = false; // (spread right across the sky)
       mesh.renderOrder = wispy ? 2 : 0;
       mesh.name = 'clouds';
@@ -231,6 +235,11 @@ export class Clouds {
     for (const m of this.materials) {
       m.color.set(0xffffff).lerp(STORM, dark);
       m.emissive.copy(skyGlow).multiplyScalar(0.3 * (1 - 0.6 * dark));
+    }
+    // Their shadows on the land: sharp-edged in sunshine, gone under a lid of cloud.
+    if (sky?.lightDir) {
+      const strength = 0.7 * Math.min(1, sky.lightStrength) * (1 - 0.9 * this.overcast);
+      paintCloudShadows(this.clouds, focus, sky.lightDir, generator.getBaseHeight(focus.x, focus.z), this.range, strength);
     }
     // Sunset glow on the faces the sun lights, fading under a lid of cloud.
     if (sky) {

@@ -8,7 +8,7 @@ import { createGrassLayer } from './world/layers/GrassLayer.js';
 import { caveNightVision, createCaveLayer } from './world/layers/CaveLayer.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
-import { createRiverLayer } from './world/layers/RiverLayer.js';
+import { createRiverLayer, mistLight } from './world/layers/RiverLayer.js';
 import { createReedLayer } from './world/layers/ReedLayer.js';
 import { createLilyLayer } from './world/layers/LilyLayer.js';
 import { createVentLayer } from './world/layers/VentLayer.js';
@@ -30,11 +30,14 @@ import { DayNight } from './render/DayNight.js';
 import { RayEffects } from './render/RayEffects.js';
 import { Clouds } from './world/Clouds.js';
 import { Weather, WEATHER } from './render/Weather.js';
-import { Lightning, Rain } from './render/Storm.js';
+import { Lightning, panTowards, Rain } from './render/Storm.js';
 import { Sound } from './render/Sound.js';
 import { Showers } from './render/Showers.js';
 import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
-import { describeWind, updateWind, windStrength } from './render/wind.js';
+import { describeWind, gustAt, updateWind, windDirection, windStrength } from './render/wind.js';
+import { FallingLeaves } from './render/FallingLeaves.js';
+import { sparkleUniforms } from './render/waterSparkle.js';
+import { addCloudShadow, cloudShadowUniforms } from './render/cloudShadow.js';
 import { Minimap } from './ui/Minimap.js';
 import { BiomeMap } from './ui/BiomeMap.js';
 
@@ -64,6 +67,7 @@ const dayNight = new DayNight(scene, WORLD, drawDistance * 1.2);
 dayNight.groundAt = (x, z) => Math.max(generator.getBaseHeight(x, z), WORLD.seaLevel);
 dayNight.horizonDistance = drawDistance * 0.9;
 const clouds = new Clouds(scene);
+windDirection.value.set(clouds.wind.x, clouds.wind.z).normalize(); // (the gusts roll the way the clouds drift)
 // The weather: cloud cover, rain and thunderstorms, changing by itself.
 const weather = new Weather('fair');
 const rain = new Rain(scene);
@@ -89,7 +93,10 @@ const rocks = createRockLayer(WORLD);
 const trees = createTreeLayer({ rocks });
 const grass = createGrassLayer(WORLD);
 chunks.addLayer(water);
-chunks.addLayer(createRiverLayer(dayNight.horizon));
+const rivers = createRiverLayer(dayNight.horizon);
+// Leaves drifting down from the trees round about (see FallingLeaves).
+const fallingLeaves = new FallingLeaves(scene);
+chunks.addLayer(rivers);
 chunks.addLayer(createReedLayer(WORLD));
 chunks.addLayer(createLilyLayer(WORLD));
 chunks.addLayer(createVentLayer(WORLD));
@@ -112,6 +119,8 @@ const caves = createCaveLayer(WORLD);
 chunks.addLayer(caves);
 chunks.addLayer(createEntranceLayer(WORLD, caves.material));
 chunks.addLayer(rocks);
+// The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).
+for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.material, rocks.material, farTrees.material, logs.material, water.material, rivers.material]) if (m) addCloudShadow(m);
 
 /**
  * What you'd stand on at (x, z) from feet height `feetY`: the terrain, or a
@@ -203,6 +212,7 @@ const ui = {
   alt: document.getElementById('stat-alt'),
   speed: document.getElementById('stat-speed'),
   biome: document.getElementById('stat-biome'),
+  pos: document.getElementById('stat-pos'),
 };
 ui.seed.value = WORLD.seed;
 
@@ -437,7 +447,8 @@ function coldHere(dt) {
 
 // What's around you, for the sounds of the place (see Sound.ambience):
 // sampled every second from the land round about.
-const around = { wait: 0, env: { woods: 0, jungle: 0, grass: 0, wetland: 0, ocean: 0, lava: 0, high: 0, snowy: 0, day: 1, dawn: 0, dusk: 0, wind: 0, rain: 0 } };
+const around = { wait: 0, surf: { x: 0, z: 0 }, env: { woods: 0, jungle: 0, grass: 0, wetland: 0, ocean: 0, lava: 0, high: 0, snowy: 0, day: 1, dawn: 0, dusk: 0, wind: 0, rain: 0,
+  exposure: 0, hollow: 0, canopy: 0, bare: 0, gust: 0, fall: 0, fallPan: 0, brook: 0, brookPan: 0, river: 0, riverPan: 0, surfPan: 0 } };
 function surroundings(dt, snow) {
   const e = around.env;
   around.wait -= dt;
@@ -454,14 +465,33 @@ function surroundings(dt, snow) {
       jungle += w.jungle / pts.length;
       wetland += w.wetland / pts.length;
     }
+    around.surf.x = around.surf.z = 0;
     for (let k = 0; k < 8; k++) {
       const a = (k / 8) * Math.PI * 2;
       for (const d of [40, 120]) {
         const px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
-        if (generator.getBaseHeight(px, pz) < WORLD.seaLevel - 0.5 && generator.getOceanness(px, pz) > 0.5) ocean = Math.max(ocean, d < 100 ? 1 : 0.6);
+        if (generator.getBaseHeight(px, pz) < WORLD.seaLevel - 0.5 && generator.getOceanness(px, pz) > 0.5) {
+          ocean = Math.max(ocean, d < 100 ? 1 : 0.6);
+          around.surf.x += Math.cos(a) / d; // (which way the sea is)
+          around.surf.z += Math.sin(a) / d;
+        }
       }
     }
-    Object.assign(e, { woods, jungle, grass, wetland, ocean: ocean * (1 - smoothstep(30, 90, camera.position.y - WORLD.seaLevel)), lava: heat.lava });
+    // The lie of the land: up on a ridge or a peak (the wind blows harder
+    // and whistles), or down in a valley or a canyon (hushed).
+    const here = generator.getBaseHeight(x, z);
+    let ring = 0;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      for (const d of [120, 300]) ring += generator.getBaseHeight(x + Math.cos(a) * d, z + Math.sin(a) * d) / 16;
+    }
+    const above = camera.position.y - here;
+    Object.assign(e, {
+      woods, jungle, grass, wetland, ocean: ocean * (1 - smoothstep(30, 90, camera.position.y - WORLD.seaLevel)), lava: heat.lava,
+      exposure: smoothstep(4, 40, here - ring) * (1 - smoothstep(40, 150, above)),
+      hollow: smoothstep(4, 40, ring - here) * (1 - smoothstep(15, 80, above)),
+      canopy: Math.min(1, woods + jungle) * (1 - smoothstep(12, 50, above)),
+    });
   }
   const sun = dayNight.sunDir.y;
   e.day = smoothstep(-0.05, 0.12, sun);
@@ -471,7 +501,54 @@ function surroundings(dt, snow) {
   e.snowy = Math.max(snow, seasonUniforms.uSnowfall.value * 0.7);
   e.wind = Math.min(1, windStrength.value / 1.6);
   e.rain = weather.rain;
+  e.bare = seasonUniforms.uWinter.value;
+  e.gust = gustAt(camera.position.x, camera.position.z);
+  e.surfPan = around.surf.x || around.surf.z ? panTowards(camera, camera.position.x + around.surf.x * 1e4, camera.position.z + around.surf.z * 1e4) : 0;
+  waterSounds(dt, e);
   return e;
+}
+
+// Running water near you, for its sound: the waterfalls and the nearest
+// stretch of each stream and river, looked up now and then by a chunk
+// worker (which knows the rivers); how loud each is, and from which side,
+// worked out every frame as you move.
+const waterNear = { wait: 0, busy: false, falls: [], runs: [] };
+function waterSounds(dt, e) {
+  waterNear.wait -= dt;
+  const p = camera.position;
+  if (waterNear.wait <= 0 && !waterNear.busy && !sheltered) {
+    waterNear.wait = 1.5;
+    waterNear.busy = true;
+    chunks
+      .task({ kind: 'waterSounds', x: p.x, z: p.z })
+      .then((r) => Object.assign(waterNear, r))
+      .catch(() => {})
+      .finally(() => (waterNear.busy = false));
+  }
+  let fall = 0, fallPan = 0, brook = 0, brookPan = 0, river = 0, riverPan = 0;
+  for (const f of waterNear.falls) {
+    const d = Math.hypot(f.x - p.x, (f.y - p.y) * 0.7, f.z - p.z);
+    const v = Math.min(1, 0.35 + f.drop / 10 + f.width / 12) / (1 + (d / (10 + f.drop * 2)) ** 2);
+    fall += v;
+    fallPan += v * panTowards(camera, f.x, f.z);
+  }
+  for (const r of waterNear.runs) {
+    const d = Math.hypot(r.x - p.x, (r.y - p.y) * 0.7, r.z - p.z);
+    if (r.stream && r.width < 6) {
+      const v = (0.35 + Math.min(0.65, r.steep * 5)) / (1 + (d / 10) ** 2);
+      brook += v;
+      brookPan += v * panTowards(camera, r.x, r.z);
+    } else {
+      const v = Math.min(1, 0.3 + r.width / 10) / (1 + (d / 22) ** 2);
+      river += v;
+      riverPan += v * panTowards(camera, r.x, r.z);
+    }
+  }
+  Object.assign(e, {
+    fall: Math.min(1, fall), fallPan: fall ? fallPan / fall : 0,
+    brook: Math.min(1, brook), brookPan: brook ? brookPan / brook : 0,
+    river: Math.min(1, river), riverPan: river ? riverPan / river : 0,
+  });
 }
 
 // Heat haze: in the desert and the dune seas, in the heat of a clear
@@ -514,7 +591,7 @@ function farLightning(dt) {
         showers.flash = 1;
         showers.flashAt = s;
         const d = Math.hypot(s.x - camera.position.x, s.z - camera.position.z);
-        setTimeout(() => sound.thunder(d), (d / 343) * 1000);
+        setTimeout(() => sound.thunder(d, panTowards(camera, s.x, s.z)), (d / 343) * 1000);
       }
     }
   }
@@ -611,7 +688,8 @@ resize();
 
 let lastTime = performance.now();
 // What the clouds need to know about the sky each frame.
-const cloudSky = { cover: 0, storm: 0, glowColor: dayNight.glowColor, get glowStrength() { return dayNight.glowStrength; }, sunDir: dayNight.sunDir, viewMatrix: null };
+const cloudSky = { cover: 0, storm: 0, glowColor: dayNight.glowColor, get glowStrength() { return dayNight.glowStrength; }, sunDir: dayNight.sunDir, viewMatrix: null,
+  lightDir: dayNight.lightDirection, get lightStrength() { return dayNight.light.intensity / 2.2; } };
 const dir = new THREE.Vector3();
 let frames = 0;
 let fpsTime = 0;
@@ -656,6 +734,15 @@ function tick(now) {
   // In a cold winter, it snows (over the lands that have one).
   const snow = seasonUniforms.uWinter.value * coldHere(dt);
   rain.update(now / 1000, camera.position, weather.rain, clouds.wind, wind, dayNight.horizon, snow);
+  // Water: the sun's glitter on it (not behind cloud), rings where the rain falls; the waterfalls' mist in the daylight.
+  sparkleUniforms.uSunView.value.copy(dayNight.lightDirection).transformDirection(camera.matrixWorldInverse);
+  sparkleUniforms.uSunColor.value.copy(dayNight.light.color);
+  sparkleUniforms.uGlitter.value = Math.min(1, dayNight.light.intensity / 2.2) * (1 - smoothstep(0.55, 0.85, weather.cover)) * (1 - weather.rain);
+  sparkleUniforms.uRainfall.value = weather.rain * (1 - snow);
+  mistLight.value = 0.2 + 0.8 * smoothstep(-0.1, 0.25, dayNight.sunDir.y);
+  // Leaves drifting down from the trees round about.
+  const autumn = seasonUniforms.uAutumn.value, spring = seasonUniforms.uSpring.value, winter = seasonUniforms.uWinter.value;
+  fallingLeaves.update(dt, camera, trees.crowns, WORLD.chunkSize, (x, z) => chunks.groundHeightAt(x, z), { autumn, spring, winter, summer: Math.max(0, 1 - autumn - spring - winter) }, wind, windDirection.value, sheltered);
   body.update(controls, dt);
   torches.update(now / 1000, camera.position);
   updateVisibility();
@@ -689,6 +776,8 @@ function tick(now) {
     ui.clock.textContent = dayNight.clock;
     if (document.activeElement !== ui.time) ui.time.value = dayNight.hour.toFixed(2);
     ui.alt.textContent = `${Math.round(camera.position.y)} m`;
+    // (Where you are, so a screenshot says where to look.)
+    if (ui.pos) ui.pos.textContent = `x ${Math.round(camera.position.x)} · z ${Math.round(camera.position.z)}`;
     ui.speed.textContent = `${Math.round(controls.currentSpeed)} m/s`;
     // (Worked out by a chunk worker, which knows the rivers already: the
     // main thread never has to.)
@@ -711,4 +800,4 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, renderer, scene, camera, chunks, farTrees, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };

@@ -2,6 +2,7 @@ import { BufferAttribute, BufferGeometry, Color, Mesh, MeshPhongMaterial } from 
 import { waterData } from '../waterData.js';
 import { windStrength } from '../../render/wind.js';
 import { seasonUniforms } from '../../render/Seasons.js';
+import { SPARKLE_HEAD, sparkleUniforms } from '../../render/waterSparkle.js';
 
 /**
  * Low-poly water for every chunk that dips below sea level.
@@ -31,6 +32,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.34, skyColor 
     shader.uniforms.uSky = uniforms.uSky;
     shader.uniforms.uWind = windStrength;
     shader.uniforms.uWinter = seasonUniforms.uWinter;
+    Object.assign(shader.uniforms, sparkleUniforms);
     // Fresnel: looking across the water you see the sky reflected in it,
     // looking straight down you see into it.
     shader.fragmentShader = shader.fragmentShader
@@ -46,7 +48,8 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.34, skyColor 
           vec2 i = floor(p), f = fract(p);
           f = f * f * (3.0 - 2.0 * f);
           return mix(mix(waterHash(i), waterHash(i + vec2(1.0, 0.0)), f.x), mix(waterHash(i + vec2(0.0, 1.0)), waterHash(i + vec2(1.0, 1.0)), f.x), f.y);
-        }`)
+        }
+        ${SPARKLE_HEAD}`)
       .replace(
         '#include <fog_fragment>',
         /* glsl */ `float fresnel = pow(1.0 - clamp(dot(normal, normalize(vViewPosition) * -1.0), 0.0, 1.0), 3.0);
@@ -60,6 +63,10 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.34, skyColor 
         float white = max(breaking, cap);
         gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.95, 0.97, 0.98), white * 0.85);
         gl_FragColor.a = mix(gl_FragColor.a, 1.0, white * 0.7);
+        // Sun glitter (not where a cloud's shadow lies), and rings in the rain.
+        float open = (1.0 - vIce) * (1.0 - white);
+        gl_FragColor.rgb += sunGlitter(vWorld, normal, normalize(-vViewPosition), uTime) * open * (1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r * 1.6);
+        gl_FragColor.rgb += rainRings(vWorld, uTime) * 0.22 * open;
         // Winter: lakes freeze over.
         gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.74, 0.84, 0.9), vIce * 0.85);
         gl_FragColor.a = mix(gl_FragColor.a, 0.95, vIce);

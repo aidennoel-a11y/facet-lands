@@ -111,29 +111,34 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (!(ground >= seaLevel + (marsh ? -0.8 : 1.2))) continue; // outside the chunk, in water or over a cave mouth
       if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
       if (generator.rivers.at(wx, wz, 1.5)) continue; // nor in a river or right on its bank
+      // How high and how steep, from the land itself rather than this level
+      // of detail's mesh (far off, its big triangles can pass metres above
+      // or below the ground on a mountainside), so trees don't come and go
+      // as you approach.
+      const hx0 = generator.getHeight(wx - 2, wz), hx1 = generator.getHeight(wx + 2, wz);
+      const hz0 = generator.getHeight(wx, wz - 2), hz1 = generator.getHeight(wx, wz + 2);
+      const land = (hx0 + hx1 + hz0 + hz1) / 4;
       // Nothing but cacti grows on sand (beaches included).
-      const colourHeight = ground + generator.getColorJitter(wx, wz);
+      const colourHeight = land + generator.getColorJitter(wx, wz);
       if (biome.id !== 'desert' && !marsh && colourHeight < 7) continue;
       // Nor on bare rock: the grey band up the mountains, and faces
       // steep enough to show rock (the same test the ground's colour
       // uses). Steep slopes that are still green keep their trees.
-      // (How steep, from the land itself rather than this level of
-      // detail's mesh, so trees don't come and go as you approach.)
-      const gradX = (generator.getHeight(wx + 2, wz) - generator.getHeight(wx - 2, wz)) / 4;
-      const gradZ = (generator.getHeight(wx, wz + 2) - generator.getHeight(wx, wz - 2)) / 4;
+      const gradX = (hx1 - hx0) / 4;
+      const gradZ = (hz1 - hz0) / 4;
       const upness = 1 / Math.sqrt(1 + gradX * gradX + gradZ * gradZ);
       const r = hash2(gi, gj, seed + 12);
       const cliff = 1 - smoothstep(0.5, 0.72, upness);
       if (r < Math.max(cliff, lakeside ? 0 : smoothstep(128, 146, colourHeight))) continue;
       // And ever fewer the higher you go (the tree line).
-      if (!lakeside && hash2(gi, gj, seed + 13) < smoothstep(85, 150, ground) * 0.9) continue;
+      if (!lakeside && hash2(gi, gj, seed + 13) < smoothstep(85, 150, land) * 0.9) continue;
 
       // Too steep for roots? (height change per metre)
       if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
 
       // Pick a species that is happy at this height (edges blurred a bit).
       // In a birch wood (or aspen stand) the `grove` species take over.
-      const h = ground + (hash2(gi, gj, seed + 3) - 0.5) * 16;
+      const h = land + (hash2(gi, gj, seed + 3) - 0.5) * 16;
       const grove = trees.species.some((s) => s.grove) ? generator.getGrove(wx, wz) : 0;
       const weight = (s) => s.weight * (s.grove ? 1 + 14 * grove : 1 - 0.85 * grove);
       let total = 0;

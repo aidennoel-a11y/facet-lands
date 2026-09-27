@@ -21,9 +21,14 @@ function smoothstep(a, b, x) {
   return t * t * (3 - 2 * t);
 }
 
-/** Spray for each waterfall in the chunk: cubes pouring over the lip, and splashing up at the foot. */
+/**
+ * Spray for each waterfall in the chunk: cubes pouring over the lip, and
+ * splashing up at the foot; and over the bigger falls a mist, puffs of it
+ * billowing up from the foot (`mist`: x, y, z; `mistLife`: seconds, phase,
+ * size, rise per life).
+ */
 function sprayData(rivers, x0, z0, chunkSize) {
-  const starts = [], velocities = [], lives = [];
+  const starts = [], velocities = [], lives = [], mist = [], mistLife = [];
   let n = 0;
   for (const course of rivers) {
     const P = course.points;
@@ -56,10 +61,21 @@ function sprayData(rivers, x0, z0, chunkSize) {
         lives.push((2 * up) / 9.8, rand(), 0.15 + rand() * 0.25);
       }
       n += pour + splash;
+      if (fall > 1.5) {
+        const puffs = Math.round(5 + Math.min(12, fall * 1.3 + width));
+        for (let k = 0; k < puffs; k++) {
+          const across = (rand() - 0.5) * width * 1.3;
+          const out = 0.5 + rand() * (2 + fall * 0.25);
+          mist.push(b.x - x0 - uz * across + ux * out, b.level + 0.2, b.z - z0 + ux * across + uz * out);
+          mistLife.push(3 + rand() * 3, rand(), 1.6 + rand() * 1.4 + fall * 0.12, 1.5 + rand() * 1.5 + fall * 0.3);
+        }
+      }
     }
   }
   if (!n) return null;
-  return { starts: new Float32Array(starts), velocities: new Float32Array(velocities), lives: new Float32Array(lives) };
+  const out = { starts: new Float32Array(starts), velocities: new Float32Array(velocities), lives: new Float32Array(lives) };
+  if (mist.length) Object.assign(out, { mist: new Float32Array(mist), mistLife: new Float32Array(mistLife) });
+  return out;
 }
 
 /**

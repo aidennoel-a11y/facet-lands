@@ -38,6 +38,29 @@ self.onmessage = (event) => {
     self.postMessage({ id, result: g.describe(event.data.x, event.data.z) });
     return;
   }
+  if (event.data.kind === 'waterSounds') {
+    // The waterfalls and running water near the player (for their sounds).
+    const { x, z } = event.data, R = 260;
+    const falls = [], runs = [];
+    for (const course of g.rivers.inBox(x - R, z - R, x + R, z + R)) {
+      const P = course.points;
+      let best = null;
+      for (let i = 0; i < P.length - 1; i++) {
+        const a = P[i], b = P[i + 1];
+        const dx = b.x - a.x, dz = b.z - a.z, run = Math.hypot(dx, dz) || 1, drop = a.level - b.level;
+        if (drop / run >= 0.4 && drop >= 0.8 && Math.hypot(b.x - x, b.z - z) < R) falls.push({ x: b.x, y: b.level, z: b.z, drop, width: Math.max(a.width, b.width) });
+        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (run * run)));
+        const px = a.x + dx * t, pz = a.z + dz * t, d = Math.hypot(px - x, pz - z);
+        if (d < 150 && (!best || d < best.d)) best = { d, x: px, z: pz, y: a.level + (b.level - a.level) * t, steep: drop / run, width: a.width + (b.width - a.width) * t, stream: course.kind === 'stream' };
+      }
+      if (best) runs.push(best);
+    }
+    const near = (p) => Math.hypot(p.x - x, p.z - z);
+    falls.sort((p, q) => near(p) - near(q));
+    runs.sort((p, q) => p.d - q.d);
+    self.postMessage({ id, result: { falls: falls.slice(0, 8), runs: runs.slice(0, 6) } });
+    return;
+  }
   if (event.data.kind === 'map') {
     // A tile of the big map.
     const { x0, z0, n, s } = event.data;

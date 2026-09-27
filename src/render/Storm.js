@@ -118,6 +118,15 @@ export class Rain {
  * follows at the speed of sound: a sharp crack for a close strike, a long
  * low rumble for a distant one.
  */
+const forward = new Vector3();
+/** Which side of you (x, z) is: -1 left .. 1 right. */
+export function panTowards(camera, x, z) {
+  camera.getWorldDirection(forward);
+  const dx = x - camera.position.x, dz = z - camera.position.z;
+  const d = Math.hypot(dx, dz) || 1, f = Math.hypot(forward.x, forward.z) || 1;
+  return (dx * -forward.z + dz * forward.x) / (d * f);
+}
+
 export class Lightning {
   constructor(scene) {
     this.scene = scene;
@@ -181,7 +190,8 @@ export class Lightning {
     // Thunder arriving.
     for (let i = this.pending.length - 1; i >= 0; i--) {
       if (this.time >= this.pending[i].at) {
-        sound?.thunder(this.pending[i].distance, sheltered);
+        const { distance, x, z } = this.pending[i];
+        sound?.thunder(distance, panTowards(camera, x, z));
         this.pending.splice(i, 1);
       }
     }
@@ -207,7 +217,8 @@ export class Lightning {
 
   #start(camera, ground) {
     const angle = Math.random() * Math.PI * 2;
-    const distance = 250 + Math.random() * 1300;
+    // (Now and then one strikes close by: the thunder all but at once.)
+    const distance = Math.random() < 0.1 ? 90 + Math.random() * 160 : 250 + Math.random() * 1300;
     const x = camera.position.x + Math.cos(angle) * distance;
     const z = camera.position.z + Math.sin(angle) * distance;
     const base = ground(x, z);
@@ -219,9 +230,9 @@ export class Lightning {
     this.bolt.frustumCulled = false;
     this.bolt.renderOrder = 4;
     this.scene.add(this.bolt);
-    const power = 0.45 + 0.55 * (1 - (distance - 250) / 1300);
+    const power = Math.min(1, 0.45 + 0.55 * (1 - (distance - 250) / 1300));
     this.strike = { age: 0, pulses: [0, 0.12 + Math.random() * 0.1, 0.3 + Math.random() * 0.25].slice(0, 2 + Math.floor(Math.random() * 2)), power };
-    this.pending.push({ at: this.time + distance / 343, distance });
+    this.pending.push({ at: this.time + distance / 343, distance, x, z });
     this.wait = 3 + Math.random() * 12;
   }
 

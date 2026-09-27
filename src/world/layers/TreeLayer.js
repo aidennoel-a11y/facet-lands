@@ -25,11 +25,31 @@ const TRUNK_RADIUS = { pine: 0.31, spruce: 0.27, broadleaf: 0.34, birch: 0.19, p
   oak: 0.5, larch: 0.25, silverBirch: 0.2, aspen: 0.19, baobab: 1.05, joshuaTree: 0.28, charredSnag: 0.28, treeFern: 0.22, weepingWillow: 0.42, mangrove: 0.8, jungleGiant: 0.75, junglePalm: 0.22, bamboo: 0.9, jungleCanopy: 0.45 };
 const TRUNK_OFFSET = { acacia: 0.4 };
 
+// A broad-leaved (deciduous) tree's crown, for a tree of size 1: { bottom,
+// top, radius }, or null for the evergreens (remembered).
+const CROWNS = new Map();
+function crownOf(type) {
+  if (!CROWNS.has(type)) {
+    const g = TREE_GEOMETRIES[type], crown = g.userData.crown;
+    const season = g.attributes.aSeason;
+    let leafy = 0;
+    for (let k = 0; season && k < season.count; k++) leafy = Math.max(leafy, season.getX(k));
+    let out = null;
+    if (crown && leafy > 0.5) {
+      crown.computeBoundingBox();
+      const b = crown.boundingBox;
+      out = { bottom: b.min.y, top: b.max.y, radius: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2 };
+    }
+    CROWNS.set(type, out);
+  }
+  return CROWNS.get(type);
+}
+
 /**
  * @param rocks  the rock layer, if any: trees don't grow on its boulders
  */
 export function createTreeLayer({ rocks = null } = {}) {
-  const WIND = { strength: 0.012, speed: 1.1 };
+  const WIND = { strength: 0.012, speed: 1.1, gust: 0.004 }; // (leaning a little in the gusts)
   const material = addWind(new MeshLambertMaterial({ vertexColors: true, flatShading: true }), WIND);
   const leafMaterial = addWind(
     new MeshLambertMaterial({
@@ -62,6 +82,7 @@ export function createTreeLayer({ rocks = null } = {}) {
     leafMaterial,
     count: 0, // trees currently loaded, for the HUD
     trunks: new Map(), // "cx,cz" -> [x, z, radius, ...] in world space, for collisions
+    crowns: new Map(), // "cx,cz" -> [x, z, bottom, top, radius, ...] of broad-leaved crowns (world), for falling leaves
 
     /**
      * Pushes a circle (the walking player) out of any tree trunk it overlaps.
@@ -109,6 +130,16 @@ export function createTreeLayer({ rocks = null } = {}) {
         for (const t of list) trunks.push(originX + t.x + Math.cos(t.rot) * off * t.s, originZ + t.z - Math.sin(t.rot) * off * t.s, r * t.s);
       }
 
+      // Where the broad-leaved trees' crowns are (for falling leaves), on the nearer chunks.
+      const crowns = [];
+      if (lod <= 1) {
+        for (const [type, list] of Object.entries(placed)) {
+          const c = crownOf(type);
+          if (!c) continue;
+          for (const t of list) crowns.push(originX + t.x, originZ + t.z, t.y + c.bottom * t.sy, t.y + c.top * t.sy, c.radius * t.s);
+        }
+      }
+
       const group = new Group();
       group.name = 'trees';
       let count = 0;
@@ -153,8 +184,10 @@ export function createTreeLayer({ rocks = null } = {}) {
       group.userData.count = count;
       group.userData.key = `${cx},${cz}`;
       group.userData.trunks = trunks;
+      group.userData.crowns = crowns;
       layer.count += count;
       layer.trunks.set(group.userData.key, trunks);
+      layer.crowns.set(group.userData.key, crowns);
       return group;
     },
 
@@ -162,6 +195,7 @@ export function createTreeLayer({ rocks = null } = {}) {
       layer.count -= group.userData.count;
       // A rebuilt chunk (new LOD) may already have registered its trunks.
       if (layer.trunks.get(group.userData.key) === group.userData.trunks) layer.trunks.delete(group.userData.key);
+      if (layer.crowns.get(group.userData.key) === group.userData.crowns) layer.crowns.delete(group.userData.key);
       for (const mesh of group.children) mesh.dispose(); // geometry is shared
     },
   };

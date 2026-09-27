@@ -1,9 +1,30 @@
-import { MeshDepthMaterial, RGBADepthPacking } from 'three';
+import { MeshDepthMaterial, RGBADepthPacking, Vector2 } from 'three';
 
 // Shared clock and strength for every wind-blown material; call updateWind()
 // once per frame.
 export const windTime = { value: 0 };
 export const windStrength = { value: 1 };
+// Which way it blows (the way the clouds drift).
+export const windDirection = { value: new Vector2(0.95, 0.31) };
+
+// Gusts: fronts of stronger wind a hundred-odd metres apart, rolling
+// downwind across the land at about 9 m/s, their lines wavering. (The
+// same in the shaders, where they bend the grass over in waves, and here,
+// where the wind's sound swells as one passes.)
+const GUST = /* glsl */ `
+  float windGust(vec2 p, float t, vec2 dir, float strength) {
+    float along = dot(p, dir), across = dot(p, vec2(-dir.y, dir.x));
+    float w = along * 0.045 - t * 0.4 + 1.6 * sin(across * 0.011 + t * 0.05) + 0.7 * sin(across * 0.031 - along * 0.008);
+    return smoothstep(0.55, 1.0, sin(w)) * smoothstep(0.1, 0.5, strength);
+  }`;
+
+/** How strong a gust is at (x, z) now (0..1), as the shaders have it. */
+export function gustAt(x, z) {
+  const d = windDirection.value, t = windTime.value;
+  const along = x * d.x + z * d.y, across = -x * d.y + z * d.x;
+  const w = along * 0.045 - t * 0.4 + 1.6 * Math.sin(across * 0.011 + t * 0.05) + 0.7 * Math.sin(across * 0.031 - along * 0.008);
+  return smoothstep(0.55, 1, Math.sin(w)) * smoothstep(0.1, 0.5, windStrength.value);
+}
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -42,8 +63,14 @@ export function describeWind(strength) {
  *   fade      [start, end] distance from the camera over which instances
  *             shrink to nothing (used for grass), or null
  */
-export function addWind(material, { strength = 0.02, speed = 1.2, fade = null } = {}) {
+export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, gust = 0 } = {}) {
   const f = (n) => n.toFixed(4);
+  // (A gust bends it right over downwind, and shows the paler undersides:
+  // \`vGust\` for the fragment shader.)
+  const gustCode = gust
+    ? `vGust = windGust(wOrigin.xz, uWindTime, uWindDir, uWindStrength);
+        transformed.xz += uWindDir * pow(max(transformed.y, 0.0), 1.5) * ${f(gust)} * vGust;`
+    : '';
   const fadeCode = fade
     ? `transformed *= 1.0 - smoothstep(${f(fade[0])}, ${f(fade[1])}, distance(wOrigin.xz, cameraPosition.xz));`
     : '';
@@ -52,8 +79,9 @@ export function addWind(material, { strength = 0.02, speed = 1.2, fade = null } 
     previous?.call(material, shader, renderer);
     shader.uniforms.uWindTime = windTime;
     shader.uniforms.uWindStrength = windStrength;
+    shader.uniforms.uWindDir = windDirection;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uWindTime;\nuniform float uWindStrength;')
+      .replace('#include <common>', `#include <common>\nuniform float uWindTime;\nuniform float uWindStrength;\nuniform vec2 uWindDir;\nvarying float vGust;\n${GUST}`)
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `#include <begin_vertex>
@@ -66,10 +94,13 @@ export function addWind(material, { strength = 0.02, speed = 1.2, fade = null } 
         float wBend = pow(max(transformed.y, 0.0), 1.5) * ${f(strength)} * uWindStrength;
         transformed.x += (sin(wPhase) + 0.35 * sin(wPhase * 2.7 + position.z)) * wBend;
         transformed.z += (0.6 * cos(wPhase * 0.8) + 0.25 * sin(wPhase * 3.1 + position.x)) * wBend;
+        vGust = 0.0;
+        ${gustCode}
         ${fadeCode}`,
       );
+    if (!shader.fragmentShader.includes('varying float vGust;')) shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGust;');
   };
-  const key = `wind-${strength}-${speed}-${fade}`;
+  const key = `wind-${strength}-${speed}-${fade}-${gust}`;
   material.customProgramCacheKey = () => key;
   return material;
 }

@@ -87,16 +87,17 @@ export function createGrassLayer(config) {
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
   // Double-sided materials flip the normal on back faces, which would turn
   // the far side of every blade black. Undo the flip: both sides face up.
+  // (And as a gust rolls over it, the grass lies over and shows paler.)
   material.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <normal_fragment_begin>',
-      '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal *= faceDirection;\n#endif',
-    );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal *= faceDirection;\n#endif')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 + 0.2 * vGust;');
   };
   addWind(material, {
     strength: 0.25,
     speed: 1.9,
     fade: config.grassFade,
+    gust: 0.3,
   });
   seasonalGrass(material);
 
