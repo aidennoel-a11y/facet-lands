@@ -345,7 +345,6 @@ export class DayNight {
 
     this._lightDir = new Vector3();
     this._shadowDir = new Vector3(); // (see update: the light's direction, in steps)
-    this.shadowMoved = true;
     this._shaftDir = new Vector3();
     this._basis = new Matrix4();
     this._inverse = new Matrix4();
@@ -553,12 +552,6 @@ export class DayNight {
     f.y = Math.round(f.y / texel) * texel;
     f.applyMatrix4(this._basis);
 
-    // (Whether the shadow map had better be drawn afresh right away, see
-    // main: the light turned, or the box jumped, as when you turn round.
-    // Walking along, a map a frame old still lines up: it keeps the view
-    // it was drawn from.)
-    this.shadowMoved = light.target.position.distanceTo(f) > 20 || !this._shadowPlaced?.equals(sd);
-    (this._shadowPlaced ??= new Vector3()).copy(sd);
     light.target.position.copy(f);
     light.position.copy(f).addScaledVector(sd, 800);
   }
