@@ -40,13 +40,23 @@ function reedGeometry(seed = 7) {
     const tx = bx + Math.cos(angle) * lean, tz = bz + Math.sin(angle) * lean;
     const fx = Math.cos(facing) * half, fz = Math.sin(facing) * half;
     tri([bx + fx, 0, bz + fz], [bx - fx, 0, bz - fz], [tx, height, tz], STEM_LOW, STEM_LOW, STEM_HIGH);
-    if (rand() < 0.35) {
-      // A cattail: a small brown spindle just below the tip.
-      const y0 = height * 0.72, y1 = height * 0.9, w = 0.07;
-      const px = bx + (tx - bx) * 0.8, pz = bz + (tz - bz) * 0.8;
-      for (const [ox, oz] of [[w, 0], [0, w], [-w, 0], [0, -w]]) {
-        tri([px + ox, y0, pz + oz], [px - oz, y0, pz + ox], [px, y1, pz], HEAD, HEAD, HEAD);
+    if (rand() < 0.45) {
+      // A cattail: a fat brown sausage of a head just below the tip, and
+      // the thin spike above it.
+      const y0 = height * 0.66, y1 = height * 0.86, w = 0.075;
+      const at = (y) => [bx + (tx - bx) * (y / height), bz + (tz - bz) * (y / height)];
+      const [ax, az] = at(y0), [cx, cz] = at(y1);
+      const ring = (x, y, z, r) => Array.from({ length: 6 }, (_, n) => [x + Math.cos((n / 6) * Math.PI * 2) * r, y, z + Math.sin((n / 6) * Math.PI * 2) * r]);
+      const lo = ring(ax, y0, az, w), hi = ring(cx, y1, cz, w);
+      const bottom = [ax, y0 - 0.04, az], top = [cx, y1 + 0.04, cz];
+      for (let n = 0; n < 6; n++) {
+        const m = (n + 1) % 6;
+        tri(lo[n], lo[m], hi[n], HEAD, HEAD, HEAD);
+        tri(hi[n], lo[m], hi[m], HEAD, HEAD, HEAD);
+        tri(bottom, lo[m], lo[n], HEAD, HEAD, HEAD);
+        tri(top, hi[n], hi[m], HEAD, HEAD, HEAD);
       }
+      tri([cx + 0.012, y1, cz], [cx - 0.012, y1, cz], [tx, height + 0.12, tz], STEM_HIGH, STEM_HIGH, STEM_HIGH);
     }
   }
   const g = new BufferGeometry();

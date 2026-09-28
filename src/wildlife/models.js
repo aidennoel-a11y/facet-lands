@@ -214,6 +214,137 @@ function bear({ coat, back, muzzle, claws = 0x2a2420, hump = 0 }) {
 export const blackBear = () => bear({ coat: 0x1c1816, back: 0x141110, muzzle: 0xa88a64 });
 export const grizzly = () => bear({ coat: 0x6e4c2e, back: 0x8a6a4a, muzzle: 0x5a3e26, hump: 1 });
 
+// The wild dogs, each built its own way (about a metre long at scale 1,
+// each kind drawn at its own scale, facing +z).
+
+/**
+ * A grey wolf: big and deep in the chest, a thick ruff of fur about the
+ * neck and shoulders, a broad head with short rounded ears and a pale mask,
+ * long legs, and a straight bushy tail hanging down.
+ */
+export function wolf() {
+  const coat = 0x8a8984, back = 0x4e4c48, pale = 0xd8d4c8, ruff = 0xa4a29a, dark = 0x2e2c2a;
+  const body = new Blocks()
+    .box(0.36, 0.38, 0.4, coat, [0, 0.7, 0.22], [0, 0, 0], [0.85, 0.9]) // deep chest
+    .box(0.42, 0.34, 0.26, ruff, [0, 0.8, 0.36], [0.3, 0, 0], [0.8, 0.9]) // the ruff, shaggy
+    .box(0.28, 0.28, 0.44, coat, [0, 0.72, -0.14], [0, 0, 0], [0.9, 1]) // barrel, tucked up
+    .box(0.29, 0.29, 0.24, coat, [0, 0.72, -0.44], [0, 0, 0], [0.85, 0.9]) // hips
+    .box(0.24, 0.07, 0.72, back, [0, 0.89, -0.08], [0, 0, 0], [0.8, 1]) // dark saddle
+    .box(0.2, 0.08, 0.46, pale, [0, 0.54, 0.02]) // pale belly
+    .box(0.26, 0.26, 0.24, ruff, [0, 0.88, 0.5], [0.5, 0, 0], [0.8, 0.85]) // thick neck
+    .box(0.2, 0.2, 0.14, pale, [0, 0.7, 0.5]) // pale throat
+    .box(0.13, 0.13, 0.42, coat, [0, 0.6, -0.68], [-0.95, 0, 0], [1.25, 1.25]) // bushy tail, hanging
+    .box(0.12, 0.12, 0.12, dark, [0, 0.42, -0.8], [-1.1, 0, 0]);
+  return {
+    body: body.build(),
+    headPivot: [0, 0.94, 0.62],
+    head: new Blocks()
+      .box(0.28, 0.24, 0.26, coat, [0, 0.02, 0.08], [0, 0, 0], [0.9, 0.9]) // broad skull
+      .box(0.3, 0.12, 0.1, ruff, [0, -0.04, 0.0]) // cheek fur
+      .box(0.15, 0.12, 0.22, pale, [0, -0.04, 0.3], [0, 0, 0], [0.8, 0.85]) // blunt muzzle, pale
+      .box(0.08, 0.06, 0.04, 0x141010, [0, 0.0, 0.42]) // nose
+      .box(0.1, 0.03, 0.1, back, [0, 0.14, 0.14]) // dark brow
+      .box(0.035, 0.03, 0.02, 0xc8a040, [0.08, 0.06, 0.21]) // amber eyes
+      .box(0.035, 0.03, 0.02, 0xc8a040, [-0.08, 0.06, 0.21])
+      .box(0.08, 0.1, 0.05, coat, [0.09, 0.17, 0.02], [0, 0, 0.2], [0.35, 0.5]) // short rounded ears
+      .box(0.08, 0.1, 0.05, coat, [-0.09, 0.17, 0.02], [0, 0, -0.2], [0.35, 0.5])
+      .build(),
+    antlers: null,
+    leg: new Blocks()
+      .box(0.11, 0.34, 0.12, coat, [0, -0.17, 0], [0, 0, 0], [0.85, 0.9])
+      .box(0.08, 0.2, 0.08, pale, [0, -0.44, 0.01])
+      .box(0.11, 0.05, 0.14, 0x6a6660, [0, -0.54, 0.03]) // big paw
+      .build(),
+    legs: [[0.12, 0.56, 0.32], [-0.12, 0.56, 0.32], [0.11, 0.56, -0.42], [-0.11, 0.56, -0.42]],
+  };
+}
+
+/**
+ * A coyote: lean and rangy, a narrow pointed muzzle, big tall ears, thin
+ * legs, tawny with a grizzled back, and the tail carried low, the tip dark.
+ */
+export function coyote() {
+  const coat = 0xae8a5e, back = 0x7a6450, grizzle = 0x9a8a7a, pale = 0xe2d2b4, dark = 0x2e2620;
+  const body = new Blocks()
+    .box(0.24, 0.28, 0.32, coat, [0, 0.66, 0.24], [0, 0, 0], [0.85, 0.9]) // narrow chest
+    .box(0.2, 0.22, 0.44, coat, [0, 0.67, -0.1], [0, 0, 0], [0.9, 1]) // slim barrel, tucked well up
+    .box(0.22, 0.24, 0.22, coat, [0, 0.67, -0.4], [0, 0, 0], [0.85, 0.9]) // hips
+    .box(0.16, 0.06, 0.8, grizzle, [0, 0.8, -0.06]) // grizzled back
+    .box(0.1, 0.04, 0.6, back, [0, 0.83, -0.06])
+    .box(0.15, 0.06, 0.42, pale, [0, 0.54, 0.02]) // pale belly
+    .box(0.16, 0.2, 0.18, coat, [0, 0.8, 0.42], [0.7, 0, 0], [0.8, 0.9]) // thin neck, reaching forward
+    .box(0.14, 0.14, 0.12, pale, [0, 0.66, 0.42]) // pale throat
+    .box(0.1, 0.1, 0.4, grizzle, [0, 0.52, -0.62], [-1.2, 0, 0], [1.15, 1.15]) // tail, carried low
+    .box(0.09, 0.09, 0.12, dark, [0, 0.33, -0.7], [-1.35, 0, 0]);
+  return {
+    body: body.build(),
+    headPivot: [0, 0.86, 0.54],
+    head: new Blocks()
+      .box(0.18, 0.17, 0.2, coat, [0, 0.02, 0.07], [0, 0, 0], [0.9, 0.9]) // small skull
+      .box(0.08, 0.07, 0.26, pale, [0, -0.03, 0.28], [0, 0, 0], [0.75, 0.8]) // long pointed muzzle
+      .box(0.05, 0.04, 0.04, 0x141010, [0, -0.01, 0.42]) // nose
+      .box(0.03, 0.025, 0.02, 0xb89040, [0.06, 0.05, 0.17]) // yellow eyes
+      .box(0.03, 0.025, 0.02, 0xb89040, [-0.06, 0.05, 0.17])
+      .box(0.08, 0.17, 0.04, coat, [0.07, 0.18, 0.02], [0, 0, 0.12], [0.2, 0.4]) // big tall ears
+      .box(0.08, 0.17, 0.04, coat, [-0.07, 0.18, 0.02], [0, 0, -0.12], [0.2, 0.4])
+      .box(0.05, 0.1, 0.01, pale, [0.07, 0.16, 0.045], [0, 0, 0.12], [0.3, 0.4]) // pale inner ears
+      .box(0.05, 0.1, 0.01, pale, [-0.07, 0.16, 0.045], [0, 0, -0.12], [0.3, 0.4])
+      .build(),
+    antlers: null,
+    leg: new Blocks()
+      .box(0.075, 0.3, 0.085, coat, [0, -0.15, 0], [0, 0, 0], [0.85, 0.9])
+      .box(0.055, 0.2, 0.055, 0xc4a47a, [0, -0.4, 0.01]) // thin shanks
+      .box(0.07, 0.04, 0.1, 0x8a6e50, [0, -0.5, 0.03]) // small paw
+      .build(),
+    legs: [[0.08, 0.52, 0.3], [-0.08, 0.52, 0.3], [0.08, 0.52, -0.38], [-0.08, 0.52, -0.38]],
+  };
+}
+
+/**
+ * A red fox: small and long in the body on short legs in black stockings,
+ * a slender snout, a white bib and chin, black-backed pointed ears, and a
+ * great brush of a tail, as long as its body, held out behind, white-tipped.
+ */
+export function fox() {
+  const coat = 0xc8622a, back = 0xa84e1c, white = 0xf2ece0, black = 0x241a14;
+  const body = new Blocks()
+    .box(0.26, 0.26, 0.3, coat, [0, 0.48, 0.3], [0, 0, 0], [0.85, 0.9]) // chest
+    .box(0.24, 0.23, 0.52, coat, [0, 0.49, -0.06], [0, 0, 0], [0.9, 1]) // long body
+    .box(0.25, 0.25, 0.24, coat, [0, 0.5, -0.4], [0, 0, 0], [0.85, 0.9]) // hips
+    .box(0.16, 0.05, 0.8, back, [0, 0.62, -0.04]) // darker back
+    .box(0.18, 0.08, 0.26, white, [0, 0.36, 0.34]) // white bib
+    .box(0.14, 0.06, 0.4, 0xe8d8c4, [0, 0.36, -0.06]) // pale belly
+    .box(0.18, 0.2, 0.18, coat, [0, 0.62, 0.48], [0.45, 0, 0], [0.8, 0.9]) // neck
+    .box(0.16, 0.18, 0.1, white, [0, 0.5, 0.52]) // white throat
+    .box(0.2, 0.2, 0.34, coat, [0, 0.46, -0.66], [-0.3, 0, 0], [1.1, 1.1]) // the brush, thick
+    .box(0.24, 0.23, 0.3, coat, [0, 0.38, -0.94], [-0.22, 0, 0], [0.8, 0.8])
+    .box(0.16, 0.15, 0.16, white, [0, 0.33, -1.14], [-0.2, 0, 0]); // white tip
+  return {
+    body: body.build(),
+    headPivot: [0, 0.68, 0.6],
+    head: new Blocks()
+      .box(0.2, 0.17, 0.2, coat, [0, 0.02, 0.06], [0, 0, 0], [0.9, 0.9]) // skull
+      .box(0.24, 0.1, 0.08, white, [0, -0.05, 0.05]) // white cheeks
+      .box(0.08, 0.07, 0.22, coat, [0, -0.02, 0.24], [0, 0, 0], [0.7, 0.8]) // slender snout
+      .box(0.07, 0.03, 0.2, white, [0, -0.06, 0.24]) // white chin
+      .box(0.045, 0.04, 0.04, 0x141010, [0, 0.0, 0.36]) // nose
+      .box(0.03, 0.025, 0.02, 0x1a0c06, [0.06, 0.05, 0.16]) // eyes
+      .box(0.03, 0.025, 0.02, 0x1a0c06, [-0.06, 0.05, 0.16])
+      .box(0.08, 0.15, 0.04, black, [0.07, 0.17, 0.0], [0, 0, 0.15], [0.2, 0.4]) // black-backed ears
+      .box(0.08, 0.15, 0.04, black, [-0.07, 0.17, 0.0], [0, 0, -0.15], [0.2, 0.4])
+      .box(0.05, 0.09, 0.01, white, [0.07, 0.15, 0.025], [0, 0, 0.15], [0.3, 0.4])
+      .box(0.05, 0.09, 0.01, white, [-0.07, 0.15, 0.025], [0, 0, -0.15], [0.3, 0.4])
+      .build(),
+    antlers: null,
+    leg: new Blocks()
+      .box(0.08, 0.16, 0.09, coat, [0, -0.08, 0], [0, 0, 0], [0.85, 0.9])
+      .box(0.06, 0.17, 0.06, black, [0, -0.24, 0.01]) // black stockings
+      .box(0.07, 0.035, 0.09, black, [0, -0.33, 0.025])
+      .build(),
+    legs: [[0.08, 0.35, 0.34], [-0.08, 0.35, 0.34], [0.08, 0.35, -0.38], [-0.08, 0.35, -0.38]],
+  };
+}
+
 // --- Birds ------------------------------------------------------------------
 // About 0.3 m long at scale 1 (each kind drawn at its own scale), centred on
 // the body, facing +z. Wings hinge at the shoulders (flapped and folded):
@@ -260,6 +391,41 @@ export const bee = () => new Blocks()
   .box(0.04, 0.04, 0.02, 0x1e1a14, [0, 0, -0.045])
   .box(0.05, 0.005, 0.04, 0xe8f0f4, [0.04, 0.03, 0.01], [0, 0, 0.3])
   .box(0.05, 0.005, 0.04, 0xe8f0f4, [-0.04, 0.03, 0.01], [0, 0, -0.3])
+  .build();
+
+/**
+ * A dragonfly: a long thin body (blue, or green), a round head with big
+ * eyes, and four clear wings held out flat. About 8 cm long at scale 1.
+ */
+export const dragonfly = (body = 0x2a82c8, eyes = 0x1e3a5a) => new Blocks()
+  .box(0.012, 0.012, 0.06, body, [0, 0, -0.035]) // the long tail
+  .box(0.018, 0.018, 0.025, body, [0, 0, 0.005]) // thorax
+  .box(0.022, 0.018, 0.016, eyes, [0, 0.002, 0.025]) // head, all eyes
+  .box(0.05, 0.002, 0.014, 0xdce8f0, [0.03, 0.008, 0.012], [0, -0.12, 0]) // wings
+  .box(0.05, 0.002, 0.014, 0xdce8f0, [-0.03, 0.008, 0.012], [0, 0.12, 0])
+  .box(0.045, 0.002, 0.013, 0xdce8f0, [0.028, 0.008, -0.006], [0, 0.15, 0])
+  .box(0.045, 0.002, 0.013, 0xdce8f0, [-0.028, 0.008, -0.006], [0, -0.15, 0])
+  .build();
+
+/**
+ * A frog sitting at the water's edge: a squat green body, its big hind
+ * legs folded at its sides, bulging eyes, a pale throat. About 9 cm long at
+ * scale 1, facing +z, sitting on y = 0.
+ */
+export const frog = () => new Blocks()
+  .box(0.05, 0.03, 0.07, 0x4f7f2e, [0, 0.022, 0], [-0.25, 0, 0], [0.8, 0.8]) // body, sitting up a little
+  .box(0.044, 0.02, 0.03, 0x5a8a34, [0, 0.035, 0.034], [0, 0, 0], [0.85, 0.8]) // head
+  .box(0.04, 0.008, 0.03, 0xd8d0a0, [0, 0.022, 0.032]) // pale throat
+  .box(0.014, 0.014, 0.014, 0x2e3a1c, [0.016, 0.05, 0.036]) // eyes
+  .box(0.014, 0.014, 0.014, 0x2e3a1c, [-0.016, 0.05, 0.036])
+  .box(0.016, 0.018, 0.05, 0x44702a, [0.03, 0.01, -0.01]) // folded hind legs
+  .box(0.016, 0.018, 0.05, 0x44702a, [-0.03, 0.01, -0.01])
+  .box(0.022, 0.006, 0.026, 0x3e6624, [0.034, 0.003, 0.018]) // big feet
+  .box(0.022, 0.006, 0.026, 0x3e6624, [-0.034, 0.003, 0.018])
+  .box(0.008, 0.022, 0.008, 0x44702a, [0.018, 0.012, 0.04]) // front legs
+  .box(0.008, 0.022, 0.008, 0x44702a, [-0.018, 0.012, 0.04])
+  .box(0.012, 0.004, 0.03, 0x2e4a1a, [0.012, 0.038, -0.012]) // dark spots
+  .box(0.012, 0.004, 0.02, 0x2e4a1a, [-0.014, 0.036, -0.02])
   .build();
 
 /** A firefly's light: a tiny block. */

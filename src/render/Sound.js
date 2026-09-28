@@ -297,7 +297,8 @@ export class Sound {
    * A creature's call, from off to one side (`pan`, -1 left .. 1 right), as
    * loud as `volume` (0..1): 'caw' (a crow), 'gull', 'hawk' (a long
    * screech), 'snort' (a startled deer), 'grunt' (a bison), 'flutter' (birds
-   * taking off); and not creatures: 'splash', 'bigsplash', 'rumble' (a
+   * taking off), 'howl' (wolves), 'yip' (coyotes), 'croak' (a frog), 'peep'
+   * (a spring peeper); and not creatures: 'splash', 'bigsplash', 'rumble' (a
    * volcano), 'crackle' (a fire).
    */
   call(kind, pan = 0, volume = 1) {
@@ -375,6 +376,20 @@ export class Sound {
       tone(t, 0.7, 'sawtooth', 85, 65, 220, 1, 0.2);
     } else if (kind === 'flutter') {
       noise(t, 0.9, 1400, 0.8, 0.07, 22);
+    } else if (kind === 'howl') {
+      // A long rising, falling howl, and another voice joining in.
+      tone(t, 2.6, 'sine', 380, 520, 600, 1.2, 0.12, 5);
+      tone(t + 1.1, 2.2, 'sine', 460, 600, 700, 1.2, 0.08, 6);
+    } else if (kind === 'yip') {
+      const n = 4 + Math.floor(Math.random() * 5);
+      for (let k = 0; k < n; k++) tone(t + k * 0.16 + Math.random() * 0.05, 0.12, 'sawtooth', 900 + Math.random() * 300, 1300, 1200, 1.5, 0.05);
+    } else if (kind === 'croak') {
+      // A frog: a low, rattling croak or two.
+      const n = 1 + Math.floor(Math.random() * 2), f = 160 + Math.random() * 90;
+      for (let k = 0; k < n; k++) tone(t + k * 0.26, 0.18, 'square', f * 1.1, f * 0.85, f * 2.4, 1.6, 0.07, 38);
+    } else if (kind === 'peep') {
+      // A spring peeper: a high rising whistle.
+      tone(t, 0.12, 'sine', 2500 + Math.random() * 300, 3000 + Math.random() * 300, 2800, 1, 0.035);
     } else if (kind === 'splash') {
       noise(t, 0.22, 2200, 0.9, 0.08);
       tone(t, 0.12, 'sine', 700, 300, 500, 1, 0.05);

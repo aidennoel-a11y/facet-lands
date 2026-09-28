@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   Color,
@@ -88,16 +89,18 @@ function part(geometry, colorLow, colorHigh = colorLow, options = {}) {
  * crown on its own (as userData.crown) so leaf clusters can be placed right
  * on its faces.
  */
-function withCrown(wood, crown) {
-  // Mark which vertices are crown (1) and which wood (0), for the seasons.
+function withCrown(wood, crown, fruit = []) {
+  // Mark which vertices are crown (1) and which wood (0), for the seasons
+  // (and fruit, 2).
   const mark = (g, v) => g.setAttribute('aCrown', new BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
   wood.forEach((g) => mark(g, 0));
   crown.forEach((g) => mark(g, 1));
-  const solid = mergeGeometries([...wood, ...crown]);
+  fruit.forEach((g) => mark(g, 2));
+  const solid = mergeGeometries([...wood, ...crown, ...fruit]);
   solid.userData.crown = mergeGeometries(crown);
   // And the tree without the boughs inside its crown, for whenever they're
   // hidden in the leaves (fewer faces to draw): see TreeLayer.
-  if (wood.some((g) => g.userData.bough)) solid.userData.lean = mergeGeometries([...wood.filter((g) => !g.userData.bough), ...crown]);
+  if (wood.some((g) => g.userData.bough)) solid.userData.lean = mergeGeometries([...wood.filter((g) => !g.userData.bough), ...crown, ...fruit]);
   return solid;
 }
 
@@ -1003,6 +1006,83 @@ function onMesh(geometry) {
   };
 }
 
+// Fruit and berries: little blocks dotted over the outside of a crown, each
+// centred on a quarter-metre grid point (and under 0.25 m across) (so the seasons can grow each one out
+// from its middle: see seasonalTrees), in `colours`.
+function fruitOn(blobs, count, size, colours, seed, { low = 0.25 } = {}) {
+  const rand = mulberry32(seed * 977);
+  const out = [], taken = new Set();
+  for (let tries = 0; out.length < count && tries < count * 40; tries++) {
+    const [bx, by, bz, r, sy = 1] = blobs[Math.floor(rand() * blobs.length)];
+    // Round the sides and underneath, where fruit hangs.
+    const a = rand() * Math.PI * 2, up = -0.6 + rand() * (0.6 + low * 2);
+    const c = Math.sqrt(Math.max(0, 1 - up * up));
+    const px = bx + Math.cos(a) * c * r, py = by + up * r * sy, pz = bz + Math.sin(a) * c * r;
+    const gx = Math.floor(px * 4), gy = Math.floor(py * 4), gz = Math.floor(pz * 4);
+    const key = `${gx},${gy},${gz}`;
+    if (taken.has(key)) continue;
+    const x = (gx + 0.5) * 0.25, y = (gy + 0.5) * 0.25, z = (gz + 0.5) * 0.25;
+    // (Still on the crown's surface once it's snapped to the grid.)
+    const d = Math.hypot(x - bx, (y - by) / sy, z - bz) / r;
+    if (d < 0.9 || d > 1.08) continue;
+    taken.add(key);
+    const k = Math.min(0.22, size * (0.8 + 0.4 * rand()));
+    const colour = colours[Math.floor(rand() * colours.length)];
+    out.push(part(new BoxGeometry(k, k, k), colour, colour, { x, y, z, seed: seed + out.length }));
+  }
+  return out;
+}
+
+// A wild apple tree: a short, crooked trunk and a low, broad, rounded crown;
+// white-pink blossom in spring, and apples through late summer into the autumn.
+const APPLE_BLOBS = [
+  [0, 3.1, 0, 1.7, 0.8],
+  [1.3, 2.8, 0.5, 1.2, 0.8],
+  [-1.2, 2.9, -0.4, 1.25, 0.8],
+  [0.2, 3.9, -0.3, 1.2, 0.8],
+];
+
+function appleTree() {
+  return withCrown(
+    [
+      part(new CylinderGeometry(0.18, 0.3, 2.0, 6), TRUNK, 0x6e4c35, { y: 1.0, rz: 0.06, seed: 700 }),
+      part(new CylinderGeometry(0.07, 0.12, 1.3, 4), TRUNK, TRUNK, { x: 0.5, y: 2.2, rz: -0.9, seed: 701 }),
+      part(new CylinderGeometry(0.07, 0.12, 1.2, 4), TRUNK, TRUNK, { x: -0.45, y: 2.1, rz: 0.85, seed: 702 }),
+      ...boughs(APPLE_BLOBS, 1.7, 2.3, TRUNK, 703),
+    ],
+    APPLE_BLOBS.map(([x, y, z, r, sy], i) =>
+      part(new IcosahedronGeometry(r, 0), 0x4c8a38, 0x86bf58, { x, y, z, sy, lump: 0.2, seed: 710 + i }),
+    ),
+    fruitOn(APPLE_BLOBS, 26, 0.17, [0xc8261c, 0xb01c18, 0xd8402a, 0xd8b030], 720),
+  );
+}
+
+// Berry bushes: a raspberry thicket (red berries) and blueberry bushes
+// (low, in the cold woods), white flowers in spring, berries in late summer.
+const BERRY_BLOBS = [
+  [0, 0.7, 0, 0.95, 0.75],
+  [0.8, 0.55, 0.3, 0.72, 0.75],
+  [-0.7, 0.5, -0.35, 0.72, 0.75],
+  [0.1, 0.5, -0.8, 0.6, 0.75],
+];
+const BLUEBERRY_BLOBS = [
+  [0, 0.45, 0, 0.8, 0.6],
+  [0.7, 0.35, 0.35, 0.6, 0.6],
+  [-0.6, 0.35, -0.3, 0.62, 0.6],
+];
+
+function berryBush(blobs, low, high, berries, seed) {
+  return withCrown(
+    blobs.flatMap(([x, y, z, r], i) => [
+      limb([x * 0.2, 0, z * 0.2], [x * 1.1, y + r * 0.3, z * 1.1], 0.04, 0.018, 0x5a3e30, 0x6e4a3a, seed + i),
+    ]),
+    blobs.map(([x, y, z, r, sy], i) => part(new DodecahedronGeometry(r, 0), low, high, { x, y, z, sy, lump: 0.18, seed: seed + 10 + i })),
+    fruitOn(blobs, 30, 0.1, berries, seed + 20, { low: 0.5 }),
+  );
+}
+const raspberryBush = () => berryBush(BERRY_BLOBS, 0x3f7a34, 0x74ae50, [0xc01830, 0xa8142a, 0xd82a40], 730);
+const blueberryBush = () => berryBush(BLUEBERRY_BLOBS, 0x365f34, 0x5f8c48, [0x3a3a8a, 0x2c2c6e, 0x4a4a9e], 760);
+
 /** Built once and shared by every chunk. */
 export const TREE_GEOMETRIES = {
   cypress: cypress(),
@@ -1034,6 +1114,9 @@ export const TREE_GEOMETRIES = {
   jungleCanopy: jungleCanopy(),
   junglePalm: junglePalm(),
   bamboo: bamboo(),
+  appleTree: appleTree(),
+  raspberryBush: raspberryBush(),
+  blueberryBush: blueberryBush(),
 };
 
 // How each species takes the seasons: [deciduous (leaves turn and fall),
@@ -1048,6 +1131,7 @@ const SEASONAL = {
   mangrove: [0, 1, 0], treeFern: [0, 1, 0], charredSnag: [0, 1, 0],
   baobab: [0, 0, 0], joshuaTree: [0, 0, 0], ocotillo: [0, 0, 0],
   jungleGiant: [0, 0, 0], jungleCanopy: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
+  appleTree: [1, 1, 1], raspberryBush: [1, 1, 1], blueberryBush: [1, 1, 1],
 };
 function markSeasons(geometries) {
   for (const [type, full] of Object.entries(geometries)) for (const g of [full, full.userData.lean].filter(Boolean)) {
@@ -1059,6 +1143,10 @@ function markSeasons(geometries) {
     const crown = g.attributes.aCrown;
     for (let k = 0; k < n; k++) {
       const leafy = crown ? crown.getX(k) : 1;
+      if (leafy > 1.5) {
+        a[k * 3 + 2] = 2; // (fruit: grows and ripens with the seasons)
+        continue;
+      }
       a[k * 3] = deciduous * leafy;
       a[k * 3 + 1] = snowy;
       a[k * 3 + 2] = flowers * leafy;
@@ -1083,7 +1171,7 @@ export function treeGeometry(type, bare) {
 export const STIFF = new Set(['cactus', 'smallCactus', 'joshuaTree', 'baobab']);
 
 /** Species too small to bump into. */
-export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus', 'ocotillo']);
+export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus', 'ocotillo', 'raspberryBush', 'blueberryBush']);
 
 const crown = (type) => onMesh(TREE_GEOMETRIES[type].userData.crown);
 
@@ -1097,6 +1185,9 @@ export const LEAF_GEOMETRIES = {
   poplar: leaves(40, [0.35, 0.6], [0x5a9a42, 0x6fae4c, 0x84c05a], crown('poplar'), 16),
   maple: leaves(55, [0.45, 0.8], [0xe07a2c, 0xf2a33c, 0xc9502a, 0xf5c04a, 0xb33a22], crown('maple'), 17),
   bush: leaves(16, [0.25, 0.45], [0x78b556, 0x8fc663, 0x9fd06d], crown('bush'), 13),
+  appleTree: leaves(40, [0.35, 0.6], [0x5a9a42, 0x6fae4c, 0x84c05a, 0x4c8a38], crown('appleTree'), 34),
+  raspberryBush: leaves(16, [0.22, 0.4], [0x5f9a44, 0x74ae50, 0x86bc5c], crown('raspberryBush'), 35),
+  blueberryBush: leaves(12, [0.2, 0.35], [0x4a7a40, 0x5f8c48, 0x6e9a52], crown('blueberryBush'), 36),
   acacia: leaves(55, [0.4, 0.7], [0x7f9a3c, 0x93aa48, 0xa7b858, 0x6f8a34], crown('acacia'), 18),
   dryBush: leaves(14, [0.25, 0.4], [0xa89d55, 0xbfae62, 0x9a9048], crown('dryBush'), 19),
   oak: leaves(60, [0.45, 0.8], [0x416e31, 0x55853c, 0x679747, 0x4a7a36], crown('oak'), 25),

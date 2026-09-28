@@ -27,8 +27,13 @@ function smoothstep(a, b, x) {
  * billowing up from the foot (`mist`: x, y, z; `mistLife`: seconds, phase,
  * size, rise per life).
  */
-function sprayData(rivers, x0, z0, chunkSize) {
-  const starts = [], velocities = [], lives = [], mist = [], mistLife = [];
+/** How hard a waterfall at (x, z) freezes in the depth of winter (0..1): only in the coldest lands. */
+export function fallIce(generator, x, z) {
+  return smoothstep(0.62, 0.8, generator.getSeasonality(x, z));
+}
+
+function sprayData(rivers, x0, z0, chunkSize, generator) {
+  const starts = [], velocities = [], lives = [], mist = [], mistLife = [], sprayIce = [], mistIce = [];
   let n = 0;
   for (const course of rivers) {
     const P = course.points;
@@ -44,6 +49,9 @@ function sprayData(rivers, x0, z0, chunkSize) {
       const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
       const drop = Math.sqrt((2 * (fall + 0.3)) / 9.8); // seconds to fall
       const pour = Math.round(10 + width * 4), splash = Math.round(12 + width * 4);
+      // (In the coldest lands the falls freeze solid in the depth of winter.)
+      const ice = fallIce(generator, a.x, a.z);
+      for (let k = 0; k < pour + splash; k++) sprayIce.push(ice);
       for (let k = 0; k < pour; k++) {
         const across = (rand() - 0.5) * width;
         starts.push(a.x - x0 - uz * across, a.level + 0.1, a.z - z0 + ux * across);
@@ -68,13 +76,14 @@ function sprayData(rivers, x0, z0, chunkSize) {
           const out = 0.5 + rand() * (2 + fall * 0.25);
           mist.push(b.x - x0 - uz * across + ux * out, b.level + 0.2, b.z - z0 + ux * across + uz * out);
           mistLife.push(3 + rand() * 3, rand(), 1.6 + rand() * 1.4 + fall * 0.12, 1.5 + rand() * 1.5 + fall * 0.3);
+          mistIce.push(ice);
         }
       }
     }
   }
   if (!n) return null;
-  const out = { starts: new Float32Array(starts), velocities: new Float32Array(velocities), lives: new Float32Array(lives) };
-  if (mist.length) Object.assign(out, { mist: new Float32Array(mist), mistLife: new Float32Array(mistLife) });
+  const out = { starts: new Float32Array(starts), velocities: new Float32Array(velocities), lives: new Float32Array(lives), ice: new Float32Array(sprayIce) };
+  if (mist.length) Object.assign(out, { mist: new Float32Array(mist), mistLife: new Float32Array(mistLife), mistIce: new Float32Array(mistIce) });
   return out;
 }
 
@@ -120,6 +129,7 @@ export function riverData(generator, config, cx, cz) {
       flow[k * 4 + 3] = Math.min(1, Math.max(0, (drop - 0.25) / 0.5));
       inset[k] = w.inset;
       if (w.pond) ice[k] = w.tint === 2 ? 0 : generator.getSeasonality(x, z); // (hot springs never freeze)
+      else if (drop > 0.25 && w.tint !== 2) ice[k] = fallIce(generator, x, z) * Math.min(1, (drop - 0.25) / 0.3); // (and falls, where it's cold enough)
       tint[k] = w.tint || 0;
       any = true;
     }
@@ -184,6 +194,6 @@ export function riverData(generator, config, cx, cz) {
     streaks: new Float32Array(streaks),
     freezes: new Float32Array(freezes),
     mouths: new Float32Array(mouths),
-    spray: sprayData(courses, x0, z0, chunkSize),
+    spray: sprayData(courses, x0, z0, chunkSize, generator),
   };
 }

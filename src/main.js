@@ -15,6 +15,7 @@ import { createVentLayer } from './world/layers/VentLayer.js';
 import { createGeyserLayer } from './world/layers/GeyserLayer.js';
 import { createCoralLayer } from './world/layers/CoralLayer.js';
 import { createLeafLayer } from './world/layers/LeafLayer.js';
+import { createMushroomLayer } from './world/layers/MushroomLayer.js';
 import { createSeaCoastLayer } from './world/layers/SeaCoastLayer.js';
 import { createKelpLayer } from './world/layers/KelpLayer.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
@@ -37,7 +38,7 @@ import { Showers } from './render/Showers.js';
 import { PRINT, Traces } from './render/Traces.js';
 import { Fish } from './wildlife/Fish.js';
 import { ShootingStars } from './render/ShootingStars.js';
-import { Sandstorm, Volcanoes, Wildfires } from './render/Phenomena.js';
+import { DustDevils, Sandstorm, Volcanoes, Wildfires } from './render/Phenomena.js';
 import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
 import { describeWind, gustAt, updateWind, windDirection, windStrength } from './render/wind.js';
 import { FallingLeaves } from './render/FallingLeaves.js';
@@ -119,6 +120,7 @@ lightning.onStrike = (x, y, z, distance) => {
 const fires = new Wildfires(scene);
 const volcanoes = new Volcanoes(scene);
 const sandstorm = new Sandstorm(scene, Rain);
+const devils = new DustDevils(scene);
 const ambientLight = new THREE.Color();
 const insects = new Insects(scene, addCloudShadow);
 chunks.addLayer(rivers);
@@ -128,6 +130,7 @@ chunks.addLayer(createVentLayer(WORLD));
 chunks.addLayer(createGeyserLayer(WORLD));
 chunks.addLayer(createCoralLayer(WORLD));
 chunks.addLayer(createLeafLayer());
+chunks.addLayer(createMushroomLayer());
 chunks.addLayer(createLavaLayer(WORLD));
 chunks.addLayer(createSeaCoastLayer(WORLD, terrainMaterial));
 chunks.addLayer(createKelpLayer(WORLD));
@@ -266,11 +269,11 @@ function playerTraces(dt) {
   const heading = Math.atan2(pos.x - walker.x, pos.z - walker.z);
   walker.left = !walker.left;
   const side = walker.left ? 0.13 : -0.13;
-  footfall(pos.x + Math.cos(heading) * side, pos.z - Math.sin(heading) * side, heading, PRINT.boot, 0.34, 0.6);
+  footfall(pos.x + Math.cos(heading) * side, pos.z - Math.sin(heading) * side, heading, PRINT.square, 0.28, 0.6); // (square: a blocky foot)
   walker.x = pos.x;
   walker.z = pos.z;
 }
-const ANIMAL_PRINTS = { deer: [PRINT.hoof, 0.11], bison: [PRINT.hoof, 0.17], blackBear: [PRINT.paw, 0.22], grizzly: [PRINT.paw, 0.26], rabbit: [PRINT.rabbit, 0.09] };
+const ANIMAL_PRINTS = { deer: [PRINT.hoof, 0.11], bison: [PRINT.hoof, 0.17], blackBear: [PRINT.paw, 0.22], grizzly: [PRINT.paw, 0.26], rabbit: [PRINT.rabbit, 0.09], wolf: [PRINT.paw, 0.12], coyote: [PRINT.paw, 0.09], fox: [PRINT.paw, 0.07] };
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
 function placeCamera() {
@@ -417,6 +420,15 @@ ui.sound.addEventListener('change', () => sound.setEnabled(ui.sound.checked));
 // Holding the mouse in the middle of the screen (click, and look by moving
 // it), or not (drag to look, click where you point).
 ui.mouseLock?.addEventListener('change', () => controls.setMouseLock(ui.mouseLock.checked));
+// (For testing: a dust storm blowing in, or a dust devil close by, wherever you are.)
+document.getElementById('test-storm')?.addEventListener('click', (e) => {
+  sandstorm.start(true);
+  e.currentTarget.blur();
+});
+document.getElementById('test-devil')?.addEventListener('click', (e) => {
+  devils.spawn(camera.position.x, camera.position.z, true);
+  e.currentTarget.blur();
+});
 const WEATHER_ORDER = ['auto', ...Object.keys(WEATHER)];
 ui.shadows.addEventListener('change', () => {
   dayNight.shadows = ui.shadows.checked;
@@ -627,7 +639,7 @@ function surroundings(dt, snow) {
     for (const [dx, dz] of pts) {
       const w = generator.getBiomeWeights(x + dx, z + dz, {});
       const forest = generator.getForestDensity(x + dx, z + dz);
-      woods += (w.temperate * smoothstep(0.35, 0.7, forest) + w.blackHills * 0.7 + w.pine) / pts.length;
+      woods += (w.temperate * smoothstep(0.35, 0.7, forest) + w.blackHills * 0.7 + w.pine + (w.smoky ?? 0)) / pts.length;
       grass += (w.temperate * (1 - smoothstep(0.35, 0.7, forest)) + w.savanna) / pts.length;
       jungle += w.jungle / pts.length;
       wetland += w.wetland / pts.length;
@@ -812,7 +824,9 @@ function marshMist(dt) {
     mistState.marsh = sheltered ? 0 : w.wetland;
     mistState.dry = w.desert + 0.5 * w.savanna;
     mistState.desert = w.desert;
-    mistState.mossy = Math.min(1, 0.55 * w.temperate + 0.9 * w.pine + w.jungle + w.wetland);
+    mistState.devilCountry = w.desert + w.savanna;
+    mistState.mossy = Math.min(1, 0.55 * w.temperate + 0.9 * w.pine + w.jungle + w.wetland + 0.9 * (w.smoky ?? 0));
+    mistState.smoky = w.smoky ?? 0;
   }
   // (Moss on the trees in damp country round about.)
   seasonUniforms.uMossy.value += ((mistState.mossy ?? 0) - seasonUniforms.uMossy.value) * Math.min(1, dt / 4);
@@ -886,6 +900,20 @@ function applyUnderwater() {
   scene.fog.far = 38 - 14 * smoothstep(5, 30, depth);
   dayNight.sky.visible = false;
   scene.background = scene.fog.color;
+}
+
+// The blue haze that hangs over the Smoky Mountains (from the trees): the
+// far ridges fading into blue, softer after rain, gone at night.
+const SMOKY_BLUE = new THREE.Color(0x8fa8c8);
+const smokyState = { value: 0 };
+function smokyHaze(dt) {
+  const target = sheltered || underwater ? 0 : (mistState.smoky ?? 0) * (1 - 0.6 * weather.rain);
+  smokyState.value += (target - smokyState.value) * Math.min(1, dt / 3);
+  const a = smokyState.value;
+  if (a < 0.002) return;
+  const lum = Math.min(1, 0.25 + 0.75 * Math.min(1, dayNight.light.intensity / 2 + dayNight.hemi.intensity / 3));
+  scene.fog.color.lerp(printColour.copy(SMOKY_BLUE).multiplyScalar(lum), 0.4 * a);
+  scene.fog.far *= 1 - 0.3 * a;
 }
 
 // In a sandstorm the air is thick with dust: the view closes right in, all
@@ -977,6 +1005,7 @@ function tick(now) {
   scene.fog.near = openFog.near * (1 - 0.75 * weather.rain) * (1 - 0.85 * mist);
   scene.fog.far = openFog.far * (1 - 0.5 * weather.rain) * (1 - 0.75 * mist);
   if (mist > 0) scene.fog.color.lerp(MIST, 0.45 * mist);
+  smokyHaze(dt);
   dayNight.sky.visible = true;
   applyCaveHaze(dt);
   applyUnderwater();
@@ -1009,6 +1038,7 @@ function tick(now) {
   // The wildlife round you.
   const life = {
     waterAt: (x, z) => waterAt(x, z),
+    splash: (x, y, z) => traces.splash(x, y, z, 6, 1.2, 0.6),
     step: (a, x, z, running) => {
       const [shape, size] = ANIMAL_PRINTS[a.kind] ?? [PRINT.hoof, 0.12];
       footfall(x, z, a.heading, shape, size * a.scale, running ? 1 : 0.35);
@@ -1028,6 +1058,7 @@ function tick(now) {
   fires.update(dt, air);
   volcanoes.update(dt, air);
   sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y });
+  devils.update(dt, { ...air, dry: sheltered ? 0 : mistState.devilCountry ?? 0, hour: dayNight.hour, winter: seasonUniforms.uWinter.value, ground: (x, z) => chunks.groundHeightAt(x, z) });
   shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)));
   insects.update(dt, life);
   env.buzz = insects.buzz.level;
@@ -1099,4 +1130,4 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, traces, fish, fires, volcanoes, sandstorm, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };

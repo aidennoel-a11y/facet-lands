@@ -53,6 +53,8 @@ export const BIOMES = {
         { type: 'spruce', weight: 0.9, minHeight: 45, maxHeight: 165 },
         { type: 'larch', weight: 0.4, minHeight: 60, maxHeight: 165 },
         { type: 'bush', weight: 0.5, minHeight: 5, maxHeight: 130 },
+        { type: 'raspberryBush', weight: 0.22, minHeight: 5, maxHeight: 110 },
+        { type: 'appleTree', weight: 0.06, minHeight: 5, maxHeight: 60 },
         { type: 'deadPine', weight: 0.06, minHeight: 30, maxHeight: 160 },
       ],
     },
@@ -122,7 +124,50 @@ export const BIOMES = {
         { type: 'aspen', weight: 0.4, minHeight: 10, maxHeight: 160, grove: true }, // aspen stands
         { type: 'oak', weight: 0.2, minHeight: 5, maxHeight: 90 }, // bur oak, low down
         { type: 'bush', weight: 0.3, minHeight: 5, maxHeight: 200 },
+        { type: 'blueberryBush', weight: 0.2, minHeight: 20, maxHeight: 200 },
         { type: 'deadPine', weight: 0.08, minHeight: 20, maxHeight: 230 },
+      ],
+    },
+  },
+
+  // The Smoky Mountains: old worn-down mountains, rounded ridge after ridge
+  // under deep mixed forest (oak, maple, tulip poplar, hemlock and pine,
+  // spruce on the high crests), laurel thickets below; blue haze.
+  smoky: {
+    id: 'smoky',
+    name: 'Smoky Mountains',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xc9b98a },
+      { height: 5, color: 0x9fb068 },
+      { height: 8, color: 0x7aa84f },
+      { height: 40, color: 0x5f9446 }, // forest floor
+      { height: 90, color: 0x557f3e },
+      { height: 140, color: 0x5d7a44 },
+      { height: 175, color: 0x76805a },
+      { height: 210, color: 0x8e8c9a },
+    ],
+    cliff: 0x8a8490,
+    cliffSlope: [0.66, 0.44],
+    snowLine: 230,
+    snow: 0xf1f4f7,
+    grass: 0.6,
+    trees: {
+      density: 1.25,
+      clumped: false,
+      species: [
+        { type: 'broadleaf', weight: 1, minHeight: -99, maxHeight: 150 },
+        { type: 'oak', weight: 0.7, minHeight: -99, maxHeight: 140 },
+        { type: 'maple', weight: 0.6, minHeight: -99, maxHeight: 150 },
+        { type: 'poplar', weight: 0.45, minHeight: -99, maxHeight: 110 },
+        { type: 'birch', weight: 0.2, minHeight: 40, maxHeight: 170 },
+        { type: 'pine', weight: 0.6, minHeight: -99, maxHeight: 170 },
+        { type: 'spruce', weight: 0.5, minHeight: 95, maxHeight: 230 },
+        { type: 'bush', weight: 0.5, minHeight: -99, maxHeight: 180 },
+        { type: 'raspberryBush', weight: 0.25, minHeight: -99, maxHeight: 120 },
+        { type: 'blueberryBush', weight: 0.2, minHeight: 60, maxHeight: 200 },
+        { type: 'appleTree', weight: 0.05, minHeight: -99, maxHeight: 70 },
       ],
     },
   },
@@ -235,6 +280,7 @@ export const BIOMES = {
         { type: 'larch', weight: 0.35, minHeight: 20, maxHeight: 170 },
         { type: 'deadPine', weight: 0.05, minHeight: -99, maxHeight: 170 },
         { type: 'bush', weight: 0.15, minHeight: -99, maxHeight: 130 },
+        { type: 'blueberryBush', weight: 0.3, minHeight: -99, maxHeight: 150 },
       ],
     },
   },

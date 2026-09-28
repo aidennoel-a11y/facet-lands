@@ -1,4 +1,4 @@
-import { Color, CylinderGeometry, DoubleSide, Mesh, ShaderMaterial, Vector3 } from 'three';
+import { Color, CylinderGeometry, DoubleSide, IcosahedronGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, Mesh, ShaderMaterial, UniformsLib, UniformsUtils, Vector3 } from 'three';
 import { Puffs } from './Puffs.js';
 import { cloudShadowUniforms } from './cloudShadow.js';
 
@@ -241,10 +241,11 @@ export class Sandstorm {
     this.from = new Vector3();
   }
 
-  /** Start one now (for testing). */
-  start() {
+  /** Start one now: `forced` (for testing) blows in wherever you are, and closer. */
+  start(forced = false) {
     this.state = 'coming';
-    this.distance = 1500;
+    this.distance = forced ? 700 : 1500;
+    this.forced = forced;
   }
 
   /**
@@ -262,11 +263,11 @@ export class Sandstorm {
       }
     } else if (this.state === 'coming') {
       this.distance -= 32 * dt;
-      if (this.distance <= 0 || ctx.desert < 0.3) (this.state = 'in'), (this.until = rnd(60, 120));
+      if (this.distance <= 0 || (ctx.desert < 0.3 && !this.forced)) (this.state = 'in'), (this.until = rnd(60, 120));
     } else if (this.state === 'in') {
       this.until -= dt;
       this.amount = Math.min(1, this.amount + dt / 8);
-      if (this.until <= 0 || ctx.desert < 0.2) (this.state = 'going'), (this.distance = 0);
+      if (this.until <= 0 || (ctx.desert < 0.2 && !this.forced)) (this.state = 'going'), (this.forced = false), (this.distance = 0);
     } else if (this.state === 'going') {
       this.amount = Math.max(0, this.amount - dt / 20);
       this.distance -= 32 * dt; // (off downwind, away from you)
@@ -293,5 +294,118 @@ export class Sandstorm {
       this.sand.uniforms.fall.value.set(ux * 24, -1.5, uz * 24);
       this.sand.uniforms.colour.value.set(0xc8a878).multiply(ctx.light);
     }
+  }
+}
+
+/**
+ * Dust devils, out on the savanna and in the desert on hot, dry
+ * afternoons: a spinning funnel of dust, wider at the top, wandering over
+ * the ground on the breeze for half a minute or so, then dying away.
+ * `spawn()` sets one going near you (for testing).
+ */
+export class DustDevils {
+  constructor(scene) {
+    this.scene = scene;
+    this.devils = [];
+    this.wait = rnd(15, 40);
+    const N = 160;
+    const seeds = new Float32Array(N * 4);
+    for (let k = 0; k < N; k++) seeds.set([Math.random(), Math.random() * Math.PI * 2, 0.4 + 0.6 * Math.random(), 0.5 + Math.random()], k * 4);
+    const geometry = new IcosahedronGeometry(1, 0);
+    geometry.setAttribute('aSeed', new InstancedBufferAttribute(seeds, 4));
+    this.geometry = geometry;
+    this.count = N;
+  }
+
+  #make() {
+    const uniforms = UniformsUtils.merge([UniformsLib.fog, {
+      uTime: { value: 0 }, uCentre: { value: new Vector3() }, uHeight: { value: 30 }, uRadius: { value: 4 }, uAmount: { value: 0 },
+      uLight: { value: new Color(1, 1, 1) }, uColour: { value: new Color(0xc4a676) },
+    }]);
+    const material = new ShaderMaterial({
+      uniforms,
+      transparent: true,
+      depthWrite: false,
+      fog: true,
+      vertexShader: /* glsl */ `
+        attribute vec4 aSeed; // height (0..1) it starts at, angle, how far out, size
+        uniform float uTime;
+        uniform vec3 uCentre;
+        uniform float uHeight;
+        uniform float uRadius;
+        uniform float uAmount;
+        varying float vAlpha;
+        varying float vShade;
+        #include <fog_pars_vertex>
+        void main() {
+          // Each speck rises up the funnel, whirling round it, faster low down.
+          float h = fract(aSeed.x + uTime * 0.12);
+          float a = aSeed.y + uTime * (5.0 - 2.5 * h);
+          float r = uRadius * (0.25 + 0.9 * h) * aSeed.z;
+          float lean = h * h * 0.25 * uHeight;
+          vec3 c = uCentre + vec3(cos(a) * r + lean * 0.3, h * uHeight, sin(a) * r);
+          float size = aSeed.w * (0.5 + 1.6 * h) * step(0.001, uAmount);
+          vec4 mvPosition = viewMatrix * vec4(c + position * size, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          vAlpha = sin(3.14159 * h) * uAmount * (1.0 - 0.4 * h);
+          vShade = 0.7 + 0.3 * max(normal.y, 0.0);
+          #include <fog_vertex>
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColour;
+        uniform vec3 uLight;
+        varying float vAlpha;
+        varying float vShade;
+        #include <fog_pars_fragment>
+        void main() {
+          gl_FragColor = vec4(uColour * uLight * vShade, vAlpha * 0.55);
+          #include <fog_fragment>
+        }`,
+    });
+    const mesh = new InstancedMesh(this.geometry, material, this.count);
+    for (let k = 0; k < this.count; k++) mesh.setMatrixAt(k, new Matrix4());
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
+    this.scene.add(mesh);
+    return mesh;
+  }
+
+  /** One near (x, z) now (`near`: closer, for testing). */
+  spawn(x, z, near = false) {
+    if (this.devils.length >= 3) this.devils[0].life = Math.min(this.devils[0].life, this.devils[0].age + 6); // (the oldest dies away)
+    const a = Math.random() * Math.PI * 2, d = near ? rnd(30, 50) : rnd(60, 160);
+    this.devils.push({ x: x + Math.cos(a) * d, z: z + Math.sin(a) * d, age: 0, life: rnd(30, 55), height: rnd(25, 45), radius: rnd(3, 6), turn: Math.random() * Math.PI * 2, mesh: this.#make() });
+  }
+
+  /** @param ctx { time, camera, dry (0..1: how much savanna and desert here), hour, rain, winter, wind: { x, z }, light, ground(x, z) } */
+  update(dt, ctx) {
+    this.wait -= dt;
+    if (this.wait <= 0) {
+      this.wait = rnd(20, 60);
+      const afternoon = ctx.hour > 12 && ctx.hour < 17.5;
+      if (afternoon && ctx.dry > 0.5 && ctx.rain < 0.05 && ctx.winter < 0.4 && Math.random() < 0.5) this.spawn(ctx.camera.position.x, ctx.camera.position.z);
+    }
+    for (const d of this.devils) {
+      d.age += dt;
+      // Wandering over the ground on the breeze.
+      d.turn += (Math.random() - 0.5) * dt * 1.5;
+      d.x += (ctx.wind.x * 0.6 + Math.cos(d.turn) * 2.5) * dt;
+      d.z += (ctx.wind.z * 0.6 + Math.sin(d.turn) * 2.5) * dt;
+      const u = d.mesh.material.uniforms;
+      const y = ctx.ground(d.x, d.z);
+      u.uCentre.value.set(d.x, Number.isFinite(y) ? y - 0.5 : ctx.camera.position.y - 2, d.z);
+      u.uTime.value = ctx.time;
+      u.uHeight.value = d.height;
+      u.uRadius.value = d.radius;
+      u.uAmount.value = Math.min(1, d.age / 4) * (1 - smoothstep(d.life - 6, d.life, d.age));
+      u.uLight.value.copy(ctx.light);
+      if (d.age >= d.life) {
+        this.scene.remove(d.mesh);
+        d.mesh.material.dispose();
+        d.mesh.dispose();
+        d.done = true;
+      }
+    }
+    this.devils = this.devils.filter((d) => !d.done);
   }
 }

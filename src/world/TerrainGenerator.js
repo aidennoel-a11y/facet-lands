@@ -125,6 +125,8 @@ export class TerrainGenerator {
     this.ruggedNoise = new SimplexNoise(this.seed + 16);
     this.massifNoise = new SimplexNoise(this.seed + 17);
     this.hillsNoise = new SimplexNoise(this.seed + 18); // Black Hills country
+    this.smokyNoise = new SimplexNoise(this.seed + 149); // Smoky Mountains country
+    this._islands = new Map(); // (see #island)
     this.mesaNoise = new SimplexNoise(this.seed + 19);
     this.escarpNoise = new SimplexNoise(this.seed + 20);
     this.volcanoNoise = new SimplexNoise(this.seed + 140); // volcanic highlands
@@ -142,7 +144,7 @@ export class TerrainGenerator {
     this._range = { value: 0, size: 1, large: 0 };
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
-    this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0, volcanic: 0, wetland: 0, jungle: 0, pine: 0 };
+    this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0, smoky: 0, volcanic: 0, wetland: 0, jungle: 0, pine: 0 };
     this._lastWeights = { x: NaN, z: NaN, range: NaN };
     this._features = { mesa: 0, mesaTop: 0, escarp: 0, hills: 0, erg: 0, canyon: 0, canyonFloor: 0, canyonCut: 0 };
     this._erg = 0; // the last point's dune sea, for its roughness
@@ -213,6 +215,7 @@ export class TerrainGenerator {
       out.savanna = m.savanna;
       out.desert = m.desert;
       out.blackHills = m.blackHills;
+      out.smoky = m.smoky;
       out.volcanic = m.volcanic;
       out.wetland = m.wetland;
       out.jungle = m.jungle;
@@ -227,6 +230,7 @@ export class TerrainGenerator {
     m.savanna = out.savanna;
     m.desert = out.desert;
     m.blackHills = out.blackHills;
+    m.smoky = out.smoky;
     m.volcanic = out.volcanic;
     m.wetland = out.wetland;
     m.jungle = out.jungle;
@@ -249,10 +253,14 @@ export class TerrainGenerator {
     // country, whatever the zone says.)
     const vz = Math.max(this.#volcanoZone(x, z, range), this.#coneReach(x, z));
     const volcanic = temperate * (1 - hz) * vz;
+    // The Smoky Mountains: old, worn-down mountains, long rounded ridges
+    // under deep forest, in stretches of the wet green country (see #smokyZone).
+    const sz = temperate * (1 - hz) * (1 - vz) > 0 ? this.#smokyZone(x, z, range) : 0;
+    const smoky = temperate * (1 - hz) * (1 - vz) * sz;
     // Wetlands: only in the wettest, low, flat country (so never anywhere
     // near a desert: the whole savanna lies between them).
     const wz = this.#wetZone(x, z, range, a);
-    const green = temperate * (1 - hz) * (1 - vz);
+    const green = temperate * (1 - hz) * (1 - vz) * (1 - sz);
     // Jungles: in the warmest, wettest lowlands, well away from dry
     // country and mountains (see #jungleZone).
     // (A jungle is jungle right through: wetlands, forest and plains give way to it.)
@@ -268,6 +276,7 @@ export class TerrainGenerator {
     out.savanna = savanna;
     out.desert = desert;
     out.blackHills = hills;
+    out.smoky = smoky;
     out.volcanic = volcanic;
     return out;
   }
@@ -753,6 +762,19 @@ export class TerrainGenerator {
       blackHills = hz * (22 + domes * 55) + heart * domes * this.#tors(x, z) + heart * this.#needles(x, z, domes);
     }
 
+    // The Smoky Mountains: long rounded ridges, forested to their tops,
+    // winding between deep valleys (where the rivers find their way),
+    // easing down into the country round about at the edges.
+    let smoky = 0;
+    if (w.smoky > 0) {
+      const qx = x + this.smokyNoise.noise2D(x * 0.0005 + 40, z * 0.0005) * 320;
+      const qz = z + this.smokyNoise.noise2D(x * 0.0005, z * 0.0005 - 40) * 320;
+      const n = this.smokyNoise.fbm(qx * 0.0009 + 311, qz * 0.0009 - 97, 3);
+      const crest = smoothstep(0.3, 0.83, 1 - Math.sqrt(n * n + 0.03)); // (rounded along the top, not a knife-edge)
+      const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * 10;
+      smoky = w.smoky * (Math.pow(crest, 1.3) * 105 + 14 + rolling);
+    }
+
     // Volcanic highlands: a raised, rough plateau of old lava, and cinder
     // cones with a crater at the top and tongues of lava down their sides.
     let volcanic = 0;
@@ -774,19 +796,8 @@ export class TerrainGenerator {
     const greenLand = w.temperate + (w.pine || 0);
     if (greenLand + 0.45 * w.savanna !== 0 && 1 - 0.6 * mask !== 0) {
       const hilly = smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
-      const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (7 + 27 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
+      const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (5 + 17 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
       hills = rolling * (greenLand + 0.45 * w.savanna) * (1 - 0.6 * mask);
-      // Old worn-down mountains (like the Smokies), in stretches of the
-      // hilly green country (not the plains): long rounded ridges, forested to their tops, winding
-      // between broad deep valleys (where the rivers find their way).
-      const ridgeZone = smoothstep(0.08, 0.32, this.hillRegionNoise.fbm(x * 0.0004 + 500, z * 0.0004 - 800, 2)) * smoothstep(0.55, 0.7, hilly) * greenLand * (1 - 0.6 * mask);
-      if (ridgeZone > 0) {
-        const qx = x + this.hillRegionNoise.noise2D(x * 0.0005 + 40, z * 0.0005) * 320;
-        const qz = z + this.hillRegionNoise.noise2D(x * 0.0005, z * 0.0005 - 40) * 320;
-        const n = this.hillNoise.fbm(qx * 0.0009 + 311, qz * 0.0009 - 97, 3);
-        const crest = smoothstep(0.3, 0.83, 1 - Math.sqrt(n * n + 0.03)); // (rounded along the top, not a knife-edge)
-        hills += ridgeZone * Math.pow(crest, 1.3) * 88;
-      }
     }
     const f = this.#features(x, z, dryness, mask, w);
     let dunes = 0;
@@ -817,7 +828,7 @@ export class TerrainGenerator {
 
     const seaLevel = this.rivers.seaLevel;
     // (Few cliffs drop straight into a lake: escarpments fade out over lake basins.)
-    let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + volcanic + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
+    let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + volcanic + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // Canyons cut down into it (their floors kept above the sea).
     if (f.canyonCut > 0) height -= Math.min(f.canyonCut, Math.max(0, height - (seaLevel + 3)));
     // Wetlands: the land sinks to just above the water, a maze of shallow
@@ -825,6 +836,12 @@ export class TerrainGenerator {
     if (w.wetland > 0) {
       const target = seaLevel + this.#marsh(x, z);
       if (height > target) height += (target - height) * w.wetland;
+    }
+    // Islands, here and there out in a lake or the sea: a wooded hump of
+    // land with a beach round it (shaped by the lake shore below).
+    if (height < seaLevel - 0.5 && !this._probing && w.wetland < 0.3) {
+      const lift = this.#islandHeight(x, z);
+      if (lift > height) height = lift;
     }
     // Lake shores (not the open sea's beaches, nor marshes): a real edge
     // rather than the land just sloping on down under the water.
@@ -859,6 +876,66 @@ export class TerrainGenerator {
       if (legs > height) height = legs;
     }
     return height;
+  }
+
+  // Islands: one to a 640 m cell or none, standing only where the water
+  // is deep enough all round it (so never joined to the shore). Remembered.
+  #island(i, j) {
+    const key = i * 100003 + j;
+    let isl = this._islands.get(key);
+    if (isl !== undefined) return isl;
+    isl = null;
+    const seed = this.seed ^ 0x51a4d;
+    if (hash2(i, j, seed) < 0.55) {
+      const C = 640;
+      const r = 40 + 130 * Math.pow(hash2(i, j, seed + 1), 1.5);
+      const x = (i + 0.2 + 0.6 * hash2(i, j, seed + 2)) * C, z = (j + 0.2 + 0.6 * hash2(i, j, seed + 3)) * C;
+      const probe = this.#probe(), sea = this.rivers.seaLevel;
+      let ok = probe.getBaseHeight(x, z) < sea - 3;
+      for (let k = 0; ok && k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        ok = probe.getBaseHeight(x + Math.cos(a) * r * 1.5, z + Math.sin(a) * r * 1.5) < sea - 1;
+      }
+      if (ok) isl = { x, z, r, top: sea + 2.5 + 10 * (r / 170) + 4 * hash2(i, j, seed + 4) };
+    }
+    if (this._islands.size > 4000) this._islands.clear();
+    this._islands.set(key, isl);
+    return isl;
+  }
+
+  /** The ground of an island at (x, z) (or -Infinity: none there). */
+  #islandHeight(x, z) {
+    const C = 640, ci = Math.floor(x / C), cj = Math.floor(z / C);
+    const sea = this.rivers.seaLevel;
+    let best = -Infinity;
+    for (let j = cj - 1; j <= cj + 1; j++) {
+      for (let i = ci - 1; i <= ci + 1; i++) {
+        const isl = this.#island(i, j);
+        if (!isl) continue;
+        const d = Math.hypot(x - isl.x, z - isl.z);
+        if (d > isl.r * 2.4) continue;
+        // (A ragged, bays-and-points outline, not a circle.)
+        const t = d / (isl.r * (0.75 + 0.5 * (this.coastNoise.noise2D(x * 0.008 + 61, z * 0.008 - 17) * 0.5 + 0.5)));
+        let h;
+        if (t < 1) {
+          const dome = Math.pow(1 - t * t, 1.4);
+          h = sea - 1.5 + (isl.top - sea + 1.5) * dome + this.hillNoise.fbm(x * 0.02, z * 0.02, 2) * 1.5 * dome;
+        } else h = sea - 1.5 - (t - 1) * isl.r * 0.3; // (the underwater skirt)
+        if (h > best) best = h;
+      }
+    }
+    return best;
+  }
+
+  /** Whether (x, z) is on (or just off) an island: 0..1. */
+  islandAt(x, z) {
+    const C = 640, ci = Math.floor(x / C), cj = Math.floor(z / C);
+    let best = 0;
+    for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) {
+      const isl = this.#island(i, j);
+      if (isl) best = Math.max(best, 1 - smoothstep(isl.r * 0.9, isl.r * 1.4, Math.hypot(x - isl.x, z - isl.z)));
+    }
+    return best;
   }
 
   /**
@@ -1752,7 +1829,7 @@ export class TerrainGenerator {
    */
   getSeasonality(x, z) {
     const w = this.getBiomeWeights(x, z, {});
-    return w.temperate + w.pine + w.wetland + w.blackHills + 0.85 * w.volcanic + 0.15 * w.savanna;
+    return w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna;
   }
 
   /** How much (x, z) is a cliffed stretch of the open coast (0..1). */
@@ -1908,7 +1985,7 @@ export class TerrainGenerator {
       out.mesaHeight = mesa * layers;
     }
     // Escarpments: most often in rolling hills and forest country.
-    const green = w.temperate + w.pine + 0.5 * w.savanna;
+    const green = w.temperate + w.pine + w.smoky + 0.5 * w.savanna;
     const hilly = smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
     const wooded = smoothstep(-0.2, 0.25, this.forestNoise.fbm(x * 0.0045, z * 0.0045, 3));
     const escarp = smoothstep(0.32 - 0.22 * Math.max(hilly, wooded), 0.5 - 0.2 * Math.max(hilly, wooded), this.escarpNoise.fbm(x * 0.0003, z * 0.0003, 2)) * flatland * green;
@@ -2039,6 +2116,24 @@ export class TerrainGenerator {
    * Black Hills country (0..1): rare patches of the rolling hills, away
    * from mountain ranges and the dry country.
    */
+  #smokyZone(x, z, range) {
+    const zone = this.#smokyZoneRaw(x, z, range);
+    return zone > 0 ? zone * this.#minSize('smoky', x, z, (px, pz) => this.#smokyZoneRaw(px, pz, this.#rangeField(px, pz, {}).value), 0.8) : 0;
+  }
+
+  #smokyZoneRaw(x, z, range) {
+    // Stretches of country several kilometres across, fading in over the
+    // best part of a kilometre (no hard edge), clear of the Black Hills,
+    // the volcanic country and the high ranges, and well inside the green
+    // lands.
+    const zone = smoothstep(0.1, 0.3, this.smokyNoise.fbm(x * 0.00013 + 130, z * 0.00013 - 420, 2))
+      * (1 - smoothstep(0.02, 0.12, this.hillsNoise.fbm(x * 0.00016 - 250, z * 0.00016 + 610, 2)))
+      * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
+    if (zone <= 0) return 0;
+    const dryNear = 1 - smoothstep(0.4, 0.5, this.#aridAround(x, z));
+    return zone * dryNear * (1 - smoothstep(0.05, 0.3, range)) * (1 - smoothstep(0.42, 0.56, this.#rawAridity(x, z)));
+  }
+
   #hillsZone(x, z, range) {
     const zone = this.#hillsZoneRaw(x, z, range);
     return zone > 0 ? zone * this.#minSize('hills', x, z, (px, pz) => this.#hillsZoneRaw(px, pz, this.#rangeField(px, pz, {}).value), 0.8) : 0;
@@ -2282,7 +2377,7 @@ export class TerrainGenerator {
     const beds = smoothstep(0.0, 0.25, this.coastNoise.fbm(x * 0.004 - 70, z * 0.004 + 35, 2));
     if (beds <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
-    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.wetland + w.blackHills + w.volcanic);
+    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + w.volcanic);
     if (cool <= 0) return 0;
     const ocean = smoothstep(0.4, 0.7, this.getOceanness(x, z));
     const depth = smoothstep(sea - 2.5, sea - 4, ground) * (1 - smoothstep(sea - 13, sea - 16, ground));
@@ -2379,6 +2474,7 @@ export class TerrainGenerator {
     }
     const water = quick ? null : this.rivers.at(x, z, 0);
     if (water) return water.crater ? 'Crater lake' : water.hot ? 'Hot spring' : water.alpine ? 'Alpine lake' : water.oasis ? 'Oasis' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : 'River';
+    if (this.islandAt(x, z) > 0.5) return 'Island';
     const w = this.getBiomeWeights(x, z, {});
     const f = this.getFeatures(x, z);
     if (this.getOceanness(x, z) > 0.5 && height < sea + 34 && this.getSeaCliff(x, z) > 0.5) {
@@ -2406,6 +2502,7 @@ export class TerrainGenerator {
     }
     const top = Object.keys(w).reduce((a, b) => (w[a] >= w[b] ? a : b));
     if (top === 'blackHills') return 'Black Hills';
+    if (top === 'smoky') return 'Smoky Mountains';
     if (top === 'volcanic') {
       const n = this.#nearestSpring(x, z);
       if (n && n.spring.geyser && n.d < 12) return 'Geyser';

@@ -20,6 +20,8 @@ export const MAP_LABELS = [
   ['Mountains', '#8d8797'],
   ['Snowy peaks', '#f1f4f7'],
   ['Black Hills', '#4a4450'],
+  ['Smoky Mountains', '#35613d'],
+  ['Island', '#5f9a45'],
   ['Volcanic highlands', '#3b4a2c'],
   ['Volcano', '#2b2827'],
   ['Geyser', '#e6dcc4'],

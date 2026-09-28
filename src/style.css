@@ -49,6 +49,8 @@ body {
   backdrop-filter: blur(8px);
   border-radius: 14px;
   box-shadow: 0 6px 24px rgba(20, 40, 70, 0.18);
+  max-height: calc(100vh - 2 * var(--gutter));
+  overflow-y: auto; /* (scrolls on a short screen) */
 }
 
 .panel > * {
@@ -388,4 +390,15 @@ kbd {
 /* (Hidden means hidden: see the P key.) */
 [hidden] {
   display: none !important;
+}
+
+.tests {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.tests button {
+  padding: 5px 0;
+  font-size: 12px;
 }

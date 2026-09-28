@@ -45,7 +45,7 @@ function farGeometry(type, detailed) {
   const most = (get) => (season ? Math.max(...Array.from({ length: season.count }, (_, k) => get(k))) : 0);
   const deciduous = most((k) => season.getX(k));
   const snowy = season ? season.getY(0) : 0;
-  const flowers = most((k) => season.getZ(k));
+  const flowers = Math.min(1, most((k) => season.getZ(k))); // (not the fruit)
   const leafy = [deciduous, snowy, flowers], woody = [0, snowy, 0];
 
   const centre = box.getCenter(new Vector3());

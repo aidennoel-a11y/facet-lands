@@ -26,6 +26,12 @@ const SPECIES = {
   // stands its ground (`aggressive`: one day it will come for you).
   blackBear: { ground: true, grade: 0.78, model: Models.blackBear, max: 16, walk: 0.9, run: 9, flee: 35, calm: 100, radius: 0.7, height: 1.3, health: 150, stride: 1.4, turn: 1.8, size: 1.3, forager: true },
   grizzly: { ground: true, grade: 0.78, model: Models.grizzly, max: 10, walk: 0.9, run: 10, flee: 10, calm: 40, radius: 0.8, height: 1.5, health: 260, stride: 1.6, turn: 1.6, size: 1.6, forager: true, aggressive: true },
+  // Wild dogs: wolves in packs in the pine woods and the cold north (they
+  // howl at night), coyotes on the savanna and the plains (yipping at dusk),
+  // foxes alone at the woods' edges where the winters are cold.
+  wolf: { ground: true, grade: 0.8, model: Models.wolf, max: 24, walk: 1.4, run: 12, flee: 40, calm: 110, radius: 0.35, height: 0.9, health: 70, stride: 1.3, turn: 3, size: 1.25, forager: true, call: 'howl' },
+  coyote: { ground: true, grade: 0.8, model: Models.coyote, max: 16, walk: 1.3, run: 11, flee: 35, calm: 100, radius: 0.28, height: 0.7, health: 40, stride: 1.1, turn: 3.5, size: 0.95, forager: true, call: 'yip' },
+  fox: { ground: true, grade: 0.85, model: Models.fox, max: 14, walk: 1.1, run: 10, flee: 25, calm: 70, radius: 0.2, height: 0.5, health: 20, stride: 0.8, turn: 4, size: 0.62, forager: true },
   rabbit: { ground: true, grade: 0.58, model: Models.rabbit, max: 40, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.3, height: 0.55, health: 10, stride: 1.0, turn: 5, size: 1.8 },
   songbird: { bird: true, model: Models.songbird, max: 60, scale: 1.6, flee: 9, radius: 0.25, health: 2 },
   starling: { bird: true, model: Models.starling, max: 60, scale: 1.45, flee: 22, radius: 0.25, health: 2 },
@@ -313,7 +319,7 @@ export class Wildlife {
       const p = at();
       if (p.y < ctx.seaLevel + 1 || p.y > 150) continue;
       const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
-      if (w.temperate + w.pine > 0.6 && f > 0.08 && f < 0.95 && g.getMountainness(p.x, p.z) < 0.55) {
+      if (w.temperate + w.pine + w.smoky > 0.6 && f > 0.08 && f < 0.95 && g.getMountainness(p.x, p.z) < 0.55) {
         if (rand() < 0.28) {
           const from = this.animals.length;
           const herd = this.#spawnHerd('deer', p, 2 + Math.floor(rand() * 5));
@@ -344,7 +350,7 @@ export class Wildlife {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
       const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
-      if (m > 0.18 && m < 0.65 && w.temperate + w.pine > 0.5 && g.getForestDensity(p.x, p.z) > 0.05) {
+      if (((m > 0.18 && m < 0.65) || w.smoky > 0.5) && w.temperate + w.pine + w.smoky > 0.5 && g.getForestDensity(p.x, p.z) > 0.05) {
         if (rand() < 0.22) {
           const from = this.animals.length;
           const kind = rand() < 0.35 + 0.5 * (m - 0.18) ? 'grizzly' : 'blackBear';
@@ -369,6 +375,47 @@ export class Wildlife {
           own(from);
         }
         break;
+      }
+    }
+    // Wolves: a pack in the pine woods, or the cold northern forests.
+    for (let k = 0; k < 2; k++) {
+      const p = at();
+      if (p.y < ctx.seaLevel + 1) continue;
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      const cold = g.getSeasonality(p.x, p.z);
+      if ((w.pine > 0.5 || (w.temperate > 0.6 && cold > 0.7)) && g.getForestDensity(p.x, p.z) > 0.2 && g.getMountainness(p.x, p.z) < 0.6) {
+        if (rand() < 0.09) {
+          const from = this.animals.length;
+          const herd = this.#spawnHerd('wolf', p, 3 + Math.floor(rand() * 4));
+          if (herd) home.herds.push(herd);
+          own(from);
+        }
+        break;
+      }
+    }
+    // Coyotes on the savanna and the plains: alone, or two or three.
+    for (let k = 0; k < 2; k++) {
+      const p = at();
+      if (p.y < ctx.seaLevel + 1) continue;
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if ((w.savanna > 0.5 || (w.temperate > 0.6 && g.getPlainness(p.x, p.z) > 0.3)) && g.getMountainness(p.x, p.z) < 0.4) {
+        if (rand() < 0.14) {
+          const from = this.animals.length;
+          const herd = this.#spawnHerd('coyote', p, 1 + Math.floor(rand() * 3));
+          if (herd) home.herds.push(herd);
+          own(from);
+        }
+        break;
+      }
+    }
+    // A fox, at the woods' edge where the winters are cold.
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
+      if (p.y > ctx.seaLevel + 1 && w.temperate + w.pine > 0.6 && g.getSeasonality(p.x, p.z) > 0.55 && f > 0.05 && f < 0.7 && rand() < 0.16) {
+        const from = this.animals.length;
+        this.#spawnWalker('fox', p.x, p.z, null);
+        own(from);
       }
     }
     // Rabbits in the grass and at the woods' edges.
@@ -584,6 +631,17 @@ export class Wildlife {
       herd.goalWait = rnd(5, 15);
     }
     if (herd.drinking) herd.goalWait = Math.max(herd.goalWait, 1);
+    // Wolves howl in the night, coyotes yip at dusk and after dark, near you.
+    const call = SPECIES[herd.kind]?.call;
+    if (call && lead) {
+      herd.callWait = (herd.callWait ?? rnd(10, 40)) - dt;
+      const dark = call === 'howl' ? ctx.night : Math.max(ctx.night, ctx.dusk);
+      const d = Math.hypot(lead.x - ctx.camera.position.x, lead.z - ctx.camera.position.z);
+      if (herd.callWait <= 0) {
+        herd.callWait = rnd(25, 70);
+        if (dark > 0.5 && d < 700 && herd.fleeTime <= 0) ctx.sound?.call(call, ctx.pan(lead.x, lead.z), Math.min(1, 0.25 + 0.75 * (1 - d / 700)));
+      }
+    }
     // The herd drifts to fresh grazing now and then.
     // (Not while most of it is lying down.)
     if (herd.goalWait <= 0 && herd.members.filter((m) => m.state === 'rest').length * 2 > herd.members.length) herd.goalWait = rnd(8, 20);

@@ -18,7 +18,7 @@ import {
 // How bright the waterfalls' mist is (the daylight on it): set by the caller.
 export const mistLight = { value: 1 };
 import { riverData } from '../riverData.js';
-import { seasonalWater } from '../../render/Seasons.js';
+import { seasonalWater, seasonUniforms } from '../../render/Seasons.js';
 import { SPARKLE_HEAD, sparkleUniforms } from '../../render/waterSparkle.js';
 
 /**
@@ -170,8 +170,9 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
   const sprayMaterial = new MeshLambertMaterial({ color: 0xeef7fa, emissive: 0x4a6068 });
   sprayMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
+    shader.uniforms.uWinter = seasonUniforms.uWinter;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec3 aStart;\nattribute vec3 aVelocity;\nattribute vec3 aLife;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWinter;\nattribute vec3 aStart;\nattribute vec3 aVelocity;\nattribute vec3 aLife;\nattribute float aIce;')
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `// aLife: x = lifetime (s), y = phase (0..1), z = size.
@@ -180,10 +181,11 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         float spin = aLife.y * 40.0 + age * 3.0;
         vec3 p = position;
         p.xz = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * p.xz;
-        vec3 transformed = p * aLife.z * (1.0 - k * k) + aStart + aVelocity * age + vec3(0.0, -4.9 * age * age, 0.0);`,
+        float frozen = 1.0 - aIce * smoothstep(0.35, 0.8, uWinter); // (none off a frozen fall)
+        vec3 transformed = p * aLife.z * (1.0 - k * k) * frozen + aStart + aVelocity * age + vec3(0.0, -4.9 * age * age, 0.0);`,
       );
   };
-  sprayMaterial.customProgramCacheKey = () => 'spray';
+  sprayMaterial.customProgramCacheKey = () => 'spray-ice';
 
   // Waterfall mist: soft, pale puffs billowing up from the foot of a fall,
   // swelling and thinning away, always facing you.
@@ -191,8 +193,9 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
   mistMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
     shader.uniforms.uMistLight = mistLight;
+    shader.uniforms.uWinter = seasonUniforms.uWinter;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec3 aMist;\nattribute vec4 aMistLife;\nvarying vec2 vMistUv;\nvarying float vMistAlpha;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWinter;\nattribute vec3 aMist;\nattribute vec4 aMistLife;\nattribute float aMistIce;\nvarying vec2 vMistUv;\nvarying float vMistAlpha;')
       .replace(
         '#include <project_vertex>',
         /* glsl */ `// aMistLife: x = lifetime (s), y = phase (0..1), z = size, w = rise.
@@ -202,7 +205,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         mvPosition.xy += position.xy * aMistLife.z * (0.5 + 1.1 * age);
         gl_Position = projectionMatrix * mvPosition;
         vMistUv = position.xy;
-        vMistAlpha = sin(3.14159 * age);`,
+        vMistAlpha = sin(3.14159 * age) * (1.0 - aMistIce * smoothstep(0.35, 0.8, uWinter));`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float uMistLight;\nvarying vec2 vMistUv;\nvarying float vMistAlpha;')
@@ -211,17 +214,18 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         '#include <color_fragment>\ndiffuseColor.rgb *= uMistLight;\ndiffuseColor.a *= vMistAlpha * 0.3 * (1.0 - smoothstep(0.12, 0.5, length(vMistUv)));',
       );
   };
-  mistMaterial.customProgramCacheKey = () => 'mist';
+  mistMaterial.customProgramCacheKey = () => 'mist-ice';
   const puff = new PlaneGeometry(1, 1);
   puff.deleteAttribute('normal');
   puff.deleteAttribute('uv');
 
-  function mist({ mist: at, mistLife }) {
+  function mist({ mist: at, mistLife, mistIce }) {
     const geometry = new InstancedBufferGeometry();
     geometry.index = puff.index;
     geometry.setAttribute('position', puff.attributes.position);
     geometry.setAttribute('aMist', new InstancedBufferAttribute(at, 3));
     geometry.setAttribute('aMistLife', new InstancedBufferAttribute(mistLife, 4));
+    geometry.setAttribute('aMistIce', new InstancedBufferAttribute(mistIce ?? new Float32Array(at.length / 3), 1));
     geometry.instanceCount = at.length / 3;
     const mesh = new Mesh(geometry, mistMaterial);
     mesh.frustumCulled = false; // (it moves on the GPU; there are only a few)
@@ -231,11 +235,12 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
   }
 
   /** The spray of a chunk's waterfalls (see riverData), as a mesh. */
-  function spray({ starts, velocities, lives }) {
+  function spray({ starts, velocities, lives, ice }) {
     const geometry = cube.clone();
     geometry.setAttribute('aStart', new InstancedBufferAttribute(starts, 3));
     geometry.setAttribute('aVelocity', new InstancedBufferAttribute(velocities, 3));
     geometry.setAttribute('aLife', new InstancedBufferAttribute(lives, 3));
+    geometry.setAttribute('aIce', new InstancedBufferAttribute(ice ?? new Float32Array(lives.length / 3), 1));
     const mesh = new InstancedMesh(geometry, sprayMaterial, starts.length / 3);
     mesh.frustumCulled = false; // it moves on the GPU; there are only a few
     mesh.name = 'spray';

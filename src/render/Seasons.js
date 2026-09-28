@@ -25,6 +25,8 @@ export const seasonUniforms = {
   uWet: { value: 0 }, // how wet the ground is after rain (puddles), 0..1
   uSnowfall: { value: 0 }, // fresh snow lying on everything after it has snowed, 0..1
   uMossy: { value: 0 }, // how damp the country round about is: moss on the north sides of the trees (0..1)
+  uFruit: { value: 0 }, // the fruit and berries on the trees and bushes: set in early summer, gone by winter (0..1)
+  uRipe: { value: 0 }, // and how ripe they are: green, then coloured by late summer (0..1)
 };
 
 function smoothstep(a, b, x) {
@@ -83,6 +85,10 @@ export class Seasons {
     seasonUniforms.uSpring.value = amount(0);
     seasonUniforms.uAutumn.value = amount(2);
     seasonUniforms.uWinter.value = amount(3);
+    // Fruit sets in early summer, ripens by late summer, and falls in late autumn.
+    const t = this.time;
+    seasonUniforms.uFruit.value = smoothstep(1.0, 1.4, t) * (1 - smoothstep(2.7, 3.05, t));
+    seasonUniforms.uRipe.value = smoothstep(1.3, 1.8, t);
   }
 }
 
@@ -92,6 +98,7 @@ const COMMON = /* glsl */ `
   uniform float uWinter;
   uniform float uSnowfall;
   uniform float uMossy;
+  uniform float uRipe;
   float seasonGreen(vec3 c) { return clamp((c.g - max(c.r, c.b)) * 9.0, 0.0, 1.0); }
   float seasonHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   float seasonNoise(vec2 p) {
@@ -253,7 +260,7 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
       shader.vertexShader = shader.vertexShader
         .replace(
           '#include <common>',
-          `#include <common>\nattribute vec3 aSeason;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nuniform float uWinter;${leaves || randFrom ? '' : '\nattribute float aCrown;\nvarying float vTreeNorth;'}`,
+          `#include <common>\nattribute vec3 aSeason;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nuniform float uWinter;\nuniform float uFruit;${leaves || randFrom ? '' : '\nattribute float aCrown;\nvarying float vTreeNorth;'}`,
         )
         .replace(
           '#include <begin_vertex>',
@@ -271,7 +278,11 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
           #else
             vTreeRand = 0.5;
           #endif`}
-          ${leaves || randFrom ? '' : `// Winter: a deciduous tree's crown (its leaves) shrinks away to
+          ${leaves || randFrom ? '' : `// Fruit and berries (aSeason.z = 2), each a little block centred on
+          // a quarter-metre grid point: grown out from nothing in early summer,
+          // gone again by winter.
+          if (aSeason.z > 1.5) transformed = mix((floor(position * 4.0) + 0.5) * 0.25, transformed, uFruit);
+          // Winter: a deciduous tree's crown (its leaves) shrinks away to
           // nothing, leaving the bare boughs.
           float bare = smoothstep(0.55, 0.95, uWinter) * aSeason.x;
           transformed = mix(transformed, vec3(0.0, transformed.y * 0.85, 0.0), bare);`}
@@ -288,12 +299,14 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
             // Spring: fresh green, and the bushes dotted with little flowers
             // (pink, white, yellow or lilac, bush by bush).
             c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * leafy * 0.7);
-            if (vSeason.z > 0.0 && uSpring > 0.0) {
+            if (vSeason.z > 0.0 && vSeason.z < 1.5 && uSpring > 0.0) {
               vec3 cell = floor(vFlowerAt * 4.5);
               float dot1 = seasonHash(cell.xz + cell.y * 7.13 + vTreeRand * 31.0);
               vec3 petal = vTreeRand < 0.3 ? vec3(1.0, 0.55, 0.72) : vTreeRand < 0.55 ? vec3(0.98, 0.97, 0.92) : vTreeRand < 0.8 ? vec3(1.0, 0.86, 0.3) : vec3(0.78, 0.6, 0.95);
               c = mix(c, petal, step(0.8, dot1) * uSpring * vSeason.z);
             }
+            // Fruit: green, ripening to its own colour.
+            if (vSeason.z > 1.5) c = mix(vec3(0.42, 0.6, 0.22), c, uRipe);
             // Autumn: yellow, orange or red, tree by tree.
             vec3 fall = vTreeRand < 0.35 ? vec3(0.85, 0.62, 0.08) : vTreeRand < 0.7 ? vec3(0.9, 0.35, 0.05) : vec3(0.65, 0.1, 0.05);
             c = mix(c, fall * (0.75 + 0.5 * dot(c, vec3(0.33))), uAutumn * leafy * 0.9);
