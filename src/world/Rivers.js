@@ -6,6 +6,12 @@ function smoothstep(a, b, x) {
   return t * t * (3 - 2 * t);
 }
 
+/** The lower of a and b, rounded off over `k` where they meet. */
+function smin(a, b, k) {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - h * h * k * 0.25;
+}
+
 const REGION = 768; // at most one river and one mountain stream rise per region this size
 const RIVER_REACH = 4; // a river stays within this many regions of where it rises
 const STREAM_REACH = 2; // likewise a stream
@@ -13,7 +19,7 @@ const CELL = 32; // spatial index cell (m)
 const STEP = 8; // path spacing (m)
 const RIVER_STEPS = 400; // a river is at most ~3 km long
 const STREAM_STEPS = 170; // a stream at most ~1.4 km
-const INFLUENCE = 26; // how far past its channel a river still shapes the land (m)
+const INFLUENCE = 150; // how far past its channel a river still shapes the land (m): its valley (see valleyWidth)
 
 /**
  * Rivers and mountain streams, all ending in open water:
@@ -29,13 +35,16 @@ const INFLUENCE = 26; // how far past its channel a river still shapes the land 
  *    cliffs, until they join a river or reach open water.
  *
  * Water levels only ever fall along a course. The terrain is carved to
- * match (see carve()): rivers run in a trench cut a metre or two into the
- * land, with a bed below the water; a channel at least ~5 m wide kept under
+ * match (see carve()): each runs down the floor of its own valley, broad
+ * and gentle-floored for a river (broadening downstream), a narrow V for a
+ * mountain stream, the valley's sides easing up into the lie of the land.
+ * At the water: a bed below it, a channel at least ~5 m wide kept under
  * the water level (the mesh is finer along rivers, so its triangles always
- * have corners in it and never bridge over the water); a strip of mud at
- * the water, then a steep cut bank up to the land (raised where the land
- * beside would be lower, so water never floats), and valley sides rising
- * from there. Ponds get a basin and banks.
+ * have corners in it and never bridge over the water), a strip of mud,
+ * then a steep cut bank up to the valley floor (raised where the land
+ * beside would be lower, so water never floats). Ponds get a basin and
+ * banks. Rivers trace the fall of the land closely, so they run where the
+ * land is lowest, as real ones do.
  *
  * Generated region by region from the seed. Streams are only traced once
  * every river that could reach them exists, so any chunk (or worker),
@@ -320,7 +329,7 @@ export class Rivers {
         dz = dir[1] * keep + dz * (1 - keep);
       }
       // A slow meander.
-      const a = this.meander.noise2D(px * 0.004, pz * 0.004) * (stream ? 0.2 : 0.35);
+      const a = this.meander.noise2D(px * 0.004, pz * 0.004) * (stream ? 0.2 : 0.25);
       const ca = Math.cos(a), sa = Math.sin(a);
       [dx, dz] = [dx * ca - dz * sa, dx * sa + dz * ca];
       const l = Math.hypot(dx, dz) || 1;
@@ -567,7 +576,7 @@ export class Rivers {
       const a = points[i], b = points[i + 1];
       const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, stream: kind === 'stream', along };
       along += Math.hypot(b.x - a.x, b.z - a.z);
-      const r = Rivers.channel(Math.max(a.width, b.width) / 2) + INFLUENCE;
+      const r = Rivers.channel(Math.max(a.width, b.width) / 2) + Math.min(INFLUENCE, Rivers.valleyWidth(kind === 'stream', seg.along + STEP) * 1.3);
       const box = [Math.min(a.x, b.x) - r, Math.min(a.z, b.z) - r, Math.max(a.x, b.x) + r, Math.max(a.z, b.z) + r];
       this.#index(this.cells, seg, ...box);
       if (kind === 'river') this.#index(this.riverCells, seg, ...box);
@@ -613,6 +622,29 @@ export class Rivers {
     if (e < 0.6) return 0;
     const top = 0.6 + 3.3 / k;
     return e < top ? (e - 0.6) * k : 3.3 + (e - top) * 0.45;
+  }
+
+  /**
+   * How far out (m, from the channel's edge) a river's valley reaches: a
+   * river's broadens downstream, from some 40 m near its source to 150 m
+   * for a big river in the lowlands; a mountain stream's is a narrow V.
+   */
+  static valleyWidth(stream, along) {
+    return stream ? 24 : 40 + Math.min(110, along * 0.05);
+  }
+
+  /**
+   * How far above the water the land stands `e` metres out from the
+   * channel's edge, in a valley `w` wide: the bank (see bankRise), then a
+   * gentle floor, the sides rising ever more steeply out to the valley's
+   * rim, where it meets the lie of the land.
+   */
+  static valleyRise(e, k, w, stream) {
+    if (e < 0.6) return 0;
+    const top = 0.6 + 3.3 / k;
+    if (e < top) return (e - 0.6) * k;
+    const u = e - top, f = u / w;
+    return 3.3 + u * (stream ? 0.3 : 0.08) + f * f * w * (stream ? 1.6 : 1.1);
   }
 
   /**
@@ -686,7 +718,8 @@ export class Rivers {
         continue;
       }
       const { d, level, half, water } = Rivers.#measure(item, x, z, m);
-      if (d > half + INFLUENCE) continue;
+      const w = Rivers.valleyWidth(item.stream, m.along);
+      if (d > half + w * 1.3) continue;
       edge = Math.min(edge, d - half);
       if (d < half) {
         // Under the water: the bed, then the channel's margin just below the
@@ -699,8 +732,9 @@ export class Rivers {
       } else {
         // The bank: mud at the water, a steep cut bank (steeper in some
         // places than others) up to the land, then the valley side.
+        // (The land eases into the valley, rather than meeting it in a crease.)
         if (k === 0) k = 0.75 + 0.55 * (this.meander.noise2D(x * 0.02 + 40, z * 0.02) + 1);
-        h = Math.min(h, level + 0.2 + Rivers.bankRise(d - half, item.stream ? k * 0.8 : k));
+        h = smin(h, level + 0.2 + Rivers.valleyRise(d - half, item.stream ? k * 0.8 : k, w, item.stream), d - half < 8 ? 0.5 : 4);
         if (d < half + 8) bank = Math.max(bank, level + 0.2 - Math.max(0, d - half - 3.2) * 0.6);
       }
     }

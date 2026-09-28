@@ -1,4 +1,4 @@
-import { ClampToEdgeWrapping, DataTexture, LinearFilter, RedFormat, UnsignedByteType, Vector2 } from 'three';
+import { ClampToEdgeWrapping, Color, DataTexture, LinearFilter, RedFormat, UnsignedByteType, Vector2 } from 'three';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -27,6 +27,11 @@ export const cloudShadowUniforms = {
   uCloudOrigin: { value: new Vector2() }, // world x, z of the map's corner
   uCloudSize: { value: 2600 }, // metres across
   uCloudStrength: { value: 0 }, // how much of the direct light a cloud takes (0..1)
+  // Mist lying in the valleys (see addCloudShadow): how much, how high its
+  // top lies (world y), and its colour.
+  uMist: { value: 0 },
+  uMistTop: { value: 0 },
+  uMistColor: { value: new Color(0xdfe6ea) },
 };
 
 /**
@@ -76,32 +81,51 @@ export function paintCloudShadows(clouds, focus, light, ground, range, strength)
   texture.needsUpdate = true;
 }
 
-/** Patches a material so the cloud shadows dim its direct light. */
+/**
+ * Patches a material so the cloud shadows dim its direct light; and so the
+ * valley mist lies over it (see uMist): whatever lies low, under the
+ * mist's top, is veiled, the more so the further off it is (the more mist
+ * there is to look through), so from up high a valley below lies under a
+ * white sheet, and down in it the woods fade into it.
+ */
 export function addCloudShadow(material) {
   const previous = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
     previous?.call(material, shader, renderer);
     Object.assign(shader.uniforms, cloudShadowUniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vCloudXZ;')
+      .replace('#include <common>', '#include <common>\nvarying vec2 vCloudXZ;\nvarying float vCloudY;')
       .replace(
         '#include <project_vertex>',
         `#include <project_vertex>
+        {
         #ifdef USE_INSTANCING
-          vCloudXZ = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xz;
+          vec4 cw = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
         #else
-          vCloudXZ = (modelMatrix * vec4(transformed, 1.0)).xz;
-        #endif`,
+          vec4 cw = modelMatrix * vec4(transformed, 1.0);
+        #endif
+          vCloudXZ = cw.xz;
+          vCloudY = cw.y;
+        }`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uCloudShadow;\nuniform vec2 uCloudOrigin;\nuniform float uCloudSize;\nuniform float uCloudStrength;\nvarying vec2 vCloudXZ;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uCloudShadow;\nuniform vec2 uCloudOrigin;\nuniform float uCloudSize;\nuniform float uCloudStrength;\nvarying vec2 vCloudXZ;\nvarying float vCloudY;\nuniform float uMist;\nuniform float uMistTop;\nuniform vec3 uMistColor;')
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
         reflectedLight.directDiffuse *= 1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r;`,
+      )
+      .replace(
+        '#include <fog_fragment>',
+        `#include <fog_fragment>
+        if (uMist > 0.001) {
+          float under = smoothstep(uMistTop, uMistTop - 12.0, vCloudY);
+          float through = 1.0 - exp(-distance(cameraPosition, vec3(vCloudXZ.x, vCloudY, vCloudXZ.y)) * 0.008);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, uMistColor, uMist * under * (0.25 + 0.75 * through));
+        }`,
       );
   };
   const previousKey = material.customProgramCacheKey?.bind(material);
-  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|cloud-shadow`;
+  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|cloud-shadow-mist`;
   return material;
 }

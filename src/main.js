@@ -676,11 +676,44 @@ function marshMist(dt) {
   const foggy = roll < 0.6 ? 0.45 + roll * 0.6 : 0;
   const dawn = smooth(4.3, 5.8, h) * (1 - smooth(8, 9.8, h));
   const low = 1 - smooth(20, 90, camera.position.y);
-  const valley = 1 - smooth(WORLD.seaLevel + 40, WORLD.seaLevel + 150, camera.position.y);
-  const target = Math.max(mistState.marsh * low, sheltered ? 0 : foggy * valley * (1 - 0.8 * mistState.dry)) * dawn;
+  const target = mistState.marsh * low * dawn;
   mistState.value += (target - mistState.value) * Math.min(1, dt / 2);
+  valleyMist(dt, foggy * dawn * (1 - 0.8 * mistState.dry));
   return mistState.value < 0.002 ? 0 : mistState.value;
 }
+
+// Mist in the valleys on a still morning: a layer lying over the low
+// ground round about, some ten metres deep (see addCloudShadow), thicker
+// in spring and autumn and after rain, thinned by the wind, burning off
+// as the morning goes on.
+const valley = { floor: null, wait: 0, amount: 0 };
+function valleyMist(dt, morning) {
+  valley.wait -= dt;
+  if (valley.wait <= 0) {
+    valley.wait = 2;
+    const p = camera.position;
+    // (The low ground: the lowest fifth of the land round about.)
+    const heights = [];
+    for (const r of [0, 120, 260, 450]) {
+      for (let k = 0; k < (r ? 12 : 1); k++) {
+        const a = (k / 12) * Math.PI * 2;
+        const h = chunks.groundHeightAt(p.x + Math.cos(a) * r, p.z + Math.sin(a) * r);
+        if (Number.isFinite(h)) heights.push(Math.max(h, WORLD.seaLevel));
+      }
+    }
+    if (heights.length > 8) valley.target = heights.sort((a, b) => a - b)[Math.floor(heights.length * 0.2)];
+  }
+  if (valley.target !== undefined) valley.floor = valley.floor === null ? valley.target : valley.floor + (valley.target - valley.floor) * Math.min(1, dt / 8);
+  const s = seasonUniforms;
+  const damp = 1 + 0.5 * (s.uSpring.value + s.uAutumn.value) + 0.6 * s.uWet.value;
+  const calm = 1 - 0.75 * smooth(0.3, 0.8, windStrength.value);
+  const target = sheltered ? 0 : Math.min(0.85, morning * damp * calm);
+  valley.amount += (target - valley.amount) * Math.min(1, dt / 3);
+  cloudShadowUniforms.uMist.value = valley.amount;
+  cloudShadowUniforms.uMistTop.value = (valley.floor ?? 0) + 10 + 6 * valley.amount;
+  cloudShadowUniforms.uMistColor.value.copy(scene.fog.color).lerp(MIST_WHITE, 0.35);
+}
+const MIST_WHITE = new THREE.Color(0xf2f4f5);
 function smooth(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
