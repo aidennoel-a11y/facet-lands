@@ -361,6 +361,33 @@ export class Sound {
       src.start(start, Math.random() * 2);
       src.stop(start + len + 0.05);
     };
+    // Noise through a low- or high-pass filter (a wash of it), and a
+    // droplet: a tiny bright tick.
+    const wash = (start, len, type, freq, peak, attack = 0.01, sweep = null) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.setValueAtTime(freq, start);
+      if (sweep) f.frequency.exponentialRampToValueAtTime(sweep, start + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+      src.connect(f).connect(g).connect(out);
+      src.start(start, Math.random() * 3);
+      src.stop(start + len + 0.05);
+    };
+    // A bubble's "plop": a pure tone rising fast (as a bubble in water rings).
+    const bloop = (start, f0, len, peak) => tone(start, len, 'sine', f0, f0 * (2 + Math.random()), f0 * 1.6, 0.7, peak);
+    const drops = (start, n, spread, peak) => {
+      for (let k = 0; k < n; k++) {
+        const at = start + Math.pow(Math.random(), 1.6) * spread;
+        const fade = 1 - (at - start) / (spread * 1.2);
+        if (Math.random() < 0.5) bloop(at, 900 + Math.random() * 1400, 0.035 + Math.random() * 0.03, peak * fade * 0.6);
+        else noise(at, 0.03, 3000 + Math.random() * 3000, 4, peak * fade);
+      }
+    };
     if (kind === 'caw') {
       const n = 2 + Math.floor(Math.random() * 3);
       for (let k = 0; k < n; k++) tone(t + k * 0.32, 0.22, 'sawtooth', 560 + Math.random() * 80, 430, 1100, 1.5, 0.09);
@@ -391,11 +418,22 @@ export class Sound {
       // A spring peeper: a high rising whistle.
       tone(t, 0.12, 'sine', 2500 + Math.random() * 300, 3000 + Math.random() * 300, 2800, 1, 0.035);
     } else if (kind === 'splash') {
-      noise(t, 0.22, 2200, 0.9, 0.08);
-      tone(t, 0.12, 'sine', 700, 300, 500, 1, 0.05);
+      // A foot or a paddle in the water: the slap of it, a bubble or two
+      // gulping, and the drops falling back.
+      wash(t, 0.16, 'lowpass', 2400, 0.14, 0.004, 700);
+      bloop(t + 0.02, 380 + Math.random() * 200, 0.06, 0.06);
+      if (Math.random() < 0.6) bloop(t + 0.07, 600 + Math.random() * 300, 0.05, 0.04);
+      drops(t + 0.05, 6 + Math.floor(Math.random() * 5), 0.35, 0.035);
     } else if (kind === 'bigsplash') {
-      noise(t, 0.6, 1400, 0.6, 0.18);
-      tone(t, 0.25, 'sine', 380, 120, 260, 0.8, 0.12);
+      // Into the water from a height: a heavy thump, the crash and hiss of
+      // the water thrown up, the deep gulp as it closes, and the rain of
+      // drops coming down after.
+      tone(t, 0.3, 'sine', 140, 55, 120, 0.7, 0.3);
+      wash(t, 0.9, 'lowpass', 4000, 0.3, 0.005, 600);
+      wash(t + 0.05, 0.6, 'highpass', 2500, 0.08, 0.02);
+      bloop(t + 0.12, 180, 0.18, 0.12);
+      bloop(t + 0.22, 300, 0.12, 0.07);
+      drops(t + 0.3, 22, 1.1, 0.05);
     } else if (kind === 'rumble') {
       noise(t, 3.5, 70, 0.7, 0.35, 3);
       tone(t, 3, 'sine', 42, 30, 60, 0.7, 0.25);
@@ -443,6 +481,90 @@ export class Sound {
     } else if (kind === 'thunk') {
       tone(t, 0.15, 'sine', 150, 80, 220, 1, 0.35);
       noise(t, 0.06, 900, 1, 0.15);
+    } else if (kind === 'stab') {
+      // A blade or a point going into flesh: a dull wet thud.
+      tone(t, 0.16, 'sine', 130, 55, 160, 0.8, 0.45);
+      wash(t, 0.12, 'bandpass', 650, 0.2, 0.003);
+      noise(t + 0.02, 0.1, 1200, 3, 0.06);
+    } else if (kind === 'bleat') {
+      // A deer's (an elk's) bleat: a high nasal wavering cry.
+      tone(t, 0.45, 'sawtooth', 620 + Math.random() * 120, 520, 1300, 2, 0.07, 14);
+    } else if (kind === 'squeal') {
+      // A boar hurt or charging: a harsh rising shriek.
+      tone(t, 0.7, 'sawtooth', 700, 1500, 1400, 1.2, 0.12, 25);
+      tone(t + 0.05, 0.6, 'square', 1050, 2100, 2000, 2, 0.04, 31);
+    } else if (kind === 'oink') {
+      // Boar rooting about: short deep nasal grunts.
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) tone(t + k * 0.22 + Math.random() * 0.05, 0.14, 'sawtooth', 120 + Math.random() * 30, 90, 520, 2.5, 0.12, 40);
+    } else if (kind === 'bellow') {
+      // A moose: a long low moaning call, cracking at the end.
+      tone(t, 1.8, 'sawtooth', 190, 110, 400, 2.5, 0.14, 6);
+      noise(t + 1.3, 0.5, 300, 2, 0.08, 18);
+    } else if (kind === 'bugle') {
+      // An elk's bugle: a deep rising note breaking into a high whistling
+      // scream, then falling away in grunts.
+      tone(t, 0.6, 'sawtooth', 220, 700, 900, 1.5, 0.06);
+      tone(t + 0.45, 1.6, 'sine', 1400, 1900, 1700, 3, 0.1, 7);
+      tone(t + 1.9, 0.5, 'sine', 1800, 700, 1000, 2, 0.05);
+      for (let k = 0; k < 3; k++) tone(t + 2.5 + k * 0.28, 0.16, 'sawtooth', 110, 90, 300, 1.5, 0.1);
+    } else if (kind === 'scream') {
+      // A cougar's scream in the night: harsh, human, horrible.
+      tone(t, 1.5, 'sawtooth', 900, 600, 1500, 1.2, 0.12, 9);
+      tone(t, 1.5, 'square', 1350, 900, 2400, 2, 0.04, 13);
+      noise(t, 1.4, 2200, 1.2, 0.08);
+    } else if (kind === 'hiss') {
+      // A snake, a cornered cat: a long breathy hiss.
+      wash(t, 0.9, 'highpass', 3500, 0.12, 0.03);
+    } else if (kind === 'rattle') {
+      // A rattlesnake's rattle: a dry buzzing whirr.
+      noise(t, 0.65, 5500, 2, 0.14, 55);
+      noise(t, 0.65, 3200, 3, 0.06, 55);
+    } else if (kind === 'gobble') {
+      // A turkey's gobble: a rapid tumbling warble.
+      const n = 9 + Math.floor(Math.random() * 5);
+      for (let k = 0; k < n; k++) tone(t + k * 0.055, 0.06, 'sawtooth', 700 + Math.random() * 250, 520, 1100, 2, 0.06);
+    } else if (kind === 'quack') {
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) {
+        tone(t + k * 0.24, 0.16, 'sawtooth', 480, 380, 1300, 3, 0.1);
+        tone(t + k * 0.24, 0.16, 'square', 240, 190, 700, 2, 0.04);
+      }
+    } else if (kind === 'squeak') {
+      tone(t, 0.18, 'sine', 2100, 2700, 2400, 2, 0.06);
+    } else if (kind === 'crash') {
+      // Something broken into: splintering wood and a heavy thump.
+      tone(t, 0.3, 'sine', 90, 45, 130, 0.8, 0.35);
+      for (let k = 0; k < 5; k++) noise(t + k * 0.07 + Math.random() * 0.05, 0.12, 900 + Math.random() * 1500, 1.5, 0.14);
+    } else if (kind === 'twang') {
+      // A crossbow loosed: the snap of the string, the bolt away.
+      tone(t, 0.25, 'triangle', 190, 150, 300, 1.5, 0.3);
+      noise(t, 0.05, 3000, 2, 0.18);
+      wash(t + 0.03, 0.25, 'bandpass', 900, 0.08, 0.01, 400);
+    } else if (kind === 'winch') {
+      // Winding a crossbow: the ratchet clicking.
+      for (let k = 0; k < 8; k++) noise(t + k * 0.24, 0.03, 4200, 5, 0.1);
+      tone(t, 1.9, 'sawtooth', 70, 90, 300, 4, 0.03);
+    } else if (kind === 'click') {
+      noise(t, 0.03, 3500, 4, 0.18);
+      tone(t, 0.04, 'square', 1200, 900, 1500, 2, 0.05);
+    } else if (kind === 'ignite') {
+      // A torch or a fire catching: a soft whoomph and the first crackles.
+      wash(t, 0.5, 'lowpass', 300, 0.25, 0.05, 1600);
+      for (let k = 0; k < 4; k++) noise(t + 0.2 + Math.random() * 0.4, 0.04, 3000 + Math.random() * 2000, 2, 0.06);
+    } else if (kind === 'grind') {
+      // Steel on the turning stone: a rasping, sparking whine.
+      noise(t, 1.1, 3200, 2, 0.12, 12);
+      tone(t, 1.1, 'sawtooth', 900, 1100, 2400, 5, 0.03, 8);
+    } else if (kind === 'dig') {
+      // A blade into the earth: a crunch and the soil turned over.
+      wash(t, 0.18, 'lowpass', 900, 0.25, 0.005);
+      noise(t + 0.12, 0.2, 500, 1, 0.12);
+    } else if (kind === 'pour') {
+      noise(t, 1.0, 1100, 1.2, 0.1, 17);
+      for (let k = 0; k < 5; k++) bloop(t + Math.random() * 0.9, 500 + Math.random() * 400, 0.05, 0.03);
+    } else if (kind === 'shear') {
+      for (let k = 0; k < 3; k++) noise(t + k * 0.18, 0.05, 4200, 3, 0.14);
     } else if (kind === 'crackle') {
       for (let k = 0; k < 6; k++) noise(t + Math.random() * 0.8, 0.04, 2500 + Math.random() * 2500, 2, 0.05 + Math.random() * 0.06);
     }

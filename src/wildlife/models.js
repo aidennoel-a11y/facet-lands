@@ -47,62 +47,102 @@ class Blocks {
   }
 }
 
-// --- Four-legged animals ----------------------------------------------------
+// --- Four-legged animals (and two-legged birds that walk) -------------------
 // Standing on the ground at y = 0, facing +z. Parts: body; head (turned
 // about its pivot to graze or look up); optional antlers (on the head's
-// pivot); legs (one geometry, hanging from its hip pivot, drawn four times).
+// pivot); and the legs, each in two parts, jointed: the upper (from the hip
+// or shoulder) and the lower (from the knee or hock, with the hoof or paw),
+// set by the gait so each foot stands where it's put down (see Gait.js).
+// `legs`: the hip and shoulder joints (fore near, fore off, hind near, hind
+// off; a bird's two). `torso` and `skull`: boxes for what a blow or an arrow
+// hits ([x, y, z, half width, half height, half length]; the skull's in the
+// head's own frame, about its pivot).
 
-export function deer() {
-  const coat = 0x9c6b3f, back = 0x86592f, belly = 0xdcc6a2, dark = 0x2e221a, white = 0xf2ece0, nose = 0x1c1612;
+/**
+ * A leg in two parts, each hanging down -y from its joint: the upper
+ * (length l1, from `top` [width, depth] at the hip to `knee` at the joint)
+ * and the lower (length l2, down to `ankle`, with the foot [w, h, d,
+ * colour, how far forward] at its end, standing on the ground).
+ */
+function limb(l1, l2, { top, knee, ankle = [knee[0] * 0.8, knee[1] * 0.8], color, low = color, foot }) {
+  const upper = new Blocks().box(knee[0], l1, knee[1], color, [0, -l1 / 2, 0], [0, 0, 0], [top[0] / knee[0], top[1] / knee[1]]);
+  const lower = new Blocks().box(ankle[0], l2, ankle[1], low, [0, -l2 / 2, 0], [0, 0, 0], [(knee[0] * 0.85) / ankle[0], (knee[1] * 0.85) / ankle[1]]);
+  const [fw, fh, fd, fc, fz = 0] = foot;
+  lower.box(fw, fh, fd, fc, [0, -l2 + fh / 2, fz]);
+  return { upper: upper.build(), lower: lower.build(), l1, l2 };
+}
+
+/**
+ * A deer (or an elk): a slender body on long thin legs, the white rump and
+ * tail, a long neck and a narrow head with big ears; a buck's antlers. An
+ * elk is bigger and darker in the neck, with a shaggy mane, a pale straw
+ * rump, and great swept-back antlers.
+ */
+function cervid({ coat, back, belly, rump = 0xf2ece0, neck = coat, mane = null, elk = false }) {
+  const dark = 0x2e221a, nose = 0x1c1612;
+  const body = new Blocks()
+    .box(0.42, 0.5, 0.62, coat, [0, 1.04, 0.28], [0, 0, 0], [0.9, 0.95]) // chest and shoulders
+    .box(0.4, 0.44, 0.56, coat, [0, 1.05, -0.24], [0, 0, 0], [0.92, 1]) // barrel
+    .box(0.42, 0.5, 0.36, coat, [0, 1.07, -0.6], [0, 0, 0], [0.85, 0.9]) // haunches
+    .box(0.3, 0.08, 1.2, back, [0, 1.3, -0.1]) // the darker line of the back
+    .box(0.34, 0.1, 1.0, belly, [0, 0.8, -0.05], [0, 0, 0], [1.1, 1]) // belly
+    .box(elk ? 0.38 : 0.3, elk ? 0.4 : 0.32, 0.1, rump, [0, 1.04, -0.79]) // the pale rump
+    .box(0.24, 0.2, 0.12, elk ? neck : belly, [0, 1.0, 0.6]); // throat
+  if (elk) body.box(0.08, 0.1, 0.06, coat, [0, 1.16, -0.84], [0.3, 0, 0]); // a stub of a tail
+  else body.box(0.12, 0.22, 0.07, rump, [0, 1.18, -0.84], [0.45, 0, 0]).box(0.1, 0.18, 0.06, coat, [0, 1.2, -0.82], [0.45, 0, 0]); // tail, up
+  const head = new Blocks()
+    .box(0.26, 0.3, 0.32, neck, [0, 0.02, -0.02], [0.2, 0, 0], [0.9, 0.9]) // the base of the neck, into the shoulders
+    .box(0.2, 0.5, 0.22, neck, [0, 0.3, 0.1], [0.45, 0, 0], [0.8, 0.85]) // neck, leaning forward up to the head
+    .box(0.14, 0.36, 0.08, elk ? neck : belly, [0, 0.24, 0.2], [0.45, 0, 0]) // throat
+    .box(0.22, 0.2, 0.26, elk ? neck : coat, [0, 0.58, 0.22]) // skull
+    .box(0.16, 0.16, 0.22, coat, [0, 0.54, 0.44], [0, 0, 0], [0.85, 1]) // face
+    .box(0.12, 0.09, 0.08, nose, [0, 0.52, 0.56]) // nose
+    .box(0.03, 0.04, 0.04, 0x0e0a08, [0.11, 0.62, 0.32]) // eyes
+    .box(0.03, 0.04, 0.04, 0x0e0a08, [-0.11, 0.62, 0.32])
+    .box(0.05, 0.2, 0.12, coat, [0.15, 0.74, 0.16], [0, 0.3, -0.7], [0.6, 0.6]) // ears
+    .box(0.05, 0.2, 0.12, coat, [-0.15, 0.74, 0.16], [0, -0.3, 0.7], [0.6, 0.6])
+    .box(0.02, 0.14, 0.08, 0xe8c8b0, [0.17, 0.74, 0.18], [0, 0.3, -0.7])
+    .box(0.02, 0.14, 0.08, 0xe8c8b0, [-0.17, 0.74, 0.18], [0, -0.3, 0.7]);
+  if (mane) head.box(0.26, 0.4, 0.2, mane, [0, 0.16, -0.02], [0.45, 0, 0], [0.9, 0.9]); // the shaggy mane under the neck
+  const antlers = new Blocks(), bone = 0xcbb690;
+  for (const side of [1, -1]) {
+    if (elk) {
+      // A long beam sweeping up and back, and six tines off it, forward.
+      antlers.box(0.05, 0.4, 0.05, bone, [side * 0.12, 0.88, 0.16], [-0.35, 0, -side * 0.3]);
+      antlers.box(0.045, 0.4, 0.045, bone, [side * 0.22, 1.2, 0.02], [-0.6, 0, -side * 0.18]);
+      antlers.box(0.04, 0.34, 0.04, bone, [side * 0.26, 1.46, -0.2], [-0.9, 0, -side * 0.1]);
+      antlers.box(0.035, 0.2, 0.035, bone, [side * 0.16, 0.86, 0.34], [1.0, 0, -side * 0.2]); // brow tine
+      antlers.box(0.035, 0.18, 0.035, bone, [side * 0.2, 1.0, 0.24], [0.9, 0, -side * 0.2]);
+      antlers.box(0.035, 0.2, 0.035, bone, [side * 0.26, 1.28, 0.12], [0.5, 0, -side * 0.25]);
+      antlers.box(0.03, 0.18, 0.03, bone, [side * 0.29, 1.46, -0.04], [0.3, 0, -side * 0.3]);
+      antlers.box(0.03, 0.16, 0.03, bone, [side * 0.28, 1.6, -0.24], [-0.1, 0, -side * 0.3]);
+    } else {
+      antlers.box(0.04, 0.3, 0.04, bone, [side * 0.1, 0.82, 0.22], [0, 0, -side * 0.35]); // beam
+      antlers.box(0.035, 0.28, 0.035, bone, [side * 0.2, 1.02, 0.16], [-0.4, 0, -side * 0.2]);
+      antlers.box(0.03, 0.2, 0.03, bone, [side * 0.24, 1.18, 0.1], [-0.6, 0, -side * 0.1]);
+      antlers.box(0.03, 0.16, 0.03, bone, [side * 0.17, 1.0, 0.3], [0.7, 0, -side * 0.2]); // tines
+      antlers.box(0.03, 0.14, 0.03, bone, [side * 0.26, 1.12, 0.24], [0.6, 0, -side * 0.3]);
+      antlers.box(0.03, 0.12, 0.03, bone, [side * 0.22, 1.28, 0.06], [0.2, 0, -side * 0.3]);
+    }
+  }
+  const legColor = elk ? neck : coat;
   return {
-    body: new Blocks()
-      .box(0.42, 0.5, 0.62, coat, [0, 1.04, 0.28], [0, 0, 0], [0.9, 0.95]) // chest and shoulders
-      .box(0.4, 0.44, 0.56, coat, [0, 1.05, -0.24], [0, 0, 0], [0.92, 1]) // barrel
-      .box(0.42, 0.5, 0.36, coat, [0, 1.07, -0.6], [0, 0, 0], [0.85, 0.9]) // haunches
-      .box(0.3, 0.08, 1.2, back, [0, 1.3, -0.1]) // the darker line of the back
-      .box(0.34, 0.1, 1.0, belly, [0, 0.8, -0.05], [0, 0, 0], [1.1, 1]) // belly
-      .box(0.3, 0.32, 0.1, white, [0, 1.02, -0.79]) // the white rump
-      .box(0.12, 0.22, 0.07, white, [0, 1.18, -0.84], [0.45, 0, 0]) // tail, up
-      .box(0.1, 0.18, 0.06, coat, [0, 1.2, -0.82], [0.45, 0, 0])
-      .box(0.24, 0.2, 0.12, belly, [0, 1.0, 0.6]) // pale throat
-      .build(),
+    body: body.build(),
     headPivot: [0, 1.2, 0.52],
-    head: new Blocks()
-      .box(0.26, 0.3, 0.32, coat, [0, 0.02, -0.02], [0.2, 0, 0], [0.9, 0.9]) // the base of the neck, into the shoulders
-      .box(0.2, 0.5, 0.22, coat, [0, 0.3, 0.1], [0.45, 0, 0], [0.8, 0.85]) // neck, leaning forward up to the head
-      .box(0.14, 0.36, 0.08, belly, [0, 0.24, 0.2], [0.45, 0, 0]) // pale throat
-      .box(0.22, 0.2, 0.26, coat, [0, 0.58, 0.22]) // skull
-      .box(0.16, 0.16, 0.22, coat, [0, 0.54, 0.44], [0, 0, 0], [0.85, 1]) // face
-      .box(0.12, 0.09, 0.08, nose, [0, 0.52, 0.56]) // nose
-      .box(0.03, 0.04, 0.04, 0x0e0a08, [0.11, 0.62, 0.32]) // eyes
-      .box(0.03, 0.04, 0.04, 0x0e0a08, [-0.11, 0.62, 0.32])
-      .box(0.05, 0.2, 0.12, coat, [0.15, 0.74, 0.16], [0, 0.3, -0.7], [0.6, 0.6]) // ears
-      .box(0.05, 0.2, 0.12, coat, [-0.15, 0.74, 0.16], [0, -0.3, 0.7], [0.6, 0.6])
-      .box(0.02, 0.14, 0.08, 0xe8c8b0, [0.17, 0.74, 0.18], [0, 0.3, -0.7])
-      .box(0.02, 0.14, 0.08, 0xe8c8b0, [-0.17, 0.74, 0.18], [0, -0.3, 0.7])
-      .build(),
-    antlers: (() => {
-      const b = new Blocks(), bone = 0xcbb690;
-      for (const side of [1, -1]) {
-        b.box(0.04, 0.3, 0.04, bone, [side * 0.1, 0.82, 0.22], [0, 0, -side * 0.35]); // beam
-        b.box(0.035, 0.28, 0.035, bone, [side * 0.2, 1.02, 0.16], [-0.4, 0, -side * 0.2]);
-        b.box(0.03, 0.2, 0.03, bone, [side * 0.24, 1.18, 0.1], [-0.6, 0, -side * 0.1]);
-        b.box(0.03, 0.16, 0.03, bone, [side * 0.17, 1.0, 0.3], [0.7, 0, -side * 0.2]); // tines
-        b.box(0.03, 0.14, 0.03, bone, [side * 0.26, 1.12, 0.24], [0.6, 0, -side * 0.3]);
-        b.box(0.03, 0.12, 0.03, bone, [side * 0.22, 1.28, 0.06], [0.2, 0, -side * 0.3]);
-      }
-      return b.build();
-    })(),
-    // A leg: the thick upper leg, a knee bent back, the slender shank, the hoof.
-    leg: new Blocks()
-      .box(0.13, 0.4, 0.16, coat, [0, -0.2, 0], [0, 0, 0], [1.2, 1.2])
-      .box(0.08, 0.2, 0.09, coat, [0, -0.48, -0.03], [0.25, 0, 0])
-      .box(0.06, 0.26, 0.07, coat, [0, -0.7, 0])
-      .box(0.08, 0.07, 0.1, dark, [0, -0.84, 0.01])
-      .build(),
+    head: head.build(),
+    antlers: antlers.build(),
+    // (Long slender legs: the forearm and the thin cannon below the knee;
+    // the thigh and gaskin, and the cannon below the hock.)
+    fore: limb(0.44, 0.47, { top: [0.15, 0.2], knee: [0.08, 0.09], ankle: [0.055, 0.06], color: legColor, foot: [0.075, 0.07, 0.1, dark, 0.01] }),
+    hind: limb(0.46, 0.45, { top: [0.17, 0.26], knee: [0.08, 0.1], ankle: [0.055, 0.06], color: coat, foot: [0.075, 0.07, 0.1, dark, 0.01] }),
     legs: [[0.13, 0.87, 0.46], [-0.13, 0.87, 0.46], [0.14, 0.87, -0.58], [-0.14, 0.87, -0.58]],
+    torso: [[0, 1.05, -0.08, 0.21, 0.27, 0.74]],
+    neck: [0, 0.28, 0.08, 0.12, 0.28, 0.13],
+    skull: [0, 0.57, 0.32, 0.12, 0.12, 0.27],
   };
 }
+export const deer = () => cervid({ coat: 0x9c6b3f, back: 0x86592f, belly: 0xdcc6a2 });
+export const elk = () => cervid({ coat: 0xa8845a, back: 0x8a6a44, belly: 0x5a3e28, neck: 0x4e3622, mane: 0x3e2a1a, rump: 0xe0cc9a, elk: true });
 
 export function bison() {
   const coat = 0x5e4028, shag = 0x3e2a1a, mane = 0x33231a, dark = 0x1e140e, horn = 0x2a2420, nose = 0x16100c;
@@ -137,26 +177,66 @@ export function bison() {
       .box(0.08, 0.16, 0.08, horn, [-0.49, 0.3, 0.36], [0, 0, -0.35])
       .build(),
     antlers: null,
-    leg: new Blocks()
-      .box(0.3, 0.4, 0.34, shag, [0, -0.18, 0], [0, 0, 0], [1.15, 1.1]) // shaggy upper leg
-      .box(0.2, 0.3, 0.22, coat, [0, -0.48, 0])
-      .box(0.17, 0.12, 0.2, coat, [0, -0.66, 0.01])
-      .box(0.22, 0.08, 0.26, dark, [0, -0.73, 0.02]) // hoof
-      .build(),
+    fore: limb(0.38, 0.42, { top: [0.36, 0.4], knee: [0.22, 0.24], ankle: [0.17, 0.19], color: shag, low: coat, foot: [0.22, 0.08, 0.26, dark, 0.02] }),
+    hind: limb(0.39, 0.41, { top: [0.34, 0.44], knee: [0.2, 0.24], ankle: [0.16, 0.18], color: coat, foot: [0.22, 0.08, 0.26, dark, 0.02] }),
     legs: [[0.3, 0.76, 0.5], [-0.3, 0.76, 0.5], [0.28, 0.76, -0.88], [-0.28, 0.76, -0.88]],
+    torso: [[0, 1.15, -0.62, 0.42, 0.48, 0.62], [0, 1.45, 0.38, 0.56, 0.9, 0.48]],
+    skull: [0, -0.15, 0.4, 0.33, 0.36, 0.36],
   };
 }
 
-export function rabbit() {
-  const fur = 0x8f7f6a, pale = 0xe8e0d2, dark = 0x2a221c, pink = 0xd8a0a0;
+/**
+ * A moose: the biggest of the deer, dark and humped at the shoulders, on
+ * long pale legs; a long drooping muzzle, the bell hanging from the throat,
+ * and (a bull's) broad flat palms of antler.
+ */
+export function moose() {
+  const coat = 0x3a2a1e, dark = 0x241a12, leg = 0x9a8a72, muzzle = 0x4e3a2a, bone = 0xc8b48c;
+  const antlers = new Blocks();
+  for (const side of [1, -1]) {
+    antlers.box(0.08, 0.08, 0.2, bone, [side * 0.2, 0.26, 0.36], [0, 0, 0]); // the base, out sideways
+    antlers.box(0.62, 0.05, 0.4, bone, [side * 0.52, 0.42, 0.34], [0, 0, side * 0.42]); // the palm
+    for (let k = 0; k < 5; k++) antlers.box(0.04, 0.16, 0.04, bone, [side * (0.36 + k * 0.1), 0.44 + k * 0.07, 0.52], [0.3, 0, side * 0.2]); // tines along its edge
+  }
+  return {
+    body: new Blocks()
+      .box(0.72, 0.84, 0.8, coat, [0, 1.56, 0.42], [0, 0, 0], [0.85, 0.9]) // deep chest and shoulders
+      .box(0.66, 0.72, 0.8, coat, [0, 1.5, -0.24], [0, 0, 0], [0.9, 1]) // barrel
+      .box(0.6, 0.68, 0.46, coat, [0, 1.46, -0.76], [0, 0, 0], [0.82, 0.9]) // hindquarters, lower
+      .box(0.46, 0.34, 0.66, dark, [0, 2.02, 0.36], [0, 0, 0], [0.6, 0.8]) // the hump over the shoulders
+      .box(0.52, 0.12, 1.4, dark, [0, 1.12, -0.12]) // belly
+      .box(0.1, 0.14, 0.08, dark, [0, 1.6, -1.0], [0.4, 0, 0]) // stub of a tail
+      .build(),
+    headPivot: [0, 1.82, 0.78],
+    head: new Blocks()
+      .box(0.34, 0.44, 0.48, coat, [0, 0.0, 0.18], [0.7, 0, 0], [0.85, 0.85]) // thick short neck, reaching forward
+      .box(0.3, 0.3, 0.34, coat, [0, 0.04, 0.5]) // skull
+      .box(0.26, 0.3, 0.42, muzzle, [0, -0.1, 0.82], [0.15, 0, 0], [0.9, 0.9]) // long heavy muzzle
+      .box(0.26, 0.18, 0.14, dark, [0, -0.18, 1.04]) // the overhanging nose
+      .box(0.08, 0.36, 0.14, dark, [0, -0.36, 0.44], [0.15, 0, 0]) // the bell
+      .box(0.04, 0.05, 0.04, 0x0a0806, [0.15, 0.1, 0.62]) // eyes
+      .box(0.04, 0.05, 0.04, 0x0a0806, [-0.15, 0.1, 0.62])
+      .box(0.08, 0.22, 0.12, coat, [0.2, 0.24, 0.4], [0, 0.3, -0.9], [0.6, 0.6]) // ears
+      .box(0.08, 0.22, 0.12, coat, [-0.2, 0.24, 0.4], [0, -0.3, 0.9], [0.6, 0.6])
+      .build(),
+    antlers: antlers.build(),
+    fore: limb(0.6, 0.64, { top: [0.24, 0.3], knee: [0.12, 0.13], ankle: [0.08, 0.09], color: coat, low: leg, foot: [0.11, 0.09, 0.15, dark, 0.02] }),
+    hind: limb(0.62, 0.62, { top: [0.26, 0.36], knee: [0.12, 0.14], ankle: [0.08, 0.09], color: coat, low: leg, foot: [0.11, 0.09, 0.15, dark, 0.02] }),
+    legs: [[0.2, 1.18, 0.55], [-0.2, 1.18, 0.55], [0.19, 1.18, -0.78], [-0.19, 1.18, -0.78]],
+    torso: [[0, 1.55, -0.14, 0.35, 0.46, 0.92]],
+    neck: [0, 0.0, 0.2, 0.18, 0.24, 0.26],
+    skull: [0, -0.04, 0.72, 0.16, 0.2, 0.42],
+  };
+}
+
+export function rabbit({ fur = 0x8f7f6a, pale = 0xe8e0d2, hare = false } = {}) {
+  const dark = 0x2a221c, pink = 0xd8a0a0, ear = hare ? 0.28 : 0.2;
   return {
     body: new Blocks()
       .box(0.24, 0.22, 0.24, fur, [0, 0.19, -0.05], [0, 0, 0], [0.85, 0.9]) // haunches
       .box(0.2, 0.19, 0.18, fur, [0, 0.2, 0.1], [0, 0, 0], [0.85, 0.9]) // chest
       .box(0.16, 0.06, 0.26, pale, [0, 0.1, 0.02]) // belly
       .box(0.1, 0.1, 0.08, pale, [0, 0.24, -0.2]) // tail
-      .box(0.08, 0.05, 0.16, fur, [0.1, 0.09, -0.08]) // big hind feet
-      .box(0.08, 0.05, 0.16, fur, [-0.1, 0.09, -0.08])
       .build(),
     headPivot: [0, 0.27, 0.15],
     head: new Blocks()
@@ -165,16 +245,22 @@ export function rabbit() {
       .box(0.04, 0.03, 0.02, pink, [0, 0.02, 0.18]) // nose
       .box(0.025, 0.035, 0.03, dark, [0.07, 0.06, 0.1]) // eyes
       .box(0.025, 0.035, 0.03, dark, [-0.07, 0.06, 0.1])
-      .box(0.045, 0.2, 0.025, fur, [0.04, 0.18, 0.02], [-0.25, 0, -0.12], [0.7, 1])
-      .box(0.045, 0.2, 0.025, fur, [-0.04, 0.18, 0.02], [-0.25, 0, 0.12], [0.7, 1])
-      .box(0.025, 0.15, 0.01, pink, [0.04, 0.18, 0.035], [-0.25, 0, -0.12])
-      .box(0.025, 0.15, 0.01, pink, [-0.04, 0.18, 0.035], [-0.25, 0, 0.12])
+      .box(0.045, ear, 0.025, fur, [0.04, 0.08 + ear / 2, 0.02], [-0.25, 0, -0.12], [0.7, 1]) // long ears
+      .box(0.045, ear, 0.025, fur, [-0.04, 0.08 + ear / 2, 0.02], [-0.25, 0, 0.12], [0.7, 1])
+      .box(0.025, ear * 0.75, 0.01, hare ? dark : pink, [0.04, 0.08 + ear / 2, 0.035], [-0.25, 0, -0.12]) // (a hare's ears tipped black)
+      .box(0.025, ear * 0.75, 0.01, hare ? dark : pink, [-0.04, 0.08 + ear / 2, 0.035], [-0.25, 0, 0.12])
       .build(),
     antlers: null,
-    leg: new Blocks().box(0.05, 0.12, 0.07, fur, [0, -0.06, 0]).box(0.05, 0.03, 0.08, pale, [0, -0.11, 0.02]).build(),
-    legs: [[0.06, 0.12, 0.13], [-0.06, 0.12, 0.13], [0.09, 0.12, -0.08], [-0.09, 0.12, -0.08]],
+    // Short forelegs; the long hind legs folded, on their big long feet.
+    fore: limb(0.07, 0.07, { top: [0.06, 0.07], knee: [0.045, 0.05], color: fur, foot: [0.05, 0.03, 0.07, pale, 0.02] }),
+    hind: limb(0.1, hare ? 0.12 : 0.1, { top: [0.1, 0.14], knee: [0.06, 0.07], color: fur, foot: [0.07, 0.04, hare ? 0.2 : 0.17, fur, 0.06] }),
+    legs: [[0.06, 0.13, 0.12], [-0.06, 0.13, 0.12], [0.09, 0.18, -0.1], [-0.09, 0.18, -0.1]],
+    torso: [[0, 0.2, 0.0, 0.12, 0.11, 0.2]],
+    skull: [0, 0.03, 0.08, 0.08, 0.08, 0.1],
   };
 }
+// (A hare, drawn white: tinted brown except in the winter.)
+export const hare = () => rabbit({ fur: 0xf4f2ee, pale: 0xffffff, hare: true });
 
 /**
  * A bear: a heavy, rounded body on thick legs, low-slung head with a long
@@ -189,6 +275,7 @@ function bear({ coat, back, muzzle, claws = 0x2a2420, hump = 0 }) {
     .box(0.56, 0.2, 1.3, back, [0, 1.38, 0.02], [0, 0, 0], [0.8, 0.95]) // the back
     .box(0.12, 0.1, 0.1, coat, [0, 1.12, -0.8]); // stub of a tail
   if (hump) body.box(0.6, 0.3 * hump, 0.46, back, [0, 1.46 + 0.1 * hump, 0.46], [0, 0, 0], [0.6, 0.7]);
+  const paw = [0.24, 0.08, 0.32, back, 0.05];
   return {
     body: body.build(),
     headPivot: [0, 1.15, 0.72],
@@ -202,13 +289,12 @@ function bear({ coat, back, muzzle, claws = 0x2a2420, hump = 0 }) {
       .box(0.12, 0.12, 0.06, coat, [-0.18, 0.25, 0.1])
       .build(),
     antlers: null,
-    leg: new Blocks()
-      .box(0.26, 0.4, 0.3, coat, [0, -0.18, 0], [0, 0, 0], [1.1, 1.1])
-      .box(0.22, 0.3, 0.24, coat, [0, -0.48, 0.01])
-      .box(0.24, 0.08, 0.3, back, [0, -0.66, 0.04]) // paw
-      .box(0.2, 0.03, 0.06, claws, [0, -0.68, 0.2])
-      .build(),
+    // (Thick legs, flat on the ground on their broad clawed paws.)
+    fore: limb(0.36, 0.38, { top: [0.3, 0.34], knee: [0.23, 0.25], ankle: [0.21, 0.23], color: coat, foot: paw }),
+    hind: limb(0.37, 0.37, { top: [0.3, 0.38], knee: [0.22, 0.25], ankle: [0.2, 0.22], color: coat, foot: paw }),
     legs: [[0.26, 0.7, 0.5], [-0.26, 0.7, 0.5], [0.26, 0.7, -0.52], [-0.26, 0.7, -0.52]],
+    torso: [[0, 1.0, -0.02, 0.4, 0.45 + 0.05 * hump, 0.78]],
+    skull: [0, 0.0, 0.3, 0.22, 0.21, 0.32],
   };
 }
 export const blackBear = () => bear({ coat: 0x1c1816, back: 0x141110, muzzle: 0xa88a64 });
@@ -250,12 +336,11 @@ export function wolf() {
       .box(0.08, 0.1, 0.05, coat, [-0.09, 0.17, 0.02], [0, 0, -0.2], [0.35, 0.5])
       .build(),
     antlers: null,
-    leg: new Blocks()
-      .box(0.11, 0.34, 0.12, coat, [0, -0.17, 0], [0, 0, 0], [0.85, 0.9])
-      .box(0.08, 0.2, 0.08, pale, [0, -0.44, 0.01])
-      .box(0.11, 0.05, 0.14, 0x6a6660, [0, -0.54, 0.03]) // big paw
-      .build(),
+    fore: limb(0.28, 0.3, { top: [0.12, 0.15], knee: [0.08, 0.08], ankle: [0.065, 0.065], color: coat, low: pale, foot: [0.11, 0.05, 0.14, 0x6a6660, 0.03] }),
+    hind: limb(0.29, 0.29, { top: [0.13, 0.18], knee: [0.08, 0.09], ankle: [0.065, 0.065], color: coat, low: pale, foot: [0.11, 0.05, 0.14, 0x6a6660, 0.03] }),
     legs: [[0.12, 0.56, 0.32], [-0.12, 0.56, 0.32], [0.11, 0.56, -0.42], [-0.11, 0.56, -0.42]],
+    torso: [[0, 0.72, 0.03, 0.18, 0.21, 0.58]],
+    skull: [0, 0.0, 0.18, 0.14, 0.12, 0.25],
   };
 }
 
@@ -291,12 +376,11 @@ export function coyote() {
       .box(0.05, 0.1, 0.01, pale, [-0.07, 0.16, 0.045], [0, 0, -0.12], [0.3, 0.4])
       .build(),
     antlers: null,
-    leg: new Blocks()
-      .box(0.075, 0.3, 0.085, coat, [0, -0.15, 0], [0, 0, 0], [0.85, 0.9])
-      .box(0.055, 0.2, 0.055, 0xc4a47a, [0, -0.4, 0.01]) // thin shanks
-      .box(0.07, 0.04, 0.1, 0x8a6e50, [0, -0.5, 0.03]) // small paw
-      .build(),
+    fore: limb(0.26, 0.28, { top: [0.085, 0.1], knee: [0.055, 0.06], ankle: [0.045, 0.045], color: coat, low: 0xc4a47a, foot: [0.07, 0.04, 0.1, 0x8a6e50, 0.03] }),
+    hind: limb(0.27, 0.27, { top: [0.1, 0.14], knee: [0.06, 0.065], ankle: [0.045, 0.045], color: coat, low: 0xc4a47a, foot: [0.07, 0.04, 0.1, 0x8a6e50, 0.03] }),
     legs: [[0.08, 0.52, 0.3], [-0.08, 0.52, 0.3], [0.08, 0.52, -0.38], [-0.08, 0.52, -0.38]],
+    torso: [[0, 0.68, 0.0, 0.12, 0.16, 0.52]],
+    skull: [0, 0.0, 0.2, 0.09, 0.09, 0.24],
   };
 }
 
@@ -336,12 +420,11 @@ export function fox() {
       .box(0.05, 0.09, 0.01, white, [-0.07, 0.15, 0.025], [0, 0, -0.15], [0.3, 0.4])
       .build(),
     antlers: null,
-    leg: new Blocks()
-      .box(0.08, 0.16, 0.09, coat, [0, -0.08, 0], [0, 0, 0], [0.85, 0.9])
-      .box(0.06, 0.17, 0.06, black, [0, -0.24, 0.01]) // black stockings
-      .box(0.07, 0.035, 0.09, black, [0, -0.33, 0.025])
-      .build(),
+    fore: limb(0.17, 0.19, { top: [0.08, 0.1], knee: [0.06, 0.06], color: coat, low: black, foot: [0.07, 0.035, 0.09, black, 0.025] }),
+    hind: limb(0.18, 0.18, { top: [0.09, 0.13], knee: [0.06, 0.065], color: coat, low: black, foot: [0.07, 0.035, 0.09, black, 0.025] }),
     legs: [[0.08, 0.35, 0.34], [-0.08, 0.35, 0.34], [0.08, 0.35, -0.38], [-0.08, 0.35, -0.38]],
+    torso: [[0, 0.49, -0.02, 0.13, 0.14, 0.52]],
+    skull: [0, 0.0, 0.15, 0.1, 0.09, 0.22],
   };
 }
 
@@ -371,12 +454,205 @@ export function sheep() {
       .box(0.03, 0.03, 0.02, 0xd8c060, [-0.07, 0.04, 0.2])
       .build(),
     antlers: null,
-    leg: new Blocks()
-      .box(0.1, 0.18, 0.1, woolDark, [0, -0.06, 0])
-      .box(0.06, 0.36, 0.06, face, [0, -0.3, 0])
-      .box(0.07, 0.04, 0.08, 0x141010, [0, -0.48, 0.01])
-      .build(),
+    // (Woolly at the top, thin and black below.)
+    fore: limb(0.25, 0.27, { top: [0.12, 0.12], knee: [0.06, 0.06], ankle: [0.05, 0.05], color: woolDark, low: face, foot: [0.07, 0.04, 0.08, 0x141010, 0.01] }),
+    hind: limb(0.26, 0.26, { top: [0.13, 0.15], knee: [0.06, 0.065], ankle: [0.05, 0.05], color: woolDark, low: face, foot: [0.07, 0.04, 0.08, 0x141010, 0.01] }),
     legs: [[0.14, 0.5, 0.3], [-0.14, 0.5, 0.3], [0.14, 0.5, -0.3], [-0.14, 0.5, -0.3]],
+    torso: [[0, 0.76, -0.02, 0.27, 0.3, 0.52]],
+    skull: [0, -0.02, 0.14, 0.1, 0.12, 0.16],
+  };
+}
+
+/**
+ * A wild boar: a heavy wedge of a body, high at the shoulders with a
+ * bristling dark mane down the back, a big long head ending in a flat
+ * snout, curved white tusks, small ears, short strong legs, a thin tail.
+ */
+export function boar() {
+  const coat = 0x4a3c30, dark = 0x2a221c, mane = 0x1e1814, snout = 0x6a5a50, tusk = 0xf0e8d8;
+  return {
+    body: new Blocks()
+      .box(0.46, 0.6, 0.5, coat, [0, 0.74, 0.28], [0, 0, 0], [0.8, 0.9]) // high shoulders
+      .box(0.44, 0.52, 0.6, coat, [0, 0.68, -0.18], [0, 0, 0], [0.85, 0.95]) // barrel
+      .box(0.38, 0.46, 0.34, coat, [0, 0.62, -0.56], [0, 0, 0], [0.8, 0.9]) // rump, lower
+      .box(0.1, 0.12, 0.9, mane, [0, 1.06, 0.06], [0, 0, 0], [0.6, 1]) // the bristling mane
+      .box(0.34, 0.08, 0.9, dark, [0, 0.42, -0.1]) // belly
+      .box(0.03, 0.26, 0.03, dark, [0, 0.58, -0.76], [0.25, 0, 0]) // thin tail
+      .box(0.06, 0.08, 0.05, mane, [0, 0.45, -0.8])
+      .build(),
+    headPivot: [0, 0.8, 0.5],
+    head: new Blocks()
+      .box(0.34, 0.38, 0.34, coat, [0, -0.02, 0.12], [0, 0, 0], [0.85, 0.85]) // big head
+      .box(0.2, 0.22, 0.36, coat, [0, -0.14, 0.4], [0.25, 0, 0], [0.8, 0.8]) // long face, sloping down
+      .box(0.16, 0.14, 0.05, snout, [0, -0.24, 0.6]) // the flat snout
+      .box(0.03, 0.12, 0.03, tusk, [0.09, -0.14, 0.5], [0.3, 0, -0.5]) // tusks, curving up and out
+      .box(0.03, 0.12, 0.03, tusk, [-0.09, -0.14, 0.5], [0.3, 0, 0.5])
+      .box(0.035, 0.035, 0.03, 0x0a0806, [0.12, 0.04, 0.3]) // small eyes
+      .box(0.035, 0.035, 0.03, 0x0a0806, [-0.12, 0.04, 0.3])
+      .box(0.08, 0.12, 0.04, coat, [0.12, 0.2, 0.06], [0.3, 0, -0.3], [0.4, 0.6]) // small pointed ears
+      .box(0.08, 0.12, 0.04, coat, [-0.12, 0.2, 0.06], [0.3, 0, 0.3], [0.4, 0.6])
+      .box(0.08, 0.14, 0.2, mane, [0, 0.2, -0.02]) // the mane, starting on the head
+      .build(),
+    antlers: null,
+    fore: limb(0.22, 0.24, { top: [0.16, 0.2], knee: [0.09, 0.1], ankle: [0.07, 0.07], color: coat, low: dark, foot: [0.08, 0.05, 0.09, 0x141010, 0.01] }),
+    hind: limb(0.22, 0.24, { top: [0.16, 0.22], knee: [0.09, 0.1], ankle: [0.07, 0.07], color: coat, low: dark, foot: [0.08, 0.05, 0.09, 0x141010, 0.01] }),
+    legs: [[0.14, 0.44, 0.34], [-0.14, 0.44, 0.34], [0.13, 0.44, -0.5], [-0.13, 0.44, -0.5]],
+    torso: [[0, 0.7, -0.1, 0.23, 0.32, 0.66]],
+    skull: [0, -0.06, 0.28, 0.17, 0.2, 0.34],
+  };
+}
+
+/**
+ * A cougar: a long, low tawny cat, lean in the flank, a small round head
+ * with a white muzzle and dark marks at the lips, small round ears, big
+ * soft paws, and a long heavy tail, curling up at its dark tip.
+ */
+export function cougar() {
+  const coat = 0xb88a58, back = 0x9a7048, pale = 0xece0cc, dark = 0x2a1e16;
+  return {
+    body: new Blocks()
+      .box(0.3, 0.34, 0.4, coat, [0, 0.62, 0.3], [0, 0, 0], [0.85, 0.9]) // chest
+      .box(0.26, 0.28, 0.6, coat, [0, 0.62, -0.14], [0, 0, 0], [0.9, 1]) // long lean flank
+      .box(0.3, 0.34, 0.3, coat, [0, 0.65, -0.52], [0, 0, 0], [0.85, 0.9]) // hips
+      .box(0.16, 0.05, 1.1, back, [0, 0.8, -0.1]) // a darker back
+      .box(0.2, 0.06, 0.8, pale, [0, 0.47, -0.04]) // pale belly
+      .box(0.09, 0.09, 0.4, coat, [0, 0.54, -0.8], [-1.0, 0, 0], [0.95, 0.95]) // the long tail, hanging
+      .box(0.085, 0.085, 0.34, coat, [0, 0.3, -0.98], [-0.2, 0, 0])
+      .box(0.08, 0.08, 0.18, dark, [0, 0.33, -1.2], [0.6, 0, 0]) // curling up at the dark tip
+      .build(),
+    headPivot: [0, 0.76, 0.52],
+    head: new Blocks()
+      .box(0.2, 0.22, 0.22, coat, [0, -0.06, 0.0], [0.5, 0, 0], [0.85, 0.9]) // neck
+      .box(0.22, 0.19, 0.2, coat, [0, 0.04, 0.14], [0, 0, 0], [0.9, 0.9]) // small round head
+      .box(0.13, 0.1, 0.1, pale, [0, -0.02, 0.27]) // white muzzle
+      .box(0.05, 0.04, 0.03, 0x6a4a3a, [0, 0.02, 0.33]) // nose
+      .box(0.13, 0.03, 0.02, dark, [0, -0.05, 0.32]) // the dark lip line
+      .box(0.035, 0.03, 0.02, 0xc8a040, [0.06, 0.08, 0.24]) // amber eyes
+      .box(0.035, 0.03, 0.02, 0xc8a040, [-0.06, 0.08, 0.24])
+      .box(0.07, 0.07, 0.04, coat, [0.08, 0.16, 0.1], [0, 0, 0.2], [0.6, 0.6]) // small round ears
+      .box(0.07, 0.07, 0.04, coat, [-0.08, 0.16, 0.1], [0, 0, -0.2], [0.6, 0.6])
+      .build(),
+    antlers: null,
+    fore: limb(0.26, 0.28, { top: [0.12, 0.15], knee: [0.09, 0.09], ankle: [0.075, 0.075], color: coat, foot: [0.12, 0.05, 0.13, pale, 0.03] }),
+    hind: limb(0.27, 0.27, { top: [0.14, 0.2], knee: [0.08, 0.09], ankle: [0.07, 0.07], color: coat, foot: [0.12, 0.05, 0.13, pale, 0.03] }),
+    legs: [[0.1, 0.52, 0.36], [-0.1, 0.52, 0.36], [0.1, 0.52, -0.5], [-0.1, 0.52, -0.5]],
+    torso: [[0, 0.63, -0.1, 0.16, 0.2, 0.64]],
+    neck: [0, -0.07, -0.02, 0.11, 0.13, 0.1],
+    skull: [0, 0.03, 0.17, 0.12, 0.12, 0.17],
+  };
+}
+
+/**
+ * A wild turkey: a plump bronze body on long pink legs, barred wings
+ * folded at its sides, a fan of a tail (spread wide, in the spring, to
+ * show off), and a small bare blue-and-red head on a long neck, the
+ * wattle hanging.
+ */
+export function turkey() {
+  const bronze = 0x4a3a2a, sheen = 0x6a5438, bar = 0xd8d0c0, skin = 0x7a98c8, red = 0xc02a20, leg = 0xc89a8a;
+  const tail = new Blocks();
+  for (let k = -3; k <= 3; k++) tail.box(0.09, 0.02, 0.36, k % 2 ? sheen : bronze, [Math.sin(k * 0.3) * 0.2, 0.72 + Math.cos(k * 0.3) * 0.18, -0.38], [-1.1, k * 0.3, 0]);
+  return {
+    body: new Blocks()
+      .box(0.36, 0.4, 0.5, bronze, [0, 0.66, 0.0], [0, 0, 0], [0.8, 0.85]) // plump body
+      .box(0.32, 0.34, 0.26, sheen, [0, 0.62, 0.22], [0, 0, 0], [0.8, 0.8]) // breast
+      .box(0.04, 0.12, 0.04, 0x1a1410, [0, 0.62, 0.36]) // the beard
+      .box(0.06, 0.26, 0.42, sheen, [0.18, 0.68, -0.04], [0, 0, 0], [1, 0.9]) // folded wings, barred
+      .box(0.06, 0.26, 0.42, sheen, [-0.18, 0.68, -0.04], [0, 0, 0], [1, 0.9])
+      .box(0.065, 0.04, 0.3, bar, [0.18, 0.6, -0.06])
+      .box(0.065, 0.04, 0.3, bar, [-0.18, 0.6, -0.06])
+      .box(0.2, 0.06, 0.36, bronze, [0, 0.62, -0.34], [0.5, 0, 0]) // tail, folded down
+      .build(),
+    fan: tail.build(),
+    headPivot: [0, 0.8, 0.24],
+    head: new Blocks()
+      .box(0.07, 0.28, 0.07, skin, [0, 0.12, 0.04], [0.15, 0, 0]) // long bare neck
+      .box(0.08, 0.08, 0.1, skin, [0, 0.28, 0.08]) // small head
+      .box(0.03, 0.03, 0.05, 0xd8c8a0, [0, 0.27, 0.15]) // beak
+      .box(0.04, 0.1, 0.04, red, [0, 0.2, 0.1]) // wattle
+      .box(0.02, 0.07, 0.02, red, [0, 0.3, 0.14], [0.3, 0, 0]) // snood
+      .box(0.02, 0.02, 0.02, 0x0a0806, [0.04, 0.3, 0.1])
+      .box(0.02, 0.02, 0.02, 0x0a0806, [-0.04, 0.3, 0.1])
+      .build(),
+    antlers: null,
+    biped: true,
+    hind: limb(0.2, 0.24, { top: [0.1, 0.12], knee: [0.035, 0.035], ankle: [0.03, 0.03], color: bronze, low: leg, foot: [0.1, 0.02, 0.12, leg, 0.03] }),
+    legs: [[0.08, 0.44, 0.0], [-0.08, 0.44, 0.0]],
+    torso: [[0, 0.66, 0.02, 0.19, 0.2, 0.3]],
+    neck: [0, 0.1, 0.04, 0.05, 0.14, 0.05],
+    skull: [0, 0.27, 0.09, 0.05, 0.06, 0.07],
+  };
+}
+
+/**
+ * A mallard: a boat of a body, grey and brown, the drake's green head with
+ * its white collar, a yellow bill, a curl of black at the tail, and short
+ * orange legs well back (a waddle on land; on the water, paddling).
+ */
+export function duck() {
+  const grey = 0x9a948a, brown = 0x6a4a34, green = 0x1e5a3a, bill = 0xd8b030, leg = 0xe08a30;
+  const wing = (side) => new Blocks()
+    .box(0.24, 0.02, 0.14, brown, [side * 0.12, 0, 0])
+    .box(0.12, 0.015, 0.1, 0x3a4a9a, [side * 0.18, 0.005, -0.02]) // the blue speculum
+    .box(0.14, 0.015, 0.1, brown, [side * 0.3, 0, -0.03], [0, side * 0.3, 0])
+    .build();
+  return {
+    body: new Blocks()
+      .box(0.2, 0.14, 0.36, grey, [0, 0.16, 0.0], [0, 0, 0], [0.85, 0.85]) // body
+      .box(0.18, 0.12, 0.14, brown, [0, 0.17, 0.16]) // chestnut breast
+      .box(0.14, 0.06, 0.24, brown, [0, 0.24, -0.04]) // brown back
+      .box(0.1, 0.08, 0.1, 0x1a1a1a, [0, 0.19, -0.2], [-0.4, 0, 0]) // black tail curl
+      .box(0.08, 0.04, 0.08, 0xf2f2f0, [0, 0.16, -0.22])
+      .build(),
+    wingL: wing(1),
+    wingR: wing(-1),
+    wingAt: [0, 0.22, 0.02],
+    headPivot: [0, 0.22, 0.16],
+    head: new Blocks()
+      .box(0.07, 0.03, 0.06, 0xf2f2f0, [0, 0.03, 0.02]) // white collar
+      .box(0.07, 0.1, 0.07, green, [0, 0.09, 0.03]) // green neck
+      .box(0.08, 0.08, 0.1, green, [0, 0.15, 0.06]) // head
+      .box(0.05, 0.02, 0.08, bill, [0, 0.13, 0.14]) // bill
+      .box(0.015, 0.015, 0.015, 0x0a0806, [0.04, 0.17, 0.08])
+      .box(0.015, 0.015, 0.015, 0x0a0806, [-0.04, 0.17, 0.08])
+      .build(),
+    antlers: null,
+    biped: true,
+    swims: true,
+    hind: limb(0.05, 0.06, { top: [0.03, 0.03], knee: [0.02, 0.02], color: leg, foot: [0.06, 0.012, 0.06, leg, 0.02] }),
+    legs: [[0.05, 0.11, -0.02], [-0.05, 0.11, -0.02]],
+    torso: [[0, 0.17, 0, 0.1, 0.09, 0.2]],
+    neck: [0, 0.05, 0.03, 0.045, 0.06, 0.045],
+    skull: [0, 0.14, 0.08, 0.05, 0.05, 0.09],
+  };
+}
+
+/**
+ * A rattlesnake: a long body drawn as a chain of segments (the body tan
+ * with dark diamonds down the back), a broad flat head, the rattle at the
+ * end of the tail.
+ */
+export function snake() {
+  const tan = 0xb0986a, dark = 0x4a3a26;
+  return {
+    segment: new Blocks()
+      .box(0.07, 0.05, 0.1, tan, [0, 0.025, 0])
+      .box(0.045, 0.012, 0.06, dark, [0, 0.052, 0], [0, 0.785, 0]) // a diamond on its back
+      .build(),
+    head: new Blocks()
+      .box(0.08, 0.04, 0.1, tan, [0, 0.022, 0.04], [0, 0, 0], [0.8, 0.8]) // broad flat head
+      .box(0.05, 0.03, 0.04, tan, [0, 0.02, 0.1])
+      .box(0.015, 0.015, 0.015, 0x1a1008, [0.035, 0.035, 0.07])
+      .box(0.015, 0.015, 0.015, 0x1a1008, [-0.035, 0.035, 0.07])
+      .box(0.012, 0.004, 0.04, 0x3a1010, [0, 0.01, 0.14]) // tongue
+      .build(),
+    rattle: new Blocks()
+      .box(0.035, 0.03, 0.03, 0xd8c8a0, [0, 0.02, -0.02])
+      .box(0.03, 0.026, 0.03, 0xc8b890, [0, 0.02, -0.05])
+      .box(0.025, 0.022, 0.03, 0xd8c8a0, [0, 0.02, -0.08])
+      .build(),
+    segments: 16,
+    spacing: 0.075,
   };
 }
 

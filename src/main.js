@@ -113,6 +113,12 @@ const shootingStars = new ShootingStars(scene);
 // Lightning may set the land alight where it strikes: dry ground with
 // something on it to burn (not sand, snow, bare rock or water).
 lightning.onStrike = (x, y, z, distance) => {
+  // Right by you: it knocks you flat, or kills you.
+  if (distance < 14 && controls.mode === 'walk') {
+    const hurt = distance < 3 ? 70 : 120 / (distance * distance) * 9;
+    game.hurt(hurt, 'lightning');
+    game.hotbar?.flash(distance < 3 ? 'Struck by lightning!' : 'Lightning, right beside you!');
+  }
   if (distance > 1300 || y < WORLD.seaLevel + 2 || waterAt(x, z, true)) return;
   const w = generator.getBiomeWeights(x, z, {});
   if (w.desert > 0.4 || seasonUniforms.uWinter.value * generator.getSeasonality(x, z) > 0.4) return;
@@ -293,7 +299,11 @@ function playerTraces(dt) {
   walker.x = pos.x;
   walker.z = pos.z;
 }
-const ANIMAL_PRINTS = { deer: [PRINT.hoof, 0.11], bison: [PRINT.hoof, 0.17], blackBear: [PRINT.paw, 0.22], grizzly: [PRINT.paw, 0.26], rabbit: [PRINT.rabbit, 0.09], wolf: [PRINT.paw, 0.12], wolfPup: [PRINT.paw, 0.07], coyote: [PRINT.paw, 0.09], fox: [PRINT.paw, 0.07], sheep: [PRINT.hoof, 0.08] };
+const ANIMAL_PRINTS = {
+  deer: [PRINT.hoof, 0.11], elk: [PRINT.hoof, 0.1], moose: [PRINT.hoof, 0.16], bison: [PRINT.hoof, 0.17], blackBear: [PRINT.paw, 0.22], grizzly: [PRINT.paw, 0.26],
+  rabbit: [PRINT.rabbit, 0.09], hare: [PRINT.rabbit, 0.06], wolf: [PRINT.paw, 0.12], wolfPup: [PRINT.paw, 0.07], coyote: [PRINT.paw, 0.09], fox: [PRINT.paw, 0.07],
+  sheep: [PRINT.hoof, 0.08], boar: [PRINT.hoof, 0.1], cougar: [PRINT.paw, 0.12], turkey: [PRINT.paw, 0.1], duck: [PRINT.paw, 0.05],
+};
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
 function placeCamera() {
@@ -1067,6 +1077,8 @@ function tick(now) {
   weather.update(dt, dayNight.hour);
   const wind = updateWind(now / 1000, 0.95 * weather.storm + 0.35 * weather.rain);
   // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)
+  // (Out on high open ground in a storm, not under a roof: the lightning may find you.)
+  lightning.exposed = controls.mode === 'walk' && !sheltered && (game.sheltered ?? 0) < 0.5 ? 0.12 * (around.env?.exposure ?? 0) * (1 - (around.env?.canopy ?? 0)) : 0;
   lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getBaseHeight(x, z), sound, sheltered);
   farLightning(dt);
   afterRain(dt);
@@ -1118,6 +1130,9 @@ function tick(now) {
   const gameLights = game.update(dt, {
     time: now / 1000, wind: clouds.wind, light: ambientLight, day: around.env.day, night: 1 - around.env.day, rain: weather.rain,
     snowing: weather.rain > 0.2 && seasonUniforms.uWinter.value > 0.5 && cold.value > 0.3,
+    // A blizzard: a hard snowstorm (bitter cold in the wind).
+    dust: sandstorm.amount,
+    blizzard: seasonUniforms.uWinter.value > 0.5 && cold.value > 0.3 ? smoothstep(0.45, 0.85, weather.rain) * (0.5 + 0.5 * weather.storm) : 0,
     winter: seasonUniforms.uWinter.value, spring: seasonUniforms.uSpring.value, autumn: seasonUniforms.uAutumn.value,
     summer: Math.max(0, 1 - seasonUniforms.uWinter.value - seasonUniforms.uSpring.value - seasonUniforms.uAutumn.value),
     planPoint: (origin, direction, reach) => solidHit(origin, direction, reach)?.point ?? null,
@@ -1130,8 +1145,9 @@ function tick(now) {
   // The wildlife round you.
   const life = {
     waterAt: (x, z) => waterAt(x, z),
-    splash: (x, y, z) => traces.splash(x, y, z, 6, 1.2, 0.6),
+    splash: (x, y, z, size = 1) => traces.splash(x, y, z, 6, 1.2 * size, 0.6 * size),
     bleed,
+    fires: game.fearLights(), caches: () => game.caches(), raid: (c) => game.raid(c),
     autumn: seasonUniforms.uAutumn.value,
     step: (a, x, z, running) => {
       const [shape, size] = ANIMAL_PRINTS[a.kind] ?? [PRINT.hoof, 0.12];
@@ -1152,7 +1168,7 @@ function tick(now) {
   const air = { time: now / 1000, camera, generator, wind: clouds.wind, rain: weather.rain, light: ambientLight, night, sound, pan: (x, z) => panTowards(camera, x, z), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
   volcanoes.update(dt, air);
-  sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y });
+  sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y, fog: scene.fog.color });
   devils.update(dt, { ...air, dry: sheltered ? 0 : mistState.devilCountry ?? 0, hour: dayNight.hour, winter: seasonUniforms.uWinter.value, ground: (x, z) => chunks.groundHeightAt(x, z) });
   shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)));
   insects.update(dt, life);

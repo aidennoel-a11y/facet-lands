@@ -188,8 +188,11 @@ const wallVertex = /* glsl */ `
   }`;
 const wallFragment = /* glsl */ `
   uniform vec3 colour;
+  uniform vec3 haze;
+  uniform float hazeAmount;
   uniform float opacity;
   uniform float time;
+  uniform float seed;
   varying vec2 vUv;
   varying vec3 vWorld;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -198,16 +201,29 @@ const wallFragment = /* glsl */ `
     f = f * f * (3.0 - 2.0 * f);
     return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
   }
+  float fbm(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + 7.1; a *= 0.5; }
+    return v;
+  }
   void main() {
-    // A towering wall of dust, billowing along its top, thinning at its ends.
-    float x = vUv.x * 40.0;
-    float billow = noise(vec2(x * 0.6, time * 0.15)) * 0.6 + noise(vec2(x * 1.7, time * 0.3 + 4.0)) * 0.4;
-    float top = 0.55 + 0.4 * billow;
-    float body = 1.0 - smoothstep(top - 0.2, top, vUv.y);
-    float ends = smoothstep(0.0, 0.18, vUv.x) * (1.0 - smoothstep(0.82, 1.0, vUv.x));
-    float streaks = 0.75 + 0.25 * noise(vec2(x * 3.0 - time * 1.5, vUv.y * 6.0));
-    float shade = 0.7 + 0.3 * vUv.y;
-    gl_FragColor = vec4(colour * shade * streaks, opacity * body * ends);
+    // A haboob: a towering bank of dust, its top heaped in great rounded
+    // heads rolling up and over, dense and dark at its foot, the heads lit
+    // pale; hazed with distance like any far thing.
+    float x = vUv.x * 55.0 + seed * 31.0;
+    float heads = fbm(vec2(x * 0.16, time * 0.025 + seed));
+    float top = 0.35 + 0.55 * heads;
+    vec2 q = vec2(x * 0.3, vUv.y * 11.0 - time * 0.12);
+    float puffs = fbm(q + 1.7 * fbm(q * 0.6 + vec2(time * 0.02, seed)));
+    // (Round-edged, puffy, not a hard line.)
+    float edge = top - vUv.y + (puffs - 0.5) * 0.22;
+    float body = smoothstep(-0.01, 0.1, edge);
+    float ends = smoothstep(0.0, 0.22, vUv.x) * (1.0 - smoothstep(0.78, 1.0, vUv.x));
+    // Light: on the upper faces of the heads, shadowed in their folds and at the foot.
+    float lit = smoothstep(0.0, 0.18, 0.18 - edge) ;
+    float shade = (0.5 + 0.45 * puffs) * (0.7 + 0.3 * smoothstep(0.0, 0.8, vUv.y)) + 0.35 * lit;
+    vec3 c = mix(colour * shade, haze, hazeAmount);
+    gl_FragColor = vec4(c, opacity * body * ends * (0.8 + 0.2 * puffs));
     #include <colorspace_fragment>
   }`;
 
@@ -223,20 +239,27 @@ export class Sandstorm {
     this.wait = rnd(30, 90);
     this.amount = 0;
     this.distance = 0;
-    this.material = new ShaderMaterial({
-      uniforms: { colour: { value: new Color(0xb89a6a) }, opacity: { value: 0 }, time: { value: 0 } },
-      vertexShader: wallVertex,
-      fragmentShader: wallFragment,
-      transparent: true,
-      depthWrite: false,
-      side: DoubleSide,
-      fog: false,
+    // (Two banks, one a little behind the other, for depth.)
+    const geometry = new CylinderGeometry(1, 1, 1, 96, 1, true, -1.1, 2.2).translate(0, 0.5, 0);
+    this.walls = [0, 1].map((k) => {
+      const material = new ShaderMaterial({
+        uniforms: { colour: { value: new Color(0xb89a6a) }, haze: { value: new Color() }, hazeAmount: { value: 0 }, opacity: { value: 0 }, time: { value: 0 }, seed: { value: k * 3.7 + 1 } },
+        vertexShader: wallVertex,
+        fragmentShader: wallFragment,
+        transparent: true,
+        depthWrite: false,
+        side: DoubleSide,
+        fog: false,
+      });
+      const wall = new Mesh(geometry, material);
+      wall.frustumCulled = false;
+      wall.visible = false;
+      wall.renderOrder = 2 - k;
+      scene.add(wall);
+      return wall;
     });
-    this.wall = new Mesh(new CylinderGeometry(1, 1, 1, 64, 1, true, -1.0, 2.0).translate(0, 0.5, 0), this.material);
-    this.wall.frustumCulled = false;
-    this.wall.visible = false;
-    this.wall.renderOrder = 2;
-    scene.add(this.wall);
+    this.wall = this.walls[0];
+    this.material = this.walls[0].material;
     this.sand = new Rain(scene); // (blowing sand: the rain's streaks, driven sideways)
     this.from = new Vector3();
   }
@@ -275,19 +298,23 @@ export class Sandstorm {
     }
     // The wall: an arc of dust upwind as it comes, downwind as it goes.
     const showing = this.state === 'coming' || (this.state === 'going' && this.amount < 0.6);
-    this.wall.visible = showing;
-    if (showing) {
-      const d = Math.max(60, Math.abs(this.distance));
+    this.walls.forEach((wall, k) => {
+      wall.visible = showing;
+      if (!showing) return;
+      const d = Math.max(60, Math.abs(this.distance)) * (1 + k * 0.07);
       const toward = this.distance > 0 ? -1 : 1; // (upwind, or downwind)
-      this.wall.position.set(cam.x, ctx.ground(cam.x, cam.z) - 30, cam.z);
-      this.wall.scale.set(d, 230, d);
+      // (Its foot well down, so the land in front hides it; tall, darkening the sky.)
+      wall.position.set(cam.x, ctx.ground(cam.x, cam.z) - 80, cam.z);
+      wall.scale.set(d, 360 + k * 50, d);
       // (Its arc centred on the way it lies from you.)
-      this.wall.rotation.y = Math.atan2(ux * toward, uz * toward);
-      const u = this.material.uniforms;
+      wall.rotation.y = Math.atan2(ux * toward, uz * toward) + k * 0.05;
+      const u = wall.material.uniforms;
       u.time.value = ctx.time;
-      u.opacity.value = 0.92 * smoothstep(60, 250, Math.abs(this.distance)) * (this.state === 'going' ? 1 - this.amount / 0.6 : 1);
-      u.colour.value.set(0xb89a6a).multiply(ctx.light);
-    }
+      u.opacity.value = (k ? 0.6 : 0.95) * smoothstep(60, 250, Math.abs(this.distance)) * (this.state === 'going' ? 1 - this.amount / 0.6 : 1);
+      u.colour.value.set(k ? 0xa88a5c : 0xb89a6a).multiply(ctx.light);
+      if (ctx.fog) u.haze.value.copy(ctx.fog);
+      u.hazeAmount.value = ctx.fog ? 0.45 * smoothstep(250, 1600, d) : 0;
+    });
     // Blowing sand.
     this.sand.update(ctx.time, cam, this.amount, ctx.wind, 1, ctx.light);
     if (this.amount > 0.01) {

@@ -8,7 +8,7 @@ const BARS = [
   ['warmth', 'Warmth', '#f06a2a', `<path d="M16 2c1 6 8 8 8 16a8 8 0 0 1-16 0c0-4 2-6 3-8 1 3 3 4 3 4 0-5-1-8 2-12z"/>`],
   ['energy', 'Energy', '#e8d24a', `<path d="M18 2L6 18h8l-2 12 12-16h-8z"/>`],
 ];
-const GROUPS = ['Tools', 'Materials', 'Food', 'Worn', 'Building'];
+const GROUPS = ['Tools', 'Materials', 'Food', 'Farming', 'Worn', 'Building'];
 
 /**
  * What's on screen for staying alive: the bars (health, hunger, thirst,
@@ -31,6 +31,7 @@ export class Hud {
       </div>
       <div class="status"></div>
       <p class="prompt" hidden></p>
+      <div class="hitmark"></div>
       <div class="draw" hidden><i></i></div>
       <div class="hurt-vignette"></div>
       <div class="cold-vignette"></div>
@@ -92,6 +93,10 @@ export class Hud {
     const chips = [];
     if (survival.sick > 0) chips.push(['sick', 'Fever']);
     if (survival.bleeding > 0) chips.push(['bleed', 'Bleeding']);
+    if (survival.venom > 0) chips.push(['bleed', 'Venom']);
+    if (info.sheltered) chips.push(['load', 'Sheltered']);
+    if (info.heatstroke) chips.push(['bleed', 'Heatstroke']);
+    if (info.blizzard) chips.push(['wet', 'Blizzard']);
     if (survival.energy < 20) chips.push(['tired', survival.energy <= 0 ? 'Exhausted' : 'Worn out']);
     if (survival.wet > 0.3) chips.push(['wet', 'Soaked']);
     chips.push([info.heavy > 0 ? 'heavy' : 'load', `${Math.round(info.load)} kg${info.heavy > 0.5 ? ': too heavy to run' : info.heavy > 0 ? ': heavy' : ''}`]);
@@ -102,6 +107,15 @@ export class Hud {
     this.el('.hurt-vignette').style.opacity = Math.min(0.8, survival.hurtFlash + (survival.health < 25 ? 0.25 + 0.1 * Math.sin(performance.now() / 250) : 0) + (survival.bleeding > 0 ? 0.08 : 0)).toFixed(3);
     this.el('.cold-vignette').style.opacity = (info.active ? Math.min(0.85, (1 - survival.warmth / 100) * 0.9 * Math.min(1, survival.cold * 3)) : 0).toFixed(3);
     this.el('.sleep-fade').style.opacity = this.sleepAmount.toFixed(3);
+  }
+
+  /** A hit landed (on the head: a bigger mark). */
+  hitMark(head) {
+    const el = this.el('.hitmark');
+    el.classList.remove('show', 'head');
+    void el.offsetWidth; // (restart its animation)
+    el.classList.add('show');
+    if (head) el.classList.add('head');
   }
 
   /** How far a bow's drawn (0..1), or hidden (null). */
@@ -139,11 +153,11 @@ export class Hud {
   renderCraft(inventory) {
     const list = this.el('.recipes');
     list.innerHTML = RECIPES.map((r) => {
-      const can = Object.entries(r.needs).every(([id, n]) => inventory.count(id) >= n);
+      const can = Object.entries(r.needs).every(([id, n]) => inventory.count(id) >= n) && (!r.at || this.stations?.[r.at]);
       const needs = Object.entries(r.needs)
         .map(([id, n]) => `<span class="need${inventory.count(id) >= n ? '' : ' short'}" title="${ITEMS[id].name}">${iconSvg(id)}${inventory.count(id)}/${n}</span>`)
         .join('');
-      return `<li class="${can ? 'can' : ''}"><span class="made">${iconSvg(r.id)}${r.makes ? `<b>×${r.makes}</b>` : ''}</span><span class="what"><b>${ITEMS[r.id].name}</b><small>${r.note}</small><span class="needs">${needs}</span></span><button type="button" data-craft="${r.id}" ${can ? '' : 'disabled'}>Craft</button></li>`;
+      return `<li class="${can ? 'can' : ''}"><span class="made">${iconSvg(r.id)}${r.makes ? `<b>×${r.makes}</b>` : ''}</span><span class="what"><b>${ITEMS[r.id].name}</b><small>${r.note}${r.at ? ` · <em class="${this.stations?.[r.at] ? '' : 'short'}">at an ${r.at}</em>` : ''}</small><span class="needs">${needs}</span></span><button type="button" data-craft="${r.id}" ${can ? '' : 'disabled'}>Craft</button></li>`;
     }).join('');
     list.onclick = (e) => {
       const b = e.target.closest('[data-craft]');

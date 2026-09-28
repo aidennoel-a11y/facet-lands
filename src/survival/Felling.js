@@ -1,8 +1,8 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, Group, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, Vector3 } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, Group, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, TorusGeometry, Vector3 } from 'three';
 import { LEAF_GEOMETRIES, treeGeometry } from '../world/trees.js';
 import { Inventory } from './Inventory.js';
 
-const m4 = new Matrix4(), v = new Vector3();
+const m4 = new Matrix4(), m5 = new Matrix4(), v = new Vector3();
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 // The trees that give a vine or two when chopped up (climbers grow up them).
@@ -80,11 +80,13 @@ function clipGeometry(source, cut, above) {
 /**
  * Felling trees with an axe: each blow bites into the trunk where you
  * first struck it (low or chest-high: wherever you swing), shakes the tree
- * and sends chips flying; enough of them (more for a bigger tree) and it
+ * and sends chips flying, the cut in the trunk growing round it blow by
+ * blow; once it's cut through (more blows for a bigger tree) it
  * goes: the last of the wood at the cut holds it a moment, creaking, then
  * it tips, away from you (and the way it leans, and the wind), gathering
- * speed (a tall one slowly, a short one quick) until its crown meets the
- * ground (never into it), bouncing once or twice. A stump is left, for
+ * speed (a tall one slowly, a short one quick) until its trunk meets the
+ * ground, bouncing once or twice, its crown crushed down against the
+ * ground where it lands, the leaves bunched up there. A stump is left, for
  * good. Chop the fallen trunk a few more times and it breaks up into logs
  * you can carry (and a vine or two from the leafier trees). A bush comes
  * down in a couple of blows, for a stick or two.
@@ -128,9 +130,11 @@ export class Felling {
     this.#chips(hit.x, hit.y + state.cut, hit.z, from);
     if (state.blows < this.blows(hit)) {
       this.shaking = { hit, time: 0.3, matrix: this.trees.matrixOf(hit).clone(), from: { x: from.x, z: from.z } };
+      if (!hit.bush) this.#notch(hit, state, from);
       return 'chop';
     }
     this.hits.delete(hit.key);
+    this.#unnotch(state);
     if (hit.bush) {
       this.trees.remove(hit);
       return 'bush';
@@ -145,6 +149,7 @@ export class Felling {
     const pivot = new Vector3(0, cut, 0).applyMatrix4(world);
     const local = world.clone().premultiply(m4.makeTranslation(-pivot.x, -pivot.y, -pivot.z));
     const group = new Group();
+    let leafMesh = null;
     for (const [geometry, material] of [[falling, this.trees.material], [leaves, this.trees.leafMaterial]]) {
       if (!geometry) continue;
       const mesh = new InstancedMesh(geometry, material, 1);
@@ -153,6 +158,7 @@ export class Felling {
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       group.add(mesh);
+      if (geometry === leaves) leafMesh = mesh;
     }
     group.position.copy(pivot);
     this.scene.add(group);
@@ -175,8 +181,64 @@ export class Felling {
       hold: rnd(0.4, 1.4),
       crown: prof ? { bottom: prof.bottom * hit.t.sy - state.cut, top, radius: prof.radius * hit.t.s, cone: prof.cone } : null,
       trunk: this.trees.trunkRadius(hit.type) * hit.t.s,
+      leaves: leafMesh, leafLocal: local.clone(), leafBase: leaves ? Float32Array.from(leaves.attributes.position.array) : null,
     });
     return 'fell';
+  }
+
+  // The cut in a standing trunk, where the axe has been biting: a dark
+  // groove, the pale wood showing at its lips, going round the trunk from
+  // the side you've struck it, further with each blow (all the way round,
+  // and it's through).
+  #notch(hit, state, from) {
+    const done = Math.min(1, state.blows / this.blows(hit));
+    const r = this.trees.trunkRadius(hit.type) * hit.t.s * 1.02;
+    const arc = Math.PI * 2 * Math.max(0.12, done);
+    this.#unnotch(state);
+    const group = new Group();
+    const groove = new Mesh(new TorusGeometry(r, 0.018 + 0.03 * done, 4, 28, arc), this.notchDark ??= new MeshLambertMaterial({ color: 0x2e1e12 }));
+    const lip = new Mesh(new TorusGeometry(r * 1.01, 0.01 + 0.015 * done, 3, 28, arc), this.chipMaterial);
+    lip.position.y = 0.035 + 0.03 * done;
+    group.add(groove, lip);
+    // (The arc centred on the side you struck, lying round the trunk.)
+    const face = Math.atan2(from.x - hit.x, from.z - hit.z);
+    group.position.set(hit.x, hit.y + state.cut, hit.z);
+    group.rotation.set(0, face - Math.PI / 2 + arc / 2, 0);
+    for (const m of group.children) m.rotation.x = Math.PI / 2;
+    this.scene.add(group);
+    state.notch = group;
+  }
+
+  #unnotch(state) {
+    if (!state?.notch) return;
+    this.scene.remove(state.notch);
+    for (const m of state.notch.children) m.geometry.dispose();
+    state.notch = null;
+  }
+
+  // The crown of a falling tree, crushed down where it meets the ground:
+  // no leaf goes into the ground; those that would are pushed up and
+  // bunched against it instead.
+  #crush(f, ground) {
+    const leaves = f.leaves;
+    if (!leaves) return;
+    f.group.updateMatrixWorld(true);
+    m4.multiplyMatrices(f.group.matrixWorld, f.leafLocal);
+    m5.copy(m4).invert();
+    const pos = leaves.geometry.attributes.position, base = f.leafBase;
+    let moved = false;
+    for (let i = 0; i < pos.count; i++) {
+      v.set(base[i * 3], base[i * 3 + 1], base[i * 3 + 2]).applyMatrix4(m4);
+      const g = ground(v.x, v.z);
+      if (Number.isFinite(g) && v.y < g + 0.06) {
+        v.y = g + 0.06 + Math.min(0.9, (g + 0.06 - v.y) * 0.22);
+        moved = true;
+      }
+      v.applyMatrix4(m5);
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    pos.needsUpdate = true;
+    if (moved) leaves.geometry.computeVertexNormals();
   }
 
   // A stump where a tree was felled (saved: see stumpsJSON).
@@ -219,7 +281,7 @@ export class Felling {
     const s = Math.sin(angle), c = Math.cos(angle);
     for (let k = 1; k <= 12; k++) {
       const along = (f.length * k) / 12;
-      const reach = this.#girth(f, along);
+      const reach = Math.min(this.#girth(f, along), f.trunk * 1.5); // (its trunk and branches: the leaves give)
       // (Its underside: out along the fall, and down.)
       const x = f.pivot.x + f.dir.x * (s * along + c * reach * 0.3), z = f.pivot.z + f.dir.z * (s * along + c * reach * 0.3);
       const y = f.pivot.y + c * along - s * reach;
@@ -348,6 +410,8 @@ export class Felling {
         } else f.angle = next;
       }
       f.group.quaternion.setFromAxisAngle(f.axis, f.angle);
+      // (The crown crushed against the ground as it comes down, and settling.)
+      if (f.leaves && f.angle > 0.35 && (!f.fallen || (f.settle = (f.settle ?? 0) + dt) < 0.3)) this.#crush(f, ground);
       // (A trunk left lying is gone after a long while.)
       if (f.fallen && f.time > 600) f.gone = true;
     }
@@ -373,6 +437,7 @@ export class Felling {
 
   clear() {
     for (const f of this.falling) this.scene.remove(f.group);
+    for (const st of this.hits.values()) this.#unnotch(st);
     this.falling = [];
     this.hits.clear();
     this.loadStumps([]);

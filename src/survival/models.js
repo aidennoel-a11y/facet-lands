@@ -274,7 +274,7 @@ export const potModel = () =>
     .add(new CylinderGeometry(0.22, 0.22, 0.03, 8), 0x6e7680, [0, 0.22, 0])
     .build();
 
-export const ironBarModel = () => new Parts(53).add(new BoxGeometry(0.3, 0.07, 0.1), 0xa4acb4, [0, 0.035, 0], [0, 0, 0], [1, 1, 1], 0.03).build();
+export const ironBarModel = (colour = 0xa4acb4) => new Parts(53).add(new BoxGeometry(0.3, 0.07, 0.1), colour, [0, 0.035, 0], [0, 0, 0], [1, 1, 1], 0.03).build();
 
 export const fishModel = (cooked = false) =>
   new Parts(55)
@@ -377,5 +377,188 @@ export function raftModel() {
   }
   for (const z of [-0.9, 0.9]) b.log([-1.2, 0.36, z], [1.2, 0.36, z], 0.08, 0x6a4a2e, 0xc8a070, 6);
   for (const z of [-0.9, 0.9]) for (let k = 0; k < 6; k++) b.add(new BoxGeometry(0.2, 0.06, 0.22), 0x4f6a34, [-0.95 + k * 0.38, 0.34, z]);
+  return b.build();
+}
+
+// --- Tools, and things to build: the smithy, the farm, the camp -------------
+
+/** A crossbow: a stock, a steel bow across its front, the string drawn back (along +z, the bolt's way). */
+export const crossbowModel = () =>
+  new Parts(81)
+    .add(new BoxGeometry(0.07, 0.07, 0.7), 0x7a5232, [0, 0, 0.05])
+    .add(new BoxGeometry(0.06, 0.12, 0.18), 0x6a4428, [0, -0.07, -0.22], [0.3, 0, 0])
+    .add(new BoxGeometry(0.62, 0.035, 0.05), 0x9aa4b0, [0, 0.03, 0.36], [0, 0, 0], [1, 1, 1], 0.03)
+    .add(new BoxGeometry(0.02, 0.02, 0.3), 0xe8e0cc, [0.18, 0.04, 0.24], [0, -0.9, 0])
+    .add(new BoxGeometry(0.02, 0.02, 0.3), 0xe8e0cc, [-0.18, 0.04, 0.24], [0, 0.9, 0])
+    .add(new BoxGeometry(0.03, 0.05, 0.08), 0x3a3a40, [0, -0.05, -0.02])
+    .build();
+
+/** A crossbow bolt: short and heavy, iron-headed. */
+export const boltModel = () =>
+  new Parts(83)
+    .add(new CylinderGeometry(0.011, 0.011, 0.42, 4), 0x7a5232, [0, 0, 0], [Math.PI / 2, 0, 0])
+    .add(new ConeGeometry(0.022, 0.07, 4), 0x9aa4b0, [0, 0, 0.24], [Math.PI / 2, 0, 0])
+    .add(new BoxGeometry(0.002, 0.03, 0.07), 0xc8c0b0, [0, 0.012, -0.17])
+    .add(new BoxGeometry(0.03, 0.002, 0.07), 0xc8c0b0, [0, 0, -0.17])
+    .build();
+
+/** A hoe: a long handle, a flat blade at right angles. */
+export const hoeModel = () =>
+  new Parts(85)
+    .add(new CylinderGeometry(0.022, 0.026, 1.1, 5), 0x8a6038, [0, 0.55, 0])
+    .add(new BoxGeometry(0.18, 0.04, 0.14), 0x8e8a84, [0, 1.08, 0.08], [0.2, 0, 0])
+    .build();
+
+/** Shears: two blades on a spring of iron. */
+export const shearsModel = () =>
+  new Parts(87)
+    .add(new BoxGeometry(0.03, 0.2, 0.01), 0xc8d0d8, [0.02, 0.1, 0], [0, 0, -0.08])
+    .add(new BoxGeometry(0.03, 0.2, 0.01), 0xc8d0d8, [-0.02, 0.1, 0], [0, 0, 0.08])
+    .add(new BoxGeometry(0.1, 0.03, 0.02), 0x5a3c24, [0, 0, 0])
+    .build();
+
+/** An anvil on a stump: the horn to the front, the flat face on top. */
+export function anvilModel() {
+  return new Parts(89)
+    .add(new CylinderGeometry(0.34, 0.4, 0.55, 8), 0x6e5234, [0, 0.27, 0])
+    .add(new CylinderGeometry(0.3, 0.3, 0.02, 8), 0xc8a070, [0, 0.56, 0])
+    .add(new BoxGeometry(0.28, 0.16, 0.3), 0x3e444c, [0, 0.64, 0])
+    .add(new BoxGeometry(0.2, 0.1, 0.22), 0x3e444c, [0, 0.76, 0])
+    .add(new BoxGeometry(0.62, 0.14, 0.26), 0x4a5058, [0.04, 0.87, 0], [0, 0, 0], [1, 1, 1], 0.02)
+    .add(new ConeGeometry(0.1, 0.34, 6), 0x4a5058, [-0.42, 0.87, 0], [0, 0, Math.PI / 2])
+    .add(new BoxGeometry(0.6, 0.01, 0.24), 0x8a949e, [0.04, 0.945, 0], [0, 0, 0], [1, 1, 1], 0.02)
+    .build();
+}
+
+/** A grindstone: a stone wheel on an axle in a frame of logs, a crank at one side. */
+export function grindstoneModel() {
+  const b = new Parts(91)
+    .add(new CylinderGeometry(0.42, 0.42, 0.14, 12), 0x9a968e, [0, 0.8, 0], [0, 0, Math.PI / 2])
+    .add(new CylinderGeometry(0.04, 0.04, 0.6, 5), 0x5a3c24, [0, 0.8, 0], [0, 0, Math.PI / 2])
+    .add(new BoxGeometry(0.04, 0.24, 0.04), 0x5a3c24, [0.3, 0.7, 0])
+    .add(new BoxGeometry(0.14, 0.04, 0.04), 0x5a3c24, [0.34, 0.58, 0]);
+  for (const x of [-0.22, 0.22]) {
+    b.log([x, 0, -0.35], [x, 0.85, 0], 0.05, 0x7a5232, 0xc8a070, 5);
+    b.log([x, 0, 0.35], [x, 0.85, 0], 0.05, 0x7a5232, 0xc8a070, 5);
+  }
+  return b.build();
+}
+
+/** A tanning rack: a frame of poles, a hide stretched in it on thongs. */
+export function tanningRackModel() {
+  const b = new Parts(93);
+  b.log([-0.8, 0, 0], [-0.8, 1.9, 0], 0.045, 0x8a5d38, 0xc8a070, 5);
+  b.log([0.8, 0, 0], [0.8, 1.9, 0], 0.045, 0x8a5d38, 0xc8a070, 5);
+  b.log([-0.9, 1.8, 0], [0.9, 1.8, 0], 0.04, 0x8a5d38, 0xc8a070, 5);
+  b.log([-0.9, 0.3, 0], [0.9, 0.3, 0], 0.04, 0x8a5d38, 0xc8a070, 5);
+  b.log([-0.8, 0, 0], [-0.6, 0, -0.6], 0.03, 0x8a5d38, 0xc8a070, 4);
+  b.log([0.8, 0, 0], [0.6, 0, -0.6], 0.03, 0x8a5d38, 0xc8a070, 4);
+  return b.build();
+}
+/** The hide on it (raw: pink and pale; tanned: brown). */
+export const stretchedHideModel = (tanned = false) =>
+  new Parts(95)
+    .add(new BoxGeometry(1.2, 1.2, 0.03), tanned ? 0xb8804a : 0xc89080, [0, 1.05, 0.02])
+    .add(new BoxGeometry(0.8, 0.8, 0.035), tanned ? 0xa06a38 : 0xe0b0a0, [0, 1.05, 0.02])
+    .build();
+
+/**
+ * A thatched roof on four posts, 4 m square, the thatch pitched from a
+ * ridge: stood over the walls, a shelter.
+ */
+export const ROOF_SIZE = 4;
+export function roofModel() {
+  const b = new Parts(97), h = ROOF_SIZE / 2;
+  for (const [x, z] of [[-h + 0.15, -h + 0.15], [h - 0.15, -h + 0.15], [-h + 0.15, h - 0.15], [h - 0.15, h - 0.15]]) b.log([x, -0.2, z], [x, 2.9, z], 0.1, 0x6e5234, 0xc8a070, 6);
+  b.log([-h - 0.2, 3.9, 0], [h + 0.2, 3.9, 0], 0.1, 0x6a5238, 0xc8a070, 6); // the ridge
+  for (const side of [-1, 1]) {
+    b.log([-h - 0.2, 2.9, side * h], [h + 0.2, 2.9, side * h], 0.09, 0x6a5238, 0xc8a070, 6);
+    // Thatch, in courses.
+    for (let k = 0; k < 4; k++) {
+      const t = (k + 0.5) / 4, y = 3.9 - t * 1.15, z = side * t * (h + 0.4);
+      b.add(new BoxGeometry(ROOF_SIZE + 0.6, 0.14, (h + 0.4) / 3.4), k % 2 ? 0xc8a860 : 0xb89850, [0, y, z], [side * 0.52, 0, 0]);
+    }
+  }
+  // The gable ends, woven.
+  for (const x of [-h + 0.02, h - 0.02]) b.add(new ConeGeometry(h + 0.2, 1.0, 3), 0xa88a4a, [x, 3.35, 0], [0, 0, Math.PI / 2], [0.12, 1, 1.9]);
+  return b.build();
+}
+
+/** A section of fence, 3 m long: three posts and two rails, low (a sheep can't get over it). */
+export const FENCE_LENGTH = 3;
+export function fenceModel() {
+  const b = new Parts(99), h = FENCE_LENGTH / 2;
+  for (const x of [-h + 0.08, 0, h - 0.08]) b.log([x, -0.2, 0], [x, 1.15, 0], 0.07, 0x7a6448, 0xc8a070, 6);
+  for (const y of [0.45, 0.95]) b.log([-h, y, 0.06], [h, y, 0.06], 0.05, 0x8a6a44, 0xc8a070, 5);
+  return b.build();
+}
+/** A fence gate: its two posts... */
+export function fenceGatePostsModel() {
+  const b = new Parts(101), h = FENCE_LENGTH / 2;
+  for (const x of [-h + 0.08, h - 0.08]) b.log([x, -0.2, 0], [x, 1.25, 0], 0.08, 0x6e5438, 0xc8a070, 6);
+  return b.build();
+}
+/** ...and the gate (hinged at x = 0). */
+export function fenceGateDoorModel() {
+  const b = new Parts(103), w = FENCE_LENGTH - 0.3;
+  for (const y of [0.35, 0.95]) b.add(new BoxGeometry(w, 0.1, 0.05), 0x8a6a44, [w / 2, y, 0]);
+  for (const x of [0.05, w - 0.05]) b.add(new BoxGeometry(0.08, 0.8, 0.05), 0x7a5a38, [x, 0.65, 0]);
+  b.add(new BoxGeometry(0.06, 0.9, 0.04), 0x5a3c24, [w / 2, 0.65, -0.03], [0, 0, 1.0]);
+  return b.build();
+}
+
+/** A rope hanging from a stake at a cliff's top: the stake (its length drawn separately). */
+export function ropeStakeModel() {
+  return new Parts(105)
+    .add(new CylinderGeometry(0.05, 0.03, 0.7, 5), 0x8a6038, [0, 0.15, 0])
+    .add(new CylinderGeometry(0.07, 0.07, 0.08, 6), 0xb89a60, [0, 0.3, 0])
+    .build();
+}
+/** A metre of rope, hanging (drawn stretched to its length). */
+export const ropeLengthModel = () => new Parts(107).add(new CylinderGeometry(0.025, 0.025, 1, 5), 0xb89a60, [0, -0.5, 0], [0, 0, 0], [1, 1, 1], 0.05).build();
+
+/** A dug plot, 2 m square: dark turned earth in furrows. */
+export const PLOT_SIZE = 2;
+export function plotModel() {
+  const b = new Parts(109);
+  b.add(new BoxGeometry(PLOT_SIZE, 0.12, PLOT_SIZE), 0x4a3424, [0, 0.0, 0], [0, 0, 0], [1, 1, 1], 0.05);
+  for (let k = 0; k < 4; k++) b.add(new BoxGeometry(PLOT_SIZE - 0.1, 0.08, 0.22), 0x5a4030, [0, 0.08, -0.75 + k * 0.5], [0, 0, 0], [1, 1, 1], 0.1);
+  return b.build();
+}
+
+/**
+ * A crop at its full height (drawn scaled up as it grows): wheat (a stand
+ * of golden stalks with their ears), corn (tall stalks with long leaves and
+ * a cob or two), potatoes (a low bushy leafy plant), carrots (feathery tops).
+ * Several of them in a plot's rows.
+ */
+export function cropModel(kind, ripe = false) {
+  const b = new Parts(111 + kind.length);
+  const rand = mulberry32(kind.length * 7 + (ripe ? 1 : 0));
+  const green = ripe ? 0x8a8a34 : 0x5a8a34;
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) {
+      const x = -0.75 + c * 0.5 + (rand() - 0.5) * 0.1, z = -0.75 + r * 0.5 + (rand() - 0.5) * 0.1;
+      if (kind === 'wheat') {
+        for (let k = 0; k < 4; k++) {
+          const dx = (rand() - 0.5) * 0.2, dz = (rand() - 0.5) * 0.2, h = 0.8 + rand() * 0.2, lean = (rand() - 0.5) * 0.2;
+          b.add(new BoxGeometry(0.015, h, 0.015), ripe ? 0xc8a050 : 0x6a9a3a, [x + dx, h / 2, z + dz], [lean, 0, lean]);
+          b.add(new BoxGeometry(0.04, 0.14, 0.04), ripe ? 0xe0bc64 : 0x8aba4a, [x + dx + lean * 0.4, h + 0.05, z + dz + lean * 0.4], [lean, 0, lean]);
+        }
+      } else if (kind === 'corn') {
+        if ((r + c) % 2) continue;
+        b.add(new BoxGeometry(0.05, 2.0, 0.05), ripe ? 0x9a9a44 : 0x5a9a34, [x, 1.0, z]);
+        for (let k = 0; k < 4; k++) b.add(new BoxGeometry(0.5, 0.02, 0.08), green, [x + 0.2 * Math.cos(k * 1.9), 0.5 + k * 0.35, z + 0.2 * Math.sin(k * 1.9)], [0, k * 1.9, -0.4]);
+        b.add(new BoxGeometry(0.08, 0.26, 0.08), ripe ? 0xf0c830 : 0x8aba4a, [x + 0.06, 1.1, z], [0, 0, 0.3]);
+        b.add(new BoxGeometry(0.04, 0.2, 0.04), 0xc8a060, [x, 2.05, z]);
+      } else if (kind === 'potato') {
+        b.add(new DodecahedronGeometry(0.2, 0), green, [x, 0.18, z], [rand(), rand(), 0], [1, 0.8, 1]);
+        if (!ripe) b.add(new DodecahedronGeometry(0.05, 0), 0xe8e0f0, [x, 0.36, z]);
+      } else {
+        for (let k = 0; k < 5; k++) b.add(new BoxGeometry(0.02, 0.3, 0.06), green, [x + (rand() - 0.5) * 0.08, 0.15, z + (rand() - 0.5) * 0.08], [(rand() - 0.5) * 0.6, rand() * 3, (rand() - 0.5) * 0.6]);
+        if (ripe) b.add(new ConeGeometry(0.03, 0.06, 5), 0xe8762a, [x, 0.03, z], [Math.PI, 0, 0]);
+      }
+    }
+  }
   return b.build();
 }

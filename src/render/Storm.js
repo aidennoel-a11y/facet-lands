@@ -217,8 +217,11 @@ export class Lightning {
 
   #start(camera, ground) {
     const angle = Math.random() * Math.PI * 2;
-    // (Now and then one strikes close by: the thunder all but at once.)
-    const distance = Math.random() < 0.1 ? 90 + Math.random() * 160 : 250 + Math.random() * 1300;
+    // (Now and then one strikes close by: the thunder all but at once. And
+    // out in the open up high, the tallest thing about, it may come down
+    // right by you: see `exposed`, set from outside, 0..1.)
+    const near = Math.random() < 0.35 * (this.exposed ?? 0);
+    const distance = near ? 1.5 + Math.random() * 10 : Math.random() < 0.1 ? 90 + Math.random() * 160 : 250 + Math.random() * 1300;
     const x = camera.position.x + Math.cos(angle) * distance;
     const z = camera.position.z + Math.sin(angle) * distance;
     const base = ground(x, z);

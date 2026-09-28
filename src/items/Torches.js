@@ -23,9 +23,11 @@ function glowTexture() {
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
   const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  g.addColorStop(0, 'rgba(255,220,150,1)');
-  g.addColorStop(0.25, 'rgba(255,170,80,0.55)');
-  g.addColorStop(1, 'rgba(255,120,40,0)');
+  // (A soft warm haze, no hard white core: looked at straight on in the
+  // dark of a cave it mustn't blind you.)
+  g.addColorStop(0, 'rgba(255,190,110,0.55)');
+  g.addColorStop(0.3, 'rgba(255,150,70,0.25)');
+  g.addColorStop(1, 'rgba(255,110,40,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   return new CanvasTexture(canvas);
@@ -34,8 +36,9 @@ function glowTexture() {
 /**
  * Placeable torches.
  *
- * Each torch is a low-poly stick with a flickering two-layer flame and a
- * soft glow. Real light comes from a fixed pool of point lights handed to
+ * Each torch is a low-poly stick with a pitch-soaked head; set down, it's
+ * cold until it's lit (with flint and steel, or a torch you're carrying),
+ * then it burns with a flickering two-layer flame and a soft glow. Real light comes from a fixed pool of point lights handed to
  * the torches nearest the camera every frame: the number of lights never
  * changes, so placing torches never makes the renderer recompile shaders,
  * and hundreds of torches cost no more than a few.
@@ -55,17 +58,18 @@ export class Torches {
     this.stickMaterial = new MeshLambertMaterial({ color: 0x6b4a2f, flatShading: true });
     this.headMaterial = new MeshLambertMaterial({ color: 0x2e2620, flatShading: true });
     this.outerMaterial = new MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9 });
-    this.innerMaterial = new MeshBasicMaterial({ color: 0xfff0a0 });
+    this.innerMaterial = new MeshBasicMaterial({ color: 0xffd070 });
     this.glowMaterial = new SpriteMaterial({
       map: glowTexture(),
       blending: AdditiveBlending,
       transparent: true,
       depthWrite: false,
+      opacity: 0.7,
     });
 
     this.lights = [];
     for (let i = 0; i < maxLights; i++) {
-      const light = new PointLight(0xffa24a, 0, 16, 1.7);
+      const light = new PointLight(0xffa24a, 0, 26, 1.35);
       light.position.set(0, -10000, 0);
       scene.add(light);
       this.lights.push(light);
@@ -78,10 +82,11 @@ export class Torches {
   }
 
   /**
-   * Puts a torch at `point` on a surface facing `normal`. On the ground it
-   * stands up; on a wall it leans out. Returns null for ceilings.
+   * Puts a torch at `point` on a surface facing `normal` (cold, unless
+   * `lit`). On the ground it stands up; on a wall it leans out. Returns null
+   * for ceilings.
    */
-  place(point, normal, save = true) {
+  place(point, normal, save = true, lit = false) {
     if (normal.y < -0.3) return null;
     const lean = normal.y > 0.7 ? UP.clone() : normal.clone().multiplyScalar(0.55).add(UP).normalize();
 
@@ -103,10 +108,33 @@ export class Torches {
     this.scene.add(group);
     group.updateMatrixWorld(true);
 
-    const torch = { group, outer, inner, glow, phase: Math.random() * 100, point: point.clone(), normal: normal.clone() };
+    const torch = { group, outer, inner, glow, phase: Math.random() * 100, point: point.clone(), normal: normal.clone(), lit };
+    outer.visible = inner.visible = glow.visible = lit;
     this.torches.push(torch);
     if (save) this.#save();
     return torch;
+  }
+
+  /** The torch nearest a ray (within `reach`, near enough to it), or null. */
+  alongRay(origin, direction, reach, tolerance = 0.5) {
+    let best = null, bestD = tolerance;
+    const c = new Vector3();
+    for (const t of this.torches) {
+      t.group.localToWorld(c.set(0, 0.6, 0));
+      const ox = c.x - origin.x, oy = c.y - origin.y, oz = c.z - origin.z;
+      const along = ox * direction.x + oy * direction.y + oz * direction.z;
+      if (along < 0 || along > reach) continue;
+      const off = Math.sqrt(Math.max(0, ox * ox + oy * oy + oz * oz - along * along));
+      if (off < bestD) (bestD = off), (best = t);
+    }
+    return best;
+  }
+
+  /** Lights a torch (or puts it out). */
+  light(t, lit = true) {
+    t.lit = lit;
+    t.outer.visible = t.inner.visible = t.glow.visible = lit;
+    this.#save();
   }
 
   /** Removes the torch closest to `point` within `radius`; returns true if one went. */
@@ -156,12 +184,12 @@ export class Torches {
     } catch {
       saved = [];
     }
-    for (const [x, y, z, nx, ny, nz] of saved) this.place(new Vector3(x, y, z), new Vector3(nx, ny, nz), false);
+    for (const [x, y, z, nx, ny, nz, lit = 1] of saved) this.place(new Vector3(x, y, z), new Vector3(nx, ny, nz), false, !!lit);
   }
 
   #save() {
     if (this.seed === null) return;
-    const data = this.torches.map((t) => [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)));
+    const data = this.torches.map((t) => [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)).concat(t.lit ? 1 : 0));
     try {
       localStorage.setItem(`facet-lands:torches:${this.seed}`, JSON.stringify(data));
     } catch {
@@ -176,15 +204,18 @@ export class Torches {
    */
   update(time, cameraPosition, extra = []) {
     for (const t of this.torches) {
+      if (!t.lit) continue;
       const f = 0.85 + 0.15 * Math.sin(time * 13 + t.phase) * Math.sin(time * 7.3 + t.phase * 1.7);
       t.outer.scale.set(f, 0.9 + 0.2 * f, f);
       t.outer.rotation.y = time * 2 + t.phase;
       t.inner.scale.setScalar(0.9 + 0.15 * f);
-      t.glow.scale.setScalar(1.4 + 0.35 * f);
-      t.flicker = f;
       t.distance = t.group.position.distanceToSquared(cameraPosition);
+      // (The glow smaller close to: its light is on everything round
+      // about, and up close a big halo only dazzles.)
+      t.glow.scale.setScalar((0.9 + 0.25 * f) * (0.5 + 0.5 * Math.min(1, Math.sqrt(t.distance) / 6)));
+      t.flicker = f;
     }
-    const all = [...this.torches];
+    const all = this.torches.filter((t) => t.lit);
     for (const x of extra) {
       x.distance = (x.x - cameraPosition.x) ** 2 + (x.y - cameraPosition.y) ** 2 + (x.z - cameraPosition.z) ** 2;
       all.push(x);
@@ -199,13 +230,13 @@ export class Torches {
       }
       if (t.group) {
         light.position.copy(t.group.localToWorld(this._flame.set(0, FLAME_HEIGHT + 0.1, 0)));
-        light.intensity = 14 * t.flicker;
-        light.distance = 16;
+        light.intensity = 30 * t.flicker;
+        light.distance = 26;
       } else {
         light.position.set(t.x, t.y, t.z);
         const f = 0.85 + 0.15 * Math.sin(time * 11 + t.x) * Math.sin(time * 6.1 + t.z);
         light.intensity = t.strength * f;
-        light.distance = t.reach ?? 16;
+        light.distance = t.reach ?? 26;
       }
     });
   }

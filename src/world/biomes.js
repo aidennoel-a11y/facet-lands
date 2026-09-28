@@ -54,7 +54,7 @@ export const BIOMES = {
         { type: 'larch', weight: 0.4, minHeight: 60, maxHeight: 165 },
         { type: 'bush', weight: 0.5, minHeight: 5, maxHeight: 130 },
         { type: 'raspberryBush', weight: 0.22, minHeight: 5, maxHeight: 110 },
-        { type: 'appleTree', weight: 0.06, minHeight: 5, maxHeight: 60 },
+        { type: 'appleTree', weight: 0.15, minHeight: 5, maxHeight: 70 }, // (now and then, among the others)
         { type: 'deadPine', weight: 0.06, minHeight: 30, maxHeight: 160 },
       ],
     },
@@ -167,7 +167,7 @@ export const BIOMES = {
         { type: 'bush', weight: 0.5, minHeight: -99, maxHeight: 180 },
         { type: 'raspberryBush', weight: 0.25, minHeight: -99, maxHeight: 120 },
         { type: 'blueberryBush', weight: 0.2, minHeight: 60, maxHeight: 200 },
-        { type: 'appleTree', weight: 0.05, minHeight: -99, maxHeight: 70 },
+        { type: 'appleTree', weight: 0.12, minHeight: -99, maxHeight: 80 },
       ],
     },
   },
