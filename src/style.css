@@ -708,3 +708,139 @@ kbd {
     width: 40px;
   }
 }
+
+/* What's wrong with you, and what you carry, under the bars. */
+.status {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--gutter) + 132px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  transition: opacity 0.3s;
+}
+.status.paused {
+  opacity: 0.45;
+}
+.chip {
+  padding: 2px 8px;
+  font: 600 12px/1.3 var(--display);
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: rgba(29, 39, 51, 0.55);
+  border-radius: 10px;
+}
+.chip-sick {
+  background: rgba(120, 140, 30, 0.8);
+}
+.chip-bleed {
+  background: rgba(170, 20, 20, 0.85);
+}
+.chip-tired {
+  background: rgba(150, 120, 20, 0.8);
+}
+.chip-wet {
+  background: rgba(40, 100, 170, 0.75);
+}
+.chip-heavy {
+  background: rgba(140, 70, 20, 0.8);
+}
+.wind {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+}
+.wind svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.3s;
+}
+/* A bow being drawn: a bar under the crosshair. */
+.draw {
+  position: fixed;
+  left: 50%;
+  top: calc(50% + 14px);
+  width: 60px;
+  height: 4px;
+  margin-left: -30px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+.draw i {
+  display: block;
+  height: 100%;
+  background: #fff;
+}
+/* The dark of sleep. */
+.sleep-fade {
+  position: fixed;
+  inset: 0;
+  background: #05070c;
+  opacity: 0;
+  pointer-events: none;
+}
+/* Creative: every item. */
+.creative {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(640px, calc(100vw - 2 * var(--gutter)));
+  max-height: calc(100vh - 2 * var(--gutter));
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 16px;
+  color: #fff;
+  background: rgba(29, 39, 51, 0.9);
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+  z-index: 10;
+}
+.creative header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.creative h2 {
+  margin: 0;
+  font: 700 22px/1 var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.creative header p {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+}
+.creative h3 {
+  margin: 12px 0 0;
+  font: 600 13px/1 var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+#hud .creative .slot {
+  width: 64px;
+  height: 64px;
+  align-content: center;
+}
+.slot-name {
+  display: block;
+  font: 500 9px/1.1 var(--body);
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
+  padding: 0 2px;
+}
+.recipes .made {
+  position: relative;
+}
+.recipes .made b {
+  position: absolute;
+  right: -4px;
+  bottom: 0;
+  font: 700 12px/1 var(--display);
+}

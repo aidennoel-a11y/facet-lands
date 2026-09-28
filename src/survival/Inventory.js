@@ -10,7 +10,8 @@ import { ITEMS, stackOf } from './items.js';
 export class Inventory {
   constructor(size = 9) {
     this.slots = new Array(size).fill(null);
-    this.worn = null;
+    this.worn = null; // (a coat)
+    this.armour = null;
     this.listeners = new Set();
   }
 
@@ -28,6 +29,7 @@ export class Inventory {
     const s = { id, count };
     if (item?.durability) s.dur = item.durability;
     if (item?.spoils) s.fresh = item.spoils;
+    if (item?.holds) (s.water = 0), (s.clean = true);
     return s;
   }
 
@@ -132,10 +134,19 @@ export class Inventory {
   clear() {
     this.slots.fill(null);
     this.worn = null;
+    this.armour = null;
     this.changed();
   }
 
   toJSON() {
-    return { slots: this.slots, worn: this.worn };
+    return { slots: this.slots, worn: this.worn, armour: this.armour };
+  }
+
+  load(data) {
+    this.slots.fill(null);
+    (data?.slots ?? []).forEach((s, i) => i < this.slots.length && (this.slots[i] = s));
+    this.worn = data?.worn ?? null;
+    this.armour = data?.armour ?? null;
+    this.changed();
   }
 }

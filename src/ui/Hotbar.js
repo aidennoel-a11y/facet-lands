@@ -10,6 +10,7 @@ export function wearOf(stack) {
   const item = stack && ITEMS[stack.id];
   if (!item) return null;
   if (stack.dur !== undefined && item.durability) return stack.dur / item.durability;
+  if (item.holds) return stack.water / item.holds;
   if (stack.fresh !== undefined && item.spoils) return stack.fresh / item.spoils;
   return null;
 }
@@ -18,7 +19,8 @@ export function wearOf(stack) {
 export function slotHtml(stack, key = '') {
   if (!stack) return key ? `<span class="slot-key">${key}</span>` : '';
   const wear = wearOf(stack);
-  const bar = wear === null ? '' : `<span class="slot-bar${ITEMS[stack.id].spoils ? ' fresh' : ''}"><i style="width:${Math.max(4, Math.round(wear * 100))}%;background:hsl(${Math.round(wear * 110)} 70% 48%)"></i></span>`;
+  const hue = ITEMS[stack.id].holds ? (stack.clean ? 200 : 45) : Math.round(wear * 110);
+  const bar = wear === null ? '' : `<span class="slot-bar${ITEMS[stack.id].spoils ? ' fresh' : ''}"><i style="width:${Math.max(4, Math.round(wear * 100))}%;background:hsl(${hue} 70% 48%)"></i></span>`;
   return `${key ? `<span class="slot-key">${key}</span>` : ''}${iconSvg(stack.id)}${stack.count > 1 ? `<span class="slot-count">${stack.count}</span>` : ''}${bar}`;
 }
 

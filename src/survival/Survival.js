@@ -16,6 +16,13 @@ function smoothstep(a, b, x) {
  * drains away (far slower in a deerskin coat) and at nothing you freeze. A
  * campfire warms you back up.
  *
+ * Energy: you tire through the day (faster running), and only sleep
+ * brings it back; worn out, you can't run, and at nothing you start to
+ * suffer. Fever (from raw meat, dirty water): you burn through food and
+ * water, can't mend, and now and then are sick; it passes, faster with
+ * rest, at once with a stew. Bleeding (a bite, a swipe): it drains you
+ * until it's bandaged (or clots, after a while).
+ *
  * Health comes back slowly while you're fed, watered and warm. Falls from
  * too high hurt, and so do wolves and bears.
  */
@@ -31,6 +38,9 @@ export class Survival {
     this.warmth = 100;
     this.wet = 0; // how soaked you are (swimming, rain), 0..1
     this.cold = 0; // how cold it is where you are, 0..1+
+    this.energy = 100;
+    this.sick = 0; // seconds of fever left
+    this.bleeding = 0; // seconds of bleeding left (if not bandaged)
     this.alive = true;
     this.cause = '';
     this.hurtFlash = 0; // (for the red flash when you're hurt)
@@ -52,12 +62,43 @@ export class Survival {
     return false;
   }
 
-  /** Eats (or drinks): `food` { hunger, thirst, health }. */
+  /**
+   * Eats (or drinks): `food` { hunger, thirst, health, sick (the chance of
+   * a fever), cure (it cures one) }. Returns whether it made you sick.
+   */
   consume(food) {
     this.hunger = Math.min(100, this.hunger + (food.hunger ?? 0));
     this.thirst = Math.min(100, this.thirst + (food.thirst ?? 0));
     if (food.health > 0) this.health = Math.min(100, this.health + food.health);
     else if (food.health < 0) this.hurt(-food.health, 'food poisoning');
+    if (food.cure) this.sick = 0;
+    if (food.sick && Math.random() < food.sick) {
+      this.sick = Math.max(this.sick, 150 + Math.random() * 120);
+      return true;
+    }
+    return false;
+  }
+
+  /** A wound that bleeds (until bandaged, or it clots). */
+  bleed(seconds = 90) {
+    this.bleeding = Math.max(this.bleeding, seconds);
+  }
+
+  /** A bandage: the bleeding stops, and it mends a little. */
+  bandage() {
+    const was = this.bleeding > 0;
+    this.bleeding = 0;
+    this.health = Math.min(100, this.health + 8);
+    return was;
+  }
+
+  /** A night's sleep. */
+  sleep() {
+    this.energy = 100;
+    this.hunger = Math.max(5, this.hunger - 20);
+    this.thirst = Math.max(5, this.thirst - 25);
+    this.sick = Math.max(0, this.sick - 180);
+    this.health = Math.min(100, this.health + 25);
   }
 
   /**
@@ -89,10 +130,26 @@ export class Survival {
     // Hunger: a slow drain (about 40 minutes from full to empty sat
     // still), more walking, much more running, jumping and swimming.
     const work = e.sprinting ? 4 : e.swimming ? 2.2 : e.moving ? 1.3 : 1;
-    this.hunger = Math.max(0, this.hunger - dt * 0.042 * work - (e.jumped ?? 0) * 0.5);
+    const fever = this.sick > 0 ? 1.5 : 1;
+    this.hunger = Math.max(0, this.hunger - dt * 0.042 * work * fever - (e.jumped ?? 0) * 0.5);
+    // Energy: a day's worth (about 45 minutes awake), faster running, carrying a load.
+    this.energy = Math.max(0, this.energy - dt * 0.037 * (e.sprinting ? 2 : 1) * (1 + (e.load ?? 0)));
     // Thirst: faster (half an hour or so), and far faster in the heat.
     const heat = 1 + (e.heat ?? 0) * (0.6 + 0.4 * (e.day ?? 1));
-    this.thirst = Math.max(0, this.thirst - dt * 0.055 * heat * (e.sprinting ? 2.2 : e.moving ? 1.15 : 1) - (e.jumped ?? 0) * 0.25);
+    this.thirst = Math.max(0, this.thirst - dt * 0.055 * heat * fever * (e.sprinting ? 2.2 : e.moving ? 1.15 : 1) - (e.jumped ?? 0) * 0.25);
+    // Fever passes; bleeding clots in the end.
+    if (this.sick > 0) {
+      this.sick = Math.max(0, this.sick - dt);
+      if (Math.random() < dt / 40) {
+        this.hunger = Math.max(0, this.hunger - 8);
+        this.thirst = Math.max(0, this.thirst - 8);
+        this.retched = true; // (for the sound and the message)
+      }
+    }
+    if (this.bleeding > 0) {
+      this.bleeding = Math.max(0, this.bleeding - dt);
+      if (this.hurt(dt * 0.5, 'bleeding')) return;
+    }
     // Wet from swimming and the rain; drying off slowly (fast by a fire).
     this.wet = Math.min(1, Math.max(0, this.wet + (e.swimming ? dt * 0.5 : e.rain > 0.2 ? dt * 0.01 * e.rain : -dt * (0.004 + 0.05 * (e.fire ?? 0)))));
     // Warmth.
@@ -104,12 +161,21 @@ export class Survival {
     if (this.hunger <= 0 && this.hurt(dt * 0.6, 'starvation')) return;
     if (this.thirst <= 0 && this.hurt(dt * 0.9, 'thirst')) return;
     if (this.warmth <= 0 && this.hurt(dt * 1.1, 'the cold')) return;
+    if (this.energy <= 0 && this.hurt(dt * 0.25, 'exhaustion')) return;
+    if (this.sick > 0 && this.hurt(dt * 0.05, 'fever')) return;
     if (e.inFire && this.hurt(dt * 12, 'burns')) return;
     // Mending, while you're looked after.
-    if (this.hunger > 40 && this.thirst > 40 && this.warmth > 30) this.health = Math.min(100, this.health + dt * (this.hunger > 75 && this.thirst > 75 ? 0.5 : 0.2));
+    if (this.hunger > 40 && this.thirst > 40 && this.warmth > 30 && this.sick <= 0 && this.bleeding <= 0) this.health = Math.min(100, this.health + dt * (this.hunger > 75 && this.thirst > 75 ? 0.5 : 0.2));
   }
 
   toJSON() {
-    return { health: this.health, hunger: this.hunger, thirst: this.thirst, warmth: this.warmth };
+    const r = (v) => Math.round(v * 10) / 10;
+    return { health: r(this.health), hunger: r(this.hunger), thirst: r(this.thirst), warmth: r(this.warmth), energy: r(this.energy), sick: Math.round(this.sick), bleeding: Math.round(this.bleeding) };
+  }
+
+  load(data) {
+    if (!data) return;
+    for (const k of ['health', 'hunger', 'thirst', 'warmth', 'energy', 'sick', 'bleeding']) if (Number.isFinite(data[k])) this[k] = data[k];
+    if (this.health <= 0) this.reset();
   }
 }

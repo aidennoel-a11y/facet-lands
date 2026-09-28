@@ -49,6 +49,9 @@ export class PlayerControls {
     this.eyeHeight = 1.7;
     this.crouch = false; // keeping low (C / Ctrl while walking)
     this.speedFactor = 1; // slowed (pushing through leaves, say): set from outside
+    this.burden = 1; // slowed by what you carry: set from outside
+    this.noSprint = false; // too worn out or weighed down to run
+    this.vehicle = null; // (dt, input) => void: something you're riding (a raft) moves you instead
     this.frozen = false; // not moving at all (a menu's open, or you're dead)
     this.jumps = 0; // jumps since last asked (see takeJumps)
     this.onLand = null; // (speed m/s) => void: you've come down from a fall
@@ -178,8 +181,8 @@ export class PlayerControls {
     const fast = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
     if (this.mode === 'fly') return this.flySpeed * (fast ? this.flyBoost : 1);
     if (this.swimming) return this.swimSpeed;
-    if (this.crouch) return this.walkSpeed * 0.45 * this.speedFactor;
-    return (fast ? this.sprintSpeed : this.walkSpeed) * this.speedFactor;
+    if (this.crouch) return this.walkSpeed * 0.45 * this.speedFactor * this.burden;
+    return (fast && !this.noSprint ? this.sprintSpeed : this.walkSpeed) * this.speedFactor * this.burden;
   }
 
   /** How many times you've jumped since last asked. */
@@ -192,7 +195,11 @@ export class PlayerControls {
   update(dt) {
     if (this.frozen) this.keys.clear();
     if (this.mode === 'fly') this.#updateFly(dt);
-    else this.#updateWalk(dt);
+    else if (this.vehicle) {
+      this.swimming = false;
+      this.crouch = false;
+      this.vehicle(dt, this.#input());
+    } else this.#updateWalk(dt);
   }
 
   #input() {
@@ -267,7 +274,7 @@ export class PlayerControls {
     pos.y = feet0 + this.eyeHeight;
     const fast = k.has('ShiftLeft') || k.has('ShiftRight');
     this.moving = input.forward !== 0 || input.strafe !== 0;
-    this.sprinting = this.moving && fast && !this.crouch && !this.swimming;
+    this.sprinting = this.moving && fast && !this.crouch && !this.swimming && !this.noSprint;
     // In deep water, swimming.
     const water = this.#water(pos.x, pos.z);
     const under = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z);

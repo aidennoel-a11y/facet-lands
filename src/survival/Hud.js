@@ -6,36 +6,45 @@ const BARS = [
   ['hunger', 'Hunger', '#d8903a', `<path d="M8 6c-3 6 0 10 3 11l-1 11h4l-1-11c3-1 6-5 3-11zM22 4c-2 4-3 10 0 12l-1 12h4V4z"/>`],
   ['thirst', 'Thirst', '#3a9ae0', `<path d="M16 3S7 14 7 20a9 9 0 0 0 18 0c0-6-9-17-9-17z"/>`],
   ['warmth', 'Warmth', '#f06a2a', `<path d="M16 2c1 6 8 8 8 16a8 8 0 0 1-16 0c0-4 2-6 3-8 1 3 3 4 3 4 0-5-1-8 2-12z"/>`],
+  ['energy', 'Energy', '#e8d24a', `<path d="M18 2L6 18h8l-2 12 12-16h-8z"/>`],
 ];
+const GROUPS = ['Tools', 'Materials', 'Food', 'Worn', 'Building'];
 
 /**
- * What's on screen for staying alive: the four bars (health, hunger,
- * thirst, warmth) above the hotbar, your coat if you're wearing one, what
- * you can do with what's in front of you (under the crosshair), the
- * crafting menu (Tab), a chest's contents, the red of being hurt and the
- * frost of the cold, and the end.
+ * What's on screen for staying alive: the bars (health, hunger, thirst,
+ * warmth, energy) above the hotbar, what's wrong with you (fever,
+ * bleeding, worn out, weighed down), which way the wind blows (your scent
+ * goes with it), what you're wearing, what you can do with what's in
+ * front of you (under the crosshair), the crafting menu (Tab), the
+ * creative menu (Z: every item, for testing), a chest's contents, the red
+ * of being hurt, the frost of the cold, the dark of sleep, and the end.
  */
 export class Hud {
   constructor(root) {
     this.root = root;
     root.innerHTML = `
-      <div class="vitals" aria-label="Health, hunger, thirst and warmth">
+      <div class="vitals" aria-label="Health, hunger, thirst, warmth and energy">
         ${BARS.map(([id, label, colour, icon]) => `<div class="vital" data-vital="${id}" title="${label}"><svg viewBox="0 0 32 32" aria-hidden="true" fill="${colour}">${icon}</svg><span class="vital-bar"><i style="background:${colour}"></i></span></div>`).join('')}
-        <div class="worn" hidden title="Wearing"></div>
+        <div class="worn worn-coat" hidden title="Wearing"></div>
+        <div class="worn worn-armour" hidden title="Wearing"></div>
+        <div class="wind" title="The wind: your scent goes the way it blows"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l7 20-7-5-7 5z" fill="#dfe8ee"/></svg></div>
       </div>
+      <div class="status"></div>
       <p class="prompt" hidden></p>
+      <div class="draw" hidden><i></i></div>
       <div class="hurt-vignette"></div>
       <div class="cold-vignette"></div>
+      <div class="sleep-fade"></div>
       <section class="craft" hidden aria-label="Crafting">
-        <header><h2>Crafting</h2><p>Tab or Esc to close</p></header>
+        <header><h2>Crafting</h2><p>Tab or Esc to close · Z for every item</p></header>
         <ul class="recipes"></ul>
-        <details class="testing">
-          <summary>Testing: take any item</summary>
-          <div class="all-items"></div>
-        </details>
+      </section>
+      <section class="creative" hidden aria-label="Creative: every item">
+        <header><h2>Every item</h2><p>Click for a stack in your hotbar · Z or Esc to close</p></header>
+        <div class="creative-groups"></div>
       </section>
       <section class="chest-ui" hidden aria-label="Chest">
-        <header><h2>Chest</h2><p>Click to move a stack across · E or Esc to close</p></header>
+        <header><h2>Chest</h2><p>Click to move a stack across · food in here keeps · E or Esc to close</p></header>
         <ol class="chest-slots"></ol>
         <h3>Carrying</h3>
         <ol class="pack-slots"></ol>
@@ -52,27 +61,54 @@ export class Hud {
     this.onChestMove = null;
     this.onRespawn = null;
     this.el('.respawn').addEventListener('click', () => this.onRespawn?.());
+    this.sleepAmount = 0;
   }
 
   get busy() {
-    return !this.el('.craft').hidden || !this.el('.chest-ui').hidden || !this.el('.death').hidden;
+    return ['.craft', '.creative', '.chest-ui', '.death'].some((sel) => !this.el(sel).hidden);
   }
 
-  update(survival, inventory, active) {
-    this.el('.vitals').classList.toggle('paused', !active);
+  /**
+   * @param info { active (on foot), load (kg), heavy (0..), wind (the
+   *               wind's direction relative to your view, radians) }
+   */
+  update(survival, inventory, info) {
+    this.el('.vitals').classList.toggle('paused', !info.active);
     for (const [id, el] of Object.entries(this.bars)) {
       const v = survival[id];
       el.querySelector('i').style.width = `${Math.max(0, v)}%`;
       el.classList.toggle('low', v < 25);
     }
-    const worn = this.el('.worn');
-    worn.hidden = !inventory.worn;
-    if (inventory.worn) {
-      const html = slotHtml(inventory.worn);
-      if (worn.dataset.html !== html) (worn.innerHTML = html), (worn.dataset.html = html);
+    for (const [sel, stack] of [['.worn-coat', inventory.worn], ['.worn-armour', inventory.armour]]) {
+      const el = this.el(sel);
+      el.hidden = !stack;
+      if (stack) {
+        const html = slotHtml(stack);
+        if (el.dataset.html !== html) (el.innerHTML = html), (el.dataset.html = html);
+      }
     }
-    this.el('.hurt-vignette').style.opacity = Math.min(0.8, survival.hurtFlash + (survival.health < 25 ? 0.25 + 0.1 * Math.sin(performance.now() / 250) : 0)).toFixed(3);
-    this.el('.cold-vignette').style.opacity = (active ? Math.min(0.85, (1 - survival.warmth / 100) * 0.9 * Math.min(1, survival.cold * 3)) : 0).toFixed(3);
+    this.el('.wind svg').style.transform = `rotate(${info.wind ?? 0}rad)`;
+    // What's wrong with you.
+    const chips = [];
+    if (survival.sick > 0) chips.push(['sick', 'Fever']);
+    if (survival.bleeding > 0) chips.push(['bleed', 'Bleeding']);
+    if (survival.energy < 20) chips.push(['tired', survival.energy <= 0 ? 'Exhausted' : 'Worn out']);
+    if (survival.wet > 0.3) chips.push(['wet', 'Soaked']);
+    chips.push([info.heavy > 0 ? 'heavy' : 'load', `${Math.round(info.load)} kg${info.heavy > 0.5 ? ': too heavy to run' : info.heavy > 0 ? ': heavy' : ''}`]);
+    const html = chips.map(([k, t]) => `<span class="chip chip-${k}">${t}</span>`).join('');
+    const status = this.el('.status');
+    if (status.dataset.html !== html) (status.innerHTML = html), (status.dataset.html = html);
+    status.classList.toggle('paused', !info.active);
+    this.el('.hurt-vignette').style.opacity = Math.min(0.8, survival.hurtFlash + (survival.health < 25 ? 0.25 + 0.1 * Math.sin(performance.now() / 250) : 0) + (survival.bleeding > 0 ? 0.08 : 0)).toFixed(3);
+    this.el('.cold-vignette').style.opacity = (info.active ? Math.min(0.85, (1 - survival.warmth / 100) * 0.9 * Math.min(1, survival.cold * 3)) : 0).toFixed(3);
+    this.el('.sleep-fade').style.opacity = this.sleepAmount.toFixed(3);
+  }
+
+  /** How far a bow's drawn (0..1), or hidden (null). */
+  draw(amount) {
+    const el = this.el('.draw');
+    el.hidden = amount === null;
+    if (amount !== null) el.querySelector('i').style.width = `${Math.round(amount * 100)}%`;
   }
 
   /** What you can do with what's under the crosshair ("E · Pick up stick"), or nothing. */
@@ -97,11 +133,6 @@ export class Hud {
     this.closeAll();
     panel.hidden = false;
     this.renderCraft(inventory);
-    this.el('.all-items').innerHTML = Object.keys(ITEMS).map((id) => `<button type="button" class="slot" data-take="${id}" title="${ITEMS[id].name}">${iconSvg(id)}</button>`).join('');
-    this.el('.all-items').onclick = (e) => {
-      const b = e.target.closest('[data-take]');
-      if (b) this.onTake?.(b.dataset.take);
-    };
     return true;
   }
 
@@ -112,12 +143,31 @@ export class Hud {
       const needs = Object.entries(r.needs)
         .map(([id, n]) => `<span class="need${inventory.count(id) >= n ? '' : ' short'}" title="${ITEMS[id].name}">${iconSvg(id)}${inventory.count(id)}/${n}</span>`)
         .join('');
-      return `<li><span class="made">${iconSvg(r.id)}</span><span class="what"><b>${ITEMS[r.id].name}</b><small>${r.note}</small><span class="needs">${needs}</span></span><button type="button" data-craft="${r.id}" ${can ? '' : 'disabled'}>Craft</button></li>`;
+      return `<li class="${can ? 'can' : ''}"><span class="made">${iconSvg(r.id)}${r.makes ? `<b>×${r.makes}</b>` : ''}</span><span class="what"><b>${ITEMS[r.id].name}</b><small>${r.note}</small><span class="needs">${needs}</span></span><button type="button" data-craft="${r.id}" ${can ? '' : 'disabled'}>Craft</button></li>`;
     }).join('');
     list.onclick = (e) => {
       const b = e.target.closest('[data-craft]');
       if (b && !b.disabled) this.onCraft?.(b.dataset.craft);
     };
+  }
+
+  // --- Creative: every item --------------------------------------------------------
+
+  toggleCreative() {
+    const panel = this.el('.creative');
+    if (!panel.hidden) return this.closeAll();
+    this.closeAll();
+    panel.hidden = false;
+    const groups = this.el('.creative-groups');
+    groups.innerHTML = GROUPS.map((g) => {
+      const ids = Object.keys(ITEMS).filter((id) => ITEMS[id].group === g);
+      return `<h3>${g}</h3><div class="all-items">${ids.map((id) => `<button type="button" class="slot" data-take="${id}" title="${ITEMS[id].name}">${iconSvg(id)}<span class="slot-name">${ITEMS[id].name}</span></button>`).join('')}</div>`;
+    }).join('');
+    groups.onclick = (e) => {
+      const b = e.target.closest('[data-take]');
+      if (b) this.onTake?.(b.dataset.take);
+    };
+    return true;
   }
 
   // --- A chest -------------------------------------------------------------------
@@ -145,8 +195,7 @@ export class Hud {
   }
 
   closeAll() {
-    this.el('.craft').hidden = true;
-    this.el('.chest-ui').hidden = true;
+    for (const sel of ['.craft', '.creative', '.chest-ui']) this.el(sel).hidden = true;
     this.chest = null;
     return false;
   }

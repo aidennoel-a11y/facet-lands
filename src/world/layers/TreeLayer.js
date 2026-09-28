@@ -187,6 +187,21 @@ export function createTreeLayer({ rocks = null } = {}) {
       return profileOf(type)?.top ?? 6;
     },
 
+    /** A species' crown, for a tree of size 1: { bottom, top, radius, cone }, or null. */
+    profile(type) {
+      return profileOf(type);
+    },
+
+    /** How thick a species' trunk is, for a tree of size 1. */
+    trunkRadius(type) {
+      return TRUNK_RADIUS[type] ?? 0.3;
+    },
+
+    /** Whether the deciduous trees are bare now (winter). */
+    get bare() {
+      return bare;
+    },
+
     /** The transform a picked tree is drawn with (world). */
     matrixOf(hit, out = new Matrix4()) {
       const mesh = hit.group.userData.meshes[hit.type];

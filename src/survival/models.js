@@ -88,20 +88,29 @@ export const ironModel = () =>
 
 export const logModel = () => new Parts(11).log([-0.9, 0.2, 0], [0.9, 0.2, 0], 0.2).build();
 
-export const spearModel = () =>
+export const spearModel = (metal = 0x4a4e58) =>
   new Parts(13)
     .add(new CylinderGeometry(0.025, 0.03, 2.0, 5), 0x8a6038, [0, 0, 0], [Math.PI / 2, 0, 0])
-    .add(new ConeGeometry(0.045, 0.2, 4), 0x4a4e58, [0, 0, 1.08], [Math.PI / 2, 0, 0])
+    .add(new ConeGeometry(0.045, 0.2, 4), metal, [0, 0, 1.08], [Math.PI / 2, 0, 0])
     .add(new CylinderGeometry(0.035, 0.035, 0.08, 5), 0x4f6a34, [0, 0, 0.95], [Math.PI / 2, 0, 0])
     .build(); // (along +z, its point at the front, centred)
 
-export const axeModel = () =>
+export const axeModel = (metal = 0x8e8a84, edge = 0xbcb8b0) =>
   new Parts(15)
     .add(new CylinderGeometry(0.022, 0.028, 0.62, 5), 0x8a6038, [0, 0.31, 0])
-    .add(new BoxGeometry(0.2, 0.1, 0.05), 0x8e8a84, [0.07, 0.56, 0], [0, 0, -0.15])
-    .add(new BoxGeometry(0.05, 0.12, 0.052), 0xbcb8b0, [0.17, 0.55, 0], [0, 0, -0.15])
+    .add(new BoxGeometry(0.2, 0.1, 0.05), metal, [0.07, 0.56, 0], [0, 0, -0.15])
+    .add(new BoxGeometry(0.05, 0.12, 0.052), edge, [0.17, 0.55, 0], [0, 0, -0.15])
     .add(new CylinderGeometry(0.032, 0.032, 0.06, 5), 0x4f6a34, [0, 0.5, 0])
     .build(); // (the handle up +y, the head at the top)
+
+/** A pickaxe: a handle, and a curved head pointed both ways. */
+export const pickaxeModel = (metal = 0x8e8a84, edge = 0xbcb8b0) =>
+  new Parts(16)
+    .add(new CylinderGeometry(0.022, 0.028, 0.66, 5), 0x8a6038, [0, 0.33, 0])
+    .add(new BoxGeometry(0.34, 0.06, 0.05), metal, [0, 0.62, 0])
+    .add(new ConeGeometry(0.035, 0.14, 4), edge, [0.22, 0.58, 0], [0, 0, -Math.PI / 2 - 0.4])
+    .add(new ConeGeometry(0.035, 0.14, 4), edge, [-0.22, 0.58, 0], [0, 0, Math.PI / 2 + 0.4])
+    .build();
 
 export const meatModel = (cooked = false) =>
   new Parts(17)
@@ -216,3 +225,157 @@ export const bonesModel = () =>
     .add(new CylinderGeometry(0.02, 0.02, 0.42, 4), 0xe0d8c4, [-0.25, 0.02, -0.1], [0, -0.5, Math.PI / 2])
     .add(new IcosahedronGeometry(0.03, 0), 0xe8e0cc, [0.55, 0.02, 0.3])
     .build();
+
+// --- More tools and things ------------------------------------------------------
+
+/** A bow, held upright: a bent stave and its string. */
+export function bowModel() {
+  const b = new Parts(41);
+  const n = 7;
+  for (let k = 0; k < n; k++) {
+    const a0 = -0.75 + (1.5 * k) / n, a1 = a0 + 1.5 / n;
+    const p0 = [0, Math.sin(a0) * 0.55, -Math.cos(a0) * 0.18 + 0.18], p1 = [0, Math.sin(a1) * 0.55, -Math.cos(a1) * 0.18 + 0.18];
+    b.log(p0, p1, 0.018, 0x8a5d38, 0x8a5d38, 5);
+  }
+  b.add(new CylinderGeometry(0.004, 0.004, 1.02, 3), 0xe8e0cc, [0, 0, 0.055]);
+  return b.build();
+}
+
+/** An arrow, along +z (the point at the front). */
+export const arrowModel = () =>
+  new Parts(43)
+    .add(new CylinderGeometry(0.008, 0.008, 0.75, 4), 0x9a6e44, [0, 0, 0], [Math.PI / 2, 0, 0])
+    .add(new ConeGeometry(0.02, 0.07, 4), 0x3e4250, [0, 0, 0.4], [Math.PI / 2, 0, 0])
+    .add(new BoxGeometry(0.002, 0.04, 0.1), 0xe8e0d0, [0, 0.015, -0.32])
+    .add(new BoxGeometry(0.04, 0.002, 0.1), 0xe8e0d0, [0, 0, -0.32])
+    .build();
+
+export const rodModel = () =>
+  new Parts(45)
+    .add(new CylinderGeometry(0.008, 0.02, 1.8, 5), 0x8a5d38, [0, 0.9, 0])
+    .add(new CylinderGeometry(0.025, 0.025, 0.12, 6), 0x4f6a34, [0, 0.35, 0])
+    .build();
+
+export const bobberModel = () =>
+  new Parts(47)
+    .add(new IcosahedronGeometry(0.05, 0), 0xd83a2a, [0, 0.02, 0])
+    .add(new IcosahedronGeometry(0.045, 0), 0xf4f0e8, [0, -0.03, 0])
+    .build();
+
+export const waterskinModel = () =>
+  new Parts(49)
+    .add(new DodecahedronGeometry(0.13, 0), 0xa8743e, [0, 0.12, 0], [0, 0, 0], [1, 1.3, 0.7])
+    .add(new CylinderGeometry(0.03, 0.035, 0.08, 6), 0x5a3c24, [0, 0.29, 0])
+    .build();
+
+export const potModel = () =>
+  new Parts(51)
+    .add(new CylinderGeometry(0.2, 0.15, 0.22, 8), 0x4a5058, [0, 0.11, 0])
+    .add(new CylinderGeometry(0.22, 0.22, 0.03, 8), 0x6e7680, [0, 0.22, 0])
+    .build();
+
+export const ironBarModel = () => new Parts(53).add(new BoxGeometry(0.3, 0.07, 0.1), 0xa4acb4, [0, 0.035, 0], [0, 0, 0], [1, 1, 1], 0.03).build();
+
+export const fishModel = (cooked = false) =>
+  new Parts(55)
+    .add(new OctahedronGeometry(0.1, 0), cooked ? 0xa8703a : 0x8aa4b4, [0, 0.05, 0], [0, 0, 0], [0.8, 0.8, 2.4])
+    .add(new ConeGeometry(0.07, 0.1, 4), cooked ? 0x8a5a2a : 0x6a8494, [0, 0.05, -0.26], [-Math.PI / 2, 0, 0], [0.3, 1, 1])
+    .build();
+
+/** A stone furnace: a squat dome of stones with a fire-mouth at the front. */
+export function furnaceModel() {
+  const b = new Parts(57);
+  const rand = mulberry32(3);
+  for (let ring = 0; ring < 4; ring++) {
+    const r = 0.62 - ring * 0.13, y = 0.15 + ring * 0.27, n = 9 - ring;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 + ring * 0.4;
+      if (ring === 0 && Math.abs(a - Math.PI / 2) < 0.4) continue; // (the mouth, at the front)
+      b.add(new DodecahedronGeometry(0.2 + rand() * 0.05, 0), 0x8a867e, [Math.cos(a) * r, y, Math.sin(a) * r], [k, ring, 0], [1.1, 0.8, 1]);
+    }
+  }
+  b.add(new CylinderGeometry(0.16, 0.2, 0.3, 7), 0x6a665e, [0, 1.25, 0]); // (the chimney)
+  b.add(new CylinderGeometry(0.42, 0.46, 0.9, 8), 0x3a3430, [0, 0.45, 0]); // (dark inside)
+  return b.build();
+}
+
+/** A bed: a frame of logs, a wool mattress and a blanket of skins. */
+export function bedModel() {
+  return new Parts(59)
+    .log([-0.5, 0.15, -1.0], [-0.5, 0.15, 1.0], 0.1, 0x6e4c32, 0xc8a070, 6)
+    .log([0.5, 0.15, -1.0], [0.5, 0.15, 1.0], 0.1, 0x6e4c32, 0xc8a070, 6)
+    .log([-0.6, 0.15, -1.0], [0.6, 0.15, -1.0], 0.1, 0x6e4c32, 0xc8a070, 6)
+    .log([-0.6, 0.15, 1.0], [0.6, 0.15, 1.0], 0.1, 0x6e4c32, 0xc8a070, 6)
+    .add(new BoxGeometry(0.95, 0.16, 1.95), 0xece6d8, [0, 0.3, 0])
+    .add(new BoxGeometry(0.7, 0.12, 0.35), 0xf6f2e8, [0, 0.42, -0.72])
+    .add(new BoxGeometry(1.0, 0.06, 1.2), 0xa8743e, [0, 0.4, 0.35])
+    .log([-0.6, 0.1, -1.05], [-0.6, 0.8, -1.05], 0.08, 0x5a3c24, 0xc8a070, 6)
+    .log([0.6, 0.1, -1.05], [0.6, 0.8, -1.05], 0.08, 0x5a3c24, 0xc8a070, 6)
+    .build();
+}
+
+/** A gate in a palisade: two tall posts (the frame)... */
+export function gateFrameModel() {
+  const b = new Parts(61);
+  for (const x of [-WALL_LENGTH / 2 + 0.2, WALL_LENGTH / 2 - 0.2]) {
+    b.add(new CylinderGeometry(0.22, 0.24, 3.8, 7), 0x6e5438, [x, 1.6, 0]);
+    b.add(new ConeGeometry(0.22, 0.55, 7), 0xb0946a, [x, 3.77, 0]);
+  }
+  b.log([-WALL_LENGTH / 2 + 0.1, 3.2, 0], [WALL_LENGTH / 2 - 0.1, 3.2, 0], 0.13, 0x6a5238, 0xb89468, 6);
+  return b.build();
+}
+/** ...and its door: planks of split logs, hinged at its left edge (x = 0), braced. */
+export function gateDoorModel() {
+  const b = new Parts(63);
+  const w = WALL_LENGTH - 0.9, n = 8;
+  for (let k = 0; k < n; k++) b.add(new BoxGeometry(w / n - 0.02, 2.8, 0.14), 0x8a6a44, [(w / n) * (k + 0.5), 1.45, 0]);
+  for (const y of [0.5, 2.4]) b.add(new BoxGeometry(w, 0.16, 0.08), 0x5a3c24, [w / 2, y, -0.1]);
+  b.add(new BoxGeometry(0.12, 2.3, 0.07), 0x5a3c24, [w / 2, 1.45, -0.12], [0, 0, 0.62]);
+  return b.build();
+}
+export const GATE_DOOR_WIDTH = WALL_LENGTH - 0.9;
+
+/** A drying rack: two A-frames, a pole, and strips of meat hanging from it (see the rack's hooks). */
+export function dryingRackModel() {
+  const b = new Parts(65);
+  for (const x of [-0.7, 0.7]) {
+    b.log([x, 0, -0.35], [x, 1.25, 0], 0.035, 0x8a5d38, 0xc8a070, 5);
+    b.log([x, 0, 0.35], [x, 1.25, 0], 0.035, 0x8a5d38, 0xc8a070, 5);
+  }
+  b.log([-0.85, 1.18, 0], [0.85, 1.18, 0], 0.03, 0x8a5d38, 0xc8a070, 5);
+  return b.build();
+}
+export const meatStripModel = (dry = false) => new Parts(67).add(new BoxGeometry(0.1, 0.36, 0.03), dry ? 0x6a2e18 : 0xb84040, [0, -0.2, 0]).build();
+
+/** A snare: two sticks and a noose of vine across a run in the grass. */
+export function snareModel() {
+  const b = new Parts(69);
+  b.log([-0.2, 0, 0], [-0.18, 0.4, 0], 0.015, 0x8a5d38, 0xc8a070, 4);
+  b.log([0.2, 0, 0], [0.18, 0.4, 0], 0.015, 0x8a5d38, 0xc8a070, 4);
+  b.log([-0.22, 0.36, 0], [0.22, 0.36, 0], 0.012, 0x8a5d38, 0xc8a070, 4);
+  for (let k = 0; k < 8; k++) {
+    const a0 = (k / 8) * Math.PI * 2, a1 = ((k + 1) / 8) * Math.PI * 2;
+    b.log([Math.cos(a0) * 0.1, 0.12 + Math.sin(a0) * 0.1, 0], [Math.cos(a1) * 0.1, 0.12 + Math.sin(a1) * 0.1, 0], 0.006, 0x4f8a34, 0x4f8a34, 3);
+  }
+  b.log([0, 0.22, 0], [0, 0.36, 0], 0.006, 0x4f8a34, 0x4f8a34, 3);
+  return b.build();
+}
+/** A rabbit caught in one. */
+export const caughtModel = () =>
+  new Parts(71)
+    .add(new DodecahedronGeometry(0.13, 0), 0x9a8468, [0, 0.08, 0], [0, 0, 0.3], [1.5, 0.8, 1])
+    .add(new DodecahedronGeometry(0.07, 0), 0x8a765c, [0.18, 0.08, 0])
+    .add(new BoxGeometry(0.04, 0.02, 0.12), 0x8a765c, [0.24, 0.1, 0.05], [0, 0.4, 0])
+    .build();
+
+/** A raft: logs lashed side by side, with two cross-pieces. */
+export function raftModel() {
+  const b = new Parts(73);
+  for (let k = 0; k < 6; k++) {
+    const x = -0.95 + k * 0.38;
+    b.log([x, 0.15, -1.3], [x, 0.15, 1.3], 0.19, 0x7a5232, 0xc8a070, 7);
+  }
+  for (const z of [-0.9, 0.9]) b.log([-1.2, 0.36, z], [1.2, 0.36, z], 0.08, 0x6a4a2e, 0xc8a070, 6);
+  for (const z of [-0.9, 0.9]) for (let k = 0; k < 6; k++) b.add(new BoxGeometry(0.2, 0.06, 0.22), 0x4f6a34, [-0.95 + k * 0.38, 0.34, z]);
+  return b.build();
+}

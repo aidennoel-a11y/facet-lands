@@ -32,6 +32,10 @@ const SPECIES = {
   wolf: { ground: true, grade: 0.8, model: Models.wolf, max: 24, walk: 1.4, run: 12, flee: 40, calm: 110, radius: 0.35, height: 0.9, health: 70, stride: 1.3, turn: 3, size: 1.25, forager: true, call: 'howl' },
   coyote: { ground: true, grade: 0.8, model: Models.coyote, max: 16, walk: 1.3, run: 11, flee: 35, calm: 100, radius: 0.28, height: 0.7, health: 40, stride: 1.1, turn: 3.5, size: 0.95, forager: true, call: 'yip' },
   fox: { ground: true, grade: 0.85, model: Models.fox, max: 14, walk: 1.1, run: 10, flee: 25, calm: 70, radius: 0.2, height: 0.5, health: 20, stride: 0.8, turn: 4, size: 0.62, forager: true },
+  // Sheep in flocks on the open plains (a black face, a woolly fleece);
+  // wolf pups by their den.
+  sheep: { ground: true, grade: 0.7, model: Models.sheep, max: 40, walk: 1.0, run: 7.5, flee: 22, calm: 70, radius: 0.45, height: 1.0, health: 60, stride: 1.1, turn: 2.5, size: 1.1, call: 'baa' },
+  wolfPup: { ground: true, grade: 0.8, model: Models.wolf, max: 12, walk: 1.2, run: 8, flee: 12, calm: 40, radius: 0.2, height: 0.5, health: 20, stride: 0.7, turn: 4, size: 0.55, forager: true },
   rabbit: { ground: true, grade: 0.58, model: Models.rabbit, max: 40, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.3, height: 0.55, health: 10, stride: 1.0, turn: 5, size: 1.8 },
   songbird: { bird: true, model: Models.songbird, max: 60, scale: 1.6, flee: 9, radius: 0.25, health: 2 },
   starling: { bird: true, model: Models.starling, max: 60, scale: 1.45, flee: 22, radius: 0.25, health: 2 },
@@ -43,7 +47,7 @@ const SPECIES = {
 // come for you (`predator`: how far off they see you, how near you can come
 // before they come for you anyway, how hard they bite or swipe, how often,
 // and from how far).
-const BULK = { deer: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', wolf: 'medium', coyote: 'medium', fox: 'small', rabbit: 'small' };
+const BULK = { deer: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', wolf: 'medium', coyote: 'medium', sheep: 'medium', fox: 'small', rabbit: 'small', wolfPup: 'small' };
 for (const [kind, sp] of Object.entries(SPECIES)) sp.bulk = BULK[kind] ?? 'small';
 SPECIES.wolf.predator = { sight: 70, close: 22, bite: 11, every: 1.3, reach: 1.4 };
 SPECIES.grizzly.predator = { sight: 55, close: 25, bite: 30, every: 1.7, reach: 2.0 };
@@ -52,7 +56,7 @@ SPECIES.blackBear.predator = { sight: 35, close: 16, bite: 22, every: 1.6, reach
 // die (a blow to the head brings one down; one more finishes it).
 const BLOWS = { large: [3, 5, 6], medium: [2, 3, 4], small: [1, 2, 2] };
 // What a carcass gives when butchered.
-const YIELD = { deer: { rawMeat: 4, deerSkin: 1 }, bison: { rawMeat: 6 }, blackBear: { rawMeat: 5 }, grizzly: { rawMeat: 6 }, wolf: { rawMeat: 2 }, coyote: { rawMeat: 2 }, fox: { rawMeat: 1 }, rabbit: { rawMeat: 1 } };
+const YIELD = { sheep: { rawMeat: 3, wool: 3 }, wolfPup: { rawMeat: 1 }, deer: { rawMeat: 4, deerSkin: 1 }, bison: { rawMeat: 6 }, blackBear: { rawMeat: 5 }, grizzly: { rawMeat: 6 }, wolf: { rawMeat: 2 }, coyote: { rawMeat: 2 }, fox: { rawMeat: 1 }, rabbit: { rawMeat: 1 } };
 
 // Songbirds come in colours: robins, finches, jays, wrens, sparrows.
 const SONGBIRD_TINTS = [0xc0703a, 0xd8b040, 0x5a7ab8, 0x8a6a4a, 0xa89878, 0xb04030];
@@ -248,6 +252,8 @@ export class Wildlife {
 
   // A wolf or a bear comes for you (and a wolf's pack with it).
   #enrage(a) {
+    if (!SPECIES[a.kind].predator) return;
+    a.hibernating = false;
     if (!a.hunting) this.ctx?.sound?.call(a.kind === 'wolf' ? 'snarl' : 'growl', this.ctx.pan(a.x, a.z), 0.8);
     a.hunting = true;
     a.notice = 9;
@@ -255,33 +261,56 @@ export class Wildlife {
     if (a.herd) {
       a.herd.hunting = true;
       a.herd.fleeTime = 0;
-      for (const m of a.herd.members) if (m.alive && !m.lame && !m.down) (m.hunting = true), (m.notice = 9);
+      for (const m of a.herd.members) if (m.alive && !m.lame && !m.down && SPECIES[m.kind].predator) (m.hunting = true), (m.notice = 9);
     }
   }
 
-  // A wolf or a bear watching for you: it notices you if you're in sight
-  // a moment (less far off if you keep low), at once if you come close,
-  // and hunts you down; it gives up once you're well away.
+  // A wolf or a bear watching for you: it notices you if you're in sight a
+  // while (less far off if you keep low, or the trees are thick between,
+  // further if the wind carries your scent to it), and warns you (a growl,
+  // a snarl) and comes stalking before it charges; up close, or at its den,
+  // at once. It gives up once you're well away.
   #stalk(a, sp, t, dt, ctx) {
     const p = ctx.player, pr = sp.predator;
     const able = p && p.mode === 'walk' && p.alive && !ctx.tame && !a.lame && !a.down;
     if (!able) {
       a.hunting = false;
+      a.stalking = false;
       a.notice = 0;
       if (a.herd) a.herd.hunting = false;
       return;
     }
-    const sight = pr.sight * (p.crouch ? 0.55 : 1) * (0.7 + 0.3 * ctx.day);
-    if (t.d < pr.close * (p.crouch ? 0.7 : 1)) a.notice = 9;
+    a.forestWait = (a.forestWait ?? 0) - dt;
+    if (a.forestWait <= 0) (a.forestWait = 3), (a.forest = ctx.generator.getForestDensity(a.x, a.z));
+    const den = a.herd?.den ?? a.den;
+    const atDen = den && Math.hypot(p.x - den.x, p.z - den.z) < 30;
+    const sight = pr.sight * (p.crouch ? 0.55 : 1) * (0.7 + 0.3 * ctx.day) * (1 - 0.55 * (a.forest ?? 0)) * this.#scent(a, ctx);
+    if (t.d < pr.close * (p.crouch ? 0.7 : 1) || atDen) a.notice = Math.max(a.notice ?? 0, 2.4);
     else if (t.d < sight) a.notice = (a.notice ?? 0) + dt;
     else a.notice = Math.max(0, (a.notice ?? 0) - dt * 0.5);
-    if (!a.hunting && a.notice > 1.5) this.#enrage(a);
+    // (A warning first: you hear it before it comes.)
+    a.stalking = !a.hunting && a.notice > 0.6;
+    if (a.stalking && !a.warned) {
+      a.warned = true;
+      ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : 'growl', ctx.pan(a.x, a.z), Math.min(0.9, 25 / (t.d + 10)));
+    }
+    if (!a.hunting && a.notice > 2.2) this.#enrage(a);
     if (a.hunting && t.d > pr.sight * 2.5) {
       a.hunting = false;
+      a.warned = false;
       a.notice = 0;
       if (a.herd) a.herd.hunting = false;
     }
     if (a.herd?.hunting && !a.hunting) (a.hunting = true), (a.notice = 9);
+  }
+
+  // How far your scent carries to it: further downwind of you, less upwind.
+  #scent(a, ctx) {
+    const w = ctx.windDir, p = ctx.player;
+    if (!w || !p) return 1;
+    const dx = a.x - p.x, dz = a.z - p.z, d = Math.hypot(dx, dz) || 1;
+    const along = (dx * w.x + dz * w.y) / d; // (1: it's straight downwind of you)
+    return along > 0 ? 1 + 0.8 * along : 1 + 0.3 * along;
   }
 
   // --- Coming and going -----------------------------------------------------
@@ -475,7 +504,7 @@ export class Wildlife {
       if (p.y < ctx.seaLevel + 1) continue;
       const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
       if (((m > 0.18 && m < 0.65) || w.smoky > 0.5) && w.temperate + w.pine + w.smoky > 0.5 && g.getForestDensity(p.x, p.z) > 0.05) {
-        if (rand() < 0.22) {
+        if (rand() < 0.22 && ctx.winter < 0.5) { // (in winter they're asleep in their dens: see below)
           const from = this.animals.length;
           const kind = rand() < 0.35 + 0.5 * (m - 0.18) ? 'grizzly' : 'blackBear';
           this.#spawnWalker(kind, p.x, p.z, null);
@@ -554,8 +583,59 @@ export class Wildlife {
         own(from);
       }
     }
+    // Sheep: flocks out on the open plains.
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if (p.y > ctx.seaLevel + 1 && w.temperate > 0.6 && g.getPlainness(p.x, p.z) > 0.3 && g.getForestDensity(p.x, p.z) < 0.35 && g.getMountainness(p.x, p.z) < 0.3 && rand() < 0.18) {
+        const from = this.animals.length;
+        const herd = this.#spawnHerd('sheep', p, 5 + Math.floor(rand() * 8));
+        if (herd) home.herds.push(herd);
+        own(from);
+      }
+    }
+    // Dens in the mouths of caves: a wolf pack with its pups, or a bear
+    // (in the winter, asleep in there till spring).
+    for (const e of g.caves?.mouthsNear(cx * C, cz * C, (cx + 1) * C, (cz + 1) * C) ?? []) {
+      const m = e.mouth;
+      if (m.x < cx * C || m.x >= (cx + 1) * C || m.z < cz * C || m.z >= (cz + 1) * C) continue;
+      const w = g.getBiomeWeights(m.x, m.z, {}), f = g.getForestDensity(m.x, m.z);
+      if (!(w.temperate + w.pine + w.smoky + w.blackHills > 0.5 && f > 0.1)) continue;
+      const roll = hash2(Math.round(m.x), Math.round(m.z), ctx.seed ^ 0xd3d);
+      const kind = roll < 0.35 && (w.pine > 0.3 || g.getSeasonality(m.x, m.z) > 0.55) ? 'wolves' : roll > 0.65 ? 'bear' : null;
+      if (!kind) continue;
+      const from = this.animals.length;
+      // (Just outside the mouth, where the ground's firm.)
+      let spot = null;
+      for (let k = 0; k < 8 && !spot; k++) {
+        const a = (k / 8) * TAU, x = m.x + Math.sin(a) * 6, z = m.z + Math.cos(a) * 6;
+        const y = ctx.ground(x, z);
+        if (y > ctx.seaLevel + 1 && this.#slope(x, z, ctx) < 0.5) spot = { x, z, y };
+      }
+      if (!spot) continue;
+      const den = { x: spot.x, z: spot.z };
+      if (kind === 'wolves') {
+        const herd = this.#spawnHerd('wolf', spot, 3 + Math.floor(rand() * 3));
+        if (!herd) continue;
+        herd.den = den;
+        const pups = 2 + Math.floor(rand() * 2);
+        for (let k = 0; k < pups; k++) this.#spawnWalker('wolfPup', spot.x + rnd(-2, 2), spot.z + rnd(-2, 2), herd);
+        for (const a of herd.members) if (a.kind === 'wolfPup') a.offset = { x: rnd(-2, 2), z: rnd(-2, 2) };
+        home.herds.push(herd);
+      } else {
+        this.#spawnWalker(rand() < 0.5 ? 'grizzly' : 'blackBear', spot.x, spot.z, null);
+        const bear = this.animals.length > from ? this.animals[this.animals.length - 1] : null;
+        if (bear) {
+          bear.den = den;
+          bear.home = den;
+          if (ctx.winter > 0.5) bear.hibernating = true;
+        }
+      }
+      own(from);
+    }
     return home;
   }
+
 
   #coastSpot(ctx) {
     const { camera, generator: g, seaLevel } = ctx;
@@ -762,7 +842,7 @@ export class Wildlife {
     const call = SPECIES[herd.kind]?.call;
     if (call && lead) {
       herd.callWait = (herd.callWait ?? rnd(10, 40)) - dt;
-      const dark = call === 'howl' ? ctx.night : Math.max(ctx.night, ctx.dusk);
+      const dark = call === 'howl' ? ctx.night : call === 'baa' ? 1 : Math.max(ctx.night, ctx.dusk);
       const d = Math.hypot(lead.x - ctx.camera.position.x, lead.z - ctx.camera.position.z);
       if (herd.callWait <= 0) {
         herd.callWait = rnd(25, 70);
@@ -776,7 +856,10 @@ export class Wildlife {
       herd.goalWait = rnd(20, 50);
       const a = rnd(0, TAU), d = rnd(15, 45);
       const lead = herd.members[0];
-      if (lead) herd.goal = { x: lead.x + Math.sin(a) * d, z: lead.z + Math.cos(a) * d };
+      // (In the autumn the grazing herds drift south, in the spring back north.)
+      const migrate = herd.kind === 'deer' || herd.kind === 'bison' || herd.kind === 'sheep' ? ((ctx.autumn ?? 0) - (ctx.spring ?? 0)) * 30 : 0;
+      if (lead) herd.goal = { x: lead.x + Math.sin(a) * d, z: lead.z + Math.cos(a) * d + migrate };
+      if (herd.den && lead) herd.goal = { x: herd.den.x + rnd(-12, 12), z: herd.den.z + rnd(-12, 12) }; // (a pack keeps near its den)
     }
     // Where it is (its middle): the members keep together.
     let x = 0, z = 0;
@@ -795,6 +878,19 @@ export class Wildlife {
       a.headDown += (Math.sin(a.struggle * 2.1) * 0.5 - a.headDown) * Math.min(1, dt * 3);
       return;
     }
+    if (a.hibernating && a.alive) {
+      // Asleep in its den for the winter, till something wakes it: you
+      // coming close, running near, a blow.
+      a.lie = 1;
+      a.state = 'rest';
+      a.speed = 0;
+      const p = ctx.player, c = ctx.camera.position;
+      const d = Math.hypot(a.x - c.x, a.z - c.z);
+      if (!ctx.tame && p?.mode === 'walk' && (d < 7 || (p.sprint && d < 20) || a.hits)) this.#enrage(a);
+      const y = ctx.ground(a.x, a.z);
+      if (y === y) a.y = y;
+      return;
+    }
     if (!a.alive) {
       // Down on its side, where it fell.
       a.deadTime += dt;
@@ -811,7 +907,7 @@ export class Wildlife {
     // them): they bolt.
     const p = ctx.player, onFoot = p && p.mode === 'walk' && p.alive;
     const stance = !onFoot ? 1 : p.crouch ? (p.moving ? 0.45 : 0.3) : p.sprint ? 1.5 : p.moving ? 1 : 0.6;
-    const reach = sp.flee * stance * (t.above > 25 ? 0.5 : 1);
+    const reach = sp.flee * stance * (t.above > 25 ? 0.5 : 1) * (onFoot ? this.#scent(a, ctx) : 1);
     if (sp.predator) this.#stalk(a, sp, t, dt, ctx);
     if (!ctx.tame && !a.hunting && t.d < reach && t.above < 50) {
       if (herd) {
@@ -934,8 +1030,19 @@ export class Wildlife {
         if (a.state === 'rest' || a.state === 'graze' || a.state === 'drink') (a.state = 'walk'), (a.timer = rnd(2, 4));
       }
     }
+    // Stalking you: coming on, slowly, head low.
+    if (a.stalking && !a.hunting && !fleeing) {
+      want = Math.atan2(p.x - a.x, p.z - a.z);
+      speed = t.d > 8 ? sp.walk * 1.2 : 0;
+      a.state = 'stalk';
+    }
     // Lame: it can only hobble.
     if (a.lame) speed *= 0.45;
+    // Wounded, it leaves a trail of blood.
+    if ((a.hits || a.lame) && a.speed > 0.3) {
+      a.bled = (a.bled ?? 0) + a.speed * dt;
+      if (a.bled > 1.2) (a.bled = 0), ctx.bleed?.(a.x + rnd(-0.2, 0.2), a.z + rnd(-0.2, 0.2), a.lame ? 1 : 0.6);
+    }
     // Where it looks: at you when alert, about it when looking round, a
     // little from side to side as it grazes, and the way it's turning.
     let yaw = 0;
@@ -1054,7 +1161,7 @@ export class Wildlife {
     if (up === up && down === down) a.pitch += (-Math.atan2(up - down, 2 * L) * 0.3 - a.pitch) * Math.min(1, dt * 6);
     // Head down to graze, up when alarmed.
     a.lunge = Math.max(0, (a.lunge ?? 0) - dt);
-    const headWant = a.lunge > 0 ? 0.55 : fleeing ? -0.15 : { graze: 1, drink: 1.15, alert: -0.25, look: -0.05, rest: 0.35, hunt: 0.15 }[a.state] ?? 0.1;
+    const headWant = a.lunge > 0 ? 0.55 : fleeing ? -0.15 : { graze: 1, drink: 1.15, alert: -0.25, look: -0.05, rest: 0.35, hunt: 0.15, stalk: 0.45 }[a.state] ?? 0.1;
     a.headDown += (headWant - a.headDown) * Math.min(1, dt * 3);
   }
 

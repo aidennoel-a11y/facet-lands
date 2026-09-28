@@ -2,14 +2,14 @@ import { Group, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, Quaternion, V
 import { hash2 } from '../noise/random.js';
 import { Inventory } from './Inventory.js';
 import { ITEMS } from './items.js';
-import { axeModel, bundleModel, flintModel, ironModel, logModel, meatModel, rockModel, skinModel, spearModel, stickModel } from './models.js';
+import { arrowModel, axeModel, bowModel, bundleModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, stickModel, waterskinModel } from './models.js';
 
 const m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s = new Vector3(), up = new Vector3(0, 1, 0);
 const hidden = new Matrix4().makeScale(0, 0, 0);
 
 // What lies about on the ground by itself, per kind: its model.
 const NATURAL = { stick: stickModel, rock: rockModel, flint: flintModel };
-const BUNDLE_COLOURS = { berries: 0xb01830, apple: 0xc8261c, mushroom: 0xc49a60, vine: 0x4f8a34, flintSteel: 0x5a6070, coat: 0xa8743e, torch: 0x8a5d38, campfire: 0x7a5232, wall: 0x8a6a44, stake: 0x8a6a44, chest: 0x8a6038 };
+const BUNDLE_COLOURS = { berries: 0xb01830, apple: 0xc8261c, mushroom: 0xc49a60, vine: 0x4f8a34, flintSteel: 0x5a6070, fineFlintSteel: 0x9aa4b0, coat: 0xa8743e, armour: 0x7a5230, torch: 0x8a5d38, campfire: 0x7a5232, wall: 0x8a6a44, gate: 0x8a6a44, stake: 0x8a6a44, chest: 0x8a6038, furnace: 0x8a867e, bed: 0xece6d8, dryingRack: 0x8a5d38, snare: 0x6fae4c, raft: 0x7a5232, jerky: 0x6a2e18, stew: 0x8a4a2a, wool: 0xf0ece0, bandage: 0xece6d8 };
 
 /**
  * Things on the ground to pick up:
@@ -56,7 +56,15 @@ export class GroundItems {
   model(id, variant = '') {
     const key = id + variant;
     if (!this.models[key]) {
-      const make = { stick: stickModel, rock: rockModel, flint: flintModel, iron: ironModel, log: logModel, spear: spearModel, axe: axeModel, rawMeat: () => meatModel(false), cookedMeat: () => meatModel(true), deerSkin: skinModel }[id];
+      const steel = [0xb8c0c8, 0xeef2f6];
+      const make = {
+        stick: stickModel, rock: rockModel, flint: flintModel, iron: ironModel, log: logModel, deerSkin: skinModel,
+        spear: () => spearModel(), steelSpear: () => spearModel(0x9aa4b0),
+        axe: () => axeModel(), steelAxe: () => axeModel(...steel),
+        pickaxe: () => pickaxeModel(), steelPickaxe: () => pickaxeModel(...steel),
+        rawMeat: () => meatModel(false), cookedMeat: () => meatModel(true), rawFish: () => fishModel(false), cookedFish: () => fishModel(true),
+        bow: bowModel, arrow: arrowModel, fishingRod: rodModel, waterskin: waterskinModel, pot: potModel, ironBar: ironBarModel,
+      }[id];
       this.models[key] = make ? make() : bundleModel(BUNDLE_COLOURS[id] ?? 0x9a8a6a);
     }
     return this.models[key];

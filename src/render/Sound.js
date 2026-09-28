@@ -399,6 +399,9 @@ export class Sound {
     } else if (kind === 'rumble') {
       noise(t, 3.5, 70, 0.7, 0.35, 3);
       tone(t, 3, 'sine', 42, 30, 60, 0.7, 0.25);
+    } else if (kind === 'baa') {
+      // A sheep: a wavering bleat.
+      tone(t, 0.7, 'sawtooth', 330 + Math.random() * 60, 300, 900, 1.5, 0.08, 11);
     } else if (kind === 'chop') {
       // An axe biting wood: a knock and a crack.
       tone(t, 0.12, 'triangle', 190, 120, 400, 1.2, 0.3);

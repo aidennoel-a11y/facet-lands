@@ -92,15 +92,53 @@ export function createMushroomLayer() {
       );
   };
   material.customProgramCacheKey = () => 'mushrooms';
+  const chunks = new Map(); // "cx,cz" -> [{ key, x, y, z, mesh, index }]
+  const hidden = new Matrix4().makeScale(0, 0, 0);
 
-  return {
+  const layer = {
     name: 'mushrooms',
     material,
+    taken: new Set(), // picked (saved with the world)
+
+    /** Whether they're up just now (the autumn, or after rain). */
+    get season() {
+      return Math.max(seasonUniforms.uAutumn.value, 0.6 * seasonUniforms.uWet.value) * (1 - seasonUniforms.uWinter.value);
+    },
+
+    /** The mushroom nearest a ray (within reach) to pick: { item, distance }, or null. */
+    pick(origin, dir, reach) {
+      if (layer.season < 0.35) return null;
+      const C = config0.chunkSize, ccx = Math.floor(origin.x / C), ccz = Math.floor(origin.z / C);
+      let best = null;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        for (const it of chunks.get(`${ccx + dx},${ccz + dz}`) ?? []) {
+          if (it.gone || Math.abs(it.x - origin.x) > reach + 1 || Math.abs(it.z - origin.z) > reach + 1) continue;
+          const ox = it.x - origin.x, oy = it.y + 0.1 - origin.y, oz = it.z - origin.z;
+          const t = ox * dir.x + oy * dir.y + oz * dir.z;
+          if (t < 0 || t > reach + 0.3) continue;
+          const off = Math.sqrt(Math.max(0, ox * ox + oy * oy + oz * oz - t * t));
+          if (off > 0.35 + t * 0.05) continue;
+          if (!best || t < best.distance) best = { item: it, distance: t };
+        }
+      }
+      return best;
+    },
+
+    /** Picks it: gone for good. */
+    take(hit) {
+      const it = hit.item;
+      it.gone = true;
+      layer.taken.add(it.key);
+      it.mesh.setMatrixAt(it.index, hidden);
+      it.mesh.instanceMatrix.needsUpdate = true;
+    },
 
     reuseKey: ({ lod }) => (lod > 0 ? 'none' : 'near'),
 
     build({ cx, cz, lod, prepared, groundHeightAt, generator, config }) {
       if (lod > 0 || !prepared?.trees) return null;
+      config0 = config;
+      const found = [];
       const size = config.chunkSize, sea = config.seaLevel;
       const x0 = cx * size, z0 = cz * size;
       const seed = generator.seed ^ 0x5f00d;
@@ -108,10 +146,13 @@ export function createMushroomLayer() {
       const surface = { normalY: 1 };
       const put = (kind, lx, lz, s, turn) => {
         if (lx < 0 || lz < 0 || lx >= size || lz >= size) return;
+        const key = `${cx},${cz},${Math.round(lx * 10)},${Math.round(lz * 10)}`;
+        if (layer.taken.has(key)) return;
         const y = groundHeightAt(lx, lz, surface);
         if (!(y > sea + 0.6) || surface.normalY < 0.75) return;
         position.set(lx, y - 0.01, lz);
         rotation.setFromAxisAngle(up, turn);
+        found.push({ key, x: x0 + lx, y: y - 0.01, z: z0 + lz, kind, index: placed[kind].length });
         placed[kind].push(matrix.compose(position, rotation, scale.set(s, s * (0.85 + 0.3 * (turn % 1)), s)).clone());
       };
       // In the damp woods: a clump by the foot of about one tree in six.
@@ -154,15 +195,21 @@ export function createMushroomLayer() {
         if (!list.length) return;
         const mesh = new InstancedMesh(shapes[k], material, list.length);
         list.forEach((m, n) => mesh.setMatrixAt(n, m));
+        for (const it of found) if (it.kind === k) it.mesh = mesh;
         mesh.computeBoundingSphere();
         mesh.receiveShadow = true;
         group.add(mesh);
       });
+      group.userData.key = `${cx},${cz}`;
+      chunks.set(group.userData.key, found);
       return group;
     },
 
     dispose(group) {
+      if (chunks.get(group.userData.key) && group.userData.key) chunks.delete(group.userData.key);
       for (const mesh of group.children) mesh.dispose(); // (the shapes are shared)
     },
   };
+  let config0 = { chunkSize: 128 };
+  return layer;
 }

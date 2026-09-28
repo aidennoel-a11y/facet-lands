@@ -345,6 +345,41 @@ export function fox() {
   };
 }
 
+/**
+ * A sheep: a fat, lumpy fleece of cream wool on thin black legs, a narrow
+ * black face with the ears sticking out sideways, and a stub of a tail.
+ */
+export function sheep() {
+  const wool = 0xece6d6, woolDark = 0xd8d0bc, face = 0x241e1a;
+  const body = new Blocks()
+    .box(0.52, 0.48, 0.86, wool, [0, 0.7, -0.02], [0, 0, 0], [0.85, 0.9]) // the fleece
+    .box(0.44, 0.2, 0.7, woolDark, [0, 0.95, -0.02], [0, 0, 0], [0.8, 0.9]) // lumpy on top
+    .box(0.3, 0.3, 0.3, wool, [0.14, 0.78, 0.28]) // lumps
+    .box(0.3, 0.3, 0.3, woolDark, [-0.15, 0.74, -0.3])
+    .box(0.28, 0.28, 0.28, wool, [0.12, 0.72, -0.34])
+    .box(0.34, 0.3, 0.28, wool, [0, 0.82, 0.42], [0, 0, 0], [0.8, 0.85]) // the chest
+    .box(0.12, 0.1, 0.1, woolDark, [0, 0.8, -0.48]); // tail
+  return {
+    body: body.build(),
+    headPivot: [0, 0.9, 0.52],
+    head: new Blocks()
+      .box(0.16, 0.2, 0.26, face, [0, -0.02, 0.12], [0.3, 0, 0], [0.8, 0.85]) // long narrow face
+      .box(0.22, 0.14, 0.14, wool, [0, 0.08, 0.0]) // a woolly cap
+      .box(0.14, 0.05, 0.05, face, [0.13, 0.04, 0.04], [0, 0, -0.3]) // ears, out sideways
+      .box(0.14, 0.05, 0.05, face, [-0.13, 0.04, 0.04], [0, 0, 0.3])
+      .box(0.03, 0.03, 0.02, 0xd8c060, [0.07, 0.04, 0.2]) // pale eyes
+      .box(0.03, 0.03, 0.02, 0xd8c060, [-0.07, 0.04, 0.2])
+      .build(),
+    antlers: null,
+    leg: new Blocks()
+      .box(0.1, 0.18, 0.1, woolDark, [0, -0.06, 0])
+      .box(0.06, 0.36, 0.06, face, [0, -0.3, 0])
+      .box(0.07, 0.04, 0.08, 0x141010, [0, -0.48, 0.01])
+      .build(),
+    legs: [[0.14, 0.5, 0.3], [-0.14, 0.5, 0.3], [0.14, 0.5, -0.3], [-0.14, 0.5, -0.3]],
+  };
+}
+
 // --- Birds ------------------------------------------------------------------
 // About 0.3 m long at scale 1 (each kind drawn at its own scale), centred on
 // the body, facing +z. Wings hinge at the shoulders (flapped and folded):

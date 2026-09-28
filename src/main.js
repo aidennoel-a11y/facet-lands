@@ -132,7 +132,8 @@ chunks.addLayer(createVentLayer(WORLD));
 chunks.addLayer(createGeyserLayer(WORLD));
 chunks.addLayer(createCoralLayer(WORLD));
 chunks.addLayer(createLeafLayer());
-chunks.addLayer(createMushroomLayer());
+const mushrooms = createMushroomLayer();
+chunks.addLayer(mushrooms);
 chunks.addLayer(createLavaLayer(WORLD));
 chunks.addLayer(createSeaCoastLayer(WORLD, terrainMaterial));
 chunks.addLayer(createKelpLayer(WORLD));
@@ -232,7 +233,7 @@ function groundNormal(x, z) {
  * A footfall at (x, z) heading `heading` (the player's boot, or an
  * animal's hoof or paw): a print in soft ground, a splash in water.
  */
-function footfall(x, z, heading, shape, size, loud = 0.5) {
+function footfall(x, z, heading, shape, size, loud = 0.5, track = false) {
   const water = waterAt(x, z, true);
   const y = chunks.groundHeightAt(x, z);
   if (!Number.isFinite(y) || water?.frozen) return; // (none on the ice)
@@ -241,8 +242,22 @@ function footfall(x, z, heading, shape, size, loud = 0.5) {
     if (Math.hypot(x - camera.position.x, z - camera.position.z) < 25) sound.call('splash', panTowards(camera, x, z), 0.25 + 0.4 * loud);
     return;
   }
-  const kind = printGround(x, z, y);
+  let kind = printGround(x, z, y);
+  // (An animal's tracks show faintly even in the grass and the dirt: to follow.)
+  if (!kind && track) {
+    const jitter = generator.getColorJitter(x, z);
+    generator.surfaceColor(x, z, y + jitter, 1, printColour, jitter);
+    printColour.multiplyScalar(0.72);
+    kind = 'grass';
+  }
   if (kind) traces.print(x, y, z, heading, shape, size, kind, printColour, groundNormal(x, z));
+}
+// Blood, where a wounded animal's been.
+const BLOOD = new THREE.Color(0x6a0a0a);
+function bleed(x, z, amount = 1) {
+  const y = chunks.groundHeightAt(x, z);
+  if (!Number.isFinite(y) || waterAt(x, z)) return;
+  traces.print(x, y, z, Math.random() * 6.28, PRINT.paw, 0.12 + 0.12 * amount * Math.random(), 'blood', printColour.copy(BLOOD).multiplyScalar(0.8 + Math.random() * 0.4), groundNormal(x, z));
 }
 // The player's steps and strokes.
 const walker = { x: null, z: null, left: false, wet: false, stroke: 0 };
@@ -278,7 +293,7 @@ function playerTraces(dt) {
   walker.x = pos.x;
   walker.z = pos.z;
 }
-const ANIMAL_PRINTS = { deer: [PRINT.hoof, 0.11], bison: [PRINT.hoof, 0.17], blackBear: [PRINT.paw, 0.22], grizzly: [PRINT.paw, 0.26], rabbit: [PRINT.rabbit, 0.09], wolf: [PRINT.paw, 0.12], coyote: [PRINT.paw, 0.09], fox: [PRINT.paw, 0.07] };
+const ANIMAL_PRINTS = { deer: [PRINT.hoof, 0.11], bison: [PRINT.hoof, 0.17], blackBear: [PRINT.paw, 0.22], grizzly: [PRINT.paw, 0.26], rabbit: [PRINT.rabbit, 0.09], wolf: [PRINT.paw, 0.12], wolfPup: [PRINT.paw, 0.07], coyote: [PRINT.paw, 0.09], fox: [PRINT.paw, 0.07], sheep: [PRINT.hoof, 0.08] };
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
 function placeCamera() {
@@ -318,7 +333,18 @@ torches.loadWorld(WORLD.seed);
 // (See Game: your pack, health, hunger, thirst, warmth; crafting, building,
 // felling and hunting; and the world remembering what you've done.)
 const game = new Game({
-  scene, camera, controls, chunks, trees, torches, wildlife, sound, config: WORLD,
+  scene, camera, controls, chunks, trees, rocks, mushrooms, fish, traces, torches, wildlife, sound, config: WORLD,
+  solidHit: (origin, direction, reach) => solidHit(origin, direction, reach),
+  wind: () => clouds.wind,
+  // (A campfire left burning in the dry sets the grass alight.)
+  ignite: (x, y, z) => fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
+  // (Sleeping the night through: on to the next morning.)
+  sleepUntilMorning: () => {
+    const h = dayNight.hour;
+    const days = (h > 6.5 ? 24 - h + 6.5 : 6.5 - h) / 24;
+    dayNight.hour = 6.5;
+    seasons.update(days, 1);
+  },
   hudRoot: document.getElementById('hud'),
   generator: () => generator,
   waterAt: (x, z) => waterAt(x, z),
@@ -331,7 +357,6 @@ const game = new Game({
 });
 chunks.addLayer(game.items.layer);
 game.loadWorld(WORLD.seed);
-game.newLife();
 window.addEventListener('beforeunload', () => game.dirty && game.save());
 // Falls from too high hurt (not into the water).
 controls.onLand = (speed) => {
@@ -539,6 +564,7 @@ const pointer = new THREE.Vector2();
 let press = null;
 canvas.addEventListener('pointerdown', (e) => {
   press = { x: e.clientX, y: e.clientY, time: performance.now(), button: e.button, locked: controls.locked };
+  if (e.button === 0 && (controls.locked || controls.lockFailed || !controls.mouseLock)) game.press(); // (a bow starts to draw)
 });
 canvas.addEventListener('pointerup', (e) => {
   if (!press) return;
@@ -548,8 +574,8 @@ canvas.addEventListener('pointerup', (e) => {
     const r = canvas.getBoundingClientRect();
     at = [r.left + r.width / 2, r.top + r.height / 2];
   } else if (controls.lockFailed || !controls.mouseLock || press.button === 2) {
-    // (The click that takes hold of the mouse doesn't use the item too.)
-    const quick = performance.now() - press.time < 400 && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6;
+    // (The click that takes hold of the mouse doesn't use the item too; a bow may be held drawn.)
+    const quick = (performance.now() - press.time < 400 || game.drawing) && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6;
     if (quick) at = [e.clientX, e.clientY];
   }
   if (at) {
@@ -600,7 +626,7 @@ function solidHit(origin, direction, reach) {
   }
   normal.transformDirection(hit.object.matrixWorld);
   if (normal.dot(direction) > 0) normal.negate(); // caves are seen from inside
-  return { point: hit.point, normal };
+  return { point: hit.point, normal, cave: hit.object.name.startsWith('cave') };
 }
 
 /** Sets a torch where you point: returns whether it went. */
@@ -1105,9 +1131,11 @@ function tick(now) {
   const life = {
     waterAt: (x, z) => waterAt(x, z),
     splash: (x, y, z) => traces.splash(x, y, z, 6, 1.2, 0.6),
+    bleed,
+    autumn: seasonUniforms.uAutumn.value,
     step: (a, x, z, running) => {
       const [shape, size] = ANIMAL_PRINTS[a.kind] ?? [PRINT.hoof, 0.12];
-      footfall(x, z, a.heading, shape, size * a.scale, running ? 1 : 0.35);
+      footfall(x, z, a.heading, shape, size * a.scale, running ? 1 : 0.35, true);
     },
     camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, rocks, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
