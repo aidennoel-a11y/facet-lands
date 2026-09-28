@@ -26,6 +26,7 @@ import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
+import { Game } from './survival/Game.js';
 import { PlayerControls } from './controls/PlayerControls.js';
 import { PlayerBody } from './player/PlayerBody.js';
 import { DayNight } from './render/DayNight.js';
@@ -66,6 +67,7 @@ const drawDistance = WORLD.viewDistance * WORLD.chunkSize;
 scene.fog = new THREE.Fog(0xd6e8f7, drawDistance * 0.45, drawDistance * 0.95);
 
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, drawDistance * 1.5);
+scene.add(camera); // (so what you hold, drawn in front of you, is in the scene)
 
 // Sky dome, sun, moon, stars, lighting and shadows, driven by the time of day.
 const dayNight = new DayNight(scene, WORLD, drawDistance * 1.2);
@@ -145,6 +147,9 @@ chunks.addLayer(farTrees);
 chunks.addLayer(grass);
 const caves = createCaveLayer(WORLD);
 chunks.addLayer(caves);
+// (The iron ore lying in the caves, to pick up: see GroundItems.addCave.)
+caves.onFinds = (cx, cz, features, group) => game.items.addCave(cx, cz, features, group);
+caves.onGone = (cx, cz) => game.items.removeCave(cx, cz);
 chunks.addLayer(createEntranceLayer(WORLD, caves.material));
 chunks.addLayer(rocks);
 chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
@@ -296,14 +301,43 @@ const controls = new PlayerControls(camera, canvas, {
   seaLevel: WORLD.seaLevel,
   waterAt,
   collide: (position, radius) => {
+    const feet = position.y - controls.eyeHeight;
     trees.collide(position, radius, WORLD.chunkSize);
-    generator.caves.collide(position, radius, position.y - controls.eyeHeight);
+    // (Into the leaves a little way, not through them; and they slow you.)
+    controls.speedFactor = trees.leaves(position, radius, feet, controls.eyeHeight + 0.1);
+    game.structures.collide(position, radius, feet);
+    generator.caves.collide(position, radius, feet);
   },
 });
 placeCamera();
 const body = new PlayerBody(scene);
 const torches = new Torches(scene);
 torches.loadWorld(WORLD.seed);
+
+// --- Staying alive -----------------------------------------------------------------
+// (See Game: your pack, health, hunger, thirst, warmth; crafting, building,
+// felling and hunting; and the world remembering what you've done.)
+const game = new Game({
+  scene, camera, controls, chunks, trees, torches, wildlife, sound, config: WORLD,
+  hudRoot: document.getElementById('hud'),
+  generator: () => generator,
+  waterAt: (x, z) => waterAt(x, z),
+  // (The ground at (x, z); from height y, the cave floor if there's one under it.)
+  groundAt: (x, z, y) => {
+    if (y !== undefined) return groundAt(x, y, z).height;
+    const h = chunks.groundHeightAt(x, z);
+    return Number.isFinite(h) ? Math.max(h, rocks.surfaceAt(x, z)) : generator.getHeight(x, z);
+  },
+});
+chunks.addLayer(game.items.layer);
+game.loadWorld(WORLD.seed);
+game.newLife();
+window.addEventListener('beforeunload', () => game.dirty && game.save());
+// Falls from too high hurt (not into the water).
+controls.onLand = (speed) => {
+  const harm = Math.max(0, speed - 13) * 6.5;
+  if (harm > 0) game.hurt(harm, 'a fall');
+};
 
 // --- HUD -----------------------------------------------------------------------
 const minimap = new Minimap(document.getElementById('minimap'));
@@ -363,9 +397,13 @@ ui.seed.value = WORLD.seed;
 function setSeed(seed) {
   WORLD.seed = seed;
   generator = new TerrainGenerator(seed, WORLD);
+  game.trees.removed.clear(); // (the new world's felled trees are loaded below)
   chunks.setGenerator(generator);
   minimap.invalidate();
   torches.loadWorld(seed);
+  if (game.dirty) game.save();
+  game.loadWorld(seed);
+  game.spawn = null;
   wildlife.clear();
   fish.clear();
   fires.clear();
@@ -439,7 +477,14 @@ ui.automove.addEventListener('change', () => {
 ui.fly.addEventListener('change', () => {
   const mode = ui.fly.checked ? 'fly' : 'walk';
   controls.setMode(mode);
+  // (Where you first set foot in a world is where you come back to after dying.)
+  if (mode === 'walk' && !game.spawn) {
+    const { x, z } = camera.position;
+    game.spawn = { x, y: Math.max(chunks.groundHeightAt(x, z) || generator.getHeight(x, z), WORLD.seaLevel) + 1.8, z };
+  }
 });
+// Peaceful (for testing): the wolves and bears leave you be, and nothing runs from you.
+const peaceful = document.getElementById('peaceful');
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
   // P (or F3) shows and hides everything on screen but the crosshair: the
@@ -447,7 +492,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP' || e.code === 'F3') {
     e.preventDefault();
     const hide = !ui.panel.hidden;
-    for (const el of [ui.panel, ui.minimap, ui.hotbar]) if (el) el.hidden = hide;
+    for (const el of [ui.panel, ui.minimap, ui.hotbar, document.getElementById('hud')]) if (el) el.hidden = hide;
     return;
   }
   if (e.code === 'KeyX') ui.mouseLock?.click();
@@ -474,23 +519,21 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// --- Hotbar and placing things --------------------------------------------------
-const hotbar = new Hotbar(document.getElementById('hotbar'), [
-  { id: 'torch', name: 'Torch', icon: 'torch' },
-  { id: 'pickup', name: 'Pick up torch', icon: 'pickup' },
-]);
+// --- Hotbar, and using what's in your hand -----------------------------------------
+const hotbar = new Hotbar(document.getElementById('hotbar'), game.inventory);
+game.hotbar = hotbar;
 
 // Scroll through the hotbar while walking (flying uses the wheel for speed).
 canvas.addEventListener(
   'wheel',
   (e) => {
-    if (controls.mode === 'walk') hotbar.step(e.deltaY > 0 ? 1 : -1);
+    if (controls.mode === 'walk' && !game.hud.busy) hotbar.step(e.deltaY > 0 ? 1 : -1);
   },
   { passive: true },
 );
 
-// A quick click or tap (not a drag to look around) uses the selected item
-// where you point; right-click always picks a torch back up.
+// A quick click (not a drag to look around) uses what's in your hand where
+// you point (see Game.use); right-click throws a spear, or picks up.
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let press = null;
@@ -499,18 +542,31 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 canvas.addEventListener('pointerup', (e) => {
   if (!press) return;
+  let at = null;
   if (press.locked) {
-    // (The mouse held in the middle: the item goes where the crosshair is.)
+    // (The mouse held in the middle: where the crosshair is.)
     const r = canvas.getBoundingClientRect();
-    useItem(r.left + r.width / 2, r.top + r.height / 2, press.button === 2 ? { id: 'pickup' } : hotbar.selected);
+    at = [r.left + r.width / 2, r.top + r.height / 2];
   } else if (controls.lockFailed || !controls.mouseLock || press.button === 2) {
     // (The click that takes hold of the mouse doesn't use the item too.)
     const quick = performance.now() - press.time < 400 && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6;
-    if (quick) useItem(e.clientX, e.clientY, press.button === 2 ? { id: 'pickup' } : hotbar.selected);
+    if (quick) at = [e.clientX, e.clientY];
+  }
+  if (at) {
+    const ray = rayAt(at[0], at[1]);
+    if (press.button === 2) game.alt(ray);
+    else game.use(ray, placeTorch);
   }
   press = null;
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+function rayAt(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  return { origin: raycaster.ray.origin.clone(), direction: raycaster.ray.direction.clone() };
+}
 
 /** Terrain and cave meshes you can put things on, near the camera. */
 function solidTargets() {
@@ -529,23 +585,12 @@ function solidTargets() {
   return out;
 }
 
-function useItem(clientX, clientY, item) {
-  if (!item) return;
-  const rect = canvas.getBoundingClientRect();
-  pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
-  raycaster.setFromCamera(pointer, camera);
-  const reach = controls.mode === 'walk' ? 8 : 150;
-
-  if (item.id === 'pickup') {
-    if (!torches.removeAlongRay(raycaster.ray, reach)) hotbar.flash('Point at a torch to pick it up');
-    return;
-  }
+/** Where a ray meets the ground (or a cave's rock) within `reach`: { point, normal }, or null. */
+function solidHit(origin, direction, reach) {
+  raycaster.set(origin, direction);
   raycaster.far = reach;
   const hit = raycaster.intersectObjects(solidTargets(), false)[0];
-  if (!hit) {
-    hotbar.flash(controls.mode === 'walk' ? 'Too far away: get closer' : 'Point at the ground');
-    return;
-  }
+  if (!hit) return null;
   const normal = hit.face.normal.clone();
   if (hit.instanceId !== undefined) {
     // Rocks are instanced: turn the normal by that rock's own transform too.
@@ -554,8 +599,22 @@ function useItem(clientX, clientY, item) {
     normal.transformDirection(instance);
   }
   normal.transformDirection(hit.object.matrixWorld);
-  if (normal.dot(raycaster.ray.direction) > 0) normal.negate(); // caves are seen from inside
-  if (item.id === 'torch' && !torches.place(hit.point, normal)) hotbar.flash("Torches can't hang from a ceiling");
+  if (normal.dot(direction) > 0) normal.negate(); // caves are seen from inside
+  return { point: hit.point, normal };
+}
+
+/** Sets a torch where you point: returns whether it went. */
+function placeTorch(origin, direction) {
+  const hit = solidHit(origin, direction, 6);
+  if (!hit) {
+    hotbar.flash('Point at the ground or a wall nearby');
+    return false;
+  }
+  if (!torches.place(hit.point, hit.normal)) {
+    hotbar.flash("Torches can't hang from a ceiling");
+    return false;
+  }
+  return true;
 }
 
 // --- What to draw ---------------------------------------------------------------
@@ -1030,7 +1089,14 @@ function tick(now) {
   const autumn = seasonUniforms.uAutumn.value, spring = seasonUniforms.uSpring.value, winter = seasonUniforms.uWinter.value;
   fallingLeaves.update(dt, camera, trees.crowns, WORLD.chunkSize, (x, z) => chunks.groundHeightAt(x, z), { autumn, spring, winter, summer: Math.max(0, 1 - autumn - spring - winter) }, wind, windDirection.value, sheltered);
   body.update(controls, dt);
-  torches.update(now / 1000, camera.position);
+  const gameLights = game.update(dt, {
+    time: now / 1000, wind: clouds.wind, light: ambientLight, day: around.env.day, night: 1 - around.env.day, rain: weather.rain,
+    snowing: weather.rain > 0.2 && seasonUniforms.uWinter.value > 0.5 && cold.value > 0.3,
+    winter: seasonUniforms.uWinter.value, spring: seasonUniforms.uSpring.value, autumn: seasonUniforms.uAutumn.value,
+    summer: Math.max(0, 1 - seasonUniforms.uWinter.value - seasonUniforms.uSpring.value - seasonUniforms.uAutumn.value),
+    planPoint: (origin, direction, reach) => solidHit(origin, direction, reach)?.point ?? null,
+  });
+  torches.update(now / 1000, camera.position, gameLights);
   updateVisibility();
   const haze = heatHaze(dt);
   sound.update(underwater ? 0 : weather.rain * (1 - snow), sheltered || underwater);
@@ -1046,7 +1112,8 @@ function tick(now) {
     camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, rocks, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
     rain: weather.rain, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
-    sheltered, sound, pan: (x, z) => panTowards(camera, x, z), tame: WORLD.tameWildlife,
+    sheltered, sound, pan: (x, z) => panTowards(camera, x, z), tame: peaceful?.checked ?? WORLD.tameWildlife,
+    player: game.player, structures: game.structures,
   };
   wildlife.update(dt, life);
   fish.update(dt, { ...life, traces, autumn, ground: (x, z) => chunks.groundHeightAt(x, z) });
@@ -1130,4 +1197,4 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, game, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };

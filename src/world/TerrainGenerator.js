@@ -533,7 +533,10 @@ export class TerrainGenerator {
 
   /** Where wetlands lie (0..1): patches of the wettest, low-lying, flat country. */
   #wetZone(x, z, range, aridity) {
-    const zone = this.#wetZoneRaw(x, z, range, aridity);
+    let zone = this.#wetZoneRaw(x, z, range, aridity);
+    if (zone <= 0) return 0;
+    // (Not in the land rising into the Smoky Mountains: a marsh there would be a pit.)
+    if (!this._probing) zone *= 1 - smoothstep(0.02, 0.25, this.#smokyLift(x, z));
     if (zone <= 0) return 0;
     return zone * this.#minSize('wet', x, z, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
@@ -685,6 +688,8 @@ export class TerrainGenerator {
 
   /** The land before rivers are carved into it (rivers are traced over this). */
   getBaseHeight(x, z) {
+    // (First: it looks at the land round about.)
+    const smokyLift = this._probing ? 0 : this.#smokyLift(x, z);
     const field = this.#rangeField(x, z);
     const w = this.getBiomeWeights(x, z, this._weights, field.value);
 
@@ -762,17 +767,20 @@ export class TerrainGenerator {
       blackHills = hz * (22 + domes * 55) + heart * domes * this.#tors(x, z) + heart * this.#needles(x, z, domes);
     }
 
-    // The Smoky Mountains: long rounded ridges, forested to their tops,
-    // winding between deep valleys (where the rivers find their way),
-    // easing down into the country round about at the edges.
+    // The Smoky Mountains: enormous rolling swells, like a dune sea's
+    // scaled up a hundredfold: high rounded tops and deep low troughs a
+    // couple of kilometres apart, never a steep drop, forested all over.
+    // (Their height comes from a softened, spread-out version of where the
+    // biome is, so the country climbs into them over a kilometre or so,
+    // never up a wall at the edge: see #smokyLift.)
     let smoky = 0;
-    if (w.smoky > 0) {
-      const qx = x + this.smokyNoise.noise2D(x * 0.0005 + 40, z * 0.0005) * 320;
-      const qz = z + this.smokyNoise.noise2D(x * 0.0005, z * 0.0005 - 40) * 320;
-      const n = this.smokyNoise.fbm(qx * 0.0009 + 311, qz * 0.0009 - 97, 3);
-      const crest = smoothstep(0.3, 0.83, 1 - Math.sqrt(n * n + 0.03)); // (rounded along the top, not a knife-edge)
-      const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * 10;
-      smoky = w.smoky * (Math.pow(crest, 1.3) * 105 + 14 + rolling);
+    if (smokyLift > 0) {
+      const qx = x + this.smokyNoise.noise2D(x * 0.00025 + 40, z * 0.00025) * 500;
+      const qz = z + this.smokyNoise.noise2D(x * 0.00025, z * 0.00025 - 40) * 500;
+      const n = this.smokyNoise.fbm(qx * 0.00032 + 311, qz * 0.00046 - 97, 2);
+      const swell = smoothstep(-0.6, 0.6, n);
+      const rolls = this.hillNoise.fbm(x * 0.0014 + 50, z * 0.0014 - 20, 2) * 22;
+      smoky = smokyLift * (30 + 230 * swell + rolls);
     }
 
     // Volcanic highlands: a raised, rough plateau of old lava, and cinder
@@ -1935,7 +1943,8 @@ export class TerrainGenerator {
     // ruled: their line wanders a little and their faces are knobbled with
     // ledges and bulges, as steep as ever.
     const dryLand = Math.max(smoothstep(0.5, 0.62, dryness), 0.5 * w.temperate * (1 - w.wetland) * (1 - w.blackHills) * (1 - w.jungle))
-      * (1 - smoothstep(0.35, 0.6, mask)) * (1 - out.erg);
+      * (1 - smoothstep(0.35, 0.6, mask)) * (1 - out.erg)
+      * (this._probing ? 1 : 1 - smoothstep(0, 0.3, this.#smokyLift(x, z))); // (none cut into the Smoky Mountains, nor the land rising into them)
     if (dryLand > 0) {
       // (Some stretches of the network die away altogether, so canyons are
       // a find rather than everywhere.)
@@ -1988,7 +1997,8 @@ export class TerrainGenerator {
     const green = w.temperate + w.pine + w.smoky + 0.5 * w.savanna;
     const hilly = smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
     const wooded = smoothstep(-0.2, 0.25, this.forestNoise.fbm(x * 0.0045, z * 0.0045, 3));
-    const escarp = smoothstep(0.32 - 0.22 * Math.max(hilly, wooded), 0.5 - 0.2 * Math.max(hilly, wooded), this.escarpNoise.fbm(x * 0.0003, z * 0.0003, 2)) * flatland * green;
+    const escarp = smoothstep(0.32 - 0.22 * Math.max(hilly, wooded), 0.5 - 0.2 * Math.max(hilly, wooded), this.escarpNoise.fbm(x * 0.0003, z * 0.0003, 2)) * flatland * green
+      * (this._probing ? 1 : 1 - smoothstep(0, 0.3, this.#smokyLift(x, z))); // (no cliff steps in the Smoky Mountains)
     if (escarp > 0) {
       const e = this.escarpNoise.fbm(x * 0.0011 + 100, z * 0.0011 - 100, 2);
       const tall = 10 + 10 * (this.escarpNoise.noise2D(x * 0.0006 - 20, z * 0.0006) * 0.5 + 0.5);
@@ -2116,6 +2126,52 @@ export class TerrainGenerator {
    * Black Hills country (0..1): rare patches of the rolling hills, away
    * from mountain ranges and the dry country.
    */
+  /**
+   * How much the land is lifted into the Smoky Mountains at (x, z), 0..1:
+   * where the biome is, spread out and softened over the best part of a
+   * kilometre (a blur over a 160 m grid of it, remembered), so the land
+   * rises into them gently rather than up a wall at the biome's edge.
+   */
+  #smokyLift(x, z) {
+    const G = 160, R = 3;
+    const cache = this._smokyLift ?? (this._smokyLift = { raw: new Map(), blur: new Map() });
+    const probe = this.#probe();
+    const raw = (i, j) => {
+      const k = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.raw.get(k);
+      if (v === undefined) {
+        v = probe.getBiomeWeights(i * G, j * G, {}).smoky;
+        if (cache.raw.size > 60000) cache.raw.clear();
+        cache.raw.set(k, v);
+      }
+      return v;
+    };
+    const blur = (i, j) => {
+      const k = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.blur.get(k);
+      if (v === undefined) {
+        let sum = 0, weight = 0;
+        for (let b = -R; b <= R; b++) {
+          for (let a = -R; a <= R; a++) {
+            const w = 1 - Math.hypot(a, b) / (R + 1);
+            if (w <= 0) continue;
+            sum += raw(i + a, j + b) * w;
+            weight += w;
+          }
+        }
+        v = sum / weight;
+        if (cache.blur.size > 20000) cache.blur.clear();
+        cache.blur.set(k, v);
+      }
+      return v;
+    };
+    const gx = Math.floor(x / G), gz = Math.floor(z / G);
+    const fx = x / G - gx, fz = z / G - gz;
+    const a = blur(gx, gz) + (blur(gx + 1, gz) - blur(gx, gz)) * fx;
+    const b = blur(gx, gz + 1) + (blur(gx + 1, gz + 1) - blur(gx, gz + 1)) * fx;
+    return smoothstep(0.03, 0.8, a + (b - a) * fz);
+  }
+
   #smokyZone(x, z, range) {
     const zone = this.#smokyZoneRaw(x, z, range);
     return zone > 0 ? zone * this.#minSize('smoky', x, z, (px, pz) => this.#smokyZoneRaw(px, pz, this.#rangeField(px, pz, {}).value), 0.8) : 0;

@@ -47,6 +47,28 @@ function crownOf(type) {
   return CROWNS.get(type);
 }
 
+// Every species' crown, for a tree of size 1: { bottom, top, radius, cone }
+// (a cone narrows to its tip: pines and the like), or null. For the leaves'
+// hitboxes: you can push a little way into the leaves, not through them.
+const PROFILES = new Map();
+const CONES = new Set(['pine', 'spruce', 'larch', 'deadPine', 'cypress']);
+function profileOf(type) {
+  if (!PROFILES.has(type)) {
+    const crown = TREE_GEOMETRIES[type]?.userData.crown;
+    let out = null;
+    if (crown) {
+      crown.computeBoundingBox();
+      const b = crown.boundingBox;
+      out = { bottom: b.min.y, top: b.max.y, radius: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, cone: CONES.has(type) };
+    }
+    PROFILES.set(type, out);
+  }
+  return PROFILES.get(type);
+}
+
+/** Which tree this is, for good (see TreeLayer.remove). */
+const treeKey = (cx, cz, type, t) => `${cx},${cz},${type},${Math.round(t.x * 4)},${Math.round(t.z * 4)}`;
+
 /**
  * @param rocks  the rock layer, if any: trees don't grow on its boulders
  */
@@ -117,6 +139,142 @@ export function createTreeLayer({ rocks = null } = {}) {
     count: 0, // trees currently loaded, for the HUD
     trunks: new Map(), // "cx,cz" -> [x, z, radius, ...] in world space, for collisions
     crowns: new Map(), // "cx,cz" -> [x, z, bottom, top, radius, ...] of broad-leaved crowns (world), for falling leaves
+    foliage: new Map(), // "cx,cz" -> [x, z, bottom, top, radius, cone, ...] of every crown (world), for the leaves' hitboxes
+    removed: new Set(), // trees felled (see remove), saved with the world
+
+    /**
+     * The tree whose trunk (or, for a bush, whose leaves) a ray from
+     * `origin` along unit `dir` meets within `reach`: { key, type, t
+     * (as placed), x, y, z (its foot, world), radius, height, bush,
+     * distance }, or null.
+     */
+    pick(origin, dir, reach) {
+      const size = layer.chunkSize;
+      if (!size) return null;
+      const ccx = Math.floor(origin.x / size), ccz = Math.floor(origin.z / size);
+      let best = null;
+      const a = dir.x * dir.x + dir.z * dir.z;
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const group = groups.get(`${ccx + dx},${ccz + dz}`);
+          if (!group) continue;
+          const { placed, cx, cz } = group.userData;
+          for (const [type, list] of Object.entries(placed)) {
+            const bush = NO_COLLIDE.has(type);
+            const prof = profileOf(type);
+            for (const t of list) {
+              if (t.removed) continue;
+              const x = cx * size + t.x, z = cz * size + t.z;
+              if (Math.abs(x - origin.x) > reach + 3 || Math.abs(z - origin.z) > reach + 3) continue;
+              const radius = bush ? (prof?.radius ?? 0.8) * t.s * 0.8 : (TRUNK_RADIUS[type] ?? 0.3) * t.s;
+              const height = bush ? (prof?.top ?? 1.2) * t.sy : Math.max(2, (prof?.bottom ?? 3) * t.sy);
+              const ox = origin.x - x, oz = origin.z - z;
+              let tt = a > 1e-6 ? -(ox * dir.x + oz * dir.z) / a : 0;
+              tt = Math.max(0, Math.min(reach, tt));
+              const hd = Math.hypot(ox + dir.x * tt, oz + dir.z * tt);
+              const y = origin.y + dir.y * tt;
+              if (hd > radius + 0.25 || y < t.y - 0.4 || y > t.y + height + 0.3) continue;
+              if (!best || tt < best.distance) best = { key: treeKey(cx, cz, type, t), type, t, x, y: t.y, z, radius, height, bush, distance: tt, group };
+            }
+          }
+        }
+      }
+      return best;
+    },
+
+    /** How tall a species' crown reaches, for a tree of size 1. */
+    profileTop(type) {
+      return profileOf(type)?.top ?? 6;
+    },
+
+    /** The transform a picked tree is drawn with (world). */
+    matrixOf(hit, out = new Matrix4()) {
+      const mesh = hit.group.userData.meshes[hit.type];
+      mesh.getMatrixAt(hit.t.index, out);
+      return out.premultiply(hit.group.matrixWorld);
+    },
+
+    /** Takes a tree away, for good (felled): no longer drawn, nor in the way. */
+    remove(hit) {
+      layer.removed.add(hit.key);
+      hit.t.removed = true;
+      const mesh = hit.group.userData.meshes[hit.type];
+      mesh.setMatrixAt(hit.t.index, matrix.makeScale(0, 0, 0));
+      mesh.instanceMatrix.needsUpdate = true;
+      const key = hit.group.userData.key;
+      const cut = (list, stride) => {
+        if (!list) return;
+        for (let k = 0; k < list.length; k += stride) {
+          if (Math.abs(list[k] - hit.x) < 0.05 && Math.abs(list[k + 1] - hit.z) < 0.05) {
+            list.splice(k, stride);
+            return;
+          }
+        }
+      };
+      cut(layer.trunks.get(key), 3);
+      cut(layer.crowns.get(key), 5);
+      cut(layer.foliage.get(key), 6);
+    },
+
+    /**
+     * The leaves of the trees round a walking body (a circle at `position`,
+     * feet at `feetY`, `height` tall): pushed out of the thick of them (you
+     * can lean a little way in, not walk through), and how much they slow
+     * you (1: not at all).
+     */
+    leaves(position, radius, feetY, height = 1.8) {
+      const size = layer.chunkSize;
+      if (!size) return 1;
+      const cx = Math.floor(position.x / size), cz = Math.floor(position.z / size);
+      let slow = 1;
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const list = layer.foliage.get(`${cx + dx},${cz + dz}`);
+          if (!list) continue;
+          for (let k = 0; k < list.length; k += 6) {
+            const ox = position.x - list[k], oz = position.z - list[k + 1];
+            if (Math.abs(ox) > 8 || Math.abs(oz) > 8) continue;
+            const bottom = list[k + 2], top = list[k + 3];
+            const low = Math.max(bottom, feetY + 0.35);
+            if (low > feetY + height || top < feetY + 0.35) continue;
+            // (A pine's crown is widest at its foot.)
+            const r = list[k + 4] * (list[k + 5] ? Math.max(0.25, (top - low) / (top - bottom)) : 1);
+            const d = Math.hypot(ox, oz);
+            if (d > r + radius) continue;
+            slow = Math.min(slow, 0.45 + 0.55 * Math.max(0, (d - r * 0.5) / (r * 0.5 + radius)));
+            const hard = r * 0.55 + radius;
+            if (d < hard && d > 0) {
+              position.x += (ox / d) * (hard - d);
+              position.z += (oz / d) * (hard - d);
+            }
+          }
+        }
+      }
+      return slow;
+    },
+
+    /** The thick of the leaves near (x, z) at the height of an animal `tall` metres high: circles [x, z, radius, ...]. */
+    leafObstacles(x, z, reach, groundY, tall) {
+      const size = layer.chunkSize;
+      const out = [];
+      if (!size) return out;
+      const cx = Math.floor(x / size), cz = Math.floor(z / size);
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const list = layer.foliage.get(`${cx + dx},${cz + dz}`);
+          if (!list) continue;
+          for (let k = 0; k < list.length; k += 6) {
+            if (Math.abs(list[k] - x) > reach || Math.abs(list[k + 1] - z) > reach) continue;
+            const bottom = list[k + 2], top = list[k + 3];
+            const low = Math.max(bottom, groundY + 0.3);
+            if (low > groundY + tall || top < groundY + 0.3) continue;
+            const r = list[k + 4] * (list[k + 5] ? Math.max(0.25, (top - low) / (top - bottom)) : 1);
+            out.push(list[k], list[k + 1], r * 0.55);
+          }
+        }
+      }
+      return out;
+    },
 
     /**
      * Pushes a circle (the walking player) out of any tree trunk it overlaps.
@@ -155,7 +313,17 @@ export function createTreeLayer({ rocks = null } = {}) {
       const originX = cx * chunkSize;
       const originZ = cz * chunkSize;
       // (Worked out by the chunk's worker, or here.)
-      const placed = prepared?.trees ?? placeTrees(generator, config, cx, cz, groundHeightAt, rocks ? rocks.bouldersNear(cx, cz, generator, spacing) : null);
+      const all = prepared?.trees ?? placeTrees(generator, config, cx, cz, groundHeightAt, rocks ? rocks.bouldersNear(cx, cz, generator, spacing) : null);
+      // (Not the ones felled; each remembers where it is in its mesh.)
+      const placed = {};
+      for (const [type, list] of Object.entries(all)) {
+        const kept = [];
+        for (const t0 of list) {
+          if (layer.removed.size && layer.removed.has(treeKey(cx, cz, type, t0))) continue;
+          kept.push({ ...t0, index: kept.length });
+        }
+        if (kept.length) placed[type] = kept;
+      }
 
       const trunks = [];
       for (const [type, list] of Object.entries(placed)) {
@@ -175,14 +343,29 @@ export function createTreeLayer({ rocks = null } = {}) {
         }
       }
 
+      // Every crown near enough to walk into, for the leaves' hitboxes.
+      const foliage = [];
+      if (lod <= 1) {
+        for (const [type, list] of Object.entries(placed)) {
+          const c = profileOf(type);
+          if (!c || STIFF.has(type)) continue;
+          for (const t of list) foliage.push(originX + t.x, originZ + t.z, t.y + c.bottom * t.sy, t.y + c.top * t.sy, c.radius * t.s, c.cone ? 1 : 0);
+        }
+      }
+
       const group = new Group();
       group.name = 'trees';
+      group.userData.placed = placed;
+      group.userData.meshes = {};
+      group.userData.cx = cx;
+      group.userData.cz = cz;
       let count = 0;
       for (const [type, list] of Object.entries(placed)) {
         const stiff = STIFF.has(type);
         const mesh = new InstancedMesh(treeGeometry(type, bare), stiff ? stiffMaterial : material, list.length);
         mesh.name = type;
         meshes.add(mesh);
+        group.userData.meshes[type] = mesh;
         list.forEach((t, k) => {
           position.set(t.x, t.y, t.z);
           // Spin about the trunk, then tip over by the lean.
@@ -221,7 +404,9 @@ export function createTreeLayer({ rocks = null } = {}) {
       group.userData.key = `${cx},${cz}`;
       group.userData.trunks = trunks;
       group.userData.crowns = crowns;
+      group.userData.foliage = foliage;
       layer.count += count;
+      layer.foliage.set(group.userData.key, foliage);
       layer.trunks.set(group.userData.key, trunks);
       layer.crowns.set(group.userData.key, crowns);
       groups.set(group.userData.key, group);
@@ -233,6 +418,7 @@ export function createTreeLayer({ rocks = null } = {}) {
       // A rebuilt chunk (new LOD) may already have registered its trunks.
       if (layer.trunks.get(group.userData.key) === group.userData.trunks) layer.trunks.delete(group.userData.key);
       if (layer.crowns.get(group.userData.key) === group.userData.crowns) layer.crowns.delete(group.userData.key);
+      if (layer.foliage.get(group.userData.key) === group.userData.foliage) layer.foliage.delete(group.userData.key);
       if (groups.get(group.userData.key) === group) groups.delete(group.userData.key);
       for (const mesh of group.children) {
         meshes.delete(mesh);

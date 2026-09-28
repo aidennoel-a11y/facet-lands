@@ -44,7 +44,7 @@ export const WORLD = {
   leafMaxLod: 0, // leaf clusters only on chunks this close
 
   // Wildlife: for testing, the animals pay you no mind (no bolting or scattering).
-  tameWildlife: true,
+  tameWildlife: false,
 
   // Caves (their mouths are cut into full-detail terrain only)
   caveMaxLod: 1,

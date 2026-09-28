@@ -39,6 +39,21 @@ const SPECIES = {
   gull: { bird: true, model: Models.gull, max: 12, scale: 3.0, flee: 15, radius: 0.5, health: 6 },
   hawk: { bird: true, model: Models.hawk, max: 4, scale: 4.2, flee: 30, radius: 0.7, health: 12 },
 };
+// Hunting: how big a quarry each is (see wound), and the ones that will
+// come for you (`predator`: how far off they see you, how near you can come
+// before they come for you anyway, how hard they bite or swipe, how often,
+// and from how far).
+const BULK = { deer: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', wolf: 'medium', coyote: 'medium', fox: 'small', rabbit: 'small' };
+for (const [kind, sp] of Object.entries(SPECIES)) sp.bulk = BULK[kind] ?? 'small';
+SPECIES.wolf.predator = { sight: 70, close: 22, bite: 11, every: 1.3, reach: 1.4 };
+SPECIES.grizzly.predator = { sight: 55, close: 25, bite: 30, every: 1.7, reach: 2.0 };
+SPECIES.blackBear.predator = { sight: 35, close: 16, bite: 22, every: 1.6, reach: 1.8 };
+// How many blows to the body each size takes to go lame, to go down, and to
+// die (a blow to the head brings one down; one more finishes it).
+const BLOWS = { large: [3, 5, 6], medium: [2, 3, 4], small: [1, 2, 2] };
+// What a carcass gives when butchered.
+const YIELD = { deer: { rawMeat: 4, deerSkin: 1 }, bison: { rawMeat: 6 }, blackBear: { rawMeat: 5 }, grizzly: { rawMeat: 6 }, wolf: { rawMeat: 2 }, coyote: { rawMeat: 2 }, fox: { rawMeat: 1 }, rabbit: { rawMeat: 1 } };
+
 // Songbirds come in colours: robins, finches, jays, wrens, sparrows.
 const SONGBIRD_TINTS = [0xc0703a, 0xd8b040, 0x5a7ab8, 0x8a6a4a, 0xa89878, 0xb04030];
 
@@ -117,37 +132,107 @@ export class Wildlife {
    * passes through, within `max` metres: { animal, distance }, or null.
    */
   raycast(origin, dir, max = 150) {
+    return this.aim(origin, dir, max);
+  }
+
+  /**
+   * What a ray from `origin` along unit `dir` hits first, within `max`: a
+   * creature's head or its body. { animal, distance, head }, or null.
+   * (`dead`: the dead ones too, for butchering.)
+   */
+  aim(origin, dir, max = 150, dead = false) {
     let best = null;
     for (const a of this.animals) {
-      if (!a.alive) continue;
-      const sp = SPECIES[a.kind];
-      const r = sp.radius * (a.scale ?? 1) * 1.3;
-      const cy = a.y + (sp.ground ? sp.height * 0.55 * a.scale : 0);
-      const ox = a.x - origin.x, oy = cy - origin.y, oz = a.z - origin.z;
-      const t = ox * dir.x + oy * dir.y + oz * dir.z;
-      if (t < 0 || t > max) continue;
-      const d2 = ox * ox + oy * oy + oz * oz - t * t;
-      if (d2 > r * r) continue;
-      if (!best || t < best.distance) best = { animal: a, distance: t };
+      if (a.gone || (!a.alive && !dead)) continue;
+      if (Math.abs(a.x - origin.x) > max + 3 || Math.abs(a.z - origin.z) > max + 3) continue;
+      for (const part of this.#parts(a)) {
+        const ox = part.x - origin.x, oy = part.y - origin.y, oz = part.z - origin.z;
+        const t = ox * dir.x + oy * dir.y + oz * dir.z;
+        if (t < 0 || t > max) continue;
+        const d2 = ox * ox + oy * oy + oz * oz - t * t;
+        if (d2 > part.r * part.r) continue;
+        const along = t - Math.sqrt(part.r * part.r - d2);
+        if (!best || along < best.distance - (part.head ? 0.25 : 0)) best = { animal: a, distance: along, head: part.head };
+      }
     }
     return best;
   }
 
+  // A creature's body (front and back) and its head, as spheres: { x, y, z, r, head }.
+  #parts(a) {
+    const sp = SPECIES[a.kind], s = a.scale;
+    if (!sp.ground) return [{ x: a.x, y: a.y, z: a.z, r: sp.radius * s * 0.5 + 0.12, head: false }];
+    const sh = Math.sin(a.heading), ch = Math.cos(a.heading);
+    const lying = a.down || !a.alive;
+    const bodyY = a.y + (lying ? sp.radius * 0.5 : sp.height * 0.55) * s;
+    const len = sp.height * 0.45 * s;
+    const r = sp.radius * s * (lying ? 0.9 : 1.05);
+    const pivot = this.rigs[a.kind].model.headPivot;
+    const hz = (pivot[2] + 0.18) * s, hy = lying ? sp.radius * 0.5 * s : (pivot[1] - 0.05 - (a.headDown ?? 0) * 0.3) * s;
+    return [
+      { x: a.x + sh * hz, y: a.y + hy, z: a.z + ch * hz, r: Math.max(0.13, 0.2 * s), head: true },
+      { x: a.x + sh * len * 0.45, y: bodyY, z: a.z + ch * len * 0.45, r, head: false },
+      { x: a.x - sh * len * 0.45, y: bodyY, z: a.z - ch * len * 0.45, r, head: false },
+    ];
+  }
+
+  /**
+   * A blow (a spear's, or an axe's) to a creature, from `from`: to the head
+   * it brings one down, and one more finishes it; to the body, a big one
+   * (a deer, a bison, a bear) goes lame after three, down after five, and
+   * dies at the sixth; a middling one (a wolf, a coyote) lame after two,
+   * down at three, dead at four; a small one (a fox) lame after one and
+   * dead at two, and a rabbit or a bird at one. Returns 'hit', 'lame',
+   * 'down' or 'dead'. The rest run; a wolf or a bear turns on you.
+   */
+  wound(a, { head = false, from } = {}) {
+    if (!a.alive) return 'dead';
+    const sp = SPECIES[a.kind];
+    const [lame, down, dead] = sp.bird || a.kind === 'rabbit' ? [1, 1, 1] : BLOWS[sp.bulk];
+    let outcome;
+    if (a.down) outcome = 'dead';
+    else if (head) outcome = dead <= 1 ? 'dead' : 'down';
+    else {
+      a.hits = (a.hits ?? 0) + 1;
+      outcome = a.hits >= dead ? 'dead' : a.hits >= down ? 'down' : a.hits >= lame ? 'lame' : 'hit';
+    }
+    if (outcome === 'dead') {
+      a.alive = false;
+      a.down = false;
+      a.hunting = false;
+      a.state = sp.bird ? 'falling' : 'dead';
+      a.deadTime = 0;
+      a.side = a.side ?? (Math.random() < 0.5 ? 1 : -1);
+      a.vy = 0;
+      return 'dead';
+    }
+    if (outcome === 'down') {
+      a.down = true;
+      a.hunting = false;
+      a.state = 'down';
+      a.side = Math.random() < 0.5 ? 1 : -1;
+      a.speed = 0;
+    }
+    if (outcome === 'lame') a.lame = true;
+    const at = from ?? this.ctx?.camera.position ?? a;
+    if (sp.predator && !a.lame && !a.down) this.#enrage(a);
+    else if (a.herd) {
+      this.#alarm(a.herd, at.x, at.z);
+      if (a.lame || a.down) a.hunting = false;
+    } else a.fear = 8;
+    return outcome;
+  }
+
   /** Wounds a creature (from a point `from`): it flees, or dies. Returns whether it died. */
   hit(a, damage, from) {
-    if (!a.alive) return false;
-    a.health -= damage;
-    if (a.health <= 0) {
-      a.alive = false;
-      a.state = SPECIES[a.kind].bird ? 'falling' : 'dead';
-      a.deadTime = 0;
-      a.side = Math.random() < 0.5 ? 1 : -1;
-      a.vy = 0;
-      return true;
-    }
-    if (a.herd) this.#alarm(a.herd, from.x, from.z);
-    else a.fear = 4;
-    return false;
+    return this.wound(a, { from }) === 'dead';
+  }
+
+  /** Butchers a carcass: it's gone, and here's what it gave ({ id: count }). */
+  butcher(a) {
+    if (a.alive || a.gone) return null;
+    a.gone = true;
+    return { ...(YIELD[a.kind] ?? { rawMeat: 1 }) };
   }
 
   /** The dead lying near (x, z), for butchering and the like. */
@@ -156,8 +241,47 @@ export class Wildlife {
   }
 
   #alarm(herd, x, z) {
+    if (herd.hunting) return;
     herd.fear = { x, z };
     herd.fleeTime = 7;
+  }
+
+  // A wolf or a bear comes for you (and a wolf's pack with it).
+  #enrage(a) {
+    if (!a.hunting) this.ctx?.sound?.call(a.kind === 'wolf' ? 'snarl' : 'growl', this.ctx.pan(a.x, a.z), 0.8);
+    a.hunting = true;
+    a.notice = 9;
+    a.fear = 0;
+    if (a.herd) {
+      a.herd.hunting = true;
+      a.herd.fleeTime = 0;
+      for (const m of a.herd.members) if (m.alive && !m.lame && !m.down) (m.hunting = true), (m.notice = 9);
+    }
+  }
+
+  // A wolf or a bear watching for you: it notices you if you're in sight
+  // a moment (less far off if you keep low), at once if you come close,
+  // and hunts you down; it gives up once you're well away.
+  #stalk(a, sp, t, dt, ctx) {
+    const p = ctx.player, pr = sp.predator;
+    const able = p && p.mode === 'walk' && p.alive && !ctx.tame && !a.lame && !a.down;
+    if (!able) {
+      a.hunting = false;
+      a.notice = 0;
+      if (a.herd) a.herd.hunting = false;
+      return;
+    }
+    const sight = pr.sight * (p.crouch ? 0.55 : 1) * (0.7 + 0.3 * ctx.day);
+    if (t.d < pr.close * (p.crouch ? 0.7 : 1)) a.notice = 9;
+    else if (t.d < sight) a.notice = (a.notice ?? 0) + dt;
+    else a.notice = Math.max(0, (a.notice ?? 0) - dt * 0.5);
+    if (!a.hunting && a.notice > 1.5) this.#enrage(a);
+    if (a.hunting && t.d > pr.sight * 2.5) {
+      a.hunting = false;
+      a.notice = 0;
+      if (a.herd) a.herd.hunting = false;
+    }
+    if (a.herd?.hunting && !a.hunting) (a.hunting = true), (a.notice = 9);
   }
 
   // --- Coming and going -----------------------------------------------------
@@ -552,8 +676,11 @@ export class Wildlife {
   // --- Behaviour ------------------------------------------------------------
 
   // Tree trunks and boulders within `reach` of (x, z): [x, z, radius, ...].
-  #obstacles(x, z, reach, ctx) {
+  #obstacles(x, z, reach, ctx, tall = 1.2) {
     const out = [];
+    // (The thick of low leaves, and whatever you've built.)
+    if (ctx.trees.leafObstacles) out.push(...ctx.trees.leafObstacles(x, z, reach, ctx.ground(x, z), tall));
+    if (ctx.structures) out.push(...ctx.structures.obstacles(x, z, reach));
     const C = ctx.chunkSize, cx = Math.floor(x / C), cz = Math.floor(z / C);
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
@@ -659,6 +786,15 @@ export class Wildlife {
 
   #walker(a, dt, ctx) {
     const sp = SPECIES[a.kind];
+    if (a.down && a.alive) {
+      // Down, on its side, struggling, not getting up.
+      a.speed = 0;
+      a.struggle = (a.struggle ?? 0) + dt;
+      a.roll += (a.side * Math.PI * 0.42 - a.roll) * Math.min(1, dt * 4);
+      a.y = ctx.ground(a.x, a.z) + sp.radius * 0.35 * a.scale * Math.abs(Math.sin(a.roll));
+      a.headDown += (Math.sin(a.struggle * 2.1) * 0.5 - a.headDown) * Math.min(1, dt * 3);
+      return;
+    }
     if (!a.alive) {
       // Down on its side, where it fell.
       a.deadTime += dt;
@@ -669,9 +805,15 @@ export class Wildlife {
     }
     const herd = a.herd;
     const t = this.#threat(a, ctx);
-    // Too close (on the ground, or flying low over them): they bolt.
-    const reach = sp.flee * (t.above > 25 ? 0.5 : 1);
-    if (!ctx.tame && t.d < reach && t.above < 50) {
+    // How much of a threat you are: running at them, much; walking, some;
+    // keeping low and moving slowly, little (and less still standing still
+    // crouched). Too close for that (on the ground, or flying low over
+    // them): they bolt.
+    const p = ctx.player, onFoot = p && p.mode === 'walk' && p.alive;
+    const stance = !onFoot ? 1 : p.crouch ? (p.moving ? 0.45 : 0.3) : p.sprint ? 1.5 : p.moving ? 1 : 0.6;
+    const reach = sp.flee * stance * (t.above > 25 ? 0.5 : 1);
+    if (sp.predator) this.#stalk(a, sp, t, dt, ctx);
+    if (!ctx.tame && !a.hunting && t.d < reach && t.above < 50) {
       if (herd) {
         if (herd.fleeTime <= 0 && a.kind === 'bison') ctx.sound?.call('grunt', ctx.pan(a.x, a.z), 0.6);
         if (herd.fleeTime <= 0 && a.kind === 'deer') ctx.sound?.call('snort', ctx.pan(a.x, a.z), 0.5);
@@ -679,9 +821,35 @@ export class Wildlife {
       } else a.fear = 3;
     }
     a.fear = Math.max(0, a.fear - dt);
-    const fleeing = herd ? herd.fleeTime > 0 : a.fear > 0;
+    const fleeing = !a.hunting && (herd ? herd.fleeTime > 0 : a.fear > 0);
     let want = a.heading, speed = 0;
-    if (fleeing) {
+    if (a.hunting) {
+      // Hunting you: running you down (a pack spreading out to come at you
+      // from either side), then biting or swiping when in reach.
+      const pr = sp.predator;
+      let tx = p.x, tz = p.z;
+      if (herd && t.d > 6) {
+        const side = (a.offset.x >= 0 ? 1 : -1) * Math.min(1, (t.d - 6) / 15) * 6;
+        const ux = (p.x - a.x) / t.d, uz = (p.z - a.z) / t.d;
+        tx += -uz * side;
+        tz += ux * side;
+      }
+      want = Math.atan2(tx - a.x, tz - a.z);
+      const inReach = pr.reach + sp.radius * a.scale;
+      speed = t.d > inReach ? sp.run * (t.d > 25 ? 0.95 : 0.8) : 0;
+      a.state = 'hunt';
+      a.attackCd = (a.attackCd ?? 0) - dt;
+      a.growl = (a.growl ?? rnd(2, 6)) - dt;
+      if (a.growl <= 0) {
+        a.growl = rnd(4, 9);
+        ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : 'growl', ctx.pan(a.x, a.z), Math.min(0.7, 12 / (t.d + 6)));
+      }
+      if (t.d <= inReach + 0.35 && Math.abs(p.y - 1.2 - a.y) < 2.5 && a.attackCd <= 0) {
+        a.attackCd = pr.every * rnd(0.85, 1.2);
+        a.lunge = 0.35;
+        p.damage(pr.bite * rnd(0.8, 1.2), a.kind, a);
+      }
+    } else if (fleeing) {
       const from = herd?.fear ?? ctx.camera.position;
       want = Math.atan2(a.x - from.x, a.z - from.z);
       if (herd?.mid) {
@@ -758,7 +926,16 @@ export class Wildlife {
         const off = angleTo(a.heading, Math.atan2(c.x - a.x, c.z - a.z));
         if (Math.abs(off) > 1.1) want = a.heading + off - Math.sign(off) * 0.9;
       }
+      // However slowly you come, right up close it always backs away.
+      const close = Math.max(3.5, sp.radius * a.scale * 3 + 2.5);
+      if (onFoot && !ctx.tame && t.d < close) {
+        want = Math.atan2(a.x - p.x, a.z - p.z);
+        speed = sp.walk * 1.8;
+        if (a.state === 'rest' || a.state === 'graze' || a.state === 'drink') (a.state = 'walk'), (a.timer = rnd(2, 4));
+      }
     }
+    // Lame: it can only hobble.
+    if (a.lame) speed *= 0.45;
     // Where it looks: at you when alert, about it when looking round, a
     // little from side to side as it grazes, and the way it's turning.
     let yaw = 0;
@@ -805,7 +982,7 @@ export class Wildlife {
     if (speed > 0) {
       const look = body + 1 + a.speed * 0.8;
       const fx = Math.sin(want), fz = Math.cos(want);
-      const obs = this.#obstacles(a.x, a.z, look + 2, ctx);
+      const obs = this.#obstacles(a.x, a.z, look + 2, ctx, sp.height * a.scale * 0.8);
       let steer = 0;
       for (let k = 0; k < obs.length; k += 3) {
         const ox = obs[k] - a.x, oz = obs[k + 1] - a.z, r = obs[k + 2] + me + 0.3;
@@ -819,11 +996,12 @@ export class Wildlife {
     }
     // Turn (slowly from a standstill, as it sets off; not spinning on the
     // spot), speed up or slow down.
-    const rate = sp.turn * (fleeing ? 1.5 : 1) * (0.3 + 0.7 * Math.min(1, a.speed / sp.walk));
+    const urgent = fleeing || a.hunting;
+    const rate = sp.turn * (urgent ? 1.5 : 1) * (urgent ? 1 : 0.3 + 0.7 * Math.min(1, a.speed / sp.walk));
     a.heading += Math.max(-rate * dt, Math.min(rate * dt, angleTo(a.heading, want)));
     // (Slowing to take a sharp turn.)
     const sharp = Math.abs(angleTo(a.heading, want));
-    a.speed += (speed * (1 - 0.6 * smoothstep(0.6, 1.6, sharp)) - a.speed) * Math.min(1, dt * (fleeing ? 3 : a.kind === 'rabbit' ? 8 : 1.5));
+    a.speed += (speed * (1 - 0.6 * smoothstep(0.6, 1.6, sharp)) - a.speed) * Math.min(1, dt * (urgent ? 3 : a.kind === 'rabbit' ? 8 : 1.5));
     // Step, over ground it can walk (not into the water, or off a cliff).
     if (a.speed > 0.01) {
       const sx = Math.sin(a.heading), sz = Math.cos(a.heading);
@@ -858,7 +1036,7 @@ export class Wildlife {
     // Never inside a trunk or a boulder (its middle, nor its chest).
     for (const reach of [0, body * 0.7]) {
       const px = a.x + Math.sin(a.heading) * reach, pz = a.z + Math.cos(a.heading) * reach;
-      const obs = this.#obstacles(px, pz, me + 3, ctx);
+      const obs = this.#obstacles(px, pz, me + 3, ctx, sp.height * a.scale * 0.8);
       for (let k = 0; k < obs.length; k += 3) {
         const ox = px - obs[k], oz = pz - obs[k + 1], r = obs[k + 2] + me * (reach ? 0.6 : 1), d = Math.hypot(ox, oz);
         if (d >= r || d === 0) continue;
@@ -875,7 +1053,8 @@ export class Wildlife {
     // legs reaching down the slope or folding up it: see #draw.)
     if (up === up && down === down) a.pitch += (-Math.atan2(up - down, 2 * L) * 0.3 - a.pitch) * Math.min(1, dt * 6);
     // Head down to graze, up when alarmed.
-    const headWant = fleeing ? -0.15 : { graze: 1, drink: 1.15, alert: -0.25, look: -0.05, rest: 0.35 }[a.state] ?? 0.1;
+    a.lunge = Math.max(0, (a.lunge ?? 0) - dt);
+    const headWant = a.lunge > 0 ? 0.55 : fleeing ? -0.15 : { graze: 1, drink: 1.15, alert: -0.25, look: -0.05, rest: 0.35, hunt: 0.15 }[a.state] ?? 0.1;
     a.headDown += (headWant - a.headDown) * Math.min(1, dt * 3);
   }
 
@@ -1145,7 +1324,7 @@ export class Wildlife {
         const moving = Math.min(1, a.speed / sp.walk);
         const running = smoothstep(sp.walk * 1.5, sp.run * 0.7, a.speed);
         const bob = a.kind === 'rabbit' ? Math.abs(Math.sin(a.phase * 0.5)) * 0.28 * moving : Math.abs(Math.sin(a.phase)) * 0.04 * moving;
-        base.elements[13] += bob; // (the body bobs as it goes; a rabbit bounds)
+        base.elements[13] += bob + (a.lame ? Math.max(0, Math.sin(a.phase)) * 0.09 * moving * a.scale : 0); // (the body bobs as it goes; a rabbit bounds; a lame one lurches)
         put(M.body, [0, 0, 0], 0, 0, 0);
         const headRx = a.alive ? a.headDown * (a.kind === 'bison' ? 0.5 : a.kind === 'rabbit' ? 0.4 : SPECIES[a.kind].forager ? 0.6 : 1.05) + Math.sin(a.phase * 2) * 0.05 * moving : 0.3;
         put(M.head, rig.model.headPivot, headRx, a.alive ? a.headYaw : 0, 0);
@@ -1160,10 +1339,11 @@ export class Wildlife {
           let swing = Math.sin(phase) * amp;
           if (a.kind === 'rabbit') swing = (front ? -1 : 1) * Math.max(0, Math.sin(a.phase * 0.5)) * 0.9 * moving;
           if (a.alive && a.lie > 0.001) swing += ((front ? 1.45 : -1.45) - swing) * a.lie; // (folded under)
+          if (a.down) swing = Math.sin(this.time * 7 + k * 1.7) * 0.45 * (0.4 + 0.6 * Math.abs(Math.sin(this.time * 0.9))); // (kicking)
           // On a slope each leg reaches down to the ground under its own hoof
           // (longer down the slope, shorter up it).
           let reach = 1;
-          if (a.alive && a.lie < 0.5 && near && this.ctx?.ground) {
+          if (a.alive && !a.down && a.lie < 0.5 && near && this.ctx?.ground) {
             const ch = Math.cos(a.heading), sh = Math.sin(a.heading);
             const gy = this.ctx.ground(a.x + (p[0] * ch + p[2] * sh) * a.scale, a.z + (-p[0] * sh + p[2] * ch) * a.scale);
             const hip = base.elements[13] + (p[1] * Math.cos(a.pitch) - p[2] * Math.sin(a.pitch)) * a.scale;

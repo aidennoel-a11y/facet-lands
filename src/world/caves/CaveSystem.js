@@ -73,7 +73,7 @@ export class CaveSystem {
       this.cache.delete(key); // re-insert: most recently used last
       this.cache.set(key, entry);
     } else {
-      entry = { ready: false, grid: undefined, rock: null, deco: null, obstacles: [], users: 0, listeners: [] };
+      entry = { ready: false, grid: undefined, rock: null, deco: null, obstacles: [], features: new Float32Array(0), users: 0, listeners: [] };
       this.cache.set(key, entry);
       this.#request(key, entry, cx, cz);
     }
@@ -95,6 +95,7 @@ export class CaveSystem {
       entry.rock = toGeometry(data.rock);
       entry.deco = toGeometry(data.deco);
       entry.obstacles = data.obstacles;
+      entry.features = data.features ?? new Float32Array(0);
       entry.ready = true;
       for (const fn of entry.listeners.splice(0)) fn(entry);
     };

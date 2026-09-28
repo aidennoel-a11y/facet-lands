@@ -58,6 +58,7 @@ export class PlayerBody {
     const yaw = controls.euler.y;
     this.group.position.set(cam.x + Math.sin(yaw) * 0.12, feet, cam.z + Math.cos(yaw) * 0.12);
     this.group.rotation.y = yaw;
+    this.group.scale.y = controls.eyeHeight / 1.7; // (crouching)
 
     // Swing limbs by distance actually travelled on the ground.
     let moved = 0;

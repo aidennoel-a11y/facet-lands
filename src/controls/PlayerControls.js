@@ -6,7 +6,7 @@ import { Euler, Vector3 } from 'three';
  * Fly:  free camera. WASD / arrows move where you look, Space / E up,
  *       Ctrl / Q down, Shift fast, mouse wheel changes cruising speed.
  * Walk: you're a person on the ground. WASD moves along the ground, Space
- *       jumps, Shift sprints. Gravity pulls you down, slopes that are too
+ *       jumps, Shift sprints, C / Ctrl crouches (slower, lower, quieter). Gravity pulls you down, slopes that are too
  *       steep can't be climbed, tree trunks block you. In deep water (the
  *       sea, lakes, rivers and ponds) you swim: you float with your head
  *       above the surface; Space swims up, Ctrl / Q / C dives, and under
@@ -44,7 +44,16 @@ export class PlayerControls {
     this.flyClearance = 4;
 
     // Walk
+    this.standingEye = 1.7;
+    this.crouchingEye = 1.05;
     this.eyeHeight = 1.7;
+    this.crouch = false; // keeping low (C / Ctrl while walking)
+    this.speedFactor = 1; // slowed (pushing through leaves, say): set from outside
+    this.frozen = false; // not moving at all (a menu's open, or you're dead)
+    this.jumps = 0; // jumps since last asked (see takeJumps)
+    this.onLand = null; // (speed m/s) => void: you've come down from a fall
+    this.moving = false;
+    this.sprinting = false;
     this.radius = 0.35;
     this.walkSpeed = 5;
     this.sprintSpeed = 10;
@@ -134,10 +143,12 @@ export class PlayerControls {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
       if (e.code === 'Space') e.preventDefault(); // don't toggle focused checkboxes
+      if (this.frozen) return;
       this.keys.add(e.code);
       if (e.code === 'Space' && this.mode === 'walk' && this.grounded && !this.swimming) {
-        this.velocityY = this.jumpSpeed;
+        this.velocityY = this.jumpSpeed * (this.crouch ? 0.8 : 1);
         this.grounded = false;
+        this.jumps++;
       }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -167,10 +178,19 @@ export class PlayerControls {
     const fast = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
     if (this.mode === 'fly') return this.flySpeed * (fast ? this.flyBoost : 1);
     if (this.swimming) return this.swimSpeed;
-    return fast ? this.sprintSpeed : this.walkSpeed;
+    if (this.crouch) return this.walkSpeed * 0.45 * this.speedFactor;
+    return (fast ? this.sprintSpeed : this.walkSpeed) * this.speedFactor;
+  }
+
+  /** How many times you've jumped since last asked. */
+  takeJumps() {
+    const n = this.jumps;
+    this.jumps = 0;
+    return n;
   }
 
   update(dt) {
+    if (this.frozen) this.keys.clear();
     if (this.mode === 'fly') this.#updateFly(dt);
     else this.#updateWalk(dt);
   }
@@ -239,6 +259,15 @@ export class PlayerControls {
   #updateWalk(dt) {
     const pos = this.camera.position;
     const input = this.#input();
+    // Crouching (not in the water): your eyes sink, and you go slowly.
+    const k = this.keys;
+    this.crouch = !this.swimming && (k.has('KeyC') || k.has('ControlLeft') || k.has('ControlRight'));
+    const feet0 = pos.y - this.eyeHeight;
+    this.eyeHeight += ((this.crouch ? this.crouchingEye : this.standingEye) - this.eyeHeight) * Math.min(1, dt * 10);
+    pos.y = feet0 + this.eyeHeight;
+    const fast = k.has('ShiftLeft') || k.has('ShiftRight');
+    this.moving = input.forward !== 0 || input.strafe !== 0;
+    this.sprinting = this.moving && fast && !this.crouch && !this.swimming;
     // In deep water, swimming.
     const water = this.#water(pos.x, pos.z);
     const under = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z);
@@ -277,6 +306,7 @@ export class PlayerControls {
     let feet = feetNow + this.velocityY * dt;
 
     if (feet <= floor || (wasGrounded && this.velocityY <= 0 && feet - floor < 0.6)) {
+      if (!wasGrounded && this.velocityY < -8) this.onLand?.(-this.velocityY);
       feet = floor;
       this.velocityY = 0;
       this.grounded = true;

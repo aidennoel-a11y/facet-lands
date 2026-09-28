@@ -1,42 +1,49 @@
-// Inline icons for hotbar items, drawn in the game's faceted style.
-const ICONS = {
-  torch: `<svg viewBox="0 0 32 32" aria-hidden="true">
-    <path d="M14.5 13h3l-.6 16h-1.8z" fill="#8a5d38"/>
-    <path d="M16 13h1.5l-.6 16H16z" fill="#6b4a2f"/>
-    <path d="M13 10.5h6l-.8 3h-4.4z" fill="#3a2f27"/>
-    <path d="M16 1.5l4 6.5-4 3.5-4-3.5z" fill="#ff8a2a"/>
-    <path d="M16 1.5l4 6.5-4 3.5z" fill="#f26b1d"/>
-    <path d="M16 5l2 3.3-2 1.8-2-1.8z" fill="#fff0a0"/>
-  </svg>`,
-  pickup: `<svg viewBox="0 0 32 32" aria-hidden="true">
-    <path d="M9 17V9.5a1.8 1.8 0 0 1 3.6 0V15V6.5a1.8 1.8 0 0 1 3.6 0V15V7.5a1.8 1.8 0 0 1 3.6 0V15v-5a1.8 1.8 0 0 1 3.6 0v9.5c0 5-3.2 8.5-8 8.5-3.4 0-5.3-1.6-7-4.2l-3.3-5a1.9 1.9 0 0 1 3-2.2z" fill="#f2d2b0" stroke="#5a4636" stroke-width="1.4" stroke-linejoin="round"/>
-  </svg>`,
-};
+import { ICONS, ITEMS } from '../survival/items.js';
+
+/** An item's icon, as inline SVG. */
+export function iconSvg(id) {
+  return `<svg viewBox="0 0 32 32" aria-hidden="true">${ICONS[id] ?? ''}</svg>`;
+}
+
+/** How worn (tools) or how fresh (food) a stack is, 0..1, or null. */
+export function wearOf(stack) {
+  const item = stack && ITEMS[stack.id];
+  if (!item) return null;
+  if (stack.dur !== undefined && item.durability) return stack.dur / item.durability;
+  if (stack.fresh !== undefined && item.spoils) return stack.fresh / item.spoils;
+  return null;
+}
+
+/** The contents of a slot button: its icon, how many, and a bar for wear or freshness. */
+export function slotHtml(stack, key = '') {
+  if (!stack) return key ? `<span class="slot-key">${key}</span>` : '';
+  const wear = wearOf(stack);
+  const bar = wear === null ? '' : `<span class="slot-bar${ITEMS[stack.id].spoils ? ' fresh' : ''}"><i style="width:${Math.max(4, Math.round(wear * 100))}%;background:hsl(${Math.round(wear * 110)} 70% 48%)"></i></span>`;
+  return `${key ? `<span class="slot-key">${key}</span>` : ''}${iconSvg(stack.id)}${stack.count > 1 ? `<span class="slot-count">${stack.count}</span>` : ''}${bar}`;
+}
 
 /**
- * A 9-slot hotbar along the bottom of the screen. Select with 1-9, the
- * mouse wheel (while walking) or by tapping a slot. Empty slots are ready
- * for future items: add an entry to `items` with an id and an icon.
+ * The hotbar along the bottom of the screen: your whole inventory, nine
+ * slots. Select with 1-9, the mouse wheel (while walking) or by tapping a
+ * slot. Each slot shows its item, how many, and how worn it is (tools) or
+ * how fresh (food).
  */
 export class Hotbar {
-  constructor(root, items, { onSelect } = {}) {
+  constructor(root, inventory, { onSelect } = {}) {
     this.root = root;
-    this.items = items;
+    this.inventory = inventory;
     this.onSelect = onSelect;
     this.index = 0;
 
     this.slots = [];
     const list = document.createElement('ol');
     list.className = 'hotbar-slots';
-    for (let i = 0; i < 9; i++) {
-      const item = items[i] ?? null;
+    for (let i = 0; i < inventory.slots.length; i++) {
       const li = document.createElement('li');
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'slot';
       button.id = `slot-${i + 1}`;
-      button.setAttribute('aria-label', item ? `${i + 1}: ${item.name}` : `${i + 1}: empty`);
-      button.innerHTML = `<span class="slot-key">${i + 1}</span>${item ? ICONS[item.icon] ?? '' : ''}`;
       button.addEventListener('click', () => this.select(i));
       li.append(button);
       list.append(li);
@@ -46,17 +53,31 @@ export class Hotbar {
     this.label.className = 'hotbar-label';
     this.label.setAttribute('aria-live', 'polite');
     root.append(this.label, list);
+    inventory.onChange(() => this.render());
+    this.render();
     this.select(0, true);
 
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
       const n = Number(e.key);
-      if (n >= 1 && n <= 9) this.select(n - 1);
+      if (n >= 1 && n <= this.slots.length) this.select(n - 1);
+    });
+  }
+
+  render() {
+    this.inventory.slots.forEach((s, i) => {
+      const html = slotHtml(s, String(i + 1));
+      const button = this.slots[i];
+      if (button.dataset.html !== html) {
+        button.innerHTML = html;
+        button.dataset.html = html;
+      }
+      button.setAttribute('aria-label', s ? `${i + 1}: ${ITEMS[s.id].name}${s.count > 1 ? ` (${s.count})` : ''}` : `${i + 1}: empty`);
     });
   }
 
   get selected() {
-    return this.items[this.index] ?? null;
+    return this.inventory.slots[this.index] ?? null;
   }
 
   /** Briefly shows a message above the hotbar. */
@@ -69,19 +90,15 @@ export class Hotbar {
 
   /** Moves the selection by one slot (wraps around). */
   step(direction) {
-    this.select((this.index + direction + 9) % 9);
+    const n = this.slots.length;
+    this.select((this.index + direction + n) % n);
   }
 
   select(i, quiet = false) {
     this.index = i;
     this.slots.forEach((s, k) => s.setAttribute('aria-pressed', String(k === i)));
     const item = this.selected;
-    this.label.textContent = item ? item.name : 'Empty';
-    if (!quiet) {
-      this.label.classList.remove('show');
-      void this.label.offsetWidth; // restart the fade
-      this.label.classList.add('show');
-    }
+    if (!quiet) this.flash(item ? ITEMS[item.id].name : 'Empty hand');
     this.onSelect?.(item);
   }
 }

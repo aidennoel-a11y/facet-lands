@@ -310,8 +310,9 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
             // Autumn: yellow, orange or red, tree by tree.
             vec3 fall = vTreeRand < 0.35 ? vec3(0.85, 0.62, 0.08) : vTreeRand < 0.7 ? vec3(0.9, 0.35, 0.05) : vec3(0.65, 0.1, 0.05);
             c = mix(c, fall * (0.75 + 0.5 * dot(c, vec3(0.33))), uAutumn * leafy * 0.9);
-            ${leaves || randFrom ? '' : `// Moss up the north side of the trunks, in damp country.
-            c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * smoothstep(0.1, 0.8, vTreeNorth) * (0.5 + 0.5 * seasonHash(floor(vFlowerAt.xy * 4.0) + vTreeRand)) * 0.8);`}
+            ${leaves || randFrom ? '' : `// Moss up the north side of the trunks, in damp country: on about
+            // one tree in six.
+            c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * step(0.83, fract(vTreeRand * 13.7)) * smoothstep(0.1, 0.8, vTreeNorth) * (0.5 + 0.5 * seasonHash(floor(vFlowerAt.xy * 4.0) + vTreeRand)) * 0.8);`}
             // Winter: bare grey-brown twigs, and snow on the upward faces.
             c = mix(c, vec3(0.13, 0.1, 0.08), uWinter * leafy * 0.85);
             c = mix(c, vec3(0.86, 0.89, 0.93), max(uWinter, uSnowfall) * vSeason.y * smoothstep(0.3 - 0.2 * uSnowfall, 0.75, vSeasonUp) * 0.85);

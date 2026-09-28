@@ -399,6 +399,47 @@ export class Sound {
     } else if (kind === 'rumble') {
       noise(t, 3.5, 70, 0.7, 0.35, 3);
       tone(t, 3, 'sine', 42, 30, 60, 0.7, 0.25);
+    } else if (kind === 'chop') {
+      // An axe biting wood: a knock and a crack.
+      tone(t, 0.12, 'triangle', 190, 120, 400, 1.2, 0.3);
+      noise(t, 0.08, 1800, 1.5, 0.18);
+    } else if (kind === 'creak') {
+      // A tree about to go: a long groaning creak.
+      tone(t, 1.3, 'sawtooth', 70, 110, 260, 4, 0.12, 9);
+      noise(t + 0.9, 0.5, 900, 1, 0.1, 30);
+    } else if (kind === 'treefall') {
+      // It hits the ground: a thud and the crash of branches.
+      tone(t, 0.6, 'sine', 70, 35, 120, 0.8, 0.5);
+      noise(t, 1.1, 1300, 0.6, 0.35, 14);
+      noise(t, 0.3, 300, 0.8, 0.4);
+    } else if (kind === 'growl') {
+      noise(t, 1.2, 160, 2, 0.3, 24);
+      tone(t, 1.2, 'sawtooth', 70, 60, 180, 1.5, 0.18, 22);
+    } else if (kind === 'snarl') {
+      noise(t, 0.7, 700, 2, 0.2, 38);
+      tone(t, 0.7, 'sawtooth', 190, 150, 500, 2, 0.1, 30);
+    } else if (kind === 'hurt') {
+      tone(t, 0.25, 'sawtooth', 240, 150, 600, 1.2, 0.15);
+      noise(t, 0.15, 500, 1, 0.2);
+    } else if (kind === 'eat') {
+      for (let k = 0; k < 3; k++) noise(t + k * 0.16, 0.08, 1400 + Math.random() * 600, 2, 0.12);
+    } else if (kind === 'drink') {
+      for (let k = 0; k < 3; k++) tone(t + k * 0.22, 0.12, 'sine', 500 + Math.random() * 100, 260, 400, 1, 0.12);
+    } else if (kind === 'pickup') {
+      noise(t, 0.08, 2600, 1.5, 0.1);
+      tone(t, 0.08, 'triangle', 600, 900, 800, 1, 0.08);
+    } else if (kind === 'craft' || kind === 'place') {
+      tone(t, 0.1, 'triangle', 220, 160, 420, 1.2, 0.25);
+      tone(t + 0.14, 0.1, 'triangle', 260, 180, 420, 1.2, 0.2);
+    } else if (kind === 'strike') {
+      // Flint on steel: a bright scrape and a click.
+      noise(t, 0.12, 5200, 3, 0.18);
+      tone(t, 0.05, 'square', 2400, 1800, 3000, 2, 0.05);
+    } else if (kind === 'whoosh') {
+      noise(t, 0.4, 700, 0.7, 0.15);
+    } else if (kind === 'thunk') {
+      tone(t, 0.15, 'sine', 150, 80, 220, 1, 0.35);
+      noise(t, 0.06, 900, 1, 0.15);
     } else if (kind === 'crackle') {
       for (let k = 0; k < 6; k++) noise(t + Math.random() * 0.8, 0.04, 2500 + Math.random() * 2500, 2, 0.05 + Math.random() * 0.06);
     }

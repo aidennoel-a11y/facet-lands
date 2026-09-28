@@ -289,6 +289,7 @@ export function decorateChunk(grid, field) {
   const seed = field.seed ^ 0x51f15e;
   const parts = [];
   const obstacles = [];
+  const floors = []; // [x, y, z, random, ...]: open cave floor, for the finds (see below)
   const step = cell * 2;
   const f = (x, y, z) => Math.min(gridHeight(grid, x, z) - y, sampleGrid(grid, x, y, z));
   const tmp = new Color();
@@ -344,6 +345,7 @@ export function decorateChunk(grid, field) {
           const flat = !inEntrance && f(x, floor + 0.6, z) < -0.3 && f(x + 1.5, floor - 0.5, z) >= 0 && f(x - 1.5, floor - 0.5, z) >= 0;
           const r1 = hash2(Math.round(x * 3), Math.round(floor * 3), seed + 1);
           const r2 = hash2(Math.round(z * 3), Math.round(roof * 3), seed + 2);
+          if (!inEntrance && gap > 2.2 && f(x, floor + 0.4, z) < -0.2) floors.push(x, floor, z, hash2(Math.round(x * 7), Math.round(floor * 7), seed + 5));
           if (gap > 3 && gap < 11 && r1 < 0.12 && flat) {
             // Pillar: a stalagmite and stalactite that meet.
             const radius = 0.45 + r2 * 0.4;
@@ -370,11 +372,30 @@ export function decorateChunk(grid, field) {
       }
     }
   }
-  if (!parts.length) return { geometry: null, obstacles };
+  // What's to be found on the cave floors: lumps of iron ore (in every
+  // cave: at least a couple wherever there's floor), clusters of crystal,
+  // glowing mushrooms, old bones. [kind, x, y, z, turn, size, ...]; kinds:
+  // 1 iron ore, 2 crystals, 3 glowcaps, 4 bones.
+  const features = [];
+  let iron = 0;
+  for (let k = 0; k < floors.length; k += 4) {
+    const [x, y, z, r] = floors.slice(k, k + 4);
+    const kind = r < 0.06 ? 1 : r < 0.1 ? 2 : r < 0.18 ? 3 : r < 0.2 ? 4 : 0;
+    if (!kind) continue;
+    if (kind === 1) iron++;
+    features.push(kind, x, y, z, r * 71 % 6.28, kind === 1 ? 0.8 + r * 6 : 0.7 + (r * 13 % 1) * 0.8);
+  }
+  for (let k = 0; iron < 2 && k < floors.length; k += 4 * 5) {
+    const [x, y, z, r] = floors.slice(k, k + 4);
+    if (r < 0.2) continue; // (something's there already)
+    features.push(1, x, y, z, r * 71 % 6.28, 0.9);
+    iron++;
+  }
+  if (!parts.length) return { geometry: null, obstacles, features };
   const geometry = mergeGeometries(parts);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-  return { geometry, obstacles };
+  return { geometry, obstacles, features };
 }
 
 /**
@@ -385,7 +406,7 @@ export function decorateChunk(grid, field) {
  */
 export function buildChunkData(field, cx, cz, chunkSize) {
   const grid = sampleChunk(field, cx, cz, chunkSize);
-  if (!grid) return { grid: null, rock: null, deco: null, obstacles: new Float32Array(0) };
+  if (!grid) return { grid: null, rock: null, deco: null, obstacles: new Float32Array(0), features: new Float32Array(0) };
   const rock = meshChunk(grid, field);
   const deco = decorateChunk(grid, field);
   const pack = (g) =>
@@ -401,6 +422,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
     rock: pack(rock),
     deco: pack(deco.geometry),
     obstacles: new Float32Array(deco.obstacles),
+    features: new Float32Array(deco.features),
   };
 }
 
@@ -410,5 +432,6 @@ export function chunkDataBuffers(data) {
   if (data.grid) out.push(data.grid.values.buffer);
   for (const part of [data.rock, data.deco]) if (part) for (const a of Object.values(part)) out.push(a.buffer);
   out.push(data.obstacles.buffer);
+  if (data.features) out.push(data.features.buffer);
   return [...new Set(out)];
 }

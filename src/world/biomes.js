@@ -272,7 +272,7 @@ export const BIOMES = {
     snow: 0xf1f4f7,
     grass: 0.35,
     trees: {
-      density: 0.95,
+      density: 0.55, // (open enough to walk through: see the crowns' collisions)
       clumped: false,
       species: [
         { type: 'pine', weight: 1.3, minHeight: -99, maxHeight: 160 },

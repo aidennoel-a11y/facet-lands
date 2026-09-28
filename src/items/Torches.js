@@ -169,8 +169,12 @@ export class Torches {
     }
   }
 
-  /** Flicker the flames and give the nearest torches the real lights. */
-  update(time, cameraPosition) {
+  /**
+   * Flicker the flames and give the real lights to the nearest of the
+   * torches and `extra` lights ({ x, y, z, strength, distance? }: campfires,
+   * a torch in your hand).
+   */
+  update(time, cameraPosition, extra = []) {
     for (const t of this.torches) {
       const f = 0.85 + 0.15 * Math.sin(time * 13 + t.phase) * Math.sin(time * 7.3 + t.phase * 1.7);
       t.outer.scale.set(f, 0.9 + 0.2 * f, f);
@@ -180,9 +184,12 @@ export class Torches {
       t.flicker = f;
       t.distance = t.group.position.distanceToSquared(cameraPosition);
     }
-    const nearest = this.torches.length <= this.lights.length
-      ? this.torches
-      : [...this.torches].sort((a, b) => a.distance - b.distance).slice(0, this.lights.length);
+    const all = [...this.torches];
+    for (const x of extra) {
+      x.distance = (x.x - cameraPosition.x) ** 2 + (x.y - cameraPosition.y) ** 2 + (x.z - cameraPosition.z) ** 2;
+      all.push(x);
+    }
+    const nearest = all.length <= this.lights.length ? all : all.sort((a, b) => a.distance - b.distance).slice(0, this.lights.length);
     this.lights.forEach((light, i) => {
       const t = nearest[i];
       if (!t) {
@@ -190,8 +197,16 @@ export class Torches {
         light.position.set(0, -10000, 0);
         return;
       }
-      light.position.copy(t.group.localToWorld(this._flame.set(0, FLAME_HEIGHT + 0.1, 0)));
-      light.intensity = 14 * t.flicker;
+      if (t.group) {
+        light.position.copy(t.group.localToWorld(this._flame.set(0, FLAME_HEIGHT + 0.1, 0)));
+        light.intensity = 14 * t.flicker;
+        light.distance = 16;
+      } else {
+        light.position.set(t.x, t.y, t.z);
+        const f = 0.85 + 0.15 * Math.sin(time * 11 + t.x) * Math.sin(time * 6.1 + t.z);
+        light.intensity = t.strength * f;
+        light.distance = t.reach ?? 16;
+      }
     });
   }
 }
