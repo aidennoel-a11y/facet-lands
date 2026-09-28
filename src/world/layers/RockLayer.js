@@ -239,7 +239,14 @@ export function createRockLayer(config) {
       let count = 0;
       placed.forEach((list, s) => (count += list.length * ALL_SHAPES[s].attributes.position.count));
       if (!count) return null;
-      const positions = new Float32Array(count * 3), normals = new Float32Array(count * 3), colors = new Float32Array(count * 3), locals = new Float32Array(count * 3);
+      const positions = new Float32Array(count * 3), normals = new Float32Array(count * 3), colors = new Float32Array(count * 3), locals = new Float32Array(count * 3), mosses = new Float32Array(count * 2);
+      // How mossy the rocks here are (damp woods, jungle, wetland) and how
+      // lichened (up high, and in dry country); rock by rock a little more or less.
+      const cw = generator.getBiomeWeights((cx + 0.5) * config.chunkSize, (cz + 0.5) * config.chunkSize, {});
+      const damp = Math.min(1, 0.55 * (cw.temperate ?? 0) + 0.9 * (cw.pine ?? 0) + (cw.jungle ?? 0) + (cw.wetland ?? 0));
+      const high = generator.getMountainness((cx + 0.5) * config.chunkSize, (cz + 0.5) * config.chunkSize);
+      const dry = Math.min(1, 0.8 * high + 0.35 * ((cw.savanna ?? 0) + (cw.volcanic ?? 0)));
+      let rockIndex = 0;
       let o = 0;
       placed.forEach((list, s) => {
         const shape = ALL_SHAPES[s].attributes;
@@ -247,6 +254,8 @@ export function createRockLayer(config) {
           normalMatrix.getNormalMatrix(m);
           locals.set(shape.position.array, o);
           colors.set(shape.color.array, o);
+          const vary = 0.5 + hash2(cx * 97 + rockIndex, cz * 89 + rockIndex++, 0x5a55);
+          for (let i = 0; i < shape.position.count; i++) (mosses[(o / 3 + i) * 2] = damp * vary), (mosses[(o / 3 + i) * 2 + 1] = dry * vary);
           for (let i = 0; i < shape.position.count; i++, o += 3) {
             v.fromBufferAttribute(shape.position, i).applyMatrix4(m);
             positions[o] = v.x;
@@ -264,6 +273,7 @@ export function createRockLayer(config) {
       geometry.setAttribute('normal', new BufferAttribute(normals, 3));
       geometry.setAttribute('color', new BufferAttribute(colors, 3));
       geometry.setAttribute('rockLocal', new BufferAttribute(locals, 3));
+      geometry.setAttribute('rockMoss', new BufferAttribute(mosses, 2));
       geometry.computeBoundingSphere();
       const mesh = new Mesh(geometry, material);
       mesh.castShadow = true;

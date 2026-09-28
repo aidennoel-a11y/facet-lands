@@ -235,27 +235,6 @@ kbd {
   border-radius: 4px;
 }
 
-.keys {
-  position: fixed;
-  right: var(--gutter);
-  top: calc(var(--gutter) + env(safe-area-inset-top, 0px));
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 10px 12px;
-  font-size: 12px;
-  background: var(--card);
-  border-radius: 10px;
-}
-.keys span {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-.keys[data-mode='fly'] .walk-only,
-.keys[data-mode='walk'] .fly-only {
-  display: none;
-}
 
 #minimap {
   position: fixed;
@@ -347,12 +326,6 @@ kbd {
   }
 }
 
-@media (max-width: 900px) {
-  .keys {
-    display: none;
-  }
-}
-
 @media (max-width: 600px) {
   .hotbar .slot {
     width: 34px;
@@ -367,9 +340,6 @@ kbd {
     transform: none;
     justify-items: start;
   }
-  .keys {
-    display: none;
-  }
   #minimap {
     width: 120px;
     height: 120px;
@@ -379,4 +349,38 @@ kbd {
     padding: 10px 12px;
     gap: 8px;
   }
+}
+
+/* The crosshair in the middle of the screen: a small white plus. */
+#crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  pointer-events: none;
+  z-index: 5;
+}
+#crosshair::before,
+#crosshair::after {
+  content: '';
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 0 1px #1d273380;
+}
+#crosshair::before {
+  left: 8px;
+  top: 0;
+  width: 2px;
+  height: 18px;
+}
+#crosshair::after {
+  top: 8px;
+  left: 0;
+  width: 18px;
+  height: 2px;
+}
+.panel[hidden] {
+  display: none;
 }

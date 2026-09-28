@@ -297,7 +297,8 @@ export class Sound {
    * A creature's call, from off to one side (`pan`, -1 left .. 1 right), as
    * loud as `volume` (0..1): 'caw' (a crow), 'gull', 'hawk' (a long
    * screech), 'snort' (a startled deer), 'grunt' (a bison), 'flutter' (birds
-   * taking off).
+   * taking off); and not creatures: 'splash', 'bigsplash', 'rumble' (a
+   * volcano), 'crackle' (a fire).
    */
   call(kind, pan = 0, volume = 1) {
     if (!this.ctx || !this.enabled || volume < 0.02) return;
@@ -374,6 +375,17 @@ export class Sound {
       tone(t, 0.7, 'sawtooth', 85, 65, 220, 1, 0.2);
     } else if (kind === 'flutter') {
       noise(t, 0.9, 1400, 0.8, 0.07, 22);
+    } else if (kind === 'splash') {
+      noise(t, 0.22, 2200, 0.9, 0.08);
+      tone(t, 0.12, 'sine', 700, 300, 500, 1, 0.05);
+    } else if (kind === 'bigsplash') {
+      noise(t, 0.6, 1400, 0.6, 0.18);
+      tone(t, 0.25, 'sine', 380, 120, 260, 0.8, 0.12);
+    } else if (kind === 'rumble') {
+      noise(t, 3.5, 70, 0.7, 0.35, 3);
+      tone(t, 3, 'sine', 42, 30, 60, 0.7, 0.25);
+    } else if (kind === 'crackle') {
+      for (let k = 0; k < 6; k++) noise(t + Math.random() * 0.8, 0.04, 2500 + Math.random() * 2500, 2, 0.05 + Math.random() * 0.06);
     }
   }
 

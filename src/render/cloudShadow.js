@@ -1,4 +1,4 @@
-import { ClampToEdgeWrapping, Color, DataTexture, LinearFilter, RedFormat, UnsignedByteType, Vector2 } from 'three';
+import { ClampToEdgeWrapping, Color, DataTexture, LinearFilter, RedFormat, UnsignedByteType, Vector2, Vector4 } from 'three';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -32,6 +32,9 @@ export const cloudShadowUniforms = {
   uMist: { value: 0 },
   uMistTop: { value: 0 },
   uMistColor: { value: new Color(0xdfe6ea) },
+  // Ground burnt by a wildfire (see Wildfires): up to eight scars, each
+  // (x, z, radius, how burnt 0..1).
+  uBurns: { value: Array.from({ length: 8 }, () => new Vector4(0, 0, 0, 0)) },
 };
 
 /**
@@ -109,11 +112,23 @@ export function addCloudShadow(material) {
         }`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uCloudShadow;\nuniform vec2 uCloudOrigin;\nuniform float uCloudSize;\nuniform float uCloudStrength;\nvarying vec2 vCloudXZ;\nvarying float vCloudY;\nuniform float uMist;\nuniform float uMistTop;\nuniform vec3 uMistColor;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uCloudShadow;\nuniform vec2 uCloudOrigin;\nuniform float uCloudSize;\nuniform float uCloudStrength;\nvarying vec2 vCloudXZ;\nvarying float vCloudY;\nuniform float uMist;\nuniform float uMistTop;\nuniform vec3 uMistColor;\nuniform vec4 uBurns[8];')
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
-        reflectedLight.directDiffuse *= 1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r;`,
+        reflectedLight.directDiffuse *= 1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r;
+        {
+          // Burnt: charred black where a fire went through, ragged at the edge.
+          float burnt = 0.0;
+          float rag = fract(sin(dot(floor(vCloudXZ * 0.7), vec2(12.9898, 78.233))) * 43758.5453);
+          for (int i = 0; i < 8; i++) {
+            vec4 b = uBurns[i];
+            if (b.w > 0.0) burnt = max(burnt, b.w * (1.0 - smoothstep(b.z * (0.55 + 0.25 * rag), b.z, distance(vCloudXZ, b.xy))));
+          }
+          vec3 char = mix(vec3(1.0), vec3(0.16, 0.13, 0.11), burnt);
+          reflectedLight.directDiffuse *= char;
+          reflectedLight.indirectDiffuse *= char;
+        }`,
       )
       .replace(
         '#include <fog_fragment>',

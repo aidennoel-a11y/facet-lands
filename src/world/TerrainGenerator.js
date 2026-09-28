@@ -1,5 +1,5 @@
 import { SimplexNoise } from '../noise/SimplexNoise.js';
-import { hash2, hashSeed } from '../noise/random.js';
+import { hash2, hashSeed, mulberry32 } from '../noise/random.js';
 import { BIOME_IDS, BIOMES, blendedFaceColor, prepareBiome } from './biomes.js';
 import { CaveSystem } from './caves/CaveSystem.js';
 import { Rivers } from './Rivers.js';
@@ -1601,30 +1601,69 @@ export class TerrainGenerator {
     const key = (i + 32768) * 65536 + (j + 32768);
     const cache = this._springs ?? (this._springs = new Map());
     if (cache.has(key)) return cache.get(key);
-    let spring = null;
+    const springs = [];
     const s = this.seed ^ 0x5b1e;
-    if (hash2(i, j, s) < 0.38) {
-      const C = 180;
-      const x = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * C, z = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * C;
+    const C = 180;
+    const ok = (x, z, need = 0.75) => {
       // (Fresh objects: the shared ones may be in use for the point being built.)
       const w = this.getBiomeWeights(x, z, {}, this.#rangeField(x, z, {}).value);
-      if (w.volcanic > 0.75) {
-        const v = this.getVolcanic(x, z);
-        if (v.cone < 0.2 && v.lava < 0.1) {
-          spring = {
-            x, z,
-            r: 4 + 4 * hash2(i, j, s + 3),
-            geyser: hash2(i, j, s + 4) < 0.35,
-            period: 45 + 60 * hash2(i, j, s + 5),
-            phase: hash2(i, j, s + 6),
-            strength: 0.7 + 0.3 * hash2(i, j, s + 7),
-          };
-        }
+      if (!(w.volcanic > need)) return false;
+      const v = this.getVolcanic(x, z);
+      return v.cone < 0.2 && v.lava < 0.1;
+    };
+    if (hash2(i, j, s) < 0.38) {
+      const x = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * C, z = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * C;
+      if (ok(x, z)) {
+        springs.push({
+          x, z,
+          r: 4 + 4 * hash2(i, j, s + 3),
+          geyser: hash2(i, j, s + 4) < 0.35,
+          period: 45 + 60 * hash2(i, j, s + 5),
+          phase: hash2(i, j, s + 6),
+          strength: 0.7 + 0.3 * hash2(i, j, s + 7),
+        });
+      }
+    }
+    // Geothermal fields: here and there in the volcanic country, a patch
+    // where the ground is riddled with them, pools and geysers crowded
+    // close together (see #geothermalField).
+    const cx = (i + 0.5) * C, cz = (j + 0.5) * C;
+    const field = this.#geothermalField(cx, cz);
+    if (field) {
+      const rand = mulberry32(hash2(i, j, s + 40) * 4294967296);
+      const n = 3 + Math.floor(rand() * 4);
+      for (let t = 0; t < 40 && springs.length < n + 1; t++) {
+        const x = i * C + 8 + rand() * (C - 16), z = j * C + 8 + rand() * (C - 16);
+        if (Math.hypot(x - field.x, z - field.z) > field.r) continue;
+        if (springs.some((o) => Math.hypot(o.x - x, o.z - z) < 13)) continue;
+        if (!ok(x, z, 0.6)) continue;
+        springs.push({ x, z, r: 2.5 + 2.5 * rand(), geyser: rand() < 0.4, period: 30 + 60 * rand(), phase: rand(), strength: 0.6 + 0.4 * rand() });
       }
     }
     if (cache.size > 20000) cache.clear();
-    cache.set(key, spring);
-    return spring;
+    cache.set(key, springs);
+    return springs;
+  }
+
+  /**
+   * The geothermal field (a patch 70-130 m across, thick with hot springs
+   * and geysers) that (x, z) lies near, if any: { x, z, r }. About a third
+   * of the 720 m squares of the volcanic country hold one.
+   */
+  #geothermalField(x, z) {
+    const F = 720, s = this.seed ^ 0x6e07;
+    const fi = Math.floor(x / F), fj = Math.floor(z / F);
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const i = fi + di, j = fj + dj;
+        if (hash2(i, j, s) > 0.35) continue;
+        const f = { x: (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * F, z: (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * F, r: 70 + 60 * hash2(i, j, s + 3) };
+        if (Math.hypot(x - f.x, z - f.z) > f.r + 130) continue;
+        const w = this.getBiomeWeights(f.x, f.z, {}, this.#rangeField(f.x, f.z, {}).value);
+        if (w.volcanic > 0.7) return f;
+      }
+    }
+    return null;
   }
 
   /** The hot springs and geysers in or near a box. */
@@ -1632,8 +1671,7 @@ export class TerrainGenerator {
     const C = 180, out = [];
     for (let j = Math.floor((minZ - 20) / C); j <= Math.floor((maxZ + 20) / C); j++) {
       for (let i = Math.floor((minX - 20) / C); i <= Math.floor((maxX + 20) / C); i++) {
-        const sp = this.#springAt(i, j);
-        if (sp && sp.x > minX - 20 && sp.x < maxX + 20 && sp.z > minZ - 20 && sp.z < maxZ + 20) out.push(sp);
+        for (const sp of this.#springAt(i, j)) if (sp.x > minX - 20 && sp.x < maxX + 20 && sp.z > minZ - 20 && sp.z < maxZ + 20) out.push(sp);
       }
     }
     return out;
@@ -1645,10 +1683,10 @@ export class TerrainGenerator {
     const ci = Math.floor(x / C), cj = Math.floor(z / C);
     let best = null, bd = 40;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
-      const sp = this.#springAt(ci + di, cj + dj);
-      if (!sp) continue;
-      const d = Math.hypot(x - sp.x, z - sp.z);
-      if (d < bd) { bd = d; best = sp; }
+      for (const sp of this.#springAt(ci + di, cj + dj)) {
+        const d = Math.hypot(x - sp.x, z - sp.z);
+        if (d < bd) { bd = d; best = sp; }
+      }
     }
     return best ? { spring: best, d: bd } : null;
   }

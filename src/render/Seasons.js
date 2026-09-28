@@ -24,6 +24,7 @@ export const seasonUniforms = {
   uWinter: { value: 0 },
   uWet: { value: 0 }, // how wet the ground is after rain (puddles), 0..1
   uSnowfall: { value: 0 }, // fresh snow lying on everything after it has snowed, 0..1
+  uMossy: { value: 0 }, // how damp the country round about is: moss on the north sides of the trees (0..1)
 };
 
 function smoothstep(a, b, x) {
@@ -90,6 +91,7 @@ const COMMON = /* glsl */ `
   uniform float uAutumn;
   uniform float uWinter;
   uniform float uSnowfall;
+  uniform float uMossy;
   float seasonGreen(vec3 c) { return clamp((c.g - max(c.r, c.b)) * 9.0, 0.0, 1.0); }
   float seasonHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   float seasonNoise(vec2 p) {
@@ -169,7 +171,7 @@ export function seasonalRocks(material) {
     material,
     (shader) => {
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vRockLocal;\nvarying vec3 vRockNormal;\n#ifndef USE_INSTANCING\nattribute vec3 rockLocal;\n#endif')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vRockLocal;\nvarying vec3 vRockNormal;\nvarying vec2 vRockMoss;\n#ifndef USE_INSTANCING\nattribute vec3 rockLocal;\nattribute vec2 rockMoss;\n#endif')
         // (Instanced, or baked together into one mesh a chunk: see RockLayer.)
         .replace(
           '#include <begin_vertex>',
@@ -177,19 +179,32 @@ export function seasonalRocks(material) {
           #ifdef USE_INSTANCING
           vRockLocal = position;
           vRockNormal = normalize((modelMatrix * instanceMatrix * vec4(normal, 0.0)).xyz);
+          vRockMoss = vec2(0.0);
           #else
           vRockLocal = rockLocal;
           vRockNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+          vRockMoss = rockMoss;
           #endif`,
         );
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vRockLocal;\nvarying vec3 vRockNormal;`)
+        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vRockLocal;\nvarying vec3 vRockNormal;\nvarying vec2 vRockMoss;`)
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
           {
             vec3 c = diffuseColor.rgb;
             float cool = 1.0 - smoothstep(0.02, 0.1, c.r - c.b);
+            // Moss on the damp north faces and tops (in wet country), and
+            // lichen, pale green-grey and orange, in spots (up high and in
+            // dry country): see RockLayer's rockMoss.
+            {
+              vec3 cell = floor(vRockLocal * 3.0);
+              float patchy = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+              float north = smoothstep(0.0, 0.7, -vRockNormal.z), top = smoothstep(0.3, 0.9, vRockNormal.y);
+              c = mix(c, vec3(0.27, 0.38, 0.15) * (0.85 + 0.3 * patchy), vRockMoss.x * max(north, top * 0.6) * smoothstep(0.3, 0.6, patchy) * 0.85);
+              float spot = step(0.84, fract(sin(dot(floor(vRockLocal * 9.0), vec3(39.34, 11.13, 83.17))) * 24634.63));
+              c = mix(c, patchy > 0.55 ? vec3(0.8, 0.52, 0.2) : vec3(0.72, 0.75, 0.62), vRockMoss.y * spot * 0.75);
+            }
             float cap = smoothstep(0.45, 0.75, vRockNormal.y);
             float drift = (1.0 - smoothstep(-0.35, 0.05, vRockLocal.y)) * smoothstep(-0.2, 0.5, dot(vRockNormal.xz, vec2(0.8, 0.6)));
             float snow = cool * clamp(max(uWinter * max(cap, drift), uSnowfall * smoothstep(0.1, 0.5, vRockNormal.y)), 0.0, 1.0);
@@ -241,7 +256,7 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
       shader.vertexShader = shader.vertexShader
         .replace(
           '#include <common>',
-          '#include <common>\nattribute vec3 aSeason;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nuniform float uWinter;',
+          `#include <common>\nattribute vec3 aSeason;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nuniform float uWinter;${leaves || randFrom ? '' : '\nattribute float aCrown;\nvarying float vTreeNorth;'}`,
         )
         .replace(
           '#include <begin_vertex>',
@@ -249,6 +264,11 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
           vSeason = aSeason;
           vFlowerAt = position;
           vSeasonUp = normal.y;
+          ${leaves || randFrom ? '' : `#ifdef USE_INSTANCING
+            vTreeNorth = -normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal).z * (1.0 - aCrown);
+          #else
+            vTreeNorth = 0.0;
+          #endif`}
           ${randFrom ? `vTreeRand = ${randFrom};` : `#ifdef USE_INSTANCING
             vTreeRand = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
           #else
@@ -261,7 +281,7 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
 `,
         );
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;`)
+        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;${leaves || randFrom ? '' : '\nvarying float vTreeNorth;'}`)
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
@@ -280,6 +300,8 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
             // Autumn: yellow, orange or red, tree by tree.
             vec3 fall = vTreeRand < 0.35 ? vec3(0.85, 0.62, 0.08) : vTreeRand < 0.7 ? vec3(0.9, 0.35, 0.05) : vec3(0.65, 0.1, 0.05);
             c = mix(c, fall * (0.75 + 0.5 * dot(c, vec3(0.33))), uAutumn * leafy * 0.9);
+            ${leaves || randFrom ? '' : `// Moss up the north side of the trunks, in damp country.
+            c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * smoothstep(0.1, 0.8, vTreeNorth) * (0.5 + 0.5 * seasonHash(floor(vFlowerAt.xy * 4.0) + vTreeRand)) * 0.8);`}
             // Winter: bare grey-brown twigs, and snow on the upward faces.
             c = mix(c, vec3(0.13, 0.1, 0.08), uWinter * leafy * 0.85);
             c = mix(c, vec3(0.86, 0.89, 0.93), max(uWinter, uSnowfall) * vSeason.y * smoothstep(0.3 - 0.2 * uSnowfall, 0.75, vSeasonUp) * 0.85);

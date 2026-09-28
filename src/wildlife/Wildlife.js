@@ -175,7 +175,7 @@ export class Wildlife {
       this.wait = 0.5;
       this.#populate(ctx);
     }
-    for (const herd of this.herds) this.#herd(herd, dt);
+    for (const herd of this.herds) this.#herd(herd, dt, ctx);
     for (const flock of this.flocks) this.#flock(flock, dt, ctx);
     for (const a of this.animals) {
       if (SPECIES[a.kind].ground) this.#walker(a, dt, ctx);
@@ -525,6 +525,31 @@ export class Wildlife {
     return out;
   }
 
+  /**
+   * Water within 130 m of (x, z) for animals to drink at: { x, z } in the
+   * water and { bx, bz } on the bank before it, or null.
+   */
+  #findWater(x, z, ctx) {
+    for (const r of [15, 30, 50, 75, 100, 130]) {
+      const turn = Math.random() * TAU;
+      for (let k = 0; k < 16; k++) {
+        const a = turn + (k / 16) * TAU;
+        const wx = x + Math.sin(a) * r, wz = z + Math.cos(a) * r;
+        if (!ctx.waterAt(wx, wz)) continue;
+        // Back from the water to the bank.
+        for (let b = 2; b < r; b += 2) {
+          const bx = wx - Math.sin(a) * b, bz = wz - Math.cos(a) * b;
+          if (!ctx.waterAt(bx, bz)) {
+            const gx = bx - Math.sin(a) * 1.5, gz = bz - Math.cos(a) * 1.5;
+            return { x: wx, z: wz, bx: gx, bz: gz };
+          }
+        }
+        return null;
+      }
+    }
+    return null;
+  }
+
   /** How steep the ground is at (x, z): rise over run, the steepest way. */
   #slope(x, z, ctx) {
     const e = 1.5;
@@ -538,9 +563,27 @@ export class Wildlife {
     return { d: Math.hypot(a.x - c.x, a.z - c.z), d3: Math.hypot(a.x - c.x, a.y - c.y, a.z - c.z), above: c.y - a.y };
   }
 
-  #herd(herd, dt) {
+  #herd(herd, dt, ctx) {
     herd.fleeTime -= dt;
     herd.goalWait -= dt;
+    // At dawn and at dusk the herd goes down to the water to drink, if
+    // there's some within reach: to the bank, the members spread along it.
+    const when = ctx.dawn > 0.3 ? 'dawn' : ctx.dusk > 0.3 ? 'dusk' : null;
+    const lead = herd.members[0];
+    if (when && herd.drank !== when && !herd.drinking && herd.fleeTime <= 0 && lead && ctx.waterAt) {
+      herd.drank = when;
+      const water = this.#findWater(lead.x, lead.z, ctx);
+      if (water) {
+        herd.drinking = { ...water, until: this.time + 75 };
+        herd.goal = { x: water.bx, z: water.bz };
+        for (const m of herd.members) m.drank = false;
+      }
+    }
+    if (herd.drinking && (this.time > herd.drinking.until || herd.fleeTime > 0)) {
+      herd.drinking = null;
+      herd.goalWait = rnd(5, 15);
+    }
+    if (herd.drinking) herd.goalWait = Math.max(herd.goalWait, 1);
     // The herd drifts to fresh grazing now and then.
     // (Not while most of it is lying down.)
     if (herd.goalWait <= 0 && herd.members.filter((m) => m.state === 'rest').length * 2 > herd.members.length) herd.goalWait = rnd(8, 20);
@@ -594,7 +637,9 @@ export class Wildlife {
       if (t.d > sp.calm && herd) herd.fleeTime = Math.min(herd.fleeTime, 0.5);
     } else {
       a.timer -= dt;
-      const goal = herd ? { x: herd.goal.x + a.offset.x, z: herd.goal.z + a.offset.z } : a.goal ?? a.home;
+      // (Going to drink, they bunch up along the bank.)
+      const spread = herd?.drinking ? 0.35 : 1;
+      const goal = herd ? { x: herd.goal.x + a.offset.x * spread, z: herd.goal.z + a.offset.z * spread } : a.goal ?? a.home;
       const far = Math.hypot(goal.x - a.x, goal.z - a.z);
       // Safe again: it stops and looks back the way it came.
       if (a.state === 'flee') (a.state = 'alert'), (a.timer = rnd(3, 6)), (a.alertCool = rnd(10, 20));
@@ -623,7 +668,14 @@ export class Wildlife {
         a.wanderHeading = a.heading + rnd(-0.8, 0.8);
       }
       // A resting one gets up as the herd moves off.
-      if (a.state === 'rest' && far > 22) (a.state = 'walk'), (a.timer = rnd(6, 12));
+      if (a.state === 'rest' && (far > 22 || herd?.drinking)) (a.state = 'walk'), (a.timer = rnd(6, 12));
+      // At the water: down to drink.
+      if (herd?.drinking && !a.drank && far < 4 && a.state !== 'alert') {
+        a.drank = true;
+        a.state = 'drink';
+        a.timer = rnd(8, 20);
+      }
+      if (herd?.drinking && !a.drank && a.state !== 'alert' && a.state !== 'drink' && far > 4) (a.state = 'walk'), (a.timer = Math.max(a.timer, 3));
       if (a.state === 'walk') {
         want = far > 3 ? Math.atan2(goal.x - a.x, goal.z - a.z) : a.wanderHeading ?? a.heading;
         speed = sp.walk * (far > 25 ? 1.6 : 1);
@@ -638,6 +690,10 @@ export class Wildlife {
           speed = sp.walk * (sp.forager ? 0.5 : 0.3);
           if (a.step < -rnd(0.8, 1.6)) (a.step = sp.forager ? rnd(1, 3) : rnd(3, 9)), (a.stepHeading = a.heading + rnd(-0.6, 0.6));
         }
+      } else if (a.state === 'drink' && herd?.drinking) {
+        // (Turning to face the water.)
+        const off = angleTo(a.heading, Math.atan2(herd.drinking.x - a.x, herd.drinking.z - a.z));
+        if (Math.abs(off) > 0.3) want = a.heading + off;
       } else if (a.state === 'alert') {
         // Turning to face you if you're round behind it.
         const c = ctx.camera.position;
@@ -726,6 +782,18 @@ export class Wildlife {
         a.z = nz;
       }
       a.phase += (a.speed / sp.stride) * TAU * dt;
+      // Its footfalls, near you: prints in the snow, sand and mud; splashes
+      // through the water (see ctx.step).
+      a.stepped = (a.stepped ?? 0) + a.speed * dt;
+      if (a.stepped > sp.stride * 0.5 && ctx.step) {
+        a.stepped = 0;
+        const c = ctx.camera.position;
+        if (Math.abs(a.x - c.x) < 70 && Math.abs(a.z - c.z) < 70) {
+          a.foot = !a.foot;
+          const side = (a.foot ? 1 : -1) * sp.radius * a.scale * 0.45;
+          ctx.step(a, a.x + Math.cos(a.heading) * side, a.z - Math.sin(a.heading) * side, a.speed > sp.walk * 2);
+        }
+      }
     }
     // Never inside a trunk or a boulder (its middle, nor its chest).
     for (const reach of [0, body * 0.7]) {
@@ -745,7 +813,7 @@ export class Wildlife {
     const up = ctx.ground(a.x + sx * L, a.z + sz * L), down = ctx.ground(a.x - sx * L, a.z - sz * L);
     if (up === up && down === down) a.pitch += (-Math.atan2(up - down, 2 * L) * 0.8 - a.pitch) * Math.min(1, dt * 6);
     // Head down to graze, up when alarmed.
-    const headWant = fleeing ? -0.15 : { graze: 1, alert: -0.25, look: -0.05, rest: 0.35 }[a.state] ?? 0.1;
+    const headWant = fleeing ? -0.15 : { graze: 1, drink: 1.15, alert: -0.25, look: -0.05, rest: 0.35 }[a.state] ?? 0.1;
     a.headDown += (headWant - a.headDown) * Math.min(1, dt * 3);
   }
 

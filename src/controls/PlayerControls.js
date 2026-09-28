@@ -58,6 +58,7 @@ export class PlayerControls {
     this.velocityY = 0;
     this.grounded = false;
     this.swimming = false;
+    this.locked = false; // the mouse held in the middle of the screen (pointer lock)
     this.underwater = false; // your eyes are under the surface
 
     this.euler = new Euler(0, 0, 0, 'YXZ');
@@ -75,20 +76,46 @@ export class PlayerControls {
 
   #bind() {
     const dom = this.dom;
-    dom.addEventListener('pointerdown', (e) => {
-      this.dragging = true;
-      this.lastPointer = { x: e.clientX, y: e.clientY };
-      dom.setPointerCapture(e.pointerId);
-    });
-    dom.addEventListener('pointermove', (e) => {
-      if (!this.dragging) return;
-      const dx = e.clientX - this.lastPointer.x;
-      const dy = e.clientY - this.lastPointer.y;
-      this.lastPointer = { x: e.clientX, y: e.clientY };
+    // Click to hold the mouse in the middle of the screen (Esc lets go):
+    // then moving it looks about. Where the browser won't hold it, drag to look.
+    const turn = (dx, dy) => {
       this.euler.y -= dx * this.lookSensitivity;
       this.euler.x -= dy * this.lookSensitivity;
       this.euler.x = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, this.euler.x));
       this.camera.quaternion.setFromEuler(this.euler);
+    };
+    dom.addEventListener('pointerdown', (e) => {
+      if (this.locked) return;
+      if (e.button === 0 && dom.requestPointerLock && !this.lockFailed) {
+        try {
+          const p = dom.requestPointerLock();
+          p?.catch?.(() => (this.lockFailed = true));
+        } catch {
+          this.lockFailed = true;
+        }
+      }
+      this.dragging = true;
+      this.lastPointer = { x: e.clientX, y: e.clientY };
+      try {
+        dom.setPointerCapture(e.pointerId);
+      } catch {
+        // (Not while the mouse is being taken hold of.)
+      }
+    });
+    document.addEventListener('pointerlockchange', () => {
+      this.locked = document.pointerLockElement === dom;
+      this.dragging = false;
+    });
+    document.addEventListener('pointerlockerror', () => (this.lockFailed = true));
+    document.addEventListener('mousemove', (e) => {
+      if (this.locked) turn(e.movementX, e.movementY);
+    });
+    dom.addEventListener('pointermove', (e) => {
+      if (!this.dragging || this.locked) return;
+      const dx = e.clientX - this.lastPointer.x;
+      const dy = e.clientY - this.lastPointer.y;
+      this.lastPointer = { x: e.clientX, y: e.clientY };
+      turn(dx, dy);
     });
     const stop = () => (this.dragging = false);
     dom.addEventListener('pointerup', stop);

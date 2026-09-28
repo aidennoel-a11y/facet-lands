@@ -33,6 +33,10 @@ import { Weather, WEATHER } from './render/Weather.js';
 import { Lightning, panTowards, Rain } from './render/Storm.js';
 import { Sound } from './render/Sound.js';
 import { Showers } from './render/Showers.js';
+import { PRINT, Traces } from './render/Traces.js';
+import { Fish } from './wildlife/Fish.js';
+import { ShootingStars } from './render/ShootingStars.js';
+import { Sandstorm, Volcanoes, Wildfires } from './render/Phenomena.js';
 import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
 import { describeWind, gustAt, updateWind, windDirection, windStrength } from './render/wind.js';
 import { FallingLeaves } from './render/FallingLeaves.js';
@@ -99,6 +103,22 @@ const rivers = createRiverLayer(dayNight.horizon, dayNight.top);
 const fallingLeaves = new FallingLeaves(scene);
 // The animals (deer, bison, rabbits, birds), and the bees, their nests and the fireflies.
 const wildlife = new Wildlife(scene, addCloudShadow);
+const traces = new Traces(scene);
+const fish = new Fish(scene, addCloudShadow);
+const shootingStars = new ShootingStars(scene);
+// Lightning may set the land alight where it strikes: dry ground with
+// something on it to burn (not sand, snow, bare rock or water).
+lightning.onStrike = (x, y, z, distance) => {
+  if (distance > 1300 || y < WORLD.seaLevel + 2 || waterAt(x, z, true)) return;
+  const w = generator.getBiomeWeights(x, z, {});
+  if (w.desert > 0.4 || seasonUniforms.uWinter.value * generator.getSeasonality(x, z) > 0.4) return;
+  const summer = 1 - seasonUniforms.uSpring.value - seasonUniforms.uWinter.value;
+  if (Math.random() < 0.18 + 0.2 * summer + 0.15 * w.savanna) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
+};
+const fires = new Wildfires(scene);
+const volcanoes = new Volcanoes(scene);
+const sandstorm = new Sandstorm(scene, Rain);
+const ambientLight = new THREE.Color();
 const insects = new Insects(scene, addCloudShadow);
 chunks.addLayer(rivers);
 chunks.addLayer(createReedLayer(WORLD));
@@ -139,21 +159,116 @@ function groundAt(x, feetY, z) {
   // swum or walked under from below.
   const over = g.height < WORLD.seaLevel + 40 ? generator.overhangAt(x, z) : null;
   if (over && feetY > over.bottom) g.height = Math.max(g.height, over.top);
+  // A frozen lake or pond: you walk out on the ice.
+  if (!g.inCave) {
+    const water = waterAt(x, z, true);
+    if (water?.frozen) g.height = Math.max(g.height, water.level);
+  }
   return g;
 }
 
 /**
  * The water's surface at (x, z) and its current: { level, fx, fz, speed },
  * or null on dry land. The sea or a lake where the land dips under it; a
- * river, stream or pond where one runs (the higher of the two).
+ * river, stream or pond where one runs (the higher of the two). Frozen
+ * over (a lake or pond in a cold winter, as the water draws its ice) it's
+ * no water to swim in, but ice to walk on: null, unless `ice` is asked for,
+ * then with `frozen` set.
  */
-function waterAt(x, z) {
+function waterAt(x, z, ice = false) {
   const ground = chunks.groundHeightAt(x, z);
-  let found = ground < WORLD.seaLevel ? { level: WORLD.seaLevel, fx: 0, fz: 0, speed: 0 } : null;
+  let found = ground < WORLD.seaLevel ? { level: WORLD.seaLevel, fx: 0, fz: 0, speed: 0, lake: true } : null;
   const r = generator.rivers.waterAt(x, z, 0);
-  if (r && (!found || r.level > found.level)) found = { level: r.level, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : 0.6 + Math.min(2.4, Math.max(0, r.drop) * 6) };
+  if (r && (!found || r.level > found.level)) found = { level: r.level, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : 0.6 + Math.min(2.4, Math.max(0, r.drop) * 6), pond: r.pond, hot: r.tint === 2 };
+  if (found && (found.lake || (found.pond && !found.hot))) {
+    const winter = smooth(0.35, 0.8, seasonUniforms.uWinter.value);
+    if (winter > 0.5) {
+      const cold = generator.getSeasonality(x, z) * (found.lake ? 1 - generator.getOceanness(x, z) : 1);
+      found.frozen = winter * cold > 0.6;
+    }
+  }
+  if (found?.frozen && !ice) return null;
   return found;
 }
+
+// --- Tracks and splashes --------------------------------------------------------
+const printColour = new THREE.Color(), SNOW_PRINT = new THREE.Color(0.42, 0.48, 0.62);
+const printNormal = new THREE.Vector3();
+/**
+ * What the ground at (x, z) takes a footprint in: 'snow', 'sand' or
+ * 'mud' (with the print's colour in printColour), or null (grass, rock).
+ */
+function printGround(x, z, y) {
+  const cold = generator.getSeasonality(x, z);
+  const jitter = generator.getColorJitter(x, z);
+  generator.surfaceColor(x, z, y + jitter, 1, printColour, jitter);
+  const c = printColour;
+  const snowy = (seasonUniforms.uSnowfall.value > 0.3 && cold > 0.3) || seasonUniforms.uWinter.value * cold > 0.55 || Math.min(c.r, c.g, c.b) > 0.78;
+  if (snowy) return printColour.copy(SNOW_PRINT).multiplyScalar(0.5 + 0.5 * Math.min(1, dayNight.hemi.intensity)), 'snow';
+  const w = generator.getBiomeWeights(x, z, {});
+  const shore = y < WORLD.seaLevel + 5.5 ? generator.getShore(x, z, y) : null;
+  const river = generator.rivers.at(x, z, 3.5);
+  const muddy = (river && river.d < river.half + 3.5) || w.wetland > 0.5;
+  const sandy = w.desert > 0.5 || shore?.kind === 'sand';
+  if (!muddy && !sandy) return null;
+  printColour.multiplyScalar(muddy ? 0.45 : 0.6);
+  return muddy ? 'mud' : 'sand';
+}
+function groundNormal(x, z) {
+  const e = 0.5;
+  return printNormal.set(chunks.groundHeightAt(x - e, z) - chunks.groundHeightAt(x + e, z), 2 * e, chunks.groundHeightAt(x, z - e) - chunks.groundHeightAt(x, z + e)).normalize();
+}
+/**
+ * A footfall at (x, z) heading `heading` (the player's boot, or an
+ * animal's hoof or paw): a print in soft ground, a splash in water.
+ */
+function footfall(x, z, heading, shape, size, loud = 0.5) {
+  const water = waterAt(x, z, true);
+  const y = chunks.groundHeightAt(x, z);
+  if (!Number.isFinite(y) || water?.frozen) return; // (none on the ice)
+  if (water && water.level > y + 0.02) {
+    traces.splash(x, water.level, z, 5 + Math.round(loud * 6), 1.2 + loud * 1.6, 0.5 + loud * 0.6);
+    if (Math.hypot(x - camera.position.x, z - camera.position.z) < 25) sound.call('splash', panTowards(camera, x, z), 0.25 + 0.4 * loud);
+    return;
+  }
+  const kind = printGround(x, z, y);
+  if (kind) traces.print(x, y, z, heading, shape, size, kind, printColour, groundNormal(x, z));
+}
+// The player's steps and strokes.
+const walker = { x: null, z: null, left: false, wet: false, stroke: 0 };
+function playerTraces(dt) {
+  const pos = camera.position;
+  if (walker.x === null) (walker.x = pos.x), (walker.z = pos.z);
+  const moved = Math.hypot(pos.x - walker.x, pos.z - walker.z);
+  const water = controls.mode === 'walk' ? waterAt(pos.x, pos.z) : null;
+  const feet = pos.y - controls.eyeHeight;
+  const inWater = !!water && feet < water.level + 0.05;
+  // Into the water from above: a big splash.
+  if (inWater && !walker.wet && controls.velocityY < -3) {
+    traces.splash(pos.x, water.level, pos.z, 30, 4, 2.2);
+    sound.call('bigsplash', 0, 0.8);
+  }
+  walker.wet = inWater;
+  if (controls.swimming) {
+    walker.stroke -= dt;
+    if (walker.stroke <= 0 && moved > 0.3) {
+      walker.stroke = 0.7;
+      traces.splash(pos.x, water ? water.level : pos.y, pos.z, 4, 1.3, 1.1);
+      sound.call('splash', 0, 0.3);
+    }
+    if (moved > 0.3) (walker.x = pos.x), (walker.z = pos.z);
+    return;
+  }
+  if (moved > 20) (walker.x = pos.x), (walker.z = pos.z); // (flown or teleported)
+  if (controls.mode !== 'walk' || !controls.grounded || moved < 0.7) return;
+  const heading = Math.atan2(pos.x - walker.x, pos.z - walker.z);
+  walker.left = !walker.left;
+  const side = walker.left ? 0.13 : -0.13;
+  footfall(pos.x + Math.cos(heading) * side, pos.z - Math.sin(heading) * side, heading, PRINT.boot, 0.34, 0.6);
+  walker.x = pos.x;
+  walker.z = pos.z;
+}
+const ANIMAL_PRINTS = { deer: [PRINT.hoof, 0.11], bison: [PRINT.hoof, 0.17], blackBear: [PRINT.paw, 0.22], grizzly: [PRINT.paw, 0.26], rabbit: [PRINT.rabbit, 0.09] };
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
 function placeCamera() {
@@ -209,7 +324,7 @@ const ui = {
   wireframe: document.getElementById('wireframe'),
   fly: document.getElementById('fly'),
   automove: document.getElementById('automove'),
-  keys: document.querySelector('.keys'),
+  panel: document.querySelector('.panel'),
   fps: document.getElementById('stat-fps'),
   tris: document.getElementById('stat-tris'),
   draws: document.getElementById('stat-draws'),
@@ -244,6 +359,9 @@ function setSeed(seed) {
   minimap.invalidate();
   torches.loadWorld(seed);
   wildlife.clear();
+  fish.clear();
+  fires.clear();
+  volcanoes.clear();
   insects.clear();
   placeCamera();
 }
@@ -301,10 +419,15 @@ ui.automove.addEventListener('change', () => {
 ui.fly.addEventListener('change', () => {
   const mode = ui.fly.checked ? 'fly' : 'walk';
   controls.setMode(mode);
-  ui.keys.dataset.mode = mode;
 });
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
+  // The debug panel: P (or F3) shows and hides it.
+  if (e.code === 'KeyP' || e.code === 'F3') {
+    e.preventDefault();
+    ui.panel.hidden = !ui.panel.hidden;
+    return;
+  }
   if (e.code === 'KeyB') bigMap.toggle();
   if (e.code === 'KeyV') ui.fly.click();
   if (e.code === 'KeyF') ui.automove.click();
@@ -346,12 +469,19 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let press = null;
 canvas.addEventListener('pointerdown', (e) => {
-  press = { x: e.clientX, y: e.clientY, time: performance.now(), button: e.button };
+  press = { x: e.clientX, y: e.clientY, time: performance.now(), button: e.button, locked: controls.locked };
 });
 canvas.addEventListener('pointerup', (e) => {
   if (!press) return;
-  const quick = performance.now() - press.time < 400 && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6;
-  if (quick) useItem(e.clientX, e.clientY, press.button === 2 ? { id: 'pickup' } : hotbar.selected);
+  if (press.locked) {
+    // (The mouse held in the middle: the item goes where the crosshair is.)
+    const r = canvas.getBoundingClientRect();
+    useItem(r.left + r.width / 2, r.top + r.height / 2, press.button === 2 ? { id: 'pickup' } : hotbar.selected);
+  } else if (controls.lockFailed || press.button === 2) {
+    // (The click that takes hold of the mouse doesn't use the item too.)
+    const quick = performance.now() - press.time < 400 && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6;
+    if (quick) useItem(e.clientX, e.clientY, press.button === 2 ? { id: 'pickup' } : hotbar.selected);
+  }
   press = null;
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -667,7 +797,11 @@ function marshMist(dt) {
     const w = generator.getBiomeWeights(p.x, p.z, {});
     mistState.marsh = sheltered ? 0 : w.wetland;
     mistState.dry = w.desert + 0.5 * w.savanna;
+    mistState.desert = w.desert;
+    mistState.mossy = Math.min(1, 0.55 * w.temperate + 0.9 * w.pine + w.jungle + w.wetland);
   }
+  // (Moss on the trees in damp country round about.)
+  seasonUniforms.uMossy.value += ((mistState.mossy ?? 0) - seasonUniforms.uMossy.value) * Math.min(1, dt / 4);
   const h = dayNight.hour;
   if (h < mistState.lastHour - 12) mistState.day++;
   mistState.lastHour = h;
@@ -740,6 +874,22 @@ function applyUnderwater() {
   scene.background = scene.fog.color;
 }
 
+// In a sandstorm the air is thick with dust: the view closes right in, all
+// a brown haze, the sun gone.
+const SAND = new THREE.Color(0xb89a6a);
+function applySandstorm() {
+  const a = sandstorm.amount;
+  if (a < 0.001 || underwater || sheltered) return;
+  const lum = Math.min(1, 0.3 + 0.7 * Math.min(1, dayNight.light.intensity / 2 + dayNight.hemi.intensity / 3));
+  scene.fog.color.lerp(printColour.copy(SAND).multiplyScalar(lum), a);
+  scene.fog.near += (1 - scene.fog.near) * a;
+  scene.fog.far += (55 - scene.fog.far) * a;
+  if (a > 0.85) {
+    dayNight.sky.visible = false;
+    scene.background = scene.fog.color;
+  }
+}
+
 function applyCaveHaze(dt) {
   caveHaze.amount += (caveHaze.target - caveHaze.amount) * Math.min(1, dt * 3);
   const a = caveHaze.amount;
@@ -783,6 +933,7 @@ function tick(now) {
   const dt = Math.min(elapsed, 0.1); // big hitches shouldn't teleport the player
   lastTime = now;
   controls.update(dt);
+  playerTraces(dt);
   camera.getWorldDirection(dir);
   chunks.update(camera.position, now / 1000, dir);
   weather.spring = seasonUniforms.uSpring.value;
@@ -796,9 +947,14 @@ function tick(now) {
   dayNight.update(dt, camera.position, weather);
   // The ground gets wet in the rain (puddles), and dries off over a few minutes.
   seasonUniforms.uWet.value = Math.min(1, Math.max(0, seasonUniforms.uWet.value + (weather.rain > 0.2 ? dt / 20 : -dt / 240)));
-  // Snow lies fresh over everything after a snowfall, melting off over a few minutes (and with the winter).
-  const snowing = weather.rain > 0.2 && seasonUniforms.uWinter.value > 0.5;
-  seasonUniforms.uSnowfall.value = Math.min(seasonUniforms.uWinter.value, Math.max(0, seasonUniforms.uSnowfall.value + (snowing ? dt / 60 : -dt / 300)));
+  // Snow lies over everything after a snowfall, and stays: through the
+  // depth of winter it doesn't melt at all; only in the sunshine early and
+  // late in the winter (and for good once it's spring).
+  const winterNow = seasonUniforms.uWinter.value;
+  const snowing = weather.rain > 0.2 && winterNow > 0.5;
+  const sunshine = smooth(0.05, 0.25, dayNight.sunDir.y) * (1 - smooth(0.5, 0.8, weather.cover)) * (weather.rain > 0.05 ? 0 : 1);
+  const thaw = sunshine * (1 - smooth(0.6, 0.9, winterNow)) / 240 + (winterNow < 0.05 ? 1 / 120 : 0);
+  seasonUniforms.uSnowfall.value = Math.min(1, Math.max(0, seasonUniforms.uSnowfall.value + (snowing ? dt / 60 : -dt * thaw)));
   shadowReach(dt);
   northernLights(dt);
   // Rain closes the view in, and so does the mist that lies over the
@@ -810,6 +966,7 @@ function tick(now) {
   dayNight.sky.visible = true;
   applyCaveHaze(dt);
   applyUnderwater();
+  applySandstorm();
   cloudSky.cover = weather.cover;
   cloudSky.storm = weather.storm;
   cloudSky.weather = weather;
@@ -837,16 +994,35 @@ function tick(now) {
   const env = surroundings(dt, snow);
   // The wildlife round you.
   const life = {
+    waterAt: (x, z) => waterAt(x, z),
+    step: (a, x, z, running) => {
+      const [shape, size] = ANIMAL_PRINTS[a.kind] ?? [PRINT.hoof, 0.12];
+      footfall(x, z, a.heading, shape, size * a.scale, running ? 1 : 0.35);
+    },
     camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, rocks, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
     rain: weather.rain, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
     sheltered, sound, pan: (x, z) => panTowards(camera, x, z), tame: WORLD.tameWildlife,
   };
   wildlife.update(dt, life);
+  fish.update(dt, { ...life, traces, autumn, ground: (x, z) => chunks.groundHeightAt(x, z) });
+  traces.update(dt);
+  // Fire, smoke and dust, lit by the light of the sky.
+  ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
+  const night = dayNight._w?.night ?? 0;
+  const air = { time: now / 1000, camera, generator, wind: clouds.wind, rain: weather.rain, light: ambientLight, night, sound, pan: (x, z) => panTowards(camera, x, z), ground: (x, z) => generator.getBaseHeight(x, z) };
+  fires.update(dt, air);
+  volcanoes.update(dt, air);
+  sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y });
+  shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)));
   insects.update(dt, life);
   env.buzz = insects.buzz.level;
   env.buzzPan = insects.buzz.pan;
   sound.ambience(env);
+  // (The ground trembles as a volcano rumbles.)
+  const tremble = volcanoes.shake > 0 && !controls.swimming ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0;
+  camera.position.y += tremble;
+  camera.updateMatrixWorld();
   if (ui.rays.checked) {
     light.strength = dayNight.lightStrength;
     light.reach = dayNight.shaftReach;
@@ -856,6 +1032,7 @@ function tick(now) {
     renderer.render(scene, camera);
   }
 
+  camera.position.y -= tremble;
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
 
   frames++;
@@ -908,4 +1085,4 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, traces, fish, fires, volcanoes, sandstorm, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };

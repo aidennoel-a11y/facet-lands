@@ -222,6 +222,7 @@ export class Lightning {
     const x = camera.position.x + Math.cos(angle) * distance;
     const z = camera.position.z + Math.sin(angle) * distance;
     const base = ground(x, z);
+    this.onStrike?.(x, base, z, distance); // (it may start a fire: see main)
     const top = Math.max(base + 220, 320); // from inside the cloud deck
     this.bolt = new Mesh(this.#boltGeometry(top - base), this.material);
     this.bolt.position.set(x, base, z);

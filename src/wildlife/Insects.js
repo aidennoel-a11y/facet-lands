@@ -134,7 +134,7 @@ export class Insects {
     this.buzz.pan = level ? panSum / level : 0;
 
     // Fireflies: warm, still nights, over the grass and the marshes.
-    const warm = Math.max(ctx.summer, ctx.spring * 0.35) * (1 - ctx.winter);
+    const warm = ctx.summer * (1 - ctx.winter); // (summer only)
     const want = Math.round(220 * ctx.night * warm * (1 - ctx.rain) * (1 - 0.6 * ctx.wind) * ctx.meadow);
     this.flies = this.flies.filter((f) => Math.hypot(f.x - cam.x, f.z - cam.z) < 110);
     for (let k = 0; this.flies.length < want && k < 8; k++) {
