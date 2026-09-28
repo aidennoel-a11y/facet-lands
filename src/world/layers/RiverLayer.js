@@ -56,6 +56,8 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         uniform float uTime;
         attribute vec4 flow;
         attribute float streaks;
+        attribute float aMouth;
+        varying float vMouth;
         varying vec4 vFlow;
         varying float vStreaks;
         varying vec2 vRiverWorld;`,
@@ -65,6 +67,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         /* glsl */ `#include <begin_vertex>
         vFlow = flow;
         vStreaks = streaks;
+        vMouth = aMouth;
         vRiverWorld = (modelMatrix * vec4(transformed, 1.0)).xz;
         // The current: little humps of water running downstream (quicker
         // and higher where it's steep, heaving over rapids), none at the banks.
@@ -84,6 +87,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         uniform vec3 uSkyTop;
         varying vec4 vFlow;
         varying float vStreaks;
+        varying float vMouth;
         varying vec2 vRiverWorld;
         float waterHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float waterNoise(vec2 p) {
@@ -152,11 +156,12 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
           float calm = (1.0 - vFlow.w) * (1.0 - white);
           gl_FragColor.rgb += sunGlitter(vRiverWorld, normal, -V, uTime) * calm * (1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r * 1.6);
           gl_FragColor.rgb += rainRings(vRiverWorld, uTime) * 0.2 * calm;
+          gl_FragColor.a *= vMouth; // (giving way to the lake or sea it runs into)
         }
         #include <fog_fragment>`,
       );
   };
-  material.customProgramCacheKey = () => 'river-v2';
+  material.customProgramCacheKey = () => 'river-v3';
   seasonalWater(material); // ponds freeze in winter
 
   // Waterfall spray: little cubes, each flying on its own arc (start, velocity,
@@ -257,6 +262,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
       geometry.setAttribute('color', new BufferAttribute(data.colors, 4));
       geometry.setAttribute('flow', new BufferAttribute(data.flows, 4));
       geometry.setAttribute('streaks', new BufferAttribute(data.streaks, 1));
+      geometry.setAttribute('aMouth', new BufferAttribute(data.mouths, 1));
       geometry.setAttribute('aFreeze', new BufferAttribute(data.freezes, 1));
       geometry.computeVertexNormals();
       geometry.computeBoundingSphere();

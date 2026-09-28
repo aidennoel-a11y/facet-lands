@@ -59,6 +59,9 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       if (river && river.d < river.water + 2.5) continue; // nor on a river's muddy banks (reeds grow there)
 
       generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color, jitter);
+      // (Bare grey rock and snow are all but colourless; grassland isn't.)
+      const hi = Math.max(color.r, color.g, color.b), lo = Math.min(color.r, color.g, color.b);
+      if (hi - lo < 0.2 * hi) continue;
       const v = 0.9 + hash2(gi, gj, seed + 3) * 0.22;
       colors.set([color.r * v, color.g * v, color.b * v], count * 3);
 

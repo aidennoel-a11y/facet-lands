@@ -95,7 +95,7 @@ self.onmessage = (event) => {
   if (wantRivers) {
     out.river = riverData(g, config, cx, cz);
     if (out.river) {
-      for (const k of ['positions', 'colors', 'flows', 'streaks', 'freezes']) transfer.push(out.river[k].buffer);
+      for (const k of ['positions', 'colors', 'flows', 'streaks', 'freezes', 'mouths']) transfer.push(out.river[k].buffer);
       if (out.river.spray) for (const a of Object.values(out.river.spray)) transfer.push(a.buffer);
     }
     out.reeds = reedData(g, config, cx, cz, groundHeightAt, heights);

@@ -80,7 +80,7 @@ function sprayData(rivers, x0, z0, chunkSize) {
 
 /**
  * The river water over chunk (cx, cz): the surface's faces { positions,
- * colors (rgba), flows, streaks, freezes } and its waterfalls' spray, or
+ * colors (rgba), flows, streaks, freezes, mouths } and its waterfalls' spray, or
  * null if there's none.
  */
 export function riverData(generator, config, cx, cz) {
@@ -131,6 +131,7 @@ export function riverData(generator, config, cx, cz) {
   const flows = [];
   const streaks = [];
   const freezes = [];
+  const mouths = [];
   const seed = generator.seed ^ 0x3c6ef372;
   const tri = (a, b, c, shade) => {
     if (Number.isNaN(level[a]) || Number.isNaN(level[b]) || Number.isNaN(level[c])) return;
@@ -148,13 +149,16 @@ export function riverData(generator, config, cx, cz) {
     const spread = Math.max(flow[a * 4], flow[b * 4], flow[c * 4]) - Math.min(flow[a * 4], flow[b * 4], flow[c * 4]);
     const streaky = spread < 8 ? 1 : 0;
     const clear = 0.5 + 0.18 * deep; // see-through, more so at the edges
-    const alpha = clear + (0.68 + 0.26 * t - clear) * (1 - r);
+    const alpha = clear;
     for (const k of [a, b, c]) {
       positions.push((k % n) * GRID, level[k], Math.floor(k / n) * GRID);
       colors.push(color.r, color.g, color.b, alpha);
       flows.push(flow[k * 4], flow[k * 4 + 1], flow[k * 4 + 2], flow[k * 4 + 3]);
       streaks.push(streaky);
       freezes.push(ice[k]);
+      // Fading away where it runs out into a lake or the sea, so the two
+      // waters meet with no edge between them (see RiverLayer).
+      mouths.push(smoothstep(0.05, 0.85, river[k]));
     }
   };
   for (let j = 0; j < cells; j++) {
@@ -173,14 +177,13 @@ export function riverData(generator, config, cx, cz) {
     }
   }
   if (!positions.length) return null;
-
-  if (!positions.length) return null;
   return {
     positions: new Float32Array(positions),
     colors: new Float32Array(colors),
     flows: new Float32Array(flows),
     streaks: new Float32Array(streaks),
     freezes: new Float32Array(freezes),
+    mouths: new Float32Array(mouths),
     spray: sprayData(courses, x0, z0, chunkSize),
   };
 }

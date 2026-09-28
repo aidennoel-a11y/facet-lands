@@ -11,20 +11,22 @@ const angleTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 /**
- * The kinds of animal. Ground animals: walking and running speeds (m/s),
+ * The kinds of animal. Ground animals: how steep a slope they'll take
+ * (`grade`: rise over run; a bison keeps to gentle ground, a deer or a bear
+ * goes up a steep bank), walking and running speeds (m/s),
  * how near you can come before they bolt (`flee`, metres) and how far off
  * they settle again (`calm`), their bulk (`radius`, for trees and for
  * being hit), `health` (for hunting), and how long a stride is. Birds: how
  * big they're drawn (`scale`) and how near you can come (`flee`).
  */
 const SPECIES = {
-  deer: { ground: true, model: Models.deer, max: 60, walk: 1.3, run: 11, flee: 45, calm: 130, radius: 0.5, height: 1.4, health: 60, stride: 1.6, turn: 2.5, size: 1.3 },
-  bison: { ground: true, model: Models.bison, max: 70, walk: 1.0, run: 8.5, flee: 30, calm: 85, radius: 1.0, height: 2.0, health: 200, stride: 2.2, turn: 1.4, size: 1.5 },
+  deer: { ground: true, grade: 0.72, model: Models.deer, max: 60, walk: 1.3, run: 11, flee: 45, calm: 130, radius: 0.5, height: 1.4, health: 60, stride: 1.6, turn: 2.5, size: 1.3 },
+  bison: { ground: true, grade: 0.4, model: Models.bison, max: 70, walk: 1.0, run: 8.5, flee: 30, calm: 85, radius: 1.0, height: 2.0, health: 200, stride: 2.2, turn: 1.4, size: 1.5 },
   // Bears (in the mountain foothills): a black bear shies away; a grizzly
   // stands its ground (`aggressive`: one day it will come for you).
-  blackBear: { ground: true, model: Models.blackBear, max: 16, walk: 0.9, run: 9, flee: 35, calm: 100, radius: 0.7, height: 1.3, health: 150, stride: 1.4, turn: 1.8, size: 1.3, forager: true },
-  grizzly: { ground: true, model: Models.grizzly, max: 10, walk: 0.9, run: 10, flee: 10, calm: 40, radius: 0.8, height: 1.5, health: 260, stride: 1.6, turn: 1.6, size: 1.6, forager: true, aggressive: true },
-  rabbit: { ground: true, model: Models.rabbit, max: 40, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.3, height: 0.55, health: 10, stride: 1.0, turn: 5, size: 1.8 },
+  blackBear: { ground: true, grade: 0.78, model: Models.blackBear, max: 16, walk: 0.9, run: 9, flee: 35, calm: 100, radius: 0.7, height: 1.3, health: 150, stride: 1.4, turn: 1.8, size: 1.3, forager: true },
+  grizzly: { ground: true, grade: 0.78, model: Models.grizzly, max: 10, walk: 0.9, run: 10, flee: 10, calm: 40, radius: 0.8, height: 1.5, health: 260, stride: 1.6, turn: 1.6, size: 1.6, forager: true, aggressive: true },
+  rabbit: { ground: true, grade: 0.58, model: Models.rabbit, max: 40, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.3, height: 0.55, health: 10, stride: 1.0, turn: 5, size: 1.8 },
   songbird: { bird: true, model: Models.songbird, max: 60, scale: 1.6, flee: 9, radius: 0.25, health: 2 },
   starling: { bird: true, model: Models.starling, max: 60, scale: 1.45, flee: 22, radius: 0.25, health: 2 },
   crow: { bird: true, model: Models.crow, max: 40, scale: 2.3, flee: 25, radius: 0.35, health: 4 },
@@ -229,12 +231,12 @@ export class Wildlife {
     const day = ctx.day, winter = ctx.winter;
 
     // Flocks wheeling over the woods and fields, by day.
-    if (day > 0.4 && this.flocks.filter((f) => f.kind === 'starling').length < (winter > 0.5 ? 1 : 2)) {
+    if (day > 0.4 && this.flocks.filter((f) => f.kind === 'starling').length < 1) {
       const s = spot(260, 380, (x, z) => { const w = g.getBiomeWeights(x, z, {}); return w.temperate + w.savanna + w.pine > 0.6; }, 6);
-      if (s) this.#spawnFlock('starling', s, Math.round(rnd(9, 18)));
+      if (s) this.#spawnFlock('starling', s, Math.round(rnd(6, 12)));
     }
     // Gulls over the coast.
-    if (day > 0.2 && count('gull') < 5) {
+    if (day > 0.2 && count('gull') < 3) {
       const s = spot(120, 350, (x, z) => g.getOceanness(x, z) > 0.5, 10) ?? this.#coastSpot(ctx);
       if (s) this.#spawnCircler('gull', s);
     }
@@ -244,13 +246,13 @@ export class Wildlife {
       if (s) this.#spawnCircler('hawk', s);
     }
     // At dusk, crows fly over on their way home to roost.
-    if (ctx.dusk > 0.25 && this.crowCooldown <= 0 && this.flocks.filter((f) => f.kind === 'crow').length < 2) {
+    if (ctx.dusk > 0.25 && this.crowCooldown <= 0 && this.flocks.filter((f) => f.kind === 'crow').length < 1) {
       this.crowCooldown = rnd(20, 45);
       const a = rnd(0, TAU);
       const from = { x: cx + Math.sin(a) * 380, z: cz + Math.cos(a) * 380 };
       const b = a + Math.PI + rnd(-0.6, 0.6);
       const to = { x: cx + Math.sin(b) * 420, z: cz + Math.cos(b) * 420 };
-      this.#spawnFlock('crow', { ...from, y: g.getBaseHeight(from.x, from.z) }, Math.round(rnd(6, 14)), to);
+      this.#spawnFlock('crow', { ...from, y: g.getBaseHeight(from.x, from.z) }, Math.round(rnd(4, 9)), to);
     }
   }
 
@@ -275,11 +277,13 @@ export class Wildlife {
         // Songbirds on its trees, once they're there (the trees near you).
         if (!home.birds && ctx.day > 0.3 && ctx.trees.crowns.get(key)) {
           home.birds = true;
-          const list = ctx.trees.crowns.get(key), n = Math.round(home.rand() * 4 * (1 - 0.6 * ctx.winter));
+          const list = ctx.trees.crowns.get(key), n = Math.round(home.rand() * 2.6 * (1 - 0.6 * ctx.winter));
           for (let k = 0; k < n && list.length; k++) {
             const i = Math.floor(home.rand() * (list.length / 5)) * 5;
             if (list[i + 3] - list[i + 2] < 2.5) continue;
-            const a = this.#spawnSongbird(list.slice(i, i + 5));
+            const perch = this.#perchOn(list.slice(i, i + 5), ctx);
+            if (!perch) continue;
+            const a = this.#spawnSongbird(perch);
             a.chunk = key;
             home.animals.push(a);
           }
@@ -392,6 +396,23 @@ export class Wildlife {
     return null;
   }
 
+  /**
+   * A spot to land on crown `c` ([x, z, bottom, top, radius]): on its top,
+   * found by looking down onto the tree itself (a crown is round, and a
+   * spot out from the middle is lower than its top), or null. None in
+   * winter, when the broad-leaved trees stand bare.
+   */
+  #perchOn(c, ctx) {
+    if (ctx.winter > 0.5) return null;
+    for (let k = 0; k < 4; k++) {
+      const f = k === 3 ? 0 : 0.35;
+      const x = c[0] + rnd(-f, f) * c[4], z = c[1] + rnd(-f, f) * c[4];
+      const y = ctx.trees.topAt ? ctx.trees.topAt(x, z, c[3] + 3) : c[3];
+      if (y !== null && y > c[2]) return { x, y: y + 0.02, z };
+    }
+    return null;
+  }
+
   // Broad-leaved crowns (see TreeLayer.crowns) within `r` of you: [x, z, bottom, top, radius].
   #crownsNear(ctx, r) {
     const { camera, trees, chunkSize } = ctx;
@@ -425,6 +446,7 @@ export class Wildlife {
     const sp = SPECIES[kind];
     const y = this.ctx.ground(x, z);
     if (!(y > this.ctx.seaLevel + 0.5)) return;
+    if (this.#slope(x, z, this.ctx) > sp.grade) return; // (not on a slope too steep for it)
     const a = {
       kind, x, z, y, heading: rnd(0, TAU), pitch: 0, roll: 0, speed: 0,
       scale: (sp.size ?? 1) * (kind === 'bison' ? rnd(0.9, 1.1) : rnd(0.85, 1.1)),
@@ -439,9 +461,9 @@ export class Wildlife {
     herd?.members.push(a);
   }
 
-  #spawnSongbird(c) {
+  #spawnSongbird(at) {
     const a = {
-      kind: 'songbird', x: c[0], y: c[3] + 0.1, z: c[1], heading: rnd(0, TAU), pitch: 0, roll: 0,
+      kind: 'songbird', x: at.x, y: at.y, z: at.z, heading: rnd(0, TAU), pitch: 0, roll: 0,
       scale: SPECIES.songbird.scale * rnd(0.85, 1.15), alive: true, health: SPECIES.songbird.health,
       state: 'perch', timer: rnd(3, 15), flap: 0, tint: SONGBIRD_TINTS[Math.floor(Math.random() * SONGBIRD_TINTS.length)],
     };
@@ -501,6 +523,14 @@ export class Wildlife {
       }
     }
     return out;
+  }
+
+  /** How steep the ground is at (x, z): rise over run, the steepest way. */
+  #slope(x, z, ctx) {
+    const e = 1.5;
+    const gx = ctx.ground(x + e, z) - ctx.ground(x - e, z), gz = ctx.ground(x, z + e) - ctx.ground(x, z - e);
+    const s = Math.hypot(gx, gz) / (2 * e);
+    return s === s ? s : 0;
   }
 
   #threat(a, ctx) {
@@ -637,6 +667,19 @@ export class Wildlife {
         if (d > 0 && d < r) (a.x += (dx / d) * (r - d) * Math.min(1, dt * 1.5)), (a.z += (dz / d) * (r - d) * Math.min(1, dt * 1.5));
       }
     }
+    // Standing on ground too steep for it (the land built in under it):
+    // off it, the way down.
+    a.slopeCheck = (a.slopeCheck ?? Math.random()) - dt;
+    if (a.slopeCheck <= 0 && !fleeing) {
+      a.slopeCheck = 1;
+      a.onSteep = this.#slope(a.x, a.z, ctx) > sp.grade * 1.1;
+      if (a.onSteep) {
+        const e = 1.5, gx = ctx.ground(a.x + e, a.z) - ctx.ground(a.x - e, a.z), gz = ctx.ground(a.x, a.z + e) - ctx.ground(a.x, a.z - e);
+        a.detour = { heading: Math.atan2(-gx, -gz), time: 2.5 };
+        if (a.state !== 'walk') (a.state = 'walk'), (a.timer = rnd(3, 6));
+      }
+    }
+    if (a.detour && !fleeing && speed === 0 && a.lie < 0.1) speed = sp.walk; // (walking off it)
     // A detour round water or a cliff ahead: a steady turn one way for a while.
     if (a.detour) {
       a.detour.time -= dt;
@@ -673,7 +716,8 @@ export class Wildlife {
       const nx = a.x + sx * a.speed * dt, nz = a.z + sz * a.speed * dt;
       const ny = ctx.ground(nx, nz);
       const probe = ctx.ground(a.x + sx * (body + 1.5), a.z + sz * (body + 1.5));
-      if (!(ny > ctx.seaLevel + 0.4) || !(probe > ctx.seaLevel + 0.3) || Math.abs(probe - a.y) > 2.5) {
+      const steep = !a.onSteep && Math.abs(probe - a.y) > sp.grade * (body + 1.5); // (steeper than it takes; unless it's already on such a slope, making its way off)
+      if (!(ny > ctx.seaLevel + 0.4) || !(probe > ctx.seaLevel + 0.3) || steep) {
         if (!a.detour) a.detour = { heading: a.heading + (Math.random() < 0.5 ? 1 : -1) * rnd(1.4, 2.2), time: rnd(1.5, 3) };
         a.speed *= Math.max(0, 1 - dt * 3);
         if (herd && herd.fleeTime <= 0) herd.goal = { x: a.x - sx * 20, z: a.z - sz * 20 };
@@ -731,7 +775,8 @@ export class Wildlife {
         if (scared) c = crowns.find((k) => Math.hypot(k[0] - ctx.camera.position.x, k[1] - ctx.camera.position.z) > 40) ?? c;
         const toGround = !scared && Math.random() < 0.35;
         let to;
-        if (c && !toGround) to = { x: c[0] + rnd(-0.5, 0.5) * c[4], y: c[3] + 0.05, z: c[1] + rnd(-0.5, 0.5) * c[4], state: 'perch' };
+        const perch = c && !toGround ? this.#perchOn(c, ctx) : null;
+        if (perch) to = { ...perch, state: 'perch' };
         else {
           const x = a.x + rnd(-6, 6), z = a.z + rnd(-6, 6), y = ctx.ground(x, z);
           to = y > ctx.seaLevel + 0.3 ? { x, y: y + 0.07 * a.scale, z, state: 'ground' } : null;

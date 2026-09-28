@@ -1,4 +1,4 @@
-import { Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
+import { Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Raycaster, Vector3 } from 'three';
 import { addWind, windDepthMaterial } from '../../render/wind.js';
 import { seasonalTrees, seasonUniforms } from '../../render/Seasons.js';
 import { LEAF_GEOMETRIES, NO_COLLIDE, STIFF, TREE_GEOMETRIES, treeGeometry } from '../trees.js';
@@ -12,6 +12,8 @@ const lean = new Vector3();
 const scale = new Vector3();
 const up = new Vector3(0, 1, 0);
 const tint = new Color();
+const ray = new Raycaster();
+const down = new Vector3(0, -1, 0);
 
 /**
  * Trees on the nearby chunks (where they stand: see placeTrees). Every
@@ -80,9 +82,26 @@ export function createTreeLayer({ rocks = null } = {}) {
   // boughs showing, or hidden in the leaves: see treeGeometry).
   const meshes = new Set();
   let bare = false;
+  const groups = new Map(); // "cx,cz" -> the chunk's trees (see topAt)
 
   const layer = {
     name: 'trees',
+
+    /**
+     * The height of the top of whatever tree stands at (x, z) (world), or
+     * null if there's none there: for a bird to land on its crown, and
+     * not in the air beside it.
+     */
+    topAt(x, z, from = 400) {
+      const size = layer.chunkSize;
+      const group = size && groups.get(`${Math.floor(x / size)},${Math.floor(z / size)}`);
+      if (!group) return null;
+      group.updateMatrixWorld();
+      ray.set(position.set(x, from, z), down);
+      ray.far = from + 50;
+      const hits = ray.intersectObjects(group.children.filter((m) => !m.name.endsWith(' leaves')), false);
+      return hits.length ? hits[0].point.y : null;
+    },
 
     update() {
       // (Before the crowns start to fall, which is at 0.55 of winter; and
@@ -130,6 +149,7 @@ export function createTreeLayer({ rocks = null } = {}) {
     build({ cx, cz, lod, groundHeightAt, generator, config, prepared }) {
       if (lod > config.treeMaxLod) return null;
       const { chunkSize, treeSpacing } = config;
+      layer.chunkSize = chunkSize;
       const cells = Math.round(chunkSize / treeSpacing);
       const spacing = chunkSize / cells;
       const originX = cx * chunkSize;
@@ -204,6 +224,7 @@ export function createTreeLayer({ rocks = null } = {}) {
       layer.count += count;
       layer.trunks.set(group.userData.key, trunks);
       layer.crowns.set(group.userData.key, crowns);
+      groups.set(group.userData.key, group);
       return group;
     },
 
@@ -212,6 +233,7 @@ export function createTreeLayer({ rocks = null } = {}) {
       // A rebuilt chunk (new LOD) may already have registered its trunks.
       if (layer.trunks.get(group.userData.key) === group.userData.trunks) layer.trunks.delete(group.userData.key);
       if (layer.crowns.get(group.userData.key) === group.userData.crowns) layer.crowns.delete(group.userData.key);
+      if (groups.get(group.userData.key) === group) groups.delete(group.userData.key);
       for (const mesh of group.children) {
         meshes.delete(mesh);
         mesh.dispose(); // geometry is shared
