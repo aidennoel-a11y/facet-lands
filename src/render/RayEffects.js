@@ -14,8 +14,8 @@ import {
   WebGLRenderTarget,
 } from 'three';
 
-const AO_SAMPLES = 12;
-const SHAFT_SAMPLES = 40;
+const AO_SAMPLES = 8;
+const SHAFT_SAMPLES = 28;
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;

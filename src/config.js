@@ -6,7 +6,7 @@ export const WORLD = {
   // Chunking
   chunkSize: 128, // world units per chunk edge
   viewDistance: 18, // radius in chunks that stays loaded around the camera (2.3 km)
-  chunkBuildBudgetMs: 6, // max time per frame spent building chunk meshes
+  chunkBuildBudgetMs: 3.5, // max time per frame spent building chunk meshes (more is quicker to fill in, but stutters as you walk)
 
   // Level of detail: cells per chunk edge, picked by distance (in chunks).
   // Every level must divide the one above it so vertices line up at seams.

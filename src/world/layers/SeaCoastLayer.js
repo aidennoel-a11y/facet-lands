@@ -166,7 +166,7 @@ export function createSeaCoastLayer(config, terrainMaterial) {
 
     reuseKey: ({ lod }) => (lod > 3 ? 'none' : lod <= 1 ? 'near' : 'far'),
 
-    build({ cx, cz, lod, generator, groundHeightAt }) {
+    build({ cx, cz, lod, generator, groundHeightAt, heights }) {
       if (lod > 3 || !generator.seaCaves) return null;
       const size = config.chunkSize, sea = config.seaLevel;
       const x0 = cx * size, z0 = cz * size;
@@ -342,8 +342,8 @@ export function createSeaCoastLayer(config, terrainMaterial) {
         }
       }
       // The surf, near you.
-      const seaside = [[0.5, 0.5], [0, 0], [1, 0], [0, 1], [1, 1]].some(([u, v]) => generator.getBaseHeight(x0 + u * size, z0 + v * size) < sea - 0.5);
-      if (lod <= 1 && seaside) {
+      // (Only by the sea: any of the chunk's own ground under it.)
+      if (lod <= 1 && heights?.gridY.some((y) => y < sea - 0.5)) {
         const mesh = surf(surfSpots(generator, x0, z0, size, sea), x0, z0, sea);
         if (mesh) group.add(mesh);
       }

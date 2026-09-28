@@ -76,7 +76,7 @@ export function createFlowerLayer(config) {
       const G = 1.0, n = Math.round(size / G), seed = generator.seed ^ 0xf10e;
       const surface = { normalY: 1 };
       const list = [];
-      let cell = -1, meadow = 0;
+      let cell = -1, meadow = 0, stream = false;
       for (let j = 0; j < n; j++) {
         for (let i = 0; i < n; i++) {
           const gi = cx * n + i, gj = cz * n + j;
@@ -88,11 +88,14 @@ export function createFlowerLayer(config) {
           if (c !== cell) {
             cell = c;
             meadow = generator.getMeadow(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4);
+            // (And whether a stream's anywhere near the patch: then each
+            // flower is checked against it.)
+            stream = meadow > 0.05 && !!generator.rivers?.at(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4, 8);
           }
           if (keep > 0.7 * meadow) continue;
           const y = groundHeightAt(lx, lz, surface);
           if (!(y > sea + 1.5) || surface.normalY < 0.85 || y > 150) continue;
-          if (generator.rivers?.at(x0 + lx, z0 + lz, 1.5)) continue; // (not in a stream, nor right on its bank)
+          if (stream && generator.rivers.at(x0 + lx, z0 + lz, 1.5)) continue; // (not in a stream, nor right on its bank)
           // A few colours to a patch.
           const tone = generator.meadowNoise.noise2D((x0 + lx) * 0.03, (z0 + lz) * 0.03) * 0.5 + 0.5;
           const pick = Math.floor((tone * 3 + hash2(gi, gj, seed + 3) * 1.6) % COLOURS.length);

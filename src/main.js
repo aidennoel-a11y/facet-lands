@@ -46,9 +46,10 @@ import { BiomeMap } from './ui/BiomeMap.js';
 // --- Renderer, scene, camera -------------------------------------------------
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.autoUpdate = false; // (see the loop: not every frame)
+let shadowFrame = 0;
 // Shadows fade out over the outer edge of the sun's shadow map, rather
 // than stopping on a line across the land.
 THREE.ShaderChunk.shadowmap_pars_fragment = THREE.ShaderChunk.shadowmap_pars_fragment.replaceAll(
@@ -212,6 +213,9 @@ const ui = {
   automove: document.getElementById('automove'),
   keys: document.querySelector('.keys'),
   fps: document.getElementById('stat-fps'),
+  res: document.getElementById('stat-res'),
+  draws: document.getElementById('stat-draws'),
+  cpu: document.getElementById('stat-cpu'),
   chunks: document.getElementById('stat-chunks'),
   trees: document.getElementById('stat-trees'),
   wind: document.getElementById('stat-wind'),
@@ -716,9 +720,30 @@ function applyCaveHaze(dt) {
 }
 
 // --- Loop --------------------------------------------------------------------
+// Resolution follows the frame rate: when the drawing can't keep up, the
+// scene is drawn at a lower resolution (down to 70% of the screen's
+// pixels), and back up to full when there's time to spare. Only while the
+// land isn't filling in (then slow frames are the building's, not the
+// drawing's).
+const PIXEL_RATIO = Math.min(window.devicePixelRatio, 1.5);
+const resolution = { scale: 1, wait: 4 };
+function adaptResolution(fps, dt) {
+  resolution.wait -= dt;
+  if (resolution.wait > 0 || chunks.pendingCount > 0) return;
+  const min = Math.min(1, 0.7 / PIXEL_RATIO);
+  let next = resolution.scale;
+  if (fps < 45) next = Math.max(min, resolution.scale - 0.1);
+  else if (fps > 57) next = Math.min(1, resolution.scale + 0.05);
+  if (next === resolution.scale) return;
+  resolution.scale = next;
+  resolution.wait = 2; // (let it settle before judging again)
+  resize();
+}
+
 function resize() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
+  renderer.setPixelRatio(PIXEL_RATIO * resolution.scale);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -735,7 +760,12 @@ const dir = new THREE.Vector3();
 let frames = 0;
 let fpsTime = 0;
 
+let cpuTime = 0;
+renderer.info.autoReset = false; // (counted over the whole frame: see tick)
+
 function tick(now) {
+  const started = performance.now();
+  renderer.info.reset();
   const elapsed = (now - lastTime) / 1000;
   const dt = Math.min(elapsed, 0.1); // big hitches shouldn't teleport the player
   lastTime = now;
@@ -804,6 +834,12 @@ function tick(now) {
   env.buzz = insects.buzz.level;
   env.buzzPan = insects.buzz.pan;
   sound.ambience(env);
+  // The sun's shadow map is drawn afresh when the light or the box it
+  // covers has moved, and otherwise every other frame (enough for the
+  // trees swaying and the animals going about): it's the costliest thing
+  // drawn after the scene itself.
+  shadowFrame = (shadowFrame + 1) % 2;
+  renderer.shadowMap.needsUpdate = dayNight.shadowMoved || shadowFrame === 0;
   if (ui.rays.checked) {
     light.strength = dayNight.lightStrength;
     light.reach = dayNight.shaftReach;
@@ -817,8 +853,17 @@ function tick(now) {
 
   frames++;
   fpsTime += elapsed;
+  cpuTime += performance.now() - started;
   if (fpsTime >= 0.5) {
-    ui.fps.textContent = Math.round(frames / fpsTime);
+    const fps = frames / fpsTime;
+    ui.fps.textContent = Math.round(fps);
+    // (How long the frame's own work takes, and how many draws it makes:
+    // with a low FPS, a low CPU time means the graphics card is the limit.)
+    ui.cpu.textContent = `${(cpuTime / frames).toFixed(1)} ms`;
+    ui.draws.textContent = renderer.info.render.calls;
+    ui.res.textContent = `${Math.round(resolution.scale * 100)}%`;
+    adaptResolution(fps, fpsTime);
+    cpuTime = 0;
     frames = 0;
     fpsTime = 0;
     ui.chunks.textContent = chunks.pendingCount

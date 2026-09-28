@@ -344,6 +344,8 @@ export class DayNight {
     this.light = light;
 
     this._lightDir = new Vector3();
+    this._shadowDir = new Vector3(); // (see update: the light's direction, in steps)
+    this.shadowMoved = true;
     this._shaftDir = new Vector3();
     this._basis = new Matrix4();
     this._inverse = new Matrix4();
@@ -532,7 +534,14 @@ export class DayNight {
     // Centre the shadow box a little ahead of the player, where they're
     // looking (shadows behind them are never seen), snapped to whole texels.
     const texel = this.config.shadowExtent / this.config.shadowMapSize;
-    this._basis.lookAt(dir, new Vector3(0, 0, 0), new Vector3(0, 1, 0));
+    // The shadows are cast along the light's direction, but it's only
+    // brought up to date in small steps (a fifth of a degree), not every
+    // frame: the sun creeps across the sky, and its height above the
+    // horizon you can see shifts as you walk, and a shadow map turned even
+    // a hair every frame makes every shadow's edge crawl and shake.
+    const sd = this._shadowDir;
+    if (sd.lengthSq() === 0 || sd.angleTo(dir) > 0.0035) sd.copy(dir);
+    this._basis.lookAt(sd, new Vector3(0, 0, 0), new Vector3(0, 1, 0));
     this._inverse.copy(this._basis).transpose();
     const f = this._focus.copy(focus);
     if (this.viewDir) {
@@ -544,7 +553,13 @@ export class DayNight {
     f.y = Math.round(f.y / texel) * texel;
     f.applyMatrix4(this._basis);
 
+    // (Whether the shadow map had better be drawn afresh right away, see
+    // main: the light turned, or the box jumped, as when you turn round.
+    // Walking along, a map a frame old still lines up: it keeps the view
+    // it was drawn from.)
+    this.shadowMoved = light.target.position.distanceTo(f) > 20 || !this._shadowPlaced?.equals(sd);
+    (this._shadowPlaced ??= new Vector3()).copy(sd);
     light.target.position.copy(f);
-    light.position.copy(f).addScaledVector(dir, 800);
+    light.position.copy(f).addScaledVector(sd, 800);
   }
 }
