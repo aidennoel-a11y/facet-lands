@@ -18,8 +18,9 @@ const RINGS = 80;
 
 // How long a print lasts (seconds) in each ground.
 const LASTS = { snow: 180, mud: 120, sand: 90 };
-// Shapes of print: a boot, a cloven hoof, a paw, a rabbit's long hind foot.
-export const PRINT = { boot: 0, hoof: 1, paw: 2, rabbit: 3 };
+// Shapes of print: a boot, a cloven hoof, a paw, a rabbit's long hind foot
+// (and in snow, each a square-cut hollow).
+export const PRINT = { boot: 0, hoof: 1, paw: 2, rabbit: 3, square: 4 };
 
 const m4 = new Matrix4(), q = new Quaternion(), spin = new Quaternion(), p = new Vector3(), s = new Vector3(), n = new Vector3();
 const UP = new Vector3(0, 1, 0);
@@ -51,7 +52,10 @@ export class Traces {
             // aPrint: when it was made, how long it lasts, its shape.
             vec2 u = vPrintUv;
             float shape = vPrint.z, inside = 0.0;
-            if (shape < 0.5) {
+            if (shape > 3.5) {
+              // Pressed into snow: a square-cut hollow.
+              inside = step(max(abs(u.x), abs(u.y)), 0.92);
+            } else if (shape < 0.5) {
               // A boot: sole and heel, a gap at the instep.
               inside = step(length(u / vec2(0.55, 1.0)), 1.0) * step(0.1, abs(u.y + 0.2));
             } else if (shape < 1.5) {
@@ -155,7 +159,7 @@ export class Traces {
     s.set(size * (shape === PRINT.rabbit ? 0.45 : 0.62), 1, size);
     this.prints.setMatrixAt(k, m4.compose(p, q, s));
     this.prints.setColorAt(k, colour);
-    this.printInfo.setXYZ(k, this.time, LASTS[kind] ?? 90, shape);
+    this.printInfo.setXYZ(k, this.time, LASTS[kind] ?? 90, kind === 'snow' ? PRINT.square : shape);
     this.dirty.prints = true;
   }
 

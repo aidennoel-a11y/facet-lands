@@ -59,6 +59,7 @@ export class PlayerControls {
     this.grounded = false;
     this.swimming = false;
     this.locked = false; // the mouse held in the middle of the screen (pointer lock)
+    this.mouseLock = true; // whether a click takes hold of it (see setMouseLock)
     this.underwater = false; // your eyes are under the surface
 
     this.euler = new Euler(0, 0, 0, 'YXZ');
@@ -86,7 +87,7 @@ export class PlayerControls {
     };
     dom.addEventListener('pointerdown', (e) => {
       if (this.locked) return;
-      if (e.button === 0 && dom.requestPointerLock && !this.lockFailed) {
+      if (e.button === 0 && dom.requestPointerLock && !this.lockFailed && this.mouseLock) {
         try {
           const p = dom.requestPointerLock();
           p?.catch?.(() => (this.lockFailed = true));
@@ -141,6 +142,12 @@ export class PlayerControls {
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
+  }
+
+  /** Whether clicking takes hold of the mouse (else you drag to look). */
+  setMouseLock(on) {
+    this.mouseLock = on;
+    if (!on && document.pointerLockElement === this.dom) document.exitPointerLock();
   }
 
   setMode(mode) {

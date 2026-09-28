@@ -19,6 +19,7 @@ import { createSeaCoastLayer } from './world/layers/SeaCoastLayer.js';
 import { createKelpLayer } from './world/layers/KelpLayer.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
 import { createFlowerLayer } from './world/layers/FlowerLayer.js';
+import { createSnowLayer } from './world/layers/SnowLayer.js';
 import { createUnderstoryLayer } from './world/layers/UnderstoryLayer.js';
 import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
@@ -143,6 +144,7 @@ const caves = createCaveLayer(WORLD);
 chunks.addLayer(caves);
 chunks.addLayer(createEntranceLayer(WORLD, caves.material));
 chunks.addLayer(rocks);
+chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
 // The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).
 for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.material, rocks.material, farTrees.material, logs.material, water.material, rivers.material]) if (m) addCloudShadow(m);
 
@@ -344,6 +346,9 @@ const ui = {
   weatherAuto: document.querySelector('#weather option[value=auto]'),
   sunset: document.getElementById('sunset'),
   sound: document.getElementById('sound'),
+  mouseLock: document.getElementById('mouselock'),
+  minimap: document.getElementById('minimap'),
+  hotbar: document.getElementById('hotbar'),
   presets: document.querySelectorAll('[data-hour]'),
   alt: document.getElementById('stat-alt'),
   speed: document.getElementById('stat-speed'),
@@ -409,6 +414,9 @@ ui.weather.addEventListener('change', () => weather.set(ui.weather.value));
 ui.sunset.addEventListener('change', () => weather.setSunset(ui.sunset.value));
 ui.season.addEventListener('change', () => seasons.set(ui.season.value));
 ui.sound.addEventListener('change', () => sound.setEnabled(ui.sound.checked));
+// Holding the mouse in the middle of the screen (click, and look by moving
+// it), or not (drag to look, click where you point).
+ui.mouseLock?.addEventListener('change', () => controls.setMouseLock(ui.mouseLock.checked));
 const WEATHER_ORDER = ['auto', ...Object.keys(WEATHER)];
 ui.shadows.addEventListener('change', () => {
   dayNight.shadows = ui.shadows.checked;
@@ -422,13 +430,19 @@ ui.fly.addEventListener('change', () => {
 });
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
-  // The debug panel: P (or F3) shows and hides it.
+  // P (or F3) shows and hides everything on screen but the crosshair: the
+  // panel, the minimap, the hotbar.
   if (e.code === 'KeyP' || e.code === 'F3') {
     e.preventDefault();
-    ui.panel.hidden = !ui.panel.hidden;
+    const hide = !ui.panel.hidden;
+    for (const el of [ui.panel, ui.minimap, ui.hotbar]) if (el) el.hidden = hide;
     return;
   }
-  if (e.code === 'KeyB') bigMap.toggle();
+  if (e.code === 'KeyX') ui.mouseLock?.click();
+  if (e.code === 'KeyB') {
+    if (document.pointerLockElement) document.exitPointerLock(); // (to point at the map)
+    bigMap.toggle();
+  }
   if (e.code === 'KeyV') ui.fly.click();
   if (e.code === 'KeyF') ui.automove.click();
   if (e.code === 'KeyG') ui.wireframe.click();
@@ -477,7 +491,7 @@ canvas.addEventListener('pointerup', (e) => {
     // (The mouse held in the middle: the item goes where the crosshair is.)
     const r = canvas.getBoundingClientRect();
     useItem(r.left + r.width / 2, r.top + r.height / 2, press.button === 2 ? { id: 'pickup' } : hotbar.selected);
-  } else if (controls.lockFailed || press.button === 2) {
+  } else if (controls.lockFailed || !controls.mouseLock || press.button === 2) {
     // (The click that takes hold of the mouse doesn't use the item too.)
     const quick = performance.now() - press.time < 400 && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6;
     if (quick) useItem(e.clientX, e.clientY, press.button === 2 ? { id: 'pickup' } : hotbar.selected);

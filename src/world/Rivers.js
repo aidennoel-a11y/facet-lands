@@ -308,7 +308,7 @@ export class Rivers {
       }
       if (stream && i >= STREAM_STEPS) return null;
       // Rivers keep to gentle country (streams tumble down anything).
-      if (!stream && slope > 0.3) return null;
+      if (!stream && slope > 0.45) return null;
       // Circling back on itself: it's stuck in a hollow.
       if (i > 10 && points.some((p, k) => k < points.length - 10 && Math.hypot(p.x - px, p.z - pz) < 40)) return kind === 'stream' ? this.#tarn(points, rand, lowland) : null;
 

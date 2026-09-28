@@ -774,8 +774,19 @@ export class TerrainGenerator {
     const greenLand = w.temperate + (w.pine || 0);
     if (greenLand + 0.45 * w.savanna !== 0 && 1 - 0.6 * mask !== 0) {
       const hilly = smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2));
-      const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (5 + 17 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
+      const rolling = this.hillNoise.fbm(x * 0.0024, z * 0.0024, 3) * (7 + 27 * hilly) + this.flatNoise.fbm(x * 0.006, z * 0.006, 2) * 2.5;
       hills = rolling * (greenLand + 0.45 * w.savanna) * (1 - 0.6 * mask);
+      // Old worn-down mountains (like the Smokies), in stretches of the
+      // hilly green country (not the plains): long rounded ridges, forested to their tops, winding
+      // between broad deep valleys (where the rivers find their way).
+      const ridgeZone = smoothstep(0.08, 0.32, this.hillRegionNoise.fbm(x * 0.0004 + 500, z * 0.0004 - 800, 2)) * smoothstep(0.55, 0.7, hilly) * greenLand * (1 - 0.6 * mask);
+      if (ridgeZone > 0) {
+        const qx = x + this.hillRegionNoise.noise2D(x * 0.0005 + 40, z * 0.0005) * 320;
+        const qz = z + this.hillRegionNoise.noise2D(x * 0.0005, z * 0.0005 - 40) * 320;
+        const n = this.hillNoise.fbm(qx * 0.0009 + 311, qz * 0.0009 - 97, 3);
+        const crest = smoothstep(0.3, 0.83, 1 - Math.sqrt(n * n + 0.03)); // (rounded along the top, not a knife-edge)
+        hills += ridgeZone * Math.pow(crest, 1.3) * 88;
+      }
     }
     const f = this.#features(x, z, dryness, mask, w);
     let dunes = 0;

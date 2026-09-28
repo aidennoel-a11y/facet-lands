@@ -194,14 +194,11 @@ export function seasonalRocks(material) {
           {
             vec3 c = diffuseColor.rgb;
             float cool = 1.0 - smoothstep(0.02, 0.1, c.r - c.b);
-            // Moss on the damp north faces and tops (in wet country), and
-            // lichen, pale green-grey and orange, in spots (up high and in
+            // Lichen, pale green-grey and orange, in spots (up high and in
             // dry country): see RockLayer's rockMoss.
             {
               vec3 cell = floor(vRockLocal * 3.0);
               float patchy = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-              float north = smoothstep(0.0, 0.7, -vRockNormal.z), top = smoothstep(0.3, 0.9, vRockNormal.y);
-              c = mix(c, vec3(0.27, 0.38, 0.15) * (0.85 + 0.3 * patchy), vRockMoss.x * max(north, top * 0.6) * smoothstep(0.3, 0.6, patchy) * 0.85);
               float spot = step(0.84, fract(sin(dot(floor(vRockLocal * 9.0), vec3(39.34, 11.13, 83.17))) * 24634.63));
               c = mix(c, patchy > 0.55 ? vec3(0.8, 0.52, 0.2) : vec3(0.72, 0.75, 0.62), vRockMoss.y * spot * 0.75);
             }

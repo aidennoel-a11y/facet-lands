@@ -384,3 +384,8 @@ kbd {
 .panel[hidden] {
   display: none;
 }
+
+/* (Hidden means hidden: see the P key.) */
+[hidden] {
+  display: none !important;
+}

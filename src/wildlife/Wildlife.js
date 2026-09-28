@@ -772,7 +772,9 @@ export class Wildlife {
       const nx = a.x + sx * a.speed * dt, nz = a.z + sz * a.speed * dt;
       const ny = ctx.ground(nx, nz);
       const probe = ctx.ground(a.x + sx * (body + 1.5), a.z + sz * (body + 1.5));
-      const steep = !a.onSteep && Math.abs(probe - a.y) > sp.grade * (body + 1.5); // (steeper than it takes; unless it's already on such a slope, making its way off)
+      // (Not onto ground steeper than it takes; one already on such a slope
+      // only makes its way down off it.)
+      const steep = a.onSteep ? probe > a.y - 0.05 : Math.abs(probe - a.y) > sp.grade * (body + 1.5) || this.#slope(nx, nz, ctx) > sp.grade * 1.2;
       if (!(ny > ctx.seaLevel + 0.4) || !(probe > ctx.seaLevel + 0.3) || steep) {
         if (!a.detour) a.detour = { heading: a.heading + (Math.random() < 0.5 ? 1 : -1) * rnd(1.4, 2.2), time: rnd(1.5, 3) };
         a.speed *= Math.max(0, 1 - dt * 3);
@@ -811,7 +813,9 @@ export class Wildlife {
     // Leaning with the slope.
     const sx = Math.sin(a.heading), sz = Math.cos(a.heading), L = sp.height * 0.5;
     const up = ctx.ground(a.x + sx * L, a.z + sz * L), down = ctx.ground(a.x - sx * L, a.z - sz * L);
-    if (up === up && down === down) a.pitch += (-Math.atan2(up - down, 2 * L) * 0.8 - a.pitch) * Math.min(1, dt * 6);
+    // (Only a little: on a slope an animal keeps its body near level, its
+    // legs reaching down the slope or folding up it: see #draw.)
+    if (up === up && down === down) a.pitch += (-Math.atan2(up - down, 2 * L) * 0.3 - a.pitch) * Math.min(1, dt * 6);
     // Head down to graze, up when alarmed.
     const headWant = fleeing ? -0.15 : { graze: 1, drink: 1.15, alert: -0.25, look: -0.05, rest: 0.35 }[a.state] ?? 0.1;
     a.headDown += (headWant - a.headDown) * Math.min(1, dt * 3);
@@ -1070,14 +1074,16 @@ export class Wildlife {
       quat.setFromEuler(euler);
       base.compose(pos.set(a.x, a.y, a.z), quat, scl.setScalar(a.scale));
       if (a.alive && a.lie > 0.001) base.elements[13] -= a.lie * rig.model.legs[0][1] * 0.78 * a.scale; // (lying down, its legs folded under it)
-      const put = (mesh, pivot, rx, ry, rz) => {
+      const put = (mesh, pivot, rx, ry, rz, sy = 1) => {
         euler.set(rx, ry, rz, 'YXZ');
         quat.setFromEuler(euler);
-        part.compose(pos.set(pivot[0], pivot[1], pivot[2]), quat, scl.setScalar(1));
+        part.compose(pos.set(pivot[0], pivot[1], pivot[2]), quat, scl.set(1, sy, 1));
         out.multiplyMatrices(base, part);
         mesh.setMatrixAt(mesh.count++, out);
       };
       if (sp.ground) {
+        const cam = this.ctx?.camera.position;
+        const near = cam && Math.abs(a.x - cam.x) < 120 && Math.abs(a.z - cam.z) < 120;
         const moving = Math.min(1, a.speed / sp.walk);
         const running = smoothstep(sp.walk * 1.5, sp.run * 0.7, a.speed);
         const bob = a.kind === 'rabbit' ? Math.abs(Math.sin(a.phase * 0.5)) * 0.28 * moving : Math.abs(Math.sin(a.phase)) * 0.04 * moving;
@@ -1096,7 +1102,16 @@ export class Wildlife {
           let swing = Math.sin(phase) * amp;
           if (a.kind === 'rabbit') swing = (front ? -1 : 1) * Math.max(0, Math.sin(a.phase * 0.5)) * 0.9 * moving;
           if (a.alive && a.lie > 0.001) swing += ((front ? 1.45 : -1.45) - swing) * a.lie; // (folded under)
-          put(M.legs, p, swing + (a.alive ? 0 : (front ? -0.6 : 0.6)), 0, 0);
+          // On a slope each leg reaches down to the ground under its own hoof
+          // (longer down the slope, shorter up it).
+          let reach = 1;
+          if (a.alive && a.lie < 0.5 && near && this.ctx?.ground) {
+            const ch = Math.cos(a.heading), sh = Math.sin(a.heading);
+            const gy = this.ctx.ground(a.x + (p[0] * ch + p[2] * sh) * a.scale, a.z + (-p[0] * sh + p[2] * ch) * a.scale);
+            const hip = base.elements[13] + (p[1] * Math.cos(a.pitch) - p[2] * Math.sin(a.pitch)) * a.scale;
+            if (gy === gy) reach = Math.max(0.6, Math.min(1.6, (hip - gy) / (p[1] * a.scale)));
+          }
+          put(M.legs, p, swing + (a.alive ? 0 : (front ? -0.6 : 0.6)), 0, 0, reach);
         });
       } else {
         const perched = a.state === 'perch' || a.state === 'ground' || a.landed || a.state === 'dead';

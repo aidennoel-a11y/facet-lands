@@ -1,14 +1,14 @@
 import { MAP_LABELS } from './mapLabels.js';
 
 const TILE = 64; // samples per tile edge
-const SCALES = [4, 8, 16, 32, 64]; // metres per sample (per map pixel)
+const SCALES = [4, 8, 16, 32, 64, 128]; // metres per sample (per map pixel)
 const RGB = MAP_LABELS.map(([, c]) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]);
 
 const STYLE = `
 .biome-map { position: fixed; inset: 0; z-index: 50; display: none; background: rgba(12, 18, 28, 0.82); color: #fff;
   font: 13px/1.3 system-ui, sans-serif; align-items: center; justify-content: center; gap: 18px; padding: 16px; box-sizing: border-box; }
 .biome-map.open { display: flex; }
-.biome-map canvas { border-radius: 12px; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5); cursor: crosshair; touch-action: none; max-width: 100%; }
+.biome-map canvas { border-radius: 12px; max-height: 100%; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5); cursor: crosshair; touch-action: none; max-width: 100%; }
 .biome-map .side { display: flex; flex-direction: column; gap: 8px; max-height: 100%; overflow: auto; min-width: 190px; }
 .biome-map .title { font-size: 18px; font-weight: 700; }
 .biome-map .hint { opacity: 0.75; font-size: 12px; }
@@ -83,8 +83,10 @@ export class BiomeMap {
     const p = this.where();
     this.centre = { x: p.x, z: p.z };
     this.root.classList.add('open');
-    const size = Math.floor(Math.min(window.innerWidth - 260, window.innerHeight - 40, 900));
-    this.canvas.width = this.canvas.height = Math.max(240, size);
+    // (As big as the window allows: the side panel beside it, or under it on a narrow screen.)
+    const narrow = window.innerWidth < 760;
+    this.canvas.width = Math.max(240, Math.floor(window.innerWidth - (narrow ? 32 : 250)));
+    this.canvas.height = Math.max(240, Math.floor(window.innerHeight * (narrow ? 0.62 : 1) - 32));
     this.draw();
   }
 
@@ -94,8 +96,8 @@ export class BiomeMap {
 
   /** World position under canvas pixel (px, py). */
   #toWorld(px, py) {
-    const n = this.canvas.width;
-    return { x: this.centre.x + (px - n / 2) * this.scale, z: this.centre.z + (py - n / 2) * this.scale };
+    const { width, height } = this.canvas;
+    return { x: this.centre.x + (px - width / 2) * this.scale, z: this.centre.z + (py - height / 2) * this.scale };
   }
 
   #input() {
@@ -196,19 +198,19 @@ export class BiomeMap {
   draw() {
     if (!this.isOpen) return;
     const { ctx, canvas, scale } = this;
-    const n = canvas.width;
+    const w = canvas.width, n = canvas.height;
     ctx.fillStyle = '#1b2433';
-    ctx.fillRect(0, 0, n, n);
+    ctx.fillRect(0, 0, w, n);
     ctx.imageSmoothingEnabled = false;
     const span = TILE * scale;
-    const x0 = this.centre.x - (n / 2) * scale, z0 = this.centre.z - (n / 2) * scale;
+    const x0 = this.centre.x - (w / 2) * scale, z0 = this.centre.z - (n / 2) * scale;
     const want = [];
     for (let tz = Math.floor(z0 / span); tz * span < z0 + n * scale; tz++) {
-      for (let tx = Math.floor(x0 / span); tx * span < x0 + n * scale; tx++) {
+      for (let tx = Math.floor(x0 / span); tx * span < x0 + w * scale; tx++) {
         const tile = this.tiles.get(`${scale}:${tx}:${tz}`);
         const px = Math.round((tx * span - x0) / scale), py = Math.round((tz * span - z0) / scale); // (whole pixels: no seams)
         if (tile && tile !== 'pending') ctx.drawImage(tile.canvas, px, py, TILE + 1, TILE + 1);
-        else if (!tile) want.push([tx, tz, Math.hypot(px + TILE / 2 - n / 2, py + TILE / 2 - n / 2)]);
+        else if (!tile) want.push([tx, tz, Math.hypot(px + TILE / 2 - w / 2, py + TILE / 2 - n / 2)]);
       }
     }
     // Nearest the middle first, a few at a time.
