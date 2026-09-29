@@ -1518,7 +1518,14 @@ export class Game {
     this.camera.add(this.hand);
     this.grip = new Group(); // (turned about your grip, to swing)
     this.hand.add(this.grip);
-    this.handMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true, depthTest: false, depthWrite: false, transparent: true });
+    // (Solid: depth-tested against itself, so its far side never shows
+    // through; drawn into the nearest sliver of the depth range, so it's
+    // always in front of the world, never sinking into a wall.)
+    this.handMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+    this.nearest = {
+      before: (renderer) => renderer.getContext().depthRange(0, 0.01),
+      after: (renderer) => renderer.getContext().depthRange(0, 1),
+    };
     this.handFlame = new Mesh(new OctahedronGeometry(0.06, 0), new MeshBasicMaterial({ color: 0xffa040, depthTest: false, transparent: true }));
     this.handFlame.scale.set(1, 1.7, 1);
     this.heldId = null;
@@ -1539,6 +1546,8 @@ export class Game {
         const geometry = id === 'torch' ? this.items.model('stick') : this.items.model(id);
         const mesh = new Mesh(geometry, this.handMaterial);
         mesh.renderOrder = 999;
+        mesh.onBeforeRender = this.nearest.before;
+        mesh.onAfterRender = this.nearest.after;
         this.handFlame.renderOrder = 1000;
         // Each held its own way (in your hand's frame: forward is -z).
         if (AXES[id] || PICKS[id]) {

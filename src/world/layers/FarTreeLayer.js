@@ -15,8 +15,8 @@ import { TREE_GEOMETRIES } from '../trees.js';
 import { packFarTrees, placeTrees } from '../treePlacement.js';
 
 const CONES = new Set(['pine', 'spruce', 'larch']);
-const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag']);
-const CLUMPS = new Set(['bamboo']);
+const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag', 'bamboo']); // (bamboo: a single cane)
+const CLUMPS = new Set();
 // Crowns held high on a bare trunk (and its bark colour).
 const UMBRELLAS = { jungleGiant: 0x857560, jungleCanopy: 0x6e604c, junglePalm: 0x7d6a52, treeFern: 0x44342a };
 const BARK = { ...UMBRELLAS, birch: 0xd9d6cc, silverBirch: 0xe0ddd2, aspen: 0xcfd0c4, baobab: 0x8a7a66, acacia: 0x6a5240 };

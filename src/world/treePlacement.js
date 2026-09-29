@@ -169,6 +169,22 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (marsh && ground < seaLevel + 0.4 && !IN_WATER.has(species.type)) continue;
 
       const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale;
+      if (species.type === 'bamboo') {
+        // A thicket: a clump of separate canes, each of its own height and lean.
+        const list = (placed.bamboo ??= []);
+        const canes = 5 + Math.floor(hash2(gi, gj, seed + 19) * 5);
+        for (let c = 0; c < canes; c++) {
+          const a = hash2(gi + c * 17, gj, seed + 20) * Math.PI * 2, d = c ? 0.3 + 1.1 * hash2(gi, gj + c * 17, seed + 21) : 0;
+          const cx = lx + Math.cos(a) * d, cz = lz + Math.sin(a) * d;
+          const cs = (0.8 + 0.4 * hash2(gi + c, gj - c, seed + 22)) * treeScale;
+          list.push({
+            x: cx, y: ground - 0.2, z: cz, s: cs * 0.9, sy: cs * (0.7 + 0.45 * hash2(gi - c, gj + c, seed + 23)),
+            rot: a + (hash2(gi + c, gj + c, seed + 24) - 0.5) * 1.2, shade: hash2(gi + c * 3, gj, seed + 25),
+            leanX: Math.cos(a) * 0.03 - gradX * 0.1, leanZ: Math.sin(a) * 0.03 - gradZ * 0.1,
+          });
+        }
+        continue;
+      }
       (placed[species.type] ??= []).push({
         x: lx,
         // Sink the base a little so trunks never float on sloped faces.

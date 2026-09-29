@@ -51,6 +51,8 @@ const INFLUENCE = 150; // how far past its channel a river still shapes the land
  * asking in any order, sees the same water.
  */
 export class Rivers {
+  static STREAMS = false; // mountain streams and cliff waterfalls (off: see #ensureStreams)
+
   constructor(generator, { seaLevel }) {
     this.generator = generator;
     this.big = generator.bigRivers; // the great rivers (creeks and streams run into them)
@@ -120,10 +122,13 @@ export class Rivers {
   #ensureStreams(rx, rz) {
     const k = this.#key(rx, rz);
     if (this.streamRegions.has(k)) return;
+    this.streamRegions.add(k);
+    // (Mountain streams and the waterfalls off cliffs are left out for now:
+    // their stepped pools and falls don't yet sit convincingly in the land.)
+    if (!Rivers.STREAMS) return;
     // Every river a stream from here could meet must exist first.
     const reach = STREAM_REACH + RIVER_REACH;
     for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) this.#ensureRivers(rx + dx, rz + dz);
-    this.streamRegions.add(k);
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x51ab) * 4294967296);
     let made = 0;

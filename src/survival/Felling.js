@@ -111,6 +111,7 @@ export class Felling {
   /** How many blows a tree takes. */
   blows(hit) {
     if (hit.bush) return 2;
+    if (hit.type === 'bamboo') return 1; // (a single cane: one swing through it)
     return Math.round(3 + 4 * hit.t.s * Math.min(1.6, hit.t.sy));
   }
 
@@ -317,6 +318,19 @@ export class Felling {
     f.chops++;
     const c = v.copy(f.pivot).addScaledVector(f.dir, Math.sin(f.angle) * f.length * 0.3);
     this.#chips(c.x, c.y + 0.4, c.z, from);
+    if (f.hit.type === 'bamboo') {
+      // A fallen cane cuts into lengths of stick in one blow.
+      for (let k = 0; k < 3; k++) {
+        const along = f.length * (0.15 + 0.3 * k);
+        const x = f.pivot.x + f.dir.x * along, z = f.pivot.z + f.dir.z * along;
+        const g = ground(x, z);
+        this.items.drop(Inventory.stack('stick', 1), x, (Number.isFinite(g) ? g : f.pivot.y) + 0.4, z, { turn: Math.atan2(f.dir.x, f.dir.z) + Math.PI / 2 });
+      }
+      this.scene.remove(f.group);
+      for (const m of f.group.children) m.dispose();
+      this.falling.splice(this.falling.indexOf(f), 1);
+      return true;
+    }
     if (f.chops < 3) return false;
     const logs = Math.max(2, Math.min(6, Math.round(f.length / 2.5)));
     for (let k = 0; k < logs; k++) {

@@ -2491,15 +2491,19 @@ export class Wildlife {
         foot.y = v3.y;
         foot.z = v3.z;
       } else footAt(foot, p, k, a.gait ?? sp.gaits[0], a.cycle ?? 0, (a.strideLen ?? sp.stride) / s, H, Math.min(1, (a.speed ?? 0) / (sp.walk * 0.3)));
-      // Lying down: the legs folded under it (the fore hooves tucked back,
-      // the hind forward under the belly).
+      // Lying down: the legs folded under it (the fore hooves tucked back;
+      // the hind legs folded as a resting deer's or sheep's are, the knee
+      // forward along the belly and the foot tucked back beside the rump,
+      // never the joint sticking up out behind).
+      let tucked = false;
       if (a.alive && !lying && a.lie > 0.001) {
-        const fy = H * 0.78 * a.lie + 0.02, fz = p[2] + (hind ? 0.45 : -0.18) * H;
-        foot.x += (p[0] * 1.15 - foot.x) * a.lie;
+        const fy = H * 0.78 * a.lie + 0.02, fz = p[2] + (hind ? -0.22 : -0.18) * H;
+        foot.x += (p[0] * 1.2 - foot.x) * a.lie;
         foot.y += (fy - foot.y) * a.lie;
         foot.z += (fz - foot.z) * a.lie;
+        tucked = hind && a.lie > 0.5;
       }
-      solveLeg(ik, p[0], p[1], p[2], foot.x, foot.y, foot.z, limb.l1, limb.l2, !hind);
+      solveLeg(ik, p[0], p[1], p[2], foot.x, foot.y, foot.z, limb.l1, limb.l2, !hind || tucked);
       put(hind ? M.hindUpper : M.foreUpper, p, ik.a1, 0, ik.rz, 'ZYX');
       put(hind ? M.hindLower : M.foreLower, [ik.kx, ik.ky, ik.kz], ik.a2, 0, ik.rz, 'ZYX');
     });
