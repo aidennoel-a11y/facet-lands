@@ -174,6 +174,19 @@ export class Showers {
     if (this.flashAt) u.flashAt.value.set(this.flashAt.x, this.flashAt.z);
   }
 
+  /**
+   * How hard it's raining at `p` from the showers overhead (0..0.75, as
+   * the weather's rain): fly in under one and you're in its rain.
+   */
+  rainAt(p) {
+    let r = 0;
+    for (const s of this.list) {
+      const d = Math.hypot(s.x - p.x, s.z - p.z), half = s.width / 2;
+      if (d < half) r = Math.max(r, 0.75 * s.rain * (1 - smoothstep(half * 0.6, half, d)));
+    }
+    return r;
+  }
+
   /** Where one of the heavier showers stands, well away, for far lightning to strike inside it (or null). */
   pick(from) {
     const far = this.list.filter((s) => s.rain > 0.5 && Math.hypot(s.x - from.x, s.z - from.z) > 500);

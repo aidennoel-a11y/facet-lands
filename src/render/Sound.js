@@ -380,13 +380,37 @@ export class Sound {
     };
     // A bubble's "plop": a pure tone rising fast (as a bubble in water rings).
     const bloop = (start, f0, len, peak) => tone(start, len, 'sine', f0, f0 * (2 + Math.random()), f0 * 1.6, 0.7, peak);
-    const drops = (start, n, spread, peak) => {
+    const drops = (start, n, spread, peak, wet = false) => {
       for (let k = 0; k < n; k++) {
         const at = start + Math.pow(Math.random(), 1.6) * spread;
         const fade = 1 - (at - start) / (spread * 1.2);
-        if (Math.random() < 0.5) bloop(at, 900 + Math.random() * 1400, 0.035 + Math.random() * 0.03, peak * fade * 0.6);
-        else noise(at, 0.03, 3000 + Math.random() * 3000, 4, peak * fade);
+        // (`wet`: drops pattering back onto water: little clicks of noise, no plops.)
+        if (!wet && Math.random() < 0.5) bloop(at, 900 + Math.random() * 1400, 0.035 + Math.random() * 0.03, peak * fade * 0.6);
+        else noise(at, 0.025 + Math.random() * 0.02, 2500 + Math.random() * 4000, 2.5, peak * fade);
       }
+    };
+    // Churning water: a burst of noise through a band sweeping down from
+    // `f0` to `f1`, its loudness tumbling irregularly as the water breaks
+    // up (never a smooth hiss), dying away over `len`.
+    const churn = (start, len, f0, f1, q, peak) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.Q.value = q;
+      f.frequency.setValueAtTime(f0, start);
+      f.frequency.exponentialRampToValueAtTime(f1, start + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start + 0.008);
+      for (let k = 1, at = start + 0.02; at < start + len; k++, at += 0.012 + Math.random() * 0.018) {
+        const env = peak * Math.pow(1 - (at - start) / len, 1.8);
+        g.gain.linearRampToValueAtTime(Math.max(0.0001, env * (0.35 + 0.65 * Math.random())), at);
+      }
+      g.gain.linearRampToValueAtTime(0.0001, start + len);
+      src.connect(f).connect(g).connect(out);
+      src.start(start, Math.random() * 3);
+      src.stop(start + len + 0.05);
     };
     if (kind === 'caw') {
       const n = 2 + Math.floor(Math.random() * 3);
@@ -418,22 +442,26 @@ export class Sound {
       // A spring peeper: a high rising whistle.
       tone(t, 0.12, 'sine', 2500 + Math.random() * 300, 3000 + Math.random() * 300, 2800, 1, 0.035);
     } else if (kind === 'splash') {
-      // A foot or a paddle in the water: the slap of it, a bubble or two
-      // gulping, and the drops falling back.
-      wash(t, 0.16, 'lowpass', 2400, 0.14, 0.004, 700);
-      bloop(t + 0.02, 380 + Math.random() * 200, 0.06, 0.06);
-      if (Math.random() < 0.6) bloop(t + 0.07, 600 + Math.random() * 300, 0.05, 0.04);
-      drops(t + 0.05, 6 + Math.floor(Math.random() * 5), 0.35, 0.035);
+      // A foot, a paddle or a leap into the water: the sharp slap of it on
+      // the surface, the churning rush of the water thrown up (falling in
+      // pitch as it spreads), and the fizz of the drops coming back down.
+      // Noise, all of it, never a tone: water doesn't ring.
+      const big = 0.85 + Math.random() * 0.3;
+      wash(t, 0.06, 'highpass', 1200, 0.5, 0.001);
+      churn(t + 0.005, 0.32 * big, 3600 + Math.random() * 800, 850, 0.7, 0.42);
+      churn(t + 0.02, 0.22 * big, 1100, 420, 0.8, 0.18); // (the heavier water, lower)
+      wash(t + 0.07, 0.45 * big, 'highpass', 3200, 0.07, 0.03, 5500);
+      drops(t + 0.12, 5 + Math.floor(Math.random() * 4), 0.4, 0.05, true);
     } else if (kind === 'bigsplash') {
-      // Into the water from a height: a heavy thump, the crash and hiss of
-      // the water thrown up, the deep gulp as it closes, and the rain of
-      // drops coming down after.
-      tone(t, 0.3, 'sine', 140, 55, 120, 0.7, 0.3);
-      wash(t, 0.9, 'lowpass', 4000, 0.3, 0.005, 600);
-      wash(t + 0.05, 0.6, 'highpass', 2500, 0.08, 0.02);
-      bloop(t + 0.12, 180, 0.18, 0.12);
-      bloop(t + 0.22, 300, 0.12, 0.07);
-      drops(t + 0.3, 22, 1.1, 0.05);
+      // Into the water from a height: a heavy slap and thump, a great
+      // churning crash of water thrown up, the deep gulp as it closes over,
+      // and the long patter of drops raining down after.
+      tone(t, 0.25, 'sine', 110, 50, 100, 0.7, 0.25);
+      wash(t, 0.08, 'highpass', 900, 0.6, 0.001);
+      churn(t + 0.01, 0.8, 4200, 600, 0.6, 0.5);
+      churn(t + 0.05, 0.6, 1200, 250, 0.7, 0.3);
+      wash(t + 0.15, 1.1, 'highpass', 3000, 0.1, 0.05, 6000);
+      drops(t + 0.35, 26, 1.3, 0.07, true);
     } else if (kind === 'rumble') {
       noise(t, 3.5, 70, 0.7, 0.35, 3);
       tone(t, 3, 'sine', 42, 30, 60, 0.7, 0.25);

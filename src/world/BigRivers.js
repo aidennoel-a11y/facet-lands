@@ -54,6 +54,7 @@ export class BigRivers {
     this.covered = new Set(); // regions whose rivers are all in the index
     this.cells = new Map(); // index cell -> segments
     this.list = [];
+    this.deltas = [];
     this.broad = new Map();
     this._m = {};
     this._lastX = NaN;
@@ -242,6 +243,7 @@ export class BigRivers {
     });
     if (into) points[n - 1].width = Math.max(points[n - 2].width, into.river.points[into.b].width * 0.6);
     const river = { points, pond: null, tarn: null, kind: 'river', big: true, region: [i, j] };
+    if (!into) this.#delta(river, i, j);
     this.finals.set(k, river);
     return river;
   }
@@ -299,6 +301,57 @@ export class BigRivers {
     }
   }
 
+  /**
+   * Where a river runs out into the sea (or a great lake), a delta: some
+   * half a kilometre short of its mouth it splits into two or three
+   * narrower channels fanning out to the water, and the shallows between
+   * them build up into low flats of sand and silt just above the water.
+   */
+  #delta(river, i, j) {
+    const P = river.points, n = P.length;
+    if (n < 20) return;
+    const g = this.generator;
+    const end = P[n - 1];
+    if (g.getOceanness(end.x, end.z) < 0.5) return; // (only out into the open sea)
+    const apex = P[n - 14];
+    const dx = end.x - apex.x, dz = end.z - apex.z, dl = Math.hypot(dx, dz) || 1;
+    const ux = dx / dl, uz = dz / dl;
+    const s = this.seed ^ 0xde17a;
+    const count = 2 + (hash2(i, j, s) < 0.5 ? 1 : 0);
+    const angles = count === 2 ? [-0.5, 0.45] : [-0.6, 0.05, 0.55];
+    river.branches = [];
+    for (let b = 0; b < count; b++) {
+      const turn = angles[b] + (hash2(i + b, j, s + 1) - 0.5) * 0.2;
+      const len = 14 + Math.floor(hash2(i, j + b, s + 2) * 6);
+      const pts = [{ x: apex.x, z: apex.z, level: apex.level, width: apex.width * 0.5 }];
+      let a = Math.atan2(uz, ux) + turn, x = apex.x, z = apex.z;
+      for (let k = 1; k <= len; k++) {
+        a -= turn * 0.04 + this.wiggle.noise2D(x * 0.004 + b * 13, z * 0.004) * 0.08; // (easing back seawards, winding a little)
+        x += Math.cos(a) * STEP;
+        z += Math.sin(a) * STEP;
+        const f = k / len;
+        pts.push({ x, z, level: Math.max(this.seaLevel + 0.03, apex.level + (this.seaLevel + 0.03 - apex.level) * Math.min(1, f * 1.6)), width: apex.width * (0.5 - 0.15 * f) });
+      }
+      river.branches.push({ points: pts, pond: null, tarn: null, kind: 'river', big: true, branch: true });
+    }
+    river.delta = { x: apex.x, z: apex.z, ux, uz, r: (14 + 6) * STEP * 1.15, level: this.seaLevel };
+  }
+
+  /** How high a delta's flats lift the land at (x, z) (or -Infinity): just above the water, fanning out seawards from its apex. */
+  #deltaFlat(x, z) {
+    let best = -Infinity;
+    for (const d of this.deltas) {
+      const ox = x - d.x, oz = z - d.z, dist = Math.hypot(ox, oz);
+      if (dist > d.r) continue;
+      const ahead = (ox * d.ux + oz * d.uz) / (dist || 1);
+      const fan = smoothstep(-0.2, 0.25, ahead) * (1 - smoothstep(d.r * 0.7, d.r, dist));
+      if (fan <= 0) continue;
+      const lumps = this.wiggle.noise2D(x * 0.012 + 7, z * 0.012 - 3) * 0.5 + this.wiggle.noise2D(x * 0.03, z * 0.03) * 0.08;
+      best = Math.max(best, d.level + (0.35 + 0.5 * fan + lumps * fan) * fan - (1 - fan) * 2);
+    }
+    return best;
+  }
+
   /** Makes sure every river that can shape (x, z) is in the index. */
   #ensure(x, z) {
     const ri = Math.floor(x / REGION), rj = Math.floor(z / REGION);
@@ -312,6 +365,8 @@ export class BigRivers {
         if (!river || river.indexed) continue;
         river.indexed = true;
         this.#index(river);
+        for (const b of river.branches ?? []) this.#index(b);
+        if (river.delta) this.deltas.push(river.delta);
       }
     }
   }
@@ -377,6 +432,10 @@ export class BigRivers {
     this._lastX = x;
     this._lastZ = z;
     const near = this.#near(x, z);
+    if (this.deltas.length) {
+      const flat = this.#deltaFlat(x, z);
+      if (flat > h) h = flat;
+    }
     if (!near) return h;
     const m = this._m;
     let low = Infinity, edge = Infinity, levee = -Infinity, leveeWeight = 0;

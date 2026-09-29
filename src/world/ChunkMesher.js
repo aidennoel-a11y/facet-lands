@@ -404,7 +404,7 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
         // Steep walls of canyons, mesas, Black Hills rock and sea cliffs:
         // more, smaller faces, so a wall is never one great sheer triangle
         // and a spire never a single spike.
-        if (!yes && walled && hi - lo > (coarse ? 4 : 2.5)) {
+        if (!yes && walled && hi - lo > (coarse ? 5 : 3)) {
           const f = generator.getFeatures(cx, cz);
           yes = f.canyon > 0.1 || f.mesa > 0.1 || generator.getBiomeWeights(cx, cz, {}).blackHills > 0.2 || generator.getSeaCliff(cx, cz) > 0.1;
         }

@@ -123,6 +123,7 @@ export function rockCandidates(generator, config, cx, cz) {
 
       const r = hash2(gi, gj, seed + 3);
       const boulder = surf > 0 || r < lavaRock || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite);
+      if (boulder && surf <= 0 && hash2(gi, gj, seed + 31) < 0.3 * open) continue; // (and a third fewer boulders out on the grassland)
       if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
       if (generator.nearTidePool?.(wx, wz)) continue; // and tide pools
       if (!bank && generator.rivers.at(wx, wz, 1)) continue; // and rivers

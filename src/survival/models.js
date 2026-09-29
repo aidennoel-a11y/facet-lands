@@ -520,9 +520,11 @@ export const ropeLengthModel = () => new Parts(107).add(new CylinderGeometry(0.0
 /** A dug plot, 2 m square: dark turned earth in furrows. */
 export const PLOT_SIZE = 2;
 export function plotModel() {
+  // (The soil itself is painted onto the ground: see render/tilledSoil.
+  // Here, only a few low clods along the rows, sunk into it.)
   const b = new Parts(109);
-  b.add(new BoxGeometry(PLOT_SIZE, 0.12, PLOT_SIZE), 0x4a3424, [0, 0.0, 0], [0, 0, 0], [1, 1, 1], 0.05);
-  for (let k = 0; k < 4; k++) b.add(new BoxGeometry(PLOT_SIZE - 0.1, 0.08, 0.22), 0x5a4030, [0, 0.08, -0.75 + k * 0.5], [0, 0, 0], [1, 1, 1], 0.1);
+  const rand = mulberry32(1091);
+  for (let k = 0; k < 10; k++) b.add(new BoxGeometry(0.12, 0.05, 0.1), 0x3c2a1c, [(rand() - 0.5) * 1.8, -0.01, -0.75 + Math.floor(rand() * 4) * 0.5], [0, rand() * 3, 0], [1, 1, 1], 0.1);
   return b.build();
 }
 
