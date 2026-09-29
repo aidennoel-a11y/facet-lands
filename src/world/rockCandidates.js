@@ -87,6 +87,8 @@ export function rockCandidates(generator, config, cx, cz) {
           for (const d of [8, 16, 26]) rise = Math.max(rise, (generator.getHeight(wx + Math.cos(a) * d, wz + Math.sin(a) * d) - seaLevel) / d);
         }
         surf = rise > 0.45 ? smoothstep(0.45, 0.9, rise) * (0.7 + 0.3 * smoothstep(0.1, 0.4, generator.getSeaCliff(wx, wz))) : 0;
+        // (Round an island's cliffs, great heaps of fallen rock.)
+        if (surf > 0 && generator.islandAt(wx, wz) > 0.2) surf = Math.min(1.6, surf * 1.8 + 0.2);
       }
       if (roll > (0.025 + 0.2 * foothill + (cliffy ? 0.95 : 0) + 0.45 * bank + 0.55 * bare + 0.6 * shoreMax + 0.9 * granite + lavaRock) * soft + surf) continue;
 

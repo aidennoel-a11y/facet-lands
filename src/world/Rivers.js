@@ -51,7 +51,8 @@ const INFLUENCE = 150; // how far past its channel a river still shapes the land
  * asking in any order, sees the same water.
  */
 export class Rivers {
-  static STREAMS = false; // mountain streams and cliff waterfalls (off: see #ensureStreams)
+  static STREAMS = true; // mountain streams (running straight down the slopes, in rapids)
+  static CASCADES = false; // their stepped pools and falls, and waterfalls off cliffs (off: they didn't sit convincingly in the land)
 
   constructor(generator, { seaLevel }) {
     this.generator = generator;
@@ -97,7 +98,7 @@ export class Rivers {
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     let made = 0;
-    for (let attempt = 0; attempt < 90 && made < 4; attempt++) {
+    for (let attempt = 0; attempt < 110 && made < 6; attempt++) {
       const x = (rx + rand()) * REGION;
       const z = (rz + rand()) * REGION;
       // Rivers rise in the hills and foothills of the plains and savanna
@@ -123,11 +124,10 @@ export class Rivers {
     const k = this.#key(rx, rz);
     if (this.streamRegions.has(k)) return;
     this.streamRegions.add(k);
-    // (Mountain streams and the waterfalls off cliffs are left out for now:
-    // their stepped pools and falls don't yet sit convincingly in the land.)
     if (!Rivers.STREAMS) return;
-    // Every river a stream from here could meet must exist first.
-    const reach = STREAM_REACH + RIVER_REACH;
+    // Every creek a stream from here could meet must exist first (those
+    // close enough to; one further off it may cross rather than join).
+    const reach = STREAM_REACH + 1;
     for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) this.#ensureRivers(rx + dx, rz + dz);
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x51ab) * 4294967296);
@@ -152,7 +152,7 @@ export class Rivers {
         made++;
       }
     }
-    this.#cliffFalls(rx, rz, rand, siblings);
+    if (Rivers.CASCADES) this.#cliffFalls(rx, rz, rand, siblings);
   }
 
   /**
@@ -362,7 +362,7 @@ export class Rivers {
       // Rivers cut down into the land, deeper as they grow; streams on
       // gentle ground too.
       const target = b - (stream ? (slope > 0.15 ? 0.5 : 1.1) : 1.3 + Math.min(1.1, (points.length * STEP) / 700));
-      const cascade = stream && slope > 0.15;
+      const cascade = stream && slope > 0.15 && Rivers.CASCADES;
       if (cascade) {
         // Steep ground: a pool held level behind its rock lip, until the
         // land has fallen well away below it; then the water pours over

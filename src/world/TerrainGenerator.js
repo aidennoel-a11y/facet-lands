@@ -10,7 +10,7 @@ const MUD = new Color(0x5f4a36);
 const DIRT = new Color(0x7d6547);
 const RIVERBED = new Color(0x55493b);
 // How much more of the world is mountains than the range noise alone gives.
-const MOUNTAIN_BIAS = 0.085;
+const MOUNTAIN_BIAS = 0.097; // (a percent more of the world in the ranges than there was, a percent less desert)
 const DUNE = new Color(0xe6b86e); // dune sand
 const CORALS = [0xe0708a, 0xe89a4a, 0x9a6ab8, 0x4fb3a0, 0xe6cf5a, 0xd9566a].map((c) => new Color(c));
 const SINTER = new Color(0xe6dcc4); // crusts round hot springs
@@ -251,7 +251,7 @@ export class TerrainGenerator {
     range ??= this.#rangeField(x, z).value;
     const a = this.getAridity(x, z, range);
     const temperate = 1 - smoothstep(0.375, 0.575, a); // (broad transitions, not a line on the map)
-    const desert = smoothstep(0.665, 0.865, a);
+    const desert = smoothstep(0.69, 0.89, a);
     const savanna = Math.max(0, 1 - temperate - desert);
     // Black Hills country: a rare biome of its own, found now and then in
     // the rolling hills of the green lands (see #hillsZone).
@@ -454,7 +454,7 @@ export class TerrainGenerator {
     // (Rounded forests a few kilometres across, rising round the foot of
     // the mountains: each centred where the country suits it, then kept
     // only where it's cool and green enough.)
-    const blob = this.#blobs('pine', x, z, 4200, 1, 1500, 3000, 0x9e11, (px, pz) => {
+    const blob = this.#blobs('pine', x, z, 5600, 1, 1500, 3000, 0x9e11, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       if (this.getAridity(px, pz, r) > 0.42) return 0;
       // (Jungles keep well away from mountains, so near them there's none to check for.)
@@ -463,7 +463,12 @@ export class TerrainGenerator {
     });
     if (blob <= 0) return 0;
     if (aridity > 0.45) return 0;
-    return blob * (1 - smoothstep(0.05, 0.3, this.#jungleNear(x, z))) * (1 - smoothstep(0.4, 0.46, this.#aridAround(x, z)));
+    // (Pine country is the flanks of the mountains and their foothills,
+    // giving way to broadleaf forest and plains further out: never down by
+    // a jungle.)
+    const mountainous = smoothstep(0.02, 0.14, this.#mountainsAround(x, z));
+    if (mountainous <= 0) return 0;
+    return blob * mountainous * (1 - smoothstep(0.02, 0.15, this.#jungleNear(x, z))) * (1 - smoothstep(0.4, 0.46, this.#aridAround(x, z)));
   }
 
   #pineZoneRaw(x, z, range, aridity, noise = true, cooled = true) {
@@ -603,12 +608,14 @@ export class TerrainGenerator {
     // (Well clear of the Black Hills: their noise must be well below where they begin.)
     const hillsClear = 1 - smoothstep(0.08, 0.18, this.hillsNoise.fbm(x * 0.0001 - 250, z * 0.0001 + 610, 2));
     if (hillsClear <= 0) return 0;
-    // (And never near the Smoky Mountains: a good kilometre and more of
-    // forest and plains between them.)
-    let smoky = this.#smokyBlob(x, z);
+    // (And never near the Smoky Mountains or the Black Hills: a good
+    // kilometre and more of forest and plains between them. A jungle only
+    // borders wetlands, lakes, the sea, forests and plains.)
+    const upland = (px, pz) => Math.max(this.#smokyBlob(px, pz), this.#hillsBlob(px, pz));
+    let smoky = upland(x, z);
     for (let k = 0; k < 8 && smoky < 0.05; k++) {
       const a = (k / 8) * Math.PI * 2;
-      for (const d of [900, 1800]) smoky = Math.max(smoky, this.#smokyBlob(x + Math.cos(a) * d, z + Math.sin(a) * d));
+      for (const d of [900, 1800]) smoky = Math.max(smoky, upland(x + Math.cos(a) * d, z + Math.sin(a) * d));
     }
     if (smoky >= 0.3) return 0;
     const wet = 1 - smoothstep(0.3, 0.44, aridity);
@@ -1048,7 +1055,9 @@ export class TerrainGenerator {
     // Sea cliffs along stretches of the open coast.
     if (ocean > 0 && u > -10 && u < 60) {
       const cliffs = this.#cliffZone(x, z, w) * ocean;
-      if (cliffs > 0) height += (this.#seaCliff(x, z, u) - u) * cliffs;
+      // (Round an island, half as tall: never a wall higher than the island.)
+      const isle = cliffs > 0 && !this._probing ? this.islandAt(x, z) : 0;
+      if (cliffs > 0) height += (this.#seaCliff(x, z, u, 1 - 0.5 * isle) - u) * cliffs;
       // Along some stretches, a broad shelf of rock the waves have planed
       // off, a few tens of metres out from the cliff, dotted with tide pools.
       if (cliffs > 0.3 && u < 0) height = seaLevel + this.#shelf(x, z, u, height - seaLevel, smoothstep(0.3, 0.6, cliffs));
@@ -1165,8 +1174,8 @@ export class TerrainGenerator {
    * gently until it meets the land; offshore the sea deepens quickly, and
    * sea stacks, pillars of rock the sea has cut off, stand in it.
    */
-  #seaCliff(x, z, u) {
-    const h = this.#seaCliffRock(x, z, u);
+  #seaCliff(x, z, u, scale = 1) {
+    const h = this.#seaCliffRock(x, z, u, scale);
     // Sea caves: narrow inlets running back into the cliff under a roof of
     // rock (the roof is SeaCaveLayer's), their floor awash, rising to a
     // shingle beach at the back.
@@ -1185,8 +1194,9 @@ export class TerrainGenerator {
     return out;
   }
 
-  #seaCliffRock(x, z, u) {
-    const C = 14 + 16 * (this.coastNoise.noise2D(x * 0.002, z * 0.002) * 0.5 + 0.5);
+  #seaCliffRock(x, z, u, scale = 1) {
+    // (A fifth lower than they were: some 11 to 27 m; `scale` lower again round islands.)
+    const C = (11 + 13 * (this.coastNoise.noise2D(x * 0.002, z * 0.002) * 0.5 + 0.5)) * scale;
     if (u >= 0) {
       // The cliff's line wanders; its face steps back in a couple of
       // benches and is knobbled with ledges and bulges.
@@ -2378,12 +2388,17 @@ export class TerrainGenerator {
 
   #smokyZone(x, z, range) {
     const blob = this.#smokyBlob(x, z);
-    return blob > 0 ? blob * this.#broadFit(x, z, range) * this.#greenBuffer(x, z) : 0;
+    return blob > 0 ? blob * this.#broadFit(x, z, range, 0.12) * this.#greenBuffer(x, z, 0.04) : 0;
+  }
+
+  /** Where the Black Hills' blobs lie (0..1), before they're fitted to the land. */
+  #hillsBlob(x, z) {
+    return this.#blobs('hills', x, z, 8000, 1, 1500, 2600, 0xb1ac, (px, pz) => this.#greenFit(px, pz));
   }
 
   /** Where the Smoky Mountains' blobs lie (0..1), before they're fitted to the land. */
   #smokyBlob(x, z) {
-    return this.#blobs('smoky', x, z, 9000, 0.75, 1800, 3000, 0x5a0c, (px, pz) => this.#greenFit(px, pz));
+    return this.#blobs('smoky', x, z, 5000, 1, 3000, 4800, 0x5a0c, (px, pz) => this.#greenFit(px, pz, 0.04, 0.12));
   }
 
   #smokyZoneRaw(x, z, range, noise = true) {
@@ -2404,11 +2419,11 @@ export class TerrainGenerator {
    * range or volcanic country (its outline stays round, not cut to fit).
    */
   /** Whether (x, z) is green country clear of the ranges and volcanic country: somewhere a blob of hill country can be centred. */
-  #greenFit(x, z) {
+  #greenFit(x, z, looser = 0, nearRanges = 0) {
     const range = this.#rangeField(x, z, {}).value;
     // (On dry land, well in from any sea.)
     if (this.#continentBase(x, z) < 0.02) return 0;
-    return (1 - smoothstep(0.34, 0.44, this.getAridity(x, z, range))) * (1 - smoothstep(0.0, 0.15, range)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
+    return (1 - smoothstep(0.34 + looser, 0.44 + looser, this.getAridity(x, z, range))) * (1 - smoothstep(0.0 + nearRanges, 0.15 + nearRanges, range)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
   }
 
   /**
@@ -2416,16 +2431,16 @@ export class TerrainGenerator {
    * Smoky Mountains and the Black Hills end in a band of plains and forest,
    * never right up against the savanna.
    */
-  #greenBuffer(x, z) {
-    return 1 - smoothstep(0.3, 0.37, this.#aridRange(x, z, 0));
+  #greenBuffer(x, z, looser = 0) {
+    return 1 - smoothstep(0.3 + looser, 0.37 + looser, this.#aridRange(x, z, 0));
   }
 
-  #broadFit(x, z, range) {
-    return (1 - smoothstep(0.15, 0.4, range)) * (1 - smoothstep(0.3, 0.4, this.#volcanoNoise(x, z)));
+  #broadFit(x, z, range, looser = 0) {
+    return (1 - smoothstep(0.15 + looser, 0.4 + looser, range)) * (1 - smoothstep(0.3, 0.4, this.#volcanoNoise(x, z)));
   }
 
   #hillsZone(x, z, range) {
-    const blob = this.#blobs('hills', x, z, 8000, 1, 1500, 2600, 0xb1ac, (px, pz) => this.#greenFit(px, pz));
+    const blob = this.#hillsBlob(x, z);
     return blob > 0 ? blob * this.#broadFit(x, z, range) * this.#greenBuffer(x, z) : 0;
   }
 
@@ -2603,8 +2618,10 @@ export class TerrainGenerator {
     if (small > 0) value += small * this.mountainMaskNoise.fbm(x * f * 2 + 311, z * f * 2 - 173, 2);
     if (usual > 0) value += usual * this.mountainMaskNoise.fbm(x * f, z * f, 2);
     if (large > 0) value += large * this.mountainMaskNoise.fbm(x * f * 0.5 - 517, z * f * 0.5 + 229, 2);
-    // No mountain ranges in the green belt round volcanic country.
-    const belt = this.#volcanoBelt(x, z);
+    // No mountain ranges in the green belt round volcanic country (fading
+    // out gently, over a kilometre or two, from the broad, smooth lie of
+    // it: never a range cut off in a wall at its edge).
+    const belt = smoothstep(0.26, 0.54, this.volcanoNoise.fbm(x * 0.00005 + 900, z * 0.00005 - 300, 2));
     if (belt > 0) value = value * (1 - belt) - 0.3 * belt;
     out.x = x;
     out.z = z;

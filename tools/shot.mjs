@@ -15,7 +15,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errors.push(m.text()));
-await page.goto(`http://localhost:${process.env.PORT ?? 4173}/?${query}`);
+await page.goto(`http://localhost:${process.env.PORT ?? 4173}/?${query}`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(+wait * 1000);
 await page.screenshot({ path: out });
 const info = await page.evaluate(() => ['stat-biome', 'stat-pos', 'stat-chunks', 'stat-fps'].map((id) => document.getElementById(id)?.textContent).join(' | '));

@@ -369,12 +369,12 @@ export class DustDevils {
           // every few seconds low down where it's tight, lazier up where it
           // spreads out, the whirl surging and easing with the gusts. The
           // column sways, its top wandering behind its foot.
-          float h = fract(aSeed.x + uTime * 0.05);
-          float gust = 1.0 + 0.25 * sin(uTime * 0.6 + aSeed.x * 2.0) + 0.1 * sin(uTime * 1.7);
-          float a = aSeed.y + uTime * (1.5 - 0.9 * h) * gust + aSeed.x * 40.0;
-          float r = uRadius * (0.25 + 0.9 * h) * aSeed.z * (1.0 + 0.12 * sin(uTime * 0.9 + aSeed.y * 3.0));
+          float h = fract(aSeed.x + uTime * 0.025);
+          float gust = 1.0 + 0.2 * sin(uTime * 0.4 + aSeed.x * 2.0) + 0.08 * sin(uTime * 1.1);
+          float a = aSeed.y + uTime * (0.55 - 0.3 * h) * gust + aSeed.x * 40.0; // (a slow, lazy whirl: a turn every ten seconds or so)
+          float r = uRadius * (0.25 + 0.9 * h) * aSeed.z * (1.0 + 0.1 * sin(uTime * 0.5 + aSeed.y * 3.0));
           float lean = h * h * 0.25 * uHeight;
-          vec2 sway = vec2(cos(uTime * 0.23), sin(uTime * 0.31)) * lean * 0.5;
+          vec2 sway = vec2(cos(uTime * 0.12), sin(uTime * 0.16)) * lean * 0.5;
           vec3 c = uCentre + vec3(cos(a) * r + lean * 0.3 + sway.x, h * uHeight, sin(a) * r + sway.y);
           float size = aSeed.w * (0.5 + 1.6 * h) * step(0.001, uAmount);
           vec4 mvPosition = viewMatrix * vec4(c + position * size, 1.0);
@@ -420,9 +420,9 @@ export class DustDevils {
     for (const d of this.devils) {
       d.age += dt;
       // Wandering over the ground on the breeze.
-      d.turn += (Math.random() - 0.5) * dt * 1.5;
-      d.x += (ctx.wind.x * 0.6 + Math.cos(d.turn) * 2.5) * dt;
-      d.z += (ctx.wind.z * 0.6 + Math.sin(d.turn) * 2.5) * dt;
+      d.turn += (Math.random() - 0.5) * dt * 0.8;
+      d.x += (ctx.wind.x * 0.3 + Math.cos(d.turn) * 1.1) * dt;
+      d.z += (ctx.wind.z * 0.3 + Math.sin(d.turn) * 1.1) * dt;
       const u = d.mesh.material.uniforms;
       const y = ctx.ground(d.x, d.z);
       u.uCentre.value.set(d.x, Number.isFinite(y) ? y - 0.5 : ctx.camera.position.y - 2, d.z);

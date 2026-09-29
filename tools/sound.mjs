@@ -15,7 +15,7 @@ const page = await browser.newPage();
 await page.addInitScript(() => {
   window.AudioContext = function () { return (window.__off = new OfflineAudioContext(1, 44100 * 4, 44100)); };
 });
-await page.goto(`http://localhost:${process.env.PORT ?? 4173}/?vd=2`);
+await page.goto(`http://localhost:${process.env.PORT ?? 4173}/?vd=2`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.world?.sound, null, { timeout: 60000 });
 await page.keyboard.press('Shift'); // (sound starts on the first key)
 await page.waitForFunction(() => window.__off, null, { timeout: 10000 });
