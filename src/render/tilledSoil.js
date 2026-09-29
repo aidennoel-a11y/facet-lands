@@ -36,7 +36,8 @@ export function addTilledSoil(material) {
           float inside = 1.0 - smoothstep(${TILLED_HALF.toFixed(2)} - 0.15, ${TILLED_HALF.toFixed(2)} + 0.1, max(abs(l.x), abs(l.y)) + rag);
           if (inside <= 0.0) continue;
           float furrow = smoothstep(0.35, 0.65, abs(fract(l.y * 2.0) - 0.5) * 2.0); // (rows half a metre apart)
-          vec3 soil = mix(vec3(0.20, 0.13, 0.08), vec3(0.29, 0.20, 0.13), furrow);
+          // (Linear colours: dark turned earth #4a3424 in the furrows, #6a5038 on the ridges.)
+          vec3 soil = mix(vec3(0.068, 0.034, 0.018), vec3(0.144, 0.081, 0.040), furrow);
           soil *= 1.0 - 0.35 * p.w;
           diffuseColor.rgb = mix(diffuseColor.rgb, soil, inside);
         }`,

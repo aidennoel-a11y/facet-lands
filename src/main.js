@@ -1110,7 +1110,10 @@ function tick(now) {
   const started = performance.now();
   renderer.info.reset();
   const elapsed = (now - lastTime) / 1000;
-  const dt = Math.min(elapsed, 0.1); // big hitches shouldn't teleport the player
+  // (Big hitches shouldn't teleport the player; and never backwards: a frame
+  // stamped before the last, which some browsers give, would run things in
+  // reverse, a fading flash growing ever brighter.)
+  const dt = Math.max(0, Math.min(elapsed, 0.1));
   lastTime = now;
   controls.update(dt);
   playerTraces(dt);

@@ -324,9 +324,11 @@ export class BigRivers {
       const turn = angles[b] + (hash2(i + b, j, s + 1) - 0.5) * 0.2;
       const len = 14 + Math.floor(hash2(i, j + b, s + 2) * 6);
       const pts = [{ x: apex.x, z: apex.z, level: apex.level, width: apex.width * 0.5 }];
-      let a = Math.atan2(uz, ux) + turn, x = apex.x, z = apex.z;
+      const seaward = Math.atan2(uz, ux);
+      let a = seaward + turn, x = apex.x, z = apex.z;
       for (let k = 1; k <= len; k++) {
-        a -= turn * 0.04 + this.wiggle.noise2D(x * 0.004 + b * 13, z * 0.004) * 0.08; // (easing back seawards, winding a little)
+        // (Easing round towards the sea, never past it, winding a little.)
+        a += (seaward + turn * 0.35 - a) * 0.08 + this.wiggle.noise2D(x * 0.004 + b * 13, z * 0.004) * 0.05;
         x += Math.cos(a) * STEP;
         z += Math.sin(a) * STEP;
         const f = k / len;

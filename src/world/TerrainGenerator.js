@@ -839,6 +839,7 @@ export class TerrainGenerator {
     const mask = smoothstep(0.08, 0.55, range), core = smoothstep(0.3, 0.72, range);
     const dry = this.#rawAridityAt(x, z);
     const cont = this.#continentBase(x, z);
+    const contLift = this._contLift; // (kept now: what follows looks at other points, which replace it)
     const continent = cont + 0.34 * smoothstep(0.62, 0.8, dry) + 0.1 * smoothstep(0.3, 0.5, dry) + 0.5 * mask;
     const lakes = smoothstep(0.28, 0.72, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - smoothstep(0, 0.4, mask));
     // (And the Smoky Mountains' great swells, so rivers find their way
@@ -851,7 +852,7 @@ export class TerrainGenerator {
       const qz = z + this.smokyNoise.noise2D(x * 0.00025, z * 0.00025 - 40) * 500;
       smoky = lift * (10 + 212 * smoothstep(-0.6, 1.0, this.smokyNoise.fbm(qx * 0.00042 + 311, qz * 0.00055 - 97, 2)));
     }
-    return 14 + (continent - this._contLift) * 16 + Math.pow(mask, 1.5) * 48 + Math.pow(core, 1.5) * 150 - smoothstep(-0.05, -0.45, continent) * 34 - lakes + smoky;
+    return 14 + (continent - contLift) * 16 + Math.pow(mask, 1.5) * 48 + Math.pow(core, 1.5) * 150 - smoothstep(-0.05, -0.45, continent) * 34 - lakes + smoky;
   }
 
   /** The land before any rivers (the great rivers are traced over its broad lie: see broadHeight). */
