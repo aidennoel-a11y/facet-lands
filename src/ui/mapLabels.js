@@ -37,6 +37,8 @@ export const MAP_LABELS = [
   ['Canyon', '#b05a3c'],
   ['Canyon floor', '#cdb592'],
   ['Black sand beach', '#3a3634'],
+  ['River', '#2f7fd0'],
+  ['Creek', '#5fb4ea'],
 ];
 
 export const MAP_INDEX = Object.fromEntries(MAP_LABELS.map(([name], k) => [name, k]));
@@ -53,7 +55,15 @@ export function mapTile(generator, x0, z0, n, s) {
   for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) heights[j * (n + 1) + i] = generator.getBaseHeight(x0 + i * s, z0 + j * s);
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const label = generator.describe(x0 + i * s, z0 + j * s, true);
+      const x = x0 + i * s, z = z0 + j * s;
+      let label = generator.describe(x, z, true);
+      // Rivers drawn at least a pixel wide at any scale; creeks when
+      // zoomed in far enough to see them (they're slow to work out).
+      if (generator.bigRivers?.waterAt(x, z, s * 0.6)) label = 'River';
+      else if (s <= 8 && label !== 'Ocean' && label !== 'Lake') {
+        const w = generator.rivers.at(x, z, s * 0.5);
+        if (w && !w.pond && !w.big) label = 'Creek';
+      }
       labels[j * n + i] = MAP_INDEX[label] ?? 255;
       const h = heights[j * (n + 1) + i];
       const d = -(heights[j * (n + 1) + i + 1] - h) - (heights[(j + 1) * (n + 1) + i] - h);

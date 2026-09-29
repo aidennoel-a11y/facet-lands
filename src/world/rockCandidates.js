@@ -117,7 +117,9 @@ export function rockCandidates(generator, config, cx, cz) {
       // Open grassy plains: only the odd stone.
       const plain = generator.getPlainness(wx, wz);
       const chance = ((0.025 + 0.2 * foothill * flat) * (1 - 0.8 * plain) + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope)) + lavaRock) * soft + surf;
-      if (roll > chance) continue;
+      // (And on open grassland, plains and meadows, 70% fewer again.)
+      const open = bw.temperate > 0.5 ? Math.max(plain, bw.temperate * (1 - smoothstep(0.45, 0.6, generator.getForestDensity(wx, wz))) * (1 - smoothstep(0.3, 0.5, foothill))) : 0;
+      if (roll > chance * (1 - 0.7 * open)) continue;
 
       const r = hash2(gi, gj, seed + 3);
       const boulder = surf > 0 || r < lavaRock || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite);

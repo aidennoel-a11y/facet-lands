@@ -5,6 +5,11 @@ const matrix = new Matrix4();
 const position = new Vector3();
 const rotation = new Quaternion();
 const scale = new Vector3();
+
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
 const up = new Vector3(0, 1, 0);
 const color = new Color();
 const surface = { normalY: 1 };
@@ -70,9 +75,14 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       // seeding stalks and broad clumps among the tufts.
       const plain = generator.getPlainness(wx, wz);
       const tallLand = Math.max(plain, 0.9 * generator.getBiomeWeights(wx, wz, {}).savanna);
-      const long = 1 + 0.9 * tallLand;
+      // And patches, a few dozen metres to a couple of hundred across, where
+      // it grows tall and rank (nearly twice as long) or cropped short.
+      const n = generator.grassNoise.fbm(wx * 0.006 + 50, wz * 0.006 - 50, 2);
+      const tall = smoothstep(0.08, 0.38, n), short = smoothstep(-0.08, -0.38, n);
+      const long = (1 + 0.9 * tallLand) * (1 + 0.95 * tall) * (1 - 0.4 * short);
+      const stalky = Math.min(1, tallLand + 0.6 * tall);
       const pick = hash2(gi, gj, seed + 8);
-      const kind = pick < 0.35 * tallLand ? 1 : pick < 0.35 * tallLand + 0.12 + 0.15 * tallLand ? 2 : 0;
+      const kind = pick < 0.35 * stalky ? 1 : pick < 0.35 * stalky + 0.12 + 0.15 * stalky ? 2 : 0;
       kinds[count] = kind;
       position.set(lx, ground - 0.05, lz);
       rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 5) * Math.PI * 2);

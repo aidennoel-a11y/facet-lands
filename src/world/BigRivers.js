@@ -14,14 +14,14 @@ function smin(a, b, k) {
 
 const REGION = 12000; // at most one river rises in each region this size
 const SOURCE = 0.25; // it rises within this fraction of the region's size from its middle
-const CHANCE = 0.7; // how many regions have one
+const CHANCE = 1; // how many regions try for one (most find a way to the water)
 const STEP = 48; // metres between a river's points
 const MAX_STEPS = 170; // at most ~8 km long, so a river (and its valley) never reaches past the regions next to its own
-const MIN_LENGTH = 2600;
+const MIN_LENGTH = 2000;
 const CELL = 256; // spatial index cell (m)
 const VALLEY = 650; // how far out past its flood plain a river's valley reaches (m)
 const JOIN = 260; // a river coming this close to a bigger one runs into it
-const GRID = 64; // spacing of the broad land's remembered grid (m)
+const GRID = 128; // spacing of the broad land's remembered grid (m: it's smooth)
 
 /**
  * Rivers: great slow rivers, some forty to over a hundred metres across,
@@ -97,17 +97,21 @@ export class BigRivers {
     const g = this.generator;
     const rand = mulberry32(hash2(i, j, this.seed) * 4294967296);
     if (rand() > CHANCE) return null;
-    for (let attempt = 0; attempt < 24; attempt++) {
+    // Candidate springs, the highest (furthest from the sea) tried first.
+    const spots = [];
+    for (let k = 0; k < 20; k++) {
       const x = (i + 0.5 + (rand() - 0.5) * 2 * SOURCE) * REGION;
       const z = (j + 0.5 + (rand() - 0.5) * 2 * SOURCE) * REGION;
+      const b = this.#land(x, z);
+      if (b > 16 && b < 200) spots.push({ x, z, b });
+    }
+    spots.sort((p, q) => q.b - p.b);
+    for (const { x, z } of spots.slice(0, 10)) {
       // It rises in the hill country and foothills (not up in a range,
       // nor in the desert or a marsh).
-      const b = this.#land(x, z);
-      if (b < 30 || b > 190) continue;
       const m = g.getMountainness(x, z);
-      if (m < 0.05 || m > 0.7) continue;
-      const w = g.getBiomeWeights(x, z, {});
-      if (w.desert > 0.25 || w.wetland > 0.3) continue;
+      if (m > 0.7) continue;
+      if (g.getAridity(x, z) > 0.7) continue;
       const course = this.#trace(x, z, rand);
       if (course) {
         this.raws.set(k, course);
@@ -154,7 +158,10 @@ export class BigRivers {
       // Round in a loop: it's stuck.
       for (let k = 0; k < points.length - 8; k++) if (Math.hypot(points[k].x - px, points[k].z - pz) < 180) return null;
       points.push({ x: px, z: pz });
-      if (g.landHeight(px, pz) < this.seaLevel - 0.8) {
+      // (Never out into a desert: along its edge at most.)
+      if (step % 6 === 0 && g.getAridity(px, pz) > 0.765) return null; // (where the desert takes over)
+      // (The real land's looked at only where the broad lie is low enough for water.)
+      if ((step % 2 === 0 || this.#land(px, pz) < this.seaLevel + 4) && this.#land(px, pz) < this.seaLevel + 12 && g.landHeight(px, pz) < this.seaLevel - 0.8) {
         // Into a lake or the sea: on a little way, so its mouth opens out.
         for (let k = 1; k <= 3; k++) points.push({ x: px + dir[0] * STEP * k, z: pz + dir[1] * STEP * k });
         return points.length * STEP >= MIN_LENGTH ? points : null;
@@ -217,11 +224,16 @@ export class BigRivers {
       level = Math.min(level - 0.01, p.ground - 0.8 - 1.7 * smoothstep(0, 22, k));
       p.level = Math.max(this.seaLevel + 0.03, level);
     }
-    if (into) {
-      // (Never below the water it runs into.)
-      const L = into.river.points[into.b].level;
-      for (const p of points) p.level = Math.max(p.level, L);
-    }
+    // And easing down to where it ends: its mouth at the level of the lake
+    // or sea (or of the river it joins), never perched above it, rising
+    // gently upstream from there (at most 2.5 m a kilometre), so down its
+    // lower reaches it runs level with the low country beside it. (Upstream
+    // it cuts down into the land instead: its valley.)
+    const end = into ? into.river.points[into.b].level : this.seaLevel + 0.03;
+    points[points.length - 1].level = end;
+    for (let k = points.length - 2; k >= 0; k--) points[k].level = Math.min(points[k].level, points[k + 1].level + STEP * 0.0025);
+    // (Never below the water it runs into.)
+    for (const p of points) p.level = Math.max(p.level, end);
     // Broadening downstream, from a stream at its spring to about 40 m
     // within the first kilometre, and on to 120.
     const n = points.length;
@@ -250,15 +262,12 @@ export class BigRivers {
       const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
       return [-dz / l, dx / l];
     });
-    const low = (p, [nx, nz], o) => {
-      // (The land a little way either side too, so a hollow is a valley, not a pit.)
-      let h = 0;
-      for (const e of [-40, 0, 40]) h += g.landHeight(p.x + nx * (o + e), p.z + nz * (o + e));
-      return h / 3;
-    };
+    const low = (p, [nx, nz], o) => g.landHeight(p.x + nx * o, p.z + nz * o);
+    // (Every other point; the ones between are smoothed in below.)
     for (let k = 1; k < n - keep; k++) {
+      if (k % 2 === 0 && k + 1 < n - keep) continue;
       let best = 0, bestH = Infinity;
-      for (let o = -320; o <= 320; o += 80) {
+      for (let o = -320; o <= 320; o += 106) {
         const h = low(points[k], normals[k], o) + Math.abs(o) * 0.01;
         if (h < bestH) {
           bestH = h;
@@ -267,6 +276,7 @@ export class BigRivers {
       }
       shift[k] = best;
     }
+    for (let k = 2; k < n - keep - 1; k += 2) shift[k] = (shift[k - 1] + shift[k + 1]) / 2;
     // Smoothed along the course, easing in from its source.
     const smooth = new Float32Array(n);
     for (let k = 0; k < n; k++) {
@@ -285,7 +295,7 @@ export class BigRivers {
       p.x += normals[k][0] * smooth[k];
       p.z += normals[k][1] * smooth[k];
       const [nx, nz] = normals[k];
-      p.ground = Math.min(g.landHeight(p.x, p.z), g.landHeight(p.x + nx * 25, p.z + nz * 25), g.landHeight(p.x - nx * 25, p.z - nz * 25));
+      p.ground = Math.min(g.landHeight(p.x, p.z), g.landHeight(p.x + nx * 30, p.z + nz * 30), g.landHeight(p.x - nx * 30, p.z - nz * 30));
     }
   }
 

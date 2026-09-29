@@ -365,12 +365,17 @@ export class DustDevils {
         varying float vShade;
         #include <fog_pars_vertex>
         void main() {
-          // Each speck rises up the funnel, whirling round it, faster low down.
-          float h = fract(aSeed.x + uTime * 0.12);
-          float a = aSeed.y + uTime * (5.0 - 2.5 * h);
-          float r = uRadius * (0.25 + 0.9 * h) * aSeed.z;
+          // Each speck rises slowly up the funnel, whirling round it: a turn
+          // every few seconds low down where it's tight, lazier up where it
+          // spreads out, the whirl surging and easing with the gusts. The
+          // column sways, its top wandering behind its foot.
+          float h = fract(aSeed.x + uTime * 0.05);
+          float gust = 1.0 + 0.25 * sin(uTime * 0.6 + aSeed.x * 2.0) + 0.1 * sin(uTime * 1.7);
+          float a = aSeed.y + uTime * (1.5 - 0.9 * h) * gust + aSeed.x * 40.0;
+          float r = uRadius * (0.25 + 0.9 * h) * aSeed.z * (1.0 + 0.12 * sin(uTime * 0.9 + aSeed.y * 3.0));
           float lean = h * h * 0.25 * uHeight;
-          vec3 c = uCentre + vec3(cos(a) * r + lean * 0.3, h * uHeight, sin(a) * r);
+          vec2 sway = vec2(cos(uTime * 0.23), sin(uTime * 0.31)) * lean * 0.5;
+          vec3 c = uCentre + vec3(cos(a) * r + lean * 0.3 + sway.x, h * uHeight, sin(a) * r + sway.y);
           float size = aSeed.w * (0.5 + 1.6 * h) * step(0.001, uAmount);
           vec4 mvPosition = viewMatrix * vec4(c + position * size, 1.0);
           gl_Position = projectionMatrix * mvPosition;

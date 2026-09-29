@@ -267,12 +267,19 @@ export class TerrainGenerator {
     const smoky = temperate * (1 - hz) * (1 - vz) * sz;
     // Wetlands: only in the wettest, low, flat country (so never anywhere
     // near a desert: the whole savanna lies between them).
-    const wz = this.#wetZone(x, z, range, a);
+    let wz = this.#wetZone(x, z, range, a);
     const green = temperate * (1 - hz) * (1 - vz) * (1 - sz);
     // Jungles: in the warmest, wettest lowlands, well away from dry
     // country and mountains (see #jungleZone).
     // (A jungle is jungle right through: wetlands, forest and plains give way to it.)
     const jz = green > 0 ? this.#jungleZone(x, z, range, a) : 0;
+    // Round most jungles, a narrow ring of swampy wetland where the jungle
+    // gives way to the forest and plains (broken here and there).
+    if (green > 0 && a <= 0.5) {
+      const suit = this.#jungleSuit(x, z);
+      const ring = smoothstep(0.13, 0.19, suit) * (1 - smoothstep(0.27, 0.33, suit));
+      if (ring > 0) wz = Math.max(wz, ring * smoothstep(-0.35, -0.05, this.wetNoise.noise2D(x * 0.0012 + 17, z * 0.0012 - 3)));
+    }
     // Pine forests: in the hill country leading up to the mountain ranges
     // (see #pineZone).
     const rest = green * (1 - wz) * (1 - jz);
@@ -449,7 +456,9 @@ export class TerrainGenerator {
     const blob = this.#blobs('pine', x, z, 4200, 1, 1500, 3000, 0x9e11, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       if (this.getAridity(px, pz, r) > 0.42) return 0;
-      return smoothstep(0.04, 0.16, this.#mountainsAround(px, pz)) * (1 - smoothstep(0.36, 0.44, this.#aridAround(px, pz))) * (1 - smoothstep(0.05, 0.3, this.#jungleNear(px, pz)));
+      // (Jungles keep well away from mountains, so near them there's none to check for.)
+      const cool = smoothstep(0.04, 0.16, this.#mountainsAround(px, pz));
+      return cool > 0 ? cool * (1 - smoothstep(0.36, 0.44, this.#aridAround(px, pz))) : 0;
     });
     if (blob <= 0) return 0;
     if (aridity > 0.45) return 0;
@@ -1015,7 +1024,7 @@ export class TerrainGenerator {
     if (isl !== undefined) return isl;
     isl = null;
     const seed = this.seed ^ 0x51a4d;
-    if (hash2(i, j, seed) < 0.55) {
+    if (hash2(i, j, seed) < 0.33) { // (40% fewer than there were)
       const C = 640;
       const r = 40 + 130 * Math.pow(hash2(i, j, seed + 1), 1.5);
       const x = (i + 0.2 + 0.6 * hash2(i, j, seed + 2)) * C, z = (j + 0.2 + 0.6 * hash2(i, j, seed + 3)) * C;

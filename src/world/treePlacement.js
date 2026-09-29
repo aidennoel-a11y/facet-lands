@@ -129,9 +129,13 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const upness = 1 / Math.sqrt(1 + gradX * gradX + gradZ * gradZ);
       const r = hash2(gi, gj, seed + 12);
       const cliff = 1 - smoothstep(0.5, 0.72, upness);
-      if (r < Math.max(cliff, lakeside ? 0 : smoothstep(128, 146, colourHeight))) continue;
+      // (The Smoky Mountains are wooded right over their tops: no bare
+      // rock band and no tree line there, only thinner woods up high, half
+      // as thick on the highest tops.)
+      const smoky = biome.id === 'smoky';
+      if (r < Math.max(cliff, lakeside || smoky ? 0 : smoothstep(128, 146, colourHeight))) continue;
       // And ever fewer the higher you go (the tree line).
-      if (!lakeside && hash2(gi, gj, seed + 13) < smoothstep(85, 150, land) * 0.9) continue;
+      if (!lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : smoothstep(85, 150, land) * 0.9)) continue;
 
       // Too steep for roots? (height change per metre)
       if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;

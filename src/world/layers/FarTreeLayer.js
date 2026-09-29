@@ -82,15 +82,61 @@ function farGeometry(type, detailed) {
     const ys = Array.from({ length: crown.attributes.position.count }, (_, k) => crown.attributes.position.getY(k)).sort((a, b) => a - b);
     const mid = ys[Math.floor(ys.length * 0.6)];
     const low = Math.max(box.min.y, mid - (box.max.y - mid) * 1.1);
-    const ringY = low + (box.max.y - low) * 0.35;
-    const edge = ring(ringY, r * 0.95, 6, Math.PI / 6);
-    const top = [centre.x, box.max.y, centre.z], under = [centre.x, low, centre.z];
-    const dark = shade(0.8), light = shade(1.12);
-    for (let k = 0; k < 6; k++) {
-      tri(edge[(k + 1) % 6], edge[k], top, avg, avg, light);
-      tri(edge[k], edge[(k + 1) % 6], under, avg, avg, dark);
+    const dark = shade(0.72), light = shade(1.15), deep = shade(0.58);
+    if (type === 'junglePalm' || type === 'treeFern') {
+      // Palms and tree ferns: a star of fronds arching out and drooping
+      // from the crown, each a long narrow blade creased down its middle.
+      const fronds = detailed ? 7 : 5;
+      const crownY = box.max.y - (box.max.y - low) * 0.25;
+      const hub = [centre.x, crownY, centre.z];
+      for (let k = 0; k < fronds; k++) {
+        const a = (k / fronds) * Math.PI * 2 + type.length;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const reach = r * (0.9 + 0.15 * Math.sin(k * 2.3));
+        const tip = [centre.x + ca * reach, crownY - (crownY - low) * 0.9, centre.z + sa * reach];
+        const w = reach * 0.22;
+        const midR = reach * 0.55, midY = crownY + (box.max.y - crownY) * 0.6;
+        const left = [centre.x + ca * midR - sa * w, midY, centre.z + sa * midR + ca * w];
+        const right = [centre.x + ca * midR + sa * w, midY, centre.z + sa * midR - ca * w];
+        tri(hub, left, tip, light, avg, dark);
+        tri(hub, tip, right, light, dark, avg);
+        tri(hub, tip, left, dark, deep, dark); // (and seen from below)
+        tri(hub, right, tip, dark, dark, deep);
+      }
+      trunk(crownY, Math.max(0.2, r * 0.06));
+    } else {
+      // Jungle giants and the canopy trees: a broad, flattened, lumpy crown
+      // (clumps of foliage, dark underneath) high on a bare trunk, with a
+      // smaller clump off to one side up close, so it's never a neat shape.
+      const sides = detailed ? 8 : 6;
+      const lobe = (cx, cz, yb, yt, rad, turn, lump) => {
+        const lo = Array.from({ length: sides }, (_, k) => {
+          const a = (k / sides) * Math.PI * 2 + turn, q = rad * (1 + lump * Math.sin(k * 12.9898 + type.length * 3.1));
+          return [cx + Math.cos(a) * q, yb + (yt - yb) * 0.3, cz + Math.sin(a) * q];
+        });
+        const hi = Array.from({ length: sides }, (_, k) => {
+          const a = ((k + 0.5) / sides) * Math.PI * 2 + turn, q = rad * 0.72 * (1 + lump * Math.sin(k * 7.13 + type.length));
+          return [cx + Math.cos(a) * q, yb + (yt - yb) * (0.72 + 0.12 * Math.sin(k * 3.7)), cz + Math.sin(a) * q];
+        });
+        const top = [cx, yt, cz], under = [cx, yb, cz];
+        for (let k = 0; k < sides; k++) {
+          const m = (k + 1) % sides;
+          const p = (k + sides - 1) % sides;
+          // (Wound as the other crowns here are, facing out.)
+          tri(lo[k], lo[m], under, dark, dark, deep);
+          tri(lo[m], lo[k], hi[k], avg, avg, light);
+          tri(hi[p], hi[k], lo[k], light, light, avg);
+          tri(hi[p], top, hi[k], light, light, light);
+        }
+      };
+      const yb = low + (box.max.y - low) * 0.1;
+      lobe(centre.x, centre.z, yb, box.max.y, r * 0.95, Math.PI / 6, 0.22);
+      if (detailed) {
+        const a = type.length * 1.7;
+        lobe(centre.x + Math.cos(a) * r * 0.55, centre.z + Math.sin(a) * r * 0.55, yb - (box.max.y - yb) * 0.25, yb + (box.max.y - yb) * 0.55, r * 0.5, 0, 0.3);
+      }
+      trunk(yb + (box.max.y - yb) * 0.2, Math.max(0.25, r * 0.07));
     }
-    trunk(ringY, Math.max(0.25, r * 0.07));
   } else if (CLUMPS.has(type) || SPIKES.has(type) || (CONES.has(type) && !detailed)) {
     const spike = SPIKES.has(type), clump = CLUMPS.has(type);
     const sides = spike ? 3 : 5;

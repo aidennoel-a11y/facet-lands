@@ -95,7 +95,7 @@ export class Rivers {
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     let made = 0;
-    for (let attempt = 0; attempt < 90 && made < 3; attempt++) {
+    for (let attempt = 0; attempt < 90 && made < 4; attempt++) {
       const x = (rx + rand()) * REGION;
       const z = (rz + rand()) * REGION;
       // Rivers rise in the hills and foothills of the plains and savanna
@@ -210,8 +210,8 @@ export class Rivers {
     let length = 0;
     for (let i = 1; i < n; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
     const straight = Math.hypot(points[n - 1].x - points[0].x, points[n - 1].z - points[0].z);
-    if (kind === 'creek') return length >= 320 && length / Math.max(1, straight) >= 1.04;
-    if (length < 200) return false;
+    if (kind === 'creek') return length >= 450 && length / Math.max(1, straight) >= 1.04;
+    if (length < 350) return false;
     if ((points[0].level - points[n - 1].level) / length > 0.14) return false;
     let falls = 0, last = -99;
     for (let i = 0; i < n - 1; i++) {

@@ -306,8 +306,8 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
   // Skirts are shallower than the rock over any cave, and stop short of an
   // entrance ramp running underneath, so they never wall a cave off.
   const ramps = generator.caves ? generator.caves.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
-  const skirtBottom = (x, y, z) =>
-    ramps.length ? generator.caves.skirtBottom(ramps, originX + x, y, originZ + z, skirtDepth) : y - skirtDepth;
+  const skirtBottom = (x, y, z, depth = skirtDepth) =>
+    ramps.length ? generator.caves.skirtBottom(ramps, originX + x, y, originZ + z, depth) : y - depth;
   // The edge each skirt segment hangs from, as a key into the midpoints of split edges.
   const edgeKeys = [
     (t) => fine?.edgeKey(t, 0, 0),
@@ -317,7 +317,19 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
   ];
   for (let e = 0; e < 4; e++) {
     const edge = edges[e];
+    // (Only as deep as the crack could be: a coarser neighbour's edge cuts
+    // straight across a few of this one's points, so the gap is never more
+    // than the land rises and falls over them. On flat ground, a sliver.)
+    const ys = new Float32Array(resolution + 1);
+    for (let t = 0; t <= resolution; t++) ys[t] = gridY[edge(t)];
+    const depthAt = (t) => {
+      let lo = Infinity, hi = -Infinity;
+      for (let k = Math.max(0, t - 4); k <= Math.min(resolution, t + 5); k++) (lo = Math.min(lo, ys[k])), (hi = Math.max(hi, ys[k]));
+      // (Plus a little for the bumps between the points of a coarse mesh.)
+      return Math.min(skirtDepth, 0.3 + (hi - lo) * 1.1 + (chunkSize / resolution) * 0.06);
+    };
     for (let t = 0; t < resolution; t++) {
+      const depth = depthAt(t);
       const p = edge(t);
       const q = edge(t + 1);
       const mid = fine ? fine.mids.get(edgeKeys[e](t)) : undefined;
@@ -333,8 +345,8 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
       for (let k = 0; k < points.length - 1; k++) {
         const [px, py, pz] = points[k];
         const [qx, qy, qz] = points[k + 1];
-        const pb = skirtBottom(px, py, pz);
-        const qb = skirtBottom(qx, qy, qz);
+        const pb = skirtBottom(px, py, pz, depth);
+        const qb = skirtBottom(qx, qy, qz, depth);
         // Outward-facing (the edges above walk clockwise seen from above).
         pushTri(px, py, pz, qx, qy, qz, qx, qb, qz, p, q, skirtNormal);
         pushTri(px, py, pz, qx, qb, qz, px, pb, pz, q, p, skirtNormal);
