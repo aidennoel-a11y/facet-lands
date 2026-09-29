@@ -7,7 +7,7 @@ const g = new TerrainGenerator(seed, { seaLevel: 2, chunkSize: 128 });
 const t = performance.now();
 const kinds = {};
 for (const r of g.rivers.inBox(+x - 4000, +z - 4000, +x + 4000, +z + 4000)) {
-  const k = r.big ? (r.branch ? 'delta channel' : 'river') : r.kind;
+  const k = r.big ? 'river' : r.kind;
   kinds[k] = (kinds[k] || 0) + 1;
 }
-console.log(kinds, ((performance.now() - t) / 1000).toFixed(1) + 's', 'deltas', g.bigRivers.deltas.length);
+console.log(kinds, ((performance.now() - t) / 1000).toFixed(1) + 's');

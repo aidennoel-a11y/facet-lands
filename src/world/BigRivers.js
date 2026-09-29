@@ -55,7 +55,6 @@ export class BigRivers {
     this.covered = new Set(); // regions whose rivers are all in the index
     this.cells = new Map(); // index cell -> segments
     this.list = [];
-    this.deltas = [];
     this.broad = new Map();
     this._m = {};
     this._lastX = NaN;
@@ -228,30 +227,15 @@ export class BigRivers {
       // (Never out into a desert: along its edge at most.)
       if (this.#dry(px, pz) > 0.8) return null; // (where the desert takes over)
       // (The real land's looked at only where the broad lie is low enough for water.)
-      if (this.#land(px, pz) < this.seaLevel + 3 && this.#bigWater(px, pz, dir) && this.#real(px, pz) < this.seaLevel - 0.8) {
-        // Into a lake or the sea: on a little way, so its mouth opens out.
-        for (let k = 1; k <= 3; k++) points.push({ x: px + dir[0] * STEP * k, z: pz + dir[1] * STEP * k });
+      // It ends where it reaches the open sea. (One that would run into a
+      // lake on the way is no river: there's none from here.)
+      if (this.#land(px, pz) < this.seaLevel + 3 && this.#real(px, pz) < this.seaLevel - 0.3) {
+        if (g.getOceanness(px, pz) <= 0.5) return null;
+        points.push({ x: px + dir[0] * STEP, z: pz + dir[1] * STEP });
         return points.length * STEP >= MIN_LENGTH ? points : null;
       }
     }
     return null;
-  }
-
-  /**
-   * Whether the water a river has reached at (x, z), heading `dir`, is a
-   * real lake or the sea (not a pond or a hollow): the open sea, or water
-   * over most of the ground a few hundred metres on ahead and to the sides.
-   */
-  #bigWater(x, z, dir) {
-    const g = this.generator;
-    if (g.getOceanness(x, z) > 0.5) return true;
-    let wet = 0;
-    const a0 = Math.atan2(dir[1], dir[0]);
-    for (let k = 0; k < 7; k++) {
-      const a = a0 + (k - 3) * 0.45, d = k % 2 ? 260 : 420;
-      if (this.#land(x + Math.cos(a) * d, z + Math.sin(a) * d) < this.seaLevel) wet++;
-    }
-    return wet >= 5;
   }
 
   /**
@@ -318,6 +302,10 @@ export class BigRivers {
     // it cuts down into the land instead: its valley.)
     const end = into ? into.river.points[into.b].level : this.seaLevel + 0.03;
     points[points.length - 1].level = end;
+    // (From where it first runs into water, a lake on its way or the sea,
+    // it's at that water's level: through a lake and on out of it, level.)
+    const wet = points.findIndex((p) => p.ground < this.seaLevel - 0.3);
+    if (wet >= 0) for (let k = wet; k < points.length; k++) points[k].level = Math.max(end, this.seaLevel + 0.03);
     for (let k = points.length - 2; k >= 0; k--) points[k].level = Math.min(points[k].level, points[k + 1].level + STEP * 0.0025);
     // (Never below the water it runs into.)
     for (const p of points) p.level = Math.max(p.level, end);
@@ -333,7 +321,6 @@ export class BigRivers {
     const head = points[0];
     const source = { x: head.x, z: head.z, r: 26 + 16 * hash2(i, j, this.seed ^ 0x50c3), level: head.level };
     const river = { points, pond: null, tarn: null, kind: 'river', big: true, region: [i, j], joins: !!into, source };
-    if (!into) this.#delta(river, i, j);
     this.finals.set(k, river);
     return river;
   }
@@ -455,59 +442,6 @@ export class BigRivers {
     }
   }
 
-  /**
-   * Where a river runs out into the sea (or a great lake), a delta: some
-   * half a kilometre short of its mouth it splits into two or three
-   * narrower channels fanning out to the water, and the shallows between
-   * them build up into low flats of sand and silt just above the water.
-   */
-  #delta(river, i, j) {
-    const P = river.points, n = P.length;
-    if (n < 20) return;
-    const g = this.generator;
-    const end = P[n - 1];
-    if (g.getOceanness(end.x, end.z) < 0.5) return; // (only out into the open sea)
-    const apex = P[n - 14];
-    const dx = end.x - apex.x, dz = end.z - apex.z, dl = Math.hypot(dx, dz) || 1;
-    const ux = dx / dl, uz = dz / dl;
-    const s = this.seed ^ 0xde17a;
-    const count = 2 + (hash2(i, j, s) < 0.5 ? 1 : 0);
-    const angles = count === 2 ? [-0.5, 0.45] : [-0.6, 0.05, 0.55];
-    river.branches = [];
-    for (let b = 0; b < count; b++) {
-      const turn = angles[b] + (hash2(i + b, j, s + 1) - 0.5) * 0.2;
-      const len = 14 + Math.floor(hash2(i, j + b, s + 2) * 6);
-      const pts = [{ x: apex.x, z: apex.z, level: apex.level, width: apex.width * 0.5 }];
-      const seaward = Math.atan2(uz, ux);
-      let a = seaward + turn, x = apex.x, z = apex.z;
-      for (let k = 1; k <= len; k++) {
-        // (Easing round towards the sea, never past it, winding a little.)
-        a += (seaward + turn * 0.35 - a) * 0.08 + this.wiggle.noise2D(x * 0.004 + b * 13, z * 0.004) * 0.05;
-        x += Math.cos(a) * STEP;
-        z += Math.sin(a) * STEP;
-        const f = k / len;
-        pts.push({ x, z, level: Math.max(this.seaLevel + 0.03, apex.level + (this.seaLevel + 0.03 - apex.level) * Math.min(1, f * 1.6)), width: apex.width * (0.5 - 0.15 * f) });
-      }
-      river.branches.push({ points: pts, pond: null, tarn: null, kind: 'river', big: true, branch: true });
-    }
-    river.delta = { x: apex.x, z: apex.z, ux, uz, r: (14 + 6) * STEP * 1.15, level: this.seaLevel };
-  }
-
-  /** How high a delta's flats lift the land at (x, z) (or -Infinity): just above the water, fanning out seawards from its apex. */
-  #deltaFlat(x, z) {
-    let best = -Infinity;
-    for (const d of this.deltas) {
-      const ox = x - d.x, oz = z - d.z, dist = Math.hypot(ox, oz);
-      if (dist > d.r) continue;
-      const ahead = (ox * d.ux + oz * d.uz) / (dist || 1);
-      const fan = smoothstep(-0.2, 0.25, ahead) * (1 - smoothstep(d.r * 0.7, d.r, dist));
-      if (fan <= 0) continue;
-      const lumps = this.wiggle.noise2D(x * 0.012 + 7, z * 0.012 - 3) * 0.5 + this.wiggle.noise2D(x * 0.03, z * 0.03) * 0.08;
-      best = Math.max(best, d.level + (0.35 + 0.5 * fan + lumps * fan) * fan - (1 - fan) * 2);
-    }
-    return best;
-  }
-
   /** Makes sure every river that can shape (x, z) is in the index. */
   #ensure(x, z) {
     const ri = Math.floor(x / REGION), rj = Math.floor(z / REGION);
@@ -526,8 +460,6 @@ export class BigRivers {
           if (!river || river.indexed) continue;
           river.indexed = true;
           this.#index(river);
-          for (const b of river.branches ?? []) this.#index(b);
-          if (river.delta) this.deltas.push(river.delta);
         }
       }
     } finally {
@@ -596,10 +528,6 @@ export class BigRivers {
     this._lastX = x;
     this._lastZ = z;
     const near = this.#near(x, z);
-    if (this.deltas.length) {
-      const flat = this.#deltaFlat(x, z);
-      if (flat > h) h = flat;
-    }
     if (!near) return h;
     const m = this._m;
     let low = Infinity, edge = Infinity, levee = -Infinity, leveeWeight = 0;
@@ -645,7 +573,8 @@ export class BigRivers {
     this.lastEdge = edge;
     if (edge < 0) return low; // in the channel
     let out = smin(h, low, edge < 20 ? 1 : 10);
-    if (levee > out) out += (levee - out) * leveeWeight;
+    // (Only on dry land: never building banks up out of a lake or the sea.)
+    if (levee > out && h > this.seaLevel + 0.3) out += (levee - out) * leveeWeight * smoothstep(this.seaLevel + 0.3, this.seaLevel + 1.5, h);
     return out;
   }
 
