@@ -43,7 +43,7 @@ const SPECIES = {
   // foxes alone at the woods' edges where the winters are cold.
   wolf: { ground: true, grade: 0.8, model: Models.wolf, max: 24, walk: 1.4, run: 12, flee: 40, calm: 110, radius: 0.35, height: 0.9, health: 70, stride: 1.3, turn: 3, size: 1.25, forager: true, call: 'howl', gaits: DOG, trotBand: 0.5, swims: true, scavenger: true },
   coyote: { ground: true, grade: 0.8, model: Models.coyote, max: 16, walk: 1.3, run: 11, flee: 35, calm: 100, radius: 0.28, height: 0.7, health: 40, stride: 1.1, turn: 3.5, size: 0.95, forager: true, call: 'yip', gaits: DOG, trotBand: 0.45, scavenger: true },
-  fox: { ground: true, grade: 0.85, model: Models.fox, max: 14, walk: 1.1, run: 10, flee: 25, calm: 70, radius: 0.2, height: 0.5, health: 20, stride: 0.8, turn: 4, size: 0.62, forager: true, gaits: DOG, trotBand: 0.45, scavenger: true },
+  fox: { ground: true, grade: 0.85, model: Models.fox, max: 14, walk: 1.1, run: 10, flee: 25, calm: 70, radius: 0.2, height: 0.5, health: 20, stride: 0.8, turn: 4, size: 0.744, forager: true, gaits: DOG, trotBand: 0.45, scavenger: true },
   // A cougar: alone in the mountains, seldom seen: it stalks you from
   // behind, freezing when you look its way, and springs.
   cougar: { ground: true, grade: 0.95, model: Models.cougar, max: 6, walk: 1.2, run: 14, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 70, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
@@ -51,7 +51,7 @@ const SPECIES = {
   boar: { ground: true, grade: 0.72, model: Models.boar, max: 24, walk: 1.0, run: 9, flee: 24, calm: 70, radius: 0.4, height: 1.0, health: 90, stride: 0.95, turn: 3, size: 1.0, forager: true, gaits: HOOF, trotBand: 0.4, call: 'oink' },
   // Sheep in flocks on the open plains (a black face, a woolly fleece);
   // wolf pups by their den.
-  sheep: { ground: true, grade: 0.7, model: Models.sheep, max: 40, walk: 1.0, run: 7.5, flee: 22, calm: 70, radius: 0.45, height: 1.0, health: 60, stride: 1.1, turn: 2.5, size: 1.1, call: 'baa', gaits: HOOF, trotBand: 0.3 },
+  sheep: { ground: true, grade: 0.7, model: Models.sheep, max: 40, walk: 1.0, run: 7.5, flee: 22, calm: 70, radius: 0.45, height: 1.0, health: 60, stride: 1.1, turn: 2.5, size: 1.21, call: 'baa', gaits: HOOF, trotBand: 0.3 },
   wolfPup: { ground: true, grade: 0.8, model: Models.wolf, max: 12, walk: 1.2, run: 8, flee: 12, calm: 40, radius: 0.2, height: 0.5, health: 20, stride: 0.7, turn: 4, size: 0.55, forager: true, gaits: DOG, trotBand: 0.5 },
   rabbit: { ground: true, grade: 0.58, model: Models.rabbit, max: 40, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.3, height: 0.55, health: 10, stride: 1.0, turn: 5, size: 1.8, gaits: HOP },
   // Hares, out in the open and the cold woods: bigger, faster, white in the winter.
