@@ -29,7 +29,7 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errors.push(m.text()));
 const t0 = Date.now();
-await page.goto(`http://localhost:${process.env.PORT ?? 4173}/?${query}`, { waitUntil: 'domcontentloaded' });
+await page.goto(`http://localhost:${process.env.PORT ?? 4173}/?${query}`, { waitUntil: 'domcontentloaded', timeout: 180000 });
 await page.waitForFunction(() => window.world?.chunks, null, { timeout: 120000 });
 // (An optional snippet run in the page once it's up, e.g. to dig a plot:
 // it sees `world` = window.world.)

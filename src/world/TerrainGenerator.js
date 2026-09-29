@@ -937,6 +937,14 @@ export class TerrainGenerator {
     return 14 + (continent - contLift) * 16 + Math.pow(mask, 1.5) * 48 + Math.pow(core, 1.5) * 150 - smoothstep(-0.05, -0.45, continent) * 34 - lakes + smoky;
   }
 
+  /**
+   * The broad climate's dryness at (x, z), as the biomes follow it but
+   * without the finer detail (quick): past about 0.76 it's desert.
+   */
+  broadDryness(x, z) {
+    return this.#rawAridityAt(x, z) - 0.55 * smoothstep(-0.12, 0.4, this.#rangeField(x, z, {}).value);
+  }
+
   /** The land before any rivers (the great rivers are traced over its broad lie: see broadHeight). */
   landHeight(x, z) {
     // (First: it looks at the land round about.)
@@ -1040,7 +1048,10 @@ export class TerrainGenerator {
       // (Rounded tops: the swell never saturates into a plateau.)
       const swell = smoothstep(-0.6, 1.0, n);
       const rolls = this.hillNoise.fbm(x * 0.0014 + 50, z * 0.0014 - 20, 2) * 28 + this.hillNoise.noise2D(x * 0.0032 - 90, z * 0.0032 + 15) * 8;
-      smoky = smokyLift * (10 + 212 * swell + rolls * (0.7 + 0.8 * swell));
+      // (A broad valley down the Smoky Mountains' river: laid down first,
+      // the hills shaped round it. See #smokyTrunks.)
+      const valley = this._probing ? 0 : 1 - smoothstep(80, 800, this.#trunkDistance(x, z));
+      smoky = smokyLift * (10 + 212 * swell * (1 - 0.92 * valley) + rolls * (0.7 + 0.8 * swell) * (1 - 0.7 * valley));
     }
 
     // Volcanic highlands: a raised, rough plateau of old lava, and cinder
@@ -1276,7 +1287,8 @@ export class TerrainGenerator {
     // Sea caves: narrow inlets running back into the cliff under a roof of
     // rock (the roof is SeaCaveLayer's), their floor awash, rising to a
     // shingle beach at the back.
-    if (this._probing || h < -2) return h;
+    // (Not while the great rivers are being worked out: they don't need them, and they're slow to find.)
+    if (this._probing || this._riverWork || h < -2) return h;
     let out = h;
     for (const c of this.#seaCavesNear(x, z)) {
       const a = (x - c.x) * c.nx + (z - c.z) * c.nz;
@@ -2448,6 +2460,9 @@ export class TerrainGenerator {
    * rises into them gently rather than up a wall at the biome's edge.
    */
   #smokyLift(x, z) {
+    // (Nothing at all unless a blob of them lies near: the spread reaches
+    // at most some 640 m past where the biome is, and it's only in their blobs.)
+    if (!this.#smokyBlobNear(x, z, 700)) return 0;
     const G = 160, R = 3;
     const cache = this._smokyLift ?? (this._smokyLift = { raw: new Map(), blur: new Map() });
     const probe = this.#probe();
@@ -2455,7 +2470,7 @@ export class TerrainGenerator {
       const k = (i + 32768) * 65536 + (j + 32768);
       let v = cache.raw.get(k);
       if (v === undefined) {
-        v = probe.getBiomeWeights(i * G, j * G, {}).smoky;
+        v = probe.#smokyWeight(i * G, j * G);
         if (cache.raw.size > 60000) cache.raw.clear();
         cache.raw.set(k, v);
       }
@@ -2499,6 +2514,113 @@ export class TerrainGenerator {
   /** Where the Black Hills' blobs lie (0..1), before they're fitted to the land. */
   #hillsBlob(x, z) {
     return this.#blobs('hills', x, z, 8000, 1, 1500, 2600, 0xb1ac, (px, pz) => this.#greenFit(px, pz));
+  }
+
+  /**
+   * The Smoky Mountains' rivers, laid down before their hills: every blob
+   * of them has one, running from its middle out through its edge towards
+   * the lower, greener country beyond. The hills are shaped round it (a
+   * broad valley: see landHeight), and a great river rises at its head and
+   * follows it out (see BigRivers). Returns the trunks (their points,
+   * 48 m apart) of the blobs centred in the box.
+   */
+  smokyTrunks(minX, minZ, maxX, maxZ) {
+    const C = 4000, out = [];
+    for (let cj = Math.floor(minZ / C); cj <= Math.floor(maxZ / C); cj++) {
+      for (let ci = Math.floor(minX / C); ci <= Math.floor(maxX / C); ci++) {
+        const b = this.#smokyBlobCell(ci, cj);
+        if (b && b.x >= minX && b.x < maxX && b.z >= minZ && b.z < maxZ) out.push(this.#trunk(b));
+      }
+    }
+    return out;
+  }
+
+  /** The Smoky Mountains' share of getBiomeWeights at (x, z), worked out alone (quicker). */
+  #smokyWeight(x, z) {
+    const range = this.#rangeField(x, z, {}).value;
+    const a = this.getAridity(x, z, range);
+    const temperate = 1 - smoothstep(0.375, 0.575, a);
+    if (temperate <= 0) return 0;
+    const hz = this.#hillsZone(x, z, range);
+    const vz = Math.max(this.#volcanoZone(x, z, range), this.#coneReach(x, z));
+    const open = temperate * (1 - hz) * (1 - vz);
+    if (open <= 0) return 0;
+    const smoky = open * this.#smokyZone(x, z, range);
+    return smoky > 0 ? smoky * (1 - this.#mangrove(x, z, a, range)) : 0;
+  }
+
+  /** Whether a Smoky Mountains blob's outline comes within `margin` metres of (x, z). */
+  #smokyBlobNear(x, z, margin) {
+    const C = 4000, ci = Math.floor(x / C), cj = Math.floor(z / C);
+    for (let dj = -2; dj <= 2; dj++) {
+      for (let di = -2; di <= 2; di++) {
+        const b = this.#smokyBlobCell(ci + di, cj + dj);
+        if (b && Math.hypot(x - b.x, z - b.z) < b.r * 1.3 + margin) return true;
+      }
+    }
+    return false;
+  }
+
+  /** How much (x, z) lies in a Smoky Mountains blob (0..1: quick, their outline only). */
+  smokyBlobAt(x, z) {
+    return this.#smokyBlob(x, z);
+  }
+
+  /** The Smoky Mountains blob of cell (ci, cj) of their 4 km grid, or null. */
+  #smokyBlobCell(ci, cj) {
+    const C = 4000, k = (ci + 32768) * 65536 + (cj + 32768);
+    let b = this._blobs?.smoky?.get(k);
+    if (b === undefined) {
+      this.#smokyBlob((ci + 0.5) * C, (cj + 0.5) * C);
+      b = this._blobs.smoky.get(k) ?? null;
+    }
+    return b;
+  }
+
+  /** A Smoky Mountains blob's river trunk (remembered on it). */
+  #trunk(b) {
+    if (b.trunk) return b.trunk;
+    // (Out towards the lowest, greenest land beyond the blob.)
+    let best = 0, bestScore = Infinity;
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2 + b.s;
+      const px = b.x + Math.cos(a) * b.r * 1.6, pz = b.z + Math.sin(a) * b.r * 1.6;
+      const score = this.broadHeight(px, pz) + 200 * smoothstep(0.5, 0.7, this.getAridity(px, pz, this.#rangeField(px, pz, {}).value));
+      if (score < bestScore) (bestScore = score), (best = a);
+    }
+    const pts = [];
+    let a = best, x = b.x, z = b.z;
+    const n = Math.ceil((b.r * 1.2) / 48);
+    for (let k = 0; k <= n; k++) {
+      pts.push({ x, z });
+      // (Winding, never straying far from its heading.)
+      a += (best - a) * 0.08 + this.smokyNoise.noise2D(x * 0.0016 + b.s, z * 0.0016 - b.s) * 0.12;
+      x += Math.cos(a) * 48;
+      z += Math.sin(a) * 48;
+    }
+    b.trunk = pts;
+    return pts;
+  }
+
+  /** Metres from (x, z) to the nearest Smoky Mountains river trunk (Infinity if none near). */
+  #trunkDistance(x, z) {
+    const C = 4000, ci = Math.floor(x / C), cj = Math.floor(z / C);
+    let best = Infinity;
+    for (let dj = -2; dj <= 2; dj++) {
+      for (let di = -2; di <= 2; di++) {
+        const b = this.#smokyBlobCell(ci + di, cj + dj);
+        if (!b || Math.hypot(x - b.x, z - b.z) > b.r * 1.3 + 900) continue;
+        const P = this.#trunk(b);
+        // (Every third point is near enough for a valley 1.5 km across.)
+        for (let k = 3; k < P.length; k += 3) {
+          const p = P[k - 3], q = P[k];
+          const dx = q.x - p.x, dz = q.z - p.z, l2 = dx * dx + dz * dz;
+          const t = Math.max(0, Math.min(1, ((x - p.x) * dx + (z - p.z) * dz) / l2));
+          best = Math.min(best, Math.hypot(p.x + dx * t - x, p.z + dz * t - z));
+        }
+      }
+    }
+    return best;
   }
 
   /** Where the Smoky Mountains' blobs lie (0..1), before they're fitted to the land. */

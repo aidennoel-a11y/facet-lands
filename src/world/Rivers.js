@@ -607,6 +607,23 @@ export class Rivers {
   }
 
   #add(points, pond, kind, tarn = null) {
+    // (Its bends rounded off: a rolling average of its course, some 30 m
+    // either way, twice over, tapering to its two ends, which stay put.)
+    for (let pass = 0; pass < 2; pass++) {
+      const xs = points.map((p) => p.x), zs = points.map((p) => p.z);
+      for (let k = 1; k < points.length - 1; k++) {
+        const R = Math.min(4, k, points.length - 1 - k);
+        let sx = 0, sz = 0, w = 0;
+        for (let q = -R; q <= R; q++) {
+          const f = R + 1 - Math.abs(q);
+          sx += xs[k + q] * f;
+          sz += zs[k + q] * f;
+          w += f;
+        }
+        points[k].x = sx / w;
+        points[k].z = sz / w;
+      }
+    }
     const river = { points, pond, tarn, kind, id: this.list.length };
     let along = 0; // metres from the source
     for (let i = 0; i < points.length - 1; i++) {
