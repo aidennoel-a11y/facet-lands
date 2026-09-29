@@ -135,9 +135,9 @@ export function createLogLayer(config) {
           if (generator.caves.field.nearEntrance(wx, wz, 3)) continue;
           // Never on a cliff or a steep slope (judged from the land itself,
           // not this mesh, which far off smooths a cliff into a bank).
-          const e = 1.5;
-          const gx = generator.getHeight(wx + e, wz) - generator.getHeight(wx - e, wz), gz = generator.getHeight(wx, wz + e) - generator.getHeight(wx, wz - e);
-          if (Math.hypot(gx, gz) / (2 * e) > 0.45) continue;
+          const gap = 1.5;
+          const gx = generator.getHeight(wx + gap, wz) - generator.getHeight(wx - gap, wz), gz = generator.getHeight(wx, wz + gap) - generator.getHeight(wx, wz - gap);
+          if (Math.hypot(gx, gz) / (2 * gap) > 0.45) continue;
           const isStump = hash2(gi, gj, seed + 3) < 0.4;
           const a = hash2(gi, gj, seed + 4) * Math.PI * 2;
           if (isStump) {
