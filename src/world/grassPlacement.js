@@ -81,7 +81,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       // it grows tall and rank (nearly twice as long) or cropped short.
       const n = generator.grassNoise.fbm(wx * 0.006 + 50, wz * 0.006 - 50, 2);
       const tall = smoothstep(0.08, 0.38, n), short = smoothstep(-0.08, -0.38, n);
-      const long = (1 + 0.9 * tallLand) * (1 + 0.95 * tall) * (1 - 0.4 * short) * (1 - 0.45 * bw.tundra);
+      const long = (1 + 0.9 * tallLand) * (1 + 0.95 * tall) * (1 - 0.4 * short) * (1 - 0.45 * bw.tundra) * (1 + 0.6 * bw.parkland);
       const stalky = Math.min(1, tallLand + 0.6 * tall) * (1 - bw.tundra);
       const pick = hash2(gi, gj, seed + 8);
       const kind = pick < 0.35 * stalky ? 1 : pick < 0.35 * stalky + 0.12 + 0.15 * stalky ? 2 : 0;

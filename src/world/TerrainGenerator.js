@@ -333,8 +333,8 @@ export class TerrainGenerator {
   #saltFlat(x, z) {
     return this.#blobs('salt', x, z, 7000, 0.7, 700, 1500, 0x5a17, (px, pz) => {
       // (Only in the driest heart of a desert, clear of ranges.)
-      if (this.#rawAridityAt(px, pz) < 1.02) return 0;
-      return this.#rangeField(px, pz, {}).value < 0.05 && this.#aridRange(px, pz, 1) > 0.9 ? 1 : 0;
+      if (this.#rawAridityAt(px, pz) < 1.1) return 0;
+      return this.#rangeField(px, pz, {}).value < 0.05 && this.#dryAround(px, pz) > 1.0 ? 1 : 0;
     });
   }
 
@@ -906,7 +906,7 @@ export class TerrainGenerator {
     const sea = this.rivers.seaLevel;
     if (base < sea + 0.25) return 0;
     const shore = smoothstep(sea + 0.25, sea + 1.5, base);
-    const soft = (1 - 0.6 * this._weights.desert) * (1 - this._erg);
+    const soft = (1 - 0.6 * this._weights.desert) * (1 - this._erg) * (1 - 0.92 * this._weights.saltFlat); // (salt flats: dead flat)
     const amount = (0.32 + 0.8 * smoothstep(50, 170, base)) * soft;
     let r = (this.roughNoise.noise2D(x * 0.13, z * 0.13) + 0.45 * this.roughNoise.noise2D(x * 0.29 + 17, z * 0.29 - 9)) * amount;
     r += (this.roughNoise.noise2D(x * 0.05 - 31, z * 0.05 + 11) * 0.7 + this.roughNoise.noise2D(x * 0.021 + 5, z * 0.021 - 40) * 0.9) * soft;
@@ -1147,7 +1147,7 @@ export class TerrainGenerator {
     // channels just above the tide, and the sea off them shoals into warm
     // shallows a metre or so deep, where the mangroves stand.
     if (w.mangrove > 0) {
-      const target = seaLevel - 0.25 + 0.65 * this.#marsh(x, z);
+      const target = seaLevel - 0.7 + 0.7 * this.#marsh(x, z);
       if (height > target) height += (target - height) * w.mangrove;
       else if (height < target - 1.4) height += (target - 1.4 - height) * w.mangrove * (1 - smoothstep(seaLevel - 14, seaLevel - 22, height));
     }

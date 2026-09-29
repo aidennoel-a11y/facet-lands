@@ -167,6 +167,9 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       }
       // (Only cypresses, mangroves and dead trees stand out in the water.)
       if (marsh && ground < seaLevel + 0.4 && !IN_WATER.has(species.type)) continue;
+      // (On a mangrove coast the mangroves keep to the water's edge and the
+      // shallows; the drier ground between is open salt grass.)
+      if (biome.id === 'mangrove' && species.type === 'mangrove' && ground > seaLevel + 1.3) continue;
 
       const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale;
       if (species.type === 'bamboo') {

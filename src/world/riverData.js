@@ -126,6 +126,10 @@ export function riverData(generator, config, cx, cz) {
       // Past the channel's edge the sheet dips under the bank, so the shore
       // is where the land meets the water, never the grid's stepped rim.
       if (w.inset < 0) level[k] = Math.min(level[k], ground - 0.3);
+      // And where a river has come down to the level of the lake or sea it
+      // runs into, its sheet dips under that water wherever there is some,
+      // so the shore is the lake's own, not the river sheet's stepped rim.
+      if (w.level < seaLevel + 0.5 && ground < seaLevel) level[k] = Math.min(level[k], seaLevel - 0.3);
       const drop = Math.max(0, w.drop);
       flow[k * 4] = w.along;
       flow[k * 4 + 1] = Math.min(1.5, w.across);
@@ -149,6 +153,7 @@ export function riverData(generator, config, cx, cz) {
   const seed = generator.seed ^ 0x3c6ef372;
   const tri = (a, b, c, shade) => {
     if (Number.isNaN(level[a]) || Number.isNaN(level[b]) || Number.isNaN(level[c])) return;
+    if (level[a] < seaLevel - 0.2 && level[b] < seaLevel - 0.2 && level[c] < seaLevel - 0.2) return; // (all under the lake: unseen)
     const r = (river[a] + river[b] + river[c]) / 3;
     if (r === 0) return; // well out in the lake
     const deep = smoothstep(0, 3, (inset[a] + inset[b] + inset[c]) / 3);

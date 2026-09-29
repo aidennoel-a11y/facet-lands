@@ -343,7 +343,7 @@ export const BIOMES = {
     snow: 0xf1f4f7,
     grass: 1,
     trees: {
-      density: 0.42,
+      density: 0.2, // (open: groves and lone trees over the grass)
       clumped: true,
       species: [
         { type: 'birch', weight: 1, minHeight: 4, maxHeight: 140 },
@@ -378,7 +378,7 @@ export const BIOMES = {
     snow: 0xf1f4f7,
     grass: 0.8,
     trees: {
-      density: 1.1,
+      density: 0.9,
       clumped: false,
       species: [
         { type: 'mangrove', weight: 3, minHeight: -99, maxHeight: 12 },
