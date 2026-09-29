@@ -104,9 +104,20 @@ export class BigRivers {
       const x = (i + 0.5 + (rand() - 0.5) * 2 * SOURCE) * REGION;
       const z = (j + 0.5 + (rand() - 0.5) * 2 * SOURCE) * REGION;
       const b = this.#land(x, z);
-      // (Up in the Smoky Mountains' valleys first: they're the rivers' country.)
+      // (Down in the Smoky Mountains' valleys first, the lowest of them:
+      // they're the rivers' country. Elsewhere, the highest ground first.)
       const smoky = g.getBiomeWeights(x, z, {}).smoky ?? 0;
-      if (b > 16 && b < 200 + smoky * 120) spots.push({ x, z, b, rank: b + smoky * 400 });
+      if (b > 16 && b < 200 + smoky * 120) spots.push({ x, z, b, rank: smoky > 0.3 ? 1000 - b : b });
+    }
+    // (And anywhere in the region, springs in the Smoky Mountains' valleys:
+    // wherever they lie in it, rivers rise there.)
+    for (let k = 0; k < 16; k++) {
+      const x = (i + 0.5 + (rand() - 0.5) * 0.9) * REGION;
+      const z = (j + 0.5 + (rand() - 0.5) * 0.9) * REGION;
+      const smoky = g.getBiomeWeights(x, z, {}).smoky ?? 0;
+      if (smoky < 0.5) continue;
+      const b = this.#land(x, z);
+      if (b > 16 && b < 320) spots.push({ x, z, b, rank: 1000 - b });
     }
     spots.sort((p, q) => q.rank - p.rank);
     for (const { x, z } of spots.slice(0, 10)) {
@@ -164,13 +175,30 @@ export class BigRivers {
       // (Never out into a desert: along its edge at most.)
       if (step % 6 === 0 && g.getAridity(px, pz) > 0.765) return null; // (where the desert takes over)
       // (The real land's looked at only where the broad lie is low enough for water.)
-      if ((step % 2 === 0 || this.#land(px, pz) < this.seaLevel + 4) && this.#land(px, pz) < this.seaLevel + 12 && g.landHeight(px, pz) < this.seaLevel - 0.8) {
+      if ((step % 2 === 0 || this.#land(px, pz) < this.seaLevel + 4) && this.#land(px, pz) < this.seaLevel + 12 && g.landHeight(px, pz) < this.seaLevel - 0.8 && this.#bigWater(px, pz, dir)) {
         // Into a lake or the sea: on a little way, so its mouth opens out.
         for (let k = 1; k <= 3; k++) points.push({ x: px + dir[0] * STEP * k, z: pz + dir[1] * STEP * k });
         return points.length * STEP >= MIN_LENGTH ? points : null;
       }
     }
     return null;
+  }
+
+  /**
+   * Whether the water a river has reached at (x, z), heading `dir`, is a
+   * real lake or the sea (not a pond or a hollow): the open sea, or water
+   * over most of the ground a few hundred metres on ahead and to the sides.
+   */
+  #bigWater(x, z, dir) {
+    const g = this.generator;
+    if (g.getOceanness(x, z) > 0.5) return true;
+    let wet = 0;
+    const a0 = Math.atan2(dir[1], dir[0]);
+    for (let k = 0; k < 7; k++) {
+      const a = a0 + (k - 3) * 0.45, d = k % 2 ? 260 : 420;
+      if (g.landHeight(x + Math.cos(a) * d, z + Math.sin(a) * d) < this.seaLevel) wet++;
+    }
+    return wet >= 5;
   }
 
   /**
@@ -244,7 +272,11 @@ export class BigRivers {
       p.width = 6 + (Math.min(120, 40 + k * STEP * 0.011) - 6) * smoothstep(0, 22, k);
     });
     if (into) points[n - 1].width = Math.max(points[n - 2].width, into.river.points[into.b].width * 0.6);
-    const river = { points, pond: null, tarn: null, kind: 'river', big: true, region: [i, j] };
+    // It rises from a lake at its head: a spring-fed pool in a hollow, some
+    // fifty to eighty metres across, at the level of its water there.
+    const head = points[0];
+    const source = { x: head.x, z: head.z, r: 26 + 16 * hash2(i, j, this.seed ^ 0x50c3), level: head.level };
+    const river = { points, pond: null, tarn: null, kind: 'river', big: true, region: [i, j], joins: !!into, source };
     if (!into) this.#delta(river, i, j);
     this.finals.set(k, river);
     return river;
@@ -381,7 +413,7 @@ export class BigRivers {
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     for (let i = 0; i < P.length - 1; i++) {
       const a = P[i], b = P[i + 1];
-      const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, along };
+      const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, along, source: i === 0 ? river.source ?? null : null };
       along += Math.hypot(b.x - a.x, b.z - a.z);
       const r = Math.max(a.width, b.width) / 2 + BigRivers.plain(Math.max(a.width, b.width) / 2) + VALLEY;
       for (let cz = Math.floor((Math.min(a.z, b.z) - r) / CELL); cz <= Math.floor((Math.max(a.z, b.z) + r) / CELL); cz++) {
@@ -465,6 +497,15 @@ export class BigRivers {
         t = L + 1.6 + (fp - 8) * 0.012 + s * 0.05 + (s / VALLEY) ** 2 * 170;
       }
       if (t < low) low = t;
+      // The lake it rises from: a round bowl, with a low bank round it.
+      if (seg.source) {
+        const S = seg.source, e = Math.hypot(x - S.x, z - S.z) - S.r;
+        if (e < 12) {
+          const q = e < 0 ? S.level - 1.2 - 3.5 * (1 - ((e + S.r) / S.r) ** 2) : S.level - 0.4 + e * 0.25;
+          if (q < low) low = q;
+          edge = Math.min(edge, e);
+        }
+      }
       // (Where the land beside it lies lower than the water, a low natural
       // levee holds the river in.)
       if (u >= 0 && u < fp && L + 0.7 > levee) {
@@ -487,7 +528,10 @@ export class BigRivers {
     if (!near) return Infinity;
     const m = this._m;
     let edge = Infinity;
-    for (const seg of near) edge = Math.min(edge, BigRivers.#measure(seg, x, z, m).d - m.half);
+    for (const seg of near) {
+      edge = Math.min(edge, BigRivers.#measure(seg, x, z, m).d - m.half);
+      if (seg.source) edge = Math.min(edge, Math.hypot(x - seg.source.x, z - seg.source.z) - seg.source.r);
+    }
     return edge;
   }
 
@@ -503,6 +547,13 @@ export class BigRivers {
     let best = null;
     for (const seg of near) {
       BigRivers.#measure(seg, x, z, m);
+      // (The lake it rises from.)
+      if (seg.source) {
+        const S = seg.source, d = Math.hypot(x - S.x, z - S.z);
+        if (d < S.r + margin && (!best || (d < S.r && !best.inside))) {
+          best = { d, level: S.level, water: S.r, half: S.r, fx: 0, fz: 0, drop: 0, along: 0, across: d / S.r, inset: S.r - d, inside: d < S.r, lake: true };
+        }
+      }
       if (m.d > m.half + margin) continue;
       const inside = m.d < m.half;
       if (!best || (inside && (!best.inside || m.level < best.level)) || (!best.inside && !inside && m.d - m.half < best.d - best.half)) {
