@@ -59,6 +59,7 @@ export class BigRivers {
     this._lastX = NaN;
     this._lastZ = NaN;
     this.lastEdge = Infinity; // metres from the nearest river's channel, as of the last carve()
+    this.work = 0; // counts regions made ready (see TerrainGenerator.getBaseHeight)
   }
 
   static #key(i, j) {
@@ -294,6 +295,7 @@ export class BigRivers {
     const k = BigRivers.#key(ri, rj);
     if (this.covered.has(k)) return;
     this.covered.add(k);
+    this.work++;
     for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         const river = this.#final(ri + di, rj + dj);

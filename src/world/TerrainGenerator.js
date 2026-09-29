@@ -306,7 +306,11 @@ export class TerrainGenerator {
     if (x !== this._vnX || z !== this._vnZ) {
       this._vnX = x;
       this._vnZ = z;
-      this._vn = this.volcanoNoise.fbm(x * 0.00005 + 900, z * 0.00005 - 300, 2);
+      // (Warped, so the edges of volcanic country wander rather than run
+      // for kilometres in a straight line, as such slow noise does.)
+      const wx = x + this.volcanoNoise.fbm(x * 0.0004 + 31, z * 0.0004 - 57, 2) * 1400;
+      const wz = z + this.volcanoNoise.fbm(x * 0.0004 - 83, z * 0.0004 + 19, 2) * 1400;
+      this._vn = this.volcanoNoise.fbm(wx * 0.00005 + 900, wz * 0.00005 - 300, 2);
     }
     return this._vn;
   }
@@ -334,7 +338,7 @@ export class TerrainGenerator {
     let ring = Infinity;
     for (let k = 0; k < 10; k++) {
       const a = (k / 10) * Math.PI * 2;
-      for (const d of [700, 1400]) ring = Math.min(ring, this.volcanoNoise.fbm((x + Math.cos(a) * d) * 0.00005 + 900, (z + Math.sin(a) * d) * 0.00005 - 300, 2));
+      for (const d of [700, 1400]) ring = Math.min(ring, this.#volcanoNoise(x + Math.cos(a) * d, z + Math.sin(a) * d));
     }
     return zone * smoothstep(0.4, 0.46, ring) * (1 - smoothstep(0.02, 0.2, range));
   }
@@ -755,7 +759,13 @@ export class TerrainGenerator {
    */
   getBaseHeight(x, z) {
     const h = this.landHeight(x, z);
-    return this._probing ? h : this.bigRivers.carve(x, z, h);
+    if (this._probing) return h;
+    const work = this.bigRivers.work;
+    const out = this.bigRivers.carve(x, z, h);
+    // (Rivers just traced for this looked at other land, leaving its
+    // weights behind: worked out again here, so what follows sees this point's.)
+    if (this.bigRivers.work !== work) this.landHeight(x, z);
+    return out;
   }
 
   /**

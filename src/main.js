@@ -435,6 +435,7 @@ function setSeed(seed) {
   game.trees.removed.clear(); // (the new world's felled trees are loaded below)
   chunks.setGenerator(generator);
   minimap.invalidate();
+  bigMap.reset(); // (the old world's map tiles are no good now)
   torches.loadWorld(seed);
   if (game.dirty) game.save();
   game.loadWorld(seed);

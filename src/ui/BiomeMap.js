@@ -42,6 +42,8 @@ export class BiomeMap {
     this.scale = 16;
     this.centre = { x: 0, z: 0 };
     this.highlight = -1;
+    this.epoch = 0; // bumped for a new world: tiles still coming for the old one are dropped
+    this.zoomDelta = 0; // scrolling so far towards the next zoom step
 
     const style = document.createElement('style');
     style.textContent = STYLE;
@@ -94,6 +96,14 @@ export class BiomeMap {
     this.root.classList.remove('open');
   }
 
+  /** Forgets every tile (a new world: the seed changed), redrawing if open. */
+  reset() {
+    this.epoch++;
+    this.tiles.clear();
+    this.pending = 0;
+    this.draw();
+  }
+
   /** World position under canvas pixel (px, py). */
   #toWorld(px, py) {
     const { width, height } = this.canvas;
@@ -133,7 +143,17 @@ export class BiomeMap {
     });
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const k = SCALES.indexOf(this.scale) + (e.deltaY > 0 ? 1 : -1);
+      // (A trackpad sends a stream of small scrolls, a mouse wheel bigger
+      // clicks: a zoom step only once they add up to a proper scroll, and
+      // at most one step at a time, so it never races right in or out.)
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+      if (Math.sign(e.deltaY) !== Math.sign(this.zoomDelta)) this.zoomDelta = 0;
+      this.zoomDelta += e.deltaY * unit;
+      const now = performance.now();
+      if (Math.abs(this.zoomDelta) < 90 || now - (this.lastZoom ?? 0) < 180) return;
+      const k = SCALES.indexOf(this.scale) + (this.zoomDelta > 0 ? 1 : -1);
+      this.zoomDelta = 0;
+      this.lastZoom = now;
       if (k < 0 || k >= SCALES.length) return;
       // Zoom about the point under the cursor.
       const [px, py] = pixel(e);
@@ -163,17 +183,20 @@ export class BiomeMap {
 
   #request(tx, tz, scale) {
     const key = `${scale}:${tx}:${tz}`;
+    const epoch = this.epoch;
     this.tiles.set(key, 'pending');
     this.pending++;
     this.task({ kind: 'map', x0: tx * TILE * scale, z0: tz * TILE * scale, n: TILE, s: scale })
       .then(({ labels, shade }) => {
+        if (epoch !== this.epoch) return; // (the old world's)
         const tile = { labels, shade, canvas: document.createElement('canvas') };
         tile.canvas.width = tile.canvas.height = TILE;
         this.#paint(tile);
         this.tiles.set(key, tile);
       })
-      .catch(() => this.tiles.delete(key))
+      .catch(() => epoch === this.epoch && this.tiles.delete(key))
       .finally(() => {
+        if (epoch !== this.epoch) return;
         this.pending--;
         if (this.isOpen) this.draw();
       });
