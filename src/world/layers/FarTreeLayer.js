@@ -11,7 +11,7 @@ import {
   Vector3,
 } from 'three';
 import { seasonalTrees } from '../../render/Seasons.js';
-import { TREE_GEOMETRIES } from '../trees.js';
+import { FALL, TREE_GEOMETRIES } from '../trees.js';
 import { packFarTrees, placeTrees } from '../treePlacement.js';
 
 const CONES = new Set(['pine', 'spruce', 'larch']);
@@ -180,6 +180,10 @@ function farGeometry(type, detailed) {
   g.computeVertexNormals();
   g.setAttribute('color', new BufferAttribute(new Float32Array(cols), 3));
   g.setAttribute('aSeason', new BufferAttribute(new Float32Array(seasons), 3));
+  // (Its species' own autumn colour: see FALL.)
+  const fall = FALL[type] ?? [0.85, 0.45, 0.06], falls = new Float32Array(seasons.length);
+  for (let k = 0; k < falls.length; k += 3) falls.set(fall, k);
+  g.setAttribute('aFall', new BufferAttribute(falls, 3));
   return g;
 }
 

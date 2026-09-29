@@ -1130,6 +1130,14 @@ const SEASONAL = {
   jungleGiant: [0, 0, 0], jungleCanopy: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
   appleTree: [1, 1, 1], raspberryBush: [1, 1, 1], blueberryBush: [1, 1, 1],
 };
+// Each deciduous species' own autumn colour (linear RGB), so every tree of
+// a kind turns the same: birches a vibrant yellow, maples scarlet, oaks russet...
+export const FALL = {
+  birch: [0.98, 0.78, 0.04], silverBirch: [0.95, 0.72, 0.06], aspen: [1.0, 0.62, 0.02], poplar: [0.86, 0.8, 0.12],
+  maple: [0.82, 0.07, 0.03], broadleaf: [0.95, 0.4, 0.03], oak: [0.5, 0.2, 0.05], larch: [0.9, 0.55, 0.06],
+  cypress: [0.62, 0.22, 0.06], swampWillow: [0.72, 0.68, 0.14], weepingWillow: [0.85, 0.78, 0.22],
+  bush: [0.68, 0.08, 0.05], appleTree: [0.85, 0.5, 0.08], raspberryBush: [0.45, 0.05, 0.1], blueberryBush: [0.75, 0.06, 0.12],
+};
 function markSeasons(geometries) {
   for (const [type, full] of Object.entries(geometries)) for (const g of [full, full.userData.lean].filter(Boolean)) {
     const [deciduous, snowy, flowers] = SEASONAL[type] ?? [0, 0, 0];
@@ -1149,6 +1157,10 @@ function markSeasons(geometries) {
       a[k * 3 + 2] = flowers * leafy;
     }
     g.setAttribute('aSeason', new BufferAttribute(a, 3));
+    const fall = FALL[type] ?? [0.85, 0.45, 0.06];
+    const f = new Float32Array(n * 3);
+    for (let k = 0; k < n; k++) f.set(fall, k * 3);
+    g.setAttribute('aFall', new BufferAttribute(f, 3));
   }
 }
 markSeasons(TREE_GEOMETRIES);

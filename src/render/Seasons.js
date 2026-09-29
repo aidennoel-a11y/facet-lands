@@ -260,12 +260,13 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
       shader.vertexShader = shader.vertexShader
         .replace(
           '#include <common>',
-          `#include <common>\nattribute vec3 aSeason;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nuniform float uWinter;\nuniform float uFruit;${leaves || randFrom ? '' : '\nattribute float aCrown;\nvarying float vTreeNorth;'}`,
+          `#include <common>\nattribute vec3 aSeason;\nattribute vec3 aFall;\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nuniform float uWinter;\nuniform float uFruit;${leaves || randFrom ? '' : '\nattribute float aCrown;\nvarying float vTreeNorth;'}`,
         )
         .replace(
           '#include <begin_vertex>',
           /* glsl */ `#include <begin_vertex>
           vSeason = aSeason;
+          vFall = aFall;
           vFlowerAt = position;
           vSeasonUp = normal.y;
           ${leaves || randFrom ? '' : `#ifdef USE_INSTANCING
@@ -289,7 +290,7 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
 `,
         );
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;${leaves || randFrom ? '' : '\nvarying float vTreeNorth;'}`)
+        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;${leaves || randFrom ? '' : '\nvarying float vTreeNorth;'}`)
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
@@ -307,9 +308,9 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
             }
             // Fruit: green, ripening to its own colour.
             if (vSeason.z > 1.5) c = mix(vec3(0.42, 0.6, 0.22), c, uRipe);
-            // Autumn: yellow, orange or red, tree by tree.
-            vec3 fall = vTreeRand < 0.35 ? vec3(0.85, 0.62, 0.08) : vTreeRand < 0.7 ? vec3(0.9, 0.35, 0.05) : vec3(0.65, 0.1, 0.05);
-            c = mix(c, fall * (0.75 + 0.5 * dot(c, vec3(0.33))), uAutumn * leafy * 0.9);
+            // Autumn: each species its own colour (birches yellow, maples
+            // scarlet...), the same on every tree of the kind.
+            c = mix(c, vFall * (0.8 + 0.4 * dot(c, vec3(0.33))), uAutumn * leafy * 0.9);
             ${leaves || randFrom ? '' : `// Moss up the north side of the trunks, in damp country: on about
             // one tree in six.
             c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * step(0.83, fract(vTreeRand * 13.7)) * smoothstep(0.1, 0.8, vTreeNorth) * (0.5 + 0.5 * seasonHash(floor(vFlowerAt.xy * 4.0) + vTreeRand)) * 0.8);`}

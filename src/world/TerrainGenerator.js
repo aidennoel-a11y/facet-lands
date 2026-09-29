@@ -283,10 +283,7 @@ export class TerrainGenerator {
     }
     // Pine forests: in the hill country leading up to the mountain ranges
     // (see #pineZone).
-    // Tundra: the high ground in the heart of a range, mountains all round
-    // it (the range strong for some 400 m every way: see #rangeInner).
-    const tz = green > 0 && range > 0.25 ? smoothstep(0.4, 0.52, this.#rangeInner(x, z)) : 0;
-    const rest = green * (1 - wz) * (1 - jz) * (1 - tz);
+    const rest = green * (1 - wz) * (1 - jz);
     const pz = rest > 0 ? this.#pineZone(x, z, range, a) : 0;
     const open = rest * (1 - pz);
     // Birch and aspen parkland: rounded stretches of the green lowlands
@@ -294,7 +291,6 @@ export class TerrainGenerator {
     const pk = open > 0 ? this.#parkland(x, z, range) : 0;
     out.temperate = open * (1 - pk);
     out.parkland = open * pk;
-    out.tundra = green * (1 - wz) * (1 - jz) * tz;
     out.pine = rest * pz;
     out.wetland = green * wz * (1 - jz);
     out.jungle = green * jz;
@@ -306,14 +302,11 @@ export class TerrainGenerator {
     out.blackHills = hills;
     out.smoky = smoky;
     out.volcanic = volcanic;
-    // On the open sea's coasts: mangroves along the warm shores, peat bogs
-    // along the cold ones under the mountains. They take over whatever
+    // On the open sea's warm coasts: mangroves. They take over whatever
     // was there.
-    const coast = this.#coastBiome(x, z, a, range);
-    const c = coast.mangrove + coast.bog;
-    if (c > 0) for (const id of BIOME_IDS) out[id] *= 1 - c;
-    out.mangrove = coast.mangrove;
-    out.bog = coast.bog;
+    const m = this.#mangrove(x, z, a, range);
+    if (m > 0) for (const id of BIOME_IDS) out[id] *= 1 - m;
+    out.mangrove = m;
     return out;
   }
 
@@ -376,25 +369,14 @@ export class TerrainGenerator {
   }
 
   /**
-   * Mangrove coast and peat bog along stretches of the open sea's shores
-   * ({ mangrove, bog }, 0..1), given the climate there (`a`) and the range
-   * field: mangroves on the warm, humid coasts (Florida's), bogs on the
-   * cold, wet ones below the mountains.
+   * Mangrove coast (0..1) along stretches of the open sea's warm, humid
+   * shores (Florida's), given the climate there (`a`) and the range field.
    */
-  #coastBiome(x, z, a, range) {
-    const out = this._coastOut ?? (this._coastOut = { mangrove: 0, bog: 0 });
-    out.mangrove = out.bog = 0;
+  #mangrove(x, z, a, range) {
     let m = smoothstep(0.16, 0.24, a) * (1 - smoothstep(0.68, 0.76, a)) * (1 - smoothstep(-0.05, 0.08, range));
     if (m > 0) m *= smoothstep(-0.2, 0.0, this.coastNoise.fbm(x * 0.00028 + 310, z * 0.00028 - 170, 2));
-    let b = (1 - smoothstep(0.26, 0.34, a)) * smoothstep(-0.4, -0.2, range);
-    if (b > 0) b *= smoothstep(-0.05, 0.15, this.coastNoise.fbm(x * 0.00028 - 520, z * 0.00028 + 240, 2));
-    if (m <= 0 && b <= 0) return out;
-    if (this.#volcanoBelt(x, z) > 0.3) return out;
-    const coast = this.#seaCoast(x, z);
-    if (coast <= 0) return out;
-    out.mangrove = m * coast;
-    out.bog = b * coast * (1 - out.mangrove);
-    return out;
+    if (m <= 0 || this.#volcanoBelt(x, z) > 0.3) return 0;
+    return m * this.#seaCoast(x, z);
   }
 
   /** The broad continent noise alone (low near the coasts), remembered for the last point. */
@@ -1151,13 +1133,7 @@ export class TerrainGenerator {
       if (height > target) height += (target - height) * w.mangrove;
       else if (height < target - 1.4) height += (target - 1.4 - height) * w.mangrove * (1 - smoothstep(seaLevel - 14, seaLevel - 22, height));
     }
-    // Peat bogs: low, soggy moorland on the coast, hummocks of heather and
-    // black pools, a few metres above the sea.
-    if (w.bog > 0) {
-      const target = seaLevel + 2.4 + 1.3 * this.#marsh(x + 900, z - 700);
-      if (height > target) height += (target - height) * w.bog;
-    }
-    const soft = w.wetland + w.mangrove + w.bog;
+    const soft = w.wetland + w.mangrove;
     // Islands, here and there out in a lake or the sea: a wooded hump of
     // land with a beach round it (shaped by the lake shore below).
     if (height < seaLevel - 0.5 && !this._probing && soft < 0.3) {
@@ -1286,7 +1262,7 @@ export class TerrainGenerator {
 
   /** Stretches of the open coast that rise in cliffs (0..1); the rest are coves and beaches. */
   #cliffZone(x, z, w) {
-    return smoothstep(0.05, 0.3, this.coastNoise.fbm(x * 0.0007 + 11, z * 0.0007 - 3, 2)) * (1 - w.wetland - w.mangrove - w.bog) * (1 - 0.7 * w.desert);
+    return smoothstep(0.05, 0.3, this.coastNoise.fbm(x * 0.0007 + 11, z * 0.0007 - 3, 2)) * (1 - w.wetland - w.mangrove) * (1 - 0.7 * w.desert);
   }
 
   /**
@@ -2163,7 +2139,7 @@ export class TerrainGenerator {
    */
   getSeasonality(x, z) {
     const w = this.getBiomeWeights(x, z, {});
-    return w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + w.parkland + w.bog + w.tundra;
+    return w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + w.parkland;
   }
 
   /** How much (x, z) is a cliffed stretch of the open coast (0..1). */
@@ -2418,7 +2394,7 @@ export class TerrainGenerator {
     const p = this.detailNoise.noise2D(x * 0.05, z * 0.05);
     if (ocean) {
       const w = this.getBiomeWeights(x, z, {});
-      if (w.mangrove + w.bog > 0.5) return height < sea + 1.2 ? { kind: 'mud', fade, ocean } : null; // (soft, muddy shores)
+      if (w.mangrove > 0.5) return height < sea + 1.2 ? { kind: 'mud', fade, ocean } : null; // (soft, muddy shores)
       return p > 0.55 && height > sea - 0.5 ? { kind: 'rock', fade: fade * 0.6, ocean } : null;
     }
     if (height < sea + 0.7) return { kind: 'mud', fade, ocean };
@@ -2813,7 +2789,7 @@ export class TerrainGenerator {
     const beds = smoothstep(0.0, 0.25, this.coastNoise.fbm(x * 0.004 - 70, z * 0.004 + 35, 2));
     if (beds <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
-    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + w.volcanic + w.parkland + w.bog + w.tundra);
+    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + w.volcanic + w.parkland);
     if (cool <= 0) return 0;
     const ocean = smoothstep(0.4, 0.7, this.getOceanness(x, z));
     const depth = smoothstep(sea - 2.5, sea - 4, ground) * (1 - smoothstep(sea - 13, sea - 16, ground));
@@ -2920,7 +2896,6 @@ export class TerrainGenerator {
       return 'Sea cliffs';
     }
     if (w.mangrove > 0.5) return 'Mangrove coast';
-    if (w.bog > 0.5) return 'Peat bog';
     if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return w.volcanic > 0.5 ? 'Black sand beach' : 'Beach';
     if (f.canyon > 0.5) return f.canyonFloor > 0.5 ? 'Canyon floor' : 'Canyon';
     const mountains = this.getMountainness(x, z);
@@ -2928,7 +2903,6 @@ export class TerrainGenerator {
     if (mountains > 0.45 && w.smoky > 0.2 && this.#smokyLift(x, z) > 0.5) return 'Smoky Mountains';
     if (mountains > 0.45) {
       if (height > 181) return 'Snowy peaks';
-      if (w.tundra > 0.5 && height + this.getColorJitter(x, z) < 165) return 'Tundra';
       // Mountains are bare rock: above the trees, or sheer. Wooded slopes
       // lower down are the foothills.
       const steep = Math.abs(heightAt(x + 3, z) - heightAt(x - 3, z)) / 6 + Math.abs(heightAt(x, z + 3) - heightAt(x, z - 3)) / 6;
@@ -2959,7 +2933,6 @@ export class TerrainGenerator {
     if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
     if (top === 'parkland') return 'Birch & aspen parkland';
     if (top === 'saltFlat') return 'Salt flats';
-    if (top === 'tundra') return 'Tundra';
     if (this.getForestDensity(x, z) > 0.55) return 'Forest';
     if (smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Rolling hills';
     return this.getMeadow(x, z) > 0.5 ? 'Wildflower meadow' : 'Plains';

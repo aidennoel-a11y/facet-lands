@@ -107,7 +107,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const ground = groundHeightAt(lx, lz);
       // (In a wetland trees grow down to the water, and dead ones stand
       // drowned in the shallows.)
-      const marsh = biome.id === 'wetland' || biome.id === 'mangrove' || biome.id === 'bog';
+      const marsh = biome.id === 'wetland' || biome.id === 'mangrove';
       if (!(ground >= seaLevel + (marsh ? -0.8 : 1.2))) continue; // outside the chunk, in water or over a cave mouth
       if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
       if (generator.rivers.at(wx, wz, 1.5)) continue; // nor in a river or right on its bank
