@@ -12,7 +12,7 @@ function smin(a, b, k) {
   return Math.min(a, b) - h * h * k * 0.25;
 }
 
-const REGION = 12000; // at most one river rises in each region this size
+const REGION = 8500; // at most one river rises in each region this size
 const SOURCE = 0.25; // it rises within this fraction of the region's size from its middle
 const CHANCE = 1; // how many regions try for one (most find a way to the water)
 const STEP = 48; // metres between a river's points
@@ -25,7 +25,7 @@ const GRID = 128; // spacing of the broad land's remembered grid (m: it's smooth
 
 /**
  * Rivers: great slow rivers, some forty to over a hundred metres across,
- * ten times a creek. Few of them (at most one to a 12 km region), each
+ * ten times a creek. Few of them (at most one to an 8.5 km region), each
  * rising in the hill country below the ranges and winding down the
  * broadest, lowest ground it can find, the way real rivers keep to the
  * floors of the great valleys, until it reaches a lake or the sea. A river
@@ -104,9 +104,11 @@ export class BigRivers {
       const x = (i + 0.5 + (rand() - 0.5) * 2 * SOURCE) * REGION;
       const z = (j + 0.5 + (rand() - 0.5) * 2 * SOURCE) * REGION;
       const b = this.#land(x, z);
-      if (b > 16 && b < 200) spots.push({ x, z, b });
+      // (Up in the Smoky Mountains' valleys first: they're the rivers' country.)
+      const smoky = g.getBiomeWeights(x, z, {}).smoky ?? 0;
+      if (b > 16 && b < 200 + smoky * 120) spots.push({ x, z, b, rank: b + smoky * 400 });
     }
-    spots.sort((p, q) => q.b - p.b);
+    spots.sort((p, q) => q.rank - p.rank);
     for (const { x, z } of spots.slice(0, 10)) {
       // It rises in the hill country and foothills (not up in a range,
       // nor in the desert or a marsh).

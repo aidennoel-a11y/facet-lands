@@ -165,8 +165,23 @@ export class TerrainGenerator {
     // A desert always has a wide band of savanna round it: within a few
     // hundred metres of desert country the land is never greener than savanna.
     const a = this.#baseAridity(x, z, range);
-    if (a >= 0.52) return a;
-    return Math.max(a, 0.52 * smoothstep(0.62, 0.7, this.#aridRange(x, z, 1)));
+    if (a >= 0.6) return a;
+    // (And savanna of its own here and there out in the green country: a
+    // rounded stretch of dry grassland and scattered trees, dry enough for
+    // savanna but never for desert.)
+    const own = 0.6 * this.#savannaBlob(x, z);
+    if (a >= 0.52) return Math.max(a, own);
+    return Math.max(a, own, 0.52 * smoothstep(0.62, 0.7, this.#aridRange(x, z, 1)));
+  }
+
+  /** Where savanna stands on its own, away from any desert (0..1). */
+  #savannaBlob(x, z) {
+    return this.#blobs('savanna', x, z, 9000, 0.8, 1800, 3200, 0x5a7a, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      const a = this.#baseAridity(px, pz, r);
+      // (In the drier parts of the green country, clear of the ranges and of volcanic country.)
+      return a > 0.04 && a < 0.52 && r < 0.25 && this.#volcanoBelt(px, pz) < 0.3 && this.#continentBase(px, pz) - this._contLift > -0.45 ? 1 : 0; // (on dry land)
+    });
   }
 
   #baseAridity(x, z, range) {
@@ -251,7 +266,7 @@ export class TerrainGenerator {
     range ??= this.#rangeField(x, z).value;
     const a = this.getAridity(x, z, range);
     const temperate = 1 - smoothstep(0.375, 0.575, a); // (broad transitions, not a line on the map)
-    const desert = smoothstep(0.69, 0.89, a);
+    const desert = smoothstep(0.725, 0.925, a); // (a tenth fewer deserts than there were)
     const savanna = Math.max(0, 1 - temperate - desert);
     // Black Hills country: a rare biome of its own, found now and then in
     // the rolling hills of the green lands (see #hillsZone).
@@ -611,7 +626,7 @@ export class TerrainGenerator {
     // (And never near the Smoky Mountains or the Black Hills: a good
     // kilometre and more of forest and plains between them. A jungle only
     // borders wetlands, lakes, the sea, forests and plains.)
-    const upland = (px, pz) => Math.max(this.#smokyBlob(px, pz), this.#hillsBlob(px, pz));
+    const upland = (px, pz) => Math.max(this.#smokyBlob(px, pz), this.#hillsBlob(px, pz), this.#savannaBlob(px, pz));
     let smoky = upland(x, z);
     for (let k = 0; k < 8 && smoky < 0.05; k++) {
       const a = (k / 8) * Math.PI * 2;

@@ -121,7 +121,11 @@ export function riverData(generator, config, cx, cz) {
       river[k] = smoothstep(seaLevel - 0.6, seaLevel + 0.3, generator.getBaseHeight(x, z));
       // Out over a lake it sits a hair higher, clear of the lake's ripples.
       level[k] = w.level + 0.03 + 0.07 * (1 - river[k]);
-      depth[k] = w.level - generator.getHeight(x, z);
+      const ground = generator.getHeight(x, z);
+      depth[k] = w.level - ground;
+      // Past the channel's edge the sheet dips under the bank, so the shore
+      // is where the land meets the water, never the grid's stepped rim.
+      if (w.inset < 0) level[k] = Math.min(level[k], ground - 0.3);
       const drop = Math.max(0, w.drop);
       flow[k * 4] = w.along;
       flow[k * 4 + 1] = Math.min(1.5, w.across);
