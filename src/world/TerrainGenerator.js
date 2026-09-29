@@ -175,8 +175,13 @@ export class TerrainGenerator {
     // Finer detail on top of the broad climate breaks biomes into smaller
     // patches (the land's shape follows only the broad climate, so it
     // stays smooth).
-    const detail = this.aridityNoise.fbm(x * 0.0007 + 300, z * 0.0007 - 300, 2) * 0.3;
-    const aridity = Math.min(1, Math.max(0, this.#rawAridity(x, z) + detail - 0.55 * smoothstep(-0.12, 0.4, range)));
+    // (Only near a real border between the kinds of country, where it makes
+    // the border wander: deep in green country it never raises a speck of
+    // savanna, nor deep in the dry country a speck of green.)
+    const base = this.#rawAridity(x, z) - 0.55 * smoothstep(-0.12, 0.4, range);
+    const border = smoothstep(0.22, 0.34, base) * (1 - smoothstep(0.8, 0.95, base));
+    const detail = border > 0 ? this.aridityNoise.fbm(x * 0.0005 + 300, z * 0.0005 - 300, 2) * 0.22 * border : 0;
+    const aridity = Math.min(1, Math.max(0, base + detail));
     // Green all round volcanic country (see #volcanoBelt).
     const belt = this.#volcanoBelt(x, z);
     return belt > 0 ? aridity + (Math.min(aridity, 0.12) - aridity) * belt : aridity;
@@ -878,9 +883,10 @@ export class TerrainGenerator {
       // (Tall rolling hills: the tops a little lower than they were, the
       // troughs between them deeper, and more of them, closer together.)
       const n = this.smokyNoise.fbm(qx * 0.00042 + 311, qz * 0.00055 - 97, 2);
-      const swell = smoothstep(-0.6, 0.6, n);
+      // (Rounded tops: the swell never saturates into a plateau.)
+      const swell = smoothstep(-0.6, 1.0, n);
       const rolls = this.hillNoise.fbm(x * 0.0014 + 50, z * 0.0014 - 20, 2) * 28 + this.hillNoise.noise2D(x * 0.0032 - 90, z * 0.0032 + 15) * 8;
-      smoky = smokyLift * (10 + 212 * swell + rolls);
+      smoky = smokyLift * (10 + 212 * swell + rolls * (0.7 + 0.8 * swell));
     }
 
     // Volcanic highlands: a raised, rough plateau of old lava, and cinder
@@ -2297,7 +2303,7 @@ export class TerrainGenerator {
 
   #smokyZone(x, z, range) {
     const blob = this.#blobs('smoky', x, z, 9000, 0.75, 1800, 3000, 0x5a0c, (px, pz) => this.#greenFit(px, pz));
-    return blob > 0 ? blob * this.#broadFit(x, z, range) * (1 - smoothstep(0.45, 0.6, this.#rawAridity(x, z))) : 0;
+    return blob > 0 ? blob * this.#broadFit(x, z, range) * this.#greenBuffer(x, z) : 0;
   }
 
   #smokyZoneRaw(x, z, range, noise = true) {
@@ -2325,13 +2331,22 @@ export class TerrainGenerator {
     return (1 - smoothstep(0.34, 0.44, this.getAridity(x, z, range))) * (1 - smoothstep(0.0, 0.15, range)) * (1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z)));
   }
 
+  /**
+   * Green country for the best part of a kilometre round (0..1): the
+   * Smoky Mountains and the Black Hills end in a band of plains and forest,
+   * never right up against the savanna.
+   */
+  #greenBuffer(x, z) {
+    return 1 - smoothstep(0.3, 0.37, this.#aridRange(x, z, 0));
+  }
+
   #broadFit(x, z, range) {
     return (1 - smoothstep(0.15, 0.4, range)) * (1 - smoothstep(0.3, 0.4, this.#volcanoNoise(x, z)));
   }
 
   #hillsZone(x, z, range) {
     const blob = this.#blobs('hills', x, z, 8000, 1, 1500, 2600, 0xb1ac, (px, pz) => this.#greenFit(px, pz));
-    return blob > 0 ? blob * this.#broadFit(x, z, range) : 0;
+    return blob > 0 ? blob * this.#broadFit(x, z, range) * this.#greenBuffer(x, z) : 0;
   }
 
   #hillsZoneRaw(x, z, range, noise = true) {

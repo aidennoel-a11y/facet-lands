@@ -150,7 +150,7 @@ export const BIOMES = {
     ],
     cliff: 0x77805e, // (steep slopes are scrubby ground, rock only in the steepest)
     cliffSlope: [0.6, 0.38],
-    snowLine: 240,
+    snowLine: 9999, // (never snow-capped: they're not that high, and green to the top)
     snow: 0xf1f4f7,
     grass: 0.6,
     trees: {
