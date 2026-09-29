@@ -46,9 +46,9 @@ export const BIOMES = {
         { type: 'oak', weight: 0.5, minHeight: 5, maxHeight: 70 },
         { type: 'poplar', weight: 0.35, minHeight: 5, maxHeight: 35 },
         { type: 'maple', weight: 0.15, minHeight: 8, maxHeight: 50 },
-        // (Birches take over in birch woods: see `grove`.)
-        { type: 'birch', weight: 0.5, minHeight: 6, maxHeight: 110, grove: true },
-        { type: 'silverBirch', weight: 0.2, minHeight: 6, maxHeight: 90, grove: true },
+        // (Birches mostly out in the parkland: see that biome.)
+        { type: 'birch', weight: 0.15, minHeight: 6, maxHeight: 110 },
+        { type: 'silverBirch', weight: 0.06, minHeight: 6, maxHeight: 90 },
         { type: 'pine', weight: 1.2, minHeight: 20, maxHeight: 150 },
         { type: 'spruce', weight: 0.9, minHeight: 45, maxHeight: 165 },
         { type: 'larch', weight: 0.4, minHeight: 60, maxHeight: 165 },
@@ -314,6 +314,167 @@ export const BIOMES = {
         { type: 'junglePalm', weight: 0.7, minHeight: -99, maxHeight: 999 },
         { type: 'treeFern', weight: 0.6, minHeight: -99, maxHeight: 999 },
         { type: 'mangrove', weight: 0.25, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // Birch and aspen parkland: open, tall, golden-green grassland with
+  // white-trunked groves of birch and aspen scattered over it, between the
+  // plains and the forests.
+  parkland: {
+    id: 'parkland',
+    name: 'Birch & aspen parkland',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xd8c690 },
+      { height: 5, color: 0xd8c690 },
+      { height: 8, color: 0xb4c96a }, // tall pale grass
+      { height: 30, color: 0xa3c060 },
+      { height: 60, color: 0x93b457 },
+      { height: 95, color: 0x8fa35a },
+      { height: 122, color: 0x8e9868 },
+      { height: 148, color: 0x9391a1 },
+      { height: 210, color: 0x838198 },
+    ],
+    cliff: 0x908a9e,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 185,
+    snow: 0xf1f4f7,
+    grass: 1,
+    trees: {
+      density: 0.42,
+      clumped: true,
+      species: [
+        { type: 'birch', weight: 1, minHeight: 4, maxHeight: 140 },
+        { type: 'silverBirch', weight: 0.5, minHeight: 4, maxHeight: 120 },
+        { type: 'aspen', weight: 0.9, minHeight: 4, maxHeight: 150 },
+        { type: 'bush', weight: 0.25, minHeight: 4, maxHeight: 130 },
+        { type: 'raspberryBush', weight: 0.12, minHeight: 4, maxHeight: 110 },
+        { type: 'pine', weight: 0.08, minHeight: 20, maxHeight: 150 },
+      ],
+    },
+  },
+
+  // Mangrove coast (like Florida's): flat, low shores running out into
+  // warm shallows, dark mud and brackish channels, mangroves standing on
+  // their stilt roots out in the water.
+  mangrove: {
+    id: 'mangrove',
+    name: 'Mangrove coast',
+    palette: [
+      { height: -Infinity, color: 0x5f6448 },
+      { height: -3, color: 0x6c6a48 },
+      { height: 1.4, color: 0x6e6446 }, // tidal mud
+      { height: 2.8, color: 0x6f8a44 }, // salt grass
+      { height: 6, color: 0x7a9a4c },
+      { height: 14, color: 0x86ab55 },
+      { height: 40, color: 0x7fa850 },
+      { height: 95, color: 0x7f9a52 },
+    ],
+    cliff: 0x7a7258,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 999,
+    snow: 0xf1f4f7,
+    grass: 0.8,
+    trees: {
+      density: 1.1,
+      clumped: false,
+      species: [
+        { type: 'mangrove', weight: 3, minHeight: -99, maxHeight: 12 },
+        { type: 'junglePalm', weight: 0.35, minHeight: 2, maxHeight: 60 }, // (cabbage palms)
+        { type: 'cypress', weight: 0.3, minHeight: -99, maxHeight: 30 },
+        { type: 'bush', weight: 0.3, minHeight: 2, maxHeight: 60 },
+        { type: 'oak', weight: 0.2, minHeight: 4, maxHeight: 60 }, // (live oaks inland)
+      ],
+    },
+  },
+
+  // Salt flats: the dry beds of old lakes in the heart of the deserts,
+  // dead flat and white, the salt crust cracked into plates.
+  saltFlat: {
+    id: 'saltFlat',
+    name: 'Salt flats',
+    palette: [
+      { height: -Infinity, color: 0xdcd6c8 },
+      { height: 0, color: 0xe9e5da },
+      { height: 60, color: 0xf0ede4 },
+      { height: 120, color: 0xe4ddcc },
+    ],
+    cliff: 0xc08c66, // (the desert's sandstone round about)
+    cliffSlope: [0.7, 0.45],
+    snowLine: 400,
+    snow: 0xf1f4f7,
+    grass: 0,
+    trees: null,
+  },
+
+  // Peat bog: cold, wet moorland on the coasts under the mountains:
+  // heather and cotton grass over deep peat, black pools, a few stunted
+  // pines and birches, the odd dead snag.
+  bog: {
+    id: 'bog',
+    name: 'Peat bog',
+    palette: [
+      { height: -Infinity, color: 0x3c3428 },
+      { height: -2, color: 0x40372a },
+      { height: 1.6, color: 0x4f4231 }, // black peat at the pools
+      { height: 2.8, color: 0x7a6a5e }, // heather
+      { height: 6, color: 0x7f7a52 }, // moss and cotton grass
+      { height: 14, color: 0x857457 },
+      { height: 40, color: 0x7a7a50 },
+      { height: 95, color: 0x80805c },
+      { height: 148, color: 0x9391a1 },
+    ],
+    cliff: 0x77727a,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 185,
+    snow: 0xf1f4f7,
+    grass: 0.7,
+    trees: {
+      density: 0.12,
+      clumped: true,
+      species: [
+        { type: 'pine', weight: 0.8, minHeight: -99, maxHeight: 150 },
+        { type: 'birch', weight: 0.6, minHeight: -99, maxHeight: 120 },
+        { type: 'deadPine', weight: 0.5, minHeight: -99, maxHeight: 150 },
+        { type: 'bush', weight: 0.6, minHeight: -99, maxHeight: 150 },
+        { type: 'blueberryBush', weight: 0.4, minHeight: -99, maxHeight: 150 },
+      ],
+    },
+  },
+
+  // Tundra: the high, enclosed ground in the heart of the ranges, above the
+  // forests: moss, lichen and low shrubs, the odd dwarfed spruce.
+  tundra: {
+    id: 'tundra',
+    name: 'Tundra',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xc9b98a },
+      { height: 5, color: 0xa7a070 },
+      { height: 8, color: 0x8c9460 }, // moss
+      { height: 60, color: 0x8f8f62 },
+      { height: 110, color: 0x9a8c68 }, // lichen, rusty dwarf shrubs
+      { height: 150, color: 0x97917a },
+      { height: 175, color: 0x9391a1 }, // bare rock
+      { height: 220, color: 0x838198 },
+    ],
+    cliff: 0x908a9e,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 190,
+    snow: 0xf1f4f7,
+    grass: 0.55,
+    trees: {
+      density: 0.07,
+      clumped: true,
+      species: [
+        { type: 'spruce', weight: 1, minHeight: -99, maxHeight: 999 },
+        { type: 'larch', weight: 0.6, minHeight: -99, maxHeight: 999 },
+        { type: 'bush', weight: 1.2, minHeight: -99, maxHeight: 999 },
+        { type: 'blueberryBush', weight: 0.8, minHeight: -99, maxHeight: 999 },
+        { type: 'deadPine', weight: 0.2, minHeight: -99, maxHeight: 999 },
       ],
     },
   },

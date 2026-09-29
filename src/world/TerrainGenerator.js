@@ -147,7 +147,7 @@ export class TerrainGenerator {
     this._range = { value: 0, size: 1, large: 0 };
 
     this.biomes = Object.fromEntries(BIOME_IDS.map((id) => [id, prepareBiome(BIOMES[id])]));
-    this._weights = { temperate: 1, savanna: 0, desert: 0, blackHills: 0, smoky: 0, volcanic: 0, wetland: 0, jungle: 0, pine: 0 };
+    this._weights = Object.fromEntries(BIOME_IDS.map((id) => [id, id === 'temperate' ? 1 : 0]));
     this._lastWeights = { x: NaN, z: NaN, range: NaN };
     this._features = { mesa: 0, mesaTop: 0, escarp: 0, hills: 0, erg: 0, canyon: 0, canyonFloor: 0, canyonCut: 0 };
     this._erg = 0; // the last point's dune sea, for its roughness
@@ -176,11 +176,12 @@ export class TerrainGenerator {
 
   /** Where savanna stands on its own, away from any desert (0..1). */
   #savannaBlob(x, z) {
-    return this.#blobs('savanna', x, z, 9000, 0.8, 1800, 3200, 0x5a7a, (px, pz) => {
+    return this.#blobs('savanna', x, z, 7000, 0.45, 1400, 2600, 0x5a7a, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       const a = this.#baseAridity(px, pz, r);
-      // (In the drier parts of the green country, clear of the ranges and of volcanic country.)
-      return a > 0.04 && a < 0.52 && r < 0.25 && this.#volcanoBelt(px, pz) < 0.3 && this.#continentBase(px, pz) - this._contLift > -0.45 ? 1 : 0; // (on dry land)
+      // (Out in the green country, well away from any desert, clear of the
+      // ranges and of volcanic country, on dry land.)
+      return a < 0.48 && r < 0.25 && this.#aridRange(px, pz, 0) < 0.6 && this.#volcanoBelt(px, pz) < 0.3 && this.#continentBase(px, pz) - this._contLift > -0.45 ? 1 : 0;
     });
   }
 
@@ -235,30 +236,14 @@ export class TerrainGenerator {
     // last answer is remembered.
     const m = this._lastWeights;
     if (m.x === x && m.z === z && m.range === range) {
-      out.temperate = m.temperate;
-      out.savanna = m.savanna;
-      out.desert = m.desert;
-      out.blackHills = m.blackHills;
-      out.smoky = m.smoky;
-      out.volcanic = m.volcanic;
-      out.wetland = m.wetland;
-      out.jungle = m.jungle;
-      out.pine = m.pine;
+      for (const id of BIOME_IDS) out[id] = m[id];
       return out;
     }
     this.#biomeWeights(x, z, out, range);
     m.x = x;
     m.z = z;
     m.range = range;
-    m.temperate = out.temperate;
-    m.savanna = out.savanna;
-    m.desert = out.desert;
-    m.blackHills = out.blackHills;
-    m.smoky = out.smoky;
-    m.volcanic = out.volcanic;
-    m.wetland = out.wetland;
-    m.jungle = out.jungle;
-    m.pine = out.pine;
+    for (const id of BIOME_IDS) m[id] = out[id];
     return out;
   }
 
@@ -266,7 +251,7 @@ export class TerrainGenerator {
     range ??= this.#rangeField(x, z).value;
     const a = this.getAridity(x, z, range);
     const temperate = 1 - smoothstep(0.375, 0.575, a); // (broad transitions, not a line on the map)
-    const desert = smoothstep(0.725, 0.925, a); // (a tenth fewer deserts than there were)
+    const desert = smoothstep(0.76, 0.96, a); // (fewer deserts than there were)
     const savanna = Math.max(0, 1 - temperate - desert);
     // Black Hills country: a rare biome of its own, found now and then in
     // the rolling hills of the green lands (see #hillsZone).
@@ -298,17 +283,117 @@ export class TerrainGenerator {
     }
     // Pine forests: in the hill country leading up to the mountain ranges
     // (see #pineZone).
-    const rest = green * (1 - wz) * (1 - jz);
+    // Tundra: the high ground in the heart of a range, mountains all round
+    // it (the range strong for some 400 m every way: see #rangeInner).
+    const tz = green > 0 && range > 0.25 ? smoothstep(0.4, 0.52, this.#rangeInner(x, z)) : 0;
+    const rest = green * (1 - wz) * (1 - jz) * (1 - tz);
     const pz = rest > 0 ? this.#pineZone(x, z, range, a) : 0;
-    out.temperate = rest * (1 - pz);
+    const open = rest * (1 - pz);
+    // Birch and aspen parkland: rounded stretches of the green lowlands
+    // (not up towards the ranges), open grass with groves in it.
+    const pk = open > 0 ? this.#parkland(x, z, range) : 0;
+    out.temperate = open * (1 - pk);
+    out.parkland = open * pk;
+    out.tundra = green * (1 - wz) * (1 - jz) * tz;
     out.pine = rest * pz;
     out.wetland = green * wz * (1 - jz);
     out.jungle = green * jz;
     out.savanna = savanna;
-    out.desert = desert;
+    // Salt flats: the dry beds of old lakes in the heart of the deserts.
+    const sf = desert > 0.5 ? this.#saltFlat(x, z) : 0;
+    out.desert = desert * (1 - sf);
+    out.saltFlat = desert * sf;
     out.blackHills = hills;
     out.smoky = smoky;
     out.volcanic = volcanic;
+    // On the open sea's coasts: mangroves along the warm shores, peat bogs
+    // along the cold ones under the mountains. They take over whatever
+    // was there.
+    const coast = this.#coastBiome(x, z, a, range);
+    const c = coast.mangrove + coast.bog;
+    if (c > 0) for (const id of BIOME_IDS) out[id] *= 1 - c;
+    out.mangrove = coast.mangrove;
+    out.bog = coast.bog;
+    return out;
+  }
+
+  /** Where birch and aspen parkland lies in the green country (0..1). */
+  #parkland(x, z, range) {
+    const low = 1 - smoothstep(0.15, 0.3, smoothstep(0.08, 0.55, range + MOUNTAIN_BIAS - this.#drySuppress(x, z)));
+    if (low <= 0) return 0;
+    return low * this.#blobs('parkland', x, z, 5000, 1, 1300, 2600, 0xb12c, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      const a = this.getAridity(px, pz, r);
+      // (Cool green country, well clear of the ranges, the savanna and the jungles.)
+      return a < 0.34 && r < 0.2 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.35 ? 1 : 0;
+    });
+  }
+
+  /** Where salt flats lie deep in the desert (0..1): dead flat, white. */
+  #saltFlat(x, z) {
+    return this.#blobs('salt', x, z, 7000, 0.7, 700, 1500, 0x5a17, (px, pz) => {
+      // (Only in the driest heart of a desert, clear of ranges.)
+      if (this.#rawAridityAt(px, pz) < 1.02) return 0;
+      return this.#rangeField(px, pz, {}).value < 0.05 && this.#aridRange(px, pz, 1) > 0.9 ? 1 : 0;
+    });
+  }
+
+  /**
+   * How much the open sea's shore is near (x, z) (0..1): on the land within
+   * half a kilometre or so of it, and the shallows just off it. On a 64 m
+   * grid (remembered) and blended between its points.
+   */
+  #seaCoast(x, z) {
+    const G = 64;
+    const gx = Math.floor(x / G), gz = Math.floor(z / G);
+    const fx = x / G - gx, fz = z / G - gz;
+    const cache = this._seaCoast ?? (this._seaCoast = new Map());
+    const basin = (px, pz) => this.#seaBasin(px, pz, this.#rangeField(px, pz, {}), this.#rawAridityAt(px, pz));
+    const at = (i, j) => {
+      const key = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.get(key);
+      if (v === undefined) {
+        const cx = i * G, cz = j * G;
+        const here = basin(cx, cz);
+        v = 0;
+        if (here < 0.95) {
+          let near = here;
+          for (let k = 0; k < 8 && near < 0.5; k++) {
+            const a = (k / 8) * Math.PI * 2;
+            near = Math.max(near, basin(cx + Math.cos(a) * 600, cz + Math.sin(a) * 600));
+          }
+          v = smoothstep(0.15, 0.5, near) * (1 - smoothstep(0.75, 0.95, here));
+          if (v > 0) v *= smoothstep(0.3, 0.6, this.#openSea(cx, cz));
+        }
+        if (cache.size > 60000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
+    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return a + (b - a) * fz;
+  }
+
+  /**
+   * Mangrove coast and peat bog along stretches of the open sea's shores
+   * ({ mangrove, bog }, 0..1), given the climate there (`a`) and the range
+   * field: mangroves on the warm, humid coasts (Florida's), bogs on the
+   * cold, wet ones below the mountains.
+   */
+  #coastBiome(x, z, a, range) {
+    const out = this._coastOut ?? (this._coastOut = { mangrove: 0, bog: 0 });
+    out.mangrove = out.bog = 0;
+    let m = smoothstep(0.16, 0.24, a) * (1 - smoothstep(0.68, 0.76, a)) * (1 - smoothstep(-0.05, 0.08, range));
+    if (m > 0) m *= smoothstep(-0.2, 0.0, this.coastNoise.fbm(x * 0.00028 + 310, z * 0.00028 - 170, 2));
+    let b = (1 - smoothstep(0.26, 0.34, a)) * smoothstep(-0.4, -0.2, range);
+    if (b > 0) b *= smoothstep(-0.05, 0.15, this.coastNoise.fbm(x * 0.00028 - 520, z * 0.00028 + 240, 2));
+    if (m <= 0 && b <= 0) return out;
+    if (this.#volcanoBelt(x, z) > 0.3) return out;
+    const coast = this.#seaCoast(x, z);
+    if (coast <= 0) return out;
+    out.mangrove = m * coast;
+    out.bog = b * coast * (1 - out.mangrove);
     return out;
   }
 
@@ -1053,9 +1138,29 @@ export class TerrainGenerator {
       const target = seaLevel + this.#marsh(x, z);
       if (height > target) height += (target - height) * w.wetland;
     }
+    // Salt flats: dead flat, a metre or so below the desert round them.
+    if (w.saltFlat > 0) {
+      const flat = 14 + (continent - contLift) * 16 + mountains - sea - 1.2;
+      height += (flat - height) * smoothstep(0.05, 0.6, w.saltFlat / (w.saltFlat + w.desert));
+    }
+    // Mangrove coasts: the land eases down to a maze of mud banks and
+    // channels just above the tide, and the sea off them shoals into warm
+    // shallows a metre or so deep, where the mangroves stand.
+    if (w.mangrove > 0) {
+      const target = seaLevel - 0.25 + 0.65 * this.#marsh(x, z);
+      if (height > target) height += (target - height) * w.mangrove;
+      else if (height < target - 1.4) height += (target - 1.4 - height) * w.mangrove * (1 - smoothstep(seaLevel - 14, seaLevel - 22, height));
+    }
+    // Peat bogs: low, soggy moorland on the coast, hummocks of heather and
+    // black pools, a few metres above the sea.
+    if (w.bog > 0) {
+      const target = seaLevel + 2.4 + 1.3 * this.#marsh(x + 900, z - 700);
+      if (height > target) height += (target - height) * w.bog;
+    }
+    const soft = w.wetland + w.mangrove + w.bog;
     // Islands, here and there out in a lake or the sea: a wooded hump of
     // land with a beach round it (shaped by the lake shore below).
-    if (height < seaLevel - 0.5 && !this._probing && w.wetland < 0.3) {
+    if (height < seaLevel - 0.5 && !this._probing && soft < 0.3) {
       const lift = this.#islandHeight(x, z);
       if (lift > height) height = lift;
     }
@@ -1065,7 +1170,7 @@ export class TerrainGenerator {
     // (Only a great stretch of water is the open sea: see #openSea.)
     const ocean = u > -40 && u < 60 ? smoothstep(-0.02, -0.25, continent) * this.#openSea(x, z) : 0;
     if (u > -4.5 && u < 7) {
-      const lake = (1 - ocean) * (1 - w.wetland);
+      const lake = (1 - ocean) * Math.max(0, 1 - soft);
       if (lake > 0) height += (this.#lakeShore(u, x, z) - u) * lake;
     }
     // Sea cliffs along stretches of the open coast.
@@ -1082,7 +1187,7 @@ export class TerrainGenerator {
     // sea cliffs): the land eases up out of the sea more gently, so the
     // sand runs a long way back before the grass begins.
     if (ocean > 0 && height > seaLevel && height < seaLevel + 8) {
-      const beachy = smoothstep(-0.1, 0.25, this.coastNoise.noise2D(x * 0.0015 + 55, z * 0.0015 - 21)) * smoothstep(0.2, 0.6, ocean) * (1 - this.#cliffZone(x, z, w));
+      const beachy = smoothstep(-0.1, 0.25, this.coastNoise.noise2D(x * 0.0015 + 55, z * 0.0015 - 21)) * smoothstep(0.2, 0.6, ocean) * (1 - this.#cliffZone(x, z, w)) * Math.max(0, 1 - soft);
       if (beachy > 0) {
         const t = (height - seaLevel) / 8;
         height += (seaLevel + 8 * Math.pow(t, 2.6) - height) * beachy;
@@ -1181,7 +1286,7 @@ export class TerrainGenerator {
 
   /** Stretches of the open coast that rise in cliffs (0..1); the rest are coves and beaches. */
   #cliffZone(x, z, w) {
-    return smoothstep(0.05, 0.3, this.coastNoise.fbm(x * 0.0007 + 11, z * 0.0007 - 3, 2)) * (1 - w.wetland) * (1 - 0.7 * w.desert);
+    return smoothstep(0.05, 0.3, this.coastNoise.fbm(x * 0.0007 + 11, z * 0.0007 - 3, 2)) * (1 - w.wetland - w.mangrove - w.bog) * (1 - 0.7 * w.desert);
   }
 
   /**
@@ -2058,7 +2163,7 @@ export class TerrainGenerator {
    */
   getSeasonality(x, z) {
     const w = this.getBiomeWeights(x, z, {});
-    return w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna;
+    return w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + w.parkland + w.bog + w.tundra;
   }
 
   /** How much (x, z) is a cliffed stretch of the open coast (0..1). */
@@ -2311,7 +2416,11 @@ export class TerrainGenerator {
     const ocean = this.getOceanness(x, z) > 0.5;
     const fade = 1 - smoothstep(sea + 3.5, sea + 5.5, height);
     const p = this.detailNoise.noise2D(x * 0.05, z * 0.05);
-    if (ocean) return p > 0.55 && height > sea - 0.5 ? { kind: 'rock', fade: fade * 0.6, ocean } : null;
+    if (ocean) {
+      const w = this.getBiomeWeights(x, z, {});
+      if (w.mangrove + w.bog > 0.5) return height < sea + 1.2 ? { kind: 'mud', fade, ocean } : null; // (soft, muddy shores)
+      return p > 0.55 && height > sea - 0.5 ? { kind: 'rock', fade: fade * 0.6, ocean } : null;
+    }
     if (height < sea + 0.7) return { kind: 'mud', fade, ocean };
     // (Wetland shores are soft: mud, grass and dirt, no rock.)
     if (p > 0.38 && this.getBiomeWeights(x, z, {}).wetland < 0.3) return { kind: 'rock', fade, ocean };
@@ -2404,7 +2513,11 @@ export class TerrainGenerator {
 
   #smokyZone(x, z, range) {
     const blob = this.#smokyBlob(x, z);
-    return blob > 0 ? blob * this.#broadFit(x, z, range, 0.12) * this.#greenBuffer(x, z, 0.04) : 0;
+    if (blob <= 0) return 0;
+    // (Never up against a range's snowy peaks: a band of lower country,
+    // several hundred metres at least, between them.)
+    const clear = 1 - smoothstep(0.35, 0.55, this.#mountainsAround(x, z));
+    return clear > 0 ? blob * clear * this.#broadFit(x, z, range, 0.12) * this.#greenBuffer(x, z, 0.04) : 0;
   }
 
   /** Where the Black Hills' blobs lie (0..1), before they're fitted to the land. */
@@ -2414,7 +2527,7 @@ export class TerrainGenerator {
 
   /** Where the Smoky Mountains' blobs lie (0..1), before they're fitted to the land. */
   #smokyBlob(x, z) {
-    return this.#blobs('smoky', x, z, 5000, 1, 3000, 4800, 0x5a0c, (px, pz) => this.#greenFit(px, pz, 0.04, 0.12));
+    return this.#blobs('smoky', x, z, 4000, 1, 3000, 4800, 0x5a0c, (px, pz) => this.#greenFit(px, pz, 0.04, 0.12));
   }
 
   #smokyZoneRaw(x, z, range, noise = true) {
@@ -2700,7 +2813,7 @@ export class TerrainGenerator {
     const beds = smoothstep(0.0, 0.25, this.coastNoise.fbm(x * 0.004 - 70, z * 0.004 + 35, 2));
     if (beds <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
-    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + w.volcanic);
+    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.wetland + w.blackHills + w.smoky + w.volcanic + w.parkland + w.bog + w.tundra);
     if (cool <= 0) return 0;
     const ocean = smoothstep(0.4, 0.7, this.getOceanness(x, z));
     const depth = smoothstep(sea - 2.5, sea - 4, ground) * (1 - smoothstep(sea - 13, sea - 16, ground));
@@ -2806,11 +2919,16 @@ export class TerrainGenerator {
       if (!quick && height < sea + 1.5 && this.#poolsNear(x, z).some((p) => Math.hypot(x - p.x, z - p.z) < p.r * 1.5)) return 'Tide pools';
       return 'Sea cliffs';
     }
+    if (w.mangrove > 0.5) return 'Mangrove coast';
+    if (w.bog > 0.5) return 'Peat bog';
     if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return w.volcanic > 0.5 ? 'Black sand beach' : 'Beach';
     if (f.canyon > 0.5) return f.canyonFloor > 0.5 ? 'Canyon floor' : 'Canyon';
     const mountains = this.getMountainness(x, z);
+    // (Land the Smoky Mountains lift is theirs, never a range's snowy peaks.)
+    if (mountains > 0.45 && w.smoky > 0.2 && this.#smokyLift(x, z) > 0.5) return 'Smoky Mountains';
     if (mountains > 0.45) {
       if (height > 181) return 'Snowy peaks';
+      if (w.tundra > 0.5 && height + this.getColorJitter(x, z) < 165) return 'Tundra';
       // Mountains are bare rock: above the trees, or sheer. Wooded slopes
       // lower down are the foothills.
       const steep = Math.abs(heightAt(x + 3, z) - heightAt(x - 3, z)) / 6 + Math.abs(heightAt(x, z + 3) - heightAt(x, z - 3)) / 6;
@@ -2839,7 +2957,10 @@ export class TerrainGenerator {
     if (top === 'desert') return f.erg > 0.5 ? 'Dune sea' : f.mesa > 0.28 ? 'Mesas' : 'Desert';
     if (top === 'savanna') return f.mesa > 0.28 ? 'Mesas' : 'Savanna';
     if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
-    if (this.getForestDensity(x, z) > 0.55) return this.getGrove(x, z) > 0.5 && height < 110 ? 'Birch forest' : 'Forest';
+    if (top === 'parkland') return 'Birch & aspen parkland';
+    if (top === 'saltFlat') return 'Salt flats';
+    if (top === 'tundra') return 'Tundra';
+    if (this.getForestDensity(x, z) > 0.55) return 'Forest';
     if (smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Rolling hills';
     return this.getMeadow(x, z) > 0.5 ? 'Wildflower meadow' : 'Plains';
   }
@@ -2851,7 +2972,29 @@ export class TerrainGenerator {
     const sea = this.rivers.seaLevel;
     const ground = height - jitter; // `height` has the colour jitter added
     height = Math.max(height, 8.5 * smoothstep(sea + 1.5, sea + 3.5, ground));
+    // (Where the land rises into the Smoky Mountains, it's coloured as
+    // they are, green to the tops: no bare rock or snow on their flanks.)
+    if (w.smoky > 0.01 && w.smoky < 0.99 && height > 100) {
+      const lift = this.#smokyLift(x, z);
+      if (lift > 0) {
+        let moved = 0;
+        for (const id of BIOME_IDS) {
+          if (id === 'smoky') continue;
+          moved += w[id] * lift;
+          w[id] *= 1 - lift;
+        }
+        w.smoky += moved;
+      }
+    }
     blendedFaceColor(this.biomes, w, height, upness, out);
+    // Salt flats: the white crust cracked into plates, each a little
+    // different, with darker seams between them.
+    if (w.saltFlat > 0.05 && upness > 0.9) {
+      const qx = x / 7 + this.detailNoise.noise2D(x * 0.05, z * 0.05) * 0.6, qz = z / 7 + this.detailNoise.noise2D(x * 0.05 + 30, z * 0.05 - 30) * 0.6;
+      const fx = qx - Math.floor(qx), fz = qz - Math.floor(qz);
+      const seam = Math.min(fx, 1 - fx, fz, 1 - fz) < 0.09 ? 0.86 : 0.96 + 0.07 * hash2(Math.floor(qx), Math.floor(qz), this.seed ^ 0x5a17);
+      out.multiplyScalar(1 + (seam - 1) * smoothstep(0.05, 0.5, w.saltFlat));
+    }
     // Ice up in the snow: the steep faces are icy blue-grey rock, and here
     // and there the snow gives way to blue glacier ice.
     if (height > 170 && w.temperate + w.pine + w.savanna > 0.5) {
@@ -2904,7 +3047,7 @@ export class TerrainGenerator {
     // Dune seas: warm golden sand all over.
     const f = w.desert + w.savanna > 0.2 ? this.getFeatures(x, z) : null;
     if (f && f.erg > 0) {
-      out.lerp(DUNE, 0.85 * f.erg);
+      out.lerp(DUNE, 0.85 * f.erg * (1 - smoothstep(0.05, 0.5, w.saltFlat)));
       const oasis = this.oasisAt(x, z);
       if (oasis > 0) out.lerp(OASIS, 0.9 * oasis);
     }
