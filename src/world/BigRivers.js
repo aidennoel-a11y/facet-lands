@@ -1,0 +1,445 @@
+import { SimplexNoise } from '../noise/SimplexNoise.js';
+import { hash2, mulberry32 } from '../noise/random.js';
+
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+/** The lower of a and b, rounded off over `k` where they meet. */
+function smin(a, b, k) {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - h * h * k * 0.25;
+}
+
+const REGION = 12000; // at most one river rises in each region this size
+const SOURCE = 0.25; // it rises within this fraction of the region's size from its middle
+const CHANCE = 0.7; // how many regions have one
+const STEP = 48; // metres between a river's points
+const MAX_STEPS = 170; // at most ~8 km long, so a river (and its valley) never reaches past the regions next to its own
+const MIN_LENGTH = 2600;
+const CELL = 256; // spatial index cell (m)
+const VALLEY = 650; // how far out past its flood plain a river's valley reaches (m)
+const JOIN = 260; // a river coming this close to a bigger one runs into it
+const GRID = 64; // spacing of the broad land's remembered grid (m)
+
+/**
+ * Rivers: great slow rivers, some forty to over a hundred metres across,
+ * ten times a creek. Few of them (at most one to a 12 km region), each
+ * rising in the hill country below the ranges and winding down the
+ * broadest, lowest ground it can find, the way real rivers keep to the
+ * floors of the great valleys, until it reaches a lake or the sea. A river
+ * that comes near another joins it; creeks and mountain streams run into
+ * them (see Rivers).
+ *
+ * They're traced over the broad lie of the land (TerrainGenerator.
+ * broadHeight: the continent and the ranges, without the hills), looking a
+ * few hundred metres ahead for the lowest way on, so they follow the
+ * valleys; then the land is carved to match: a deep channel, low banks, a
+ * broad flat flood plain and the valley's sides curving up to meet the
+ * land round about. Its water only ever falls, so where the land rises
+ * across its course it cuts down through it.
+ *
+ * Deterministic region by region: a river's course depends only on its
+ * own region and, where it joins another, on rivers of lower rank near it.
+ */
+export class BigRivers {
+  constructor(generator, { seaLevel }) {
+    this.generator = generator;
+    this.seaLevel = seaLevel;
+    this.seed = generator.seed ^ 0x1b873593;
+    this.wiggle = new SimplexNoise(this.seed);
+    this.raws = new Map(); // region -> raw course (or null)
+    this.finals = new Map(); // region -> finished river (or null)
+    this.covered = new Set(); // regions whose rivers are all in the index
+    this.cells = new Map(); // index cell -> segments
+    this.list = [];
+    this.broad = new Map();
+    this._m = {};
+    this._lastX = NaN;
+    this._lastZ = NaN;
+    this.lastEdge = Infinity; // metres from the nearest river's channel, as of the last carve()
+  }
+
+  static #key(i, j) {
+    return (i + 32768) * 65536 + (j + 32768);
+  }
+
+  #rank(i, j) {
+    return hash2(i, j, this.seed ^ 0x5bd1e995);
+  }
+
+  /** The broad land, from a remembered grid, blended. */
+  #land(x, z) {
+    const gx = Math.floor(x / GRID), gz = Math.floor(z / GRID);
+    const fx = x / GRID - gx, fz = z / GRID - gz;
+    const at = (i, j) => {
+      const k = BigRivers.#key(i, j);
+      let v = this.broad.get(k);
+      if (v === undefined) {
+        v = this.generator.broadHeight(i * GRID, j * GRID);
+        if (this.broad.size > 200000) this.broad.clear();
+        this.broad.set(k, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
+    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return a + (b - a) * fz;
+  }
+
+  /** The course a river of region (i, j) would take on its own (or null). */
+  #raw(i, j) {
+    const k = BigRivers.#key(i, j);
+    if (this.raws.has(k)) return this.raws.get(k);
+    this.raws.set(k, null);
+    const g = this.generator;
+    const rand = mulberry32(hash2(i, j, this.seed) * 4294967296);
+    if (rand() > CHANCE) return null;
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const x = (i + 0.5 + (rand() - 0.5) * 2 * SOURCE) * REGION;
+      const z = (j + 0.5 + (rand() - 0.5) * 2 * SOURCE) * REGION;
+      // It rises in the hill country and foothills (not up in a range,
+      // nor in the desert or a marsh).
+      const b = this.#land(x, z);
+      if (b < 30 || b > 190) continue;
+      const m = g.getMountainness(x, z);
+      if (m < 0.05 || m > 0.7) continue;
+      const w = g.getBiomeWeights(x, z, {});
+      if (w.desert > 0.25 || w.wetland > 0.3) continue;
+      const course = this.#trace(x, z, rand);
+      if (course) {
+        this.raws.set(k, course);
+        return course;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Follows the broad land down from (x, z): at each step it looks a few
+   * hundred metres ahead in a fan of directions and takes the lowest way
+   * on (never turning sharply), until the real land drops under the water
+   * of a lake or the sea. Returns its points, or null.
+   */
+  #trace(x, z, rand) {
+    const g = this.generator;
+    const points = [{ x, z }];
+    let dir = null;
+    let px = x, pz = z;
+    const phase = rand() * 100;
+    for (let step = 0; step < MAX_STEPS; step++) {
+      let best = null, bestScore = Infinity;
+      const tries = dir ? 9 : 16;
+      const base = dir ? Math.atan2(dir[1], dir[0]) : 0;
+      // (Rivers run on away from where they rose, never round and back.)
+      const ox = px - x, oz = pz - z, od = Math.hypot(ox, oz);
+      const away = od > 200 ? [ox / od, oz / od] : [0, 0];
+      for (let t = 0; t < tries; t++) {
+        const turn = dir ? (t - (tries - 1) / 2) * (Math.PI / 20) : (t / tries) * Math.PI * 2;
+        const a = base + turn;
+        const ux = Math.cos(a), uz = Math.sin(a);
+        const score = this.#land(px + ux * 120, pz + uz * 120) * 0.5 + this.#land(px + ux * 280, pz + uz * 280) * 0.35 + this.#land(px + ux * 520, pz + uz * 520) * 0.15 + Math.abs(turn) * 6 - (ux * away[0] + uz * away[1]) * 14;
+        if (score < bestScore) {
+          bestScore = score;
+          best = [ux, uz];
+        }
+      }
+      // A slow meander.
+      const a = Math.atan2(best[1], best[0]) + this.wiggle.noise2D(px * 0.0012 + phase, pz * 0.0012) * 0.35;
+      dir = [Math.cos(a), Math.sin(a)];
+      px += dir[0] * STEP;
+      pz += dir[1] * STEP;
+      // Round in a loop: it's stuck.
+      for (let k = 0; k < points.length - 8; k++) if (Math.hypot(points[k].x - px, points[k].z - pz) < 180) return null;
+      points.push({ x: px, z: pz });
+      if (g.landHeight(px, pz) < this.seaLevel - 0.8) {
+        // Into a lake or the sea: on a little way, so its mouth opens out.
+        for (let k = 1; k <= 3; k++) points.push({ x: px + dir[0] * STEP * k, z: pz + dir[1] * STEP * k });
+        return points.length * STEP >= MIN_LENGTH ? points : null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The river of region (i, j) as it finally runs (or null): its raw
+   * course, cut short where it meets a river of lower rank (it runs into
+   * that one), with its water levels and widths.
+   */
+  #final(i, j) {
+    const k = BigRivers.#key(i, j);
+    if (this.finals.has(k)) return this.finals.get(k);
+    this.finals.set(k, null);
+    const raw = this.#raw(i, j);
+    if (!raw) return null;
+    const rank = this.#rank(i, j);
+    let cut = raw.length, into = null;
+    for (let dj = -2; dj <= 2; dj++) {
+      for (let di = -2; di <= 2; di++) {
+        if (!di && !dj) continue;
+        if (this.#rank(i + di, j + dj) >= rank) continue;
+        const other = this.#raw(i + di, j + dj);
+        if (!other) continue;
+        // (Quick: is it anywhere near?)
+        let near = false;
+        for (let a = 0; a < cut && !near; a += 6) for (let b = 0; b < other.length; b += 6) if (Math.hypot(raw[a].x - other[b].x, raw[a].z - other[b].z) < JOIN + 600) { near = true; break; }
+        if (!near) continue;
+        const river = this.#final(i + di, j + dj);
+        if (!river) continue;
+        const P = river.points;
+        for (let a = 1; a < cut; a++) {
+          for (let b = 0; b < P.length; b++) {
+            if (Math.hypot(raw[a].x - P[b].x, raw[a].z - P[b].z) < JOIN + P[b].width / 2) {
+              cut = a;
+              into = { river, b };
+              break;
+            }
+          }
+        }
+      }
+    }
+    let points = raw.slice(0, cut).map((p) => ({ x: p.x, z: p.z, level: 0, width: 0 }));
+    if (into) {
+      // It runs on into the middle of the one it joins.
+      const q = into.river.points[into.b];
+      points.push({ x: q.x, z: q.z, level: 0, width: 0 });
+    }
+    if (points.length * STEP < MIN_LENGTH * (into ? 0.6 : 1)) return null;
+    this.#settle(points, into ? 1 : 0);
+    // Its water: a little below the real land, and only ever falling (so
+    // where the land rises across its course, it cuts down through it).
+    const g = this.generator;
+    let level = Infinity;
+    for (const [k, p] of points.entries()) {
+      // (Shallow at its spring, cutting deeper as it grows.)
+      level = Math.min(level - 0.01, p.ground - 0.8 - 1.7 * smoothstep(0, 22, k));
+      p.level = Math.max(this.seaLevel + 0.03, level);
+    }
+    if (into) {
+      // (Never below the water it runs into.)
+      const L = into.river.points[into.b].level;
+      for (const p of points) p.level = Math.max(p.level, L);
+    }
+    // Broadening downstream, from a stream at its spring to about 40 m
+    // within the first kilometre, and on to 120.
+    const n = points.length;
+    points.forEach((p, k) => {
+      p.width = 6 + (Math.min(120, 40 + k * STEP * 0.011) - 6) * smoothstep(0, 22, k);
+    });
+    if (into) points[n - 1].width = Math.max(points[n - 2].width, into.river.points[into.b].width * 0.6);
+    const river = { points, pond: null, tarn: null, kind: 'river', big: true, region: [i, j] };
+    this.finals.set(k, river);
+    return river;
+  }
+
+  /**
+   * Lets a course settle into the real land: each point moves across its
+   * course onto the lowest ground within a few hundred metres (the floor
+   * of the valley it's running down), smoothly, so the river keeps to the
+   * valley floors rather than running over the hills between them. Leaves
+   * the last `keep` points where they are. Sets each point's `ground`.
+   */
+  #settle(points, keep) {
+    const g = this.generator;
+    const n = points.length;
+    const shift = new Float32Array(n);
+    const normals = points.map((p, k) => {
+      const a = points[Math.max(0, k - 1)], b = points[Math.min(n - 1, k + 1)];
+      const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+      return [-dz / l, dx / l];
+    });
+    const low = (p, [nx, nz], o) => {
+      // (The land a little way either side too, so a hollow is a valley, not a pit.)
+      let h = 0;
+      for (const e of [-40, 0, 40]) h += g.landHeight(p.x + nx * (o + e), p.z + nz * (o + e));
+      return h / 3;
+    };
+    for (let k = 1; k < n - keep; k++) {
+      let best = 0, bestH = Infinity;
+      for (let o = -320; o <= 320; o += 80) {
+        const h = low(points[k], normals[k], o) + Math.abs(o) * 0.01;
+        if (h < bestH) {
+          bestH = h;
+          best = o;
+        }
+      }
+      shift[k] = best;
+    }
+    // Smoothed along the course, easing in from its source.
+    const smooth = new Float32Array(n);
+    for (let k = 0; k < n; k++) {
+      let sum = 0, w = 0;
+      for (let q = -3; q <= 3; q++) {
+        const i = k + q;
+        if (i < 0 || i >= n) continue;
+        const f = 4 - Math.abs(q);
+        sum += shift[i] * f;
+        w += f;
+      }
+      smooth[k] = k >= n - keep ? 0 : (sum / w) * Math.min(1, k / 4);
+    }
+    for (let k = 0; k < n; k++) {
+      const p = points[k];
+      p.x += normals[k][0] * smooth[k];
+      p.z += normals[k][1] * smooth[k];
+      const [nx, nz] = normals[k];
+      p.ground = Math.min(g.landHeight(p.x, p.z), g.landHeight(p.x + nx * 25, p.z + nz * 25), g.landHeight(p.x - nx * 25, p.z - nz * 25));
+    }
+  }
+
+  /** Makes sure every river that can shape (x, z) is in the index. */
+  #ensure(x, z) {
+    const ri = Math.floor(x / REGION), rj = Math.floor(z / REGION);
+    const k = BigRivers.#key(ri, rj);
+    if (this.covered.has(k)) return;
+    this.covered.add(k);
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const river = this.#final(ri + di, rj + dj);
+        if (!river || river.indexed) continue;
+        river.indexed = true;
+        this.#index(river);
+      }
+    }
+  }
+
+  #index(river) {
+    const P = river.points;
+    let along = 0;
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (let i = 0; i < P.length - 1; i++) {
+      const a = P[i], b = P[i + 1];
+      const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, along };
+      along += Math.hypot(b.x - a.x, b.z - a.z);
+      const r = Math.max(a.width, b.width) / 2 + BigRivers.plain(Math.max(a.width, b.width) / 2) + VALLEY;
+      for (let cz = Math.floor((Math.min(a.z, b.z) - r) / CELL); cz <= Math.floor((Math.max(a.z, b.z) + r) / CELL); cz++) {
+        for (let cx = Math.floor((Math.min(a.x, b.x) - r) / CELL); cx <= Math.floor((Math.max(a.x, b.x) + r) / CELL); cx++) {
+          const k = BigRivers.#key(cx, cz);
+          let list = this.cells.get(k);
+          if (!list) this.cells.set(k, (list = []));
+          list.push(seg);
+        }
+      }
+      minX = Math.min(minX, a.x); maxX = Math.max(maxX, a.x);
+      minZ = Math.min(minZ, a.z); maxZ = Math.max(maxZ, a.z);
+    }
+    const m = 80;
+    river.bounds = { minX: minX - m, maxX: maxX + m, minZ: minZ - m, maxZ: maxZ + m };
+    this.list.push(river);
+  }
+
+  /** How wide a river's flood plain is (m, past its bank), given its half-width. */
+  static plain(half) {
+    return 40 + half * 1.6;
+  }
+
+  static #measure(seg, x, z, out) {
+    const dx = seg.bx - seg.ax, dz = seg.bz - seg.az;
+    const len2 = dx * dx + dz * dz || 1;
+    const t = Math.max(0, Math.min(1, ((x - seg.ax) * dx + (z - seg.az) * dz) / len2));
+    out.d = Math.hypot(seg.ax + dx * t - x, seg.az + dz * t - z);
+    out.end = t <= 0 || t >= 1;
+    out.level = seg.la + (seg.lb - seg.la) * t;
+    out.water = (seg.wa + (seg.wb - seg.wa) * t) / 2;
+    out.half = out.water;
+    const run = Math.sqrt(len2);
+    out.fx = dx / run;
+    out.fz = dz / run;
+    out.drop = (seg.la - seg.lb) / run;
+    out.along = seg.along + t * run;
+    return out;
+  }
+
+  #near(x, z) {
+    this.#ensure(x, z);
+    return this.cells.get(BigRivers.#key(Math.floor(x / CELL), Math.floor(z / CELL)));
+  }
+
+  /**
+   * The land at (x, z) with the rivers' valleys carved into it, given the
+   * land as it would be (`h`).
+   */
+  carve(x, z, h) {
+    this.lastEdge = Infinity;
+    this._lastX = x;
+    this._lastZ = z;
+    const near = this.#near(x, z);
+    if (!near) return h;
+    const m = this._m;
+    let low = Infinity, edge = Infinity, levee = -Infinity, leveeWeight = 0;
+    for (const seg of near) {
+      BigRivers.#measure(seg, x, z, m);
+      const { d, level: L, half } = m;
+      const u = d - half;
+      const fp = BigRivers.plain(half);
+      if (u > fp + VALLEY) continue;
+      edge = Math.min(edge, u);
+      let t;
+      if (u < 0) {
+        // The channel: deepest in the middle.
+        const s = d / half;
+        t = L - 0.8 - (1.5 + half * 0.05) * (1 - s * s);
+      } else if (u < 8) {
+        t = L - 0.4 + u * 0.25; // the bank
+      } else if (u < fp) {
+        t = L + 1.6 + (u - 8) * 0.012; // the flood plain
+      } else {
+        // The valley's sides, steepening out to where they meet the land.
+        const s = u - fp;
+        t = L + 1.6 + (fp - 8) * 0.012 + s * 0.05 + (s / VALLEY) ** 2 * 170;
+      }
+      if (t < low) low = t;
+      // (Where the land beside it lies lower than the water, a low natural
+      // levee holds the river in.)
+      if (u >= 0 && u < fp && L + 0.7 > levee) {
+        levee = L + 0.7;
+        leveeWeight = 1 - smoothstep(fp * 0.6, fp, u);
+      }
+    }
+    if (low === Infinity) return h;
+    this.lastEdge = edge;
+    if (edge < 0) return low; // in the channel
+    let out = smin(h, low, edge < 20 ? 1 : 10);
+    if (levee > out) out += (levee - out) * leveeWeight;
+    return out;
+  }
+
+  /** Metres from the nearest river's channel edge (Infinity if none near). */
+  edgeAt(x, z) {
+    if (x === this._lastX && z === this._lastZ) return this.lastEdge;
+    const near = this.#near(x, z);
+    if (!near) return Infinity;
+    const m = this._m;
+    let edge = Infinity;
+    for (const seg of near) edge = Math.min(edge, BigRivers.#measure(seg, x, z, m).d - m.half);
+    return edge;
+  }
+
+  /**
+   * The river water at (x, z), within `margin` metres of a channel:
+   * { d, level, water, half, fx, fz, drop, along, across, inset } (the
+   * lowest water where two channels overlap), or null.
+   */
+  waterAt(x, z, margin = 0) {
+    const near = this.#near(x, z);
+    if (!near) return null;
+    const m = this._m;
+    let best = null;
+    for (const seg of near) {
+      BigRivers.#measure(seg, x, z, m);
+      if (m.d > m.half + margin) continue;
+      const inside = m.d < m.half;
+      if (!best || (inside && (!best.inside || m.level < best.level)) || (!best.inside && !inside && m.d - m.half < best.d - best.half)) {
+        best = { d: m.d, level: m.level, water: m.water, half: m.half, fx: m.fx, fz: m.fz, drop: m.drop, along: m.along, across: m.d / m.half, inset: m.half - m.d, inside };
+      }
+    }
+    return best;
+  }
+
+  /** Rivers passing near a box (for drawing their water). */
+  inBox(minX, minZ, maxX, maxZ) {
+    this.#ensure((minX + maxX) / 2, (minZ + maxZ) / 2);
+    return this.list.filter(({ bounds: b }) => b.maxX > minX && b.minX < maxX && b.maxZ > minZ && b.minZ < maxZ);
+  }
+}

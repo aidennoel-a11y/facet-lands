@@ -4,7 +4,7 @@ import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
-import { createGrassLayer } from './world/layers/GrassLayer.js';
+import { createGrassLayer, grassClearings } from './world/layers/GrassLayer.js';
 import { caveNightVision, createCaveLayer } from './world/layers/CaveLayer.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
@@ -933,10 +933,26 @@ function marshMist(dt) {
   const foggy = roll < 0.6 ? 0.45 + roll * 0.6 : 0;
   const dawn = smooth(4.3, 5.8, h) * (1 - smooth(8, 9.8, h));
   const low = 1 - smooth(20, 90, camera.position.y);
-  const target = mistState.marsh * low * dawn;
+  const target = 0.25 * mistState.marsh * low * dawn; // (a light veil: a quarter of what it was)
   mistState.value += (target - mistState.value) * Math.min(1, dt / 2);
   valleyMist(dt, foggy * dawn * (1 - 0.8 * mistState.dry));
   return mistState.value < 0.002 ? 0 : mistState.value;
+}
+
+// Grass never grows up through what you've built: the spots under the
+// things nearest you are cleared (see GrassLayer).
+const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, grindstone: 0.7, dryingRack: 0.8, tanningRack: 0.9, plot: 1.3, snare: 0.4, stake: 0.3 };
+function clearGrass() {
+  const p = camera.position;
+  const near = [];
+  for (const s of game.structures.list) {
+    const r = CLEARED[s.type];
+    if (!r) continue;
+    const d = Math.hypot(s.x - p.x, s.z - p.z);
+    if (d < 130) near.push([d, s, r]);
+  }
+  near.sort((a, b) => a[0] - b[0]);
+  grassClearings.value.forEach((v, k) => (near[k] ? v.set(near[k][1].x, near[k][1].z, near[k][2], 0) : v.set(0, 0, 0, 0)));
 }
 
 // Mist in the valleys on a still morning: a layer lying over the low
@@ -964,10 +980,10 @@ function valleyMist(dt, morning) {
   const s = seasonUniforms;
   const damp = 1 + 0.5 * (s.uSpring.value + s.uAutumn.value) + 0.6 * s.uWet.value;
   const calm = 1 - 0.75 * smooth(0.3, 0.8, windStrength.value);
-  const target = sheltered ? 0 : Math.min(0.85, morning * damp * calm);
+  const target = sheltered ? 0 : 0.25 * Math.min(0.85, morning * damp * calm); // (a light veil, a quarter as thick)
   valley.amount += (target - valley.amount) * Math.min(1, dt / 3);
   cloudShadowUniforms.uMist.value = valley.amount;
-  cloudShadowUniforms.uMistTop.value = (valley.floor ?? 0) + 10 + 6 * valley.amount;
+  cloudShadowUniforms.uMistTop.value = (valley.floor ?? 0) + 4 + 8 * valley.amount; // (lying low, a few metres deep)
   cloudShadowUniforms.uMistColor.value.copy(scene.fog.color).lerp(MIST_WHITE, 0.35);
 }
 const MIST_WHITE = new THREE.Color(0xf2f4f5);
@@ -1098,6 +1114,7 @@ function tick(now) {
   northernLights(dt);
   // Rain closes the view in, and so does the mist that lies over the
   // wetlands at dawn.
+  clearGrass();
   const mist = marshMist(dt);
   scene.fog.near = openFog.near * (1 - 0.75 * weather.rain) * (1 - 0.85 * mist);
   scene.fog.far = openFog.far * (1 - 0.5 * weather.rain) * (1 - 0.75 * mist);

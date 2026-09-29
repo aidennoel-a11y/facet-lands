@@ -145,12 +145,12 @@ export const BIOMES = {
       { height: 40, color: 0x5f9446 }, // forest floor
       { height: 90, color: 0x557f3e },
       { height: 140, color: 0x5d7a44 },
-      { height: 175, color: 0x76805a },
-      { height: 210, color: 0x8e8c9a },
+      { height: 170, color: 0x6f8a4c }, // grassy balds on the high tops, not bare rock
+      { height: 220, color: 0x7f9154 },
     ],
-    cliff: 0x8a8490,
-    cliffSlope: [0.66, 0.44],
-    snowLine: 230,
+    cliff: 0x77805e, // (steep slopes are scrubby ground, rock only in the steepest)
+    cliffSlope: [0.6, 0.38],
+    snowLine: 240,
     snow: 0xf1f4f7,
     grass: 0.6,
     trees: {

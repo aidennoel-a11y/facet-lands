@@ -53,6 +53,7 @@ const INFLUENCE = 150; // how far past its channel a river still shapes the land
 export class Rivers {
   constructor(generator, { seaLevel }) {
     this.generator = generator;
+    this.big = generator.bigRivers; // the great rivers (creeks and streams run into them)
     this.seaLevel = seaLevel;
     this.seed = generator.seed ^ 0x6c8e9cf5;
     this.meander = new SimplexNoise(this.seed);
@@ -103,13 +104,14 @@ export class Rivers {
       const h = g.getBaseHeight(x, z);
       if (h < 14 || h > 140) continue;
       if (g.getBiomeWeights(x, z, {}).desert > 0.2) continue;
+      if (this.big.waterAt(x, z, 80)) continue; // (not down in a great river's flood plain)
       const pond = this.#pond(x, z, 6 + rand() * 7, rand, 0.12);
       if (!pond) continue;
-      const course = this.#trace(pond, 'river');
+      const course = this.#trace(pond, 'creek');
       // (Long rivers first: at the start only a course of about half a
       // kilometre or more will do.)
-      if (course && Rivers.#good(course, 'river') && (attempt >= 25 || course.length * STEP >= 480)) {
-        this.#add(course, pond, 'river');
+      if (course && Rivers.#good(course, 'creek') && (attempt >= 25 || course.length * STEP >= 480)) {
+        this.#add(course, pond, 'creek');
         made++;
       }
     }
@@ -135,6 +137,7 @@ export class Rivers {
       if (h < 45 || h > 240) continue;
       if (g.getBiomeWeights(x, z, {}).desert > 0.1) continue;
       // Every stream rises from a small tarn, where there's a hollow for one.
+      if (this.big.waterAt(x, z, 80)) continue;
       const pond = this.#pond(x, z, 6 + rand() * 7, rand, 0.3);
       if (!pond) continue;
       const course = this.#trace(pond, 'stream', rand, siblings);
@@ -207,7 +210,7 @@ export class Rivers {
     let length = 0;
     for (let i = 1; i < n; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
     const straight = Math.hypot(points[n - 1].x - points[0].x, points[n - 1].z - points[0].z);
-    if (kind === 'river') return length >= 320 && length / Math.max(1, straight) >= 1.04;
+    if (kind === 'creek') return length >= 320 && length / Math.max(1, straight) >= 1.04;
     if (length < 200) return false;
     if ((points[0].level - points[n - 1].level) / length > 0.14) return false;
     let falls = 0, last = -99;
@@ -249,6 +252,17 @@ export class Rivers {
       // water runs on unbroken.
       start: { x: x + outlet[0] * r * 0.55, z: z + outlet[1] * r * 0.55 },
     };
+  }
+
+  /** The pond or lake whose water covers (x, z), if any. */
+  #pondAt(x, z) {
+    const list = this.cells.get(this.#key(Math.floor(x / CELL), Math.floor(z / CELL)));
+    if (!list) return null;
+    for (const item of list) {
+      const p = item.pond;
+      if (p && Math.hypot(x - p.x, z - p.z) < Rivers.pondRadius(p, x, z) + 1) return p;
+    }
+    return null;
   }
 
   /** The river (not stream) water at (x, z), if any: { level } */
@@ -374,6 +388,24 @@ export class Rivers {
       const low = cascade ? Math.min(b, g.getBaseHeight(px - dir[1] * 3.6, pz + dir[0] * 3.6), g.getBaseHeight(px + dir[1] * 3.6, pz - dir[0] * 3.6)) : b;
       points.push({ x: px, z: pz, level, width: 0, cascade, base: b, low });
 
+      // Reaching a lake up in the hills (an alpine lake, a tarn...): it
+      // runs into it, rather than on down under its water in steps.
+      if (i > 3) {
+        const lake = this.#pondAt(px, pz);
+        if (lake && lake.level <= level + 0.3) {
+          const last = points[points.length - 1];
+          last.level = Math.max(lake.level, Math.min(last.level, lake.level + 0.05));
+          return points.length >= 10 ? Rivers.#widen(points, kind === 'stream', lowland) : null;
+        }
+      }
+      // Reaching a great river: it runs into it.
+      const big = this.big.waterAt(px, pz, 0);
+      if (big && big.inside && big.level <= level + 0.3) {
+        const last = points[points.length - 1];
+        last.level = Math.max(big.level, Math.min(last.level, big.level + 0.05));
+        points.push({ x: px + dir[0] * STEP, z: pz + dir[1] * STEP, level: last.level, width: 0 });
+        return points.length >= 10 ? Rivers.#widen(points, kind === 'stream', lowland) : null;
+      }
       if (b < this.seaLevel) {
         // Into a lake or the sea: carry on a little way so the mouth opens out.
         points.push({ x: px + dir[0] * STEP, z: pz + dir[1] * STEP, level, width: 0 });
@@ -457,7 +489,7 @@ export class Rivers {
     const wide = points.map((p) => (p.cascade ? 1 : 0));
     points.forEach((p, i) => {
       const t = Math.max(wide[i], 0.5 * (wide[i - 1] ?? 0), 0.5 * (wide[i + 1] ?? 0));
-      if (t > 0) p.width = Math.max(p.width, p.width + (7.5 - p.width) * t);
+      if (t > 0) p.width = Math.max(p.width, p.width + (5 - p.width) * t);
       // (The water pours over a lip narrower than the pools either side.)
       if (p.lip) p.width = Math.min(p.width, 2.2 + p.width * 0.25);
     });
@@ -579,7 +611,7 @@ export class Rivers {
       const r = Rivers.channel(Math.max(a.width, b.width) / 2) + Math.min(INFLUENCE, Rivers.valleyWidth(kind === 'stream', seg.along + STEP) * 1.3);
       const box = [Math.min(a.x, b.x) - r, Math.min(a.z, b.z) - r, Math.max(a.x, b.x) + r, Math.max(a.z, b.z) + r];
       this.#index(this.cells, seg, ...box);
-      if (kind === 'river') this.#index(this.riverCells, seg, ...box);
+      if (kind === 'creek') this.#index(this.riverCells, seg, ...box);
     }
     for (const p of [pond, tarn]) {
       if (!p) continue;
@@ -681,6 +713,8 @@ export class Rivers {
    * water doesn't shape the land (they fade out towards the banks).
    */
   carve(x, z, base, rough = 0) {
+    // (The bumps fade out towards a great river's water too.)
+    rough *= smoothstep(4, 14, this.big.edgeAt(x, z));
     const near = this.#near(x, z);
     if (!near) return base + rough;
     let h = base;
@@ -760,8 +794,7 @@ export class Rivers {
    * half (channel half-width), stream, pond }. Else null.
    */
   at(x, z, margin = 0) {
-    const near = this.#near(x, z);
-    if (!near) return null;
+    const near = this.#near(x, z) ?? [];
     let best = null;
     const m = {};
     for (const item of near) {
@@ -778,6 +811,8 @@ export class Rivers {
       if (m.d > m.half + margin) continue;
       if (!best || m.d - m.half < best.d - best.half) best = { ...m, pond: false };
     }
+    const big = this.big.waterAt(x, z, margin);
+    if (big && (!best || big.d - big.half < best.d - best.half)) best = { ...big, stream: false, pond: false, big: true };
     return best;
   }
 
@@ -791,6 +826,17 @@ export class Rivers {
    * two run together as one.
    */
   waterAt(x, z, margin = 0) {
+    const creek = this.#creekWaterAt(x, z, margin);
+    const b = this.big.waterAt(x, z, margin);
+    if (!b) return creek;
+    const big = { level: b.level, fx: b.fx, fz: b.fz, drop: b.drop, along: b.along, across: b.across, inset: b.inset, pond: false, tint: 0, big: true };
+    if (!creek) return big;
+    // (Where a creek runs into it, the lower water.)
+    if (b.inside) return creek.inset > 0 && creek.level < big.level ? creek : big;
+    return creek.inset > 0 || creek.inset > big.inset ? creek : big;
+  }
+
+  #creekWaterAt(x, z, margin) {
     const near = this.#near(x, z);
     if (!near) return null;
     const m = this._w ?? (this._w = {});
@@ -830,6 +876,8 @@ export class Rivers {
   /** Rivers and streams that pass near a box (for drawing their water). */
   inBox(minX, minZ, maxX, maxZ) {
     this.#ensure((minX + maxX) / 2, (minZ + maxZ) / 2);
-    return this.list.filter(({ bounds: b }) => b.maxX > minX && b.minX < maxX && b.maxZ > minZ && b.minZ < maxZ);
+    const creeks = this.list.filter(({ bounds: b }) => b.maxX > minX && b.minX < maxX && b.maxZ > minZ && b.minZ < maxZ);
+    const big = this.big.inBox(minX, minZ, maxX, maxZ);
+    return big.length ? creeks.concat(big) : creeks;
   }
 }

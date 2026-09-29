@@ -1,8 +1,17 @@
-import { BufferAttribute, BufferGeometry, DoubleSide, InstancedBufferAttribute, InstancedMesh, MeshLambertMaterial } from 'three';
+import { BufferAttribute, BufferGeometry, DoubleSide, InstancedBufferAttribute, InstancedMesh, MeshLambertMaterial, Vector4 } from 'three';
 import { mulberry32 } from '../../noise/random.js';
 import { addWind } from '../../render/wind.js';
 import { seasonalGrass } from '../../render/Seasons.js';
 import { placeGrass } from '../grassPlacement.js';
+
+/**
+ * Spots cleared of grass (x, z, radius, 0): where something stands on the
+ * ground (a campfire, a chest, a bed...), the tufts inside shrink away to
+ * nothing, so grass never grows up through it. Filled in each moment with
+ * what's built near you (see main); unused ones have radius 0.
+ */
+export const GRASS_CLEARINGS = 24;
+export const grassClearings = { value: Array.from({ length: GRASS_CLEARINGS }, () => new Vector4(0, 0, 0, 0)) };
 
 /**
  * One tuft: a handful of single-triangle blades leaning out from a small
@@ -100,6 +109,28 @@ export function createGrassLayer(config) {
     gust: 0.3,
   });
   seasonalGrass(material);
+  const previous = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    previous?.call(material, shader, renderer);
+    shader.uniforms.uClearings = grassClearings;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\nuniform vec4 uClearings[${GRASS_CLEARINGS}];`)
+      .replace(
+        '#include <project_vertex>',
+        /* glsl */ `{
+          vec2 tuft = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;
+          float keep = 1.0;
+          for (int i = 0; i < ${GRASS_CLEARINGS}; i++) {
+            vec4 c = uClearings[i];
+            if (c.z > 0.0) keep = min(keep, smoothstep(c.z * 0.85, c.z + 0.35, distance(tuft, c.xy)));
+          }
+          transformed *= keep;
+        }
+        #include <project_vertex>`,
+      );
+  };
+  const previousKey = material.customProgramCacheKey?.bind(material);
+  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|clearings`;
 
   const layer = {
     name: 'grass',

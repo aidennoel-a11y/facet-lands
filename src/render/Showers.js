@@ -137,10 +137,9 @@ export class Showers {
     for (const cloud of this.clouds) {
       const d = cloud.userData;
       if (!cloud.visible) continue;
-      // Rain from the clouds bringing it; and now and then a lone shower
-      // from one of the biggest clouds of a cloudy sky.
-      const shower = d.rank > 0.82 ? 0.45 * smoothstep(0.62, 0.85, d.cover) : 0;
-      const rain = Math.max(smoothstep(0.05, 0.5, d.rain), shower);
+      // Rain only from the clouds really bringing it (an overcast sky
+      // that isn't raining shows none).
+      const rain = smoothstep(0.05, 0.5, d.rain);
       if (rain < 0.02) continue;
       const grown = cloud.scale.x / d.scale.x;
       const radius = d.reach * grown * 0.5;

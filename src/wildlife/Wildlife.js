@@ -1159,7 +1159,7 @@ export class Wildlife {
       y = w.level;
     } else {
       if (!(y > this.ctx.seaLevel + 0.5)) return null;
-      if (this.#slope(x, z, this.ctx) > sp.grade) return null; // (not on a slope too steep for it)
+      if (this.#trueSlope(x, z, this.ctx) > sp.grade) return null; // (not on a slope too steep for it)
     }
     const spread = kind === 'bison' ? 12 : 7;
     const a = {
@@ -1300,6 +1300,21 @@ export class Wildlife {
     const gx = ctx.ground(x + e, z) - ctx.ground(x - e, z), gz = ctx.ground(x, z + e) - ctx.ground(x, z - e);
     const s = Math.hypot(gx, gz) / (2 * e);
     return s === s ? s : 0;
+  }
+
+  /**
+   * How steep the land truly is at (x, z) (from the terrain itself, not
+   * the drawn surface, which far off is smoothed over: a canyon's wall
+   * there looks like a gentle bank), the steeper of that and #slope.
+   */
+  #trueSlope(x, z, ctx) {
+    const g = ctx.generator;
+    const s = this.#slope(x, z, ctx);
+    if (!g) return s;
+    const e = 2;
+    const gx = g.getHeight(x + e, z) - g.getHeight(x - e, z), gz = g.getHeight(x, z + e) - g.getHeight(x, z - e);
+    const t = Math.hypot(gx, gz) / (2 * e);
+    return t === t ? Math.max(s, t) : s;
   }
 
   #threat(a, ctx) {
@@ -1731,7 +1746,7 @@ export class Wildlife {
     a.slopeCheck = (a.slopeCheck ?? Math.random()) - dt;
     if (a.slopeCheck <= 0 && !fleeing) {
       a.slopeCheck = 1;
-      a.onSteep = this.#slope(a.x, a.z, ctx) > sp.grade * 1.1;
+      a.onSteep = this.#trueSlope(a.x, a.z, ctx) > sp.grade * 1.1;
       if (a.onSteep) {
         const e = 1.5, gx = ctx.ground(a.x + e, a.z) - ctx.ground(a.x - e, a.z), gz = ctx.ground(a.x, a.z + e) - ctx.ground(a.x, a.z - e);
         a.detour = { heading: Math.atan2(-gx, -gz), time: 2.5 };
@@ -1788,7 +1803,13 @@ export class Wildlife {
       const wet = kind === 2 || ahead === 2;
       // (Not onto ground steeper than it takes; one already on such a slope
       // only makes its way down off it.)
-      const steep = !swimming && (a.onSteep ? probe > a.y - 0.05 : Math.abs(probe - a.y) > sp.grade * (body + 1.5) || this.#slope(nx, nz, ctx) > sp.grade * 1.2);
+      // (The true lie of the land ahead, a few times a second.)
+      a.aheadCheck = (a.aheadCheck ?? Math.random() * 0.3) - dt;
+      if (a.aheadCheck <= 0) {
+        a.aheadCheck = 0.3;
+        a.aheadSteep = this.#trueSlope(a.x + sx * (body + 1.5), a.z + sz * (body + 1.5), ctx) > sp.grade * 1.2;
+      }
+      const steep = !swimming && (a.onSteep ? probe > a.y - 0.05 : Math.abs(probe - a.y) > sp.grade * (body + 1.5) || this.#slope(nx, nz, ctx) > sp.grade * 1.2 || a.aheadSteep);
       const blocked = !kind || !ahead || (steep && !wet) || (wet && !(fleeing || swimming || a.hunting));
       if (blocked) {
         if (fleeing) (a.herd ?? a).escapeAt = 0; // (another way, then)

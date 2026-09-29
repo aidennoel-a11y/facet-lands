@@ -140,7 +140,18 @@ export class Structures {
     if (kind.tilt) {
       const e = half[0];
       const gx = (ground(x + e, z) - ground(x - e, z)) / (2 * e), gz = (ground(x, z + e) - ground(x, z - e)) / (2 * e);
-      if (Number.isFinite(gx) && Number.isFinite(gz)) tilt = [-gx, -gz];
+      if (Number.isFinite(gx) && Number.isFinite(gz)) {
+        tilt = [-gx, -gz];
+        // (Sat on the ground's bumps, never sunk into them: raised until
+        // nothing of its footprint is under the ground.)
+        let under = 0;
+        for (const [u, v] of corners) {
+          const dx = ax * u * half[0] + bx * v * half[1], dz = az * u * half[0] + bz * v * half[1];
+          const h = ground(x + dx, z + dz);
+          if (Number.isFinite(h)) under = Math.max(under, h - (y + gx * dx + gz * dz));
+        }
+        y += under;
+      }
     }
     let ok = true, why = '';
     if (type === 'raft') {

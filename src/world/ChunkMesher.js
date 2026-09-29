@@ -386,11 +386,13 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
         }
         const cx = originX + (minX + maxX) / 2, cz = originZ + (minZ + maxZ) / 2;
         const shore = lo < sea + 3 && hi > sea - 2.5;
-        let yes = coarse && (shore || generator.rivers.at(cx, cz, 7) !== null);
+        const water = coarse && !shore ? generator.rivers.at(cx, cz, 7) : null;
+        // (Along a great river, only its banks: the water's middle needs no finer faces.)
+        let yes = coarse && (shore || (water !== null && (!water.big || water.d > water.half - 10)));
         // Steep walls of canyons, mesas, Black Hills rock and sea cliffs:
         // more, smaller faces, so a wall is never one great sheer triangle
         // and a spire never a single spike.
-        if (!yes && walled && hi - lo > (coarse ? 6 : 3.5)) {
+        if (!yes && walled && hi - lo > (coarse ? 4 : 2.5)) {
           const f = generator.getFeatures(cx, cz);
           yes = f.canyon > 0.1 || f.mesa > 0.1 || generator.getBiomeWeights(cx, cz, {}).blackHills > 0.2 || generator.getSeaCliff(cx, cz) > 0.1;
         }
