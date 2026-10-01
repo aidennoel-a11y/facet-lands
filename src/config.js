@@ -55,7 +55,13 @@ export const WORLD = {
   // Grass
   grassSpacing: 1.6, // metres between grass tufts
   grassMaxLod: 0,
-  grassFade: [70, 115], // tufts shrink away between these distances (m)
+  grassFade: [80, 125], // tufts shrink away between these distances (m)
+  // And beyond them, out to the next ring of chunks, sparse, bigger clumps
+  // of far grass (on the nearer chunks too, under the close grass), so the
+  // grassland doesn't stop dead a hundred metres off.
+  farGrassMaxLod: 1,
+  farGrassSpacing: 4.4,
+  farGrassFade: [230, 290],
 
   // Sun, moon and sky
   dayLengthMinutes: 24, // one full day/night cycle (real minutes)

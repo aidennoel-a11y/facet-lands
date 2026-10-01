@@ -20,13 +20,15 @@ const surface = { normalY: 1 };
  * chunk-local), colors (3 each), count }. Only three.js maths, so a worker
  * can do it too.
  */
-export function placeGrass(generator, config, cx, cz, groundHeightAt) {
-  const { chunkSize, grassSpacing, seaLevel } = config;
+export function placeGrass(generator, config, cx, cz, groundHeightAt, far = false) {
+  const { chunkSize, seaLevel } = config;
+  // (The far grass: sparser, bigger clumps, seen from a distance.)
+  const grassSpacing = far ? config.farGrassSpacing : config.grassSpacing;
   const cells = Math.round(chunkSize / grassSpacing);
   const spacing = chunkSize / cells;
   const originX = cx * chunkSize;
   const originZ = cz * chunkSize;
-  const seed = generator.seed ^ 0x1b873593;
+  const seed = generator.seed ^ (far ? 0x2c1b3c6d : 0x1b873593);
 
   const matrices = new Float32Array(cells * cells * 16);
   const colors = new Float32Array(cells * cells * 3);
@@ -83,7 +85,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
         colors.set([color.r * v * (1 + 0.45 * t), color.g * v * (1 + 0.12 * t), color.b * v * (1 - 0.45 * t)], count * 3);
       }
 
-      const s = 0.7 + hash2(gi, gj, seed + 4) * 0.7;
+      const s = (0.7 + hash2(gi, gj, seed + 4) * 0.7) * (far ? 1.7 : 1);
       // On the open plains and the savanna the grass grows long, with tall
       // seeding stalks and broad clumps among the tufts.
       const plain = generator.getPlainness(wx, wz);

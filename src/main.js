@@ -107,6 +107,7 @@ const water = createWaterLayer({ skyColor: dayNight.horizon, skyTop: dayNight.to
 const rocks = createRockLayer(WORLD);
 const trees = createTreeLayer({ rocks });
 const grass = createGrassLayer(WORLD);
+const farGrass = createGrassLayer(WORLD, { far: true });
 chunks.addLayer(water);
 const rivers = createRiverLayer(dayNight.horizon, dayNight.top);
 // Leaves drifting down from the trees round about (see FallingLeaves).
@@ -158,6 +159,7 @@ const farTrees = createFarTreeLayer(WORLD);
 scene.add(farTrees.group);
 chunks.addLayer(farTrees);
 chunks.addLayer(grass);
+chunks.addLayer(farGrass);
 const caves = createCaveLayer(WORLD);
 chunks.addLayer(caves);
 // (The iron ore lying in the caves, to pick up: see GroundItems.addCave.)
@@ -167,7 +169,7 @@ chunks.addLayer(createEntranceLayer(WORLD, caves.material));
 chunks.addLayer(rocks);
 chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
 // The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).
-for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.material, rocks.material, farTrees.material, logs.material, water.material, rivers.material]) if (m) addCloudShadow(m);
+for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.material, farGrass.material, rocks.material, farTrees.material, logs.material, water.material, rivers.material]) if (m) addCloudShadow(m);
 
 /**
  * What you'd stand on at (x, z) from feet height `feetY`: the terrain, or a
@@ -478,7 +480,7 @@ ui.randomSeed.addEventListener('click', () => {
   setSeed(value);
 });
 ui.wireframe.addEventListener('change', () => {
-  for (const m of [terrainMaterial, water.material, trees.material, trees.leafMaterial, grass.material, caves.material, rocks.material, ...clouds.materials]) {
+  for (const m of [terrainMaterial, water.material, trees.material, trees.leafMaterial, grass.material, farGrass.material, caves.material, rocks.material, ...clouds.materials]) {
     m.wireframe = ui.wireframe.checked;
   }
 });

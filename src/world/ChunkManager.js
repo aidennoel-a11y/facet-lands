@@ -270,6 +270,7 @@ export class ChunkManager {
       wantRocks: job.lod <= Math.max(config.rockMaxLod, config.treeMaxLod),
       wantTrees: job.lod <= config.treeMaxLod,
       wantGrass: job.lod <= config.grassMaxLod,
+      wantFarGrass: job.lod <= (config.farGrassMaxLod ?? -1),
       wantFarTrees: job.lod > config.treeMaxLod && job.lod <= (config.farTreeMaxLod ?? -1),
       wantRivers: true,
       wantReeds: job.lod <= 1,

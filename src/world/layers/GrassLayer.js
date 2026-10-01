@@ -135,7 +135,10 @@ function fineGeometry(seed = 41) {
  * They sway in the wind and shrink away with distance (`grassFade`), so
  * the edge of the grassy area is never visible.
  */
-export function createGrassLayer(config) {
+export function createGrassLayer(config, { far = false } = {}) {
+  // (The far grass: the same tufts, sparser and bigger, out to the next
+  // ring of chunks: see placeGrass.)
+  const maxLod = far ? config.farGrassMaxLod : config.grassMaxLod;
   // Ordinary tufts, tall seeding stalks, broad, many-bladed clumps, sedges
   // and fine golden grass.
   const geometries = [tuftGeometry(), tallGeometry(), tuftGeometry(14, 23), sedgeGeometry(), fineGeometry()];
@@ -152,7 +155,7 @@ export function createGrassLayer(config) {
   addWind(material, {
     strength: 0.25,
     speed: 1.9,
-    fade: config.grassFade,
+    fade: far ? config.farGrassFade : config.grassFade,
     gust: 0.3,
   });
   seasonalGrass(material);
@@ -180,15 +183,15 @@ export function createGrassLayer(config) {
   material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|clearings`;
 
   const layer = {
-    name: 'grass',
+    name: far ? 'farGrass' : 'grass',
     material,
     count: 0,
 
-    reuseKey: ({ lod, resolution }) => (lod > config.grassMaxLod ? 'none' : `${resolution}`),
+    reuseKey: ({ lod, resolution }) => (lod > maxLod ? 'none' : `${resolution}`),
 
     build({ cx, cz, lod, groundHeightAt, generator, prepared }) {
-      if (lod > config.grassMaxLod) return null;
-      const placed = prepared?.grass ?? placeGrass(generator, config, cx, cz, groundHeightAt);
+      if (lod > maxLod) return null;
+      const placed = (far ? prepared?.farGrass : prepared?.grass) ?? placeGrass(generator, config, cx, cz, groundHeightAt, far);
       const { matrices, colors, count } = placed;
       if (count === 0) return null;
       const kinds = placed.kinds ?? new Uint8Array(count);

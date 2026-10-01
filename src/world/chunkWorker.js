@@ -27,7 +27,7 @@ function rocksAt(cx, cz, config) {
 }
 
 self.onmessage = (event) => {
-  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarTrees, wantRivers, wantReeds } = event.data;
+  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarGrass, wantFarTrees, wantRivers, wantReeds } = event.data;
   if (!world || world.seed !== seed) {
     world = { seed, generator: new TerrainGenerator(seed, config) };
     rocks.clear();
@@ -123,6 +123,10 @@ self.onmessage = (event) => {
   if (wantGrass) {
     out.grass = placeGrass(g, config, cx, cz, groundHeightAt);
     transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer, out.grass.kinds.buffer);
+  }
+  if (wantFarGrass) {
+    out.farGrass = placeGrass(g, config, cx, cz, groundHeightAt, true);
+    transfer.push(out.farGrass.matrices.buffer, out.farGrass.colors.buffer, out.farGrass.kinds.buffer);
   }
   if (wantFarTrees) {
     out.farTrees = packFarTrees(placeTrees(g, config, cx, cz, groundHeightAt, null), cx, cz, config.chunkSize);
