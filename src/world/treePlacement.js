@@ -87,6 +87,9 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const biome = generator.pickBiome(wx, wz, hash2(gi, gj, seed + 11));
       const trees = biome.trees;
       let likely = (trees ? (trees.clumped ? generator.getForestDensity(wx, wz) : 1) * trees.density * (config.treeDensity ?? 1) : 0);
+      // The parkland's birches and aspens stand in thick groves, with open
+      // grassland between them (only the odd lone tree out there).
+      if (biome.id === 'parkland') likely = (0.015 + 0.6 * generator.getParklandGrove(wx, wz)) * (config.treeDensity ?? 1);
       // Round an alpine lake below the snow, a ring of trees.
       const lake = trees && biome.id === 'temperate' ? generator.rivers.at(wx, wz, 30) : null;
       const lakeside = !!(lake && lake.alpine && lake.level < 170);

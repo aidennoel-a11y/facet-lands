@@ -30,7 +30,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
 
   const matrices = new Float32Array(cells * cells * 16);
   const colors = new Float32Array(cells * cells * 3);
-  const kinds = new Uint8Array(cells * cells); // 0 tuft, 1 tall seeding stalks, 2 broad clump (see GrassLayer)
+  const kinds = new Uint8Array(cells * cells); // 0 tuft, 1 tall seeding stalks, 2 broad clump, 3 sedge, 4 fine golden grass (see GrassLayer)
   let count = 0;
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
@@ -67,8 +67,21 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       // (Bare grey rock and snow are all but colourless; grassland isn't.)
       const hi = Math.max(color.r, color.g, color.b), lo = Math.min(color.r, color.g, color.b);
       if (hi - lo < 0.2 * hi) continue;
+      // How near the water (a river, stream, pond, lake or the sea): the
+      // grass there grows lush and green, with sedges among it.
+      const bank = generator.rivers?.shoreAt(wx, wz, 22);
+      const wet = Math.max(bank ? 1 - smoothstep(3, 22, bank.e) : 0, 1 - smoothstep(seaLevel + 1.5, seaLevel + 6, ground));
+      // Patches of a few dozen metres where it runs a richer green or turns
+      // golden, and every tuft a little different: greener by the water.
+      const tint = generator.grassNoise.fbm(wx * 0.018 + 90, wz * 0.018 - 30, 2) * 1.8 + (hash2(gi, gj, seed + 9) - 0.5) * 0.9 - 1.3 * wet;
       const v = 0.9 + hash2(gi, gj, seed + 3) * 0.22;
-      colors.set([color.r * v, color.g * v, color.b * v], count * 3);
+      if (tint < 0) {
+        const t = Math.min(1, -tint) * 0.85;
+        colors.set([color.r * v * (1 - 0.25 * t), color.g * v * (1 + 0.22 * t), color.b * v * (1 - 0.3 * t)], count * 3);
+      } else {
+        const t = Math.min(1, tint) * 0.85;
+        colors.set([color.r * v * (1 + 0.45 * t), color.g * v * (1 + 0.12 * t), color.b * v * (1 - 0.45 * t)], count * 3);
+      }
 
       const s = 0.7 + hash2(gi, gj, seed + 4) * 0.7;
       // On the open plains and the savanna the grass grows long, with tall
@@ -84,11 +97,15 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt) {
       const long = (1 + 0.9 * tallLand) * (1 + 0.95 * tall) * (1 - 0.4 * short) * (1 + 0.25 * bw.parkland);
       const stalky = Math.min(1, tallLand + 0.6 * tall);
       const pick = hash2(gi, gj, seed + 8);
-      const kind = pick < 0.35 * stalky ? 1 : pick < 0.35 * stalky + 0.12 + 0.15 * stalky ? 2 : 0;
+      // Sedges by the water and in the marshes; fine golden-headed grass
+      // where it runs yellow.
+      const sedge = Math.min(0.6, 0.55 * wet + 0.4 * (bw.wetland + bw.mangrove));
+      const golden = 0.25 * smoothstep(0, 0.8, tint) + 0.06;
+      const kind = pick < sedge ? 3 : pick < sedge + golden ? 4 : pick < sedge + golden + 0.35 * stalky ? 1 : pick < sedge + golden + 0.35 * stalky + 0.12 + 0.15 * stalky ? 2 : 0;
       kinds[count] = kind;
       position.set(lx, ground - 0.05, lz);
       rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 5) * Math.PI * 2);
-      scale.set(s, s * (0.8 + hash2(gi, gj, seed + 6) * 0.5) * (kind === 1 ? 1 : long), s);
+      scale.set(s, s * (0.8 + hash2(gi, gj, seed + 6) * 0.5) * (kind === 1 || kind === 3 ? 1 + 0.3 * wet : long), s);
       matrix.compose(position, rotation, scale).toArray(matrices, count * 16);
       count++;
     }

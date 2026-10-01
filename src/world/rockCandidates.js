@@ -53,7 +53,9 @@ export function rockCandidates(generator, config, cx, cz) {
       if (erg > 0.3) continue; // no rocks in a dune sea, just sand
       const land = generator.getHeight(wx, wz);
       // Wetlands are soft mud and grass: few stones.
-      const soft = 1 - 0.85 * bw.wetland;
+      // (And the volcanic highlands: rock heaped on their rocky ground,
+      // hardly any out on the native grass.)
+      const soft = (1 - 0.85 * bw.wetland) * (bw.volcanic > 0.05 ? 1 + bw.volcanic * (2.2 * generator.getVolcanicRocky(wx, wz) - 0.8) : 1);
       // Stones along river banks, on the mud just beside the water.
       const river = generator.rivers.at(wx, wz, 3.5);
       const bank = river && river.d > river.water + 0.4 ? 1 : 0;
@@ -115,10 +117,10 @@ export function rockCandidates(generator, config, cx, cz) {
       const stony = bare * flat;
       // Shores: rock outcrops on beaches and lake edges, stones along the rest of a lake's edge.
       const shore = land < seaLevel + 5.5 ? generator.getShore(wx, wz, land) : null;
-      const shoreRock = shore ? (shore.kind === 'rock' ? (shore.ocean ? 1.4 : 1) : shore.ocean ? 0 : 0.3) * Math.max(shore.fade, 0.6) : 0;
+      const shoreRock = shore ? (shore.kind === 'rock' ? (shore.ocean ? 1.4 : 1) : shore.ocean ? 0 : 0.08) * Math.max(shore.fade, 0.6) : 0;
       // Open grassy plains: only the odd stone.
       const plain = generator.getPlainness(wx, wz);
-      const chance = ((0.025 + 0.2 * foothill * flat) * (1 - 0.8 * plain) + 0.75 * foot + 0.2 * cliff + 0.45 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope)) + lavaRock) * soft + surf;
+      const chance = ((0.025 + 0.2 * foothill * flat) * (1 - 0.8 * plain) + 0.75 * foot + 0.2 * cliff + 0.25 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope)) + lavaRock) * soft + surf;
       // (And on open grassland, plains and meadows, 70% fewer again.)
       const open = bw.temperate > 0.5 ? Math.max(plain, bw.temperate * (1 - smoothstep(0.45, 0.6, generator.getForestDensity(wx, wz))) * (1 - smoothstep(0.3, 0.5, foothill))) : 0;
       if (roll > chance * (1 - 0.7 * open)) continue;

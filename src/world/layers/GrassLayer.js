@@ -85,13 +85,60 @@ function tallGeometry(seed = 9) {
 }
 
 /**
+ * Sedge: a stiff, upright fan of long, narrow blades, a deep green, by
+ * the water and in the marshes.
+ */
+function sedgeGeometry(seed = 31) {
+  const rand = mulberry32(seed);
+  const pos = [], col = [], nor = [];
+  for (let k = 0; k < 9; k++) {
+    const angle = rand() * Math.PI * 2, r = Math.sqrt(rand()) * 0.18;
+    const bx = Math.cos(angle) * r, bz = Math.sin(angle) * r;
+    const facing = rand() * Math.PI * 2, half = 0.025 + rand() * 0.02;
+    const h = 0.75 + rand() * 0.55, lean = 0.08 + rand() * 0.22;
+    pos.push(bx + Math.cos(facing) * half, 0, bz + Math.sin(facing) * half, bx - Math.cos(facing) * half, 0, bz - Math.sin(facing) * half, bx + Math.cos(angle) * lean, h, bz + Math.sin(angle) * lean);
+    col.push(0.5, 0.58, 0.48, 0.5, 0.58, 0.48, 0.95, 1.12, 0.85);
+    nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(nor), 3));
+  g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
+  return g;
+}
+
+/**
+ * Fine grass: a low, soft spray of many thin, arching blades whose tips
+ * have turned straw-gold.
+ */
+function fineGeometry(seed = 41) {
+  const rand = mulberry32(seed);
+  const pos = [], col = [], nor = [];
+  for (let k = 0; k < 16; k++) {
+    const angle = rand() * Math.PI * 2, r = Math.sqrt(rand()) * 0.4;
+    const bx = Math.cos(angle) * r, bz = Math.sin(angle) * r;
+    const facing = rand() * Math.PI * 2, half = 0.02 + rand() * 0.02;
+    const h = 0.3 + rand() * 0.3, lean = 0.2 + rand() * 0.3;
+    pos.push(bx + Math.cos(facing) * half, 0, bz + Math.sin(facing) * half, bx - Math.cos(facing) * half, 0, bz - Math.sin(facing) * half, bx + Math.cos(angle) * (r + lean), h, bz + Math.sin(angle) * (r + lean));
+    col.push(0.65, 0.65, 0.6, 0.65, 0.65, 0.6, 1.45, 1.32, 0.78);
+    nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(nor), 3));
+  g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
+  return g;
+}
+
+/**
  * Grass tufts on the chunks right around the player (LOD `grassMaxLod`).
  * They sway in the wind and shrink away with distance (`grassFade`), so
  * the edge of the grassy area is never visible.
  */
 export function createGrassLayer(config) {
-  // Ordinary tufts, tall seeding stalks, and broad, many-bladed clumps.
-  const geometries = [tuftGeometry(), tallGeometry(), tuftGeometry(14, 23)];
+  // Ordinary tufts, tall seeding stalks, broad, many-bladed clumps, sedges
+  // and fine golden grass.
+  const geometries = [tuftGeometry(), tallGeometry(), tuftGeometry(14, 23), sedgeGeometry(), fineGeometry()];
   geometries[2].scale(1.6, 0.8, 1.6);
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
   // Double-sided materials flip the normal on back faces, which would turn

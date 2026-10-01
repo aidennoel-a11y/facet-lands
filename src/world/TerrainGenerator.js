@@ -6,8 +6,6 @@ import { Rivers } from './Rivers.js';
 import { BigRivers } from './BigRivers.js';
 import { Color } from 'three';
 
-const MUD = new Color(0x5f4a36);
-const DIRT = new Color(0x7d6547);
 const RIVERBED = new Color(0x55493b);
 // How much more of the world is mountains than the range noise alone gives.
 const MOUNTAIN_BIAS = 0.097; // (a percent more of the world in the ranges than there was, a percent less desert)
@@ -38,6 +36,32 @@ const SHORE = {
   rock: new Color(0x8a8597),
 };
 // Sandstone strata on mesa walls, bottom to top, repeating.
+// Each biome's own lake and river banks: the mud at the water's edge, the
+// grass of the bank (greener than the land round about) and, where the
+// biome is a stony one, its rock (`rock`: how much of the bank is rock,
+// 0 none). Blended by the biomes' weights, so they change gradually.
+const BANKS = {
+  temperate: { mud: 0x5f4d38, bank: 0x7fb24e, rock: 0 },
+  smoky: { mud: 0x5a4a38, bank: 0x6ca447, rock: 0 },
+  parkland: { mud: 0x6a5a3e, bank: 0x9cc25a, rock: 0 },
+  pine: { mud: 0x5a4c3e, bank: 0x6f9a4c, rock: 0.1, rockColor: 0x8a8590 },
+  jungle: { mud: 0x5a4430, bank: 0x4f9a3c, rock: 0 },
+  wetland: { mud: 0x4f4232, bank: 0x6a8e44, rock: 0 },
+  mangrove: { mud: 0x4f4232, bank: 0x6a8e44, rock: 0 },
+  volcanic: { mud: 0x363333, bank: 0x5d6d41, rock: 0 }, // black sand, native grass (its rocky ground: see getVolcanicRocky)
+  savanna: { mud: 0xa48a5e, bank: 0xa6b25a, rock: 0 },
+  desert: { mud: 0xc9a974, bank: 0xb7b066, rock: 0 },
+  saltFlat: { mud: 0xc9a974, bank: 0xb7b066, rock: 0 },
+  blackHills: { mud: 0x5f4a36, bank: 0x7c9a52, rock: 0.3, rockColor: 0x8a8597 },
+};
+for (const b of Object.values(BANKS)) {
+  b.mud = new Color(b.mud);
+  b.bank = new Color(b.bank);
+  b.rockColor = new Color(b.rockColor ?? 0x8a8597);
+}
+const VOLCANIC_ROCK = new Color(0x5e5955); // the volcanic highlands' rocky ground
+const bankTmp = new Color();
+
 const STRATA = [0xc4744a, 0xd89a64, 0xb05a3c, 0xe2b482, 0xa8583a, 0xcf8455].map((c) => new Color(c));
 const stratum = new Color();
 const STRATA_MID = new Color(0xc98458); // (the bands' average, to soften them towards)
@@ -2409,11 +2433,37 @@ export class TerrainGenerator {
       if (w.mangrove > 0.5) return height < sea + 1.2 ? { kind: 'mud', fade, ocean } : null; // (soft, muddy shores)
       return p > 0.55 && height > sea - 0.5 ? { kind: 'rock', fade: fade * 0.6, ocean } : null;
     }
-    if (height < sea + 0.7) return { kind: 'mud', fade, ocean };
-    // (Wetland shores are soft: mud, grass and dirt, no rock.)
-    if (p > 0.38 && this.getBiomeWeights(x, z, {}).wetland < 0.3) return { kind: 'rock', fade, ocean };
-    if (this.grassNoise.noise2D(x * 0.08 + 7, z * 0.08) > -0.15) return { kind: 'grass', fade, ocean };
-    return { kind: 'dirt', fade, ocean };
+    // (A lake's or river's banks: each biome's own, see BANKS.)
+    const w = this.getBiomeWeights(x, z, {});
+    if (height < sea + 0.7) return { kind: 'mud', fade, ocean, color: this.#bankColor(w, 'mud', new Color()) };
+    let rock = 0;
+    for (const id in BANKS) rock += (w[id] ?? 0) * BANKS[id].rock;
+    if (rock > 0 && p > 1 - 1.6 * rock) return { kind: 'rock', fade, ocean, color: this.#bankColor(w, 'rockColor', new Color()) };
+    return { kind: 'grass', fade: fade * 0.55, ocean, color: this.#bankColor(w, 'bank', new Color()) };
+  }
+
+  /** A part ('mud', 'bank' or 'rockColor') of the banks (BANKS), blended by the biome weights `w`. */
+  #bankColor(w, part, out) {
+    out.setRGB(0, 0, 0);
+    let sum = 0;
+    for (const id in BANKS) {
+      const k = w[id] ?? 0;
+      if (k <= 0) continue;
+      const c = BANKS[id][part];
+      out.r += c.r * k;
+      out.g += c.g * k;
+      out.b += c.b * k;
+      sum += k;
+    }
+    return sum > 0 ? out.multiplyScalar(1 / sum) : out.copy(SHORE.grass);
+  }
+
+  /**
+   * The volcanic highlands' rocky ground (0..1): broad stretches of bare,
+   * broken basalt among the native grass.
+   */
+  getVolcanicRocky(x, z) {
+    return smoothstep(0.18, 0.34, this.detailNoise.fbm(x * 0.0035 - 400, z * 0.0035 + 260, 3));
   }
 
   /**
@@ -2961,6 +3011,16 @@ export class TerrainGenerator {
   }
 
   /** How grassy a spot is, in [0, 1]: lush meadows and thinner patches. */
+  /**
+   * The birch and aspen groves of the parkland (0..1): thick stands a
+   * hundred metres or a few hundred across, with open grassland between
+   * them where hardly a tree grows.
+   */
+  getParklandGrove(x, z) {
+    const n = this.groveNoise.fbm(x * 0.0042 + 210, z * 0.0042 - 140, 3) + 0.25 * this.groveNoise.noise2D(x * 0.02 - 33, z * 0.02 + 71);
+    return smoothstep(0.02, 0.2, n);
+  }
+
   getGrassDensity(x, z) {
     return 0.35 + 0.65 * smoothstep(-0.3, 0.3, this.grassNoise.fbm(x * 0.012, z * 0.012, 2));
   }
@@ -3066,7 +3126,11 @@ export class TerrainGenerator {
     // the beach-sand band: sand only by the water.)
     const sea = this.rivers.seaLevel;
     const ground = height - jitter; // `height` has the colour jitter added
-    height = Math.max(height, 8.5 * smoothstep(sea + 1.5, sea + 3.5, ground));
+    // (And the sand only on the sea's beaches: low ground by a river or a
+    // lake takes the biome's own banks, see getShore.)
+    let land = smoothstep(sea + 1.5, sea + 3.5, ground);
+    if (land < 1 && ground > sea + 0.6) land = Math.max(land, 1 - smoothstep(0.3, 0.55, this.getOceanness(x, z)));
+    height = Math.max(height, 8.5 * land);
     // (Where the land rises into the Smoky Mountains, it's coloured as
     // they are, green to the tops: no bare rock or snow on their flanks.)
     if (w.smoky > 0.01 && w.smoky < 0.99 && height > 100) {
@@ -3116,7 +3180,7 @@ export class TerrainGenerator {
     }
     // Lake shores: mud, dirt, grass and rock; rocky outcrops on beaches.
     const shore = ground < 9 ? this.getShore(x, z, ground) : null;
-    if (shore) out.lerp(SHORE[shore.kind], 0.85 * shore.fade);
+    if (shore) out.lerp(shore.color ?? SHORE[shore.kind], 0.85 * shore.fade);
     // Fallen rock at the foot of sea cliffs and round sea stacks.
     if (ground < 7 && ground > -3) {
       const cliffs = this.getSeaCliff(x, z);
@@ -3150,6 +3214,14 @@ export class TerrainGenerator {
     if (f && f.canyonFloor > 0.3 && upness > 0.8) out.lerp(WASH, 0.75 * f.canyonFloor);
     // Volcanoes: black tongues of old lava, reddish cinders round the craters.
     if (w.volcanic > 0.02) {
+      // Native grass, and broad stretches of bare, rocky ground.
+      const rocky = this.getVolcanicRocky(x, z);
+      if (rocky > 0 && height > 8) {
+        // (Broken up: lighter and darker basalt, tufts of grass between.)
+        const n = this.detailNoise.noise2D(x * 0.09 + 17, z * 0.09 - 5);
+        bankTmp.copy(VOLCANIC_ROCK).lerp(BASALT, 0.35 * smoothstep(0.1, 0.6, n));
+        out.lerp(bankTmp, (0.55 + 0.35 * smoothstep(-0.5, 0.2, n)) * rocky * smoothstep(0.02, 0.4, w.volcanic));
+      }
       const v = this.getVolcanic(x, z);
       if (v.cone > 0) out.lerp(SCREE, 0.8 * v.cone); // bare cinder slopes
       if (v.lava > 0) out.lerp(LAVA, 0.85 * v.lava);
@@ -3190,8 +3262,9 @@ export class TerrainGenerator {
       const e = river.e; // metres from the water's edge
       const gravel = river.stream && this.getMountainness(x, z) > 0.3;
       if (e < 0) out.lerp(RIVERBED, 0.85);
-      else if (e < 1.8) out.lerp(gravel ? GRAVEL : MUD, 0.85);
-      else out.lerp(gravel ? GRAVEL : DIRT, 0.8 * (1 - smoothstep(1.5, 4, e)) * (0.7 + 0.3 * this.detailNoise.noise2D(x * 0.3, z * 0.3)));
+      else if (e < 1.8) out.lerp(gravel ? GRAVEL : this.#bankColor(w, 'mud', bankTmp), 0.85);
+      // (Then the biome's own green bank, not a band of bare dirt.)
+      else out.lerp(gravel ? GRAVEL : this.#bankColor(w, 'bank', bankTmp), 0.6 * (1 - smoothstep(1.5, 4, e)) * (0.7 + 0.3 * this.detailNoise.noise2D(x * 0.3, z * 0.3)));
     }
     return out;
   }
