@@ -1147,7 +1147,7 @@ export class TerrainGenerator {
     const soft = w.wetland + w.mangrove;
     // Islands, here and there out in a lake or the sea: a wooded hump of
     // land with a beach round it (shaped by the lake shore below).
-    if (height < seaLevel - 0.5 && !this._probing && soft < 0.3) {
+    if (height < seaLevel - 0.5 && !this._probing && !this._riverWork && soft < 0.3) { // (not while the great rivers are worked out: see BigRivers.#ensure)
       const lift = this.#islandHeight(x, z);
       if (lift > height) height = lift;
     }
@@ -1164,7 +1164,7 @@ export class TerrainGenerator {
     if (ocean > 0 && u > -10 && u < 60) {
       const cliffs = this.#cliffZone(x, z, w) * ocean;
       // (Round an island, half as tall: never a wall higher than the island.)
-      const isle = cliffs > 0 && !this._probing ? this.islandAt(x, z) : 0;
+      const isle = cliffs > 0 && !this._probing && !this._riverWork ? this.islandAt(x, z) : 0;
       if (cliffs > 0) height += (this.#seaCliff(x, z, u, 1 - 0.5 * isle) - u) * cliffs;
       // Along some stretches, a broad shelf of rock the waves have planed
       // off, a few tens of metres out from the cliff, dotted with tide pools.
@@ -3181,13 +3181,17 @@ export class TerrainGenerator {
     }
     // Muddy banks along rivers and ponds (gravel along mountain streams),
     // fading to dirt and then the land's own colour.
-    const river = this.rivers.at(x, z, 4);
+    // (Measured from the edge of whatever water covers the point, so the
+    // bed is one colour right out to the waterline, even where a stream runs
+    // into a pond, and the mud starts only at the water's edge: no brown
+    // band of bank colour under the water.)
+    const river = this.rivers.shoreAt(x, z, 4);
     if (river) {
-      const e = river.d - river.water; // metres from the water's edge
+      const e = river.e; // metres from the water's edge
       const gravel = river.stream && this.getMountainness(x, z) > 0.3;
-      if (e < -0.3) out.lerp(RIVERBED, 0.85);
+      if (e < 0) out.lerp(RIVERBED, 0.85);
       else if (e < 1.8) out.lerp(gravel ? GRAVEL : MUD, 0.85);
-      else out.lerp(gravel ? GRAVEL : DIRT, 0.8 * (1 - smoothstep(river.half - river.water + 1.5, river.half - river.water + 4, e)) * (0.7 + 0.3 * this.detailNoise.noise2D(x * 0.3, z * 0.3)));
+      else out.lerp(gravel ? GRAVEL : DIRT, 0.8 * (1 - smoothstep(1.5, 4, e)) * (0.7 + 0.3 * this.detailNoise.noise2D(x * 0.3, z * 0.3)));
     }
     return out;
   }

@@ -1,5 +1,6 @@
 import { SimplexNoise } from '../noise/SimplexNoise.js';
 import { hash2, mulberry32 } from '../noise/random.js';
+import { easeBends } from './bends.js';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -16,13 +17,16 @@ const REGION = 8500; // at most one river rises in each region this size
 const SOURCE = 0.25; // it rises within this fraction of the region's size from its middle
 const CHANCE = 1; // how many regions try for one (most find a way to the water)
 const STEP = 48; // metres between a river's points
-const MAX_STEPS = 330; // at most ~16 km long, so a river (and its valley) never reaches past the regions two out from its own
+const MAX_STEPS = 330; // at most ~16 km long, so a river (and its valley) never reaches past the regions two out from its own (see #shape)
 const REACH = 2; // regions out from a point whose rivers can reach it (see #ensure)
 const MIN_LENGTH = 1500;
 const CELL = 256; // spatial index cell (m)
 const VALLEY = 650; // how far out past its flood plain a river's valley reaches (m)
 const JOIN = 260; // a river coming this close to a bigger one runs into it
 const GRID = 128; // spacing of the broad land's remembered grid (m: it's smooth)
+const LOW = 15; // open water is looked for only where the broad land (see #land) lies less than this above the sea
+const LAKE_CLEAR = 8; // a river that would come to a lake rises this many points (STEP apart) beyond it instead
+const BEND = (8 * Math.PI) / 180; // the most it turns at any one point (STEP apart): bends some 350 m round, or wider
 
 /**
  * Rivers: great slow rivers, some forty to over a hundred metres across,
@@ -110,9 +114,9 @@ export class BigRivers {
     return a + (b - a) * fz;
   }
 
-  /** The real land (TerrainGenerator.landHeight) at the nearest point of a remembered 64 m grid: for finding water. */
-  #real(x, z) {
-    const i = Math.round(x / 64), j = Math.round(z / 64), k = BigRivers.#key(i, j);
+  /** The real land (TerrainGenerator.landHeight) at point (i, j) of a remembered 64 m grid. */
+  #realPoint(i, j) {
+    const k = BigRivers.#key(i, j);
     const cache = this.realGrid ?? (this.realGrid = new Map());
     let v = cache.get(k);
     if (v === undefined) {
@@ -121,6 +125,63 @@ export class BigRivers {
       cache.set(k, v);
     }
     return v;
+  }
+
+  /** The real land at the nearest point of the remembered 64 m grid: for finding water. */
+  #real(x, z) {
+    return this.#realPoint(Math.round(x / 64), Math.round(z / 64));
+  }
+
+  /** The real land from the remembered 64 m grid, blended between its points. */
+  #realAt(x, z) {
+    const gx = Math.floor(x / 64), gz = Math.floor(z / 64);
+    const fx = x / 64 - gx, fz = z / 64 - gz;
+    const a = this.#realPoint(gx, gz) + (this.#realPoint(gx + 1, gz) - this.#realPoint(gx, gz)) * fx;
+    const b = this.#realPoint(gx, gz + 1) + (this.#realPoint(gx + 1, gz + 1) - this.#realPoint(gx, gz + 1)) * fx;
+    return a + (b - a) * fz;
+  }
+
+  /**
+   * 1 if (x, z) lies in a lake as the broad lie of the land has it (low
+   * enough for the water, as #trace looks for it, and not the open sea),
+   * else 0. (Quick: the real land isn't looked at.)
+   */
+  #lake(x, z) {
+    if (this.#land(x, z) >= this.seaLevel + 3) return 0;
+    // (Whether it's the open sea: at the nearest point of a remembered grid.)
+    const i = Math.round(x / GRID), j = Math.round(z / GRID), k = BigRivers.#key(i, j);
+    const cache = this.seaGrid ?? (this.seaGrid = new Map());
+    let v = cache.get(k);
+    if (v === undefined) {
+      v = this.generator.getOceanness(i * GRID, j * GRID);
+      if (cache.size > 200000) cache.clear();
+      cache.set(k, v);
+    }
+    return v <= 0.5 ? 1 : 0;
+  }
+
+  /** How wide a river is `k` points (of STEP) down from its spring: a stream there, some 40 m within the first kilometre, on to 120. */
+  static width(k) {
+    return 6 + (Math.min(120, 40 + k * STEP * 0.011) - 6) * smoothstep(0, 22, k);
+  }
+
+  /** The real land (TerrainGenerator.landHeight) exactly, remembered in `memo` (a Map). */
+  #exactLand(memo, x, z) {
+    const key = `${x},${z}`;
+    let h = memo.get(key);
+    if (h === undefined) memo.set(key, (h = this.generator.landHeight(x, z)));
+    return h;
+  }
+
+  /**
+   * Whether a traced course, shaped as it will run (see #shape), reaches
+   * the sea: if so it's the region's river (and its shape is kept for #final).
+   */
+  #keep(k, course) {
+    // (A quick look: not settled into the land, the remembered grid only.)
+    if (!this.#shape(course, null, null, true)) return false;
+    this.raws.set(k, course);
+    return true;
   }
 
   /** The course a river of region (i, j) would take on its own (or null). */
@@ -136,10 +197,9 @@ export class BigRivers {
     // and on from there to the water.
     for (const trunk of g.smokyTrunks(i * REGION, j * REGION, (i + 1) * REGION, (j + 1) * REGION)) {
       const course = this.#trace(trunk[0].x, trunk[0].z, rand, trunk);
-      if (course) {
-        this.raws.set(k, course);
-        return course;
-      }
+      // (Only one that, settled into the land and smoothed as it will be,
+      // still runs out into the open sea, touching no lake on the way.)
+      if (course && this.#keep(k, course)) return course;
     }
     // Candidate springs, the highest (furthest from the sea) tried first.
     const spots = [];
@@ -170,10 +230,7 @@ export class BigRivers {
       // (not in the desert).
       if (g.getAridity(x, z) > 0.7) continue;
       const course = this.#trace(x, z, rand);
-      if (course) {
-        this.raws.set(k, course);
-        return course;
-      }
+      if (course && this.#keep(k, course)) return course;
     }
     return null;
   }
@@ -211,6 +268,8 @@ export class BigRivers {
         let score = this.#land(px + ux * 120, pz + uz * 120) * 0.5 + this.#land(px + ux * 280, pz + uz * 280) * 0.35 + this.#land(px + ux * 520, pz + uz * 520) * 0.15 + Math.abs(turn) * 6 - (ux * away[0] + uz * away[1]) * 14;
         // (Shying away from the desert: it keeps to the greener country.)
         score += 60 * smoothstep(0.62, 0.78, this.#dry(px + ux * 400, pz + uz * 400));
+        // (And from lakes: it runs on round them, to the sea.)
+        score += 400 * (this.#lake(px + ux * 120, pz + uz * 120) + this.#lake(px + ux * 280, pz + uz * 280));
         if (score < bestScore) {
           bestScore = score;
           best = [ux, uz];
@@ -277,35 +336,47 @@ export class BigRivers {
         }
       }
     }
-    let points = raw.slice(0, cut).map((p) => ({ x: p.x, z: p.z, level: 0, width: 0 }));
+    const course = raw.slice(0, cut);
     if (into) {
       // It runs on into the middle of the one it joins.
       const q = into.river.points[into.b];
-      points.push({ x: q.x, z: q.z, level: 0, width: 0 });
+      course.push({ x: q.x, z: q.z });
     }
-    if (points.length * STEP < MIN_LENGTH * (into ? 0.6 : 1)) return null;
-    this.#settle(points, into ? 1 : 0);
-    points = this.#smooth(points, into ? 1 : 0);
+    if (course.length * STEP < MIN_LENGTH * (into ? 0.6 : 1)) return null;
+    // Its shape: as worked out for #raw if it runs on to the sea as it was
+    // traced, else worked out again. (The exact land under its points,
+    // looked at there, is remembered: it's needed below.)
+    const g = this.generator;
+    const exact = new Map();
+    const shape = this.#shape(course, into, (x, z) => this.#exactLand(exact, x, z));
+    if (!shape) return null;
+    ({ into } = shape);
+    // The land under each point: the exact height under it, and the
+    // remembered grid's to either side (where that's dry land: a lake or the
+    // sea beside it is no floor for it to run along).
+    const sea = this.seaLevel;
+    const points = shape.path.map(([x, z], k, P) => {
+      const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l;
+      const left = this.#real(x + nx * 40, z + nz * 40), right = this.#real(x - nx * 40, z - nz * 40);
+      const ground = Math.min(exact.get(`${x},${z}`) ?? g.landHeight(x, z), left < sea ? Infinity : left, right < sea ? Infinity : right);
+      return { x, z, level: 0, width: 0, ground };
+    });
     // Its water: a little below the real land, and only ever falling (so
     // where the land rises across its course, it cuts down through it).
-    const g = this.generator;
     let level = Infinity;
     for (const [k, p] of points.entries()) {
       // (Shallow at its spring, cutting deeper as it grows.)
       level = Math.min(level - 0.01, p.ground - 0.8 - 1.7 * smoothstep(0, 22, k));
-      p.level = Math.max(this.seaLevel + 0.03, level);
+      p.level = Math.max(sea + 0.03, level);
     }
-    // And easing down to where it ends: its mouth at the level of the lake
-    // or sea (or of the river it joins), never perched above it, rising
-    // gently upstream from there (at most 2.5 m a kilometre), so down its
-    // lower reaches it runs level with the low country beside it. (Upstream
-    // it cuts down into the land instead: its valley.)
-    const end = into ? into.river.points[into.b].level : this.seaLevel + 0.03;
+    // And easing down to where it ends: its mouth at the level of the sea
+    // (or of the river it joins), never perched above it, rising gently
+    // upstream from there (at most 2.5 m a kilometre), so down its lower
+    // reaches it runs level with the low country beside it. (Upstream it
+    // cuts down into the land instead: its valley.)
+    const end = into ? into.river.points[into.b].level : sea + 0.03;
     points[points.length - 1].level = end;
-    // (From where it first runs into water, a lake on its way or the sea,
-    // it's at that water's level: through a lake and on out of it, level.)
-    const wet = points.findIndex((p) => p.ground < this.seaLevel - 0.3);
-    if (wet >= 0) for (let k = wet; k < points.length; k++) points[k].level = Math.max(end, this.seaLevel + 0.03);
     for (let k = points.length - 2; k >= 0; k--) points[k].level = Math.min(points[k].level, points[k + 1].level + STEP * 0.0025);
     // (Never below the water it runs into.)
     for (const p of points) p.level = Math.max(p.level, end);
@@ -313,23 +384,118 @@ export class BigRivers {
     // within the first kilometre, and on to 120.
     const n = points.length;
     points.forEach((p, k) => {
-      p.width = 6 + (Math.min(120, 40 + k * STEP * 0.011) - 6) * smoothstep(0, 22, k);
+      p.width = BigRivers.width(k);
     });
     if (into) points[n - 1].width = Math.max(points[n - 2].width, into.river.points[into.b].width * 0.6);
+    // (Its mouth opens out into the sea: see carve.)
+    const mouth = into ? null : { x: points[n - 1].x, z: points[n - 1].z, r: points[n - 1].width + 40 };
     // It rises from a lake at its head: a spring-fed pool in a hollow, some
     // fifty to eighty metres across, at the level of its water there.
     const head = points[0];
     const source = { x: head.x, z: head.z, r: 26 + 16 * hash2(i, j, this.seed ^ 0x50c3), level: head.level };
-    const river = { points, pond: null, tarn: null, kind: 'river', big: true, region: [i, j], joins: !!into, source };
+    const river = { points, pond: null, tarn: null, kind: 'river', big: true, region: [i, j], joins: !!into, source, mouth };
     this.finals.set(k, river);
     return river;
   }
 
   /**
-   * Rounds a course's bends into smooth curves (corner cutting, a few
-   * times over), then spaces its points out evenly again (STEP apart),
-   * leaving its two ends where they are (and the last `keep` points) and
-   * working out the ground under each point again.
+   * A course as it finally runs, given its raw points (and, if it runs into
+   * another river, `into`, which its last point is the middle of): settled
+   * into the real land (see #settle) and smoothed (see #smooth), then cut
+   * short where it first comes to open water, beside its channel or under
+   * it. That must be the open sea: it ends there, its mouth running on out
+   * a little way into the sea. Where it would come to a lake on the way, it
+   * rises beyond the lake instead, well clear of it (LAKE_CLEAR), so no river
+   * ever runs into or through a lake. Returns { path: [[x, z], ...] STEP
+   * apart, into (null if it now reaches the sea before the river it was to
+   * join) }, or null if it never reaches the sea (or the river it joins),
+   * or too little of it is left. (`land`: see #firstWater. `quick`: a first
+   * look, for #raw, not settled into the land, under its middle only, on
+   * the remembered grid's nearest points.)
+   */
+  #shape(raw, into, land = null, quick = false) {
+    const keep = into ? 1 : 0;
+    const points = raw.map((p) => ({ x: p.x, z: p.z }));
+    if (!quick) this.#settle(points, keep);
+    let path = this.#smooth(points, keep);
+    // (Into another river: its last stretch, into the middle of that one, isn't looked at.)
+    const upTo = () => (into ? path.length - 2 : path.length - 1);
+    let from = 0, wet = null, extended = false;
+    for (;;) {
+      wet = this.#firstWater(path, from, upTo(), land, quick);
+      if (!wet && !into && !extended) {
+        // (Its trace ended at the water's edge as the coarser grid has it:
+        // on straight ahead a little way, to where the water really is.)
+        const [ax, az] = path[path.length - 2], [bx, bz] = path[path.length - 1], l = Math.hypot(bx - ax, bz - az) || 1;
+        for (let q = 1; q <= 6 && path.length - 1 < MAX_STEPS + 6; q++) path.push([bx + ((bx - ax) / l) * STEP * q, bz + ((bz - az) / l) * STEP * q]);
+        extended = true;
+        continue;
+      }
+      if (!wet || wet.ocean) break;
+      from = wet.k + LAKE_CLEAR;
+    }
+    if (!wet) {
+      if (!into) return null;
+      path = path.slice(from);
+      return path.length * STEP >= MIN_LENGTH * 0.6 ? { path, into } : null;
+    }
+    // It ends where it reaches the sea: its last stretch carries straight
+    // on out into the water, for half its width and a little more.
+    const [x, z] = wet.at, [ux, uz] = wet.dir;
+    path = path.slice(from, wet.k + 1);
+    if (!path.length) return null;
+    if (Math.hypot(path[path.length - 1][0] - x, path[path.length - 1][1] - z) > STEP * 0.3) path.push([x, z]);
+    const out = BigRivers.width(wet.k - from) / 2 + 24;
+    for (let d = Math.min(STEP, out); ; d = Math.min(d + STEP, out)) {
+      path.push([x + ux * d, z + uz * d]);
+      if (d >= out) break;
+    }
+    // (Short enough that it, its valley and its mouth never reach past the
+    // regions two out from its own: see REACH.)
+    if (path.length * STEP < MIN_LENGTH || from + path.length - 1 > MAX_STEPS + 6) return null;
+    return { path, into: null };
+  }
+
+  /**
+   * Where a course (points STEP apart, rising at point `from`) first comes
+   * to open water (the real land, from the remembered grid, under the lake
+   * or sea): under its middle, or beside it, out past its banks. Looked at
+   * every 16 m along its stretches from `from` up to `upTo`. Returns { k
+   * (the stretch), at: [x, z] (its middle there), dir (its way on), ocean
+   * (whether that water is the open sea) }, or null. (Given `land`, the
+   * exact land at (x, z), that's looked at under each of its points too.)
+   */
+  #firstWater(path, from, upTo, land = null, quick = false) {
+    const g = this.generator, sea = this.seaLevel, wet = sea - 0.3;
+    for (let k = from; k < Math.min(upTo, path.length - 1); k++) {
+      const [ax, az] = path[k], [bx, bz] = path[k + 1];
+      const l = Math.hypot(bx - ax, bz - az) || 1, ux = (bx - ax) / l, uz = (bz - az) / l;
+      const side = BigRivers.width(k - from) / 2 + 6;
+      for (let s = 0; s < l; s += 16) {
+        const x = ax + ux * s, z = az + uz * s;
+        // (Its middle, then either side.)
+        for (const o of quick ? [0] : [0, side, -side]) {
+          const px = x - uz * o, pz = z + ux * o;
+          // (Only where the broad lie of the land is low enough for water.)
+          const low = this.#land(px, pz) < sea + LOW;
+          if (!(low && (quick ? this.#real(px, pz) : this.#realAt(px, pz)) < wet) && !(land && s === 0 && o === 0 && land(px, pz) < wet)) continue;
+          // Open sea, or a lake? Looked at here and on out into it.
+          const dx = o ? -uz * Math.sign(o) : ux, dz = o ? ux * Math.sign(o) : uz;
+          let ocean = false;
+          for (const d of [0, 150, 300]) if (g.getOceanness(px + dx * d, pz + dz * d) > 0.5) ocean = true;
+          return { k, at: [x, z], dir: [ux, uz], ocean };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Rounds a course's bends into smooth curves: a broad rolling average
+   * along it, then corner cutting, then its points spaced out evenly
+   * again (STEP apart), then any sharp bend left eased out (see BEND),
+   * leaving its two ends where they are (and the last `keep` points).
+   * Returns [[x, z], ...].
    */
   #smooth(points, keep) {
     let P = points.map((p) => [p.x, p.z]);
@@ -379,14 +545,9 @@ export class BigRivers {
     const last = P[P.length - 1];
     if (Math.hypot(even[even.length - 1][0] - last[0], even[even.length - 1][1] - last[1]) > STEP * 0.3) even.push(last);
     else even[even.length - 1] = last;
-    const g = this.generator;
-    return even.map(([x, z], k) => {
-      const a = even[Math.max(0, k - 1)], b = even[Math.min(even.length - 1, k + 1)];
-      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l;
-      // (The land under it and to either side: the exact height under it, and the remembered grid's round about.)
-      const ground = Math.min(g.landHeight(x, z), this.#real(x + nx * 40, z + nz * 40), this.#real(x - nx * 40, z - nz * 40));
-      return { x, z, level: 0, width: 0, ground };
-    });
+    // (And any bend still sharp, near its ends where the average tapers off,
+    // eased out: nowhere does it turn more than BEND at one point.)
+    return easeBends(even, BEND, 1, even.length - 1 - fixed);
   }
 
   /**
@@ -394,10 +555,9 @@ export class BigRivers {
    * course onto the lowest ground within a few hundred metres (the floor
    * of the valley it's running down), smoothly, so the river keeps to the
    * valley floors rather than running over the hills between them. Leaves
-   * the last `keep` points where they are. Sets each point's `ground`.
+   * the last `keep` points where they are.
    */
   #settle(points, keep) {
-    const g = this.generator;
     const n = points.length;
     const shift = new Float32Array(n);
     const normals = points.map((p, k) => {
@@ -405,7 +565,11 @@ export class BigRivers {
       const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
       return [-dz / l, dx / l];
     });
-    const low = (p, [nx, nz], o) => this.#real(p.x + nx * o, p.z + nz * o);
+    // (Never into a lake or the sea beside it: it keeps to the dry valley floor.)
+    const low = (p, [nx, nz], o) => {
+      const h = this.#real(p.x + nx * o, p.z + nz * o);
+      return h < this.seaLevel - 0.3 ? Infinity : h;
+    };
     // (Every other point; the ones between are smoothed in below.)
     for (let k = 1; k < n - keep; k++) {
       if (k % 2 === 0 && k + 1 < n - keep) continue;
@@ -437,8 +601,6 @@ export class BigRivers {
       const p = points[k];
       p.x += normals[k][0] * smooth[k];
       p.z += normals[k][1] * smooth[k];
-      const [nx, nz] = normals[k];
-      p.ground = Math.min(this.#real(p.x, p.z), this.#real(p.x + nx * 30, p.z + nz * 30), this.#real(p.x - nx * 30, p.z - nz * 30));
     }
   }
 
@@ -469,11 +631,16 @@ export class BigRivers {
 
   #index(river) {
     const P = river.points;
-    let along = 0;
+    let along = 0, total = 0;
+    for (let i = 0; i < P.length - 1; i++) total += Math.hypot(P[i + 1].x - P[i].x, P[i + 1].z - P[i].z);
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     for (let i = 0; i < P.length - 1; i++) {
       const a = P[i], b = P[i + 1];
-      const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, along, source: i === 0 ? river.source ?? null : null };
+      const seg = {
+        ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, along, total,
+        source: i === 0 ? river.source ?? null : null,
+        mouth: i === P.length - 2 ? river.mouth ?? null : null,
+      };
       along += Math.hypot(b.x - a.x, b.z - a.z);
       const r = Math.max(a.width, b.width) / 2 + BigRivers.plain(Math.max(a.width, b.width) / 2) + VALLEY;
       for (let cz = Math.floor((Math.min(a.z, b.z) - r) / CELL); cz <= Math.floor((Math.max(a.z, b.z) + r) / CELL); cz++) {
@@ -553,6 +720,15 @@ export class BigRivers {
         t = L + 1.6 + (fp - 8) * 0.012 + s * 0.05 + (s / VALLEY) ** 2 * 170;
       }
       if (t < low) low = t;
+      // Its mouth: the land round its end falls away under the sea, so it
+      // opens out into the water, no spit or bar of land across it.
+      if (seg.mouth) {
+        const M = seg.mouth, e = Math.hypot(x - M.x, z - M.z);
+        if (e < M.r) {
+          const q = this.seaLevel - 0.8 + 2.6 * smoothstep(0.5, 1, e / M.r);
+          if (q < low) low = q;
+        }
+      }
       // The lake it rises from: a round bowl, with a low bank round it.
       if (seg.source) {
         const S = seg.source, e = Math.hypot(x - S.x, z - S.z) - S.r;
@@ -564,14 +740,18 @@ export class BigRivers {
       }
       // (Where the land beside it lies lower than the water, a low natural
       // levee holds the river in.)
+      // (None near its end, where it opens out into the sea or the river
+      // it joins.)
       if (u >= 0 && u < fp && L + 0.7 > levee) {
         levee = L + 0.7;
-        leveeWeight = 1 - smoothstep(fp * 0.6, fp, u);
+        leveeWeight = (1 - smoothstep(fp * 0.6, fp, u)) * smoothstep(150, 600, seg.total - m.along);
       }
     }
     if (low === Infinity) return h;
     this.lastEdge = edge;
-    if (edge < 0) return low; // in the channel
+    // In the channel. (Where it runs out into the sea, never building its bed
+    // up above the sea's own floor.)
+    if (edge < 0) return h < this.seaLevel + 0.2 ? low + (Math.min(low, h) - low) * smoothstep(this.seaLevel + 0.2, this.seaLevel - 0.8, h) : low;
     let out = smin(h, low, edge < 20 ? 1 : 10);
     // (Only on dry land: never building banks up out of a lake or the sea.)
     if (levee > out && h > this.seaLevel + 0.3) out += (levee - out) * leveeWeight * smoothstep(this.seaLevel + 0.3, this.seaLevel + 1.5, h);

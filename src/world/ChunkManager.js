@@ -271,7 +271,8 @@ export class ChunkManager {
       wantTrees: job.lod <= config.treeMaxLod,
       wantGrass: job.lod <= config.grassMaxLod,
       wantFarTrees: job.lod > config.treeMaxLod && job.lod <= (config.farTreeMaxLod ?? -1),
-      wantRivers: job.lod <= 1,
+      wantRivers: true,
+      wantReeds: job.lod <= 1,
     });
   }
 

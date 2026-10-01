@@ -8,7 +8,7 @@ import { rockCandidates } from './rockCandidates.js';
 import { packFarTrees, placeTrees } from './treePlacement.js';
 import { placeGrass } from './grassPlacement.js';
 import { waterData } from './waterData.js';
-import { riverData } from './riverData.js';
+import { riverData, riverGrid } from './riverData.js';
 import { reedData } from './reedData.js';
 import { minimapPixels } from '../ui/minimapPixels.js';
 import { mapTile } from '../ui/mapLabels.js';
@@ -27,7 +27,7 @@ function rocksAt(cx, cz, config) {
 }
 
 self.onmessage = (event) => {
-  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarTrees, wantRivers } = event.data;
+  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarTrees, wantRivers, wantReeds } = event.data;
   if (!world || world.seed !== seed) {
     world = { seed, generator: new TerrainGenerator(seed, config) };
     rocks.clear();
@@ -91,13 +91,15 @@ self.onmessage = (event) => {
   // The lake or sea over it, if any.
   out.water = waterData(g, config, cx, cz, heights);
   if (out.water) for (const a of Object.values(out.water)) transfer.push(a.buffer);
-  // River, stream and pond water, and the reeds along their banks.
+  // River, stream and pond water (at every level of detail), and the reeds along their banks (close by).
   if (wantRivers) {
-    out.river = riverData(g, config, cx, cz);
+    out.river = riverData(g, config, cx, cz, riverGrid(config, resolution));
     if (out.river) {
       for (const k of ['positions', 'colors', 'flows', 'streaks', 'freezes', 'mouths']) transfer.push(out.river[k].buffer);
       if (out.river.spray) for (const a of Object.values(out.river.spray)) transfer.push(a.buffer);
     }
+  }
+  if (wantReeds) {
     out.reeds = reedData(g, config, cx, cz, groundHeightAt, heights);
     if (out.reeds) transfer.push(out.reeds.matrices.buffer, out.reeds.shades.buffer);
   }

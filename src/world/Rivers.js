@@ -1,5 +1,6 @@
 import { SimplexNoise } from '../noise/SimplexNoise.js';
 import { hash2, mulberry32 } from '../noise/random.js';
+import { easeBends } from './bends.js';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -19,6 +20,7 @@ const CELL = 32; // spatial index cell (m)
 const STEP = 8; // path spacing (m)
 const RIVER_STEPS = 400; // a river is at most ~3 km long
 const STREAM_STEPS = 170; // a stream at most ~1.4 km
+const BEND = (14 * Math.PI) / 180; // the most a course turns at any one point (STEP apart): bends some 35 m round, or wider
 const INFLUENCE = 150; // how far past its channel a river still shapes the land (m): its valley (see valleyWidth)
 
 /**
@@ -624,6 +626,13 @@ export class Rivers {
         points[k].z = sz / w;
       }
     }
+    // (And any bend still sharp, near its ends where the average tapers off,
+    // eased out: nowhere does it turn more than BEND at one point.)
+    const P = easeBends(points.map((p) => [p.x, p.z]), BEND);
+    points.forEach((p, k) => {
+      p.x = P[k][0];
+      p.z = P[k][1];
+    });
     const river = { points, pond, tarn, kind, id: this.list.length };
     let along = 0; // metres from the source
     for (let i = 0; i < points.length - 1; i++) {
@@ -804,9 +813,10 @@ export class Rivers {
       // than on a channel built out from the rock.
       return wet < base + 1.5 ? wet : h;
     }
-    // Banks never lower than the water beside them (except out in a lake or
-    // the sea, or where the land drops away under a fall).
-    if (bank > h && base > this.seaLevel - 0.5 && bank - base < 1.5) h = bank;
+    // Banks never lower than the water beside them (except where the land
+    // drops away under a fall, and never built up out of a lake or the sea:
+    // no strips of land along a creek out into the water it runs into).
+    if (bank > h && bank - base < 1.5) h += (bank - h) * smoothstep(this.seaLevel - 0.1, this.seaLevel + 0.4, base);
     return h + rough * smoothstep(5, 14, edge);
   }
 
@@ -835,6 +845,37 @@ export class Rivers {
     }
     const big = this.big.waterAt(x, z, margin);
     if (big && (!best || big.d - big.half < best.d - best.half)) best = { ...big, stream: false, pond: false, big: true };
+    return best;
+  }
+
+  /**
+   * How far (x, z) lies from the edge of the nearest water, of any river,
+   * stream or pond, if within `margin` metres of it: { e (metres out from
+   * the water's edge, the edge of the channel or pond that carve() keeps
+   * under the water; below 0 under the water), stream }, or null. Every
+   * water that covers the point counts (a stream running into a pond is
+   * under the pond's water all the way in), so the colours painted under
+   * the water and along the banks (see TerrainGenerator.surfaceColor)
+   * follow the water's real edge.
+   */
+  shoreAt(x, z, margin = 0) {
+    const near = this.#near(x, z) ?? [];
+    let best = null;
+    const m = this._s ?? (this._s = {});
+    for (const item of near) {
+      let e, stream = false;
+      if (item.pond) {
+        const pond = item.pond;
+        e = Math.hypot(x - pond.x, z - pond.z) - Math.max(Rivers.pondRadius(pond, x, z), 2.4);
+      } else {
+        Rivers.#measure(item, x, z, m);
+        e = m.d - m.half;
+        stream = m.stream;
+      }
+      if (e <= margin && (!best || e < best.e)) best = { e, stream };
+    }
+    const big = this.big.waterAt(x, z, margin);
+    if (big && (!best || big.d - big.half < best.e)) best = { e: big.d - big.half, stream: false };
     return best;
   }
 

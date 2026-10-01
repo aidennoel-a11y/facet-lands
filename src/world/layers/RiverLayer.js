@@ -17,19 +17,20 @@ import {
 
 // How bright the waterfalls' mist is (the daylight on it): set by the caller.
 export const mistLight = { value: 1 };
-import { riverData } from '../riverData.js';
+import { riverData, riverGrid } from '../riverData.js';
 import { seasonalWater, seasonUniforms } from '../../render/Seasons.js';
 import { SPARKLE_HEAD, sparkleUniforms } from '../../render/waterSparkle.js';
 
 /**
  * River, stream and pond water (see Rivers) as one surface that fills the
- * trenches: each chunk near you gets a sheet sampled every 2 m at the level
- * of the water there (see Rivers.waterAt), running a little way on under the banks so the
- * land itself cuts the waterline. So a river flows straight out of its
- * source pond, and two rivers meeting merge into one sheet. At a lake or
- * the sea it takes on that water's colour and runs on over it a little,
- * so the two meet without a seam (it's drawn first, so the lake doesn't
- * show through it twice).
+ * trenches: each chunk gets a sheet sampled every 2 m close by (coarser
+ * further off: see riverGrid) at the level of the water there (see
+ * Rivers.waterAt), flat, running a little way on under the banks and cut off
+ * cleanly there (see riverData), so the land itself cuts the waterline. So a
+ * river flows straight out of its source pond, and two rivers meeting merge
+ * into one sheet. At a lake or the sea it takes on that water's colour and
+ * fades into it, so the two meet without a seam (it's drawn first, so the
+ * lake doesn't show through it twice).
  *
  * The water is see-through, and flows: its surface runs downstream, little
  * humps of water and the ripples over them carried along by the current
@@ -255,12 +256,13 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
       uniforms.uTime.value = time;
     },
 
-    reuseKey: ({ lod }) => (lod > 1 ? 'none' : 'near'),
+    // (At every level of detail, on a grid as fine as its land's: see riverGrid.)
+    reuseKey: ({ resolution, config }) => `grid:${riverGrid(config, resolution)}`,
 
-    build({ cx, cz, lod, generator, config, prepared }) {
-      if (lod > 1 || !generator.rivers) return null;
+    build({ cx, cz, resolution, generator, config, prepared }) {
+      if (!generator.rivers) return null;
       // (Worked out by the chunk's worker, or here.)
-      const data = prepared && prepared.river !== undefined ? prepared.river : riverData(generator, config, cx, cz);
+      const data = prepared && prepared.river !== undefined ? prepared.river : riverData(generator, config, cx, cz, riverGrid(config, resolution));
       if (!data) return null;
       const geometry = new BufferGeometry();
       geometry.setAttribute('position', new BufferAttribute(data.positions, 3));

@@ -70,26 +70,55 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     surf[k] = (1 - smoothstep(0.2, 1.8, depth)) * (0.35 + 0.65 * generator.getSeaCliff(x, z));
   }
 
+  // Not down a river's channel, though, where the river's own water runs
+  // above the lake's level (see riverData): only where it has come down to
+  // that level, at its mouth, does the lake's water run on up it. (Cut off
+  // along a line across the channel, worked out between the grid's points.)
+  const open = new Float32Array(n * n).fill(1);
+  const rivers = generator.rivers;
+  if (rivers) {
+    for (let k = 0; k < n * n; k++) {
+      if (ground[k] > seaLevel + 12) continue;
+      const w = rivers.waterAt(originX + xs[k], originZ + zs[k], 8);
+      if (w) open[k] = Math.min(1, seaLevel + 0.3 - w.level);
+    }
+  }
+
   const positions = [];
   const colors = [];
   const waves = [];
   const foams = [];
   const freezes = [];
   const depths = [];
+  const put = (a, b, t) => {
+    const s = 1 - t;
+    const depth = seaLevel - (ground[a] * s + ground[b] * t);
+    color.copy(SHALLOW).lerp(DEEP, smoothstep(-1, 16, depth));
+    positions.push(xs[a] * s + xs[b] * t, seaLevel, zs[a] * s + zs[b] * t);
+    colors.push(color.r, color.g, color.b, 0.6 + 0.38 * smoothstep(-0.5, 8, depth));
+    depths.push(Math.max(-2, Math.min(40, depth)));
+    waves.push(0.1 + 0.9 * smoothstep(1, 16, depth) + 2.4 * (swell[a] * s + swell[b] * t));
+    foams.push(surf[a] * s + surf[b] * t);
+    freezes.push(freeze[a] * s + freeze[b] * t);
+  };
+  const poly = [];
   const addTri = (a, b, c) => {
     // Keep faces with any corner under water; drop fully dry ones.
     const wet = seaLevel + 1.5;
     if (ground[a] > wet && ground[b] > wet && ground[c] > wet) return;
-    for (const k of [a, b, c]) {
-      const depth = seaLevel - ground[k];
-      const t = smoothstep(-1, 16, depth);
-      color.copy(SHALLOW).lerp(DEEP, t);
-      positions.push(xs[k], seaLevel, zs[k]);
-      colors.push(color.r, color.g, color.b, 0.6 + 0.38 * smoothstep(-0.5, 8, depth));
-      depths.push(Math.max(-2, Math.min(40, depth)));
-      waves.push(0.1 + 0.9 * smoothstep(1, 16, seaLevel - ground[k]) + 2.4 * swell[k]);
-      foams.push(surf[k]);
-      freezes.push(freeze[k]);
+    if (open[a] < 0 && open[b] < 0 && open[c] < 0) return;
+    // (The part of it clear of the rivers' channels: see above.)
+    poly.length = 0;
+    const corners = [a, b, c];
+    for (let e = 0; e < 3; e++) {
+      const p = corners[e], q = corners[(e + 1) % 3];
+      if (open[p] >= 0) poly.push(p, p, 0);
+      if (open[p] >= 0 !== open[q] >= 0) poly.push(p, q, open[p] / (open[p] - open[q]));
+    }
+    for (let v = 3; v + 3 < poly.length; v += 3) {
+      put(poly[0], poly[1], poly[2]);
+      put(poly[v], poly[v + 1], poly[v + 2]);
+      put(poly[v + 3], poly[v + 4], poly[v + 5]);
     }
   };
 

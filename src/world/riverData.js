@@ -13,8 +13,11 @@ const LAKE_DEEP = new Color(0x2c67b0);
 const TINTS = [null, [new Color(0x57c9bf), new Color(0x2b98a0)], [new Color(0x7fd6d0), new Color(0x1f86c4)]];
 const color = new Color();
 const lakeColor = new Color();
-const GRID = 2; // metres between the surface's vertices
-const MARGIN = 3; // how far past a channel's edge the surface runs on under the banks
+const GRID = 2; // metres between the surface's vertices (close by: further off, see riverGrid)
+// The surface runs on under the banks until the land stands LIFT above it,
+// or at most REACH metres past the channel's edge (see riverData).
+const LIFT = 0.5;
+const REACH = 4.5;
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -88,58 +91,96 @@ function sprayData(rivers, x0, z0, chunkSize, generator) {
 }
 
 /**
+ * How far apart (m) the river water's grid points are over a chunk whose
+ * land is drawn `resolution` cells a side: every 2 m close by, and further
+ * off half the land's cells (4 m over 8 m cells, out to 16 m over 32 m).
+ */
+export function riverGrid(config, resolution) {
+  return Math.max(GRID, config.chunkSize / resolution / 2);
+}
+
+/**
  * The river water over chunk (cx, cz): the surface's faces { positions,
  * colors (rgba), flows, streaks, freezes, mouths } and its waterfalls' spray, or
  * null if there's none.
+ *
+ * The surface is sampled on a grid (`grid` metres: see riverGrid), flat at the water's level. It runs
+ * on a little way under the banks and is then cut off cleanly along a
+ * line worked out between the grid's points (never along the grid's own
+ * steps): where the land has risen `LIFT` above the water, or at the
+ * latest `REACH` metres past the channel's edge. So the shoreline you see is
+ * where the land itself comes up through the water, and the cut edge lies
+ * hidden under the bank, at every level of detail (the land is the same
+ * function of x and z on both sides of a chunk's border, so neighbouring
+ * chunks cut their water along the same line).
  */
-export function riverData(generator, config, cx, cz) {
+export function riverData(generator, config, cx, cz, grid = GRID) {
   const { chunkSize, seaLevel } = config;
   const rivers = generator.rivers;
   const x0 = cx * chunkSize, z0 = cz * chunkSize;
   const courses = rivers.inBox(x0, z0, x0 + chunkSize, z0 + chunkSize);
   if (!courses.length) return null;
 
-  // The water at each grid point: its level, current, white water, how
-  // far in from the channel's edge, and how much it has given way to a
-  // lake or the sea it runs into.
-  const cells = chunkSize / GRID;
+  // The water at each grid point: its level, current, white water, how far
+  // in from the channel's edge, how much it has given way to a lake or the
+  // sea it runs into, and `keep` (>= 0 where the water shows: see above).
+  const cells = chunkSize / grid;
   const n = cells + 1;
   const level = new Float32Array(n * n).fill(NaN);
+  const keep = new Float32Array(n * n).fill(-1);
   const flow = new Float32Array(n * n * 4);
-  const inset = new Float32Array(n * n);
-  const river = new Float32Array(n * n); // 1 in the river, 0 out in the lake it flows into
-  const depth = new Float32Array(n * n); // of the water, for the lake's colours
+  const rgba = new Float32Array(n * n * 4);
   const ice = new Float32Array(n * n); // still water in cold lands freezes in winter
-  const tint = new Uint8Array(n * n);
+  const mouth = new Float32Array(n * n); // 1 in the river, 0 where it has become the lake or sea
+  // (Points out to `search` past the edge get a value too: far enough that
+  // every face with a corner beyond it is cut away whole, more than a face's
+  // diagonal past REACH.)
+  const search = REACH + 1.6 * grid;
   let any = false;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const x = x0 + i * GRID, z = z0 + j * GRID;
-      const w = rivers.waterAt(x, z, MARGIN);
+      const x = x0 + i * grid, z = z0 + j * grid;
+      const w = rivers.waterAt(x, z, search);
       if (!w) continue;
       const k = j * n + i;
-      river[k] = smoothstep(seaLevel - 0.6, seaLevel + 0.3, generator.getBaseHeight(x, z));
-      // Out over a lake it sits a hair higher, clear of the lake's ripples.
-      level[k] = w.level + 0.03 + 0.07 * (1 - river[k]);
-      const ground = generator.getHeight(x, z);
-      depth[k] = w.level - ground;
-      // Past the channel's edge the sheet dips under the bank, so the shore
-      // is where the land meets the water, never the grid's stepped rim.
-      if (w.inset < 0) level[k] = Math.min(level[k], ground - 0.3);
-      // And where a river has come down to the level of the lake or sea it
-      // runs into, its sheet dips under that water wherever there is some,
-      // so the shore is the lake's own, not the river sheet's stepped rim.
-      if (w.level < seaLevel + 0.5 && ground < seaLevel) level[k] = Math.min(level[k], seaLevel - 0.3);
+      // (Well inside a channel or pond the bed always lies below the water:
+      // the land there needn't be looked at, unless for the lake below.)
+      const inside = w.inset > 1.5 && w.level >= seaLevel + 0.35;
+      const ground = inside ? -Infinity : generator.getHeight(x, z);
+      keep[k] = Math.min(w.level + LIFT - ground, REACH + w.inset);
+      if (keep[k] >= 0) any = true;
+      // Where it has come down to the level of the lake or sea it runs
+      // into, out over that water, it gives way to it: fading out, so the
+      // two meet with no edge between them (the lake's own sheet is there:
+      // see waterData). (Over a creek's narrow trench the lake's sheet, on
+      // its coarser grid, may not reach, so there it gives way only out over
+      // the lake itself, where the land lay under water before any river.)
+      let lake = 0;
+      if (w.level < seaLevel + 0.35) lake = smoothstep(seaLevel + 0.35, seaLevel + 0.1, w.level) * smoothstep(seaLevel + 0.2, seaLevel - 0.8, w.big ? ground : generator.landHeight(x, z));
+      mouth[k] = 1 - lake;
+      // (Out over the lake it sits a hair higher, clear of the lake's ripples.)
+      level[k] = w.level + 0.03 + 0.07 * lake;
       const drop = Math.max(0, w.drop);
       flow[k * 4] = w.along;
       flow[k * 4 + 1] = Math.min(1.5, w.across);
-      flow[k * 4 + 2] = w.pond ? 0 : (0.6 + Math.min(2.4, drop * 6)) * river[k];
+      flow[k * 4 + 2] = w.pond ? 0 : (0.6 + Math.min(2.4, drop * 6)) * (1 - lake);
       flow[k * 4 + 3] = Math.min(1, Math.max(0, (drop - 0.25) / 0.5));
-      inset[k] = w.inset;
       if (w.pond) ice[k] = w.tint === 2 ? 0 : generator.getSeasonality(x, z); // (hot springs never freeze)
       else if (drop > 0.25 && w.tint !== 2) ice[k] = fallIce(generator, x, z) * Math.min(1, (drop - 0.25) / 0.3); // (and falls, where it's cold enough)
-      tint[k] = w.tint || 0;
-      any = true;
+      // Its colour: deeper out from the banks, the lake's colours where it
+      // gives way to one; see-through, more so at the edges. (Smooth from
+      // point to point: no patchwork of faces.)
+      const deep = smoothstep(0, 3, w.inset);
+      if (w.tint) {
+        color.copy(TINTS[w.tint][0]).lerp(TINTS[w.tint][1], deep);
+      } else {
+        color.copy(SHALLOW).lerp(DEEP, deep);
+        if (lake > 0) color.lerp(lakeColor.copy(LAKE_SHALLOW).lerp(LAKE_DEEP, smoothstep(-1, 16, w.level - ground)), lake);
+      }
+      rgba[k * 4] = color.r;
+      rgba[k * 4 + 1] = color.g;
+      rgba[k * 4 + 2] = color.b;
+      rgba[k * 4 + 3] = 0.5 + 0.18 * deep;
     }
   }
   if (!any) return null;
@@ -151,47 +192,52 @@ export function riverData(generator, config, cx, cz) {
   const freezes = [];
   const mouths = [];
   const seed = generator.seed ^ 0x3c6ef372;
-  const tri = (a, b, c, shade) => {
-    if (Number.isNaN(level[a]) || Number.isNaN(level[b]) || Number.isNaN(level[c])) return;
-    if (level[a] < seaLevel - 0.2 && level[b] < seaLevel - 0.2 && level[c] < seaLevel - 0.2) return; // (all under the lake: unseen)
-    const r = (river[a] + river[b] + river[c]) / 3;
-    if (r === 0) return; // well out in the lake
-    const deep = smoothstep(0, 3, (inset[a] + inset[b] + inset[c]) / 3);
-    const t = smoothstep(-1, 16, (depth[a] + depth[b] + depth[c]) / 3);
-    lakeColor.copy(LAKE_SHALLOW).lerp(LAKE_DEEP, t);
-    color.copy(SHALLOW).lerp(DEEP, deep).lerp(lakeColor, 1 - r);
-    const tt = Math.max(tint[a], tint[b], tint[c]);
-    if (tt) color.copy(TINTS[tt][0]).lerp(TINTS[tt][1], deep);
-    color.multiplyScalar(shade);
+  // A corner of a face: grid point `a`, or the point a fraction `t` of the
+  // way from `a` to `b` (where the cut crosses the edge between them).
+  const put = (a, b, t, streaky) => {
+    const s = 1 - t;
+    positions.push(((a % n) * s + (b % n) * t) * grid, level[a] * s + level[b] * t, (Math.floor(a / n) * s + Math.floor(b / n) * t) * grid);
+    for (let q = 0; q < 4; q++) colors.push(rgba[a * 4 + q] * s + rgba[b * 4 + q] * t);
+    for (let q = 0; q < 4; q++) flows.push(flow[a * 4 + q] * s + flow[b * 4 + q] * t);
+    streaks.push(streaky);
+    freezes.push(ice[a] * s + ice[b] * t);
+    mouths.push(smoothstep(0.05, 0.85, mouth[a] * s + mouth[b] * t));
+  };
+  const poly = [];
+  const tri = (a, b, c) => {
+    if (Number.isNaN(level[a]) || Number.isNaN(level[b]) || Number.isNaN(level[c])) return; // (well away from any water)
+    if (keep[a] < 0 && keep[b] < 0 && keep[c] < 0) return;
+    if (mouth[a] === 0 && mouth[b] === 0 && mouth[c] === 0) return; // (well out in the lake: its own water)
     // Where two rivers meet, their distances along don't match: no
     // streaks on the few faces that straddle the two.
     const spread = Math.max(flow[a * 4], flow[b * 4], flow[c * 4]) - Math.min(flow[a * 4], flow[b * 4], flow[c * 4]);
     const streaky = spread < 8 ? 1 : 0;
-    const clear = 0.5 + 0.18 * deep; // see-through, more so at the edges
-    const alpha = clear;
-    for (const k of [a, b, c]) {
-      positions.push((k % n) * GRID, level[k], Math.floor(k / n) * GRID);
-      colors.push(color.r, color.g, color.b, alpha);
-      flows.push(flow[k * 4], flow[k * 4 + 1], flow[k * 4 + 2], flow[k * 4 + 3]);
-      streaks.push(streaky);
-      freezes.push(ice[k]);
-      // Fading away where it runs out into a lake or the sea, so the two
-      // waters meet with no edge between them (see RiverLayer).
-      mouths.push(smoothstep(0.05, 0.85, river[k]));
+    // The part of the face where the water shows (keep >= 0): the face
+    // itself, or cut off along the line where keep is 0 (a triangle, or a
+    // four-sided piece split in two).
+    poly.length = 0;
+    const corners = [a, b, c];
+    for (let e = 0; e < 3; e++) {
+      const p = corners[e], q = corners[(e + 1) % 3];
+      if (keep[p] >= 0) poly.push(p, p, 0);
+      if (keep[p] >= 0 !== keep[q] >= 0) poly.push(p, q, keep[p] / (keep[p] - keep[q]));
+    }
+    for (let v = 3; v + 3 < poly.length; v += 3) {
+      put(poly[0], poly[1], poly[2], streaky);
+      put(poly[v], poly[v + 1], poly[v + 2], streaky);
+      put(poly[v + 3], poly[v + 4], poly[v + 5], streaky);
     }
   };
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
       const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
       const gi = cx * cells + i, gj = cz * cells + j;
-      const s0 = 0.96 + hash2(gi * 2, gj, seed) * 0.06;
-      const s1 = 0.96 + hash2(gi * 2 + 1, gj, seed) * 0.06;
       if (hash2(gi, gj, seed + 1) < 0.5) {
-        tri(a, c, d, s0);
-        tri(a, d, b, s1);
+        tri(a, c, d);
+        tri(a, d, b);
       } else {
-        tri(a, c, b, s0);
-        tri(b, c, d, s1);
+        tri(a, c, b);
+        tri(b, c, d);
       }
     }
   }
@@ -203,6 +249,6 @@ export function riverData(generator, config, cx, cz) {
     streaks: new Float32Array(streaks),
     freezes: new Float32Array(freezes),
     mouths: new Float32Array(mouths),
-    spray: sprayData(courses, x0, z0, chunkSize, generator),
+    spray: grid <= GRID ? sprayData(courses, x0, z0, chunkSize, generator) : null,
   };
 }
