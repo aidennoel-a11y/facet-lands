@@ -170,6 +170,8 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       }
       // (Only cypresses, mangroves and dead trees stand out in the water.)
       if (marsh && ground < seaLevel + 0.4 && !IN_WATER.has(species.type)) continue;
+      // (Cacti thin out towards a desert's edges: few where it meets the savanna.)
+      if ((species.type === 'cactus' || species.type === 'smallCactus') && hash2(gi, gj, seed + 19) > smoothstep(0.55, 0.97, generator.getBiomeWeights(wx, wz, {}).desert)) continue;
       // (On a mangrove coast the mangroves keep to the water's edge and the
       // shallows; the drier ground between is open salt grass.)
       if (biome.id === 'mangrove' && species.type === 'mangrove' && ground > seaLevel + 1.3) continue;
@@ -216,7 +218,7 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 /** The kinds of tree, in a fixed order (far trees are packed by index). */
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
   'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm', 'bamboo', 'jungleCanopy',
-  'appleTree', 'raspberryBush', 'blueberryBush'];
+  'appleTree', 'raspberryBush', 'blueberryBush', 'redwood'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

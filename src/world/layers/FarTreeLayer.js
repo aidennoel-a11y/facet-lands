@@ -14,7 +14,7 @@ import { seasonalTrees } from '../../render/Seasons.js';
 import { FALL, TREE_GEOMETRIES } from '../trees.js';
 import { packFarTrees, placeTrees } from '../treePlacement.js';
 
-const CONES = new Set(['pine', 'spruce', 'larch']);
+const CONES = new Set(['pine', 'spruce', 'larch', 'redwood']);
 const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag', 'bamboo']); // (bamboo: a single cane)
 const CLUMPS = new Set();
 // Crowns held high on a bare trunk (and its bark colour).

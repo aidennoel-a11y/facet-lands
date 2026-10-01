@@ -736,6 +736,31 @@ function bamboo() {
   return withCrown(wood, sprays);
 }
 
+// Redwood: a giant, its thick, fluted, rust-red trunk rising bare a long
+// way before the first branches, then a narrow spire of dark, dense
+// foliage in ragged tiers.
+function redwood() {
+  const rand = mulberry32(2201);
+  const bark = 0x7a3420, barkTop = 0x9a4a2c;
+  const wood = [part(new CylinderGeometry(0.5, 1.15, 26, 9, 4), bark, barkTop, { y: 13, lump: 0.06, seed: 2200 })];
+  // A flared foot.
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + rand() * 0.3;
+    wood.push(limb([Math.cos(a) * 1.5, -0.2, Math.sin(a) * 1.5], [Math.cos(a) * 0.4, 2.6, Math.sin(a) * 0.4], 0.28, 0.35, bark, bark, 2210 + k));
+  }
+  // A few short, drooping limbs up the top half.
+  for (let k = 0; k < 8; k++) {
+    const a = rand() * Math.PI * 2, y = 14 + k * 1.4;
+    wood.push(limb([0, y, 0], [Math.cos(a) * 2.2, y - 0.8, Math.sin(a) * 2.2], 0.12, 0.05, barkTop, bark, 2220 + k));
+  }
+  const crown = [];
+  const tiers = [[3.2, 5, 15.5], [2.9, 4.6, 18.5], [2.5, 4.2, 21.2], [2.0, 3.8, 23.8], [1.4, 3.4, 26.2], [0.8, 2.8, 28.4]];
+  tiers.forEach(([r, h, y], i) => {
+    crown.push(part(new ConeGeometry(r, h, 7, 1), 0x1f4a2a, 0x2f5f34, { y, lump: 0.18, seed: 2240 + i }));
+  });
+  return withCrown(wood, crown);
+}
+
 // Charred snag (volcanic highlands): a dead tree burned black by an old
 // lava flow, its top snapped off.
 function charredSnag() {
@@ -1111,6 +1136,7 @@ export const TREE_GEOMETRIES = {
   jungleCanopy: jungleCanopy(),
   junglePalm: junglePalm(),
   bamboo: bamboo(),
+  redwood: redwood(),
   appleTree: appleTree(),
   raspberryBush: raspberryBush(),
   blueberryBush: blueberryBush(),
@@ -1129,6 +1155,7 @@ const SEASONAL = {
   baobab: [0, 0, 0], joshuaTree: [0, 0, 0], ocotillo: [0, 0, 0],
   jungleGiant: [0, 0, 0], jungleCanopy: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
   appleTree: [1, 1, 1], raspberryBush: [1, 1, 1], blueberryBush: [1, 1, 1],
+  redwood: [0, 1, 0],
 };
 // Each deciduous species' own autumn colour (linear RGB), so every tree of
 // a kind turns the same: birches a vibrant yellow, maples scarlet, oaks russet...

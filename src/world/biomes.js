@@ -438,6 +438,70 @@ export const BIOMES = {
       ],
     },
   },
+
+  // Redwood forest: groves of giant redwoods in the heart of a pine forest
+  // near a lake or the sea, their trunks soaring bare to far-off crowns,
+  // the floor beneath deep in shade, rust-brown litter and ferns.
+  redwood: {
+    id: 'redwood',
+    name: 'Redwood forest',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xc9b98a },
+      { height: 5, color: 0x8d7a58 },
+      { height: 8, color: 0x6f5a3c }, // rust-brown litter
+      { height: 30, color: 0x6a6038 },
+      { height: 60, color: 0x5d6436 },
+      { height: 95, color: 0x6a7448 },
+      { height: 122, color: 0x7f8660 },
+      { height: 148, color: 0x9391a1 },
+      { height: 210, color: 0x838198 },
+    ],
+    cliff: 0x86808e,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 185,
+    snow: 0xf1f4f7,
+    grass: 0.35,
+    trees: {
+      density: 0.62,
+      clumped: false,
+      species: [
+        { type: 'redwood', weight: 1.4, minHeight: -99, maxHeight: 140 },
+        { type: 'spruce', weight: 0.25, minHeight: -99, maxHeight: 160 },
+        { type: 'pine', weight: 0.15, minHeight: -99, maxHeight: 160 },
+      ],
+    },
+  },
+
+  // Badlands (like the Badlands of South Dakota): sharp, eroded ridges,
+  // spires and buttes banded cream, buff, rose and grey, gullied all over,
+  // over a floor of dry prairie grass.
+  badlands: {
+    id: 'badlands',
+    name: 'Badlands',
+    palette: [
+      { height: -Infinity, color: 0x8f8a6c },
+      { height: -14, color: 0xb8a574 },
+      { height: 0, color: 0xd8c690 },
+      { height: 6, color: 0xb9b06c }, // dry prairie grass on the floor
+      { height: 40, color: 0xb5a46a },
+      { height: 90, color: 0xc9b48a },
+    ],
+    cliff: 0xd2c2a4, // pale clay
+    cliffSlope: [0.86, 0.6],
+    snowLine: 400,
+    snow: 0xf1f4f7,
+    grass: 0.35,
+    trees: {
+      density: 0.02,
+      clumped: false,
+      species: [
+        { type: 'dryBush', weight: 1, minHeight: -99, maxHeight: 999 },
+        { type: 'bush', weight: 0.3, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
 };
 
 export const BIOME_IDS = Object.keys(BIOMES);
