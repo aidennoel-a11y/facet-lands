@@ -158,9 +158,6 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
       let lake = 0;
       if (w.level < seaLevel + 0.35) lake = smoothstep(seaLevel + 0.35, seaLevel + 0.1, w.level) * smoothstep(seaLevel + 0.2, seaLevel - 0.8, w.big ? ground : generator.landHeight(x, z));
       mouth[k] = 1 - lake;
-      // (Once it has all but given way, it ends: cut off there, so the
-      // see-through last of it never hides the lake's own sheet just under it.)
-      if (lake > 0) keep[k] = Math.min(keep[k], (0.85 - lake) * 20);
       // (Out over the lake it sits a hair higher, clear of the lake's ripples.)
       level[k] = w.level + 0.03 + 0.07 * lake;
       const drop = Math.max(0, w.drop);

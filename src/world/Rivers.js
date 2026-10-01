@@ -20,7 +20,7 @@ const CELL = 32; // spatial index cell (m)
 const STEP = 8; // path spacing (m)
 const RIVER_STEPS = 400; // a river is at most ~3 km long
 const STREAM_STEPS = 170; // a stream at most ~1.4 km
-const BEND = (14 * Math.PI) / 180; // the most a course turns at any one point (STEP apart): bends some 35 m round, or wider
+const BEND = (20 * Math.PI) / 180; // the most a course turns at any one point (STEP apart): bends some 35 m round, or wider
 const INFLUENCE = 150; // how far past its channel a river still shapes the land (m): its valley (see valleyWidth)
 
 /**
@@ -328,6 +328,14 @@ export class Rivers {
         lowland = points.length;
       }
       if (stream && i >= STREAM_STEPS) return null;
+      // Never out into a desert or a dune sea (along the edge of one, where
+      // it meets the savanna, at most).
+      // (Only looked at where it's dry enough for one: deserts are all drier
+      // than 0.67 by TerrainGenerator.broadDryness.)
+      if (i % 4 === 0 && this.big.dry(px, pz) > 0.55) {
+        const w = g.getBiomeWeights(px, pz, {});
+        if (w.desert + w.saltFlat > 0.5) return null;
+      }
       // Rivers keep to gentle country (streams tumble down anything).
       if (!stream && slope > 0.45) return null;
       // Circling back on itself: it's stuck in a hollow.
@@ -405,9 +413,12 @@ export class Rivers {
           return points.length >= 10 ? Rivers.#widen(points, kind === 'stream', lowland) : null;
         }
       }
-      // Reaching a great river: it runs into it.
+      // Reaching a great river: it runs into it, and ends there. (Never on
+      // across it: where it has cut down below the river's water, its last
+      // stretch is held up level with the river, so the two waters meet.)
       const big = this.big.waterAt(px, pz, 0);
-      if (big && big.inside && big.level <= level + 0.3) {
+      if (big && big.inside) {
+        for (const p of points) p.level = Math.max(p.level, big.level);
         const last = points[points.length - 1];
         last.level = Math.max(big.level, Math.min(last.level, big.level + 0.05));
         points.push({ x: px + dir[0] * STEP, z: pz + dir[1] * STEP, level: last.level, width: 0 });
@@ -894,8 +905,9 @@ export class Rivers {
     if (!b) return creek;
     const big = { level: b.level, fx: b.fx, fz: b.fz, drop: b.drop, along: b.along, across: b.across, inset: b.inset, pond: false, tint: 0, big: true };
     if (!creek) return big;
-    // (Where a creek runs into it, the lower water.)
-    if (b.inside) return creek.inset > 0 && creek.level < big.level ? creek : big;
+    // (Inside a great river's channel, its water: a creek running into it
+    // never shows through as a step.)
+    if (b.inside) return big;
     return creek.inset > 0 || creek.inset > big.inset ? creek : big;
   }
 

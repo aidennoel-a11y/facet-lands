@@ -46,7 +46,7 @@ async function settled(min, max, settle = 4) {
     await page.waitForTimeout(1000);
     const busy = await page.evaluate(() => {
       const c = window.world.chunks;
-      return (c.queue?.length ?? 0) + (c.inFlight?.size ?? 0);
+      return c.pendingCount ?? (c.queue?.length ?? 0) + (c.inFlight?.size ?? 0);
     });
     if (busy) quietSince = null;
     else quietSince ??= Date.now();

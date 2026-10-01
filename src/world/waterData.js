@@ -80,7 +80,10 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     for (let k = 0; k < n * n; k++) {
       if (ground[k] > seaLevel + 12) continue;
       const w = rivers.waterAt(originX + xs[k], originZ + zs[k], 8);
-      if (w) open[k] = Math.min(1, seaLevel + 0.3 - w.level);
+      // (Smoothly: out past the channel's edge the cut eases off, gone 4 m
+      // out, so it follows a line under the bank, never the search's own
+      // stepped edge 8 m out on this coarse grid.)
+      if (w) open[k] = Math.min(1, Math.max(seaLevel + 0.3 - w.level, -(w.inset ?? 0) - 4));
     }
   }
 
@@ -95,31 +98,25 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     const depth = seaLevel - (ground[a] * s + ground[b] * t);
     color.copy(SHALLOW).lerp(DEEP, smoothstep(-1, 16, depth));
     positions.push(xs[a] * s + xs[b] * t, seaLevel, zs[a] * s + zs[b] * t);
-    colors.push(color.r, color.g, color.b, 0.6 + 0.38 * smoothstep(-0.5, 8, depth));
+    // (Fading out softly where a river's water stands above it, instead of
+    // ending in an edge: see `open` above.)
+    const fade = smoothstep(-0.25, 0.15, open[a] * s + open[b] * t);
+    colors.push(color.r, color.g, color.b, (0.6 + 0.38 * smoothstep(-0.5, 8, depth)) * fade);
     depths.push(Math.max(-2, Math.min(40, depth)));
     waves.push(0.1 + 0.9 * smoothstep(1, 16, depth) + 2.4 * (swell[a] * s + swell[b] * t));
     foams.push(surf[a] * s + surf[b] * t);
     freezes.push(freeze[a] * s + freeze[b] * t);
   };
-  const poly = [];
   const addTri = (a, b, c) => {
     // Keep faces with any corner under water; drop fully dry ones.
     const wet = seaLevel + 1.5;
     if (ground[a] > wet && ground[b] > wet && ground[c] > wet) return;
-    if (open[a] < 0 && open[b] < 0 && open[c] < 0) return;
-    // (The part of it clear of the rivers' channels: see above.)
-    poly.length = 0;
-    const corners = [a, b, c];
-    for (let e = 0; e < 3; e++) {
-      const p = corners[e], q = corners[(e + 1) % 3];
-      if (open[p] >= 0) poly.push(p, p, 0);
-      if (open[p] >= 0 !== open[q] >= 0) poly.push(p, q, open[p] / (open[p] - open[q]));
-    }
-    for (let v = 3; v + 3 < poly.length; v += 3) {
-      put(poly[0], poly[1], poly[2]);
-      put(poly[v], poly[v + 1], poly[v + 2]);
-      put(poly[v + 3], poly[v + 4], poly[v + 5]);
-    }
+    // (Left out under a river's channel where the river stands above it;
+    // where it meets the river, faded out rather than cut: see put.)
+    if (open[a] < -0.25 && open[b] < -0.25 && open[c] < -0.25) return;
+    put(a, a, 0);
+    put(b, b, 0);
+    put(c, c, 0);
   };
 
   for (let j = 0; j < resolution; j++) {

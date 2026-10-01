@@ -44,6 +44,9 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
   const material = new MeshPhongMaterial({
     vertexColors: true,
     transparent: true,
+    // (It never hides the lake's or sea's own sheet just under it, where it
+    // fades out into one at its mouth: the two blend, with no edge between.)
+    depthWrite: false,
     shininess: 120,
     specular: 0x8aa4bc,
     side: DoubleSide, // (seen from underneath, too)

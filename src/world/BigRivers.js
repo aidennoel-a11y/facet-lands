@@ -26,7 +26,7 @@ const JOIN = 260; // a river coming this close to a bigger one runs into it
 const GRID = 128; // spacing of the broad land's remembered grid (m: it's smooth)
 const LOW = 15; // open water is looked for only where the broad land (see #land) lies less than this above the sea
 const LAKE_CLEAR = 8; // a river that would come to a lake rises this many points (STEP apart) beyond it instead
-const BEND = (8 * Math.PI) / 180; // the most it turns at any one point (STEP apart): bends some 350 m round, or wider
+const BEND = (20 * Math.PI) / 180; // the most it turns at any one point (STEP apart): bends some 350 m round, or wider
 
 /**
  * Rivers: great slow rivers, some forty to over a hundred metres across,
@@ -112,6 +112,11 @@ export class BigRivers {
     const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
     const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
     return a + (b - a) * fz;
+  }
+
+  /** The broad dryness (as #dry), for the creeks to tell the desert by cheaply. */
+  dry(x, z) {
+    return this.#dry(x, z);
   }
 
   /** The real land (TerrainGenerator.landHeight) at point (i, j) of a remembered 64 m grid. */
@@ -267,7 +272,7 @@ export class BigRivers {
         const ux = Math.cos(a), uz = Math.sin(a);
         let score = this.#land(px + ux * 120, pz + uz * 120) * 0.5 + this.#land(px + ux * 280, pz + uz * 280) * 0.35 + this.#land(px + ux * 520, pz + uz * 520) * 0.15 + Math.abs(turn) * 6 - (ux * away[0] + uz * away[1]) * 14;
         // (Shying away from the desert: it keeps to the greener country.)
-        score += 60 * smoothstep(0.62, 0.78, this.#dry(px + ux * 400, pz + uz * 400));
+        score += 60 * smoothstep(0.62, 0.78, this.#dry(px + ux * 400, pz + uz * 400)) + 160 * smoothstep(0.5, 0.7, this.#dry(px + ux * 200, pz + uz * 200));
         // (And from lakes: it runs on round them, to the sea.)
         score += 400 * (this.#lake(px + ux * 120, pz + uz * 120) + this.#lake(px + ux * 280, pz + uz * 280));
         if (score < bestScore) {
@@ -285,6 +290,12 @@ export class BigRivers {
       points.push({ x: px, z: pz });
       // (Never out into a desert: along its edge at most.)
       if (this.#dry(px, pz) > 0.8) return null; // (where the desert takes over)
+      // (And by the biomes themselves: never into a desert or a dune sea,
+      // only along the edge where it meets the savanna.)
+      if (step % 4 === 0 && this.#dry(px, pz) > 0.6) {
+        const w = g.getBiomeWeights(px, pz, {});
+        if (w.desert + w.saltFlat > 0.5) return null;
+      }
       // (The real land's looked at only where the broad lie is low enough for water.)
       // It ends where it reaches the open sea. (One that would run into a
       // lake on the way is no river: there's none from here.)
