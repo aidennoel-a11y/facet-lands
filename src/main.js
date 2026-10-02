@@ -115,6 +115,36 @@ const rivers = createRiverLayer(dayNight.horizon, dayNight.top);
 const fallingLeaves = new FallingLeaves(scene);
 // The animals (deer, bison, rabbits, birds), and the bees, their nests and the fireflies.
 const wildlife = new Wildlife(scene, addCloudShadow);
+
+// The animals-only view (testing): a label over each animal's head.
+const animalsOnlyBox = document.getElementById('animals-only');
+const animalLabels = document.createElement('div');
+animalLabels.className = 'animal-labels';
+document.body.append(animalLabels);
+const labelPool = [];
+const labelAt = new THREE.Vector3();
+const animalName = (kind) => kind.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+function labelAnimals(on) {
+  let used = 0;
+  if (on) {
+    const w = window.innerWidth, h = window.innerHeight;
+    for (const a of wildlife.animals) {
+      if (!a.alive || used >= 120) continue;
+      const d = Math.hypot(a.x - camera.position.x, a.z - camera.position.z);
+      if (d > 300) continue;
+      labelAt.set(a.x, (a.y ?? 0) + 1.6 * (a.scale ?? 1) + 0.4, a.z).project(camera);
+      if (labelAt.z > 1 || Math.abs(labelAt.x) > 1.05 || Math.abs(labelAt.y) > 1.05) continue;
+      const el = labelPool[used] ?? animalLabels.appendChild(Object.assign(document.createElement('span'), { className: 'animal-label' }));
+      labelPool[used] = el;
+      const text = `${animalName(a.kind)}${a.young ? ' (young)' : ''} · ${Math.round(d)} m`;
+      if (el.textContent !== text) el.textContent = text;
+      el.style.transform = `translate(${((labelAt.x + 1) / 2) * w}px, ${((1 - labelAt.y) / 2) * h}px) translate(-50%, -100%)`;
+      el.hidden = false;
+      used++;
+    }
+  }
+  for (let k = used; k < labelPool.length; k++) labelPool[k].hidden = true;
+}
 const traces = new Traces(scene);
 const fish = new Fish(scene, addCloudShadow);
 const shootingStars = new ShootingStars(scene);
@@ -1232,7 +1262,14 @@ function tick(now) {
   const tremble = volcanoes.shake > 0 && !controls.swimming ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0;
   camera.position.y += tremble;
   camera.updateMatrixWorld();
-  if (ui.rays.checked) {
+  // (Animals only, for testing: everything else hidden, each animal labelled.)
+  const animalsOnly = animalsOnlyBox?.checked;
+  const hidden = [];
+  if (animalsOnly) {
+    for (const child of scene.children) if (child.visible && !child.isLight && !child.userData.wildlife) (child.visible = false), hidden.push(child);
+  }
+  labelAnimals(animalsOnly);
+  if (ui.rays.checked && !animalsOnly) {
     light.strength = dayNight.lightStrength;
     light.reach = dayNight.shaftReach;
     light.haze = haze;
@@ -1240,6 +1277,7 @@ function tick(now) {
   } else {
     renderer.render(scene, camera);
   }
+  for (const child of hidden) child.visible = true;
 
   camera.position.y -= tremble;
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);

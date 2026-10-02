@@ -60,8 +60,17 @@ const SPECIES = {
   // their fans in the spring).
   turkey: { ground: true, biped: true, grade: 0.8, model: Models.turkey, max: 30, walk: 0.9, run: 6.5, flee: 24, calm: 70, radius: 0.25, height: 1.0, health: 10, stride: 0.55, turn: 4, size: 1.0, gaits: FOWL, call: 'gobble' },
   // Ducks paddling on the ponds and lakes (up and away, if you come near).
-  duck: { ground: true, biped: true, water: true, model: Models.duck, max: 30, walk: 0.5, run: 1.5, flee: 20, calm: 60, radius: 0.2, height: 0.35, health: 4, stride: 0.2, turn: 3, size: 1.3, gaits: FOWL, call: 'quack' },
+  duck: { ground: true, biped: true, water: true, model: Models.duck, max: 60, walk: 0.5, run: 1.5, flee: 20, calm: 60, radius: 0.2, height: 0.35, health: 4, stride: 0.2, turn: 3, size: 1.3, gaits: FOWL, call: 'quack' },
   // Rattlesnakes in the dry country (not in the winter): coiling, rattling, striking.
+  // The jungle's big cats: tigers (heavy, striped, deadly) and black
+  // panthers (smaller, ambushing from cover); giant pandas, placid, munching
+  // in the bamboo; crocodiles lying at the water's edge in the mangroves
+  // and the jungle lakes; mountain goats on the crags and in the badlands.
+  tiger: { ground: true, grade: 0.85, model: Models.tiger, max: 4, walk: 1.1, run: 15, flee: 20, calm: 90, radius: 0.4, height: 1.0, health: 180, stride: 1.5, turn: 3.2, size: 1.2, gaits: DOG, trotBand: 0.15, swims: true, call: 'growl' },
+  panther: { ground: true, grade: 0.95, model: Models.panther, max: 4, walk: 1.2, run: 15, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 80, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
+  panda: { ground: true, grade: 0.7, model: Models.panda, max: 8, walk: 0.7, run: 5, flee: 12, calm: 40, radius: 0.6, height: 1.2, health: 160, stride: 1.2, turn: 1.6, size: 1.05, forager: true, gaits: BEAR },
+  crocodile: { ground: true, grade: 0.5, model: Models.crocodile, max: 10, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
+  mountainGoat: { ground: true, grade: 1.3, model: Models.mountainGoat, max: 24, walk: 1.0, run: 9, flee: 30, calm: 80, radius: 0.35, height: 1.0, health: 70, stride: 1.0, turn: 3, size: 1.15, gaits: HOOF, trotBand: 0.35, call: 'baa' },
   snake: { serpent: true, model: Models.snake, max: 10, walk: 0.35, run: 1.2, flee: 5, calm: 12, radius: 0.1, height: 0.1, health: 4, size: 1.0 },
   songbird: { bird: true, model: Models.songbird, max: 60, scale: 1.6, flee: 9, radius: 0.25, health: 2 },
   starling: { bird: true, model: Models.starling, max: 60, scale: 1.45, flee: 22, radius: 0.25, health: 2 },
@@ -79,6 +88,9 @@ SPECIES.wolf.predator = { sight: 70, close: 22, bite: 11, every: 1.3, reach: 1.4
 SPECIES.grizzly.predator = { sight: 55, close: 25, bite: 30, every: 1.7, reach: 2.0 };
 SPECIES.blackBear.predator = { sight: 35, close: 16, bite: 22, every: 1.6, reach: 1.8 };
 SPECIES.cougar.predator = { sight: 65, close: 0, bite: 24, every: 1.2, reach: 1.3, ambush: true };
+SPECIES.tiger.predator = { sight: 70, close: 20, bite: 38, every: 1.4, reach: 1.8 };
+SPECIES.panther.predator = { sight: 60, close: 0, bite: 26, every: 1.2, reach: 1.4, ambush: true };
+SPECIES.crocodile.predator = { sight: 18, close: 0, bite: 40, every: 1.8, reach: 2.2, ambush: true };
 // The ones that stand up for themselves: charge you if you come too close
 // (`close`; `rut`: nearer in the autumn, a bull or buck; `young`: a mother
 // by her calf or piglets in spring), or when hurt (`hurt`), and then make off.
@@ -95,6 +107,7 @@ const YIELD = {
   sheep: { rawMeat: 3, wool: 3 }, wolfPup: { rawMeat: 1 }, deer: { rawMeat: 4, hide: 1 }, elk: { rawMeat: 6, hide: 2 }, moose: { rawMeat: 9, hide: 2 },
   bison: { rawMeat: 6, hide: 2 }, blackBear: { rawMeat: 5, fur: 2 }, grizzly: { rawMeat: 6, fur: 2 }, wolf: { rawMeat: 2, fur: 1 }, coyote: { rawMeat: 2, fur: 1 },
   fox: { rawMeat: 1, fur: 1 }, rabbit: { rawMeat: 1 }, hare: { rawMeat: 1, fur: 1 }, boar: { rawMeat: 5, hide: 1 }, cougar: { rawMeat: 3, fur: 1 },
+  tiger: { rawMeat: 6, fur: 2 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 },
   turkey: { rawMeat: 2, feather: 3 }, duck: { rawMeat: 1, feather: 2 }, snake: { rawMeat: 1 },
 };
 // Those that are small enough to be fed on by the scavengers (and those
@@ -146,6 +159,7 @@ export class Wildlife {
         mesh.receiveShadow = true;
         mesh.count = 0;
         mesh.name = `${kind} ${name}`;
+        mesh.userData.wildlife = true; // (see the animals-only view: main)
         scene.add(mesh);
         meshes[name] = mesh;
       };
@@ -791,7 +805,7 @@ export class Wildlife {
       const p = at();
       if (p.y < ctx.seaLevel + 1 || p.y > 150) continue;
       const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
-      if (w.temperate + w.pine + w.smoky > 0.6 && f > 0.08 && f < 0.95 && g.getMountainness(p.x, p.z) < 0.55) {
+      if (w.temperate + w.pine + w.smoky + w.parkland > 0.6 && f > 0.08 && f < 0.95 && g.getMountainness(p.x, p.z) < 0.55) { // (the birch and aspen parkland too)
         if (rand() < 0.28) {
           const from = this.animals.length;
           const herd = this.#group('deer', p, 2 + Math.floor(rand() * 5), rand() < 0.35);
@@ -959,7 +973,7 @@ export class Wildlife {
       if (p.y < ctx.seaLevel + 1) continue;
       const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z), f = g.getForestDensity(p.x, p.z);
       if (w.pine + w.smoky + w.temperate > 0.6 && m > 0.15 && m < 0.7 && f < 0.7) {
-        if (rand() < 0.1) {
+        if (rand() < 0.12) {
           const from = this.animals.length;
           const herd = this.#group('elk', p, 4 + Math.floor(rand() * 7), rand() < 0.3);
           if (herd) {
@@ -1041,7 +1055,7 @@ export class Wildlife {
     {
       const p = at();
       const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
-      if (p.y > ctx.seaLevel + 1 && w.temperate + w.smoky > 0.6 && f > 0.15 && f < 0.8 && g.getMountainness(p.x, p.z) < 0.45 && rand() < 0.1) {
+      if (p.y > ctx.seaLevel + 1 && w.temperate + w.smoky + w.parkland > 0.6 && f > 0.15 && f < 0.8 && g.getMountainness(p.x, p.z) < 0.45 && rand() < 0.1) {
         const from = this.animals.length;
         const herd = this.#group('turkey', p, 4 + Math.floor(rand() * 6), rand() < 0.2);
         if (herd) home.herds.push(herd);
@@ -1053,11 +1067,58 @@ export class Wildlife {
       const x = (cx + 0.05 + 0.9 * rand()) * C, z = (cz + 0.05 + 0.9 * rand()) * C;
       const w = ctx.waterAt(x, z);
       if (!w || (w.speed ?? 0) > 0.8 || g.getOceanness(x, z) > 0.4 || w.level - ctx.ground(x, z) < 0.4) continue;
-      if (rand() < 0.35 && ctx.winter < 0.6) {
+      if (rand() < 0.6 && ctx.winter < 0.6) {
         const from = this.animals.length;
         const herd = { kind: 'duck', goal: { x, z }, goalWait: 1e9, members: [], fear: null, fleeTime: 0 };
-        for (let n = 2 + Math.floor(rand() * 5), j = 0; j < n; j++) this.#spawnWalker('duck', x + rnd(-3, 3), z + rnd(-3, 3), herd, { water: true });
+        for (let n = 3 + Math.floor(rand() * 8), j = 0; j < n; j++) this.#spawnWalker('duck', x + rnd(-3, 3), z + rnd(-3, 3), herd, { water: true });
         if (herd.members.length) this.herds.push(herd), home.herds.push(herd);
+        own(from);
+      }
+      break;
+    }
+    // The jungle's: a tiger, a black panther, giant pandas (in the bamboo).
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if (p.y > ctx.seaLevel + 1 && w.jungle > 0.6) {
+        const r = rand();
+        const from = this.animals.length;
+        if (r < 0.05) this.#spawnWalker('tiger', p.x, p.z, null);
+        else if (r < 0.11) this.#spawnWalker('panther', p.x, p.z, null);
+        else if (r < 0.19) {
+          this.#spawnWalker('panda', p.x, p.z, null);
+          if (rand() < 0.4) this.#spawnWalker('panda', p.x + rnd(-4, 4), p.z + rnd(-4, 4), null);
+        }
+        own(from);
+      }
+    }
+    // Mountain goats: a band on the crags and in the badlands.
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if (p.y > ctx.seaLevel + 1 && (g.getMountainness(p.x, p.z) > 0.4 || w.badlands > 0.5) && w.desert < 0.5 && rand() < 0.12) {
+        const from = this.animals.length;
+        const herd = this.#group('mountainGoat', p, 3 + Math.floor(rand() * 5), rand() < 0.3);
+        if (herd) home.herds.push(herd);
+        own(from);
+      }
+    }
+    // Crocodiles: lying at the water's edge in the mangroves and round the
+    // jungle's lakes and rivers.
+    for (let k = 0; k < 4 && ctx.waterAt; k++) {
+      const x = (cx + 0.05 + 0.9 * rand()) * C, z = (cz + 0.05 + 0.9 * rand()) * C;
+      const w = g.getBiomeWeights(x, z, {});
+      if (w.mangrove + w.jungle < 0.4 || !ctx.waterAt(x, z)) continue;
+      if (rand() < 0.45) {
+        const from = this.animals.length;
+        for (let n = 1 + Math.floor(rand() * 2), j = 0; j < n; j++) {
+          // (Up on the bank, beside the water.)
+          for (let t = 0; t < 8; t++) {
+            const a = rand() * TAU, d = 3 + rand() * 6;
+            const bx = x + Math.cos(a) * d, bz = z + Math.sin(a) * d;
+            if (!ctx.waterAt(bx, bz) && this.#spawnWalker('crocodile', bx, bz, null)) break;
+          }
+        }
         own(from);
       }
       break;

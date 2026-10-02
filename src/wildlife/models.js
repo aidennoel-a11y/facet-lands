@@ -756,3 +756,236 @@ export const hive = () => new Blocks()
   .box(0.28, 0.11, 0.28, 0xc08a34, [0, -0.58, 0])
   .box(0.16, 0.06, 0.06, 0x2a1c10, [0, -0.4, 0.22])
   .build();
+
+// --- The jungle's, the swamps' and the crags' -------------------------------
+
+/**
+ * A tiger: big and heavy-shouldered, deep orange with bold black stripes
+ * running down its sides, white belly, cheeks and eye spots, a broad
+ * ruffed face, small round ears with white marks behind, a long ringed tail.
+ */
+export function tiger() {
+  const coat = 0xd8782a, dark = 0x1a1210, white = 0xf2ece0, back = 0xc8682a;
+  const body = new Blocks()
+    .box(0.46, 0.5, 0.5, coat, [0, 0.84, 0.42], [0, 0, 0], [0.85, 0.9]) // heavy shoulders
+    .box(0.4, 0.44, 0.8, coat, [0, 0.82, -0.12], [0, 0, 0], [0.9, 1]) // long body
+    .box(0.42, 0.48, 0.4, coat, [0, 0.84, -0.62], [0, 0, 0], [0.85, 0.9]) // hips
+    .box(0.24, 0.05, 1.5, back, [0, 1.08, -0.1]) // deeper orange along the back
+    .box(0.3, 0.08, 1.2, white, [0, 0.6, -0.05]); // white belly
+  // The stripes: dark bars down both flanks and over the back.
+  for (let k = 0; k < 8; k++) {
+    const z = 0.55 - k * 0.18, h = 0.3 + 0.08 * Math.sin(k * 1.7);
+    body.box(0.03, h, 0.05, dark, [0.215, 0.88, z], [0.25, 0, 0]);
+    body.box(0.03, h, 0.05, dark, [-0.215, 0.88, z], [-0.25, 0, 0]);
+    body.box(0.36, 0.03, 0.05, dark, [0, 1.09, z + 0.06]);
+  }
+  // The long tail, ringed, hanging and curving up at its black tip.
+  body.box(0.09, 0.09, 0.42, coat, [0, 0.74, -0.98], [-0.9, 0, 0], [0.95, 0.95]);
+  body.box(0.1, 0.03, 0.1, dark, [0, 0.62, -1.0]);
+  body.box(0.085, 0.085, 0.36, coat, [0, 0.44, -1.16], [-0.2, 0, 0]);
+  body.box(0.09, 0.03, 0.09, dark, [0, 0.42, -1.2]);
+  body.box(0.08, 0.08, 0.16, dark, [0, 0.46, -1.38], [0.6, 0, 0]);
+  return {
+    body: body.build(),
+    headPivot: [0, 1.0, 0.7],
+    head: new Blocks()
+      .box(0.32, 0.3, 0.26, coat, [0, -0.08, 0.0], [0.5, 0, 0], [0.85, 0.9]) // thick neck
+      .box(0.36, 0.3, 0.3, coat, [0, 0.04, 0.18], [0, 0, 0], [0.9, 0.9]) // broad head
+      .box(0.42, 0.18, 0.14, white, [0, -0.04, 0.2]) // white ruff of the cheeks
+      .box(0.18, 0.13, 0.16, white, [0, -0.06, 0.36]) // white muzzle
+      .box(0.08, 0.05, 0.04, 0x8a4a3a, [0, 0.0, 0.45]) // nose
+      .box(0.05, 0.03, 0.02, 0xd8b040, [0.08, 0.08, 0.34]) // gold eyes
+      .box(0.05, 0.03, 0.02, 0xd8b040, [-0.08, 0.08, 0.34])
+      .box(0.06, 0.03, 0.02, white, [0.09, 0.12, 0.33]) // white spots over the eyes
+      .box(0.06, 0.03, 0.02, white, [-0.09, 0.12, 0.33])
+      .box(0.03, 0.12, 0.02, dark, [0, 0.16, 0.33]) // stripes on the brow
+      .box(0.03, 0.08, 0.02, dark, [0.07, 0.17, 0.32], [0, 0, 0.3])
+      .box(0.03, 0.08, 0.02, dark, [-0.07, 0.17, 0.32], [0, 0, -0.3])
+      .box(0.03, 0.03, 0.16, dark, [0.2, 0.0, 0.2]) // cheek stripes
+      .box(0.03, 0.03, 0.16, dark, [-0.2, 0.0, 0.2])
+      .box(0.1, 0.1, 0.05, coat, [0.13, 0.22, 0.1], [0, 0, 0.2], [0.6, 0.6]) // small round ears
+      .box(0.1, 0.1, 0.05, coat, [-0.13, 0.22, 0.1], [0, 0, -0.2], [0.6, 0.6])
+      .box(0.05, 0.05, 0.01, white, [0.13, 0.22, 0.075]) // white marks behind them
+      .box(0.05, 0.05, 0.01, white, [-0.13, 0.22, 0.075])
+      .build(),
+    antlers: null,
+    fore: limb(0.32, 0.34, { top: [0.18, 0.22], knee: [0.13, 0.14], ankle: [0.11, 0.11], color: coat, foot: [0.17, 0.06, 0.19, white, 0.03] }),
+    hind: limb(0.34, 0.33, { top: [0.2, 0.28], knee: [0.12, 0.13], ankle: [0.1, 0.1], color: coat, foot: [0.17, 0.06, 0.19, white, 0.03] }),
+    legs: [[0.15, 0.66, 0.48], [-0.15, 0.66, 0.48], [0.15, 0.66, -0.64], [-0.15, 0.66, -0.64]],
+    torso: [[0, 0.84, -0.1, 0.23, 0.28, 0.8]],
+    neck: [0, -0.08, 0.0, 0.16, 0.16, 0.13],
+    skull: [0, 0.03, 0.2, 0.18, 0.15, 0.2],
+  };
+}
+
+/**
+ * A black panther (a melanistic jaguar or leopard): sleek and glossy
+ * black, the rosettes only just showing darker on it, compact and
+ * muscular, a big round head with pale green-gold eyes, a long tail.
+ */
+export function panther() {
+  const coat = 0x1e1c22, sheen = 0x2c2a32, rosette = 0x121014, eye = 0xb8c850;
+  const body = new Blocks()
+    .box(0.32, 0.36, 0.4, coat, [0, 0.64, 0.32], [0, 0, 0], [0.85, 0.9]) // chest
+    .box(0.28, 0.3, 0.62, coat, [0, 0.64, -0.12], [0, 0, 0], [0.9, 1]) // body
+    .box(0.32, 0.36, 0.32, coat, [0, 0.66, -0.52], [0, 0, 0], [0.85, 0.9]) // hips
+    .box(0.18, 0.04, 1.1, sheen, [0, 0.83, -0.1]); // the glossy back, catching the light
+  // The faint rosettes, darker on the black.
+  for (const [x, y, z] of [[0.15, 0.66, 0.3], [0.15, 0.72, 0.0], [0.145, 0.62, -0.25], [0.155, 0.7, -0.5], [-0.15, 0.68, 0.22], [-0.15, 0.62, -0.05], [-0.145, 0.72, -0.32], [-0.155, 0.66, -0.55]]) {
+    body.box(0.02, 0.07, 0.08, rosette, [x, y, z]);
+  }
+  body.box(0.08, 0.08, 0.44, coat, [0, 0.54, -0.84], [-1.0, 0, 0], [0.95, 0.95]); // long tail
+  body.box(0.075, 0.075, 0.4, coat, [0, 0.3, -1.04], [-0.25, 0, 0]);
+  body.box(0.07, 0.07, 0.2, sheen, [0, 0.36, -1.28], [0.7, 0, 0]);
+  return {
+    body: body.build(),
+    headPivot: [0, 0.78, 0.54],
+    head: new Blocks()
+      .box(0.22, 0.22, 0.22, coat, [0, -0.06, 0.0], [0.5, 0, 0], [0.85, 0.9]) // neck
+      .box(0.26, 0.22, 0.24, coat, [0, 0.05, 0.15], [0, 0, 0], [0.92, 0.92]) // big round head
+      .box(0.15, 0.11, 0.12, sheen, [0, -0.02, 0.3]) // muzzle
+      .box(0.06, 0.04, 0.03, 0x0a080a, [0, 0.02, 0.37]) // nose
+      .box(0.05, 0.035, 0.02, eye, [0.07, 0.09, 0.27]) // pale green-gold eyes
+      .box(0.05, 0.035, 0.02, eye, [-0.07, 0.09, 0.27])
+      .box(0.08, 0.08, 0.04, coat, [0.1, 0.18, 0.1], [0, 0, 0.25], [0.6, 0.6]) // small round ears
+      .box(0.08, 0.08, 0.04, coat, [-0.1, 0.18, 0.1], [0, 0, -0.25], [0.6, 0.6])
+      .build(),
+    antlers: null,
+    fore: limb(0.25, 0.27, { top: [0.13, 0.16], knee: [0.1, 0.1], ankle: [0.08, 0.08], color: coat, foot: [0.13, 0.05, 0.14, sheen, 0.03] }),
+    hind: limb(0.27, 0.26, { top: [0.15, 0.21], knee: [0.09, 0.1], ankle: [0.075, 0.075], color: coat, foot: [0.13, 0.05, 0.14, sheen, 0.03] }),
+    legs: [[0.11, 0.52, 0.38], [-0.11, 0.52, 0.38], [0.11, 0.52, -0.52], [-0.11, 0.52, -0.52]],
+    torso: [[0, 0.65, -0.1, 0.17, 0.21, 0.64]],
+    neck: [0, -0.06, 0.0, 0.12, 0.13, 0.11],
+    skull: [0, 0.04, 0.17, 0.13, 0.12, 0.17],
+  };
+}
+
+/**
+ * A giant panda: round and heavy, white with black legs, a black band
+ * over the shoulders, black round ears and the black patches round the
+ * eyes; a short white stub of a tail.
+ */
+export function panda() {
+  const white = 0xf0ece4, black = 0x161414, cream = 0xe0d8c8;
+  return {
+    body: new Blocks()
+      .box(0.8, 0.78, 0.66, white, [0, 0.92, -0.36], [0, 0, 0], [0.8, 0.85]) // round white rump
+      .box(0.84, 0.82, 0.5, white, [0, 0.95, 0.06], [0, 0, 0], [0.82, 0.88]) // belly
+      .box(0.86, 0.84, 0.44, black, [0, 0.98, 0.44], [0, 0, 0], [0.8, 0.88]) // the black band over the shoulders
+      .box(0.5, 0.18, 0.7, cream, [0, 1.32, -0.22], [0, 0, 0], [0.8, 0.95]) // a creamy back
+      .box(0.14, 0.12, 0.08, white, [0, 1.0, -0.74]) // stub of a tail
+      .build(),
+    headPivot: [0, 1.12, 0.66],
+    head: new Blocks()
+      .box(0.5, 0.44, 0.42, white, [0, 0.04, 0.16], [0, 0, 0], [0.92, 0.92]) // big round head
+      .box(0.26, 0.18, 0.18, white, [0, -0.08, 0.42], [0, 0, 0], [0.85, 0.9]) // short muzzle
+      .box(0.1, 0.07, 0.05, black, [0, -0.03, 0.52]) // nose
+      .box(0.13, 0.11, 0.04, black, [0.11, 0.08, 0.37], [0, 0, -0.4]) // the black eye patches
+      .box(0.13, 0.11, 0.04, black, [-0.11, 0.08, 0.37], [0, 0, 0.4])
+      .box(0.035, 0.035, 0.02, 0x6a5a4a, [0.11, 0.09, 0.395]) // small dark eyes in them
+      .box(0.035, 0.035, 0.02, 0x6a5a4a, [-0.11, 0.09, 0.395])
+      .box(0.15, 0.14, 0.08, black, [0.2, 0.28, 0.08]) // round black ears
+      .box(0.15, 0.14, 0.08, black, [-0.2, 0.28, 0.08])
+      .build(),
+    antlers: null,
+    // (Black legs, thick, on broad paws.)
+    fore: limb(0.34, 0.36, { top: [0.3, 0.32], knee: [0.23, 0.24], ankle: [0.21, 0.22], color: black, foot: [0.24, 0.08, 0.3, black, 0.05] }),
+    hind: limb(0.35, 0.35, { top: [0.3, 0.36], knee: [0.22, 0.24], ankle: [0.2, 0.21], color: black, foot: [0.24, 0.08, 0.3, black, 0.05] }),
+    legs: [[0.25, 0.66, 0.44], [-0.25, 0.66, 0.44], [0.25, 0.66, -0.48], [-0.25, 0.66, -0.48]],
+    torso: [[0, 0.95, -0.04, 0.4, 0.42, 0.72]],
+    skull: [0, 0.04, 0.24, 0.24, 0.22, 0.3],
+  };
+}
+
+/**
+ * A mountain goat: a stocky white goat in a shaggy coat, long hair hanging
+ * in a skirt about its legs and a beard under its chin, a hump of a
+ * shoulder, short black dagger horns curving back, black hooves.
+ */
+export function mountainGoat() {
+  const white = 0xf2f0e8, shade = 0xdcd8cc, black = 0x18161a;
+  return {
+    body: new Blocks()
+      .box(0.42, 0.5, 0.42, white, [0, 0.82, 0.24], [0, 0, 0], [0.8, 0.9]) // deep chest
+      .box(0.3, 0.2, 0.3, white, [0, 1.08, 0.24], [0, 0, 0], [0.7, 0.8]) // the hump of the shoulder
+      .box(0.38, 0.42, 0.56, white, [0, 0.8, -0.2], [0, 0, 0], [0.88, 0.95]) // body
+      .box(0.44, 0.24, 0.9, shade, [0, 0.56, 0.0], [0, 0, 0], [1.05, 1.0]) // the shaggy skirt hanging down
+      .box(0.1, 0.12, 0.08, white, [0, 0.9, -0.5]) // short tail
+      .build(),
+    headPivot: [0, 1.0, 0.44],
+    head: new Blocks()
+      .box(0.2, 0.24, 0.2, white, [0, -0.04, 0.02], [0.4, 0, 0], [0.85, 0.9]) // neck
+      .box(0.17, 0.18, 0.3, white, [0, 0.04, 0.2], [0.35, 0, 0], [0.8, 0.85]) // long narrow face
+      .box(0.08, 0.14, 0.08, shade, [0, -0.12, 0.22], [0.2, 0, 0]) // the beard
+      .box(0.06, 0.04, 0.03, black, [0, -0.04, 0.37]) // nose
+      .box(0.03, 0.03, 0.02, black, [0.07, 0.1, 0.24]) // eyes
+      .box(0.03, 0.03, 0.02, black, [-0.07, 0.1, 0.24])
+      .box(0.035, 0.18, 0.035, black, [0.05, 0.22, 0.1], [-0.5, 0, 0], [0.4, 0.4]) // short black horns, swept back
+      .box(0.035, 0.18, 0.035, black, [-0.05, 0.22, 0.1], [-0.5, 0, 0], [0.4, 0.4])
+      .box(0.08, 0.04, 0.03, white, [0.1, 0.14, 0.06], [0, 0, -0.4]) // ears
+      .box(0.08, 0.04, 0.03, white, [-0.1, 0.14, 0.06], [0, 0, 0.4])
+      .build(),
+    antlers: null,
+    fore: limb(0.24, 0.24, { top: [0.14, 0.15], knee: [0.08, 0.08], ankle: [0.065, 0.065], color: white, low: shade, foot: [0.08, 0.06, 0.09, black, 0.01] }),
+    hind: limb(0.25, 0.24, { top: [0.15, 0.18], knee: [0.08, 0.085], ankle: [0.065, 0.065], color: white, low: shade, foot: [0.08, 0.06, 0.09, black, 0.01] }),
+    legs: [[0.13, 0.52, 0.28], [-0.13, 0.52, 0.28], [0.13, 0.52, -0.32], [-0.13, 0.52, -0.32]],
+    torso: [[0, 0.8, 0.0, 0.22, 0.3, 0.5]],
+    skull: [0, 0.04, 0.2, 0.1, 0.12, 0.18],
+  };
+}
+
+/**
+ * A crocodile: long and low, armoured in rows of raised dark scutes down
+ * its back and tail, olive-grey with a pale belly, a long flat snout with
+ * a ragged row of teeth showing, eyes and nostrils raised on top of the
+ * head, a heavy tail tapering to a point, short legs sprawled out at its sides.
+ */
+export function crocodile() {
+  const hide = 0x4a5a3a, dark = 0x2e3a26, belly = 0xb8b48a, tooth = 0xf0ead8;
+  const body = new Blocks()
+    .box(0.6, 0.3, 0.9, hide, [0, 0.3, 0.1], [0, 0, 0], [0.85, 0.9]) // broad flat body
+    .box(0.5, 0.06, 0.9, belly, [0, 0.14, 0.1]) // pale belly
+    .box(0.42, 0.26, 0.6, hide, [0, 0.27, -0.6], [0, 0, 0], [0.8, 0.85]) // the tail's thick root
+    .box(0.3, 0.2, 0.6, hide, [0, 0.22, -1.15], [0, 0, 0], [0.75, 0.8]) // tapering...
+    .box(0.18, 0.14, 0.6, hide, [0, 0.18, -1.7], [0, 0, 0], [0.7, 0.75])
+    .box(0.08, 0.08, 0.5, hide, [0, 0.16, -2.2], [0, 0, 0], [0.6, 0.6]); // ...to a point
+  // Rows of raised scutes down the back, a double crest down the tail.
+  for (let k = 0; k < 7; k++) {
+    const z = 0.48 - k * 0.14;
+    body.box(0.07, 0.06, 0.08, dark, [0.13, 0.47, z]);
+    body.box(0.07, 0.06, 0.08, dark, [-0.13, 0.47, z]);
+    body.box(0.06, 0.05, 0.07, dark, [0.24, 0.42, z + 0.05]);
+    body.box(0.06, 0.05, 0.07, dark, [-0.24, 0.42, z + 0.05]);
+  }
+  for (let k = 0; k < 10; k++) {
+    const z = -0.45 - k * 0.2, s = 1 - k * 0.07;
+    body.box(0.04, 0.09 * s, 0.1, dark, [0.07 * s, 0.4 - k * 0.022, z]);
+    body.box(0.04, 0.09 * s, 0.1, dark, [-0.07 * s, 0.4 - k * 0.022, z]);
+  }
+  const head = new Blocks()
+    .box(0.34, 0.2, 0.3, hide, [0, 0.02, 0.1], [0, 0, 0], [0.9, 0.9]) // the back of the head
+    .box(0.24, 0.12, 0.6, hide, [0, -0.02, 0.5], [0, 0, 0], [0.75, 0.9]) // long flat snout
+    .box(0.22, 0.06, 0.62, belly, [0, -0.1, 0.48]) // pale underjaw
+    .box(0.1, 0.06, 0.08, hide, [0, 0.06, 0.78]) // nostrils raised at the tip
+    .box(0.07, 0.07, 0.07, dark, [0.1, 0.13, 0.12]) // eyes raised on top
+    .box(0.07, 0.07, 0.07, dark, [-0.1, 0.13, 0.12])
+    .box(0.03, 0.03, 0.02, 0xc8b040, [0.1, 0.15, 0.155]) // yellow eyes
+    .box(0.03, 0.03, 0.02, 0xc8b040, [-0.1, 0.15, 0.155]);
+  for (let k = 0; k < 6; k++) {
+    const z = 0.3 + k * 0.09;
+    head.box(0.02, 0.05, 0.02, tooth, [0.11 - k * 0.006, -0.07, z]); // the ragged row of teeth
+    head.box(0.02, 0.05, 0.02, tooth, [-0.11 + k * 0.006, -0.07, z]);
+  }
+  return {
+    body: body.build(),
+    headPivot: [0, 0.3, 0.6],
+    head: head.build(),
+    antlers: null,
+    // (Short, bent legs splayed out at its sides, on broad clawed feet.)
+    fore: limb(0.14, 0.14, { top: [0.14, 0.16], knee: [0.1, 0.11], ankle: [0.09, 0.09], color: hide, foot: [0.16, 0.04, 0.16, dark, 0.04] }),
+    hind: limb(0.15, 0.14, { top: [0.16, 0.2], knee: [0.11, 0.12], ankle: [0.09, 0.1], color: hide, foot: [0.18, 0.04, 0.18, dark, 0.04] }),
+    legs: [[0.32, 0.28, 0.38], [-0.32, 0.28, 0.38], [0.3, 0.28, -0.3], [-0.3, 0.28, -0.3]],
+    torso: [[0, 0.3, -0.3, 0.3, 0.17, 1.3]],
+    skull: [0, 0.0, 0.4, 0.17, 0.11, 0.42],
+  };
+}

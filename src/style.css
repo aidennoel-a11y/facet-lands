@@ -1109,3 +1109,26 @@ kbd {
 .sm-pause-button[hidden] {
   display: none;
 }
+
+/* Animals-only view (testing): a label over each animal. */
+.animal-labels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 30;
+}
+.animal-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 7px;
+  font: 600 13px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: rgba(20, 28, 20, 0.75);
+  clip-path: polygon(0 3px, 4px 0, 100% 1px, calc(100% - 2px) 100%, 1px calc(100% - 1px));
+  white-space: nowrap;
+}
+.animal-label[hidden] {
+  display: none;
+}
