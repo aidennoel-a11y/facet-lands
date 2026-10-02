@@ -632,6 +632,15 @@ export class Sound {
           tone(t, 0.3, 'sine', 110, 45, 100, 0.7, 0.25);
         }
         break;
+      case 'wave':
+        // A wave breaking on the rocks: the recorded splash slowed right
+        // down (a deep wash, not a bang), a lighter one on top as the spray
+        // comes down, and the water sloshing back off the rocks.
+        if ((done = c('splash', 0.45 + 0.1 * r, 0.8, t, { lowpass: 2600 }))) {
+          c('splash', 0.7 + 0.15 * r, 0.35, t + 0.12, { lowpass: 5000 });
+          c('step-water', 0.6 + 0.1 * r, 0.4, t + 0.55, { lowpass: 3500 });
+        }
+        break;
       case 'chop': done = c('chop', 1, 1); break;
       case 'dig': done = c('dig', 1, 0.9); break;
       case 'hurt': done = c('hurt', 1, 0.9); break;
@@ -642,7 +651,7 @@ export class Sound {
       case 'hiss': done = c('hiss', 0.8 + 0.3 * r, 0.8); break;
       case 'oink': done = c('pig', 0.8, 0.8); break; // (a wild boar: deeper than a farm pig)
       case 'baa': done = c('sheep', 1, 0.8); break;
-      case 'goat': done = c('sheep', 1.25, 0.75); break;
+      case 'goat': done = c('sheep', 1.3, 0.3, t, { lowpass: 3500 }); break; // (a goat: softer and further off than a sheep)
       case 'gobble': done = c('turkey', 1, 0.9); break;
       case 'croak': done = c('frog', 1, 0.8); break;
       case 'crack': done = c('snap', 0.75 + 0.2 * r, 1); break;

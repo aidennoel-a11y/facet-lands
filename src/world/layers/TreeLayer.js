@@ -1,5 +1,5 @@
 import { Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Raycaster, Vector3 } from 'three';
-import { addWind, windDepthMaterial } from '../../render/wind.js';
+import { addWind, gustAt, windDepthMaterial, windDirection, windStrength, windTime } from '../../render/wind.js';
 import { seasonalTrees, seasonUniforms } from '../../render/Seasons.js';
 import { LEAF_GEOMETRIES, NO_COLLIDE, STIFF, TREE_GEOMETRIES, treeGeometry } from '../trees.js';
 import { placeTrees } from '../treePlacement.js';
@@ -141,6 +141,38 @@ export function createTreeLayer({ rocks = null } = {}) {
     trunks: new Map(), // "cx,cz" -> [x, z, radius, ...] in world space, for collisions
     crowns: new Map(), // "cx,cz" -> [x, z, bottom, top, radius, ...] of broad-leaved crowns (world), for falling leaves
     foliage: new Map(), // "cx,cz" -> [x, z, bottom, top, radius, cone, ...] of every crown (world), for the leaves' hitboxes
+    frames: new Map(), // "cx,cz" -> [x, z, y, rot, s, sy, ...] of each swaying crowned tree (world), for swayAt
+
+    /**
+     * How far the wind has moved the branch at (x, y, z) in a tree's crown
+     * just now (the same sway as the trees' shader, see addWind), into
+     * `out` {x, z}: for a bird sitting there to move with it. Zero if
+     * there's no swaying tree there.
+     */
+    swayAt(x, y, z, chunkSize, out) {
+      out.x = out.z = 0;
+      const list = layer.frames.get(`${Math.floor(x / chunkSize)},${Math.floor(z / chunkSize)}`);
+      if (!list) return out;
+      let best = -1, bestD = 49;
+      for (let k = 0; k < list.length; k += 6) {
+        const d = (list[k] - x) ** 2 + (list[k + 1] - z) ** 2;
+        if (d < bestD) (bestD = d), (best = k);
+      }
+      if (best < 0) return out;
+      const [ox, oz, oy, rot, sc, sy] = list.slice(best, best + 6);
+      const c = Math.cos(rot), sn = Math.sin(rot), dx = x - ox, dz = z - oz;
+      // (Where that is on the tree's own model, unturned and unscaled.)
+      const lx = (dx * c - dz * sn) / sc, lz = (dx * sn + dz * c) / sc, ly = Math.max(0, (y - oy) / sy);
+      const ph = windTime.value * WIND.speed + ox * 0.045 + oz * 0.037;
+      const reach = Math.pow(ly, 1.5), bend = reach * WIND.strength * windStrength.value;
+      const g = reach * WIND.gust * gustAt(ox, oz), d = windDirection.value;
+      const mx = (Math.sin(ph) + 0.35 * Math.sin(ph * 2.7 + lz)) * bend + d.x * g;
+      const mz = (0.6 * Math.cos(ph * 0.8) + 0.25 * Math.sin(ph * 3.1 + lx)) * bend + d.y * g;
+      // (Back into the world: scaled and turned as the tree is.)
+      out.x = (mx * c + mz * sn) * sc;
+      out.z = (-mx * sn + mz * c) * sc;
+      return out;
+    },
     removed: new Set(), // trees felled (see remove), saved with the world
 
     /**
@@ -230,6 +262,7 @@ export function createTreeLayer({ rocks = null } = {}) {
       cut(layer.trunks.get(key), 3);
       cut(layer.crowns.get(key), 5);
       cut(layer.foliage.get(key), 6);
+      cut(layer.frames.get(key), 6);
     },
 
     /**
@@ -359,6 +392,15 @@ export function createTreeLayer({ rocks = null } = {}) {
         }
       }
 
+      // The swaying trees with crowns (for the birds perched in them, see swayAt).
+      const frames = [];
+      if (lod <= 1) {
+        for (const [type, list] of Object.entries(placed)) {
+          if (!crownOf(type) || STIFF.has(type)) continue;
+          for (const t of list) frames.push(originX + t.x, originZ + t.z, t.y, t.rot, t.s, t.sy);
+        }
+      }
+
       // Every crown near enough to walk into, for the leaves' hitboxes.
       const foliage = [];
       if (lod <= 1) {
@@ -424,10 +466,12 @@ export function createTreeLayer({ rocks = null } = {}) {
       group.userData.trunks = trunks;
       group.userData.crowns = crowns;
       group.userData.foliage = foliage;
+      group.userData.frames = frames;
       layer.count += count;
       layer.foliage.set(group.userData.key, foliage);
       layer.trunks.set(group.userData.key, trunks);
       layer.crowns.set(group.userData.key, crowns);
+      layer.frames.set(group.userData.key, frames);
       groups.set(group.userData.key, group);
       return group;
     },
@@ -438,6 +482,7 @@ export function createTreeLayer({ rocks = null } = {}) {
       if (layer.trunks.get(group.userData.key) === group.userData.trunks) layer.trunks.delete(group.userData.key);
       if (layer.crowns.get(group.userData.key) === group.userData.crowns) layer.crowns.delete(group.userData.key);
       if (layer.foliage.get(group.userData.key) === group.userData.foliage) layer.foliage.delete(group.userData.key);
+      if (layer.frames.get(group.userData.key) === group.userData.frames) layer.frames.delete(group.userData.key);
       if (groups.get(group.userData.key) === group) groups.delete(group.userData.key);
       for (const mesh of group.children) {
         meshes.delete(mesh);

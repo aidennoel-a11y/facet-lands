@@ -339,7 +339,7 @@ export class DayNight {
     const e = config.shadowExtent / 2;
     Object.assign(light.shadow.camera, { left: -e, right: e, top: e, bottom: -e, near: 1, far: 1600 });
     light.shadow.bias = -0.0004;
-    light.shadow.normalBias = 0.06;
+    light.shadow.normalBias = 0.09; // (enough that faceted ground and crowns don't shadow themselves in patches)
     scene.add(light, light.target);
     this.light = light;
 
@@ -403,6 +403,7 @@ export class DayNight {
    * @param weather  { cover, rain, storm, sunsetGlow } (see Weather), or null
    */
   update(dt, focus, weather = null) {
+    this._dt = dt;
     if (this.playing) this.hour = (this.hour + (dt * 24) / (this.config.dayLengthMinutes * 60)) % 24;
     const cover = weather ? weather.cover : 0.2;
     const rain = weather ? weather.rain : 0;
@@ -538,8 +539,13 @@ export class DayNight {
     // frame: the sun creeps across the sky, and its height above the
     // horizon you can see shifts as you walk, and a shadow map turned even
     // a hair every frame makes every shadow's edge crawl and shake.
+    // So it follows the light smoothly, every frame, but slowly (a
+    // second or so behind): the sun's own creep is seamless, while the
+    // little jumps of the horizon as you walk are smoothed away. (A big
+    // jump, the time of day set or sun to moon, it takes at once.)
     const sd = this._shadowDir;
-    if (sd.lengthSq() === 0 || sd.angleTo(dir) > 0.0035) sd.copy(dir);
+    if (sd.lengthSq() === 0 || sd.angleTo(dir) > 0.08) sd.copy(dir);
+    else sd.lerp(dir, Math.min(1, (this._dt ?? 0.016) / 1.2)).normalize();
     this._basis.lookAt(sd, new Vector3(0, 0, 0), new Vector3(0, 1, 0));
     this._inverse.copy(this._basis).transpose();
     const f = this._focus.copy(focus);

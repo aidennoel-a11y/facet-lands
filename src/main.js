@@ -383,9 +383,9 @@ function surfSound() {
       }
     }
   }
-  if (loud > 0.05 && T - surfHeard.last > 0.35) {
+  if (loud > 0.05 && T - surfHeard.last > 0.9) {
     surfHeard.last = T;
-    sound.call('wave', panTowards(camera, px / loud, pz / loud), Math.min(1, 0.35 + loud * 0.25));
+    sound.call('wave', panTowards(camera, px / loud, pz / loud), Math.min(0.55, 0.15 + loud * 0.15));
   }
 }
 /** What's underfoot at (x, z), for the sound of a footstep (see Sound.step). */

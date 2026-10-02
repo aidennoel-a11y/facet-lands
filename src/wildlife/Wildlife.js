@@ -8,6 +8,7 @@ function smoothstep(a, b, x) {
   return t * t * (3 - 2 * t);
 }
 const TAU = Math.PI * 2;
+const SWAY = { x: 0, z: 0 };
 const angleTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 const rnd = (a, b) => a + Math.random() * (b - a);
 
@@ -51,7 +52,7 @@ const SPECIES = {
   boar: { ground: true, grade: 0.72, model: Models.boar, max: 24, walk: 1.0, run: 9, flee: 24, calm: 70, radius: 0.4, height: 1.0, health: 90, stride: 0.95, turn: 3, size: 1.0, forager: true, gaits: HOOF, trotBand: 0.4, call: 'oink' },
   // Sheep in flocks on the open plains (a black face, a woolly fleece);
   // wolf pups by their den.
-  sheep: { ground: true, grade: 0.7, model: Models.sheep, max: 40, walk: 1.0, run: 7.5, flee: 22, calm: 70, radius: 0.45, height: 1.0, health: 60, stride: 1.1, turn: 2.5, size: 1.21, call: 'baa', gaits: HOOF, trotBand: 0.3 },
+  sheep: { ground: true, grade: 0.7, model: Models.sheep, max: 60, walk: 1.0, run: 7.5, flee: 22, calm: 70, radius: 0.45, height: 1.0, health: 60, stride: 1.1, turn: 2.5, size: 1.21, call: 'baa', gaits: HOOF, trotBand: 0.3 },
   wolfPup: { ground: true, grade: 0.8, model: Models.wolf, max: 12, walk: 1.2, run: 8, flee: 12, calm: 40, radius: 0.2, height: 0.5, health: 20, stride: 0.7, turn: 4, size: 0.55, forager: true, gaits: DOG, trotBand: 0.5 },
   rabbit: { ground: true, grade: 0.58, model: Models.rabbit, max: 40, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.3, height: 0.55, health: 10, stride: 1.0, turn: 5, size: 1.8, gaits: HOP },
   // Hares, out in the open and the cold woods: bigger, faster, white in the winter.
@@ -69,7 +70,7 @@ const SPECIES = {
   tiger: { ground: true, grade: 0.85, model: Models.tiger, max: 8, walk: 1.1, run: 15, flee: 20, calm: 90, radius: 0.4, height: 1.0, health: 180, stride: 1.5, turn: 3.2, size: 1.2, gaits: DOG, trotBand: 0.15, swims: true, call: 'growl' },
   panther: { ground: true, grade: 0.95, model: Models.panther, max: 8, walk: 1.2, run: 15, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 80, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
   panda: { ground: true, grade: 0.7, model: Models.panda, max: 8, walk: 0.7, run: 5, flee: 12, calm: 40, radius: 0.6, height: 1.2, health: 160, stride: 1.2, turn: 1.6, size: 1.05, forager: true, gaits: BEAR },
-  crocodile: { ground: true, grade: 0.5, model: Models.crocodile, max: 30, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
+  crocodile: { ground: true, grade: 0.5, model: Models.crocodile, max: 80, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
   mountainGoat: { ground: true, grade: 1.3, model: Models.mountainGoat, max: 24, walk: 1.0, run: 9, flee: 30, calm: 80, radius: 0.35, height: 1.0, health: 70, stride: 1.0, turn: 3, size: 1.15, gaits: HOOF, trotBand: 0.35, call: 'baa' },
   jaguar: { ground: true, grade: 0.95, model: Models.jaguar, max: 6, walk: 1.1, run: 14, flee: 20, calm: 90, radius: 0.35, height: 0.9, health: 130, stride: 1.3, turn: 3.6, size: 1.1, gaits: DOG, trotBand: 0.15, swims: true, call: 'jaguar' },
   // Monkeys: troops up in the jungle's crowns, leaping from tree to tree,
@@ -981,7 +982,9 @@ export class Wildlife {
     {
       const p = at();
       const w = g.getBiomeWeights(p.x, p.z, {});
-      if (p.y > ctx.seaLevel + 1 && w.temperate > 0.6 && g.getPlainness(p.x, p.z) > 0.3 && g.getForestDensity(p.x, p.z) < 0.35 && g.getMountainness(p.x, p.z) < 0.3 && rand() < 0.18) {
+      // (And in the open meadows of the birch and aspen parkland.)
+      const plain = g.getPlainness(p.x, p.z), park = w.parkland ?? 0;
+      if (p.y > ctx.seaLevel + 1 && w.temperate + park > 0.6 && (plain > 0.3 || park > 0.5) && g.getForestDensity(p.x, p.z) < 0.4 && g.getMountainness(p.x, p.z) < 0.3 && rand() < (plain > 0.5 || park > 0.5 ? 0.34 : 0.2)) {
         const from = this.animals.length;
         const herd = this.#spawnHerd('sheep', p, 5 + Math.floor(rand() * 8));
         if (herd) home.herds.push(herd);
@@ -1159,9 +1162,9 @@ export class Wildlife {
     {
       const p = at();
       const w = g.getBiomeWeights(p.x, p.z, {});
-      if (p.y > ctx.seaLevel + 1 && (g.getMountainness(p.x, p.z) > 0.4 || w.badlands > 0.5) && w.desert < 0.5 && rand() < 0.12) {
+      if (p.y > ctx.seaLevel + 1 && (g.getMountainness(p.x, p.z) > 0.4 || w.badlands > 0.5) && w.desert < 0.5 && rand() < 0.07) {
         const from = this.animals.length;
-        const herd = this.#group('mountainGoat', p, 3 + Math.floor(rand() * 5), rand() < 0.3);
+        const herd = this.#group('mountainGoat', p, 2 + Math.floor(rand() * 4), rand() < 0.3);
         if (herd) home.herds.push(herd);
         own(from);
       }
@@ -1169,17 +1172,22 @@ export class Wildlife {
     // Crocodiles: lying at the water's edge in the mangroves and round the
     // jungle's lakes and rivers.
     // (And in the marshes and wetlands, lots of them.)
-    for (let k = 0, found = 0; k < 8 && found < 2 && ctx.waterAt; k++) {
+    // (The mangroves most of all: a band on every stretch of their shore.)
+    for (let k = 0, found = 0; k < 12 && found < 2 && ctx.waterAt; k++) {
       const x = (cx + 0.05 + 0.9 * rand()) * C, z = (cz + 0.05 + 0.9 * rand()) * C;
       const w = g.getBiomeWeights(x, z, {});
       if (w.mangrove + w.jungle + w.wetland < 0.4 || !ctx.waterAt(x, z)) continue;
       found++;
-      if (rand() < 0.85) {
+      const mangrove = w.mangrove > 0.4;
+      if (mangrove || rand() < 0.85) {
         const from = this.animals.length;
         for (let n = 2 + Math.floor(rand() * 3), j = 0; j < n; j++) {
           // (Up on the bank, beside the water.)
-          for (let t = 0; t < 8; t++) {
-            const a = rand() * TAU, d = 3 + rand() * 6;
+          // (Some out in the water, swimming, low in it.)
+          if (rand() < 0.4 && this.#spawnWalker('crocodile', x + rnd(-6, 6), z + rnd(-6, 6), null, { water: true })) continue;
+          // (A mangrove coast is mostly water: look further for its banks and islands.)
+          for (let t = 0; t < (mangrove ? 20 : 8); t++) {
+            const a = rand() * TAU, d = 3 + rand() * (mangrove ? 30 : 6);
             const bx = x + Math.cos(a) * d, bz = z + Math.sin(a) * d;
             if (!ctx.waterAt(bx, bz) && this.#spawnWalker('crocodile', bx, bz, null)) break;
           }
@@ -1476,7 +1484,7 @@ export class Wildlife {
         case 'cougar': call = Math.random() < 0.3 ? 'scream' : null; break;
         case 'boar': call = 'oink'; break;
         case 'sheep': call = 'baa'; break;
-        case 'mountainGoat': call = 'goat'; break;
+        case 'mountainGoat': call = Math.random() < 0.35 ? 'goat' : null; break; // (mostly quiet)
         case 'turkey': call = 'gobble'; break;
         case 'duck': call = 'quack'; break;
         case 'tiger': call = Math.random() < 0.35 ? 'roar' : 'chuff'; break;
@@ -2061,11 +2069,16 @@ export class Wildlife {
         if (Math.hypot(a.x - c0.x, a.z - c0.z) < 40) ctx.sound?.call('splash', ctx.pan(a.x, a.z), 0.4);
       }
     }
-    // Leaning with the slope (a little: on a slope an animal keeps its body
-    // near level, its legs reaching down the slope or folding up it).
-    const sx = Math.sin(a.heading), sz = Math.cos(a.heading), L = sp.height * 0.5 * a.scale / (sp.size ?? 1);
+    // Leaning with the slope: mostly along it (as a real animal's back
+    // follows the hill, the legs only taking up the rest), the ground felt
+    // under its fore and hind feet (not just under its middle), and
+    // eased into, so it doesn't jerk at each facet of the ground.
+    const sx = Math.sin(a.heading), sz = Math.cos(a.heading), L = Math.max(0.3, sp.height * 0.6 * a.scale / (sp.size ?? 1));
     const up = ctx.ground(a.x + sx * L, a.z + sz * L), down = ctx.ground(a.x - sx * L, a.z - sz * L);
-    if (up === up && down === down && !a.swimming) a.pitch += (-Math.atan2(up - down, 2 * L) * 0.55 - a.pitch) * Math.min(1, dt * 6);
+    if (up === up && down === down && !a.swimming) {
+      const along = Math.max(-0.6, Math.min(0.6, -Math.atan2(up - down, 2 * L) * 0.8));
+      a.pitch += (along - a.pitch) * Math.min(1, dt * 4);
+    }
     // Its feet, put down one after another on the ground, near you (see Gait.js).
     const c = ctx.camera.position, near = Math.abs(a.x - c.x) < 150 && Math.abs(a.z - c.z) < 150;
     if (near && !a.swimming && a.lie < 0.5) {
@@ -2651,7 +2664,9 @@ export class Wildlife {
       else {
         euler.set(a.pitch, a.heading, a.roll, 'YXZ');
         quat.setFromEuler(euler);
-        base.compose(pos.set(a.x, a.y, a.z), quat, scl.setScalar(a.scale));
+        // (Sitting up in a tree, it rides its branch as the wind sways it.)
+        const sway = a.state === 'perch' && ctx?.trees?.swayAt ? ctx.trees.swayAt(a.x, a.y, a.z, ctx.chunkSize, SWAY) : null;
+        base.compose(pos.set(a.x + (sway?.x ?? 0), a.y, a.z + (sway?.z ?? 0)), quat, scl.setScalar(a.scale));
         const perched = a.state === 'perch' || a.state === 'ground' || a.landed || a.state === 'dead';
         let flap = 0, fold = 0;
         if (perched) fold = 1.35;
