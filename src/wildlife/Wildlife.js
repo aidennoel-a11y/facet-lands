@@ -1173,18 +1173,25 @@ export class Wildlife {
     // jungle's lakes and rivers.
     // (And in the marshes and wetlands, lots of them.)
     // (The mangroves most of all: a band on every stretch of their shore.)
-    for (let k = 0, found = 0; k < 12 && found < 2 && ctx.waterAt; k++) {
+    for (let k = 0, found = 0; k < 16 && found < 3 && ctx.waterAt; k++) {
       const x = (cx + 0.05 + 0.9 * rand()) * C, z = (cz + 0.05 + 0.9 * rand()) * C;
       const w = g.getBiomeWeights(x, z, {});
       if (w.mangrove + w.jungle + w.wetland < 0.4 || !ctx.waterAt(x, z)) continue;
       found++;
       const mangrove = w.mangrove > 0.4;
+      if (found > 2 && !mangrove) continue; // (the mangroves get a third band)
       if (mangrove || rand() < 0.85) {
         const from = this.animals.length;
-        for (let n = 2 + Math.floor(rand() * 3), j = 0; j < n; j++) {
+        for (let n = (mangrove ? 3 : 2) + Math.floor(rand() * 3), j = 0; j < n; j++) {
           // (Up on the bank, beside the water.)
           // (Some out in the water, swimming, low in it.)
-          if (rand() < 0.4 && this.#spawnWalker('crocodile', x + rnd(-6, 6), z + rnd(-6, 6), null, { water: true })) continue;
+          // (Only in the shallows among the roots, near land: not out at sea.)
+          if (rand() < 0.4) {
+            const wx = x + rnd(-6, 6), wz = z + rnd(-6, 6), wat = ctx.waterAt(wx, wz);
+            let shoreNear = false;
+            for (let q = 0; q < 8 && !shoreNear; q++) shoreNear = !ctx.waterAt(wx + Math.cos(q * 0.785) * 18, wz + Math.sin(q * 0.785) * 18);
+            if (wat && wat.level - ctx.ground(wx, wz) < 1.8 && shoreNear && g.getOceanness(wx, wz) < 0.9 && this.#spawnWalker('crocodile', wx, wz, null, { water: true })) continue;
+          }
           // (A mangrove coast is mostly water: look further for its banks and islands.)
           for (let t = 0; t < (mangrove ? 20 : 8); t++) {
             const a = rand() * TAU, d = 3 + rand() * (mangrove ? 30 : 6);
@@ -2063,10 +2070,12 @@ export class Wildlife {
     if (a.swimming) {
       a.y = w.level - H * 1.2;
       a.feet = null;
-      if ((a.swash = (a.swash ?? 0) - dt) <= 0) {
-        a.swash = 0.5;
-        ctx.splash?.(a.x, w.level, a.z, a.scale);
-        if (Math.hypot(a.x - c0.x, a.z - c0.z) < 40) ctx.sound?.call('splash', ctx.pan(a.x, a.z), 0.4);
+      // (A crocodile glides through the water: only now and then, hurrying, a swirl and a splash.)
+      const croc = a.kind === 'crocodile';
+      if ((a.swash = (a.swash ?? 0) - dt) <= 0 && (!croc || a.speed > sp.walk * 3)) {
+        a.swash = croc ? rnd(4, 9) : 0.5;
+        ctx.splash?.(a.x, w.level, a.z, a.scale * (croc ? 0.5 : 1));
+        if (Math.hypot(a.x - c0.x, a.z - c0.z) < 40) ctx.sound?.call(croc ? 'swim' : 'splash', ctx.pan(a.x, a.z), croc ? 0.2 : 0.4);
       }
     }
     // Leaning with the slope: mostly along it (as a real animal's back

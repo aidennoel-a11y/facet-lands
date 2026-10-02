@@ -41,14 +41,19 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
         const ground = groundHeightAt(lx, lz);
         // In wetlands reeds crowd the pools and channels, out into the
         // shallows and up over the wet ground.
-        if (!(ground > sea - 1.1 && ground < sea + 1.3)) continue;
-        const marsh = generator.getBiomeWeights(wx, wz, {}).wetland;
-        if (!(ground > sea - 0.7 - 0.4 * marsh && ground < sea + 0.45 + 0.8 * marsh)) continue;
+        if (!(ground > sea - 1.6 && ground < sea + 1.3)) continue;
+        const w = generator.getBiomeWeights(wx, wz, {});
+        // (And the mangroves' salt shallows: sea grass, rushes and weeds
+        // all through the water among the roots.)
+        const marsh = Math.max(w.wetland, w.mangrove);
+        if (!(ground > sea - 0.7 - 0.9 * marsh && ground < sea + 0.45 + 0.8 * marsh)) continue;
         const shore = generator.getShore(wx, wz, ground);
-        if (!shore || shore.ocean) continue;
+        if (!shore || (shore.ocean && w.mangrove < 0.4)) continue;
         const patch = 0.5 + 0.5 * Math.sin(wx * 0.07 + Math.sin(wz * 0.05) * 3);
-        if (hash2(gi, gj, seed) > patch * (0.8 + 0.5 * marsh) - 0.15 + 0.2 * marsh) continue;
-        const s = 0.8 + hash2(gi, gj, seed + 3) * 0.55;
+        if (hash2(gi, gj, seed) > patch * (0.8 + 0.5 * marsh) - 0.15 + 0.35 * marsh) continue;
+        // (Some low: weeds and grass just out of the water, not all tall reeds.)
+        const weed = w.mangrove > 0.4 && ground > sea - 0.5 && hash2(gi, gj, seed + 7) < 0.5;
+        const s = (weed ? 0.4 + hash2(gi, gj, seed + 3) * 0.3 : 0.8 + hash2(gi, gj, seed + 3) * 0.55);
         position.set(lx, ground - 0.1, lz);
         rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 4) * Math.PI * 2);
         scale.set(s, s * (0.85 + hash2(gi, gj, seed + 5) * 0.4), s);
