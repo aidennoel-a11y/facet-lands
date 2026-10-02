@@ -151,14 +151,11 @@ export class StartMenu {
       <p class="sm-qnote">${QUALITY[quality()].blurb}</p>
       <a class="sm-credits" href="sounds/CREDITS.md" target="_blank" rel="noopener">Sound credits</a>`);
     this.#on('[data-go="start"]', () => this.choose());
-    // (A new setting takes a reload: the land is built for it from the start.)
+    // (Put into effect when a world starts: see main's useQuality.)
     for (const b of this.card.querySelectorAll('.sm-q')) {
       b.addEventListener('click', () => {
-        if (b.dataset.q === quality()) return;
         setQuality(b.dataset.q);
-        const url = new URL(location.href);
-        url.searchParams.delete('quality');
-        location.replace(url);
+        this.title();
       });
     }
   }

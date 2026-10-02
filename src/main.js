@@ -52,11 +52,11 @@ import { addCloudShadow, cloudShadowUniforms } from './render/cloudShadow.js';
 import { Minimap } from './ui/Minimap.js';
 import { BiomeMap } from './ui/BiomeMap.js';
 import { Multiplayer } from './net/Multiplayer.js';
-import { applyQuality } from './quality.js';
+import { applyQuality, MAX_VIEW } from './quality.js';
 
 // --- Renderer, scene, camera -------------------------------------------------
 // (How much to ask of this computer: see quality.js, chosen on the start menu.)
-const QUALITY = applyQuality();
+let QUALITY = applyQuality();
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.antialias });
 renderer.shadowMap.enabled = true;
@@ -83,8 +83,10 @@ mp.onChange = () => {
 mp.onHour = (hour) => {
   dayNight.hour = hour;
 };
-const drawDistance = WORLD.viewDistance * WORLD.chunkSize;
-scene.fog = new THREE.Fog(0xd6e8f7, drawDistance * 0.45, drawDistance * 0.95);
+// (The sky and the camera's reach made for the furthest view; the fog is set for the chosen one: see useQuality.)
+const drawDistance = MAX_VIEW * WORLD.chunkSize;
+const viewDistance = () => WORLD.viewDistance * WORLD.chunkSize;
+scene.fog = new THREE.Fog(0xd6e8f7, viewDistance() * 0.45, viewDistance() * 0.95);
 
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, drawDistance * 1.5);
 scene.add(camera); // (so what you hold, drawn in front of you, is in the scene)
@@ -94,7 +96,7 @@ const dayNight = new DayNight(scene, WORLD, drawDistance * 1.2);
 // The sun sets on the horizon you can see (lower, from up high): the land
 // out to where the fog hides it, or the sea.
 dayNight.groundAt = (x, z) => Math.max(generator.getBaseHeight(x, z), WORLD.seaLevel);
-dayNight.horizonDistance = drawDistance * 0.9;
+dayNight.horizonDistance = viewDistance() * 0.9;
 const clouds = new Clouds(scene);
 windDirection.value.set(clouds.wind.x, clouds.wind.z).normalize(); // (the gusts roll the way the clouds drift)
 // The weather: cloud cover, rain and thunderstorms, changing by itself.
@@ -1213,6 +1215,26 @@ function smooth(a, b, x) {
 }
 const caveHaze = { target: 0, amount: 0, color: new THREE.Color(0x07080b) };
 const openFog = { near: scene.fog.near, far: scene.fog.far };
+// The graphics quality chosen on the start menu, put into effect as a
+// world starts (before its land is built): the view, the fog, the
+// shadows, the resolution.
+function useQuality() {
+  QUALITY = applyQuality();
+  const d = viewDistance();
+  openFog.near = d * 0.45;
+  openFog.far = d * 0.95;
+  dayNight.horizonDistance = d * 0.9;
+  const shadow = dayNight.light.shadow, e = WORLD.shadowExtent / 2;
+  if (shadow.mapSize.x !== WORLD.shadowMapSize) {
+    shadow.mapSize.set(WORLD.shadowMapSize, WORLD.shadowMapSize);
+    shadow.map?.dispose();
+    shadow.map = null;
+  }
+  Object.assign(shadow.camera, { left: -e, right: e, top: e, bottom: -e });
+  shadow.camera.updateProjectionMatrix();
+  PIXEL_RATIO = Math.min(window.devicePixelRatio, QUALITY.pixelRatio);
+  resize();
+}
 // Under the water: a murky blue-green haze closing in (darker at night and
 // in the depths), the sky gone, the sounds muffled.
 const UNDERWATER = new THREE.Color(0x14505c);
@@ -1274,7 +1296,7 @@ function applyCaveHaze(dt) {
 }
 
 // --- Loop --------------------------------------------------------------------
-const PIXEL_RATIO = Math.min(window.devicePixelRatio, QUALITY.pixelRatio);
+let PIXEL_RATIO = Math.min(window.devicePixelRatio, QUALITY.pixelRatio);
 function resize() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
@@ -1565,6 +1587,7 @@ if (TEST.get('mp')) {
 if (!TEST.size) {
   const menu = new StartMenu({
     onPlay: (world) => {
+      useQuality();
       game.mode = world.mode;
       setSeed(world.seed, world.mode === 'testing' ? null : world.id);
       ui.seed.value = world.seed;

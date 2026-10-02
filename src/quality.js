@@ -3,7 +3,7 @@ import { WORLD } from './config.js';
 // How much the game asks of your computer: how far the land is drawn and
 // in how much detail, the grass, the trees' shadows, the shadow map and the
 // screen's resolution. Chosen on the start menu (remembered in this
-// browser), and applied as the page loads (so a change reloads the page).
+// browser), and applied as a world starts (its land is built for it).
 // High is the full world as config.js has it.
 
 const KEY = 'facet-lands:quality';
@@ -88,9 +88,15 @@ export function setQuality(q) {
   }
 }
 
+// The full (High) settings, as config.js has them, to go back to.
+const BASE = {};
+for (const p of Object.values(QUALITY)) for (const k of Object.keys(p.world)) BASE[k] = structuredClone(WORLD[k]);
+/** The furthest the land is ever drawn (High's view distance, in chunks). */
+export const MAX_VIEW = WORLD.viewDistance;
+
 /** Sets the world's settings for the chosen quality; returns its preset. */
 export function applyQuality() {
   const preset = QUALITY[quality()];
-  Object.assign(WORLD, preset.world);
+  Object.assign(WORLD, structuredClone(BASE), preset.world);
   return preset;
 }
