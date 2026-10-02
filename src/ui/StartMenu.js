@@ -91,10 +91,12 @@ export class StartMenu {
    * `onPlay(world)` starts a world ({ id, name, seed, mode, camera? });
    * `onSave()` saves the world in play; `onQuit()` leaves it.
    */
-  constructor({ onPlay, onSave, onQuit }) {
+  constructor({ onPlay, onSave, onQuit, onHost, onJoin }) {
     this.onPlay = onPlay;
     this.onSave = onSave;
     this.onQuit = onQuit;
+    this.onHost = onHost; // ({ url, name, world }) => Promise (the room's open)
+    this.onJoin = onJoin; // ({ url, code, name }) => Promise<world> (the room's world)
     this.world = null; // (the world in play)
     const root = (this.root = document.createElement('div'));
     root.className = 'start-menu';
@@ -150,25 +152,78 @@ export class StartMenu {
       <h2 class="sm-head">Play</h2>
       <button class="sm-btn sm-primary" data-go="new">Create a new world</button>
       <button class="sm-btn" data-go="load" ${n ? '' : 'disabled'}>Load a saved world${n ? ` <small>(${n})</small>` : ''}</button>
+      ${this.onJoin ? '<button class="sm-btn" data-go="online">Play online</button>' : ''}
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
     this.#on('[data-go="new"]', () => this.create());
     this.#on('[data-go="load"]', () => this.load());
+    this.#on('[data-go="online"]', () => this.online());
     this.#on('[data-go="back"]', () => this.title());
   }
 
-  create() {
+  // Playing together: the server's address and your name (remembered),
+  // then open a world of your own to others, or join one by its code.
+  online(note = '') {
+    const remembered = (k) => {
+      try {
+        return localStorage.getItem(`facet-lands:${k}`) ?? '';
+      } catch {
+        return '';
+      }
+    };
+    const esc = (v) => String(v).replace(/[&"<]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;' })[c]);
+    const card = this.#show(`
+      <h2 class="sm-head">Play online</h2>
+      <label class="sm-field">Server<input id="sm-server" type="text" maxlength="200" placeholder="wss://your-server.onrender.com" value="${esc(remembered('server'))}" /></label>
+      <label class="sm-field">Your name<input id="sm-player" type="text" maxlength="24" value="${esc(remembered('name') || 'Wanderer')}" /></label>
+      <button class="sm-btn sm-primary" data-go="host">Host a new world</button>
+      <div class="sm-join">
+        <label class="sm-field">World code<input id="sm-code" type="text" maxlength="6" placeholder="ABC123" autocomplete="off" /></label>
+        <button class="sm-btn" data-go="join">Join</button>
+      </div>
+      <p class="sm-note" aria-live="polite">${esc(note)}</p>
+      <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
+    const read = () => {
+      const url = card.querySelector('#sm-server').value.trim(), name = card.querySelector('#sm-player').value.trim() || 'Wanderer';
+      try {
+        localStorage.setItem('facet-lands:server', url);
+        localStorage.setItem('facet-lands:name', name);
+      } catch {
+        // (Not remembered, then.)
+      }
+      if (!url) card.querySelector('.sm-note').textContent = 'Put in the server address first.';
+      return url ? { url, name } : null;
+    };
+    this.#on('[data-go="host"]', () => {
+      const who = read();
+      if (who) this.create(who);
+    });
+    this.#on('[data-go="join"]', () => {
+      const who = read();
+      const code = card.querySelector('#sm-code').value.trim().toUpperCase();
+      if (!who) return;
+      if (!code) return (card.querySelector('.sm-note').textContent = 'Put in the code of the world to join.');
+      card.querySelector('.sm-note').textContent = 'Joining…';
+      this.onJoin({ ...who, code })
+        .then((world) => this.#play(world))
+        .catch((e) => this.online(e.message));
+    });
+    this.#on('[data-go="back"]', () => this.choose());
+  }
+
+  create(online = null) {
     const seed = Math.random().toString(36).slice(2, 8);
     const card = this.#show(`
-      <h2 class="sm-head">New world</h2>
+      <h2 class="sm-head">${online ? 'New world, online' : 'New world'}</h2>
       <label class="sm-field">World name<input id="sm-name" type="text" maxlength="40" value="My world" /></label>
       <label class="sm-field">Seed<input id="sm-seed" type="text" maxlength="24" value="${seed}" /></label>
       <div class="sm-modes" role="radiogroup" aria-label="Game mode">
-        ${Object.entries(MODES).map(([id, m], i) => `
+        ${Object.entries(MODES).filter(([id]) => !online || id !== 'testing').map(([id, m], i) => `
           <button type="button" class="sm-mode${i === 0 ? ' sm-picked' : ''}" data-mode="${id}" role="radio" aria-checked="${i === 0}">
             <strong>${m.name}</strong><span>${m.blurb}</span>
           </button>`).join('')}
       </div>
-      <button class="sm-btn sm-primary" data-go="play">Create world</button>
+      <button class="sm-btn sm-primary" data-go="play">${online ? 'Create and open to others' : 'Create world'}</button>
+      <p class="sm-note" aria-live="polite"></p>
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
     let mode = 'survival';
     for (const b of card.querySelectorAll('.sm-mode')) {
@@ -184,10 +239,20 @@ export class StartMenu {
       const name = card.querySelector('#sm-name').value.trim() || 'My world';
       const s = card.querySelector('#sm-seed').value.trim() || seed;
       const world = { id: `w${Date.now().toString(36)}`, name, seed: s, mode, created: Date.now() };
+      if (online) {
+        card.querySelector('.sm-note').textContent = 'Opening the world…';
+        this.onHost({ ...online, world })
+          .then(() => {
+            rememberWorld(world);
+            this.#play(world);
+          })
+          .catch((e) => this.online(e.message));
+        return;
+      }
       if (mode !== 'testing') rememberWorld(world);
       this.#play(world);
     });
-    this.#on('[data-go="back"]', () => this.choose());
+    this.#on('[data-go="back"]', () => (online ? this.online() : this.choose()));
   }
 
   load() {
@@ -232,10 +297,13 @@ export class StartMenu {
   pause() {
     if (!this.world) return;
     this.paused = true;
-    const testing = this.world.mode === 'testing';
+    // (Testing worlds, and other people's worlds you've joined, aren't saved.)
+    const testing = this.world.mode === 'testing' || !!this.world.guest;
+    const code = this.onlineCode?.();
     const card = this.#show(`
       <h2 class="sm-head">${this.world.name.replace(/</g, '&lt;')}</h2>
       <p class="sm-tag">${MODES[this.world.mode]?.name ?? ''} · seed ${String(this.world.seed).replace(/</g, '&lt;')}</p>
+      ${code ? `<p class="sm-code">Online · world code <strong>${code}</strong></p>` : ''}
       <button class="sm-btn sm-primary" data-go="resume">Resume</button>
       ${testing ? '' : '<button class="sm-btn" data-go="save">Save world</button>'}
       <button class="sm-btn" data-go="quit">${testing ? 'Quit to title' : 'Save and quit to title'}</button>

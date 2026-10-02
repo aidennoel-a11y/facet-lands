@@ -748,6 +748,42 @@ export const frog = () => new Blocks()
   .build();
 
 /** A firefly's light: a tiny block. */
+/**
+ * Another player: a low-poly walker in a shirt of their colour, with a pack
+ * on their back. Parts, each about its own joint (for swinging): the body
+ * (hips at y = 0.92), the head (neck), the arms (shoulders) and the legs
+ * (hips). About 1.8 m tall.
+ */
+export function person(shirt = 0x3a86c8) {
+  const skin = 0xd8a47a, hair = 0x3a2a1e, trousers = 0x3a3a44, boots = 0x2a2018, pack = 0x7a5a32;
+  return {
+    body: new Blocks()
+      .box(0.36, 0.5, 0.2, shirt, [0, 0.26, 0], [0, 0, 0], [0.92, 0.9]) // chest
+      .box(0.34, 0.12, 0.19, trousers, [0, -0.02, 0]) // belt and hips
+      .box(0.3, 0.36, 0.14, pack, [0, 0.3, -0.17]) // the pack
+      .box(0.26, 0.08, 0.14, 0x5a4024, [0, 0.5, -0.17]) // its flap
+      .build(),
+    head: new Blocks()
+      .box(0.08, 0.08, 0.08, skin, [0, 0.04, 0]) // neck
+      .box(0.22, 0.24, 0.22, skin, [0, 0.19, 0.01]) // head
+      .box(0.24, 0.08, 0.24, hair, [0, 0.31, -0.005]) // hair
+      .box(0.24, 0.14, 0.05, hair, [0, 0.22, -0.1])
+      .box(0.035, 0.03, 0.01, 0x1a1410, [0.05, 0.2, 0.125]) // eyes
+      .box(0.035, 0.03, 0.01, 0x1a1410, [-0.05, 0.2, 0.125])
+      .build(),
+    arm: new Blocks()
+      .box(0.1, 0.32, 0.11, shirt, [0, -0.16, 0]) // sleeve
+      .box(0.085, 0.26, 0.09, skin, [0, -0.45, 0]) // forearm
+      .box(0.09, 0.08, 0.09, skin, [0, -0.62, 0.01]) // hand
+      .build(),
+    leg: new Blocks()
+      .box(0.14, 0.46, 0.15, trousers, [0, -0.23, 0])
+      .box(0.12, 0.38, 0.13, trousers, [0, -0.62, 0])
+      .box(0.13, 0.1, 0.22, boots, [0, -0.86, 0.04]) // boot
+      .build(),
+  };
+}
+
 /** A fly: a dark body, a big reddish head, two clear wings held back. About 1 cm long, shown a little large. */
 export const housefly = () => new Blocks()
   .box(0.022, 0.018, 0.034, 0x1e1c1a, [0, 0, -0.004])

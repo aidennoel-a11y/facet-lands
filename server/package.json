@@ -1,0 +1,16 @@
+{
+  "name": "facet-lands-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Multiplayer server for Facet Lands: rooms of players in the same world.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

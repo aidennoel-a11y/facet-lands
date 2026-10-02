@@ -1144,3 +1144,44 @@ kbd {
   color: #e8dcb8;
   text-decoration: underline;
 }
+.sm-join {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.sm-join .sm-field {
+  flex: 1;
+  margin: 0;
+}
+.sm-join .sm-btn {
+  width: auto;
+  padding-left: 22px;
+  padding-right: 22px;
+}
+.sm-code {
+  margin: 0 0 6px;
+  text-align: center;
+  color: #e8dcb8;
+}
+.sm-code strong {
+  letter-spacing: 0.12em;
+  color: #f2d880;
+}
+/* Online: the world's code and who's here, in a corner while you play. */
+.mp-badge {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  background: rgba(20, 22, 18, 0.66);
+  color: #f2ead8;
+  font: 600 15px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.04em;
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  pointer-events: none;
+  z-index: 20;
+}
+.mp-badge[hidden] {
+  display: none;
+}

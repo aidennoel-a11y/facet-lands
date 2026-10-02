@@ -51,6 +51,7 @@ import { sparkleUniforms } from './render/waterSparkle.js';
 import { addCloudShadow, cloudShadowUniforms } from './render/cloudShadow.js';
 import { Minimap } from './ui/Minimap.js';
 import { BiomeMap } from './ui/BiomeMap.js';
+import { Multiplayer } from './net/Multiplayer.js';
 
 // --- Renderer, scene, camera -------------------------------------------------
 const canvas = document.getElementById('scene');
@@ -65,6 +66,20 @@ THREE.ShaderChunk.shadowmap_pars_fragment = THREE.ShaderChunk.shadowmap_pars_fra
 );
 
 const scene = new THREE.Scene();
+// Playing together (see net/Multiplayer and server/server.mjs): the others
+// in your world, and the world's code and how many are here, up top.
+const mp = new Multiplayer(scene);
+const mpBadge = document.createElement('div');
+mpBadge.className = 'mp-badge';
+mpBadge.hidden = true;
+document.body.append(mpBadge);
+mp.onChange = () => {
+  mpBadge.hidden = !mp.connected;
+  if (mp.connected) mpBadge.textContent = `Online · ${mp.code} · ${mp.count} ${mp.count === 1 ? 'player' : 'players'}`;
+};
+mp.onHour = (hour) => {
+  dayNight.hour = hour;
+};
 const drawDistance = WORLD.viewDistance * WORLD.chunkSize;
 scene.fog = new THREE.Fog(0xd6e8f7, drawDistance * 0.45, drawDistance * 0.95);
 
@@ -639,6 +654,7 @@ ui.wireframe.addEventListener('change', () => {
 ui.time.addEventListener('input', () => {
   dayNight.hour = Number(ui.time.value);
   ui.clock.textContent = dayNight.clock;
+  mp.setHour(dayNight.hour); // (online: the others' sun moves with yours)
 });
 ui.cycle.addEventListener('change', () => {
   dayNight.playing = ui.cycle.checked;
@@ -648,6 +664,7 @@ for (const button of ui.presets) {
     dayNight.hour = Number(button.dataset.hour);
     ui.time.value = dayNight.hour;
     ui.clock.textContent = dayNight.clock;
+    mp.setHour(dayNight.hour);
   });
 }
 // Night vision, for testing: a soft green-white light everywhere, caves
@@ -1392,6 +1409,10 @@ function tick(now) {
     player: game.player, structures: game.structures,
   };
   wildlife.update(dt, life);
+  mp.update(dt, {
+    x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: camera.rotation.y, pitch: camera.rotation.x,
+    crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk',
+  });
   fish.update(dt, { ...life, traces, autumn, ground: (x, z) => chunks.groundHeightAt(x, z) });
   traces.update(dt);
   // Fire, smoke and dust, lit by the light of the sky.
@@ -1481,7 +1502,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, game, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, mp, game, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)
@@ -1518,6 +1539,16 @@ function saveWorld(world) {
   torches.save?.();
   rememberWorld({ ...world, camera: whereYouAre() });
 }
+let joinedHour = null;
+// For testing online play: ?mp=host (open this world) or ?mp=<code> (join
+// one), with &server=ws://… and &name=….
+if (TEST.get('mp')) {
+  const url = TEST.get('server') ?? 'ws://localhost:8787', name = TEST.get('name') ?? 'Tester';
+  const go = TEST.get('mp') === 'host'
+    ? mp.host(url, name, { name: 'Test world', seed: WORLD.seed, mode: 'creative' }, dayNight.hour, WORLD.dayLengthMinutes)
+    : mp.join(url, TEST.get('mp'), name).then((w) => (dayNight.hour = w.hour));
+  go.catch((e) => console.error('online:', e.message));
+}
 if (!TEST.size) {
   const menu = new StartMenu({
     onPlay: (world) => {
@@ -1526,6 +1557,8 @@ if (!TEST.size) {
       ui.seed.value = world.seed;
       applyMode(world.mode);
       // (Back where you left off.)
+      // (Joined online: the room's time of day.)
+      if (world.guest && joinedHour !== null) (dayNight.hour = joinedHour), (joinedHour = null);
       const c = world.camera;
       if (c) {
         camera.position.set(c.x, c.y, c.z);
@@ -1536,8 +1569,17 @@ if (!TEST.size) {
       }
     },
     onSave: (world) => saveWorld(world),
-    onQuit: () => {},
+    onQuit: () => mp.leave(),
+    // Online: open your new world to others (the room keeps its clock from
+    // yours), or join someone's (their world's seed, their time of day).
+    onHost: ({ url, name, world }) => mp.host(url, name, { name: world.name, seed: world.seed, mode: world.mode }, dayNight.hour, WORLD.dayLengthMinutes),
+    onJoin: ({ url, code, name }) =>
+      mp.join(url, code, name).then((w) => {
+        joinedHour = w.hour;
+        return { id: `online-${w.code}`, name: w.world.name, seed: w.world.seed, mode: w.world.mode, guest: true };
+      }),
   });
+  menu.onlineCode = () => (mp.connected ? mp.code : null);
   window.addEventListener('beforeunload', () => saveWorld(menu.world));
   // (Every couple of minutes, quietly, too.)
   setInterval(() => menu.world && !menu.open && saveWorld(menu.world), 120000);
