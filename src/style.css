@@ -868,3 +868,244 @@ kbd {
   0% { opacity: 1; transform: scale(1.3); }
   100% { opacity: 0; transform: scale(1); }
 }
+
+/* --- Title screen and pause menu (see StartMenu): faceted, rough-hewn panels ------ */
+.start-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  font-family: 'Barlow', system-ui, sans-serif;
+  color: #f1ead8;
+}
+.start-menu[hidden] {
+  display: none;
+}
+.sm-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* (Over a world in play: the world shows through, dimmed.) */
+.start-menu.sm-over-world .sm-backdrop {
+  display: none;
+}
+.start-menu.sm-over-world {
+  background: rgba(16, 22, 18, 0.55);
+  backdrop-filter: blur(3px);
+}
+.sm-card {
+  position: relative;
+  width: min(440px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 30px 28px 24px;
+  display: grid;
+  gap: 12px;
+  background: linear-gradient(160deg, rgba(46, 58, 44, 0.95), rgba(30, 38, 30, 0.96));
+  clip-path: polygon(0 18px, 22px 0, calc(100% - 40px) 4px, 100% 26px, calc(100% - 6px) calc(100% - 22px), calc(100% - 30px) 100%, 26px calc(100% - 6px), 4px calc(100% - 34px));
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+.sm-logo {
+  margin: 0;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-size: clamp(44px, 9vw, 68px);
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  color: #f4ecd6;
+  text-shadow: 3px 3px 0 #1c241c;
+}
+.sm-logo span {
+  display: block;
+  color: #e0823a;
+}
+.sm-head {
+  margin: 0 0 4px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-size: 30px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #f4ecd6;
+}
+.sm-tag {
+  margin: 0 0 8px;
+  text-align: center;
+  color: #c9bfa4;
+  font-size: 15px;
+}
+.sm-head + .sm-tag {
+  text-align: left;
+  margin-top: -8px;
+}
+.sm-btn {
+  font: 600 20px/1 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 14px 18px;
+  border: 0;
+  cursor: pointer;
+  color: #f4ecd6;
+  background: #4a5a3f;
+  clip-path: polygon(0 6px, 10px 0, 100% 3px, calc(100% - 4px) calc(100% - 7px), calc(100% - 14px) 100%, 3px calc(100% - 3px));
+  transition: background 0.12s, transform 0.12s;
+}
+.sm-btn:hover:not(:disabled),
+.sm-btn:focus-visible {
+  background: #5d6f4e;
+  transform: translateY(-1px);
+}
+.sm-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.sm-btn small {
+  font-size: 15px;
+  opacity: 0.8;
+}
+.sm-primary {
+  background: #c2652a;
+}
+.sm-primary:hover:not(:disabled),
+.sm-primary:focus-visible {
+  background: #d8763a;
+}
+.sm-ghost {
+  background: transparent;
+  color: #c9bfa4;
+  font-size: 17px;
+  padding: 8px;
+}
+.sm-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+.sm-field {
+  display: grid;
+  gap: 5px;
+  font: 600 14px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c9bfa4;
+}
+.sm-field input {
+  font: 500 17px 'Barlow', sans-serif;
+  padding: 10px 12px;
+  border: 0;
+  color: #f4ecd6;
+  background: rgba(0, 0, 0, 0.28);
+  clip-path: polygon(0 4px, 6px 0, 100% 2px, calc(100% - 3px) 100%, 2px calc(100% - 2px));
+}
+.sm-field input:focus {
+  outline: 2px solid #e0823a;
+}
+.sm-modes {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0;
+}
+.sm-mode {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  padding: 11px 14px;
+  border: 0;
+  cursor: pointer;
+  color: #e9e1cb;
+  background: rgba(0, 0, 0, 0.22);
+  clip-path: polygon(0 5px, 8px 0, 100% 2px, calc(100% - 3px) calc(100% - 6px), calc(100% - 10px) 100%, 2px calc(100% - 2px));
+  font: 400 14px/1.35 'Barlow', sans-serif;
+}
+.sm-mode strong {
+  font: 700 19px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sm-mode span {
+  color: #bdb398;
+}
+.sm-mode.sm-picked {
+  background: rgba(194, 101, 42, 0.35);
+  box-shadow: inset 4px 0 0 #e0823a;
+}
+.sm-worlds {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.sm-worlds li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+.sm-world {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 14px;
+  border: 0;
+  cursor: pointer;
+  color: #f1ead8;
+  background: rgba(0, 0, 0, 0.25);
+  clip-path: polygon(0 5px, 8px 0, 100% 2px, calc(100% - 3px) calc(100% - 6px), calc(100% - 10px) 100%, 2px calc(100% - 2px));
+  font: 400 13px 'Barlow', sans-serif;
+}
+.sm-world strong {
+  font: 700 18px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.04em;
+}
+.sm-world span {
+  color: #bdb398;
+}
+.sm-world:hover {
+  background: rgba(194, 101, 42, 0.3);
+}
+.sm-delete {
+  border: 0;
+  cursor: pointer;
+  padding: 0 12px;
+  color: #e9c3b0;
+  background: rgba(120, 40, 30, 0.45);
+  font: 600 14px 'Barlow Condensed', sans-serif;
+  clip-path: polygon(0 4px, 5px 0, 100% 2px, calc(100% - 2px) 100%, 2px calc(100% - 2px));
+}
+.sm-none {
+  color: #bdb398;
+  padding: 8px 0;
+}
+.sm-note {
+  margin: 0;
+  min-height: 1.2em;
+  text-align: center;
+  color: #9fc27a;
+}
+.sm-pause-button {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  z-index: 40;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  cursor: pointer;
+  color: #f4ecd6;
+  background: rgba(40, 52, 38, 0.85);
+  clip-path: polygon(0 6px, 8px 0, 100% 3px, calc(100% - 3px) calc(100% - 8px), calc(100% - 10px) 100%, 3px calc(100% - 3px));
+}
+.sm-pause-button svg {
+  width: 22px;
+  height: 22px;
+}
+.sm-pause-button[hidden] {
+  display: none;
+}

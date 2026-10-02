@@ -83,8 +83,11 @@ export class ChunkManager {
   }
 
   /** Changes what's drawn; see `visibility`. Cheap to call every frame. */
-  setVisibility(surface, caves) {
-    if (surface === this.visibility.surface && caves === this.visibility.caves) return;
+  setVisibility(surface, caves, eye = null) {
+    // (From the surface the caves shown depend on where you stand: looked at again as you move.)
+    const moved = caves === 'mouths' && eye && (!this.eye || Math.hypot(eye.x - this.eye.x, eye.z - this.eye.z) > 2);
+    if (surface === this.visibility.surface && caves === this.visibility.caves && !moved) return;
+    if (eye) this.eye = { x: eye.x, y: eye.y, z: eye.z };
     this.visibility = { surface, caves };
     for (const chunk of this.chunks.values()) this.#applyVisibility(chunk);
   }
@@ -93,11 +96,13 @@ export class ChunkManager {
     const { surface, caves } = this.visibility;
     chunk.mesh.visible = surface && !chunk.merged;
     for (const tile of this.tiles.values()) if (tile.mesh) tile.mesh.visible = surface;
-    // (From the surface, only the caves behind the mouths close by: past
-    // a couple of chunks the opening is too small to see into.)
-    const near = this.centre && Math.max(Math.abs(chunk.cx - this.centre[0]), Math.abs(chunk.cz - this.centre[1])) <= 2;
+    // (From the surface, only the caves behind a mouth within a few dozen
+    // metres: any further and the opening is too small to see into, and
+    // the tunnels would only cost triangles.)
+    const eye = this.eye;
+    const near = (object) => !!eye && object.userData.mouths?.some((m) => Math.hypot(m.x - eye.x, m.z - eye.z) < 45);
     for (const { layer, object } of chunk.layerObjects) {
-      object.visible = layer.name === 'caves' ? caves === 'all' || (object.userData.hasMouth === true && near) : surface;
+      object.visible = layer.name === 'caves' ? caves === 'all' || (object.userData.hasMouth === true && near(object)) : surface;
     }
   }
 

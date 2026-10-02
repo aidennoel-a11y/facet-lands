@@ -412,29 +412,32 @@ export class TerrainGenerator {
    * banded clay over a flat floor, gullied all over.
    */
   badlandsRelief(x, z) {
-    // (Warped a little, so no ridge runs dead straight.)
-    const wx = x + this.mesaNoise.noise2D(x * 0.006 + 7, z * 0.006) * 22, wz = z + this.mesaNoise.noise2D(x * 0.006, z * 0.006 + 7) * 22;
-    // Where the eroded country stands (clusters of ridges), and the open
-    // prairie floor between.
-    const field = smoothstep(-0.05, 0.25, this.mesaNoise.fbm(x * 0.0016 - 70, z * 0.0016 + 40, 2));
+    // Where the eroded country stands, and the open prairie floor between.
+    const field = smoothstep(-0.45, -0.15, this.mesaNoise.fbm(x * 0.0014 - 70, z * 0.0014 + 40, 2));
     if (field <= 0) return 0;
-    // Long, sharp-crested ridges and buttes...
-    const r1 = smoothstep(0.6, 0.97, 1 - Math.abs(this.mesaNoise.fbm(wx * 0.004 + 900, wz * 0.004 - 300, 3)));
-    // ...little hills and knobs round their feet and along their flanks...
-    const r2 = smoothstep(0.62, 0.98, 1 - Math.abs(this.mesaNoise.fbm(wx * 0.014 - 120, wz * 0.014 + 60, 2)));
-    // ...and here and there a spire.
-    const spire = smoothstep(0.9, 0.99, 1 - Math.abs(this.detailNoise.noise2D(wx * 0.03 + 33, wz * 0.03))) * r1;
-    let h = field * (34 * Math.pow(r1, 0.85) + 6 * r2 * (0.3 + 0.7 * smoothstep(0, 0.5, r1)) + 6 * spire);
-    // Gullies down their flanks (none on the floor)...
-    const gully = Math.abs(this.detailNoise.fbm(x * 0.05 + 11, z * 0.05, 2));
-    h -= (1 - smoothstep(0, 0.2, gully)) * 2.2 * smoothstep(3, 12, h);
-    h = Math.max(0, h);
-    // ...the harder bands standing out as ledges...
+    // (Warped, so no ridge runs dead straight.)
+    const wx = x + this.mesaNoise.noise2D(x * 0.005 + 7, z * 0.005) * 30, wz = z + this.mesaNoise.noise2D(x * 0.005, z * 0.005 + 7) * 30;
+    // Ridges branching into ridges: each finer set of spurs grows only off
+    // the ridges of the set above it (a ridged multifractal), so the main
+    // ridges throw off sediment spurs down their flanks, and those smaller
+    // spurs again, with gullies between every one.
+    let h = 0, weight = 1, f = 0.0055, amp = 1;
+    for (let o = 0; o < 4; o++) {
+      let r = 1 - Math.abs(this.mesaNoise.noise2D(wx * f + o * 37.1, wz * f - o * 19.7));
+      r *= r; // (crests sharpened, but rounded, never a needle)
+      r *= weight;
+      h += r * amp;
+      weight = Math.min(1, r * 2.2);
+      f *= 2.15;
+      amp *= 0.5;
+    }
+    h = smoothstep(0.12, 1.15, h) * 52 * field;
+    // Flat, grassy tables here and there, where the ridges are cut off level.
+    const cap = 34 + 14 * this.mesaNoise.noise2D(x * 0.002 + 400, z * 0.002 - 90);
+    if (h > cap) h = cap + (h - cap) * 0.08;
+    // The harder bands just showing as faint ledges.
     const step = 3, t = (h % step) / step;
-    // (Half way to the steps only: full steps would stand up as saw teeth.)
-    h = 0.45 * h + 0.55 * (Math.floor(h / step) * step + smoothstep(0.2, 0.8, t) * step);
-    // ...and the clay rough and crumbled.
-    return h + this.detailNoise.noise2D(x * 0.12 - 5, z * 0.12 + 9) * 0.22 * smoothstep(2, 8, h);
+    return 0.7 * h + 0.3 * (Math.floor(h / step) * step + smoothstep(0.3, 0.7, t) * step);
   }
 
   /** Where salt flats lie deep in the desert (0..1): dead flat, white. */
@@ -3337,7 +3340,8 @@ export class TerrainGenerator {
     // (only the floor between them grassed).
     if (w.badlands > 0.02) {
       const rise = this.badlandsRelief(x, z) * w.badlands; // (how far up the ridges)
-      const bare = smoothstep(1.5, 4, rise) * (1 - 0.6 * smoothstep(0.93, 0.99, upness) * (1 - smoothstep(10, 22, rise)));
+      // (Bare clay on the slopes; grass on the floor and over the flat tables.)
+      const bare = smoothstep(1.5, 4, rise) * (1 - 0.85 * smoothstep(0.95, 0.99, upness));
       if (bare > 0) {
         const band = Math.floor((height + this.detailNoise.noise2D(x * 0.03, z * 0.03) * 0.8) / 2.2);
         out.lerp(BADLANDS[((band % BADLANDS.length) + BADLANDS.length) % BADLANDS.length], 0.9 * bare * smoothstep(0.02, 0.5, w.badlands));

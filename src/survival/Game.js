@@ -83,6 +83,8 @@ export class Game {
     this.dirty = false;
     this.saveWait = 10;
     this.seed = null;
+    this.mode = 'testing'; // or 'creative' or 'survival' (see StartMenu)
+    this.saveKey = null; // the world's save (none for a testing world)
     this.spawn = null;
     this.drawing = null; // a bow being drawn: { since }
     this.line = null; // a fishing line out
@@ -98,19 +100,24 @@ export class Game {
     return this.controls.mode === 'walk';
   }
 
-  /** Starts you afresh: full health, the test kit. */
+  /** Starts you afresh: full health, and (but in survival) the test kit. */
   newLife() {
     this.survival.reset();
     this.inventory.clear();
-    for (const [id, n] of TEST_KIT) this.inventory.add(Inventory.stack(id, n));
+    if (this.mode !== 'survival') for (const [id, n] of TEST_KIT) this.inventory.add(Inventory.stack(id, n));
     this.hud.alive();
     this.controls.frozen = false;
   }
 
   // --- The world remembering what you've done ------------------------------------
 
-  loadWorld(seed) {
+  /**
+   * Starts on a world: `key` names its save (see StartMenu), or null for a
+   * world that's never saved (testing): fresh each time.
+   */
+  loadWorld(seed, key = this.saveKey ?? null) {
     this.seed = seed;
+    this.saveKey = key;
     this.items.clear();
     this.felling.clear();
     this.trees.removed.clear();
@@ -119,7 +126,7 @@ export class Game {
     this.#getOff();
     let saved = null;
     try {
-      saved = JSON.parse(localStorage.getItem(`facet-lands:survival:${seed}`) || 'null');
+      saved = key ? JSON.parse(localStorage.getItem(`facet-lands:survival:${key}`) || 'null') : null;
     } catch {
       saved = null;
     }
@@ -145,7 +152,7 @@ export class Game {
   }
 
   save() {
-    if (this.seed === null) return;
+    if (this.seed === null || !this.saveKey) return; // (a testing world is never saved)
     const data = {
       structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], stumps: this.felling.stumpsJSON(),
       mushrooms: [...(this.mushrooms?.taken ?? [])],
@@ -153,7 +160,7 @@ export class Game {
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn } : null,
     };
     try {
-      localStorage.setItem(`facet-lands:survival:${this.seed}`, JSON.stringify(data));
+      localStorage.setItem(`facet-lands:survival:${this.saveKey}`, JSON.stringify(data));
     } catch {
       // (No storage: the world just won't remember.)
     }
@@ -1383,7 +1390,8 @@ export class Game {
       shelter: sheltered, exposed, storm: ctx.blizzard ?? 0, dust: (ctx.dust ?? 0) * (1 - sheltered),
     };
     const wasAlive = this.survival.alive;
-    this.survival.update(dt, e);
+    // (In creative there's no hunger, thirst or cold: you stay as you are.)
+    if (this.mode !== 'creative') this.survival.update(dt, e);
     if (this.survival.retched) {
       this.survival.retched = false;
       this.sound?.call('hurt', 0, 0.4);
@@ -1451,7 +1459,7 @@ export class Game {
 
   /** You've been hurt (by a wolf, a bear, a fall...). */
   hurt(amount, cause, { bite = false } = {}) {
-    if (!this.walking || this.sleeping) return;
+    if (!this.walking || this.sleeping || this.mode === 'creative') return;
     // Armour takes the worst of a bite or a swipe (and wears for it).
     const armour = this.inventory.armour;
     if (bite && armour) {

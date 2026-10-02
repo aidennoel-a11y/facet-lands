@@ -948,30 +948,31 @@ function leaves(count, [minSize, maxSize], palette, placeOnShape, seed) {
     }
   }
 
+  const up = new Vector3(0, 1, 0), dir = new Vector3(), across = new Vector3(), tip = new Vector3(), mid = new Vector3();
   for (let i = 0; i < count; i++) {
     const { p, n, down } = placeOnShape(rand);
-    const centre = p.clone().addScaledVector(n, -0.05 - rand() * 0.08); // sunk slightly into the crown
+    // Two leaf blades fanning out from the crown's surface, each folded
+    // along its midrib, tilted out and a little up so they stand clear of
+    // the crown and catch the light (rather than a lump half sunk in it).
     side.crossVectors(n, down).normalize();
-    const along = down.clone().addScaledVector(n, (rand() - 0.5) * 0.3).normalize();
+    const base = p.clone().addScaledVector(n, -0.04);
     const s = minSize + rand() * (maxSize - minSize);
-    const corners = [
-      centre.clone().addScaledVector(along, s),
-      centre.clone().addScaledVector(side, 0.87 * s).addScaledVector(along, -0.5 * s),
-      centre.clone().addScaledVector(side, -0.87 * s).addScaledVector(along, -0.5 * s),
-    ];
-    const apex = centre.clone().addScaledVector(n, s * (0.25 + rand() * 0.15));
-
-    c.set(palette[Math.floor(rand() * palette.length)]).multiplyScalar(0.92 + rand() * 0.16);
-    underside.copy(c).multiplyScalar(0.7);
+    c.set(palette[Math.floor(rand() * palette.length)]).multiplyScalar(0.95 + rand() * 0.18);
+    underside.copy(c).multiplyScalar(0.72);
     const alpha = 0.55 + rand() * 0.4;
-
-    for (let k = 0; k < 3; k++) {
-      const q0 = corners[k];
-      const q1 = corners[(k + 1) % 3];
-      const out = q0.clone().add(q1).multiplyScalar(0.5).sub(centre).addScaledVector(n, 0.5 * s);
-      face(q0, q1, apex, out, c, alpha);
+    const turn = rand() * Math.PI * 2;
+    for (let k = 0; k < 2; k++) {
+      const a2 = turn + (k ? 0.75 : -0.75) + (rand() - 0.5) * 0.4;
+      // Out along the surface (a little upward-leaning), lifted off it.
+      dir.copy(side).multiplyScalar(Math.cos(a2)).addScaledVector(down, -Math.sin(a2)).addScaledVector(n, 0.25 + rand() * 0.2).addScaledVector(up, 0.08).normalize();
+      across.crossVectors(dir, n).normalize();
+      const len = s * (1.15 + rand() * 0.35), w = s * (0.42 + rand() * 0.12);
+      tip.copy(base).addScaledVector(dir, len);
+      mid.copy(base).addScaledVector(dir, len * 0.45).addScaledVector(n, s * 0.12); // (the midrib, raised: the fold)
+      const l = mid.clone().addScaledVector(across, w), r = mid.clone().addScaledVector(across, -w);
+      face(base, l, tip, n, c, alpha);
+      face(base, tip, r, n, k ? c : underside.clone().lerp(c, 0.6), alpha);
     }
-    face(corners[0], corners[1], corners[2], n.clone().negate(), underside, alpha);
   }
 
   const g = new BufferGeometry();
@@ -1003,7 +1004,29 @@ function onMesh(geometry) {
     faces.push({ a: a.clone(), b: b.clone(), c: c.clone(), n, weight });
     total += weight;
   }
-  return (rand) => {
+  // (Is a point inside the crown? A ray out from it crosses the crown's
+  // surface an odd number of times if so.)
+  const ray = new Vector3(), h = new Vector3(), q = new Vector3(), sv = new Vector3(), qv = new Vector3();
+  const inside = (p, dir) => {
+    let hits = 0;
+    for (const f of faces) {
+      e1.subVectors(f.b, f.a);
+      e2.subVectors(f.c, f.a);
+      h.crossVectors(dir, e2);
+      const det = e1.dot(h);
+      if (Math.abs(det) < 1e-9) continue;
+      const inv = 1 / det;
+      sv.subVectors(p, f.a);
+      const u = sv.dot(h) * inv;
+      if (u < 0 || u > 1) continue;
+      qv.crossVectors(sv, e1);
+      const v = dir.dot(qv) * inv;
+      if (v < 0 || u + v > 1) continue;
+      if (e2.dot(qv) * inv > 1e-4) hits++;
+    }
+    return hits % 2 === 1;
+  };
+  const pickOne = (rand) => {
     let pick = rand() * total;
     let face = faces[faces.length - 1];
     for (const f of faces) {
@@ -1025,6 +1048,21 @@ function onMesh(geometry) {
     if (down.lengthSq() < 1e-4) down.set(1, 0, 0).addScaledVector(n, -n.x);
     down.normalize();
     return { p, n, down };
+  };
+  // Leaves only where they'd be seen: on the crown's outside (not on a face
+  // buried inside another part of it) and not hanging from its underside.
+  return (rand) => {
+    let best = null;
+    for (let t = 0; t < 14; t++) {
+      const c = pickOne(rand);
+      best ??= c;
+      if (c.n.y < -0.3) continue;
+      q.copy(c.p).addScaledVector(c.n, 0.12);
+      ray.copy(c.n).add(new Vector3(0.013, 0.021, -0.017)).normalize();
+      if (inside(q, ray)) continue;
+      return c;
+    }
+    return best;
   };
 }
 

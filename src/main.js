@@ -7,6 +7,7 @@ import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings } from './world/layers/GrassLayer.js';
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
 import { caveNightVision, createCaveLayer } from './world/layers/CaveLayer.js';
+import { StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
 import { createRiverLayer, mistLight } from './world/layers/RiverLayer.js';
@@ -449,7 +450,7 @@ const ui = {
 };
 ui.seed.value = WORLD.seed;
 
-function setSeed(seed) {
+function setSeed(seed, saveKey = null) {
   WORLD.seed = seed;
   generator = new TerrainGenerator(seed, WORLD);
   game.trees.removed.clear(); // (the new world's felled trees are loaded below)
@@ -458,8 +459,7 @@ function setSeed(seed) {
   bigMap.reset(); // (the old world's map tiles are no good now)
   torches.loadWorld(seed);
   if (game.dirty) game.save();
-  game.loadWorld(seed);
-  game.spawn = null;
+  game.loadWorld(seed, saveKey);
   wildlife.clear();
   fish.clear();
   fires.clear();
@@ -547,8 +547,10 @@ window.addEventListener('keydown', (e) => {
   // panel, the minimap, the hotbar.
   if (e.code === 'KeyP' || e.code === 'F3') {
     e.preventDefault();
-    const hide = !ui.panel.hidden;
-    for (const el of [ui.panel, ui.minimap, ui.hotbar, document.getElementById('hud')]) if (el) el.hidden = hide;
+    const hud = document.getElementById('hud');
+    const hide = !hud.hidden;
+    // (The debug panel only ever in testing.)
+    for (const el of [game.mode === 'testing' ? ui.panel : null, ui.minimap, ui.hotbar, hud]) if (el) el.hidden = hide;
     return;
   }
   if (e.code === 'KeyX') ui.mouseLock?.click();
@@ -556,7 +558,7 @@ window.addEventListener('keydown', (e) => {
     if (document.pointerLockElement) document.exitPointerLock(); // (to point at the map)
     bigMap.toggle();
   }
-  if (e.code === 'KeyV') ui.fly.click();
+  if (e.code === 'KeyV' && game.mode !== 'survival') ui.fly.click(); // (no flying in survival)
   if (e.code === 'KeyF') ui.automove.click();
   if (e.code === 'KeyG') ui.wireframe.click();
   if (e.code === 'KeyT') ui.cycle.click();
@@ -684,10 +686,10 @@ function updateVisibility() {
   const here = chunks.groundHeightAt(p.x, p.z);
   const underground = p.y < (Number.isFinite(here) ? here : generator.getBaseHeight(p.x, p.z)) - 1.5;
   const mouths = generator.caves.mouthsNear(p.x - 70, p.z - 70, p.x + 70, p.z + 70);
-  const nearMouth = mouths.some((e) => Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z) < 60);
+  const nearMouth = mouths.some((e) => Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z) < 35);
   const surface = !underground || nearMouth;
   // Near a mouth you can see down the tunnel beyond it, so show all caves.
-  chunks.setVisibility(surface, underground || nearMouth ? 'all' : 'mouths');
+  chunks.setVisibility(surface, underground || nearMouth ? 'all' : 'mouths', p);
   clouds.group.visible = surface;
   farTrees.group.visible = surface;
   if (!surface) rain.mesh.visible = false;
@@ -1307,3 +1309,49 @@ for (const [key, id] of [['weather', 'weather'], ['season', 'season']]) {
   if (el) (el.value = TEST.get(key)), el.dispatchEvent(new Event('change'));
 }
 if (TEST.has('hide')) window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP', key: 'p' }));
+
+// --- Title screen, game modes, saved worlds (see StartMenu) ---------------------
+// (Not for a test address, e.g. the screenshot tool's: that's straight into testing.)
+function applyMode(mode) {
+  game.mode = mode;
+  // The debug panel is for testing; creative and survival play without it.
+  if (ui.panel) ui.panel.hidden = mode !== 'testing';
+  const vitals = document.querySelector('#hud .vitals');
+  if (vitals) vitals.hidden = mode === 'creative';
+  if (mode === 'creative' && !ui.fly.checked) ui.fly.click();
+  if (mode === 'survival' && ui.fly.checked) ui.fly.click();
+  if (mode === 'creative') game.survival.reset();
+}
+function whereYouAre() {
+  return { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: camera.rotation.y, pitch: camera.rotation.x };
+}
+function saveWorld(world) {
+  if (!world || world.mode === 'testing') return;
+  game.save();
+  torches.save?.();
+  rememberWorld({ ...world, camera: whereYouAre() });
+}
+if (!TEST.size) {
+  const menu = new StartMenu({
+    onPlay: (world) => {
+      game.mode = world.mode;
+      setSeed(world.seed, world.mode === 'testing' ? null : world.id);
+      ui.seed.value = world.seed;
+      applyMode(world.mode);
+      // (Back where you left off.)
+      const c = world.camera;
+      if (c) {
+        camera.position.set(c.x, c.y, c.z);
+        camera.rotation.order = 'YXZ';
+        camera.rotation.set(c.pitch ?? 0, c.yaw ?? 0, 0);
+        if (controls.yaw !== undefined) controls.yaw = c.yaw ?? 0;
+        if (controls.pitch !== undefined) controls.pitch = c.pitch ?? 0;
+      }
+    },
+    onSave: (world) => saveWorld(world),
+    onQuit: () => {},
+  });
+  window.addEventListener('beforeunload', () => saveWorld(menu.world));
+  // (Every couple of minutes, quietly, too.)
+  setInterval(() => menu.world && !menu.open && saveWorld(menu.world), 120000);
+}

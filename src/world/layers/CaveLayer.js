@@ -86,9 +86,11 @@ export function createCaveLayer(config) {
       group.userData.caves = caves;
       // From the surface only chunks with a mouth can show any cave (see ChunkManager.setVisibility).
       const size = config.chunkSize;
-      group.userData.hasMouth = caves
+      group.userData.mouths = caves
         .mouthsNear(cx * size - 16, cz * size - 16, (cx + 1) * size + 16, (cz + 1) * size + 16)
-        .some((e) => e.mouth.x > cx * size - 16 && e.mouth.x < (cx + 1) * size + 16 && e.mouth.z > cz * size - 16 && e.mouth.z < (cz + 1) * size + 16);
+        .filter((e) => e.mouth.x > cx * size - 16 && e.mouth.x < (cx + 1) * size + 16 && e.mouth.z > cz * size - 16 && e.mouth.z < (cz + 1) * size + 16)
+        .map((e) => e.mouth);
+      group.userData.hasMouth = group.userData.mouths.length > 0;
       // Caves are built on a background worker; add them when they arrive.
       caves.whenReady(entry, (data) => {
         if (group.userData.disposed) return;
