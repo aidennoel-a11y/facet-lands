@@ -139,7 +139,8 @@ export class StartMenu {
     this.#show(`
       <h1 class="sm-logo">Facet<span>Lands</span></h1>
       <p class="sm-tag">A low-poly world to survive in</p>
-      <button class="sm-btn sm-primary" data-go="start">Start</button>`);
+      <button class="sm-btn sm-primary" data-go="start">Start</button>
+      <a class="sm-credits" href="sounds/CREDITS.md" target="_blank" rel="noopener">Sound credits</a>`);
     this.#on('[data-go="start"]', () => this.choose());
   }
 

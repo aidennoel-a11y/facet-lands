@@ -10,3 +10,7 @@ open(out+'/index.html','w').write(page)
 shutil.copy(glob.glob(root+'/assets/index-*.js')[0], out+'/app.js')
 for f in glob.glob(root+'/assets/*Worker-*.js'): shutil.copy(f, out+'/'+os.path.basename(f))
 print(os.listdir(out))
+# The recorded sounds (and their credits), served next to the page.
+if os.path.isdir(root+'/sounds'):
+    shutil.copytree(root+'/sounds', out+'/sounds')
+    print(len(os.listdir(out+'/sounds')), 'sound files')

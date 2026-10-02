@@ -346,6 +346,10 @@ function playerTraces(dt) {
   const loud = controls.crouch ? 0.35 : controls.sprinting ? 1.1 : 0.7;
   const surface = stepSurface(pos.x, pos.z);
   if (surface !== 'water') sound.step(surface, loud);
+  // Pushing through tall grass, or the bushes and low leaves: their rustle round your legs.
+  const cover = surface === 'grass' || surface === 'leaves' ? game.player.cover ?? 0 : 0;
+  if (cover > 0.4) sound.call('brush', (Math.random() - 0.5) * 0.4, loud * Math.min(1, 0.4 + cover));
+  else if (controls.speedFactor < 0.9) sound.call('brush', (Math.random() - 0.5) * 0.4, loud * 0.8);
   const stick = game.items.lying?.(pos.x, pos.z, 0.6, 'stick');
   if (stick || (surface === 'leaves' && Math.random() < (controls.sprinting ? 0.12 : 0.05))) sound.call('crack', 0, (stick ? 0.8 : 0.55) * (controls.crouch ? 0.5 : 1));
   walker.x = pos.x;
@@ -424,13 +428,30 @@ function placeCamera() {
   controls.lookAt(new THREE.Vector3(best.x, best.h * 0.5, best.z));
 }
 
+// Walking into a tree: a knock on the trunk and its leaves shaking, once
+// as you come up against it (not again while you lean on it).
+const bumped = { touching: false, at: 0 };
+function treeBump(dx, dz) {
+  const push = Math.hypot(dx, dz), now = performance.now();
+  const touching = push > 0.002;
+  if (touching && !bumped.touching && now - bumped.at > 700 && controls.mode === 'walk') {
+    bumped.at = now;
+    // (From the side the trunk is on: opposite the way it pushed you.)
+    const k = 50 / push;
+    sound.call('treebump', panTowards(camera, camera.position.x - dx * k, camera.position.z - dz * k) * 0.6, controls.sprinting ? 0.9 : controls.crouch ? 0.35 : 0.6);
+  }
+  bumped.touching = touching;
+}
+
 const controls = new PlayerControls(camera, canvas, {
   groundAt,
   seaLevel: WORLD.seaLevel,
   waterAt,
   collide: (position, radius) => {
     const feet = position.y - controls.eyeHeight;
+    const bx = position.x, bz = position.z;
     trees.collide(position, radius, WORLD.chunkSize);
+    treeBump(position.x - bx, position.z - bz);
     // (Into the leaves a little way, not through them; and they slow you.)
     controls.speedFactor = trees.leaves(position, radius, feet, controls.eyeHeight + 0.1);
     game.structures.collide(position, radius, feet);

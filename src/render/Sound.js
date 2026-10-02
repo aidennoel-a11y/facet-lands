@@ -15,6 +15,16 @@
  * Browsers only allow sound after the page has been clicked or a key
  * pressed, so it starts on the first one. Underground, everything is muffled.
  */
+// Recorded clips (public/sounds, credited in public/sounds/CREDITS.md):
+// name -> how many takes (`name-1.mp3` .. `name-N.mp3`). Until a clip has
+// loaded (or if it can't), the synthesized sound plays instead.
+const CLIPS = {
+  'step-grass': 3, 'step-dirt': 2, 'step-gravel': 4, 'step-rock': 3, 'step-sand': 3, 'step-snow': 5, 'step-water': 3,
+  wood: 2, snap: 1, chop: 3, dig: 2, hurt: 1, splash: 1, stream: 4,
+  bark: 3, 'wolf-growl': 1, 'bear-growl': 3, 'bear-huff': 3, hiss: 1, pig: 2, sheep: 3, turkey: 1, frog: 3,
+  'bird-cardinal': 3, 'bird-bluebird': 3, 'bird-goldfinch': 3,
+};
+
 export class Sound {
   constructor() {
     this.enabled = true;
@@ -97,6 +107,64 @@ export class Sound {
     roar.start();
 
     this.#initAmbience();
+    this.#loadClips();
+  }
+
+  #loadClips() {
+    this.clips = {};
+    for (const [name, n] of Object.entries(CLIPS)) {
+      for (let i = 1; i <= n; i++) {
+        fetch(new URL(`sounds/${name}-${i}.mp3`, document.baseURI))
+          .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status)))
+          .then((data) => this.ctx.decodeAudioData(data))
+          .then((buf) => {
+            // (Each take evened out to the same peak, so the volumes set
+            // below mean the same thing for every recording.)
+            const d = buf.getChannelData(0);
+            let peak = 0;
+            for (let k = 0; k < d.length; k++) peak = Math.max(peak, Math.abs(d[k]));
+            if (peak > 0) for (let c = 0; c < buf.numberOfChannels; c++) {
+              const ch = buf.getChannelData(c);
+              for (let k = 0; k < ch.length; k++) ch[k] *= 0.9 / peak;
+            }
+            (this.clips[name] ??= []).push(buf);
+          })
+          .catch(() => {}); // (no file: the synthesized sound stays)
+      }
+    }
+  }
+
+  /**
+   * Plays a take of the recorded clip `name` into `dest` at `start`, sped up
+   * or slowed by `rate` (pitch with it), as loud as `gain`. False if that
+   * clip isn't loaded (the caller then synthesizes its sound).
+   */
+  #clip(name, dest, start, rate = 1, gain = 1, opts = {}) {
+    const takes = this.clips?.[name];
+    if (!takes?.length) return false;
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = takes[Math.floor(Math.random() * takes.length)];
+    src.playbackRate.value = rate * (0.94 + Math.random() * 0.12);
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    let node = src;
+    if (opts.lowpass) {
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = opts.lowpass;
+      node = node.connect(f);
+    }
+    node.connect(g).connect(dest);
+    if (opts.fade) {
+      const len = src.buffer.duration / src.playbackRate.value;
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(gain, start + opts.fade);
+      g.gain.setValueAtTime(gain, start + Math.max(opts.fade, len - opts.fade));
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+    }
+    src.start(start);
+    return src.buffer.duration / src.playbackRate.value;
   }
 
   // Continuous beds of sound, each a looped noise through a filter into its
@@ -225,7 +293,26 @@ export class Sound {
     set(this.beds.fallHiss, 0.09 * (e.fall ?? 0), 0.4);
     pan(this.beds.fall, e.fallPan);
     pan(this.beds.fallHiss, e.fallPan);
-    set(this.beds.brook, 0.07 * (e.brook ?? 0) * (0.75 + 0.25 * Math.random()), 0.08);
+    // (A recorded stream, take after take overlapping, over a little of the
+    // synthesized babble.)
+    const streams = this.clips?.stream?.length;
+    set(this.beds.brook, (streams ? 0.025 : 0.07) * (e.brook ?? 0) * (0.75 + 0.25 * Math.random()), 0.08);
+    if (streams && (e.brook ?? 0) > 0.05) {
+      if (!this.streamOut) {
+        this.streamOut = this.ctx.createGain();
+        this.streamPan = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+        if (this.streamPan) this.streamOut.connect(this.streamPan).connect(this.muffle);
+        else this.streamOut.connect(this.muffle);
+      }
+      if (t > (this.next.stream ?? 0)) {
+        const len = this.#clip('stream', this.streamOut, t + 0.02, 0.9 + Math.random() * 0.2, 1, { fade: 0.8 });
+        this.next.stream = t + Math.max(1, len - 1.4);
+      }
+    }
+    if (this.streamOut) {
+      this.streamOut.gain.setTargetAtTime(0.16 * (e.brook ?? 0), t, 0.3);
+      this.streamPan?.pan.setTargetAtTime(Math.max(-1, Math.min(1, e.brookPan ?? 0)), t, 0.3);
+    }
     this.beds.brook.filter.frequency.setTargetAtTime(1700 + Math.random() * 1700, t, 0.06);
     pan(this.beds.brook, e.brookPan);
     set(this.beds.river, 0.1 * (e.river ?? 0), 0.5);
@@ -376,6 +463,7 @@ export class Sound {
   #croak(amount) {
     const ctx = this.ctx;
     const t = ctx.currentTime + 0.02;
+    if (this.#clip('frog', this.muffle, t, 0.8 + Math.random() * 0.35, (0.08 + 0.12 * Math.random()) * Math.min(1, amount))) return;
     const len = 0.18 + Math.random() * 0.25;
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
@@ -526,7 +614,60 @@ export class Sound {
       src.start(start, Math.random() * 3);
       src.stop(start + len + 0.05);
     };
-    if (kind === 'caw') {
+    // Recorded, where there's a free recording of the real thing (see CLIPS).
+    const c = (name, rate = 1, gain = 1, at = t, opts) => this.#clip(name, out, at, rate, gain * 0.5, opts);
+    const r = Math.random();
+    let done = false;
+    switch (kind) {
+      case 'splash':
+        // Into the water: the recorded splash, and the slosh of the water after.
+        if ((done = c('splash', 0.95 + 0.3 * r, 0.9))) c('step-water', 1.1, 0.3, t + 0.05);
+        break;
+      case 'bigsplash':
+        // Something heavy: the same splash slowed down (deeper, longer), a
+        // second one on top as the water crashes back, and a low whump.
+        if ((done = c('splash', 0.6 + 0.08 * r, 1, t, { lowpass: 4500 }))) {
+          c('splash', 0.85 + 0.1 * r, 0.5, t + 0.14);
+          c('step-water', 0.7, 0.45, t + 0.5);
+          tone(t, 0.3, 'sine', 110, 45, 100, 0.7, 0.25);
+        }
+        break;
+      case 'chop': done = c('chop', 1, 1); break;
+      case 'dig': done = c('dig', 1, 0.9); break;
+      case 'hurt': done = c('hurt', 1, 0.9); break;
+      case 'bark': done = c('bark', 1.3, 0.9); break; // (a fox: a dog's bark, higher)
+      case 'snarl': done = c('wolf-growl', 1, 1); break;
+      case 'growl': done = c('bear-growl', 0.85 + 0.2 * r, 1); break;
+      case 'huff': done = c('bear-huff', 1, 1); break;
+      case 'hiss': done = c('hiss', 0.8 + 0.3 * r, 0.8); break;
+      case 'oink': done = c('pig', 0.8, 0.8); break; // (a wild boar: deeper than a farm pig)
+      case 'baa': done = c('sheep', 1, 0.8); break;
+      case 'goat': done = c('sheep', 1.25, 0.75); break;
+      case 'gobble': done = c('turkey', 1, 0.9); break;
+      case 'croak': done = c('frog', 1, 0.8); break;
+      case 'crack': done = c('snap', 0.75 + 0.2 * r, 1); break;
+      case 'twig': done = c('snap', 0.65 + 0.2 * r, 0.8, t, { lowpass: 3000 }); break;
+      case 'song0': case 'song5': done = c('bird-bluebird', kind === 'song5' ? 0.85 : 1, 0.7); break;
+      case 'song2': done = c('bird-cardinal', 1, 0.7); break;
+      case 'song3': case 'song6': done = c('bird-goldfinch', kind === 'song6' ? 0.85 : 1, 0.6); break;
+      case 'brush':
+        // Pushing through tall grass: the blades swishing against your legs.
+        if ((done = c('step-grass', 1.1 + 0.25 * r, 0.6, t, { lowpass: 7000 }))) wash(t, 0.25 + 0.15 * r, 'bandpass', 3200, 0.04, 0.06);
+        break;
+      case 'treebump':
+        // Walking into a tree: a dull knock on the trunk, and the leaves above shaking.
+        if ((done = c('wood', 0.55 + 0.1 * r, 1, t, { lowpass: 2200 }))) {
+          c('step-grass', 1.25, 0.7, t + 0.05, { lowpass: 6000 });
+          if (r < 0.4) c('snap', 0.6, 0.25, t + 0.15);
+        }
+        break;
+    }
+    if (done) return;
+    if (kind === 'brush') {
+      wash(t, 0.3, 'bandpass', 3000, 0.08, 0.06);
+    } else if (kind === 'treebump') {
+      wash(t, 0.08, 'lowpass', 300, 0.3, 0.003);
+    } else if (kind === 'caw') {
       const n = 2 + Math.floor(Math.random() * 3);
       for (let k = 0; k < n; k++) tone(t + k * 0.32, 0.22, 'sawtooth', 560 + Math.random() * 80, 430, 1100, 1.5, 0.09);
     } else if (kind === 'gull') {
@@ -949,6 +1090,15 @@ export class Sound {
     const grains = (start, n, spread, f, peak) => {
       for (let k = 0; k < n; k++) burst(start + Math.random() * spread, 0.012 + Math.random() * 0.012, 'bandpass', f * (0.7 + Math.random() * 0.7), 2, peak * (0.5 + Math.random() * 0.5), 0.002);
     };
+    // Recorded footsteps where we have them (see CLIPS).
+    const take = {
+      grass: ['step-grass', 1, 0.3], leaves: ['step-gravel', 1.15, 0.2], dirt: ['step-dirt', 1, 0.32], rock: ['step-rock', 1, 0.3],
+      sand: ['step-sand', 1, 0.3], snow: ['step-snow', 1, 0.3], mud: ['step-water', 0.7, 0.32], water: ['step-water', 1, 0.36], wood: ['wood', 1, 0.4],
+    }[surface];
+    if (take && this.#clip(take[0], out, t, take[1], take[2])) {
+      if (surface === 'leaves') this.#clip('step-grass', out, t, 1.1, 0.12); // (litter crunching over the soft ground)
+      return;
+    }
     if (surface === 'grass') {
       thud(t, 120, 0.06, 0.05);
       burst(t, 0.13, 'bandpass', 2600, 0.7, 0.06, 0.015); // (the swish of the blades)
