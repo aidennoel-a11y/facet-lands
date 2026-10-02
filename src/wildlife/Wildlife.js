@@ -9,6 +9,8 @@ function smoothstep(a, b, x) {
 }
 const TAU = Math.PI * 2;
 const SWAY = { x: 0, z: 0 };
+// The calls that carry far (see #vocalize).
+const LOUD_CALLS = new Set(['howl', 'bugle', 'roar', 'moose', 'crocBellow', 'jaguar', 'scream', 'yip']);
 const angleTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 const rnd = (a, b) => a + Math.random() * (b - a);
 
@@ -1553,7 +1555,10 @@ export class Wildlife {
           holder.voiceAt = this.time + rnd(4, 14); // (songbirds sing often)
           break;
       }
-      if (call) ctx.sound?.call(call, ctx.pan(a.x, a.z), Math.min(1, 40 / (t.d + 15)));
+      // (How far a call carries: a howl, a bugle, a roar a long way; a bleat,
+      // a grunt, a gobble only a little way, dying away fast.)
+      const carry = LOUD_CALLS.has(call) ? 60 : 18;
+      if (call) ctx.sound?.call(call, ctx.pan(a.x, a.z), Math.min(1, (carry / (t.d + carry * 0.5)) ** 2));
     }
   }
 
@@ -2284,7 +2289,7 @@ export class Wildlife {
     // A quack now and then, near you.
     if ((a.callWait = (a.callWait ?? rnd(5, 30)) - dt) <= 0) {
       a.callWait = rnd(12, 40);
-      if (t.d < 120) ctx.sound?.call('quack', ctx.pan(a.x, a.z), Math.min(0.6, 20 / (t.d + 10)));
+      if (t.d < 120) ctx.sound?.call('quack', ctx.pan(a.x, a.z), Math.min(0.6, (16 / (t.d + 8)) ** 2));
     }
     // Paddling: slowly, turning now and then, keeping on the water near its patch.
     a.timer -= dt;
