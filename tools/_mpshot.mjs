@@ -1,0 +1,22 @@
+import { createRequire } from 'module';
+import { execSync } from 'child_process';
+const require = createRequire(import.meta.url);
+const { chromium } = require(execSync('npm root -g').toString().trim() + '/playwright');
+const [code, out] = process.argv.slice(2);
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
+await page.goto(`http://localhost:4173/?seed=vz500g&x=1243&z=1555&vd=2&hide&hour=11&mp=${code}&name=Bea`, { waitUntil: 'domcontentloaded', timeout: 180000 });
+await page.waitForFunction(() => window.world?.mp?.connected, null, { timeout: 200000 });
+await page.waitForTimeout(30000);
+await page.evaluate(() => {
+  const w = window.world, c = w.camera;
+  w.controls.mode = 'fly';
+  c.position.set(1243, w.chunks.groundHeightAt(1243, 1555) + 1.6, 1555.5);
+  c.rotation.order = 'YXZ';
+  c.rotation.set(-0.08, Math.PI, 0);
+  if (w.controls.euler) w.controls.euler.set(-0.08, Math.PI, 0, 'YXZ');
+});
+await page.waitForTimeout(4000);
+console.log(await page.evaluate(() => JSON.stringify([...window.world.mp.others.values()].map((r) => [r.name, r.root.visible, r.root.position.toArray().map((v) => +v.toFixed(1))]))));
+await page.screenshot({ path: out });
+await browser.close();
