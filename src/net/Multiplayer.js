@@ -33,7 +33,7 @@ function nameTag(name, colour) {
   g.fillText(name, 20, 30);
   const tex = new CanvasTexture(c);
   tex.minFilter = LinearFilter;
-  const sprite = new Sprite(new SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  const sprite = new Sprite(new SpriteMaterial({ map: tex, depthTest: false, transparent: true, fog: false }));
   sprite.scale.set((w / 64) * 0.32, 0.32, 1);
   sprite.renderOrder = 10;
   return sprite;
