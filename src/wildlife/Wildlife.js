@@ -395,12 +395,15 @@ export class Wildlife {
       a.state = sp.bird ? 'falling' : 'dead';
       a.deadTime = 0;
       a.side = a.side ?? (Math.random() < 0.5 ? 1 : -1);
-      a.roll = Math.atan2(Math.sin(a.roll ?? 0), Math.cos(a.roll ?? 0)) * 0.3; // (from wherever it was, near upright)
+      const was = Math.atan2(Math.sin(a.roll ?? 0), Math.cos(a.roll ?? 0));
+      // (Already down on its side: it stays there. Otherwise from near upright.)
+      if (Math.abs(was) > 0.8) (a.side = Math.sign(was)), (a.roll = was);
+      else a.roll = was * 0.3;
       a.vy = 0;
       a.feet = null;
       // (Going down like a ragdoll: carried on a little by its own speed,
       // toppling over faster and faster, a bounce as it hits the ground.)
-      a.rag = { t: 0, v: Math.min(8, a.speed ?? 0), w: a.side * (0.6 + Math.random() * 0.6) + a.side * Math.min(2, (a.speed ?? 0) * 0.2), bounced: 0 };
+      a.rag = Math.abs(a.roll) > 0.8 ? null : { t: 0, v: Math.min(8, a.speed ?? 0), w: a.side * (0.6 + Math.random() * 0.6) + a.side * Math.min(2, (a.speed ?? 0) * 0.2), bounced: 0 };
       if (a.flying) (a.state = 'falling'), (a.vy = a.flying.vy);
       return 'dead';
     }
