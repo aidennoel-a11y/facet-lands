@@ -23,7 +23,7 @@ const res = await page.evaluate(async (kind) => {
   const s = window.world.sound;
   if (s.rainGain) s.rainGain.gain.value = 0;
   // (Recorded clips load in the background: give them a moment.)
-  for (let k = 0; k < 100 && Object.keys(s.clips ?? {}).length < 30; k++) await new Promise((r) => setTimeout(r, 100));
+  for (let k = 0; k < 100 && Object.keys(s.clips ?? {}).length < 33; k++) await new Promise((r) => setTimeout(r, 100));
   if (kind.startsWith('step-')) s.step(kind.slice(5), 0.8);
   else s.call(kind, 0, 0.8);
   const d = (await window.__off.startRendering()).getChannelData(0);

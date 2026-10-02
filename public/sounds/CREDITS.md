@@ -38,6 +38,9 @@ Pixabay (Pixabay Content License: free to use, no attribution required; credited
 | `splash-2` | Universfield | pixabay.com, "Water Splash 02" (352021) |
 | `shore-calm-1` | u_0lndlt5pdf | pixabay.com, "Ocean Waves" (562776), 40 s cut into a seamless loop |
 | `shore-waves-1` | SolarMusic | pixabay.com, "Ocean Waves" (112906), 21 s cut into a seamless loop |
+| `shore-mid-1` | Dragon Studio | pixabay.com, "Ocean Waves" (376898), 19 s cut into a seamless loop |
+| `rough-sea-1` | Dragon Studio | pixabay.com, "Rough Ocean Waves" (353203), 48 s cut into a seamless loop |
+| `rock-coast-1` | freesound_community | pixabay.com, "Waves crashing on rocks, spray, storm at sea, Irving Nature Park" (48358), 55 s cut into a seamless loop |
 
 License texts:
 - CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/

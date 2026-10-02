@@ -391,7 +391,7 @@ function surfSound() {
   if (rockW > 0.05) sound.coastRock = (sound.coastRock ?? 0.5) + (rockSum / rockW - (sound.coastRock ?? 0.5)) * 0.05;
   if (loud > 0.05 && T - surfHeard.last > 0.9) {
     surfHeard.last = T;
-    sound.call('wave', panTowards(camera, px / loud, pz / loud), Math.min(0.55, 0.15 + loud * 0.15));
+    sound.call('wave', panTowards(camera, px / loud, pz / loud), Math.min(0.4, 0.1 + loud * 0.12)); // (over the rocky coast's own roar)
   }
 }
 /** What's underfoot at (x, z), for the sound of a footstep (see Sound.step). */

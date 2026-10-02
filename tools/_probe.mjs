@@ -11,6 +11,6 @@ await page.waitForFunction(() => window.world?.chunks, null, { timeout: 120000 }
 await page.waitForTimeout(+wait * 1000);
 console.log(await page.evaluate((c) => new Function('world', c)(window.world), code));
 await page.waitForTimeout(+(process.env.AFTER ?? 0) * 1000);
-console.log(await page.evaluate(() => JSON.stringify({ rock: window.world.sound.coastRock, shore: !!window.world.sound.shore, gains: window.world.sound.shore ? Object.values(window.world.sound.shore).map((b) => b.gain.gain.value.toFixed(3)) : null })).catch(() => ''));
+console.log(await page.evaluate(() => JSON.stringify({ rock: window.world.sound.coastRock, shore: !!window.world.sound.shore, gains: window.world.sound.shore ? Object.fromEntries(Object.entries(window.world.sound.shore).map(([k, b]) => [k, b.gain.gain.value.toFixed(3)])) : null })).catch(() => ''));
 console.log('errors', errs.slice(0, 5));
 await browser.close();

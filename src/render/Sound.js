@@ -21,7 +21,7 @@
 const CLIPS = {
   'step-grass': 3, 'step-dirt': 2, 'step-gravel': 4, 'step-rock': 3, 'step-sand': 3, 'step-snow': 5, 'step-water': 3,
   wood: 2, snap: 1, chop: 3, dig: 2, hurt: 1, splash: 2, stream: 4,
-  'rock-surf': 1, 'body-splash': 3, 'shore-calm': 1, 'shore-waves': 1,
+  'rock-surf': 1, 'body-splash': 3, 'shore-calm': 1, 'shore-mid': 1, 'shore-waves': 1, 'rock-coast': 1, 'rough-sea': 1,
   bark: 3, 'wolf-growl': 1, 'bear-growl': 3, 'bear-huff': 3, hiss: 1, pig: 2, sheep: 3, turkey: 1, frog: 3,
   'bird-cardinal': 3, 'bird-bluebird': 3, 'bird-goldfinch': 3,
 };
@@ -319,13 +319,16 @@ export class Sound {
     set(this.beds.river, 0.1 * (e.river ?? 0), 0.5);
     pan(this.beds.river, e.riverPan);
     pan(this.beds.surf, e.surfPan);
-    // Surf on a sandy shore: recorded waves rolling in and washing up the
-    // sand, looped (quiet lapping in still air, breakers when it blows).
-    // On a rocky coast it's the waves bursting on the rocks (see 'wave').
+    // The sea, recorded, looped, from where the surf is: on a sandy shore
+    // the waves rolling in and washing up the sand (quiet lapping in still
+    // air, then waves, then breakers as the wind gets up); on a rocky coast
+    // the sea crashing and sucking back among the rocks (with each wave
+    // you see burst, see 'wave'); and in a storm, the roar of a rough sea.
     const sandy = 1 - Math.min(1, Math.max(0, ((this.coastRock ?? 0.3) - 0.3) / 0.4)); // (0.3: a beach, see SeaCoastLayer)
-    if (this.clips?.['shore-calm'] && this.clips['shore-waves'] && !this.shore) {
+    const SEA = ['shore-calm', 'shore-mid', 'shore-waves', 'rock-coast', 'rough-sea'];
+    if (!this.shore && SEA.every((n) => this.clips?.[n])) {
       this.shore = {};
-      for (const name of ['shore-calm', 'shore-waves']) {
+      for (const name of SEA) {
         const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
         src.buffer = this.clips[name][0];
         src.loop = true;
@@ -338,15 +341,20 @@ export class Sound {
       }
     }
     if (this.shore) {
-      const windy = Math.min(1, Math.max(0, (e.wind - 0.2) / 0.5));
-      for (const [name, v] of [['shore-calm', 0.45 * (1 - 0.6 * windy)], ['shore-waves', 0.4 * (0.25 + 0.75 * windy)]]) {
+      const windy = Math.min(1, Math.max(0, (e.wind - 0.15) / 0.6)), rocky = 1 - sandy;
+      const levels = {
+        'shore-calm': 0.45 * sandy * (1 - windy) ** 2,
+        'shore-mid': 0.42 * sandy * Math.min(1, 4 * windy * (1 - windy)),
+        'shore-waves': 0.4 * sandy * windy ** 2,
+        'rock-coast': 0.4 * rocky * (0.6 + 0.4 * windy),
+        'rough-sea': 0.4 * Math.max(e.storm ?? 0, 0.6 * windy ** 2),
+      };
+      for (const name of SEA) {
         const b = this.shore[name];
-        b.gain.gain.setTargetAtTime(v * e.ocean * sandy * quiet, t, 0.8);
+        b.gain.gain.setTargetAtTime(levels[name] * e.ocean * quiet, t, 0.8);
         b.pan?.pan.setTargetAtTime(Math.max(-1, Math.min(1, e.surfPan ?? 0)), t, 0.4);
       }
     }
-    set(this.beds.buzz, 0.035 * (e.buzz ?? 0), 0.3);
-    pan(this.beds.buzz, e.buzzPan);
     // The surf: waves rolling in every seven seconds or so.
     const swell = 0.55 + 0.45 * Math.sin(t * 0.9 + Math.sin(t * 0.23) * 1.5);
     set(this.beds.surf, (this.shore ? 0.04 : 0.12) * e.ocean * swell * quiet, 0.8);
