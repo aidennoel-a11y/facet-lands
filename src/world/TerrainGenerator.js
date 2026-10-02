@@ -431,13 +431,12 @@ export class TerrainGenerator {
       f *= 2.15;
       amp *= 0.5;
     }
-    h = smoothstep(0.12, 1.15, h) * 52 * field;
-    // Flat, grassy tables here and there, where the ridges are cut off level.
-    const cap = 34 + 14 * this.mesaNoise.noise2D(x * 0.002 + 400, z * 0.002 - 90);
-    if (h > cap) h = cap + (h - cap) * 0.08;
+    // (Every height between the floor and the crests, falling away down
+    // each spur: no flat cap, no two levels.)
+    h = Math.pow(smoothstep(0.08, 1.7, h), 1.25) * 58 * field;
     // The harder bands just showing as faint ledges.
     const step = 3, t = (h % step) / step;
-    return 0.7 * h + 0.3 * (Math.floor(h / step) * step + smoothstep(0.3, 0.7, t) * step);
+    return 0.85 * h + 0.15 * (Math.floor(h / step) * step + smoothstep(0.3, 0.7, t) * step);
   }
 
   /** Where salt flats lie deep in the desert (0..1): dead flat, white. */
@@ -3343,7 +3342,8 @@ export class TerrainGenerator {
       // (Bare clay on the slopes; grass on the floor and over the flat tables.)
       const bare = smoothstep(1.5, 4, rise) * (1 - 0.85 * smoothstep(0.95, 0.99, upness));
       if (bare > 0) {
-        const band = Math.floor((height + this.detailNoise.noise2D(x * 0.03, z * 0.03) * 0.8) / 2.2);
+        // (By the true height of the ground, without the colour jitter: level stripes right round every ridge.)
+        const band = Math.floor((ground + this.detailNoise.noise2D(x * 0.01, z * 0.01) * 0.6) / 2.2);
         out.lerp(BADLANDS[((band % BADLANDS.length) + BADLANDS.length) % BADLANDS.length], 0.9 * bare * smoothstep(0.02, 0.5, w.badlands));
       }
     }
