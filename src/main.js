@@ -52,10 +52,13 @@ import { addCloudShadow, cloudShadowUniforms } from './render/cloudShadow.js';
 import { Minimap } from './ui/Minimap.js';
 import { BiomeMap } from './ui/BiomeMap.js';
 import { Multiplayer } from './net/Multiplayer.js';
+import { applyQuality } from './quality.js';
 
 // --- Renderer, scene, camera -------------------------------------------------
+// (How much to ask of this computer: see quality.js, chosen on the start menu.)
+const QUALITY = applyQuality();
 const canvas = document.getElementById('scene');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.antialias });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 // Shadows fade out over the outer edge of the sun's shadow map, rather
@@ -1271,7 +1274,7 @@ function applyCaveHaze(dt) {
 }
 
 // --- Loop --------------------------------------------------------------------
-const PIXEL_RATIO = Math.min(window.devicePixelRatio, 1.5);
+const PIXEL_RATIO = Math.min(window.devicePixelRatio, QUALITY.pixelRatio);
 function resize() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;

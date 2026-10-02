@@ -4,6 +4,8 @@
 // listed in this browser's storage (see WORLDS_KEY); a testing world is
 // never saved.
 
+import { QUALITY, quality, setQuality } from '../quality.js';
+
 const WORLDS_KEY = 'facet-lands:worlds';
 
 export const MODES = {
@@ -142,8 +144,23 @@ export class StartMenu {
       <h1 class="sm-logo">Facet<span>Lands</span></h1>
       <p class="sm-tag">A low-poly world to survive in</p>
       <button class="sm-btn sm-primary" data-go="start">Start</button>
+      <div class="sm-quality" role="radiogroup" aria-label="Graphics">
+        <span>Graphics</span>
+        ${Object.entries(QUALITY).map(([id, q]) => `<button type="button" class="sm-q${id === quality() ? ' sm-picked' : ''}" data-q="${id}" role="radio" aria-checked="${id === quality()}" title="${q.blurb}">${q.name}</button>`).join('')}
+      </div>
+      <p class="sm-qnote">${QUALITY[quality()].blurb}</p>
       <a class="sm-credits" href="sounds/CREDITS.md" target="_blank" rel="noopener">Sound credits</a>`);
     this.#on('[data-go="start"]', () => this.choose());
+    // (A new setting takes a reload: the land is built for it from the start.)
+    for (const b of this.card.querySelectorAll('.sm-q')) {
+      b.addEventListener('click', () => {
+        if (b.dataset.q === quality()) return;
+        setQuality(b.dataset.q);
+        const url = new URL(location.href);
+        url.searchParams.delete('quality');
+        location.replace(url);
+      });
+    }
   }
 
   choose() {

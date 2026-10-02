@@ -1185,3 +1185,39 @@ kbd {
 .mp-badge[hidden] {
   display: none;
 }
+/* Graphics quality, on the title screen. */
+.sm-quality {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+.sm-quality span {
+  margin-right: 6px;
+  color: #c9bfa4;
+  font: 600 15px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sm-q {
+  font: 600 15px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border: 0;
+  cursor: pointer;
+  color: #e8dcb8;
+  background: rgba(74, 90, 63, 0.55);
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+.sm-q.sm-picked {
+  background: #7a9a4a;
+  color: #fff8e6;
+}
+.sm-qnote {
+  margin: 6px 0 0;
+  text-align: center;
+  color: #a89f86;
+  font-size: 13px;
+}
