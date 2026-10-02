@@ -5,7 +5,7 @@ const { chromium } = require(execSync('npm root -g').toString().trim() + '/playw
 const [query, code, wait = '60'] = process.argv.slice(2);
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
-const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
 await page.goto(`http://localhost:4173/?${query}`, { waitUntil: 'domcontentloaded', timeout: 180000 });
 await page.waitForFunction(() => window.world?.chunks, null, { timeout: 120000 });
 await page.waitForTimeout(+wait * 1000);

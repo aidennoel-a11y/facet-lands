@@ -19,12 +19,12 @@ const open = async (q) => {
   return page;
 };
 const a = await open('x=1243&z=1567&up=0&yaw=0&mp=host&name=Aiden');
-await a.waitForFunction(() => window.world.mp.code, null, { timeout: 30000 });
+await a.waitForFunction(() => window.world.mp.code, null, { timeout: 150000 });
 const code = await a.evaluate(() => window.world.mp.code);
 console.log('room', code);
 // (B stands 5 m off along -z from A... A looks down -z (yaw 0), B looks back at A (yaw π).)
 const b = await open(`x=1243&z=1561&up=0&yaw=0&pitch=-0.05&mp=${code}&name=Bea`);
-await b.waitForFunction(() => window.world.mp.connected, null, { timeout: 30000 });
+await b.waitForFunction(() => window.world.mp.connected, null, { timeout: 150000 });
 await b.waitForTimeout(40000);
 // A walks a little (moving its camera), so B sees it move.
 await a.evaluate(() => { window.world.camera.position.z -= 1; });

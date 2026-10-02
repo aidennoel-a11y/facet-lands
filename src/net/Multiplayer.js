@@ -159,8 +159,14 @@ export class Multiplayer {
         return reject(new Error("That isn't a server address (it starts wss:// or ws://)."));
       }
       this.ws = ws;
-      const timer = setTimeout(() => (ws.close(), reject(new Error("Couldn't reach the server."))), 8000);
-      ws.onopen = () => ws.send(JSON.stringify(hello));
+      // (A server asleep, a free one, can take a while to wake: and the page
+      // may be busy building the world meanwhile.)
+      let timer = setTimeout(() => (ws.close(), reject(new Error("Couldn't reach the server."))), 60000);
+      ws.onopen = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => (ws.close(), reject(new Error("The server didn't answer."))), 30000);
+        ws.send(JSON.stringify(hello));
+      };
       ws.onerror = () => (clearTimeout(timer), reject(new Error("Couldn't reach the server.")));
       ws.onclose = () => {
         clearTimeout(timer);
