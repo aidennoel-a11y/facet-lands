@@ -41,6 +41,26 @@ export class Sound {
     this.muffle.frequency.value = 20000;
     this.muffle.connect(this.master);
     this.master.connect(ctx.destination);
+    // The open air's echo: every call and step carries a soft tail of
+    // reflections off the land and the trees (a dry synthetic sound is what
+    // makes a sound feel like a cartoon). A stereo impulse of noise dying
+    // away, darker as it goes.
+    this.verb = ctx.createConvolver();
+    const len = Math.floor(ctx.sampleRate * 2.2), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const x = i / ctx.sampleRate;
+        const k = Math.min(0.9, 0.15 + x * 0.5); // (losing its highs as it goes)
+        lp = lp * k + (Math.random() * 2 - 1) * (1 - k);
+        d[i] = lp * Math.exp(-x * 3.2) * (x < 0.012 ? x / 0.012 : 1);
+      }
+    }
+    this.verb.buffer = ir;
+    this.verbOut = ctx.createGain();
+    this.verbOut.gain.value = 0.9;
+    this.verb.connect(this.verbOut).connect(this.muffle);
 
     // A few seconds of noise, looped for rain and reused for thunder.
     const length = ctx.sampleRate * 4;
@@ -181,6 +201,8 @@ export class Sound {
     this.env = env;
     const t = this.ctx.currentTime;
     const e = env, quiet = 1 - 0.6 * e.snowy; // snow deadens everything
+    // (No bugs or frogs up on the mountains, in the snow or the cold.)
+    const lowland = (1 - Math.min(1, Math.max(0, (e.high - 0.25) / 0.4))) * (1 - e.snowy);
     const set = (bed, v, lag = 1.5) => bed.gain.gain.setTargetAtTime(v, t, lag);
     // The wind: up on a ridge it blows harder, and whistles; down in a
     // valley or in among the trees it's hushed, and there the leaves rustle
@@ -227,16 +249,16 @@ export class Sound {
     this.beds.storm.filter.frequency.setTargetAtTime(420 + 650 * gust + 160 * Math.sin(t * 0.37), t, 0.5);
     // The jungle's hum by day: cicadas swelling in waves.
     const swellC = 0.45 + 0.55 * Math.max(0, Math.sin(t * 0.55 + Math.sin(t * 0.17) * 2));
-    const cicada = 0.03 * e.jungle * e.day * (1 - e.rain) * swellC * quiet;
+    const cicada = lowland * 0.03 * e.jungle * e.day * (1 - e.rain) * swellC * quiet;
     set(this.beds.cicada, cicada, 1.2);
     this.cicadaDepth.gain.setTargetAtTime(cicada * 0.9, t, 1.2);
-    const buzz = (0.022 * e.jungle + 0.012 * e.grass * (1 - e.woods) + 0.008 * (e.wetland ?? 0)) * e.day * (1 - e.rain) * quiet;
+    const buzz = lowland * (0.022 * e.jungle + 0.012 * e.grass * (1 - e.woods) + 0.008 * (e.wetland ?? 0)) * e.day * (1 - e.rain) * quiet;
     set(this.beds.insects, buzz);
     this.insectDepth.gain.setTargetAtTime(buzz * 0.8, t, 1.5);
 
     // Birds sing in the woods by day, most at dawn; crickets chirp in the
     // grass at night; frogs croak in the wetlands, from dusk on.
-    const birds = (e.woods * 0.7 + e.jungle + 0.25 * e.grass) * Math.max(e.day * 0.6, e.dawn * 1.6) * (1 - e.rain) * quiet;
+    const birds = (e.woods * 0.7 + e.jungle + 0.25 * e.grass) * Math.max(e.day * 0.6, e.dawn * 1.6) * (1 - e.rain) * quiet * (1 - 0.85 * Math.min(1, Math.max(0, (e.high - 0.4) / 0.4)));
     if (birds > 0.05 && t > this.nextBird) {
       // Each kind of country its own birds: robins, chickadees, cardinals,
       // warblers and doves in the woods; thrushes in the pines; meadowlarks
@@ -248,7 +270,7 @@ export class Sound {
         this.call(k < 0.4 ? 'song7' : k < 0.7 ? 'toucan' : 'parrot', Math.random() * 1.6 - 0.8, 0.3 + 0.5 * Math.random());
       } else if (r < e.jungle + e.woods) this.call(`song${pick((e.pine ?? 0) > 0.5 ? [5, 5, 1, 3] : [0, 0, 1, 2, 3, 4, 5])}`, Math.random() * 1.6 - 0.8, 0.3 + 0.6 * Math.random());
       else this.call(`song${pick([6, 6, 3, 4])}`, Math.random() * 1.6 - 0.8, 0.3 + 0.5 * Math.random());
-      this.nextBird = t + (0.6 + Math.random() * 3.5) / Math.min(2, birds);
+      this.nextBird = t + (2 + Math.random() * 6) / Math.min(2, birds);
     }
     const N = this.next, calm = 1 - Math.min(1, e.wind * 2.5);
     // A forest on a still day: hardly a sound, but now and then a twig
@@ -270,7 +292,7 @@ export class Sound {
     }
     // The jungle, alive: howler monkeys roaring far off, by day and by
     // night; at night the katydids and tree frogs all round.
-    if (e.jungle > 0.3 && t > N.jungle) {
+    if (e.jungle * lowland > 0.3 && t > N.jungle) {
       const k = Math.random(), pan = Math.random() * 1.8 - 0.9;
       if (k < 0.25) this.call('howler', pan, 0.15 + 0.2 * Math.random());
       else if (e.day < 0.3) this.call(k < 0.65 ? 'katydid' : 'treefrog', pan, 0.3 + 0.4 * Math.random());
@@ -279,21 +301,21 @@ export class Sound {
     }
     // Bugs in the night: katydids in the woods and the grass, mosquitoes
     // and tree frogs in the wetlands.
-    if (e.day < 0.25 && (e.woods + e.grass + (e.wetland ?? 0)) > 0.3 && e.rain < 0.3 && t > N.night) {
+    if (e.day < 0.25 && lowland > 0.5 && (e.woods + e.grass + (e.wetland ?? 0)) > 0.3 && e.rain < 0.3 && t > N.night) {
       this.call((e.wetland ?? 0) > 0.4 && Math.random() < 0.5 ? 'treefrog' : 'katydid', Math.random() * 1.8 - 0.9, (0.2 + 0.3 * Math.random()) * quiet);
-      N.night = t + 0.6 + Math.random() * 2.5;
+      N.night = t + 1.5 + Math.random() * 4;
     }
     // Sand trickling down the dunes as the wind blows.
     if (desert > 0.4 && e.wind > 0.25 && t > N.desert) {
       this.call('sandslide', Math.random() * 1.6 - 0.8, 0.5 * desert * e.wind);
       N.desert = t + 3 + Math.random() * 8;
     }
-    const crickets = (e.grass + 0.6 * e.woods + 0.5 * e.jungle) * (1 - e.day) * (1 - e.rain) * quiet;
+    const crickets = lowland * (e.grass + 0.6 * e.woods + 0.5 * e.jungle) * (1 - e.day) * (1 - e.rain) * quiet;
     if (crickets > 0.08 && t > this.nextCricket) {
       this.#cricket(crickets);
       this.nextCricket = t + 0.25 + Math.random() * 1.2 / crickets;
     }
-    const frogs = e.wetland * Math.max(1 - e.day, e.dusk) * quiet;
+    const frogs = lowland * e.wetland * Math.max(1 - e.day, e.dusk) * quiet;
     if (frogs > 0.08 && t > this.nextFrog) {
       this.#croak(frogs);
       this.nextFrog = t + 0.3 + Math.random() * 2.2 / frogs;
@@ -389,11 +411,21 @@ export class Sound {
     const t = ctx.currentTime + 0.02;
     const out = ctx.createGain();
     out.gain.value = volume;
+    // (Far off, the air takes the highs out of a sound, and you hear more
+    // of its echo than of it.)
+    const air = ctx.createBiquadFilter();
+    air.type = 'lowpass';
+    air.frequency.value = 1500 + 17000 * Math.pow(Math.min(1, volume), 1.6);
+    air.Q.value = 0.5;
+    out.connect(air);
+    const send = ctx.createGain();
+    send.gain.value = 0.18 + 0.4 * (1 - Math.min(1, volume));
+    air.connect(send).connect(this.verb);
     const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     if (panner) {
       panner.pan.value = Math.max(-1, Math.min(1, pan));
-      out.connect(panner).connect(this.muffle);
-    } else out.connect(this.muffle);
+      air.connect(panner).connect(this.muffle);
+    } else air.connect(this.muffle);
     // A tone sweeping from f0 to f1 over `len`, through a band-pass at `band`.
     const tone = (start, len, type, f0, f1, band, q, peak, wobble = 0) => {
       const o = ctx.createOscillator();
@@ -706,8 +738,13 @@ export class Sound {
       }
     } else if (kind === 'chatter') {
       // Monkeys chattering: a fast run of shrill squeaks.
-      const n = 6 + Math.floor(Math.random() * 8);
-      for (let k = 0; k < n; k++) tone(t + k * 0.07 + Math.random() * 0.03, 0.06, 'square', 1500 + Math.random() * 900, 1100 + Math.random() * 500, 1800, 2, 0.05);
+      // (Breathy, scratchy screeches: noise through a shifting narrow band, not beeps.)
+      const n = 4 + Math.floor(Math.random() * 6);
+      for (let k = 0; k < n; k++) {
+        const at = t + k * (0.09 + Math.random() * 0.07);
+        noise(at, 0.07 + Math.random() * 0.06, 1400 + Math.random() * 1200, 6, 0.08, 60);
+        tone(at, 0.08, 'sawtooth', 1300 + Math.random() * 700, 900 + Math.random() * 400, 1600, 3, 0.02, 40);
+      }
     } else if (kind === 'rustle') {
       // Leaves and branches shaken: a short scratchy rustle.
       noise(t, 0.35, 3800, 0.8, 0.12, 40);
@@ -738,16 +775,20 @@ export class Sound {
       tone(t, 1.6, 'sawtooth', 58, 50, 140, 1.2, 0.35, 11);
       noise(t, 1.5, 160, 1.5, 0.22, 11);
     } else if (kind === 'thump') {
-      // A rabbit's warning thump on the ground.
-      tone(t, 0.08, 'sine', 110, 70, 140, 0.8, 0.25);
+      // A thump on the ground (a rabbit's warning; a body falling).
+      wash(t, 0.12, 'lowpass', 220, 0.5, 0.003);
+      wash(t, 0.05, 'bandpass', 900, 0.08, 0.002);
     } else if (kind === 'owl') {
       // An owl: a soft, deep 'hoo, hoo-hoo, hooo'.
       const f = 330 + Math.random() * 60;
-      for (const [d, len] of [[0, 0.35], [0.7, 0.18], [0.92, 0.18], [1.25, 0.6]]) tone(t + d, len, 'sine', f, f * 0.94, f, 1, 0.1);
+      for (const [d, len] of [[0, 0.35], [0.7, 0.18], [0.92, 0.18], [1.25, 0.6]]) {
+        tone(t + d, len, 'sine', f, f * 0.94, f, 1, 0.08, 4);
+        noise(t + d, len, f * 1.5, 3, 0.02); // (breathy)
+      }
     } else if (kind === 'woodpecker') {
       // A woodpecker drumming on a dead branch: a fast run of knocks, slowing.
       const n = 14 + Math.floor(Math.random() * 10);
-      for (let k = 0, at = t; k < n; k++, at += 0.045 + k * 0.0018) tone(at, 0.03, 'triangle', 900, 700, 900, 2, 0.12 * (1 - (k / n) * 0.5));
+      for (let k = 0, at = t; k < n; k++, at += 0.045 + k * 0.0018) noise(at, 0.025, 1100, 2.5, 0.16 * (1 - (k / n) * 0.5)); // (beak on hollow wood: knocks, not notes)
     } else if (kind === 'cuckoo') {
       tone(t, 0.3, 'sine', 700, 690, 700, 1, 0.08);
       tone(t + 0.4, 0.4, 'sine', 560, 550, 560, 1, 0.08);
@@ -757,7 +798,10 @@ export class Sound {
       for (let k = 0; k < n; k++) tone(t + k * 0.3, 0.18, 'sawtooth', 700 + Math.random() * 300, 500, 1100, 1.5, 0.08, 25);
     } else if (kind === 'parrot') {
       const n = 1 + Math.floor(Math.random() * 3);
-      for (let k = 0; k < n; k++) tone(t + k * 0.35, 0.25, 'square', 1800 + Math.random() * 800, 1200, 2200, 1.5, 0.06, 32);
+      for (let k = 0; k < n; k++) {
+        noise(t + k * 0.35, 0.26, 1900 + Math.random() * 700, 3, 0.07, 45); // (a harsh, rasping screech)
+        tone(t + k * 0.35, 0.24, 'sawtooth', 1500 + Math.random() * 500, 1100, 1900, 2.5, 0.025, 45);
+      }
     } else if (kind === 'whoop') {
       // A tropical bird's rising, liquid whoop.
       tone(t, 0.45, 'sine', 500, 1300, 1000, 1, 0.08);
@@ -766,17 +810,17 @@ export class Sound {
       for (let k = 0; k < 3; k++) noise(t + k * 0.12, 0.06, 6500 + Math.random() * 800, 4, 0.06, 90);
     } else if (kind === 'treefrog') {
       // A tree frog: a quick, high, ringing 'peep' or a rattle.
-      const n = 1 + Math.floor(Math.random() * 3);
-      for (let k = 0; k < n; k++) tone(t + k * 0.15, 0.07, 'square', 2600 + Math.random() * 600, 2200, 2800, 3, 0.03);
+      // (A trilling, ringing note: a tone pulsed fast, soft.)
+      const n = 1 + Math.floor(Math.random() * 2), f = 2400 + Math.random() * 700;
+      for (let k = 0; k < n; k++) for (let p = 0; p < 6; p++) tone(t + k * 0.35 + p * 0.028, 0.022, 'sine', f, f * 0.97, f, 1, 0.018);
     } else if (kind === 'twig') {
       // A twig snapping, off in the woods.
-      noise(t, 0.03, 3000, 1, 0.3);
-      tone(t, 0.025, 'square', 1400, 600, 1800, 2, 0.1);
+      noise(t, 0.02, 3200, 0.8, 0.25);
+      noise(t + 0.012, 0.05, 1300, 1.2, 0.12);
     } else if (kind === 'crack') {
       // A branch cracking underfoot: a split second of sharp splintering clicks.
-      for (let k = 0; k < 3; k++) noise(t + k * 0.012 + Math.random() * 0.008, 0.025, 2200 + Math.random() * 2500, 1.2, 0.35);
-      tone(t, 0.04, 'square', 1700, 500, 1500, 1.5, 0.12);
-      noise(t + 0.03, 0.12, 900, 1, 0.12); // (and the dull snap of the wood)
+      for (let k = 0; k < 4; k++) noise(t + k * 0.011 + Math.random() * 0.008, 0.02 + Math.random() * 0.015, 1800 + Math.random() * 3000, 1, 0.3);
+      wash(t + 0.01, 0.12, 'lowpass', 600, 0.25, 0.002); // (and the dull, woody snap)
     } else if (kind === 'sandslide') {
       // A trickle of sand sliding off a dune's crest: a long soft hiss.
       wash(t, 2.2, 'bandpass', 3800, 0.06, 0.6, 2500);
@@ -815,11 +859,24 @@ export class Sound {
         lfo.start(start);
         lfo.stop(start + len + 0.05);
       }
+      // (A real bird's note is never pure: it wavers in pitch and flutters in
+      // loudness, a breath of noise in it.)
+      const jit = ctx.createOscillator(), jd = ctx.createGain();
+      jit.frequency.value = 40 + Math.random() * 60;
+      jd.gain.value = f0 * 0.012;
+      jit.connect(jd).connect(o.frequency);
+      jit.start(start);
+      jit.stop(start + len + 0.05);
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0001, start);
-      g.gain.exponentialRampToValueAtTime(peak, start + Math.min(0.02, len * 0.3));
+      g.gain.exponentialRampToValueAtTime(peak * 0.7, start + Math.min(0.02, len * 0.3));
       g.gain.exponentialRampToValueAtTime(0.0001, start + len);
-      o.connect(g).connect(out);
+      const band = ctx.createBiquadFilter();
+      band.type = 'bandpass';
+      band.frequency.value = f0;
+      band.Q.value = 1.5;
+      o.connect(band).connect(g).connect(out);
+      o.type = 'triangle';
       o.start(start);
       o.stop(start + len + 0.05);
     };
@@ -862,8 +919,11 @@ export class Sound {
     const ctx = this.ctx;
     const t = ctx.currentTime + 0.005;
     const out = ctx.createGain();
-    out.gain.value = volume * (0.9 + Math.random() * 0.2);
+    out.gain.value = volume * 0.6 * (0.85 + Math.random() * 0.3);
     out.connect(this.muffle);
+    const send = ctx.createGain();
+    send.gain.value = 0.1;
+    out.connect(send).connect(this.verb);
     const burst = (start, len, type, f, q, peak, attack = 0.004) => {
       const src = ctx.createBufferSource();
       src.buffer = this.noise;
@@ -879,18 +939,12 @@ export class Sound {
       src.start(start, Math.random() * 3);
       src.stop(start + len + 0.02);
     };
+    // The weight coming down: a dull, low burst of noise (heel), and the
+    // toe a moment after, softer (never a pitched note: that's what made
+    // them sound like a cartoon).
     const thud = (start, f, len, peak) => {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.setValueAtTime(f, start);
-      o.frequency.exponentialRampToValueAtTime(f * 0.55, start + len);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, start);
-      g.gain.exponentialRampToValueAtTime(peak, start + 0.006);
-      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
-      o.connect(g).connect(out);
-      o.start(start);
-      o.stop(start + len + 0.02);
+      burst(start, len + 0.03, 'lowpass', f * 2.2, 0.6, peak * 1.4, 0.003);
+      burst(start + 0.07 + Math.random() * 0.03, len * 0.7, 'lowpass', f * 3, 0.6, peak * 0.6, 0.004);
     };
     const grains = (start, n, spread, f, peak) => {
       for (let k = 0; k < n; k++) burst(start + Math.random() * spread, 0.012 + Math.random() * 0.012, 'bandpass', f * (0.7 + Math.random() * 0.7), 2, peak * (0.5 + Math.random() * 0.5), 0.002);

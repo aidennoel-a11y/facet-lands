@@ -122,7 +122,7 @@ function sedgeGeometry(seed = 31) {
 function fineGeometry(seed = 41) {
   const rand = mulberry32(seed);
   const pos = [], col = [], nor = [];
-  for (let k = 0; k < 16; k++) {
+  for (let k = 0; k < 10; k++) {
     const angle = rand() * Math.PI * 2, r = Math.sqrt(rand()) * 0.4;
     const bx = Math.cos(angle) * r, bz = Math.sin(angle) * r;
     const facing = rand() * Math.PI * 2, half = 0.02 + rand() * 0.02;
@@ -149,7 +149,7 @@ export function createGrassLayer(config, { far = false } = {}) {
   const maxLod = far ? config.farGrassMaxLod : config.grassMaxLod;
   // Ordinary tufts, tall seeding stalks, broad, many-bladed clumps, sedges
   // and fine golden grass.
-  const geometries = [tuftGeometry(), tallGeometry(), tuftGeometry(14, 23), sedgeGeometry(), fineGeometry()];
+  const geometries = [tuftGeometry(), tallGeometry(), tuftGeometry(10, 23), sedgeGeometry(), fineGeometry()];
   geometries[2].scale(1.6, 0.8, 1.6);
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
   // Double-sided materials flip the normal on back faces, which would turn

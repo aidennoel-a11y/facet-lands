@@ -36,10 +36,10 @@ export const WORLD = {
   // Trees
   treeSpacing: 6, // metres between candidate tree spots (lower = denser)
   treeDensity: 0.92, // and the chance of a tree at each, overall
-  treeMaxLod: 2, // chunks at this LOD or closer get full trees (out to 640 m; the leaf clusters only near)
+  treeMaxLod: 1, // chunks at this LOD or closer get full trees (out to 384 m; the leaf clusters only near; simpler far ones beyond)
   treeShadowLod: 1, // and cast shadows out to this LOD (the shadows reach no further)
   farTreeMaxLod: 5, // and out to this LOD, simple far ones (see FarTreeLayer)
-  farTreeDetailLod: 4, // the far ones with their character (trunk, tiers, round crowns) to here (1.5 km); plainer beyond
+  farTreeDetailLod: 3, // the far ones with their character (trunk, tiers, round crowns) to here (1 km); plainer beyond
   treeScale: 1.6, // overall tree size multiplier
   leafMaxLod: 0, // leaf clusters only on chunks this close
 
@@ -60,7 +60,7 @@ export const WORLD = {
   // of far grass (on the nearer chunks too, under the close grass), so the
   // grassland doesn't stop dead a hundred metres off.
   farGrassMaxLod: 1,
-  farGrassSpacing: 4.4,
+  farGrassSpacing: 5.5,
   farGrassFade: [230, 290],
 
   // Sun, moon and sky

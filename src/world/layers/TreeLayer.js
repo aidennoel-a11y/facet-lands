@@ -52,6 +52,7 @@ function crownOf(type) {
 // hitboxes: you can push a little way into the leaves, not through them.
 const PROFILES = new Map();
 const CONES = new Set(['pine', 'spruce', 'larch', 'deadPine', 'cypress']);
+export const SMALL_PLANTS = new Set(['bush', 'raspberryBush', 'blueberryBush', 'dryBush', 'smallCactus']);
 function profileOf(type) {
   if (!PROFILES.has(type)) {
     const crown = TREE_GEOMETRIES[type]?.userData.crown;
@@ -376,6 +377,9 @@ export function createTreeLayer({ rocks = null } = {}) {
       group.userData.cz = cz;
       let count = 0;
       for (const [type, list] of Object.entries(placed)) {
+        // (Bushes and the little cacti only near you: further off they're
+        // specks, and a great many triangles.)
+        if (lod > 1 && SMALL_PLANTS.has(type)) continue;
         const stiff = STIFF.has(type);
         const mesh = new InstancedMesh(treeGeometry(type, bare), stiff ? stiffMaterial : material, list.length);
         mesh.name = type;

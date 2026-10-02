@@ -13,6 +13,7 @@ import {
 import { seasonalTrees } from '../../render/Seasons.js';
 import { FALL, TREE_GEOMETRIES } from '../trees.js';
 import { packFarTrees, placeTrees } from '../treePlacement.js';
+import { SMALL_PLANTS } from './TreeLayer.js';
 
 const CONES = new Set(['pine', 'spruce', 'larch', 'redwood']);
 const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag', 'bamboo']); // (bamboo: a single cane)
@@ -326,7 +327,7 @@ export function createFarTreeLayer(config) {
       // (Their character out to the middle distance; the simplest shapes beyond.)
       const detailed = lod <= config.farTreeDetailLod;
       for (const [type, data] of Object.entries(trees)) {
-        if (!data.length) continue;
+        if (!data.length || SMALL_PLANTS.has(type)) continue; // (no bushes far off)
         add(handle, type, detailed, data);
         count += data.length / 7;
       }

@@ -306,7 +306,7 @@ function bleed(x, z, amount = 1) {
   traces.print(x, y, z, Math.random() * 6.28, PRINT.paw, 0.12 + 0.12 * amount * Math.random(), 'blood', printColour.copy(BLOOD).multiplyScalar(0.8 + Math.random() * 0.4), groundNormal(x, z));
 }
 // The player's steps and strokes.
-const walker = { x: null, z: null, left: false, wet: false, stroke: 0 };
+const walker = { x: null, z: null, left: false, wet: false, stroke: 0, since: 0 };
 function playerTraces(dt) {
   const pos = camera.position;
   if (walker.x === null) (walker.x = pos.x), (walker.z = pos.z);
@@ -331,7 +331,12 @@ function playerTraces(dt) {
     return;
   }
   if (moved > 20) (walker.x = pos.x), (walker.z = pos.z); // (flown or teleported)
-  if (controls.mode !== 'walk' || !controls.grounded || moved < 0.7) return;
+  // (A step at a person's own pace: about two a second walking, three
+  // running, slower creeping; never a rapid patter however fast you go.)
+  walker.since += dt;
+  const pace = controls.crouch ? 0.72 : controls.sprinting ? 0.34 : 0.52;
+  if (controls.mode !== 'walk' || !controls.grounded || moved < 0.35 || walker.since < pace) return;
+  walker.since = 0;
   const heading = Math.atan2(pos.x - walker.x, pos.z - walker.z);
   walker.left = !walker.left;
   const side = walker.left ? 0.13 : -0.13;
@@ -1192,28 +1197,10 @@ function applyCaveHaze(dt) {
 
 // --- Loop --------------------------------------------------------------------
 const PIXEL_RATIO = Math.min(window.devicePixelRatio, 1.5);
-// The drawing resolution, eased down when the frame rate drops (a slow
-// graphics card, a big screen) and back up when there's room: never below
-// 0.6 of a pixel per screen pixel.
-const quality = { ratio: PIXEL_RATIO, low: 0, high: 0 };
-function adaptQuality(fps) {
-  if (fps < 40) (quality.low += 1), (quality.high = 0);
-  else if (fps > 56) (quality.high += 1), (quality.low = 0);
-  else quality.low = quality.high = 0;
-  let next = quality.ratio;
-  if (quality.low >= 3) next = Math.max(0.6, quality.ratio - 0.15);
-  else if (quality.high >= 8) next = Math.min(PIXEL_RATIO, quality.ratio + 0.1);
-  if (next !== quality.ratio) {
-    quality.ratio = next;
-    quality.low = quality.high = 0;
-    resize();
-  }
-}
-
 function resize() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
-  renderer.setPixelRatio(quality.ratio);
+  renderer.setPixelRatio(PIXEL_RATIO);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -1392,7 +1379,6 @@ function tick(now) {
   if (fpsTime >= 0.5) {
     const fps = frames / fpsTime;
     ui.fps.textContent = Math.round(fps);
-    if (!document.hidden && !TEST.has("hide")) adaptQuality(fps);
     // (How long the frame's own work takes, and how much it draws (shadows
     // included): with a low FPS, a low CPU time means the graphics card is
     // the limit.)

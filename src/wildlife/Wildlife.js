@@ -394,6 +394,9 @@ export class Wildlife {
       a.side = a.side ?? (Math.random() < 0.5 ? 1 : -1);
       a.vy = 0;
       a.feet = null;
+      // (Going down like a ragdoll: carried on a little by its own speed,
+      // toppling over faster and faster, a bounce as it hits the ground.)
+      a.rag = { t: 0, v: Math.min(8, a.speed ?? 0), w: a.side * (0.6 + Math.random() * 0.6) + a.side * Math.min(2, (a.speed ?? 0) * 0.2), bounced: 0 };
       if (a.flying) (a.state = 'falling'), (a.vy = a.flying.vy);
       return 'dead';
     }
@@ -1635,7 +1638,28 @@ export class Wildlife {
       a.deadTime += dt;
       a.speed = 0;
       a.feet = null;
-      a.roll += (a.side * Math.PI * 0.5 - a.roll) * Math.min(1, dt * 5);
+      const R = a.rag;
+      if (R && R.t < 3) {
+        // Toppling: falling over faster as it goes (gravity on a body tipping
+        // past its balance), sliding on with its speed, then a dull bounce or
+        // two as it lands on its side, and still.
+        R.t += dt;
+        const g = 14 * Math.sin(Math.abs(a.roll) + 0.15) * Math.sign(R.w || a.side);
+        R.w += g * dt;
+        a.roll += R.w * dt;
+        const flat = a.side * Math.PI * 0.5;
+        if ((a.roll - flat) * a.side > 0) {
+          a.roll = flat;
+          R.w = R.bounced < 2 && Math.abs(R.w) > 1 ? -R.w * 0.28 : 0;
+          if (R.bounced === 0) this.ctx?.sound?.call('thump', this.ctx.pan(a.x, a.z), Math.min(0.8, 0.25 * a.scale * (SPECIES[a.kind].size ?? 1)));
+          R.bounced++;
+        }
+        if (R.v > 0.05) {
+          const nx = a.x + Math.sin(a.heading) * R.v * dt, nz = a.z + Math.cos(a.heading) * R.v * dt;
+          if (ctx.ground(nx, nz) === ctx.ground(nx, nz)) (a.x = nx), (a.z = nz);
+          R.v *= Math.exp(-3.5 * dt);
+        }
+      } else a.roll += (a.side * Math.PI * 0.5 - a.roll) * Math.min(1, dt * 5);
       const y = ctx.ground(a.x, a.z);
       if (y === y) a.y = y;
       return;
@@ -2732,7 +2756,9 @@ export class Wildlife {
     if (a.kind === 'crocodile') headRx = Math.min(headRx, 0.06);
     const hp = model.headPivot;
     const thrust = sp.biped && a.alive && !sp.water && a.speed > 0.05 ? Math.max(0, Math.sin(TAU * (a.cycle ?? 0) * 2)) * 0.05 : 0;
-    const head = put(M.head, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : 0, 0);
+    // (Dead, the head lolls over to the ground: a turn about the body's own up, which lying on its side is towards the ground.)
+    const deadYaw = !a.alive ? -(a.side ?? 1) * 0.25 * Math.min(1, Math.abs(Math.sin(a.roll ?? 0))) : 0;
+    const head = put(M.head, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : deadYaw, 0);
     a.hm = (a.hm ?? new Matrix4()).copy(head);
     if (M.antlers && a.antlers) put(M.antlers, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : 0, 0);
     // A tom turkey's fan, raised.
@@ -2754,11 +2780,19 @@ export class Wildlife {
     model.legs.forEach((p, k) => {
       const hind = model.biped || k >= 2, limb = hind ? model.hind : model.fore;
       if (lying) {
-        // Stretched out stiff (dead), or kicking (down).
+        // Limp (dead), or kicking (down): the legs flopped over to the ground
+        // side, each foot resting just above the ground (lying on its side,
+        // the body's x is up and down: the ground is at -side × its half
+        // width), never pushed into it; stretched out from the belly.
         const kick = a.down && a.alive ? Math.sin(this.time * 7 + k * 1.7) * 0.3 * (0.4 + 0.6 * Math.abs(Math.sin(this.time * 0.9))) : 0;
-        foot.x = p[0] * 1.25;
-        foot.y = p[1] * 0.14;
-        foot.z = p[2] + (hind ? -1 : 1) * p[1] * (0.35 + kick);
+        const bb = model.body.boundingBox, half = ((bb.max.x - bb.min.x) / 2) * 0.8;
+        const L = limb.l1 + limb.l2, lie = Math.abs(Math.sin(a.roll ?? 0));
+        const settle = a.rag ? Math.min(1, a.rag.t / 0.7) : 1;
+        const upper = Math.sign(p[0] || 1) === (a.side ?? 1); // (the legs on the upper side flop over)
+        const rest = -(a.side ?? 1) * (half * 0.92 - 0.02) * lie;
+        foot.x = p[0] + (rest - p[0]) * settle * (upper ? 1 : 0.85);
+        foot.y = p[1] - L * (0.92 - 0.18 * settle) + (upper ? 0.04 : 0);
+        foot.z = p[2] + (hind ? -1 : 1) * L * (0.12 + 0.18 * settle + kick) + (upper ? (hind ? -0.06 : 0.06) : 0);
       } else if (a.swimming) {
         // Paddling, under the water.
         foot.x = p[0];
