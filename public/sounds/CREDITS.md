@@ -28,8 +28,20 @@ pitch and volume. Sounds not listed here are synthesized in the game itself.
 | `pig-*` | TenPlus1 (mobs_animal) | MIT | via VoxeLibre mobs_mc |
 | `bird-cardinal-*`, `bird-bluebird-*`, `bird-goldfinch-*`, `frog-*`, `turkey-1` | ElCeejo (Animalia mod) | MIT (repository license) | github.com/ElCeejo/animalia |
 
+Pixabay (Pixabay Content License: free to use, no attribution required; credited anyway):
+
+| Files | Author | Source |
+| --- | --- | --- |
+| `rock-surf-1` | Dragon Studio | pixabay.com, "Big Rock Splash 5" (467472) |
+| `body-splash-1` | freesound_community (blaukreuz) | pixabay.com, "Splash" (6261) |
+| `body-splash-2`, `body-splash-3` | u_moo3yn7s9y | pixabay.com, "Big Splash Sound" (202450), two splashes cut from it |
+| `splash-2` | Universfield | pixabay.com, "Water Splash 02" (352021) |
+| `shore-calm-1` | u_0lndlt5pdf | pixabay.com, "Ocean Waves" (562776), 40 s cut into a seamless loop |
+| `shore-waves-1` | SolarMusic | pixabay.com, "Ocean Waves" (112906), 21 s cut into a seamless loop |
+
 License texts:
 - CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
 - CC BY 3.0: https://creativecommons.org/licenses/by/3.0/
 - CC BY-SA 3.0: https://creativecommons.org/licenses/by-sa/3.0/ (the modified files above are shared under the same license)
 - MIT: https://opensource.org/licenses/MIT
+- Pixabay Content License: https://pixabay.com/service/license-summary/

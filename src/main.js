@@ -325,7 +325,7 @@ function playerTraces(dt) {
     if (walker.stroke <= 0 && moved > 0.3) {
       walker.stroke = 0.7;
       traces.splash(pos.x, water ? water.level : pos.y, pos.z, 4, 1.3, 1.1);
-      sound.call('splash', 0, 0.3);
+      sound.call('swim', 0, 0.4);
     }
     if (moved > 0.3) (walker.x = pos.x), (walker.z = pos.z);
     return;
@@ -366,7 +366,7 @@ function surfSound() {
   if (prev === null || T <= prev || T - prev > 1) return;
   const p = camera.position, C = WORLD.chunkSize;
   const ccx = Math.floor(p.x / C), ccz = Math.floor(p.z / C);
-  let loud = 0, px = 0, pz = 0;
+  let loud = 0, px = 0, pz = 0, rockW = 0, rockSum = 0;
   for (let dz = -1; dz <= 1; dz++) {
     for (let dx = -1; dx <= 1; dx++) {
       const spots = seaCoast.surfNear.get(`${ccx + dx},${ccz + dz}`);
@@ -374,15 +374,21 @@ function surfSound() {
       for (const s of spots) {
         const d = Math.hypot(s.x - p.x, s.z - p.z);
         if (d > 110) continue;
+        // (How rocky the shore round you is, for the surf's sound: see Sound.ambience.)
+        const near = Math.min(1, 30 / (d + 12));
+        rockW += near;
+        rockSum += s.rock * near;
         // (Its burst comes at when·P past each whole period.)
         if (Math.floor((T - s.when * P) / P) === Math.floor((prev - s.when * P) / P)) continue;
-        const v = (0.4 + 0.6 * s.rock) * Math.min(1, 30 / (d + 12));
+        if (s.rock < 0.35) continue; // (on sand the surf rolls in: no burst on rocks)
+        const v = (0.4 + 0.6 * s.rock) * near;
         loud += v;
         px += s.x * v;
         pz += s.z * v;
       }
     }
   }
+  if (rockW > 0.05) sound.coastRock = (sound.coastRock ?? 0.5) + (rockSum / rockW - (sound.coastRock ?? 0.5)) * 0.05;
   if (loud > 0.05 && T - surfHeard.last > 0.9) {
     surfHeard.last = T;
     sound.call('wave', panTowards(camera, px / loud, pz / loud), Math.min(0.55, 0.15 + loud * 0.15));

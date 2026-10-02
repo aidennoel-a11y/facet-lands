@@ -20,7 +20,8 @@
 // loaded (or if it can't), the synthesized sound plays instead.
 const CLIPS = {
   'step-grass': 3, 'step-dirt': 2, 'step-gravel': 4, 'step-rock': 3, 'step-sand': 3, 'step-snow': 5, 'step-water': 3,
-  wood: 2, snap: 1, chop: 3, dig: 2, hurt: 1, splash: 1, stream: 4,
+  wood: 2, snap: 1, chop: 3, dig: 2, hurt: 1, splash: 2, stream: 4,
+  'rock-surf': 1, 'body-splash': 3, 'shore-calm': 1, 'shore-waves': 1,
   bark: 3, 'wolf-growl': 1, 'bear-growl': 3, 'bear-huff': 3, hiss: 1, pig: 2, sheep: 3, turkey: 1, frog: 3,
   'bird-cardinal': 3, 'bird-bluebird': 3, 'bird-goldfinch': 3,
 };
@@ -318,11 +319,37 @@ export class Sound {
     set(this.beds.river, 0.1 * (e.river ?? 0), 0.5);
     pan(this.beds.river, e.riverPan);
     pan(this.beds.surf, e.surfPan);
+    // Surf on a sandy shore: recorded waves rolling in and washing up the
+    // sand, looped (quiet lapping in still air, breakers when it blows).
+    // On a rocky coast it's the waves bursting on the rocks (see 'wave').
+    const sandy = 1 - Math.min(1, Math.max(0, ((this.coastRock ?? 0.3) - 0.3) / 0.4)); // (0.3: a beach, see SeaCoastLayer)
+    if (this.clips?.['shore-calm'] && this.clips['shore-waves'] && !this.shore) {
+      this.shore = {};
+      for (const name of ['shore-calm', 'shore-waves']) {
+        const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
+        src.buffer = this.clips[name][0];
+        src.loop = true;
+        g.gain.value = 0;
+        const pn = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+        src.connect(g);
+        (pn ? g.connect(pn) : g).connect(this.muffle);
+        src.start(0, Math.random() * src.buffer.duration);
+        this.shore[name] = { gain: g, pan: pn };
+      }
+    }
+    if (this.shore) {
+      const windy = Math.min(1, Math.max(0, (e.wind - 0.2) / 0.5));
+      for (const [name, v] of [['shore-calm', 0.45 * (1 - 0.6 * windy)], ['shore-waves', 0.4 * (0.25 + 0.75 * windy)]]) {
+        const b = this.shore[name];
+        b.gain.gain.setTargetAtTime(v * e.ocean * sandy * quiet, t, 0.8);
+        b.pan?.pan.setTargetAtTime(Math.max(-1, Math.min(1, e.surfPan ?? 0)), t, 0.4);
+      }
+    }
     set(this.beds.buzz, 0.035 * (e.buzz ?? 0), 0.3);
     pan(this.beds.buzz, e.buzzPan);
     // The surf: waves rolling in every seven seconds or so.
     const swell = 0.55 + 0.45 * Math.sin(t * 0.9 + Math.sin(t * 0.23) * 1.5);
-    set(this.beds.surf, 0.12 * e.ocean * swell * quiet, 0.8);
+    set(this.beds.surf, (this.shore ? 0.04 : 0.12) * e.ocean * swell * quiet, 0.8);
     set(this.beds.lava, 0.2 * e.lava);
     // Sand blowing over the desert as the wind rises (none in still air).
     const desert = e.desert ?? 0, blow = Math.pow(e.wind, 1.3) * (0.4 + 0.9 * gust);
@@ -620,26 +647,20 @@ export class Sound {
     let done = false;
     switch (kind) {
       case 'splash':
-        // Into the water: the recorded splash, and the slosh of the water after.
-        if ((done = c('splash', 0.95 + 0.3 * r, 0.9))) c('step-water', 1.1, 0.3, t + 0.05);
+        // Something into the water (a fish jumping, a thing thrown in): a recorded splash.
+        done = c('splash', 0.95 + 0.3 * r, 0.8);
+        break;
+      case 'swim':
+        // Your own strokes, swimming: the water sloshing round you, a splash now and then.
+        if ((done = c('step-water', 0.85 + 0.25 * r, 0.7))) if (r < 0.35) c('splash', 1.2 + 0.2 * r, 0.25, t + 0.05, { lowpass: 4000 });
         break;
       case 'bigsplash':
-        // Something heavy: the same splash slowed down (deeper, longer), a
-        // second one on top as the water crashes back, and a low whump.
-        if ((done = c('splash', 0.6 + 0.08 * r, 1, t, { lowpass: 4500 }))) {
-          c('splash', 0.85 + 0.1 * r, 0.5, t + 0.14);
-          c('step-water', 0.7, 0.45, t + 0.5);
-          tone(t, 0.3, 'sine', 110, 45, 100, 0.7, 0.25);
-        }
+        // You (or something heavy) going into deep water: a recorded body splash.
+        done = c('body-splash', 0.92 + 0.16 * r, 1);
         break;
       case 'wave':
-        // A wave breaking on the rocks: the recorded splash slowed right
-        // down (a deep wash, not a bang), a lighter one on top as the spray
-        // comes down, and the water sloshing back off the rocks.
-        if ((done = c('splash', 0.45 + 0.1 * r, 0.8, t, { lowpass: 2600 }))) {
-          c('splash', 0.7 + 0.15 * r, 0.35, t + 0.12, { lowpass: 5000 });
-          c('step-water', 0.6 + 0.1 * r, 0.4, t + 0.55, { lowpass: 3500 });
-        }
+        // A wave bursting against the rocks (the sandy shore's surf is its own, see ambience).
+        done = c('rock-surf', 0.85 + 0.25 * r, 0.9);
         break;
       case 'chop': done = c('chop', 1, 1); break;
       case 'dig': done = c('dig', 1, 0.9); break;
