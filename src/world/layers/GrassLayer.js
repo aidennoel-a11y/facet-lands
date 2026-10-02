@@ -181,14 +181,15 @@ export function createGrassLayer(config, { far = false } = {}) {
           float keep = 1.0;
           for (int i = 0; i < ${GRASS_CLEARINGS}; i++) {
             vec4 c = uClearings[i];
-            if (c.z > 0.0) keep = min(keep, smoothstep(c.z * 0.85, c.z + 0.35, distance(tuft, c.xy)));
+            if (c.z <= 0.0) break; // (they're packed at the front: the first empty one ends them)
+            keep = min(keep, smoothstep(c.z * 0.85, c.z + 0.35, distance(tuft, c.xy)));
           }
           // Bent away from whatever is pushing through it (the bend in the
           // tuft's own frame: the push turned back through its rotation).
           vec2 push = vec2(0.0);
           for (int i = 0; i < ${GRASS_PUSHERS}; i++) {
             vec4 q = uPushers[i];
-            if (q.z <= 0.0) continue;
+            if (q.z <= 0.0) break;
             vec2 off = tuft - q.xy;
             float d = length(off);
             float f = 1.0 - smoothstep(q.z * 0.4, q.z * 1.6, d);

@@ -214,6 +214,12 @@ export class GroundItems {
    * The nearest thing to pick up along a ray from `origin` (unit `dir`),
    * within `reach`: { kind: 'ground' | 'drop', item, id, distance }, or null.
    */
+  /** Whether an item `id` (e.g. a stick) lies within `r` of (x, z) on the ground. */
+  lying(x, z, r, id) {
+    const C = this.config.chunkSize, src = this.chunks.get(`${Math.floor(x / C)},${Math.floor(z / C)}`);
+    return !!src?.items.some((it) => !it.gone && it.id === id && Math.abs(it.x - x) < r && Math.abs(it.z - z) < r);
+  }
+
   pick(origin, dir, reach) {
     let best = null, bestScore = Infinity;
     const consider = (x, y, z, radius, make) => {

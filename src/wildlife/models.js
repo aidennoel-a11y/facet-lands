@@ -992,3 +992,89 @@ export function crocodile() {
     skull: [0, 0.0, 0.4, 0.17, 0.11, 0.42],
   };
 }
+
+/**
+ * A jaguar: stockier and heavier than a leopard, golden-yellow covered in
+ * black rosettes (rings with a dark spot inside), a big broad head and
+ * powerful jaw, thick legs, a shorter tail; pale belly and throat.
+ */
+export function jaguar() {
+  const coat = 0xd8a640, pale = 0xf0e4c8, ring = 0x1a1410, inner = 0xa87428;
+  const body = new Blocks()
+    .box(0.4, 0.42, 0.44, coat, [0, 0.7, 0.34], [0, 0, 0], [0.85, 0.9]) // deep, powerful chest
+    .box(0.36, 0.36, 0.66, coat, [0, 0.7, -0.12], [0, 0, 0], [0.9, 1]) // thickset body
+    .box(0.38, 0.4, 0.34, coat, [0, 0.72, -0.54], [0, 0, 0], [0.85, 0.9]) // hips
+    .box(0.28, 0.07, 1.1, pale, [0, 0.5, -0.08]); // pale belly
+  // The rosettes: dark rings, each round a darker spot, all over the flanks and back.
+  const spots = [[0.19, 0.74, 0.36], [0.19, 0.64, 0.2], [0.185, 0.78, 0.04], [0.18, 0.66, -0.12], [0.185, 0.76, -0.3], [0.19, 0.66, -0.46], [0.19, 0.78, -0.6]];
+  for (const [x, y, z] of spots) {
+    for (const s of [1, -1]) {
+      body.box(0.02, 0.1, 0.11, ring, [s * x, y, z]);
+      body.box(0.022, 0.05, 0.05, inner, [s * (x + 0.002), y, z]);
+    }
+  }
+  for (let k = 0; k < 6; k++) body.box(0.07, 0.025, 0.07, ring, [(k % 2 ? 0.07 : -0.07), 0.89, 0.4 - k * 0.19]); // spots along the back
+  body.box(0.085, 0.085, 0.36, coat, [0, 0.62, -0.86], [-0.9, 0, 0], [0.95, 0.95]); // the shorter tail
+  body.box(0.09, 0.03, 0.09, ring, [0, 0.52, -0.92]);
+  body.box(0.08, 0.08, 0.26, coat, [0, 0.4, -1.02], [-0.3, 0, 0]);
+  body.box(0.075, 0.075, 0.1, ring, [0, 0.33, -1.14]);
+  return {
+    body: body.build(),
+    headPivot: [0, 0.86, 0.6],
+    head: new Blocks()
+      .box(0.28, 0.28, 0.26, coat, [0, -0.06, 0.0], [0.5, 0, 0], [0.85, 0.9]) // thick neck
+      .box(0.34, 0.27, 0.28, coat, [0, 0.04, 0.17], [0, 0, 0], [0.92, 0.92]) // big broad head
+      .box(0.22, 0.14, 0.16, pale, [0, -0.05, 0.34]) // heavy pale jaw and muzzle
+      .box(0.08, 0.05, 0.04, 0x5a3a2a, [0, 0.0, 0.43]) // nose
+      .box(0.05, 0.035, 0.02, 0xd8b040, [0.08, 0.08, 0.32]) // amber eyes
+      .box(0.05, 0.035, 0.02, 0xd8b040, [-0.08, 0.08, 0.32])
+      .box(0.04, 0.04, 0.02, ring, [0.12, 0.15, 0.3]) // spots on the face
+      .box(0.04, 0.04, 0.02, ring, [-0.12, 0.15, 0.3])
+      .box(0.035, 0.035, 0.02, ring, [0, 0.18, 0.31])
+      .box(0.09, 0.09, 0.05, coat, [0.13, 0.2, 0.1], [0, 0, 0.25], [0.6, 0.6]) // small round ears
+      .box(0.09, 0.09, 0.05, coat, [-0.13, 0.2, 0.1], [0, 0, -0.25], [0.6, 0.6])
+      .build(),
+    antlers: null,
+    fore: limb(0.28, 0.28, { top: [0.17, 0.2], knee: [0.13, 0.13], ankle: [0.11, 0.11], color: coat, foot: [0.16, 0.06, 0.17, pale, 0.03] }),
+    hind: limb(0.3, 0.27, { top: [0.18, 0.25], knee: [0.12, 0.12], ankle: [0.1, 0.1], color: coat, foot: [0.16, 0.06, 0.17, pale, 0.03] }),
+    legs: [[0.14, 0.56, 0.4], [-0.14, 0.56, 0.4], [0.14, 0.56, -0.56], [-0.14, 0.56, -0.56]],
+    torso: [[0, 0.72, -0.1, 0.21, 0.24, 0.72]],
+    neck: [0, -0.06, 0.0, 0.15, 0.15, 0.13],
+    skull: [0, 0.04, 0.2, 0.17, 0.14, 0.2],
+  };
+}
+
+/**
+ * A howler monkey (dark, long-limbed, long prehensile tail), drawn sitting
+ * up: its arms (as a bird's wings, see Wildlife) hang from the shoulders
+ * and reach up when it climbs and leaps. About half a metre sitting.
+ */
+export function monkey() {
+  const fur = 0x3a2a1e, dark = 0x24180f, face = 0x1a1210, gold = 0x7a5a32;
+  const arm = (side) =>
+    new Blocks()
+      .box(0.07, 0.2, 0.07, fur, [side * 0.01, -0.1, 0]) // upper arm, hanging from the shoulder
+      .box(0.06, 0.2, 0.06, fur, [side * 0.01, -0.28, 0.02]) // forearm
+      .box(0.07, 0.05, 0.08, dark, [side * 0.01, -0.4, 0.03]) // hand
+      .build();
+  return {
+    body: new Blocks()
+      .box(0.22, 0.3, 0.17, fur, [0, 0.3, 0], [0, 0, 0], [0.85, 0.85]) // upright body
+      .box(0.2, 0.12, 0.16, gold, [0, 0.4, -0.02], [0, 0, 0], [0.8, 0.9]) // golden-brown back of the shoulders
+      .box(0.16, 0.15, 0.15, fur, [0, 0.52, 0.03], [0, 0, 0], [0.9, 0.9]) // head
+      .box(0.11, 0.08, 0.06, face, [0, 0.5, 0.11]) // dark bare face
+      .box(0.03, 0.025, 0.02, 0x8a6a3a, [0.035, 0.53, 0.14]) // eyes
+      .box(0.03, 0.025, 0.02, 0x8a6a3a, [-0.035, 0.53, 0.14])
+      .box(0.1, 0.06, 0.08, dark, [0, 0.44, 0.1]) // the bearded throat (the howler's)
+      .box(0.08, 0.08, 0.22, fur, [0.07, 0.13, 0.09]) // thighs, folded up as it sits
+      .box(0.08, 0.08, 0.22, fur, [-0.07, 0.13, 0.09])
+      .box(0.06, 0.15, 0.06, fur, [0.08, 0.07, 0.19]) // shins
+      .box(0.06, 0.15, 0.06, fur, [-0.08, 0.07, 0.19])
+      .box(0.05, 0.05, 0.3, fur, [0, 0.12, -0.2], [0.4, 0, 0]) // the long tail, hanging down behind...
+      .box(0.045, 0.045, 0.28, fur, [0, -0.06, -0.33], [1.2, 0, 0])
+      .box(0.04, 0.04, 0.16, dark, [0, -0.22, -0.3], [2.3, 0, 0]) // ...curling at its tip
+      .build(),
+    wingL: arm(1),
+    wingR: arm(-1),
+  };
+}

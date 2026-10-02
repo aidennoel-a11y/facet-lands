@@ -156,9 +156,17 @@ export function createSeaCoastLayer(config, terrainMaterial) {
     return mesh;
   }
 
+  // Where the surf bursts near you, chunk by chunk ("cx,cz" -> [{ x, z, rock, when }]),
+  // so its crash can be heard as each wave bursts (see main: the surf's sound).
+  const surfNear = new Map();
   return {
     name: 'seaCoast',
     material: terrainMaterial,
+    surfNear,
+    surfPeriod: 7.5,
+    get time() {
+      return time.value;
+    },
 
     update(t) {
       time.value = t;
@@ -344,13 +352,19 @@ export function createSeaCoastLayer(config, terrainMaterial) {
       // The surf, near you.
       // (Only by the sea: any of the chunk's own ground under it.)
       if (lod <= 1 && heights?.gridY.some((y) => y < sea - 0.5)) {
-        const mesh = surf(surfSpots(generator, x0, z0, size, sea), x0, z0, sea);
-        if (mesh) group.add(mesh);
+        const spots = surfSpots(generator, x0, z0, size, sea);
+        const mesh = surf(spots, x0, z0, sea);
+        if (mesh) {
+          group.add(mesh);
+          group.userData.key = `${cx},${cz}`;
+          surfNear.set(group.userData.key, spots.map((s) => ({ x: s.x, z: s.z, rock: s.rock, when: ((((s.x * 0.8 + s.z * 0.45) / 55) % 1) + 1) % 1 })));
+        }
       }
       return group.children.length ? group : null;
     },
 
     dispose(group) {
+      if (group.userData.key) surfNear.delete(group.userData.key);
       for (const child of group.children) {
         if (child.name === 'creatures') child.dispose(); // (the shapes are shared)
         else if (child.name === 'surf') (child.geometry.dispose(), child.dispose());

@@ -71,6 +71,10 @@ const SPECIES = {
   panda: { ground: true, grade: 0.7, model: Models.panda, max: 8, walk: 0.7, run: 5, flee: 12, calm: 40, radius: 0.6, height: 1.2, health: 160, stride: 1.2, turn: 1.6, size: 1.05, forager: true, gaits: BEAR },
   crocodile: { ground: true, grade: 0.5, model: Models.crocodile, max: 30, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
   mountainGoat: { ground: true, grade: 1.3, model: Models.mountainGoat, max: 24, walk: 1.0, run: 9, flee: 30, calm: 80, radius: 0.35, height: 1.0, health: 70, stride: 1.0, turn: 3, size: 1.15, gaits: HOOF, trotBand: 0.35, call: 'baa' },
+  jaguar: { ground: true, grade: 0.95, model: Models.jaguar, max: 6, walk: 1.1, run: 14, flee: 20, calm: 90, radius: 0.35, height: 0.9, health: 130, stride: 1.3, turn: 3.6, size: 1.1, gaits: DOG, trotBand: 0.15, swims: true, call: 'jaguar' },
+  // Monkeys: troops up in the jungle's crowns, leaping from tree to tree,
+  // climbing down the trunks now and then (see #monkey).
+  monkey: { bird: true, climber: true, model: Models.monkey, max: 40, scale: 1.0, flee: 14, radius: 0.25, health: 15 },
   snake: { serpent: true, model: Models.snake, max: 10, walk: 0.35, run: 1.2, flee: 5, calm: 12, radius: 0.1, height: 0.1, health: 4, size: 1.0 },
   songbird: { bird: true, model: Models.songbird, max: 60, scale: 1.6, flee: 9, radius: 0.25, health: 2 },
   starling: { bird: true, model: Models.starling, max: 60, scale: 1.45, flee: 22, radius: 0.25, health: 2 },
@@ -90,6 +94,7 @@ SPECIES.blackBear.predator = { sight: 35, close: 16, bite: 22, every: 1.6, reach
 SPECIES.cougar.predator = { sight: 65, close: 0, bite: 24, every: 1.2, reach: 1.3, ambush: true };
 SPECIES.tiger.predator = { sight: 70, close: 20, bite: 38, every: 1.4, reach: 1.8 };
 SPECIES.panther.predator = { sight: 60, close: 0, bite: 26, every: 1.2, reach: 1.4, ambush: true };
+SPECIES.jaguar.predator = { sight: 60, close: 0, bite: 32, every: 1.3, reach: 1.5, ambush: true };
 SPECIES.crocodile.predator = { sight: 18, close: 0, bite: 40, every: 1.8, reach: 2.2, ambush: true };
 // The ones that stand up for themselves: charge you if you come too close
 // (`close`; `rut`: nearer in the autumn, a bull or buck; `young`: a mother
@@ -107,7 +112,7 @@ const YIELD = {
   sheep: { rawMeat: 3, wool: 3 }, wolfPup: { rawMeat: 1 }, deer: { rawMeat: 4, hide: 1 }, elk: { rawMeat: 6, hide: 2 }, moose: { rawMeat: 9, hide: 2 },
   bison: { rawMeat: 6, hide: 2 }, blackBear: { rawMeat: 5, fur: 2 }, grizzly: { rawMeat: 6, fur: 2 }, wolf: { rawMeat: 2, fur: 1 }, coyote: { rawMeat: 2, fur: 1 },
   fox: { rawMeat: 1, fur: 1 }, rabbit: { rawMeat: 1 }, hare: { rawMeat: 1, fur: 1 }, boar: { rawMeat: 5, hide: 1 }, cougar: { rawMeat: 3, fur: 1 },
-  tiger: { rawMeat: 6, fur: 2 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 },
+  tiger: { rawMeat: 6, fur: 2 }, jaguar: { rawMeat: 4, fur: 1 }, monkey: { rawMeat: 1 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 },
   turkey: { rawMeat: 2, feather: 3 }, duck: { rawMeat: 1, feather: 2 }, snake: { rawMeat: 1 },
 };
 // Those that are small enough to be fed on by the scavengers (and those
@@ -674,8 +679,10 @@ export class Wildlife {
       else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES.snake, dt, ctx);
       else if (a.flock) this.#flockBird(a, dt, ctx);
       else if (a.circling) this.#circler(a, dt, ctx);
+      else if (a.kind === 'monkey') this.#monkey(a, dt, ctx);
       else this.#songbird(a, dt, ctx);
     }
+    this.#vocalize(dt, ctx);
     // (Those flown off out of sight, or home to roost.)
     if (this.animals.some((a) => a.gone)) {
       for (const a of this.animals) if (a.gone) this.#unstick(a);
@@ -795,6 +802,29 @@ export class Wildlife {
         let home = this.homes.get(key);
         if (!home) this.homes.set(key, (home = this.#settle(cx, cz, ctx)));
         // Songbirds on its trees, once they're there (the trees near you).
+        // Monkeys: a troop in the jungle's crowns.
+        if (!home.monkeys && ctx.trees.crowns.get(key)) {
+          home.monkeys = true;
+          const list = ctx.trees.crowns.get(key);
+          const w = ctx.generator.getBiomeWeights((cx + 0.5) * C, (cz + 0.5) * C, {});
+          if (w.jungle > 0.5 && home.rand() < 0.6) {
+            for (let k = 0, n = 3 + Math.floor(home.rand() * 5); k < n && list.length; k++) {
+              const i = Math.floor(home.rand() * (list.length / 5)) * 5;
+              if (list[i + 3] - list[i + 2] < 2.5) continue;
+              const c = list.slice(i, i + 5);
+              const perch = this.#perchOn(c, { ...ctx, winter: 0 });
+              if (!perch) continue;
+              const a = {
+                kind: 'monkey', x: perch.x, y: perch.y, z: perch.z, heading: rnd(0, TAU), pitch: 0, roll: 0, phase: rnd(0, TAU),
+                scale: rnd(0.85, 1.15), alive: true, health: SPECIES.monkey.health, state: 'perch', timer: rnd(3, 15), flap: 0,
+                trunk: { x: c[0], z: c[1], top: perch.y },
+              };
+              this.animals.push(a);
+              a.chunk = key;
+              home.animals.push(a);
+            }
+          }
+        }
         if (!home.birds && ctx.day > 0.3 && ctx.trees.crowns.get(key)) {
           home.birds = true;
           const list = ctx.trees.crowns.get(key), n = Math.round(home.rand() * 2.6 * (1 - 0.6 * ctx.winter));
@@ -1112,9 +1142,10 @@ export class Wildlife {
         const r = rand();
         const from = this.animals.length;
         // (A jungle is dangerous: big cats in it all over.)
-        if (r < 0.22) this.#spawnWalker('tiger', p.x, p.z, null);
-        else if (r < 0.46) this.#spawnWalker('panther', p.x, p.z, null);
-        else if (r < 0.56) {
+        if (r < 0.16) this.#spawnWalker('tiger', p.x, p.z, null);
+        else if (r < 0.3) this.#spawnWalker('jaguar', p.x, p.z, null);
+        else if (r < 0.5) this.#spawnWalker('panther', p.x, p.z, null);
+        else if (r < 0.6) {
           this.#spawnWalker('panda', p.x, p.z, null);
           if (rand() < 0.4) this.#spawnWalker('panda', p.x + rnd(-4, 4), p.z + rnd(-4, 4), null);
         }
@@ -1406,6 +1437,59 @@ export class Wildlife {
     const gx = g.getHeight(x + e, z) - g.getHeight(x - e, z), gz = g.getHeight(x, z + e) - g.getHeight(x, z - e);
     const t = Math.hypot(gx, gz) / (2 * e);
     return t === t ? Math.max(s, t) : s;
+  }
+
+  /**
+   * Every creature that has a voice uses it now and then, near you: deer
+   * bleat, elk mew (and bugle in the autumn), moose grunt, bison grunt,
+   * bears huff and growl, wolves howl and coyotes yip (most at night),
+   * foxes bark in the dark, a cougar screams, boar grunt, sheep and goats
+   * bleat, turkeys gobble, ducks quack, tigers roar and chuff, jaguars saw,
+   * panthers growl, pandas bleat, crocodiles bellow, songbirds sing (each
+   * its own song), rabbits thump. A herd calls one at a time.
+   */
+  #vocalize(dt, ctx) {
+    const night = 1 - (ctx.day ?? 1);
+    for (const a of this.animals) {
+      if (!a.alive || a.gone || a.tame || a.kind === 'monkey') continue;
+      const holder = a.herd ?? a;
+      if (holder.voiceAt === undefined) holder.voiceAt = this.time + rnd(5, 40);
+      if (this.time < holder.voiceAt) continue;
+      const t = this.#threat(a, ctx);
+      holder.voiceAt = this.time + rnd(18, 70);
+      if (t.d > 200) continue;
+      let call = null;
+      switch (a.kind) {
+        case 'deer': call = a.young ? 'bleat' : Math.random() < 0.3 ? 'snort' : null; break;
+        case 'elk': call = (ctx.autumn ?? 0) > 0.35 && a.antlers ? 'bugle' : 'mew'; break;
+        case 'moose': call = 'moose'; break;
+        case 'bison': call = 'grunt'; break;
+        case 'blackBear': call = Math.random() < 0.6 ? 'huff' : 'growl'; break;
+        case 'grizzly': call = Math.random() < 0.5 ? 'huff' : 'growl'; break;
+        case 'wolf': call = night > 0.5 || Math.random() < 0.15 ? 'howl' : null; break;
+        case 'wolfPup': call = 'yip'; break;
+        case 'coyote': call = night > 0.4 || (ctx.dusk ?? 0) > 0.2 ? 'yip' : null; break;
+        case 'fox': call = night > 0.5 ? 'bark' : null; break;
+        case 'cougar': call = Math.random() < 0.3 ? 'scream' : null; break;
+        case 'boar': call = 'oink'; break;
+        case 'sheep': call = 'baa'; break;
+        case 'mountainGoat': call = 'goat'; break;
+        case 'turkey': call = 'gobble'; break;
+        case 'duck': call = 'quack'; break;
+        case 'tiger': call = Math.random() < 0.35 ? 'roar' : 'chuff'; break;
+        case 'jaguar': call = 'jaguar'; break;
+        case 'panther': call = 'growl'; break;
+        case 'panda': call = 'panda'; break;
+        case 'crocodile': call = Math.random() < 0.5 ? 'crocBellow' : 'hiss'; break;
+        case 'rabbit': case 'hare': call = Math.random() < 0.2 ? 'thump' : null; break;
+        case 'songbird':
+          a.voice ??= Math.floor(Math.random() * 7);
+          call = a.state === 'perch' && (ctx.day ?? 1) > 0.3 ? `song${a.voice}` : null;
+          holder.voiceAt = this.time + rnd(4, 14); // (songbirds sing often)
+          break;
+      }
+      if (call) ctx.sound?.call(call, ctx.pan(a.x, a.z), Math.min(1, 40 / (t.d + 15)));
+    }
   }
 
   #threat(a, ctx) {
@@ -2189,6 +2273,90 @@ export class Wildlife {
     }
   }
 
+  /**
+   * A monkey: sits up in a crown; every so often leaps across to another
+   * tree's crown near by (an arc through the air), or climbs down the trunk
+   * to the ground, ambles about a little, and climbs back up. Too close, it
+   * screams and bounds away through the treetops.
+   */
+  #monkey(a, dt, ctx) {
+    if (this.#falling(a, dt, ctx)) return;
+    const t = this.#threat(a, ctx);
+    const scared = !ctx.tame && t.d < SPECIES.monkey.flee && a.state !== 'leap';
+    a.timer -= dt;
+    a.call = (a.call ?? rnd(5, 30)) - dt;
+    if (a.call <= 0 && t.d < 160) {
+      a.call = rnd(12, 45);
+      ctx.sound?.call(Math.random() < 0.35 ? 'howler' : 'chatter', ctx.pan(a.x, a.z), Math.min(0.8, 30 / (t.d + 15)));
+    }
+    const crowns = () => this.#crownsNear(ctx, 160).filter((c) => Math.hypot(c[0] - a.x, c[1] - a.z) < (scared ? 22 : 16) && Math.hypot(c[0] - a.x, c[1] - a.z) > 3);
+    if (a.state === 'perch') {
+      if (Math.random() < dt * 0.6) a.heading += rnd(-1.2, 1.2);
+      if (scared || a.timer <= 0) {
+        if (scared) ctx.sound?.call('chatter', ctx.pan(a.x, a.z), 0.7);
+        const list = crowns();
+        const cam = ctx.camera.position;
+        const away = scared ? list.filter((c) => Math.hypot(c[0] - cam.x, c[1] - cam.z) > Math.hypot(a.x - cam.x, a.z - cam.z)) : list;
+        const c = (away.length ? away : list)[Math.floor(Math.random() * Math.max(1, (away.length ? away : list).length))];
+        const to = c ? this.#perchOn(c, { ...ctx, winter: 0 }) : null;
+        if (!scared && Math.random() < 0.25 && a.trunk) {
+          // Down the trunk to the ground.
+          a.state = 'climb';
+          a.climb = { from: a.y, to: ctx.ground(a.trunk.x, a.trunk.z) + 0.05, up: false };
+          a.x = a.trunk.x;
+          a.z = a.trunk.z;
+        } else if (to) {
+          const d = Math.hypot(to.x - a.x, to.z - a.z);
+          a.heading = Math.atan2(to.x - a.x, to.z - a.z);
+          a.path = { from: { x: a.x, y: a.y, z: a.z }, to, p: 0, dur: Math.max(0.5, d / (scared ? 8 : 5.5)), arc: 1 + d * 0.12 };
+          a.trunk = { x: c[0], z: c[1], top: to.y };
+          a.state = 'leap';
+        }
+        a.timer = rnd(4, 15);
+      }
+    } else if (a.state === 'leap' && a.path) {
+      const P = a.path;
+      P.p = Math.min(1, P.p + dt / P.dur);
+      a.x = P.from.x + (P.to.x - P.from.x) * P.p;
+      a.z = P.from.z + (P.to.z - P.from.z) * P.p;
+      a.y = P.from.y + (P.to.y - P.from.y) * P.p + Math.sin(Math.PI * P.p) * P.arc;
+      a.pitch = 0.5 * Math.cos(Math.PI * P.p);
+      if (P.p >= 1) {
+        a.state = 'perch';
+        a.pitch = 0;
+        a.path = null;
+        if (Math.random() < 0.3) ctx.sound?.call('rustle', ctx.pan(a.x, a.z), Math.min(0.5, 15 / (t.d + 10)));
+      }
+    } else if (a.state === 'climb') {
+      // Hand over hand along the trunk, facing it.
+      const C = a.climb;
+      const v = 1.6 * dt;
+      a.pitch = -1.25;
+      a.y += C.to > a.y ? Math.min(v, C.to - a.y) : -Math.min(v, a.y - C.to);
+      if (Math.abs(a.y - C.to) < 0.05) {
+        a.pitch = 0;
+        if (C.up) (a.state = 'perch'), (a.timer = rnd(5, 15));
+        else (a.state = 'ground'), (a.timer = rnd(6, 16)), (a.y = C.to);
+      }
+    } else if (a.state === 'ground') {
+      // Ambling about at the tree's foot on all fours, then back up.
+      a.hop = (a.hop ?? 0) - dt;
+      if (a.hop <= 0) {
+        a.hop = rnd(0.5, 1.5);
+        a.heading += rnd(-1, 1);
+        const nx = a.x + Math.sin(a.heading) * 0.6, nz = a.z + Math.cos(a.heading) * 0.6, ny = ctx.ground(nx, nz);
+        if (ny > ctx.seaLevel + 0.2 && Math.hypot(nx - (a.trunk?.x ?? nx), nz - (a.trunk?.z ?? nz)) < 4) (a.x = nx), (a.z = nz), (a.y = ny + 0.05);
+      }
+      if ((a.timer <= 0 || t.d < SPECIES.monkey.flee * 1.4) && a.trunk) {
+        if (t.d < SPECIES.monkey.flee * 1.4) ctx.sound?.call('chatter', ctx.pan(a.x, a.z), 0.7);
+        a.x = a.trunk.x;
+        a.z = a.trunk.z;
+        a.state = 'climb';
+        a.climb = { from: a.y, to: a.trunk.top, up: true };
+      }
+    }
+  }
+
   #songbird(a, dt, ctx) {
     if (this.#falling(a, dt, ctx)) return;
     const t = this.#threat(a, ctx);
@@ -2465,6 +2633,16 @@ export class Wildlife {
         if (perched) fold = 1.35;
         else flap = Math.sin(a.flap) * (a.kind === 'hawk' || a.kind === 'gull' ? 0.55 : 0.9);
         if (a.circling && !(a.flapping > 0)) flap = 0.08; // (gliding: wings held out, a slight lift)
+        if (a.kind === 'monkey') {
+          // Its arms: hanging as it sits, reaching up as it climbs, flung
+          // forward as it leaps, swinging as it walks.
+          const reach = a.state === 'climb' ? -2.7 + Math.sin(this.time * 9 + a.phase) * 0.5 : a.state === 'leap' ? -1.9 : a.state === 'ground' ? Math.sin(this.time * 6 + a.phase) * 0.5 : 0.15;
+          put(M.body, [0, 0, 0], 0, 0, 0);
+          put(M.wingL, [0.13, 0.42, 0.02], reach, 0, 0.12);
+          put(M.wingR, [-0.13, 0.42, 0.02], a.state === 'climb' ? -2.7 - Math.sin(this.time * 9 + a.phase) * 0.5 : reach, 0, -0.12);
+          a.m = null;
+          continue;
+        }
         put(M.body, [0, 0, 0], 0, 0, 0);
         put(M.wingL, [0.05, 0.02, 0.02], 0, fold, flap - (perched ? 0.15 : 0));
         put(M.wingR, [-0.05, 0.02, 0.02], 0, -fold, -flap + (perched ? 0.15 : 0));
@@ -2549,7 +2727,9 @@ export class Wildlife {
     // bird's thrust forward and held); limp, dead.
     const nod = a.alive ? (a.rh?.nod ?? 0) : 0;
     const bend = a.kind === 'bison' ? 0.5 : a.kind === 'rabbit' || a.kind === 'hare' ? 0.4 : sp.forager ? 0.6 : sp.biped ? 0.7 : 1.05;
-    const headRx = a.alive ? a.headDown * bend + nod : 0.35;
+    // (A crocodile's head lies along the ground: it never dips its snout into it.)
+    let headRx = a.alive ? a.headDown * bend + nod : 0.35;
+    if (a.kind === 'crocodile') headRx = Math.min(headRx, 0.06);
     const hp = model.headPivot;
     const thrust = sp.biped && a.alive && !sp.water && a.speed > 0.05 ? Math.max(0, Math.sin(TAU * (a.cycle ?? 0) * 2)) * 0.05 : 0;
     const head = put(M.head, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : 0, 0);

@@ -115,7 +115,24 @@ export class Sound {
       river: this.#bed(this.brownNoise, 'lowpass', 480, 0.7, true),
       lava: this.#bed(this.brownNoise, 'lowpass', 110, 0.9),
       insects: this.#bed(this.noise, 'bandpass', 5200, 6),
+      // Sand blown over the desert: a fine high hiss of grains, and a softer
+      // rolling rush under it.
+      sand: this.#bed(this.noise, 'highpass', 4200, 0.5),
+      sandLow: this.#bed(this.noise, 'bandpass', 1300, 0.6),
+      // A winter storm: the wind howling (its note sweeping), and the deep roar of it.
+      storm: this.#bed(this.noise, 'bandpass', 650, 3),
+      stormLow: this.#bed(this.brownNoise, 'lowpass', 280, 0.7),
+      // The jungle's hum: cicadas, their shrill drone swelling and fading.
+      cicada: this.#bed(this.noise, 'bandpass', 4700, 9),
     };
+    // (The cicadas' drone throbs, forty-odd times a second.)
+    const throb = ctx.createOscillator();
+    throb.frequency.value = 43;
+    this.cicadaDepth = ctx.createGain();
+    this.cicadaDepth.gain.value = 0;
+    throb.connect(this.cicadaDepth).connect(this.beds.cicada.gain.gain);
+    throb.start();
+    this.next = { forest: 0, jungle: 0, night: 0, owl: 0, desert: 0, woodpecker: 0 };
     // A bees' nest: a low, beating hum (a few saw tones a little out of tune).
     const hum = ctx.createBiquadFilter();
     hum.type = 'lowpass';
@@ -170,8 +187,11 @@ export class Sound {
     // as each gust comes through.
     const lie = (1 + 0.9 * (e.exposure ?? 0)) * (1 - 0.5 * (e.hollow ?? 0)) * (1 - 0.45 * (e.canopy ?? 0));
     const gust = e.gust ?? 0;
-    set(this.beds.wind, (0.025 + 0.09 * e.high + 0.05 * e.wind * (0.7 + 0.6 * gust)) * (0.7 + 0.3 * quiet) * lie, 0.8);
-    set(this.beds.gust, (0.006 + 0.03 * e.high * e.wind + 0.015 * e.wind) * (0.4 + 1.3 * gust) * quiet * lie, 0.6);
+    // (No wind, no wind sound: still air low down is silent. Only up on the
+    // peaks and ridges is there always a breath of it.)
+    const peak = e.high * (0.4 + 0.6 * (e.exposure ?? 0));
+    set(this.beds.wind, (0.075 * peak * (0.35 + e.wind) + 0.06 * e.wind * e.wind * (0.7 + 0.6 * gust)) * (0.7 + 0.3 * quiet) * lie, 0.8);
+    set(this.beds.gust, (0.03 * e.high * e.wind + 0.015 * e.wind * e.wind) * (0.4 + 1.3 * gust) * quiet * lie, 0.6);
     this.beds.wind.filter.frequency.setTargetAtTime(300 + 260 * e.wind + 160 * gust + 120 * Math.sin(t * 0.13), t, 1);
     set(this.beds.whistle, 0.022 * (e.exposure ?? 0) * e.wind * (0.45 + 0.9 * gust) * quiet, 0.8);
     this.beds.whistle.filter.frequency.setTargetAtTime(700 + 450 * gust + 180 * Math.sin(t * 0.61) + 90 * Math.sin(t * 1.7), t, 0.4);
@@ -195,7 +215,22 @@ export class Sound {
     const swell = 0.55 + 0.45 * Math.sin(t * 0.9 + Math.sin(t * 0.23) * 1.5);
     set(this.beds.surf, 0.12 * e.ocean * swell * quiet, 0.8);
     set(this.beds.lava, 0.2 * e.lava);
-    const buzz = (0.018 * e.jungle + 0.012 * e.grass * (1 - e.woods)) * e.day * (1 - e.rain) * quiet;
+    // Sand blowing over the desert as the wind rises (none in still air).
+    const desert = e.desert ?? 0, blow = Math.pow(e.wind, 1.3) * (0.4 + 0.9 * gust);
+    set(this.beds.sand, 0.055 * desert * blow, 0.5);
+    set(this.beds.sandLow, 0.035 * desert * blow, 0.7);
+    this.beds.sand.filter.frequency.setTargetAtTime(3800 + 1600 * gust, t, 0.4);
+    // A winter storm: the wind howling, its note rising and falling with the gusts.
+    const storm = e.storm ?? 0;
+    set(this.beds.storm, 0.07 * storm * (0.5 + 0.8 * gust) * (1 - 0.5 * (e.hollow ?? 0)), 0.6);
+    set(this.beds.stormLow, 0.12 * storm * (0.6 + 0.5 * gust), 0.8);
+    this.beds.storm.filter.frequency.setTargetAtTime(420 + 650 * gust + 160 * Math.sin(t * 0.37), t, 0.5);
+    // The jungle's hum by day: cicadas swelling in waves.
+    const swellC = 0.45 + 0.55 * Math.max(0, Math.sin(t * 0.55 + Math.sin(t * 0.17) * 2));
+    const cicada = 0.03 * e.jungle * e.day * (1 - e.rain) * swellC * quiet;
+    set(this.beds.cicada, cicada, 1.2);
+    this.cicadaDepth.gain.setTargetAtTime(cicada * 0.9, t, 1.2);
+    const buzz = (0.022 * e.jungle + 0.012 * e.grass * (1 - e.woods) + 0.008 * (e.wetland ?? 0)) * e.day * (1 - e.rain) * quiet;
     set(this.beds.insects, buzz);
     this.insectDepth.gain.setTargetAtTime(buzz * 0.8, t, 1.5);
 
@@ -203,8 +238,55 @@ export class Sound {
     // grass at night; frogs croak in the wetlands, from dusk on.
     const birds = (e.woods * 0.7 + e.jungle + 0.25 * e.grass) * Math.max(e.day * 0.6, e.dawn * 1.6) * (1 - e.rain) * quiet;
     if (birds > 0.05 && t > this.nextBird) {
-      this.#chirp(birds, e.jungle);
-      this.nextBird = t + (0.4 + Math.random() * 3.5) / Math.min(2, birds);
+      // Each kind of country its own birds: robins, chickadees, cardinals,
+      // warblers and doves in the woods; thrushes in the pines; meadowlarks
+      // over the grass; whoops, toucans and parrots in the jungle.
+      const r = Math.random() * (e.woods + e.jungle + 0.25 * e.grass + 1e-6);
+      const pick = (list) => list[Math.floor(Math.random() * list.length)];
+      if (r < e.jungle) {
+        const k = Math.random();
+        this.call(k < 0.4 ? 'song7' : k < 0.7 ? 'toucan' : 'parrot', Math.random() * 1.6 - 0.8, 0.3 + 0.5 * Math.random());
+      } else if (r < e.jungle + e.woods) this.call(`song${pick((e.pine ?? 0) > 0.5 ? [5, 5, 1, 3] : [0, 0, 1, 2, 3, 4, 5])}`, Math.random() * 1.6 - 0.8, 0.3 + 0.6 * Math.random());
+      else this.call(`song${pick([6, 6, 3, 4])}`, Math.random() * 1.6 - 0.8, 0.3 + 0.5 * Math.random());
+      this.nextBird = t + (0.6 + Math.random() * 3.5) / Math.min(2, birds);
+    }
+    const N = this.next, calm = 1 - Math.min(1, e.wind * 2.5);
+    // A forest on a still day: hardly a sound, but now and then a twig
+    // snapping off among the trees, a woodpecker drumming, a rustle in the
+    // leaves, a cuckoo far off.
+    if (e.woods > 0.4 && calm > 0.4 && e.rain < 0.3 && t > N.forest) {
+      const k = Math.random();
+      const pan = Math.random() * 1.8 - 0.9;
+      if (k < 0.35) this.call('twig', pan, 0.12 + 0.2 * Math.random());
+      else if (k < 0.6 && e.day > 0.5) this.call('woodpecker', pan, 0.2 + 0.3 * Math.random());
+      else if (k < 0.85) this.call('rustle', pan, 0.15 + 0.2 * Math.random());
+      else if (e.day > 0.5) this.call('cuckoo', pan, 0.25);
+      N.forest = t + 4 + Math.random() * 10;
+    }
+    // Owls in the woods at night.
+    if (e.woods + e.jungle * 0.5 > 0.4 && e.day < 0.2 && e.rain < 0.3 && t > N.owl) {
+      this.call('owl', Math.random() * 1.6 - 0.8, 0.25 + 0.3 * Math.random());
+      N.owl = t + 12 + Math.random() * 30;
+    }
+    // The jungle, alive: howler monkeys roaring far off, by day and by
+    // night; at night the katydids and tree frogs all round.
+    if (e.jungle > 0.3 && t > N.jungle) {
+      const k = Math.random(), pan = Math.random() * 1.8 - 0.9;
+      if (k < 0.25) this.call('howler', pan, 0.15 + 0.2 * Math.random());
+      else if (e.day < 0.3) this.call(k < 0.65 ? 'katydid' : 'treefrog', pan, 0.3 + 0.4 * Math.random());
+      else this.call('chatter', pan, 0.1 + 0.15 * Math.random());
+      N.jungle = t + (e.day < 0.3 ? 0.4 + Math.random() * 1.6 : 5 + Math.random() * 12) / Math.max(0.4, e.jungle);
+    }
+    // Bugs in the night: katydids in the woods and the grass, mosquitoes
+    // and tree frogs in the wetlands.
+    if (e.day < 0.25 && (e.woods + e.grass + (e.wetland ?? 0)) > 0.3 && e.rain < 0.3 && t > N.night) {
+      this.call((e.wetland ?? 0) > 0.4 && Math.random() < 0.5 ? 'treefrog' : 'katydid', Math.random() * 1.8 - 0.9, (0.2 + 0.3 * Math.random()) * quiet);
+      N.night = t + 0.6 + Math.random() * 2.5;
+    }
+    // Sand trickling down the dunes as the wind blows.
+    if (desert > 0.4 && e.wind > 0.25 && t > N.desert) {
+      this.call('sandslide', Math.random() * 1.6 - 0.8, 0.5 * desert * e.wind);
+      N.desert = t + 3 + Math.random() * 8;
     }
     const crickets = (e.grass + 0.6 * e.woods + 0.5 * e.jungle) * (1 - e.day) * (1 - e.rain) * quiet;
     if (crickets > 0.08 && t > this.nextCricket) {
@@ -442,26 +524,33 @@ export class Sound {
       // A spring peeper: a high rising whistle.
       tone(t, 0.12, 'sine', 2500 + Math.random() * 300, 3000 + Math.random() * 300, 2800, 1, 0.035);
     } else if (kind === 'splash') {
-      // A foot, a paddle or a leap into the water: the sharp slap of it on
-      // the surface, the churning rush of the water thrown up (falling in
-      // pitch as it spreads), and the fizz of the drops coming back down.
-      // Noise, all of it, never a tone: water doesn't ring.
+      // Into the water: the slap on the surface, the 'plunk' of the hollow
+      // it punches in the water closing (a quick falling note), the rush of
+      // water thrown up, then bubbles popping (tiny rising notes) and drops
+      // pattering back down.
       const big = 0.85 + Math.random() * 0.3;
-      wash(t, 0.06, 'highpass', 1200, 0.5, 0.001);
-      churn(t + 0.005, 0.32 * big, 3600 + Math.random() * 800, 850, 0.7, 0.42);
-      churn(t + 0.02, 0.22 * big, 1100, 420, 0.8, 0.18); // (the heavier water, lower)
-      wash(t + 0.07, 0.45 * big, 'highpass', 3200, 0.07, 0.03, 5500);
-      drops(t + 0.12, 5 + Math.floor(Math.random() * 4), 0.4, 0.05, true);
+      wash(t, 0.04, 'highpass', 1500, 0.45, 0.001);
+      tone(t + 0.01, 0.13 * big, 'sine', 700 + Math.random() * 250, 190, 420, 0.6, 0.32);
+      churn(t + 0.01, 0.3 * big, 2600 + Math.random() * 600, 700, 0.8, 0.3);
+      for (let k = 0; k < 9; k++) {
+        const at = t + 0.06 + Math.pow(Math.random(), 1.4) * 0.5 * big, f = 1100 + Math.random() * 1900;
+        tone(at, 0.025 + Math.random() * 0.03, 'sine', f, f * (1.6 + Math.random() * 0.6), f * 1.3, 0.8, 0.07 * (1 - (at - t) / 0.7));
+      }
+      drops(t + 0.18, 6 + Math.floor(Math.random() * 4), 0.45, 0.04, true);
     } else if (kind === 'bigsplash') {
-      // Into the water from a height: a heavy slap and thump, a great
-      // churning crash of water thrown up, the deep gulp as it closes over,
-      // and the long patter of drops raining down after.
-      tone(t, 0.25, 'sine', 110, 50, 100, 0.7, 0.25);
-      wash(t, 0.08, 'highpass', 900, 0.6, 0.001);
-      churn(t + 0.01, 0.8, 4200, 600, 0.6, 0.5);
-      churn(t + 0.05, 0.6, 1200, 250, 0.7, 0.3);
-      wash(t + 0.15, 1.1, 'highpass', 3000, 0.1, 0.05, 6000);
-      drops(t + 0.35, 26, 1.3, 0.07, true);
+      // Something heavy into deep water: a deep 'whump' and slap, the big
+      // falling plunk as the water closes over the hole, a great rush of
+      // water thrown up and crashing back, and a long fizz of bubbles and drops.
+      tone(t, 0.3, 'sine', 120, 45, 100, 0.7, 0.35);
+      wash(t, 0.07, 'highpass', 1000, 0.55, 0.001);
+      tone(t + 0.06, 0.28, 'sine', 420, 110, 260, 0.6, 0.35);
+      churn(t + 0.01, 0.75, 3600, 500, 0.6, 0.45);
+      churn(t + 0.45, 0.7, 1800, 400, 0.6, 0.25); // (the water crashing back)
+      for (let k = 0; k < 22; k++) {
+        const at = t + 0.25 + Math.pow(Math.random(), 1.3) * 1.3, f = 800 + Math.random() * 2200;
+        tone(at, 0.03 + Math.random() * 0.04, 'sine', f, f * (1.5 + Math.random() * 0.8), f * 1.3, 0.8, 0.06 * (1 - (at - t) / 1.8));
+      }
+      drops(t + 0.5, 22, 1.2, 0.05, true);
     } else if (kind === 'rumble') {
       noise(t, 3.5, 70, 0.7, 0.35, 3);
       tone(t, 3, 'sine', 42, 30, 60, 0.7, 0.25);
@@ -593,8 +682,257 @@ export class Sound {
       for (let k = 0; k < 5; k++) bloop(t + Math.random() * 0.9, 500 + Math.random() * 400, 0.05, 0.03);
     } else if (kind === 'shear') {
       for (let k = 0; k < 3; k++) noise(t + k * 0.18, 0.05, 4200, 3, 0.14);
+    } else if (kind === 'roar') {
+      // A tiger's roar: a huge, rough, rising-then-falling bellow.
+      tone(t, 1.6, 'sawtooth', 110, 70, 260, 1.2, 0.35, 18);
+      noise(t, 1.5, 380, 1.4, 0.3, 26);
+      tone(t + 0.05, 1.4, 'sawtooth', 220, 140, 520, 2, 0.12, 21);
+    } else if (kind === 'chuff') {
+      // A big cat's friendly chuff: a short puffing snort or two.
+      for (let k = 0; k < 2; k++) noise(t + k * 0.22, 0.14, 650, 1.2, 0.18);
+    } else if (kind === 'jaguar') {
+      // A jaguar's 'sawing': a run of deep, coarse grunts, like a saw through wood.
+      const n = 5 + Math.floor(Math.random() * 5);
+      for (let k = 0; k < n; k++) {
+        tone(t + k * 0.42, 0.24, 'sawtooth', 130, 95, 300, 1.5, 0.22, 30);
+        noise(t + k * 0.42, 0.22, 420, 1.5, 0.14, 35);
+      }
+    } else if (kind === 'howler') {
+      // Howler monkeys: a deep, roaring, rising and falling chorus, carrying far.
+      for (let k = 0; k < 3; k++) {
+        const s = t + k * 0.6 + Math.random() * 0.3;
+        tone(s, 1.5, 'sawtooth', 160 + Math.random() * 40, 120, 420, 1.2, 0.12, 9);
+        noise(s, 1.4, 520, 1.6, 0.09, 12);
+      }
+    } else if (kind === 'chatter') {
+      // Monkeys chattering: a fast run of shrill squeaks.
+      const n = 6 + Math.floor(Math.random() * 8);
+      for (let k = 0; k < n; k++) tone(t + k * 0.07 + Math.random() * 0.03, 0.06, 'square', 1500 + Math.random() * 900, 1100 + Math.random() * 500, 1800, 2, 0.05);
+    } else if (kind === 'rustle') {
+      // Leaves and branches shaken: a short scratchy rustle.
+      noise(t, 0.35, 3800, 0.8, 0.12, 40);
+    } else if (kind === 'moose') {
+      // A moose: a deep, hollow, nasal grunt, a cow's long moaning call.
+      tone(t, 0.9, 'sawtooth', 120, 85, 300, 2.5, 0.2, 7);
+    } else if (kind === 'mew') {
+      // A cow elk's mew: a high, squealing chirp.
+      tone(t, 0.35, 'sawtooth', 900, 700, 1500, 2, 0.06, 16);
+    } else if (kind === 'huff') {
+      // A bear's huff and jaw-pop: a blast of breath, a hollow clack.
+      noise(t, 0.3, 300, 0.9, 0.3);
+      tone(t + 0.32, 0.05, 'square', 420, 300, 600, 3, 0.15);
+    } else if (kind === 'bark') {
+      // A fox's bark: a sharp, hoarse, high 'wow' or two, carrying in the night.
+      for (let k = 0; k < 2 + Math.floor(Math.random() * 2); k++) {
+        tone(t + k * 0.5, 0.18, 'sawtooth', 1100, 700, 1400, 2, 0.1);
+        noise(t + k * 0.5, 0.15, 1600, 2, 0.06);
+      }
+    } else if (kind === 'goat') {
+      // A mountain goat's bleat: short, nasal, a little hoarse.
+      tone(t, 0.4, 'sawtooth', 420 + Math.random() * 80, 360, 1100, 1.8, 0.09, 13);
+    } else if (kind === 'panda') {
+      // A giant panda's bleat: a soft goat-like bleat.
+      tone(t, 0.5, 'sawtooth', 520, 440, 1000, 2, 0.06, 10);
+    } else if (kind === 'crocBellow') {
+      // A crocodile's bellow: a low, rumbling growl that trembles.
+      tone(t, 1.6, 'sawtooth', 58, 50, 140, 1.2, 0.35, 11);
+      noise(t, 1.5, 160, 1.5, 0.22, 11);
+    } else if (kind === 'thump') {
+      // A rabbit's warning thump on the ground.
+      tone(t, 0.08, 'sine', 110, 70, 140, 0.8, 0.25);
+    } else if (kind === 'owl') {
+      // An owl: a soft, deep 'hoo, hoo-hoo, hooo'.
+      const f = 330 + Math.random() * 60;
+      for (const [d, len] of [[0, 0.35], [0.7, 0.18], [0.92, 0.18], [1.25, 0.6]]) tone(t + d, len, 'sine', f, f * 0.94, f, 1, 0.1);
+    } else if (kind === 'woodpecker') {
+      // A woodpecker drumming on a dead branch: a fast run of knocks, slowing.
+      const n = 14 + Math.floor(Math.random() * 10);
+      for (let k = 0, at = t; k < n; k++, at += 0.045 + k * 0.0018) tone(at, 0.03, 'triangle', 900, 700, 900, 2, 0.12 * (1 - (k / n) * 0.5));
+    } else if (kind === 'cuckoo') {
+      tone(t, 0.3, 'sine', 700, 690, 700, 1, 0.08);
+      tone(t + 0.4, 0.4, 'sine', 560, 550, 560, 1, 0.08);
+    } else if (kind === 'toucan') {
+      // A toucan's (or a parrot's) harsh croaking calls.
+      const n = 2 + Math.floor(Math.random() * 4);
+      for (let k = 0; k < n; k++) tone(t + k * 0.3, 0.18, 'sawtooth', 700 + Math.random() * 300, 500, 1100, 1.5, 0.08, 25);
+    } else if (kind === 'parrot') {
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) tone(t + k * 0.35, 0.25, 'square', 1800 + Math.random() * 800, 1200, 2200, 1.5, 0.06, 32);
+    } else if (kind === 'whoop') {
+      // A tropical bird's rising, liquid whoop.
+      tone(t, 0.45, 'sine', 500, 1300, 1000, 1, 0.08);
+    } else if (kind === 'katydid') {
+      // Katydids in the night: a rasping 'ka-ty-did'.
+      for (let k = 0; k < 3; k++) noise(t + k * 0.12, 0.06, 6500 + Math.random() * 800, 4, 0.06, 90);
+    } else if (kind === 'treefrog') {
+      // A tree frog: a quick, high, ringing 'peep' or a rattle.
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) tone(t + k * 0.15, 0.07, 'square', 2600 + Math.random() * 600, 2200, 2800, 3, 0.03);
+    } else if (kind === 'twig') {
+      // A twig snapping, off in the woods.
+      noise(t, 0.03, 3000, 1, 0.3);
+      tone(t, 0.025, 'square', 1400, 600, 1800, 2, 0.1);
+    } else if (kind === 'crack') {
+      // A branch cracking underfoot: a split second of sharp splintering clicks.
+      for (let k = 0; k < 3; k++) noise(t + k * 0.012 + Math.random() * 0.008, 0.025, 2200 + Math.random() * 2500, 1.2, 0.35);
+      tone(t, 0.04, 'square', 1700, 500, 1500, 1.5, 0.12);
+      noise(t + 0.03, 0.12, 900, 1, 0.12); // (and the dull snap of the wood)
+    } else if (kind === 'sandslide') {
+      // A trickle of sand sliding off a dune's crest: a long soft hiss.
+      wash(t, 2.2, 'bandpass', 3800, 0.06, 0.6, 2500);
+    } else if (kind === 'wave') {
+      // A wave bursting on the rocks: the thump of it, the roar of the
+      // water thrown up, and the long seething hiss as it pours back off.
+      tone(t, 0.4, 'sine', 70, 40, 90, 0.7, 0.35);
+      churn(t, 1.3, 1800, 300, 0.5, 0.5);
+      wash(t + 0.2, 2.6, 'bandpass', 3200, 0.16, 0.25, 1600);
+      drops(t + 0.5, 16, 1.6, 0.05, true);
+    } else if (kind.startsWith('song')) {
+      this.#song(Number(kind.slice(4)) || 0, out, t);
     } else if (kind === 'crackle') {
       for (let k = 0; k < 6; k++) noise(t + Math.random() * 0.8, 0.04, 2500 + Math.random() * 2500, 2, 0.05 + Math.random() * 0.06);
+    }
+  }
+
+  /**
+   * A bird's song, by species (`v`): 0 a robin's warbled phrases, 1 a
+   * chickadee's 'fee-bee', 2 a cardinal's run of slurred whistles, 3 a
+   * warbler's fast trill, 4 a dove's soft cooing, 5 a thrush's fluting
+   * spiral, 6 a meadowlark's falling flute, 7 a tropical bird's whoops.
+   */
+  #song(v, out, t) {
+    const ctx = this.ctx;
+    const note = (start, len, f0, f1, peak, vib = 0) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(f0, start);
+      o.frequency.exponentialRampToValueAtTime(f1, start + len);
+      if (vib) {
+        const lfo = ctx.createOscillator(), depth = ctx.createGain();
+        lfo.frequency.value = vib;
+        depth.gain.value = f0 * 0.03;
+        lfo.connect(depth).connect(o.frequency);
+        lfo.start(start);
+        lfo.stop(start + len + 0.05);
+      }
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start + Math.min(0.02, len * 0.3));
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+      o.connect(g).connect(out);
+      o.start(start);
+      o.stop(start + len + 0.05);
+    };
+    const r = Math.random;
+    if (v === 0) {
+      let at = t;
+      for (let k = 0, n = 3 + Math.floor(r() * 4); k < n; k++) {
+        const f = 2300 + r() * 900;
+        note(at, 0.16, f, f * (r() < 0.5 ? 1.25 : 0.8), 0.06);
+        note(at + 0.17, 0.12, f * 1.1, f * 0.9, 0.05);
+        at += 0.42 + r() * 0.15;
+      }
+    } else if (v === 1) {
+      note(t, 0.32, 4000, 3950, 0.05);
+      note(t + 0.38, 0.32, 3450, 3400, 0.045);
+    } else if (v === 2) {
+      for (let k = 0, n = 4 + Math.floor(r() * 5); k < n; k++) note(t + k * 0.21, 0.18, 3600, 1900, 0.06);
+    } else if (v === 3) {
+      for (let k = 0, n = 12 + Math.floor(r() * 8); k < n; k++) note(t + k * 0.04, 0.03, 5600 + (k % 2) * 400, 5200, 0.02 + 0.03 * (k / n));
+    } else if (v === 4) {
+      const f = 470 + r() * 60;
+      for (const [d, len, k] of [[0, 0.35, 1], [0.45, 0.55, 1.15], [1.1, 0.3, 1], [1.5, 0.3, 1]]) note(t + d, len, f * k, f * k * 0.95, 0.05);
+    } else if (v === 5) {
+      [1800, 2300, 2900, 3600].forEach((f, k) => note(t + k * 0.18, 0.2, f, f * 1.04, 0.05, 30));
+      for (let k = 0; k < 6; k++) note(t + 0.8 + k * 0.05, 0.04, 4200, 3800, 0.03);
+    } else if (v === 6) {
+      [3100, 2700, 2400, 2000, 1800].forEach((f, k) => note(t + k * 0.16 + (k > 2 ? 0.08 : 0), 0.18, f, f * 0.92, 0.055));
+    } else {
+      for (let k = 0, n = 2 + Math.floor(r() * 3); k < n; k++) note(t + k * 0.5, 0.4, 500 + r() * 200, 1300 + r() * 400, 0.06);
+    }
+  }
+
+  /**
+   * A footstep on `surface` ('grass', 'leaves' (the forest floor), 'dirt',
+   * 'rock', 'sand', 'snow', 'mud', 'water', 'wood'), as loud as `volume`
+   * (running: louder, sharper).
+   */
+  step(surface, volume = 1) {
+    if (!this.ctx || !this.enabled || volume < 0.02) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.005;
+    const out = ctx.createGain();
+    out.gain.value = volume * (0.9 + Math.random() * 0.2);
+    out.connect(this.muffle);
+    const burst = (start, len, type, f, q, peak, attack = 0.004) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const fl = ctx.createBiquadFilter();
+      fl.type = type;
+      fl.frequency.value = f;
+      fl.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+      src.connect(fl).connect(g).connect(out);
+      src.start(start, Math.random() * 3);
+      src.stop(start + len + 0.02);
+    };
+    const thud = (start, f, len, peak) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(f, start);
+      o.frequency.exponentialRampToValueAtTime(f * 0.55, start + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+      o.connect(g).connect(out);
+      o.start(start);
+      o.stop(start + len + 0.02);
+    };
+    const grains = (start, n, spread, f, peak) => {
+      for (let k = 0; k < n; k++) burst(start + Math.random() * spread, 0.012 + Math.random() * 0.012, 'bandpass', f * (0.7 + Math.random() * 0.7), 2, peak * (0.5 + Math.random() * 0.5), 0.002);
+    };
+    if (surface === 'grass') {
+      thud(t, 120, 0.06, 0.05);
+      burst(t, 0.13, 'bandpass', 2600, 0.7, 0.06, 0.015); // (the swish of the blades)
+    } else if (surface === 'leaves') {
+      thud(t, 110, 0.06, 0.05);
+      grains(t, 7, 0.09, 3800, 0.08); // (dry leaves and litter crunching)
+    } else if (surface === 'dirt') {
+      thud(t, 105, 0.07, 0.07);
+      burst(t, 0.06, 'highpass', 2200, 0.7, 0.02);
+    } else if (surface === 'rock') {
+      burst(t, 0.025, 'highpass', 2800, 0.8, 0.09, 0.001); // (the scuff and click of a sole on stone)
+      thud(t, 260, 0.04, 0.04);
+      grains(t + 0.01, 2, 0.04, 4500, 0.03);
+    } else if (surface === 'sand') {
+      burst(t, 0.17, 'lowpass', 2600, 0.6, 0.07, 0.03); // (sand giving and shifting: a soft 'shhk')
+      thud(t, 90, 0.05, 0.03);
+    } else if (surface === 'snow') {
+      grains(t, 12, 0.13, 1600, 0.09); // (snow packing down: crunch)
+      thud(t, 95, 0.05, 0.03);
+    } else if (surface === 'mud') {
+      burst(t, 0.2, 'lowpass', 700, 0.8, 0.09, 0.02); // (the squelch...)
+      thud(t + 0.02, 160, 0.15, 0.06);
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.setValueAtTime(300, t + 0.12);
+      o.frequency.exponentialRampToValueAtTime(700, t + 0.17); // (...and the suck of the foot coming out)
+      g.gain.setValueAtTime(0.0001, t + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.03, t + 0.13);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+      o.connect(g).connect(out);
+      o.start(t + 0.12);
+      o.stop(t + 0.2);
+    } else if (surface === 'water') {
+      burst(t, 0.03, 'highpass', 1500, 0.7, 0.1, 0.001);
+      burst(t + 0.01, 0.22, 'bandpass', 1900, 0.8, 0.1, 0.01); // (wading: the slosh)
+      grains(t + 0.06, 4, 0.2, 3500, 0.03);
+    } else if (surface === 'wood') {
+      thud(t, 190, 0.08, 0.12); // (hollow boards)
+      burst(t, 0.03, 'bandpass', 1400, 1.5, 0.05, 0.002);
     }
   }
 

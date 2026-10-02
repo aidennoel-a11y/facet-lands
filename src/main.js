@@ -179,7 +179,8 @@ chunks.addLayer(createLeafLayer());
 const mushrooms = createMushroomLayer();
 chunks.addLayer(mushrooms);
 chunks.addLayer(createLavaLayer(WORLD));
-chunks.addLayer(createSeaCoastLayer(WORLD, terrainMaterial));
+const seaCoast = createSeaCoastLayer(WORLD, terrainMaterial);
+chunks.addLayer(seaCoast);
 chunks.addLayer(createKelpLayer(WORLD));
 const logs = createLogLayer(WORLD);
 chunks.addLayer(logs);
@@ -335,8 +336,66 @@ function playerTraces(dt) {
   walker.left = !walker.left;
   const side = walker.left ? 0.13 : -0.13;
   footfall(pos.x + Math.cos(heading) * side, pos.z - Math.sin(heading) * side, heading, PRINT.square, 0.28, 0.6); // (square: a blocky foot)
+  // The sound of it: the footstep on what's underfoot, and now and then (and
+  // always over a stick lying there) a branch cracking under it in the woods.
+  const loud = controls.crouch ? 0.35 : controls.sprinting ? 1.1 : 0.7;
+  const surface = stepSurface(pos.x, pos.z);
+  if (surface !== 'water') sound.step(surface, loud);
+  const stick = game.items.lying?.(pos.x, pos.z, 0.6, 'stick');
+  if (stick || (surface === 'leaves' && Math.random() < (controls.sprinting ? 0.12 : 0.05))) sound.call('crack', 0, (stick ? 0.8 : 0.55) * (controls.crouch ? 0.5 : 1));
   walker.x = pos.x;
   walker.z = pos.z;
+}
+// The surf: every wave you see burst against the rocks near you, you hear
+// (each spot's spray bursts on its own beat, see SeaCoastLayer; the crashes
+// of those near you in the same moment heard as one, from where they are).
+const surfHeard = { t: null, last: -1 };
+function surfSound() {
+  const T = seaCoast.time, P = seaCoast.surfPeriod;
+  const prev = surfHeard.t;
+  surfHeard.t = T;
+  if (prev === null || T <= prev || T - prev > 1) return;
+  const p = camera.position, C = WORLD.chunkSize;
+  const ccx = Math.floor(p.x / C), ccz = Math.floor(p.z / C);
+  let loud = 0, px = 0, pz = 0;
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const spots = seaCoast.surfNear.get(`${ccx + dx},${ccz + dz}`);
+      if (!spots) continue;
+      for (const s of spots) {
+        const d = Math.hypot(s.x - p.x, s.z - p.z);
+        if (d > 110) continue;
+        // (Its burst comes at when·P past each whole period.)
+        if (Math.floor((T - s.when * P) / P) === Math.floor((prev - s.when * P) / P)) continue;
+        const v = (0.4 + 0.6 * s.rock) * Math.min(1, 30 / (d + 12));
+        loud += v;
+        px += s.x * v;
+        pz += s.z * v;
+      }
+    }
+  }
+  if (loud > 0.05 && T - surfHeard.last > 0.35) {
+    surfHeard.last = T;
+    sound.call('wave', panTowards(camera, px / loud, pz / loud), Math.min(1, 0.35 + loud * 0.25));
+  }
+}
+/** What's underfoot at (x, z), for the sound of a footstep (see Sound.step). */
+function stepSurface(x, z) {
+  const y = chunks.groundHeightAt(x, z);
+  const water = waterAt(x, z, true);
+  if (water && !water.frozen && water.level > y + 0.02) return 'water';
+  if (rocks.surfaceAt(x, z) > y + 0.1) return 'rock'; // (up on a boulder)
+  const kind = printGround(x, z, y);
+  if (kind) return kind; // (snow, mud or sand)
+  // Grey ground (rock, scree, the bare mountains) or steep ground: rock.
+  generator.surfaceColor(x, z, y + generator.getColorJitter(x, z), groundNormal(x, z).y, printColour, generator.getColorJitter(x, z));
+  const hi = Math.max(printColour.r, printColour.g, printColour.b), lo = Math.min(printColour.r, printColour.g, printColour.b);
+  if (hi - lo < 0.18 * hi) return 'rock';
+  const w = generator.getBiomeWeights(x, z, {});
+  const forest = generator.getForestDensity(x, z);
+  if (w.pine + w.redwood + w.jungle > 0.5 || (w.temperate + w.smoky > 0.5 && forest > 0.55)) return 'leaves';
+  if (w.savanna + w.badlands > 0.6) return 'dirt';
+  return 'grass';
 }
 const ANIMAL_PRINTS = {
   deer: [PRINT.hoof, 0.11], elk: [PRINT.hoof, 0.1], moose: [PRINT.hoof, 0.16], bison: [PRINT.hoof, 0.17], blackBear: [PRINT.paw, 0.22], grizzly: [PRINT.paw, 0.26],
@@ -782,7 +841,7 @@ function surroundings(dt, snow) {
   if (around.wait <= 0) {
     around.wait = 1;
     const { x, z } = camera.position;
-    let woods = 0, jungle = 0, grass = 0, wetland = 0, ocean = 0;
+    let woods = 0, jungle = 0, grass = 0, wetland = 0, ocean = 0, desert = 0, pine = 0;
     const pts = [[0, 0], [60, 0], [-60, 0], [0, 60], [0, -60]];
     for (const [dx, dz] of pts) {
       const w = generator.getBiomeWeights(x + dx, z + dz, {});
@@ -790,7 +849,9 @@ function surroundings(dt, snow) {
       woods += (w.temperate * smoothstep(0.35, 0.7, forest) + w.blackHills * 0.7 + w.pine + (w.smoky ?? 0)) / pts.length;
       grass += (w.temperate * (1 - smoothstep(0.35, 0.7, forest)) + w.savanna) / pts.length;
       jungle += w.jungle / pts.length;
-      wetland += w.wetland / pts.length;
+      wetland += (w.wetland + w.mangrove) / pts.length;
+      desert += (w.desert + w.saltFlat + 0.6 * w.badlands) / pts.length;
+      pine += (w.pine + w.redwood) / pts.length;
     }
     around.surf.x = around.surf.z = 0;
     for (let k = 0; k < 8; k++) {
@@ -814,7 +875,7 @@ function surroundings(dt, snow) {
     }
     const above = camera.position.y - here;
     Object.assign(e, {
-      woods, jungle, grass, wetland, ocean: ocean * (1 - smoothstep(30, 90, camera.position.y - WORLD.seaLevel)), lava: heat.lava,
+      woods, jungle, grass, wetland, desert, pine, ocean: ocean * (1 - smoothstep(30, 90, camera.position.y - WORLD.seaLevel)), lava: heat.lava,
       exposure: smoothstep(4, 40, here - ring) * (1 - smoothstep(40, 150, above)),
       hollow: smoothstep(4, 40, ring - here) * (1 - smoothstep(15, 80, above)),
       canopy: Math.min(1, woods + jungle) * (1 - smoothstep(12, 50, above)),
@@ -830,6 +891,8 @@ function surroundings(dt, snow) {
   e.rain = localRain;
   e.bare = seasonUniforms.uWinter.value;
   e.gust = gustAt(camera.position.x, camera.position.z);
+  // A winter storm: snow driving on a strong wind.
+  e.storm = seasonUniforms.uWinter.value > 0.4 && cold.value > 0.3 ? smoothstep(0.25, 0.75, localRain) * smoothstep(0.25, 0.75, e.wind) : 0;
   e.surfPan = around.surf.x || around.surf.z ? panTowards(camera, camera.position.x + around.surf.x * 1e4, camera.position.z + around.surf.z * 1e4) : 0;
   waterSounds(dt, e);
   return e;
@@ -1129,11 +1192,28 @@ function applyCaveHaze(dt) {
 
 // --- Loop --------------------------------------------------------------------
 const PIXEL_RATIO = Math.min(window.devicePixelRatio, 1.5);
+// The drawing resolution, eased down when the frame rate drops (a slow
+// graphics card, a big screen) and back up when there's room: never below
+// 0.6 of a pixel per screen pixel.
+const quality = { ratio: PIXEL_RATIO, low: 0, high: 0 };
+function adaptQuality(fps) {
+  if (fps < 40) (quality.low += 1), (quality.high = 0);
+  else if (fps > 56) (quality.high += 1), (quality.low = 0);
+  else quality.low = quality.high = 0;
+  let next = quality.ratio;
+  if (quality.low >= 3) next = Math.max(0.6, quality.ratio - 0.15);
+  else if (quality.high >= 8) next = Math.min(PIXEL_RATIO, quality.ratio + 0.1);
+  if (next !== quality.ratio) {
+    quality.ratio = next;
+    quality.low = quality.high = 0;
+    resize();
+  }
+}
 
 function resize() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
-  renderer.setPixelRatio(PIXEL_RATIO);
+  renderer.setPixelRatio(quality.ratio);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -1239,6 +1319,7 @@ function tick(now) {
   const haze = heatHaze(dt);
   sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater);
   const env = surroundings(dt, snow);
+  if (!sheltered && !underwater) surfSound();
   // The wildlife round you.
   const life = {
     waterAt: (x, z) => waterAt(x, z),
@@ -1249,6 +1330,15 @@ function tick(now) {
     step: (a, x, z, running) => {
       const [shape, size] = ANIMAL_PRINTS[a.kind] ?? [PRINT.hoof, 0.12];
       footfall(x, z, a.heading, shape, size * a.scale, running ? 1 : 0.35, true);
+      // (Close by, you hear them: hooves and paws on the ground, a branch
+      // cracking as a big one comes through the woods.)
+      const d = Math.hypot(x - camera.position.x, z - camera.position.z);
+      if (d < 22 && size * a.scale > 0.09) {
+        const pan = panTowards(camera, x, z), loud = Math.min(1, 8 / (d + 4)) * (running ? 1 : 0.55) * Math.min(1.4, size * a.scale * 7);
+        const surface = stepSurface(x, z);
+        if (surface !== 'water') sound.step(surface, loud * 0.6);
+        if (surface === 'leaves' && Math.random() < 0.04 * (running ? 2 : 1)) sound.call('crack', pan, loud * 0.8);
+      }
     },
     camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, rocks, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
@@ -1302,6 +1392,7 @@ function tick(now) {
   if (fpsTime >= 0.5) {
     const fps = frames / fpsTime;
     ui.fps.textContent = Math.round(fps);
+    if (!document.hidden && !TEST.has("hide")) adaptQuality(fps);
     // (How long the frame's own work takes, and how much it draws (shadows
     // included): with a low FPS, a low CPU time means the graphics card is
     // the limit.)

@@ -18,10 +18,10 @@ const FRUIT = { raspberryBush: 'berries', blueberryBush: 'berries', appleTree: '
 const NAMES = {
   deer: 'deer', elk: 'elk', moose: 'moose', bison: 'bison', blackBear: 'black bear', grizzly: 'grizzly bear', wolf: 'wolf', wolfPup: 'wolf pup', coyote: 'coyote', fox: 'fox',
   rabbit: 'rabbit', hare: 'hare', sheep: 'sheep', boar: 'boar', cougar: 'cougar', turkey: 'turkey', duck: 'duck', snake: 'rattlesnake',
-  tiger: 'tiger', panther: 'black panther', panda: 'giant panda', crocodile: 'crocodile', mountainGoat: 'mountain goat',
+  tiger: 'tiger', jaguar: 'jaguar', monkey: 'monkey', panther: 'black panther', panda: 'giant panda', crocodile: 'crocodile', mountainGoat: 'mountain goat',
   songbird: 'bird', starling: 'starling', crow: 'crow', gull: 'gull', hawk: 'hawk',
 };
-const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a black bear', cougar: 'a cougar', moose: 'a moose', boar: 'a wild boar', elk: 'a bull elk', deer: 'a buck', bison: 'a bison', snake: 'a rattlesnake', tiger: 'a tiger', panther: 'a black panther', crocodile: 'a crocodile', panda: 'a giant panda', mountainGoat: 'a mountain goat' };
+const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a black bear', cougar: 'a cougar', moose: 'a moose', boar: 'a wild boar', elk: 'a bull elk', deer: 'a buck', bison: 'a bison', snake: 'a rattlesnake', tiger: 'a tiger', jaguar: 'a jaguar', panther: 'a black panther', crocodile: 'a crocodile', panda: 'a giant panda', mountainGoat: 'a mountain goat' };
 const AXES = { axe: 1, steelAxe: 2, forgedAxe: 3 };
 const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2 };
 const SPEARS = new Set(['spear', 'steelSpear', 'forgedSpear']);
