@@ -464,7 +464,7 @@ export const BIOMES = {
     snow: 0xf1f4f7,
     grass: 0.35,
     trees: {
-      density: 0.62,
+      density: 0.31, // (giants: half as many as a pine forest's trees)
       clumped: false,
       species: [
         { type: 'redwood', weight: 1.4, minHeight: -99, maxHeight: 140 },

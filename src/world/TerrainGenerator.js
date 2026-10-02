@@ -23,18 +23,20 @@ export const BIOME_TUNING = {
   // How high (m) the foothills count as mountains: lower, more mountains, fewer foothills.
   mountainsAbove: 103,
   // Jungles: lower, more jungle (-0.01 ≈ +0.25%).
-  jungle: 0.06,
+  jungle: 0.02,
   // Pine forests: their size (radius scale): higher, more pine forest.
   pine: 1.15,
   // Redwood forests in the heart of the pine forests near a lake or the sea: lower, more redwood.
-  redwood: 0.1,
+  redwood: 0.0,
   // Mangrove coasts on the warm green coasts: lower, more mangrove.
   mangrove: -0.7,
   // Mesas in the dry country: lower, more mesas.
   mesa: 0.06,
+  // Wetlands and marshes: their size: higher, more.
+  wetland: 1.6,
   // Badlands in the savanna and the desert: the chance of a patch per 6 km square, and their size.
   badlands: 0.2,
-  badlandsSize: 1,
+  badlandsSize: 0.78, // (radius: 0.78 ≈ 40% smaller patches)
   // How much of the green country is forest rather than plains: higher, more forest.
   forest: 0,
 };
@@ -353,8 +355,8 @@ export class TerrainGenerator {
     out.parkland = open * pk;
     out.pine = rest * pz * (1 - rz);
     out.redwood = rest * pz * rz;
-    out.wetland = green * wz * (1 - jz);
-    out.jungle = green * jz;
+    out.wetland = green * wz;
+    out.jungle = green * jz * (1 - wz);
     // Badlands: patches of eroded, banded clay and sandstone in the
     // savanna, the desert and the salt flats.
     const bl = savanna + desert > 0.02 ? this.#badlands(x, z) : 0;
@@ -394,12 +396,15 @@ export class TerrainGenerator {
     if (groves <= 0) return 0;
     // (Near the water: a lake basin or the open sea's coast within a kilometre or so.)
     const lake = smoothstep(0.2, 0.4, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2) + 0.25 * this.lakeNoise.fbm(x * 0.0006 + 9, z * 0.0006, 2));
-    return groves * Math.max(lake, this.#seaCoast(x, z));
+    // (And well away from the big mountain ranges: on the low ground.)
+    const ranges = 1 - smoothstep(0.12, 0.25, this.#rangeField(x, z, {}).value);
+    if (ranges <= 0) return 0;
+    return groves * ranges * Math.max(lake, this.#seaCoast(x, z));
   }
 
   /** Where badlands lie in the dry country (0..1). */
   #badlands(x, z) {
-    return this.#blobs('badlands', x, z, 6000, T.badlands, 700 * T.badlandsSize, 1500 * T.badlandsSize, 0xbad1, (px, pz) => (this.getAridity(px, pz) > T.savannaStart + 0.25 && this.#rangeField(px, pz, {}).value < 0.1 ? 1 : 0));
+    return this.#blobs('badlands', x, z, 6000, T.badlands, 700 * T.badlandsSize, 1500 * T.badlandsSize, 0xbad1, (px, pz) => (this.getAridity(px, pz) > T.savannaStart + 0.25 && this.#rangeField(px, pz, {}).value < 0.1 && this.#seaCoast(px, pz) < 0.02 && this.getOceanness(px, pz) < 0.02 ? 1 : 0)) * (1 - smoothstep(0, 0.2, this.#seaCoast(x, z)));
   }
 
   /**
@@ -407,13 +412,29 @@ export class TerrainGenerator {
    * banded clay over a flat floor, gullied all over.
    */
   badlandsRelief(x, z) {
-    const wx = x + this.mesaNoise.noise2D(x * 0.006 + 7, z * 0.006) * 20, wz = z + this.mesaNoise.noise2D(x * 0.006, z * 0.006 + 7) * 20;
-    const ridge = 1 - Math.abs(this.mesaNoise.fbm(wx * 0.0035 + 900, wz * 0.0035 - 300, 3));
-    const r = smoothstep(0.55, 0.92, ridge);
-    const gullies = Math.abs(this.detailNoise.noise2D(x * 0.03 + 11, z * 0.03)) * 3;
-    // (Stepped a little: the harder bands stand out as ledges.)
-    const h = r * 34;
-    return Math.floor(h / 3) * 3 + smoothstep(0, 1, (h % 3) / 3) * 3 - gullies * r;
+    // (Warped a little, so no ridge runs dead straight.)
+    const wx = x + this.mesaNoise.noise2D(x * 0.006 + 7, z * 0.006) * 22, wz = z + this.mesaNoise.noise2D(x * 0.006, z * 0.006 + 7) * 22;
+    // Where the eroded country stands (clusters of ridges), and the open
+    // prairie floor between.
+    const field = smoothstep(-0.05, 0.25, this.mesaNoise.fbm(x * 0.0016 - 70, z * 0.0016 + 40, 2));
+    if (field <= 0) return 0;
+    // Long, sharp-crested ridges and buttes...
+    const r1 = smoothstep(0.6, 0.97, 1 - Math.abs(this.mesaNoise.fbm(wx * 0.004 + 900, wz * 0.004 - 300, 3)));
+    // ...little hills and knobs round their feet and along their flanks...
+    const r2 = smoothstep(0.62, 0.98, 1 - Math.abs(this.mesaNoise.fbm(wx * 0.014 - 120, wz * 0.014 + 60, 2)));
+    // ...and here and there a spire.
+    const spire = smoothstep(0.9, 0.99, 1 - Math.abs(this.detailNoise.noise2D(wx * 0.03 + 33, wz * 0.03))) * r1;
+    let h = field * (34 * Math.pow(r1, 0.85) + 6 * r2 * (0.3 + 0.7 * smoothstep(0, 0.5, r1)) + 6 * spire);
+    // Gullies down their flanks (none on the floor)...
+    const gully = Math.abs(this.detailNoise.fbm(x * 0.05 + 11, z * 0.05, 2));
+    h -= (1 - smoothstep(0, 0.2, gully)) * 2.2 * smoothstep(3, 12, h);
+    h = Math.max(0, h);
+    // ...the harder bands standing out as ledges...
+    const step = 3, t = (h % step) / step;
+    // (Half way to the steps only: full steps would stand up as saw teeth.)
+    h = 0.45 * h + 0.55 * (Math.floor(h / step) * step + smoothstep(0.2, 0.8, t) * step);
+    // ...and the clay rough and crumbled.
+    return h + this.detailNoise.noise2D(x * 0.12 - 5, z * 0.12 + 9) * 0.22 * smoothstep(2, 8, h);
   }
 
   /** Where salt flats lie deep in the desert (0..1): dead flat, white. */
@@ -812,7 +833,7 @@ export class TerrainGenerator {
     // (Not in the land rising into the Smoky Mountains: a marsh there would be a pit.)
     if (!this._probing) zone *= 1 - smoothstep(0.02, 0.25, this.#smokyLift(x, z));
     if (zone <= 0) return 0;
-    return zone * this.#blobs('wet', x, z, 3500, 1, 1100, 2000, 0x3e7a, (px, pz) => {
+    return zone * this.#blobs('wet', x, z, 3500, 1, 1100 * T.wetland, 2000 * T.wetland, 0x3e7a, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       return smoothstep(0, 0.35, this.#wetZoneRaw(px, pz, r, this.getAridity(px, pz, r), false));
     });
@@ -3005,7 +3026,8 @@ export class TerrainGenerator {
     // (The land rising towards a range opens out into grassy foothill
     // country; the range's own slopes are wooded again.)
     const m = this.getMountainness(x, z);
-    const open = m > 0.08 && m < 0.5 ? smoothstep(0.08, 0.3, m) * (1 - smoothstep(0.4, 0.5, m)) : 0;
+    // (Only part way: wooded still, with clearings, so it never reads as a bare patch next to the pine forests.)
+    const open = m > 0.08 && m < 0.5 ? 0.5 * smoothstep(0.08, 0.3, m) * (1 - smoothstep(0.4, 0.5, m)) : 0;
     return (0.05 + 0.95 * smoothstep(-0.3, 0.15, n)) * (1 - open);
   }
 

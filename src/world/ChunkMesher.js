@@ -384,7 +384,8 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
       for (let i = -1; i <= 5 && !walled; i++) {
         const x = originX + (i / 4) * chunkSize, z = originZ + (j / 4) * chunkSize;
         const f = generator.getFeatures(x, z);
-        walled = f.canyonZone > 0 || f.mesa > 0.02 || generator.getBiomeWeights(x, z, {}).blackHills > 0.05 || generator.getSeaCliff(x, z) > 0.05;
+        const bw = generator.getBiomeWeights(x, z, {});
+        walled = f.canyonZone > 0 || f.mesa > 0.02 || bw.blackHills > 0.05 || bw.badlands > 0.05 || generator.getSeaCliff(x, z) > 0.05;
       }
     }
     for (let j = -1; j <= resolution; j++) {
@@ -408,6 +409,8 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
           const f = generator.getFeatures(cx, cz);
           yes = f.canyon > 0.1 || f.mesa > 0.1 || generator.getBiomeWeights(cx, cz, {}).blackHills > 0.2 || generator.getSeaCliff(cx, cz) > 0.1;
         }
+        // (The badlands' ridges and knobs: finer faces wherever they rise at all.)
+        if (!yes && walled && hi - lo > 1.5) yes = generator.getBiomeWeights(cx, cz, {}).badlands > 0.2;
         for (const e of mouths) {
           const b = e.holeBounds;
           if (yes && b.maxX > originX + minX - 8 && b.minX < originX + maxX + 8 && b.maxZ > originZ + minZ - 8 && b.minZ < originZ + maxZ + 8) yes = false;
