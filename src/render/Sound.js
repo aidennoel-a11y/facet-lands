@@ -705,6 +705,30 @@ export class Sound {
       wash(t, 0.3, 'bandpass', 3000, 0.08, 0.06);
     } else if (kind === 'treebump') {
       wash(t, 0.08, 'lowpass', 300, 0.3, 0.003);
+    } else if (kind === 'flybuzz' || kind === 'whine') {
+      // A fly going by your ear (a buzz: the wingbeat's low note, rough with
+      // its overtones), or a mosquito (a thin high whine): swelling as it
+      // comes and falling away, its note dropping as it passes.
+      const fly = kind === 'flybuzz', len = fly ? 0.5 + Math.random() * 0.5 : 0.9 + Math.random() * 0.8;
+      const f0 = fly ? 170 + Math.random() * 60 : 560 + Math.random() * 120;
+      const o = ctx.createOscillator();
+      o.type = fly ? 'sawtooth' : 'triangle';
+      o.frequency.setValueAtTime(f0 * 1.04, t);
+      o.frequency.linearRampToValueAtTime(f0 * 0.96, t + len);
+      const wob = ctx.createOscillator(), wd = ctx.createGain();
+      wob.frequency.value = fly ? 9 + Math.random() * 6 : 5 + Math.random() * 3;
+      wd.gain.value = f0 * (fly ? 0.03 : 0.02);
+      wob.connect(wd).connect(o.frequency);
+      const band = ctx.createBiquadFilter();
+      band.type = 'bandpass';
+      band.frequency.value = fly ? 700 : f0 * 1.5;
+      band.Q.value = fly ? 0.6 : 1.2;
+      const g = ctx.createGain(), peak = fly ? 0.05 : 0.03;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + len * 0.45);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.connect(band).connect(g).connect(out);
+      for (const n of [o, wob]) (n.start(t), n.stop(t + len + 0.05));
     } else if (kind === 'caw') {
       const n = 2 + Math.floor(Math.random() * 3);
       for (let k = 0; k < n; k++) tone(t + k * 0.32, 0.22, 'sawtooth', 560 + Math.random() * 80, 430, 1100, 1.5, 0.09);

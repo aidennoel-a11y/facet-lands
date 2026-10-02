@@ -70,7 +70,7 @@ const SPECIES = {
   tiger: { ground: true, grade: 0.85, model: Models.tiger, max: 8, walk: 1.1, run: 15, flee: 20, calm: 90, radius: 0.4, height: 1.0, health: 180, stride: 1.5, turn: 3.2, size: 1.2, gaits: DOG, trotBand: 0.15, swims: true, call: 'growl' },
   panther: { ground: true, grade: 0.95, model: Models.panther, max: 8, walk: 1.2, run: 15, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 80, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
   panda: { ground: true, grade: 0.7, model: Models.panda, max: 8, walk: 0.7, run: 5, flee: 12, calm: 40, radius: 0.6, height: 1.2, health: 160, stride: 1.2, turn: 1.6, size: 1.05, forager: true, gaits: BEAR },
-  crocodile: { ground: true, grade: 0.5, model: Models.crocodile, max: 80, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
+  crocodile: { ground: true, grade: 0.5, model: Models.crocodile, max: 80, fearless: true, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
   mountainGoat: { ground: true, grade: 1.3, model: Models.mountainGoat, max: 24, walk: 1.0, run: 9, flee: 30, calm: 80, radius: 0.35, height: 1.0, health: 70, stride: 1.0, turn: 3, size: 1.15, gaits: HOOF, trotBand: 0.35, call: 'baa' },
   jaguar: { ground: true, grade: 0.95, model: Models.jaguar, max: 6, walk: 1.1, run: 14, flee: 20, calm: 90, radius: 0.35, height: 0.9, health: 130, stride: 1.3, turn: 3.6, size: 1.1, gaits: DOG, trotBand: 0.15, swims: true, call: 'jaguar' },
   // Monkeys: troops up in the jungle's crowns, leaping from tree to tree,
@@ -588,6 +588,25 @@ export class Wildlife {
       a.notice = 0;
       return;
     }
+    // A crocodile: it doesn't care if you look at it. It lies still, low
+    // in the shallows, watching, drifting nearer; come close and it lunges.
+    if (sp.fearless) {
+      a.seen = false;
+      if (a.hunting) {
+        if (t.d > pr.sight * 2) (a.hunting = false), (a.notice = 0);
+        return;
+      }
+      if (t.d < pr.sight * (p.crouch ? 0.7 : 1)) a.notice = (a.notice ?? 0) + dt;
+      else a.notice = Math.max(0, (a.notice ?? 0) - dt * 0.3);
+      a.stalking = a.notice > 0.6;
+      if (a.stalking && t.d < 12) {
+        a.hunting = true;
+        a.stalking = false;
+        a.notice = 9;
+        ctx.sound?.call('hiss', ctx.pan(a.x, a.z), 0.7);
+      }
+      return;
+    }
     const f = ctx.forward, fl = Math.hypot(f.x, f.z) || 1;
     const seen = t.d < 80 && ((a.x - p.x) * f.x + (a.z - p.z) * f.z) / (fl * t.d) > Math.cos(0.9);
     a.watched = seen ? (a.watched ?? 0) + dt : Math.max(0, (a.watched ?? 0) - dt * 0.5);
@@ -760,6 +779,31 @@ export class Wildlife {
       return null;
     };
     const day = ctx.day, winter = ctx.winter;
+
+    // After dark the hunters are about: now and then a wolf pack (in the
+    // woods and the hills) or a few coyotes (out on the open country) come
+    // by, from out of sight, roaming (and they leave again by day: see
+    // `night` in the herd).
+    this.nightCool = (this.nightCool ?? rnd(20, 60)) - 0.5;
+    if (day < 0.25 && this.nightCool <= 0) {
+      this.nightCool = rnd(70, 150);
+      const near = (kind) => this.animals.some((a) => a.kind === kind && a.alive && Math.hypot(a.x - cx, a.z - cz) < 200);
+      const s = spot(140, 260, (x, z) => g.getMountainness(x, z) < 0.6 && g.getBiomeWeights(x, z, {}).desert < 0.5, 10);
+      if (s) {
+        const w = g.getBiomeWeights(s.x, s.z, {}), open = w.savanna > 0.4 || (w.temperate > 0.5 && g.getPlainness(s.x, s.z) > 0.3 && g.getForestDensity(s.x, s.z) < 0.3);
+        const kind = open && !near('coyote') ? 'coyote' : !near('wolf') && w.jungle + w.mangrove < 0.4 ? 'wolf' : null;
+        const herd = kind && this.#spawnHerd(kind, s, kind === 'wolf' ? 3 + Math.floor(rnd(0, 3)) : 1 + Math.floor(rnd(0, 3)));
+        if (herd) {
+          herd.night = true;
+          // (Roaming your way: passing by some way off, to be seen, or to find you.)
+          const a = rnd(0, TAU);
+          herd.goal = { x: cx + Math.sin(a) * 45, z: cz + Math.cos(a) * 45 };
+          herd.goalWait = 60;
+        }
+      }
+    }
+    // (Come the day, the night's visitors go off, out of sight.)
+    if (day > 0.5) for (const h of this.herds) if (h.night) for (const m of h.members) if (Math.hypot(m.x - cx, m.z - cz) > 120) m.gone = true;
 
     // Flocks wheeling over the woods and fields, by day.
     if (day > 0.4 && this.flocks.filter((f) => f.kind === 'starling').length < 1) {
@@ -1186,12 +1230,15 @@ export class Wildlife {
           // (Up on the bank, beside the water.)
           // (Some out in the water, swimming, low in it.)
           // (Only in the shallows among the roots, near land: not out at sea.)
-          if (rand() < 0.4) {
-            const wx = x + rnd(-6, 6), wz = z + rnd(-6, 6), wat = ctx.waterAt(wx, wz);
+          // (Most of them: a few tries for a spot.)
+          let placed = false;
+          for (let tries = 0; tries < 6 && !placed && rand() < 0.95; tries++) {
+            const wx = x + rnd(-14, 14), wz = z + rnd(-14, 14), wat = ctx.waterAt(wx, wz);
             let shoreNear = false;
             for (let q = 0; q < 8 && !shoreNear; q++) shoreNear = !ctx.waterAt(wx + Math.cos(q * 0.785) * 18, wz + Math.sin(q * 0.785) * 18);
-            if (wat && wat.level - ctx.ground(wx, wz) < 1.8 && shoreNear && g.getOceanness(wx, wz) < 0.9 && this.#spawnWalker('crocodile', wx, wz, null, { water: true })) continue;
+            if (wat && wat.level - ctx.ground(wx, wz) < 1.8 && shoreNear && g.getOceanness(wx, wz) < 0.9 && this.#spawnWalker('crocodile', wx, wz, null, { water: true })) placed = true;
           }
+          if (placed || rand() < 0.6) continue; // (and only some up on the banks)
           // (A mangrove coast is mostly water: look further for its banks and islands.)
           for (let t = 0; t < (mangrove ? 20 : 8); t++) {
             const a = rand() * TAU, d = 3 + rand() * (mangrove ? 30 : 6);
@@ -1709,7 +1756,7 @@ export class Wildlife {
       a.followed = (a.followed ?? 0) + dt;
       if (!a.tame && a.followed > 4) this.#tame(a);
     }
-    if (!ctx.tame && !a.tame && !lured && !a.hunting && !(a.charging > 0) && !a.stalking && t.d < reach && t.above < 50) {
+    if (!ctx.tame && !a.tame && !lured && !sp.fearless && !a.hunting && !(a.charging > 0) && !a.stalking && t.d < reach && t.above < 50) {
       if (herd) {
         if (herd.fleeTime <= 0 && a.kind === 'bison') ctx.sound?.call('grunt', ctx.pan(a.x, a.z), 0.6);
         if (herd.fleeTime <= 0 && (a.kind === 'deer' || a.kind === 'elk')) ctx.sound?.call('snort', ctx.pan(a.x, a.z), 0.5);

@@ -101,7 +101,7 @@ self.onmessage = (event) => {
   }
   if (wantReeds) {
     out.reeds = reedData(g, config, cx, cz, groundHeightAt, heights);
-    if (out.reeds) transfer.push(out.reeds.matrices.buffer, out.reeds.shades.buffer);
+    if (out.reeds) transfer.push(out.reeds.matrices.buffer, out.reeds.shades.buffer, out.reeds.kinds.buffer);
   }
   if (wantTrees) {
     // Where the trees stand, off the boulders (as RockLayer.bouldersNear).

@@ -12,7 +12,8 @@ const up = new Vector3(0, 1, 0);
 
 /**
  * The reeds of chunk (cx, cz): { matrices (16 floats each, chunk-local),
- * shades }, or null if there are none.
+ * shades, kinds (0 cattails, 1 rushes, 2 sedge: see ReedLayer) }, or null
+ * if there are none.
  */
 export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
   const size = config.chunkSize;
@@ -28,6 +29,12 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
   const step = size / cells;
   const matrices = [];
   const shades = [];
+  const kinds = [];
+  // (Which kind of clump: mostly rushes and sedge, cattails here and there.)
+  const kindOf = (gi, gj, low) => {
+    const r = hash2(gi, gj, seed + 8);
+    return low ? (r < 0.75 ? 2 : 1) : r < 0.22 ? 0 : r < 0.6 ? 1 : 2;
+  };
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
       const gi = cx * cells + i, gj = cz * cells + j;
@@ -59,6 +66,7 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
         scale.set(s, s * (0.85 + hash2(gi, gj, seed + 5) * 0.4), s);
         matrices.push(matrix.compose(position, rotation, scale).clone());
         shades.push(0.85 + hash2(gi, gj, seed + 6) * 0.3);
+        kinds.push(kindOf(gi, gj, weed));
         continue;
       }
       if (river.stream && generator.getMountainness(wx, wz) > 0.3) continue; // mountain streams: gravel, no reeds
@@ -75,10 +83,11 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
       scale.set(s, s * (0.85 + hash2(gi, gj, seed + 5) * 0.4), s);
       matrices.push(matrix.compose(position, rotation, scale).clone());
       shades.push(0.85 + hash2(gi, gj, seed + 6) * 0.3);
+      kinds.push(kindOf(gi, gj, false));
     }
   }
   if (!matrices.length) return null;
   const out = new Float32Array(matrices.length * 16);
   matrices.forEach((m, k) => m.toArray(out, k * 16));
-  return { matrices: out, shades: new Float32Array(shades) };
+  return { matrices: out, shades: new Float32Array(shades), kinds: new Uint8Array(kinds) };
 }

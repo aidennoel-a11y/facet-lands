@@ -3,6 +3,7 @@ import {
   BufferGeometry,
   Color,
   DoubleSide,
+  Group,
   InstancedBufferAttribute,
   InstancedMesh,
   MeshLambertMaterial,
@@ -14,12 +15,15 @@ import { reedData } from '../reedData.js';
 const STEM_LOW = new Color(0x4d6b2f);
 const STEM_HIGH = new Color(0x9caf5a);
 const HEAD = new Color(0x6b4428); // cattail heads
+const SEDGE_LOW = new Color(0x55702e);
+const SEDGE_HIGH = new Color(0xa8b860);
 
 /**
  * One clump of reeds: tall, thin, slightly leaning blades (each a narrow
- * triangle), a few topped with a brown cattail head.
+ * triangle), some topped with a brown cattail head (`heads`: how many).
+ * Rushes: tall plain stems, no heads. Sedge: low, many, arching blades.
  */
-function reedGeometry(seed = 7) {
+function reedGeometry(seed = 7, { heads = 0.45, blades = 11, tall = [1.3, 1.0], lean = [0.05, 0.25], width = [0.035, 0.03], low = STEM_LOW, high = STEM_HIGH } = {}) {
   const rand = mulberry32(seed);
   const positions = [];
   const colors = [];
@@ -29,18 +33,18 @@ function reedGeometry(seed = 7) {
     colors.push(ca.r, ca.g, ca.b, cb.r, cb.g, cb.b, cc.r, cc.g, cc.b);
     normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
   };
-  for (let k = 0; k < 11; k++) {
+  for (let k = 0; k < blades; k++) {
     const angle = rand() * Math.PI * 2;
     const r = Math.sqrt(rand()) * 0.5;
     const bx = Math.cos(angle) * r, bz = Math.sin(angle) * r;
     const facing = rand() * Math.PI * 2;
-    const half = 0.035 + rand() * 0.03;
-    const height = 1.3 + rand() * 1.0;
-    const lean = 0.05 + rand() * 0.25;
-    const tx = bx + Math.cos(angle) * lean, tz = bz + Math.sin(angle) * lean;
+    const half = width[0] + rand() * width[1];
+    const height = tall[0] + rand() * tall[1];
+    const bend = lean[0] + rand() * lean[1];
+    const tx = bx + Math.cos(angle) * bend, tz = bz + Math.sin(angle) * bend;
     const fx = Math.cos(facing) * half, fz = Math.sin(facing) * half;
-    tri([bx + fx, 0, bz + fz], [bx - fx, 0, bz - fz], [tx, height, tz], STEM_LOW, STEM_LOW, STEM_HIGH);
-    if (rand() < 0.45) {
+    tri([bx + fx, 0, bz + fz], [bx - fx, 0, bz - fz], [tx, height, tz], low, low, high);
+    if (rand() < heads) {
       // A cattail: a fat brown sausage of a head just below the tip, and
       // the thin spike above it.
       const y0 = height * 0.66, y1 = height * 0.86, w = 0.075;
@@ -73,7 +77,12 @@ function reedGeometry(seed = 7) {
  * wind like the grass.
  */
 export function createReedLayer(config) {
-  const geometry = reedGeometry();
+  // Three kinds of clump (see reedData's kinds): cattails, rushes, sedge.
+  const geometries = [
+    reedGeometry(7),
+    reedGeometry(11, { heads: 0, blades: 14, tall: [1.0, 1.1], width: [0.02, 0.02] }),
+    reedGeometry(23, { heads: 0, blades: 18, tall: [0.45, 0.45], lean: [0.15, 0.35], width: [0.03, 0.03], low: SEDGE_LOW, high: SEDGE_HIGH }),
+  ];
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
   material.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -93,21 +102,31 @@ export function createReedLayer(config) {
       // (Worked out by the chunk's worker, or here.)
       const data = prepared && prepared.reeds !== undefined ? prepared.reeds : reedData(generator, config, cx, cz, groundHeightAt, heights);
       if (!data) return null;
-      const count = data.shades.length;
-      const mesh = new InstancedMesh(geometry, material, count);
-      mesh.name = 'reeds';
-      mesh.instanceMatrix.array.set(data.matrices);
-      const colours = new Float32Array(count * 3);
-      data.shades.forEach((v, k) => colours.set([v, v, v], k * 3));
-      mesh.instanceColor = new InstancedBufferAttribute(colours, 3);
-      mesh.computeBoundingSphere();
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      return mesh;
+      const group = new Group();
+      group.name = 'reeds';
+      geometries.forEach((geometry, kind) => {
+        const which = [];
+        data.shades.forEach((_, k) => (data.kinds?.[k] ?? 0) === kind && which.push(k));
+        if (!which.length) return;
+        const mesh = new InstancedMesh(geometry, material, which.length);
+        mesh.name = 'reeds';
+        const colours = new Float32Array(which.length * 3);
+        which.forEach((k, n) => {
+          mesh.instanceMatrix.array.set(data.matrices.subarray(k * 16, k * 16 + 16), n * 16);
+          const v = data.shades[k];
+          colours.set([v, v, v], n * 3);
+        });
+        mesh.instanceColor = new InstancedBufferAttribute(colours, 3);
+        mesh.computeBoundingSphere();
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      });
+      return group;
     },
 
-    dispose(mesh) {
-      mesh.dispose();
+    dispose(group) {
+      for (const mesh of group.children) mesh.dispose();
     },
   };
 }

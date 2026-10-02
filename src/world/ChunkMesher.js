@@ -606,7 +606,10 @@ function onTriangle(x, z, ax, ay, az, bx, by, bz, cx, cy, cz, out) {
     const nx = e1y * e2z - e1z * e2y;
     const ny = e1z * e2x - e1x * e2z;
     const nz = e1x * e2y - e1y * e2x;
-    out.normalY = Math.abs(ny) / Math.hypot(nx, ny, nz);
+    const len = Math.hypot(nx, ny, nz), up = ny < 0 ? -1 : 1;
+    out.normalY = Math.abs(ny) / len;
+    out.normalX = (nx * up) / len; // (the upward-facing normal's sideways parts)
+    out.normalZ = (nz * up) / len;
   }
   return ay + u * e1y + w * e2y;
 }

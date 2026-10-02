@@ -32,6 +32,7 @@ function head() {
 }
 
 const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), s = new Vector3(), yAxis = new Vector3(0, 1, 0);
+const tilt = new Quaternion(), lean = new Vector3();
 
 /**
  * Wildflower meadows (see TerrainGenerator.getMeadow): flowers thick in
@@ -99,15 +100,18 @@ export function createFlowerLayer(config) {
           // A few colours to a patch.
           const tone = generator.meadowNoise.noise2D((x0 + lx) * 0.03, (z0 + lz) * 0.03) * 0.5 + 0.5;
           const pick = Math.floor((tone * 3 + hash2(gi, gj, seed + 3) * 1.6) % COLOURS.length);
-          list.push([lx, y, lz, 0.7 + 0.7 * hash2(gi, gj, seed + 4), hash2(gi, gj, seed + 5), COLOURS[pick]]);
+          list.push([lx, y, lz, 0.7 + 0.7 * hash2(gi, gj, seed + 4), hash2(gi, gj, seed + 5), COLOURS[pick], surface.normalX ?? 0, surface.normalZ ?? 0]);
         }
       }
       if (!list.length) return null;
       const stemMesh = new InstancedMesh(stems, stemMaterial, list.length);
       const headMesh = new InstancedMesh(heads, headMaterial, list.length);
-      list.forEach(([x, y, z, sc, r, colour], k) => {
+      list.forEach(([x, y, z, sc, r, colour, nx, nz], k) => {
         p.set(x, y - 0.03, z);
-        q.setFromAxisAngle(yAxis, r * Math.PI * 2);
+        // (Growing out of the slope: leaning part of the way with the
+        // ground, as a stem does, turning back up to the light.)
+        tilt.setFromUnitVectors(yAxis, lean.set(nx * 0.6, 1, nz * 0.6).normalize());
+        q.setFromAxisAngle(yAxis, r * Math.PI * 2).premultiply(tilt);
         s.set(sc, sc * (0.8 + 0.5 * r), sc);
         m4.compose(p, q, s);
         stemMesh.setMatrixAt(k, m4);

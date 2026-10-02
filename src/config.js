@@ -12,8 +12,8 @@ export const WORLD = {
   // Every level must divide the one above it so vertices line up at seams.
   lods: [
     { maxDistance: 1, resolution: 64 }, // 2 m triangles right around you; grass lives here
-    { maxDistance: 3, resolution: 32 }, // 4 m
-    { maxDistance: 5, resolution: 16 }, // 8 m (rocks out to here, 640 m)
+    { maxDistance: 3, resolution: 64 }, // 2 m, out to 384 m
+    { maxDistance: 5, resolution: 32 }, // 4 m (rocks out to here, 640 m)
     { maxDistance: 8, resolution: 16 }, // 8 m, far trees (to 1 km)
     { maxDistance: 12, resolution: 8 }, // 16 m, far trees (to 1.5 km)
     { maxDistance: Infinity, resolution: 4 }, // 32 m, far trees, out to the edge of the view
@@ -23,7 +23,7 @@ export const WORLD = {
   vertexJitter: 0.35, // fraction of a cell each vertex is nudged in x/z
   // Chunks at least this detailed are "full detail": cave mouths are cut
   // into them, and they're refined along rivers and shores.
-  detailResolution: 32,
+  detailResolution: 64,
   // Far chunks (this LOD and beyond) have their ground merged into tiles of
   // this many chunks a side, one draw call a tile rather than one a chunk.
   groundMergeLod: 4,

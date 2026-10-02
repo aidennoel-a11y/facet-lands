@@ -1,4 +1,4 @@
-import { AdditiveBlending, Color, DynamicDrawUsage, Euler, InstancedMesh, Matrix4, MeshBasicMaterial, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
+import { AdditiveBlending, BoxGeometry, Color, DynamicDrawUsage, Euler, InstancedMesh, Matrix4, MeshBasicMaterial, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../noise/random.js';
 import { gustAt, windDirection, windStrength, windTime } from '../render/wind.js';
 import * as Models from './models.js';
@@ -14,12 +14,18 @@ const glow = new Color(0.78, 1, 0.3), dim = new Color(0.12, 0.16, 0.06), col = n
  *    and there (always in the same trees: see hivesNear), and their bees,
  *    little blocks of yellow and black, milling round the nest and flying
  *    out to the flowers and back, by day, out of the rain and the winter;
- *  - fireflies over the grass and the wetlands on warm summer nights,
+ *  - fireflies over the grass and the wetlands on warm summer nights (in
+ *    dry country only down by the water),
  *    drifting low and blinking yellow-green;
  *  - dragonflies over the shallows of lakes, ponds and rivers on warm
  *    days, each keeping to its own stretch: hovering, then darting;
  *  - frogs sitting at the water's edge, croaking at dusk and through the
- *    night in spring and summer, hopping into the water if you come near.
+ *    night in spring and summer, hopping about the bank, leaping into the
+ *    water if you come near and swimming off, eyes just above it;
+ *  - gnats in clouds, hanging over the water and the wet ground in the
+ *    marshes, the wetlands, the mangroves and the jungle (and, fewer, by
+ *    any water), most of all at dusk; mosquitoes whining about you there
+ *    at night; and flies, buzzing round your head.
  */
 export class Insects {
   constructor(scene, materialHook = (m) => m) {
@@ -50,6 +56,21 @@ export class Insects {
     }
     this.dragonMeshes.forEach((m) => (m.name = 'dragonflies'));
     this.frogMesh.name = 'frogs';
+    // Gnats (specks), and flies (a dark body, two pale wings).
+    this.gnatMesh = new InstancedMesh(new BoxGeometry(0.018, 0.018, 0.018), new MeshBasicMaterial({ color: 0x14140e }), 1400);
+    this.fly2Mesh = new InstancedMesh(Models.housefly(), lambert, 24);
+    for (const m of [this.gnatMesh, this.fly2Mesh]) {
+      m.instanceMatrix.setUsage(DynamicDrawUsage);
+      m.frustumCulled = false;
+      m.count = 0;
+      scene.add(m);
+    }
+    this.gnatMesh.name = 'gnats';
+    this.fly2Mesh.name = 'flies';
+    this.swarms = [];
+    this.buzzers = [];
+    this.bugWait = 0;
+    this.bugginess = 0;
     this.dragons = [];
     this.frogs = [];
     this.croakWait = 0;
@@ -66,6 +87,8 @@ export class Insects {
     this.flies = [];
     this.dragons = [];
     this.frogs = [];
+    this.swarms = [];
+    this.buzzers = [];
   }
 
   /**
@@ -104,12 +127,13 @@ export class Insects {
   update(dt, ctx) {
     this.time += dt;
     const hidden = ctx.sheltered;
-    for (const m of [this.hiveMesh, this.beeMesh, this.flyMesh, this.haloMesh, ...this.dragonMeshes, this.frogMesh]) m.visible = !hidden;
+    for (const m of [this.hiveMesh, this.beeMesh, this.flyMesh, this.haloMesh, ...this.dragonMeshes, this.frogMesh, this.gnatMesh, this.fly2Mesh]) m.visible = !hidden;
     if (hidden) return;
     if (ctx.waterAt) {
       this.#dragonflies(dt, ctx);
       this.#frogs(dt, ctx);
     }
+    this.#bugs(dt, ctx);
     const cam = ctx.camera.position;
     this.wait -= dt;
     if (this.wait <= 0) {
@@ -167,6 +191,12 @@ export class Insects {
       const a = rnd(0, TAU), d = Math.sqrt(rnd(12 * 12, 90 * 90));
       const x = cam.x + Math.sin(a) * d, z = cam.z + Math.cos(a) * d, g = ctx.ground(x, z);
       if (!(g > ctx.seaLevel - 0.5)) continue;
+      // (In dry country only down by the water: a creek, a pond, an oasis.)
+      const bw = ctx.generator?.getBiomeWeights(x, z, {});
+      if (bw && (bw.desert ?? 0) + (bw.savanna ?? 0) + (bw.badlands ?? 0) + (bw.saltFlat ?? 0) > 0.4) {
+        const wet = (dx, dz) => ctx.waterAt?.(x + dx, z + dz);
+        if (!(wet(0, 0) || wet(10, 0) || wet(-10, 0) || wet(0, 10) || wet(0, -10))) continue;
+      }
       this.flies.push({ x, z, y: g + rnd(0.3, 2.2), hover: g, vx: 0, vz: 0, period: rnd(1.8, 4.5), offset: rnd(0, 5), seed: rnd(0, 100) });
     }
     if (this.flies.length > want) this.flies.length = Math.max(want, this.flies.length - Math.ceil(dt * 20));
@@ -281,12 +311,104 @@ export class Insects {
     });
   }
 
+  // Gnats, mosquitoes and flies: thickest in the wet, warm, still places.
+  #bugs(dt, ctx) {
+    const cam = ctx.camera.position, g = ctx.generator;
+    this.bugWait -= dt;
+    if (this.bugWait <= 0 && g) {
+      this.bugWait = 1;
+      const w = g.getBiomeWeights(cam.x, cam.z, {});
+      const wet = Math.min(1, (w.wetland ?? 0) + (w.mangrove ?? 0) + (w.jungle ?? 0) * 0.9);
+      const water = ctx.waterAt?.(cam.x, cam.z) || ctx.waterAt?.(cam.x + 12, cam.z) || ctx.waterAt?.(cam.x - 12, cam.z) || ctx.waterAt?.(cam.x, cam.z + 12) || ctx.waterAt?.(cam.x, cam.z - 12);
+      const warm = Math.max(0, (ctx.summer ?? 0) + 0.6 * (ctx.spring ?? 0) + 0.3 * (ctx.autumn ?? 0)) * (1 - (ctx.winter ?? 0));
+      const high = Math.max(0, Math.min(1, (cam.y - (ctx.seaLevel ?? 0) - 60) / 60)); // (none up on the heights)
+      this.bugginess = Math.min(1, wet + (water ? 0.3 : 0) + 0.08) * Math.min(1, warm) * (1 - (ctx.rain ?? 0)) * (1 - Math.min(1, Math.max(0, (ctx.wind ?? 0) - 0.3) * 1.6)) * (1 - high);
+    }
+    const B = this.bugginess, dusk = Math.max(ctx.dusk ?? 0, 0.6 * (1 - (ctx.day ?? 1)));
+    // Clouds of gnats, hanging over the water and the wet ground near you.
+    const want = Math.round(10 * B * (0.6 + 0.8 * dusk));
+    this.swarms = this.swarms.filter((w) => Math.hypot(w.x - cam.x, w.z - cam.z) < 40 && !(w.fade < 0));
+    if (this.swarms.length > want) this.swarms[0].fade = Math.min(this.swarms[0].fade ?? 1, 1);
+    for (let k = 0; this.swarms.length < want && k < 3; k++) {
+      const a = rnd(0, TAU), d = rnd(5, 28), x = cam.x + Math.sin(a) * d, z = cam.z + Math.cos(a) * d;
+      const gr = ctx.ground(x, z);
+      if (!Number.isFinite(gr)) continue;
+      const wat = ctx.waterAt?.(x, z);
+      const base = wat ? Math.max(gr, wat.level) : gr;
+      this.swarms.push({ x, z, y: base + rnd(0.6, 2.2), n: Math.round(rnd(18, 45)), r: rnd(0.3, 0.8), seed: rnd(0, 100), fade: 1, age: 0 });
+    }
+    const wind = windDirection.value, ws = windStrength.value;
+    let n = 0;
+    const cap = this.gnatMesh.instanceMatrix.count;
+    for (const w of this.swarms) {
+      w.age += dt;
+      if (this.swarms.length > want) w.fade -= dt * 0.3;
+      // (The cloud drifts a little with the air, and bobs.)
+      w.x += wind.x * ws * 0.15 * dt;
+      w.z += wind.y * ws * 0.15 * dt;
+      const shown = Math.min(1, w.age / 2) * Math.max(0, Math.min(1, w.fade));
+      const count = Math.round(w.n * shown);
+      for (let i = 0; i < count && n < cap; i++) {
+        const h = w.seed + i * 7.31, t = this.time;
+        const r = w.r * (0.4 + 0.6 * ((i * 0.618) % 1));
+        p.set(
+          w.x + Math.sin(t * (3 + (i % 5)) + h) * r + Math.sin(t * 0.7 + h * 2) * r * 0.5,
+          w.y + Math.sin(t * (4 + (i % 3)) + h * 1.7) * r * 0.6 + Math.sin(t * 0.5 + w.seed) * 0.15,
+          w.z + Math.cos(t * (3.5 + (i % 4)) + h * 1.3) * r + Math.cos(t * 0.6 + h) * r * 0.5,
+        );
+        m4.makeTranslation(p.x, p.y, p.z);
+        this.gnatMesh.setMatrixAt(n++, m4);
+      }
+    }
+    this.gnatMesh.count = n;
+    this.gnatMesh.instanceMatrix.needsUpdate = true;
+    // Flies about your head (by day), mosquitoes (by night): darting in
+    // and out, now off, now back, with a buzz or a whine as one goes by your ear.
+    const flies = Math.round(5 * B * (ctx.player?.alive === false ? 0 : 1));
+    while (this.buzzers.length > flies) this.buzzers.pop();
+    while (this.buzzers.length < flies) this.buzzers.push({ x: cam.x + rnd(-6, 6), y: cam.y + rnd(-1, 1), z: cam.z + rnd(-6, 6), vx: 0, vy: 0, vz: 0, tx: 0, ty: 0, tz: 0, retarget: 0, heard: rnd(1, 6) });
+    let m = 0;
+    const night = (ctx.day ?? 1) < 0.3;
+    for (const f of this.buzzers) {
+      f.retarget -= dt;
+      if (f.retarget <= 0) {
+        // (A point near your head, or now and then off a way.)
+        const far = Math.random() < 0.25;
+        f.retarget = far ? rnd(1, 3) : rnd(0.2, 0.8);
+        const a = rnd(0, TAU), d = far ? rnd(2, 5) : rnd(0.3, 1.6);
+        f.tx = Math.sin(a) * d;
+        f.tz = Math.cos(a) * d;
+        f.ty = rnd(-0.8, 0.4);
+      }
+      const ax = (cam.x + f.tx - f.x) * 30 - f.vx * 6, ay = (cam.y + f.ty - f.y) * 30 - f.vy * 6, az = (cam.z + f.tz - f.z) * 30 - f.vz * 6;
+      f.vx += ax * dt;
+      f.vy += ay * dt;
+      f.vz += az * dt;
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      f.z += f.vz * dt;
+      const d = Math.hypot(f.x - cam.x, f.y - cam.y, f.z - cam.z);
+      f.heard -= dt;
+      if (d < 0.8 && f.heard <= 0) {
+        f.heard = rnd(4, 12);
+        ctx.sound?.call(night ? 'whine' : 'flybuzz', ctx.pan(f.x, f.z), 0.35);
+      }
+      if (night || m >= this.fly2Mesh.instanceMatrix.count) continue; // (a mosquito: too small to see)
+      e.set(0, Math.atan2(f.vx, f.vz), 0);
+      m4.compose(p.set(f.x, f.y, f.z), q.setFromEuler(e), s.set(1, 1, 1));
+      this.fly2Mesh.setMatrixAt(m++, m4);
+    }
+    this.fly2Mesh.count = m;
+    this.fly2Mesh.instanceMatrix.needsUpdate = true;
+  }
+
   #frogs(dt, ctx) {
     const cam = ctx.camera.position;
     const season = (ctx.summer + ctx.spring) * (1 - ctx.winter);
     const want = Math.round(18 * season * (1 - 0.5 * ctx.day));
     this.frogs = this.frogs.filter((f) => !f.gone && Math.hypot(f.x - cam.x, f.z - cam.z) < 45);
-    // Somewhere on the bank, right at the water's edge, facing the water.
+    // Somewhere on the bank, right at the water's edge, facing the water
+    // (or, now and then, already out in the shallows, floating).
     for (let k = 0; this.frogs.length < want && k < 4; k++) {
       const a = rnd(0, TAU), d = rnd(7, 32);
       const x = cam.x + Math.sin(a) * d, z = cam.z + Math.cos(a) * d, g = ctx.ground(x, z);
@@ -295,7 +417,8 @@ export class Insects {
         const b = (t / 4) * TAU + a, nx = x + Math.sin(b) * 1.2, nz = z + Math.cos(b) * 1.2;
         const w = this.#freshWater(nx, nz, ctx);
         if (!w || !(w.level - ctx.ground(nx, nz) > 0.08) || g < w.level - 0.02 || g > w.level + 0.45) continue;
-        this.frogs.push({ x, y: g, z, heading: b, level: w.level, hop: -1, wait: rnd(2, 12) });
+        if (Math.random() < 0.25) this.frogs.push({ x: nx, y: w.level, z: nz, heading: rnd(0, TAU), level: w.level, state: 'swim', swim: 0, wait: rnd(3, 10) });
+        else this.frogs.push({ x, y: g, z, heading: b, level: w.level, state: 'sit', wait: rnd(2, 12) });
         break;
       }
     }
@@ -312,27 +435,63 @@ export class Insects {
         f.puff = 0.6;
       }
     }
+    // A hop from where it is to (tx, tz), landing at height ty.
+    const hop = (f, tx, tz, ty, len, then) => Object.assign(f, { state: 'hop', t: 0, len, from: { x: f.x, z: f.z, y: f.y }, to: { x: tx, z: tz, y: ty }, then });
     let n = 0;
     for (const f of this.frogs) {
-      // You come near: a hop, and in (with a plop).
-      if (f.hop < 0 && Math.hypot(f.x - cam.x, f.z - cam.z) < 5) (f.hop = 0), (f.fromX = f.x), (f.fromZ = f.z);
+      const near = Math.hypot(f.x - cam.x, f.z - cam.z);
       let y = f.y, pitch = 0;
-      if (f.hop >= 0) {
-        f.hop += dt / 0.45;
-        const u = Math.min(1, f.hop);
-        f.x = f.fromX + Math.sin(f.heading) * 1.3 * u;
-        f.z = f.fromZ + Math.cos(f.heading) * 1.3 * u;
-        y = f.y + (f.level - f.y) * u + Math.sin(u * Math.PI) * 0.35;
+      f.wait -= dt;
+      if (f.state === 'sit') {
+        if (near < 5) {
+          // You come near: a leap, and in (with a plop).
+          hop(f, f.x + Math.sin(f.heading) * 1.3, f.z + Math.cos(f.heading) * 1.3, f.level, 0.45, 'dive');
+        } else if (f.wait <= 0) {
+          // Now and then a hop or two along the bank (catching a fly), or a turn.
+          f.wait = rnd(3, 12);
+          const h = f.heading + rnd(-1.4, 1.4), d = rnd(0.35, 0.8);
+          const tx = f.x + Math.sin(h) * d, tz = f.z + Math.cos(h) * d, g = ctx.ground(tx, tz);
+          if (Number.isFinite(g) && g > f.level - 0.02 && g < f.level + 0.45) hop(f, tx, tz, g, 0.3, 'sit');
+          f.heading = h;
+        }
+      } else if (f.state === 'swim') {
+        // In the water: floating, just its eyes and back up; swimming off
+        // with slow kicks, away from you; too close, and it's under.
+        if (near < 2.5) f.state = 'sink';
+        else {
+          const away = near < 9 ? Math.atan2(f.x - cam.x, f.z - cam.z) : f.heading;
+          f.heading += Math.atan2(Math.sin(away - f.heading), Math.cos(away - f.heading)) * Math.min(1, dt * 2);
+          f.swim = Math.max(0, (f.swim ?? 0) - dt);
+          if (f.wait <= 0) (f.wait = rnd(2, 7)), (f.swim = near < 9 ? 3 : rnd(0, 1) < 0.5 ? rnd(0.8, 2) : 0);
+          const kick = f.swim > 0 ? 0.35 * (0.5 + 0.5 * Math.sin(this.time * 9)) : 0;
+          const nx = f.x + Math.sin(f.heading) * kick * dt, nz = f.z + Math.cos(f.heading) * kick * dt;
+          if (this.#freshWater(nx, nz, ctx)) (f.x = nx), (f.z = nz);
+          else f.heading += Math.PI * 0.7;
+        }
+        y = f.level - 0.04;
+      } else if (f.state === 'sink') {
+        f.y = (f.y ?? f.level) - dt * 0.4;
+        y = f.y;
+        if (f.y < f.level - 0.5) f.gone = true;
+      }
+      if (f.state === 'hop') {
+        f.t += dt / f.len;
+        const u = Math.min(1, f.t);
+        f.x = f.from.x + (f.to.x - f.from.x) * u;
+        f.z = f.from.z + (f.to.z - f.from.z) * u;
+        y = f.from.y + (f.to.y - f.from.y) * u + Math.sin(u * Math.PI) * (f.then === 'dive' ? 0.35 : 0.18);
         pitch = -0.5 + u;
-        if (f.hop >= 1) {
-          f.gone = true;
-          ctx.splash?.(f.x, f.level, f.z);
-          if (Math.hypot(f.x - cam.x, f.z - cam.z) < 20) ctx.sound?.call('splash', ctx.pan(f.x, f.z), 0.2);
-          continue;
+        if (u >= 1) {
+          f.y = f.to.y;
+          if (f.then === 'dive') {
+            ctx.splash?.(f.x, f.level, f.z);
+            if (near < 20) ctx.sound?.call('splash', ctx.pan(f.x, f.z), 0.12);
+            Object.assign(f, { state: 'swim', swim: 3, wait: rnd(2, 5), y: f.level });
+          } else f.state = 'sit';
         }
       }
       f.puff = Math.max(0, (f.puff ?? 0) - dt);
-      if (n >= this.frogMesh.instanceMatrix.count) continue;
+      if (f.gone || n >= this.frogMesh.instanceMatrix.count) continue;
       e.set(pitch, f.heading, 0);
       const swell = 1 + 0.15 * Math.sin(Math.min(1, f.puff / 0.6) * Math.PI); // (puffing up to croak)
       m4.compose(p.set(f.x, y, f.z), q.setFromEuler(e), s.set(1.3, 1.3 * swell, 1.3));

@@ -748,6 +748,14 @@ export const frog = () => new Blocks()
   .build();
 
 /** A firefly's light: a tiny block. */
+/** A fly: a dark body, a big reddish head, two clear wings held back. About 1 cm long, shown a little large. */
+export const housefly = () => new Blocks()
+  .box(0.022, 0.018, 0.034, 0x1e1c1a, [0, 0, -0.004])
+  .box(0.018, 0.016, 0.012, 0x4a1a14, [0, 0.002, 0.018])
+  .box(0.028, 0.002, 0.018, 0xc8d4dc, [0.014, 0.01, -0.006], [0, -0.3, 0])
+  .box(0.028, 0.002, 0.018, 0xc8d4dc, [-0.014, 0.01, -0.006], [0, 0.3, 0])
+  .build();
+
 export const firefly = () => new Blocks().box(0.05, 0.05, 0.07, 0xffffff).build();
 
 /**
