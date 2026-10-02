@@ -1295,7 +1295,17 @@ let fpsTime = 0;
 let cpuTime = 0;
 renderer.info.autoReset = false; // (counted over the whole frame: see tick)
 
+// (The start menu: on the title screens the world behind isn't seen at all,
+// so nothing is worked out or drawn; paused in a world, a few frames a
+// second are enough to show it there behind the menu.)
+let startMenu = null, menuFrame = 0;
 function tick(now) {
+  if (startMenu?.open && (!startMenu.world || now - menuFrame < 125)) {
+    lastTime = now;
+    requestAnimationFrame(tick);
+    return;
+  }
+  menuFrame = now;
   const started = performance.now();
   renderer.info.reset();
   const elapsed = (now - lastTime) / 1000;
@@ -1580,6 +1590,7 @@ if (!TEST.size) {
       }),
   });
   menu.onlineCode = () => (mp.connected ? mp.code : null);
+  startMenu = menu;
   window.addEventListener('beforeunload', () => saveWorld(menu.world));
   // (Every couple of minutes, quietly, too.)
   setInterval(() => menu.world && !menu.open && saveWorld(menu.world), 120000);
