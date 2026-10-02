@@ -1103,6 +1103,8 @@ export class Game {
       }
       sp.pos.addScaledVector(sp.vel, dt);
       sp.vel.y -= 9.8 * dt;
+      // (Whistling past one: it's startled.)
+      if (!sp.done && sp.kind !== 'spear') this.wildlife.startle?.(sp.pos.x, sp.pos.z, 4);
       sp.mesh.position.copy(sp.pos);
       sp.mesh.quaternion.setFromUnitVectors(FORWARD, dir);
       // Into the water: a splash (and maybe a fish).
@@ -1116,6 +1118,7 @@ export class Game {
       // Into the ground: it sticks there.
       const g = this.groundAt(sp.pos.x, sp.pos.z, sp.pos.y + 1);
       if ((Number.isFinite(g) && sp.pos.y < g + 0.1) || sp.life <= 0) {
+        if (!sp.done) this.wildlife.startle?.(sp.pos.x, sp.pos.z, 9); // (thudding in close by)
         sp.done = true;
         sp.stack.dur = (sp.stack.dur ?? 1) - 1;
         const lost = sp.kind !== 'spear' ? Math.random() < 0.25 : sp.stack.dur <= 0;
@@ -1481,11 +1484,30 @@ export class Game {
     this.shake = Math.min(1, (this.shake ?? 0) + amount / 25);
   }
 
+  /**
+   * How much tall grass hides you at (x, z) (0..1): the long grass of the
+   * plains, the savanna and the parkland, and its rank, tall patches.
+   * (Remembered a moment: asked for every animal, every frame.)
+   */
+  #grassCover(x, z) {
+    const c = this._cover;
+    if (c && Math.abs(c.x - x) < 1 && Math.abs(c.z - z) < 1) return c.v;
+    const g = this.generator();
+    const w = g.getBiomeWeights(x, z, {});
+    const tallLand = Math.max(g.getPlainness(x, z), 0.9 * w.savanna, w.parkland);
+    const n = g.grassNoise.fbm(x * 0.006 + 50, z * 0.006 - 50, 2);
+    const tall = Math.min(1, tallLand + 0.8 * Math.max(0, Math.min(1, (n - 0.08) / 0.3)));
+    const v = tall * Math.min(1, g.getGrassDensity(x, z) * 1.3);
+    this._cover = { x, z, v };
+    return v;
+  }
+
   /** For the animals: where you are and what you're doing. */
   get player() {
     const p = this.camera.position, c = this.controls;
     return {
       x: p.x, y: p.y, z: p.z, mode: c.mode, crouch: c.crouch, moving: c.moving, sprint: c.sprinting, alive: this.survival.alive && !this.riding && !this.climbing,
+      cover: this.#grassCover(p.x, p.z),
       lure: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'wheat',
       damage: (amount, kind) => this.hurt(amount, ATTACKERS[kind] ?? `a ${NAMES[kind] ?? kind}`, { bite: kind !== 'snake' }),
       poison: () => {

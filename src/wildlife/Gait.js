@@ -30,6 +30,9 @@
 export const GAITS = {
   walk: { offsets: [0.25, 0.75, 0, 0.5], duty: 0.68, lift: 0.11, bob: 0.018, beats: 2, surge: 0.3, sway: 0.035, rock: 0.015, nod: 0.07 },
   trot: { offsets: [0, 0.5, 0.5, 0], duty: 0.42, lift: 0.17, bob: 0.035, beats: 2, surge: 0.1, sway: 0.012, rock: 0.01, nod: 0.03 },
+  // A deer's gallop: long bounding leaps, all four feet off the ground
+  // between them, the back arching and stretching.
+  deerGallop: { offsets: [0.5, 0.58, 0, 0.08], duty: 0.22, lift: 0.36, bob: 0.15, beats: 1, surge: 0.22, sway: 0, rock: 0.2, nod: 0.12 },
   rotary: { offsets: [0.6, 0.48, 0, 0.1], duty: 0.3, lift: 0.26, bob: 0.07, beats: 1, surge: 0.16, sway: 0, rock: 0.13, nod: 0.1 },
   transverse: { offsets: [0.46, 0.58, 0, 0.1], duty: 0.34, lift: 0.22, bob: 0.06, beats: 1, surge: 0.14, sway: 0, rock: 0.1, nod: 0.09 },
   bound: { offsets: [0.5, 0.56, 0, 0.03], duty: 0.28, lift: 0.3, bob: 0.3, beats: 1, surge: 0.35, sway: 0, rock: 0.28, nod: 0.05 },

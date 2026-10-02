@@ -26,7 +26,7 @@ const DOG = ['walk', 'trot', 'rotary'], HOOF = ['walk', 'trot', 'transverse'], B
  * come (`flee`).
  */
 const SPECIES = {
-  deer: { ground: true, grade: 0.72, model: Models.deer, max: 60, walk: 1.3, run: 11, flee: 45, calm: 130, radius: 0.5, height: 1.4, health: 60, stride: 1.6, turn: 2.5, size: 1.3, gaits: DOG, trotBand: 0.12, swims: true },
+  deer: { ground: true, grade: 0.72, model: Models.deer, max: 60, walk: 1.3, run: 12, flee: 45, calm: 130, radius: 0.5, height: 1.4, health: 60, stride: 1.6, turn: 2.5, size: 1.3, gaits: ['walk', 'trot', 'deerGallop'], trotBand: 0.08, swims: true },
   // Elk: herds in the high meadows and the pine woods (in the autumn the
   // bulls bugle, and one in the rut will come at you).
   elk: { ground: true, grade: 0.75, model: Models.elk, max: 30, walk: 1.3, run: 12, flee: 55, calm: 140, radius: 0.55, height: 1.8, health: 90, stride: 2.1, turn: 2.2, size: 1.55, gaits: HOOF, trotBand: 0.3, swims: true, call: 'bugle' },
@@ -66,10 +66,10 @@ const SPECIES = {
   // panthers (smaller, ambushing from cover); giant pandas, placid, munching
   // in the bamboo; crocodiles lying at the water's edge in the mangroves
   // and the jungle lakes; mountain goats on the crags and in the badlands.
-  tiger: { ground: true, grade: 0.85, model: Models.tiger, max: 4, walk: 1.1, run: 15, flee: 20, calm: 90, radius: 0.4, height: 1.0, health: 180, stride: 1.5, turn: 3.2, size: 1.2, gaits: DOG, trotBand: 0.15, swims: true, call: 'growl' },
-  panther: { ground: true, grade: 0.95, model: Models.panther, max: 4, walk: 1.2, run: 15, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 80, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
+  tiger: { ground: true, grade: 0.85, model: Models.tiger, max: 8, walk: 1.1, run: 15, flee: 20, calm: 90, radius: 0.4, height: 1.0, health: 180, stride: 1.5, turn: 3.2, size: 1.2, gaits: DOG, trotBand: 0.15, swims: true, call: 'growl' },
+  panther: { ground: true, grade: 0.95, model: Models.panther, max: 8, walk: 1.2, run: 15, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 80, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
   panda: { ground: true, grade: 0.7, model: Models.panda, max: 8, walk: 0.7, run: 5, flee: 12, calm: 40, radius: 0.6, height: 1.2, health: 160, stride: 1.2, turn: 1.6, size: 1.05, forager: true, gaits: BEAR },
-  crocodile: { ground: true, grade: 0.5, model: Models.crocodile, max: 10, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
+  crocodile: { ground: true, grade: 0.5, model: Models.crocodile, max: 30, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
   mountainGoat: { ground: true, grade: 1.3, model: Models.mountainGoat, max: 24, walk: 1.0, run: 9, flee: 30, calm: 80, radius: 0.35, height: 1.0, health: 70, stride: 1.0, turn: 3, size: 1.15, gaits: HOOF, trotBand: 0.35, call: 'baa' },
   snake: { serpent: true, model: Models.snake, max: 10, walk: 0.35, run: 1.2, flee: 5, calm: 12, radius: 0.1, height: 0.1, health: 4, size: 1.0 },
   songbird: { bird: true, model: Models.songbird, max: 60, scale: 1.6, flee: 9, radius: 0.25, health: 2 },
@@ -466,7 +466,35 @@ export class Wildlife {
   #alarm(herd, x, z) {
     if (herd.hunting) return;
     herd.fear = { x, z };
-    herd.fleeTime = 7;
+    // (Spooked, a herd runs a long way, and keeps going a good while.)
+    herd.fleeTime = 25;
+  }
+
+  /**
+   * Something landed or flew past near (x, z) (an arrow that missed): each
+   * animal (or herd) within `r` either bolts, half the time, or stops, head
+   * up, and looks about for what it was.
+   */
+  startle(x, z, r = 8) {
+    for (const a of this.animals) {
+      if (!a.alive || a.tame || a.hunting || SPECIES[a.kind].predator || SPECIES[a.kind].bird) continue;
+      if (Math.hypot(a.x - x, a.z - z) > r) continue;
+      const holder = a.herd ?? a;
+      if (this.time - (holder.startled ?? -99) < 4) continue; // (once for the one arrow)
+      holder.startled = this.time;
+      holder.bolt = Math.random() < 0.5;
+      if (holder.bolt) {
+        if (a.herd) this.#alarm(a.herd, x, z);
+        else (a.fear = 12), (a.fearFrom = { x, z });
+      }
+      for (const m of a.herd ? a.herd.members : [a]) {
+        if (!m.alive || holder.bolt) continue;
+        m.state = 'alert';
+        m.timer = rnd(4, 8);
+        m.alertCool = rnd(15, 30);
+        m.lookAround = true;
+      }
+    }
   }
 
   // A wolf or a bear comes for you (and a wolf's pack with it).
@@ -972,8 +1000,8 @@ export class Wildlife {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
       const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z), f = g.getForestDensity(p.x, p.z);
-      if (w.pine + w.smoky + w.temperate > 0.6 && m > 0.15 && m < 0.7 && f < 0.7) {
-        if (rand() < 0.12) {
+      if (w.pine + w.smoky + w.temperate + w.parkland > 0.6 && m > 0.1 && m < 0.75 && f < 0.85) {
+        if (rand() < 0.3) {
           const from = this.animals.length;
           const herd = this.#group('elk', p, 4 + Math.floor(rand() * 7), rand() < 0.3);
           if (herd) {
@@ -1083,9 +1111,10 @@ export class Wildlife {
       if (p.y > ctx.seaLevel + 1 && w.jungle > 0.6) {
         const r = rand();
         const from = this.animals.length;
-        if (r < 0.05) this.#spawnWalker('tiger', p.x, p.z, null);
-        else if (r < 0.11) this.#spawnWalker('panther', p.x, p.z, null);
-        else if (r < 0.19) {
+        // (A jungle is dangerous: big cats in it all over.)
+        if (r < 0.22) this.#spawnWalker('tiger', p.x, p.z, null);
+        else if (r < 0.46) this.#spawnWalker('panther', p.x, p.z, null);
+        else if (r < 0.56) {
           this.#spawnWalker('panda', p.x, p.z, null);
           if (rand() < 0.4) this.#spawnWalker('panda', p.x + rnd(-4, 4), p.z + rnd(-4, 4), null);
         }
@@ -1105,13 +1134,15 @@ export class Wildlife {
     }
     // Crocodiles: lying at the water's edge in the mangroves and round the
     // jungle's lakes and rivers.
-    for (let k = 0; k < 4 && ctx.waterAt; k++) {
+    // (And in the marshes and wetlands, lots of them.)
+    for (let k = 0, found = 0; k < 8 && found < 2 && ctx.waterAt; k++) {
       const x = (cx + 0.05 + 0.9 * rand()) * C, z = (cz + 0.05 + 0.9 * rand()) * C;
       const w = g.getBiomeWeights(x, z, {});
-      if (w.mangrove + w.jungle < 0.4 || !ctx.waterAt(x, z)) continue;
-      if (rand() < 0.45) {
+      if (w.mangrove + w.jungle + w.wetland < 0.4 || !ctx.waterAt(x, z)) continue;
+      found++;
+      if (rand() < 0.85) {
         const from = this.animals.length;
-        for (let n = 1 + Math.floor(rand() * 2), j = 0; j < n; j++) {
+        for (let n = 2 + Math.floor(rand() * 3), j = 0; j < n; j++) {
           // (Up on the bank, beside the water.)
           for (let t = 0; t < 8; t++) {
             const a = rand() * TAU, d = 3 + rand() * 6;
@@ -1121,7 +1152,6 @@ export class Wildlife {
         }
         own(from);
       }
-      break;
     }
     // A rattlesnake in the dry country (they sleep out the winter).
     {
@@ -1463,23 +1493,26 @@ export class Wildlife {
     const o = a.herd?.mid ?? a;
     const away = Math.atan2(o.x - from.x, o.z - from.z);
     let best = away, bestScore = -Infinity;
-    for (let k = 0; k < 16; k++) {
-      const h = away + (k / 16) * TAU;
+    for (let k = 0; k < 24; k++) {
+      const h = away + (k / 24) * TAU;
       const off = Math.abs(angleTo(away, h));
       if (off > 2.3) continue; // (never back towards you)
-      let score = Math.cos(off) * 3, clear = 0, wet = 0, y0 = ctx.ground(o.x, o.z), last = 0;
-      for (const d of [4, 9, 15, 23, 32]) {
+      // (Looking a long way ahead: through the gaps in the trees, round the
+      // steep ground, along the easy way out rather than into a dead end.)
+      let score = Math.cos(off) * 3, clear = 0, wet = 0, y0 = ctx.ground(o.x, o.z), last = 0, climb = 0;
+      for (const d of [4, 9, 15, 23, 32, 44, 60]) {
         const x = o.x + Math.sin(h) * d, z = o.z + Math.cos(h) * d;
         const kind = this.#footing(a, sp, x, z, ctx);
         if (!kind) break;
         const y = ctx.ground(x, z);
         if (Math.abs(y - y0) > sp.grade * (d - last) * 1.4) break;
+        climb += Math.abs(y - y0) / (d - last);
         y0 = y;
         last = d;
         if (kind === 2) wet++;
         clear++;
       }
-      score += clear * 1.6 - wet * 1.1 - (clear < 2 ? 6 : 0);
+      score += clear * 1.6 - wet * 1.1 - climb * 2.5 - (clear < 2 ? 6 : 0);
       if (holder.escape !== undefined) score += Math.cos(angleTo(holder.escape, h)) * 1.4;
       if (score > bestScore) (bestScore = score), (best = h);
     }
@@ -1532,7 +1565,9 @@ export class Wildlife {
     // them): they bolt.
     const p = ctx.player, onFoot = p && p.mode === 'walk' && p.alive;
     const stance = !onFoot ? 1 : p.crouch ? (p.moving ? 0.45 : 0.3) : p.sprint ? 1.5 : p.moving ? 1 : 0.6;
-    const reach = sp.flee * stance * (t.above > 25 ? 0.5 : 1) * (onFoot ? this.#scent(a, ctx) : 1);
+    // (In tall grass you're half hidden: crouched in it, nearly.)
+    const cover = onFoot ? (p.cover ?? 0) * (p.crouch ? 1 : 0.6) : 0;
+    const reach = sp.flee * stance * (1 - 0.55 * cover) * (t.above > 25 ? 0.5 : 1) * (onFoot ? this.#scent(a, ctx) : 1);
     if (sp.predator?.ambush) this.#ambush(a, sp, t, dt, ctx);
     else if (sp.predator && !a.young) this.#stalk(a, sp, t, dt, ctx);
     // Too close to one that stands up for itself (nearer in the rut, or by its young): it charges.
@@ -1558,7 +1593,7 @@ export class Wildlife {
         if (herd.fleeTime <= 0 && a.kind === 'turkey') ctx.sound?.call('gobble', ctx.pan(a.x, a.z), 0.5);
         if (herd.fleeTime <= 0 && a.kind === 'boar') ctx.sound?.call('oink', ctx.pan(a.x, a.z), 0.6);
         this.#alarm(herd, ctx.camera.position.x, ctx.camera.position.z);
-      } else a.fear = 3;
+      } else (a.fear = 12), (a.fearFrom = null);
       if (a.scavenge) this.#dropKill(a);
     }
     a.fear = Math.max(0, a.fear - dt);
@@ -1629,7 +1664,7 @@ export class Wildlife {
       }
     } else if (fleeing) {
       // Running from you: the way that's open (see #escape), with the herd.
-      const from = herd?.fear ?? ctx.camera.position;
+      const from = herd?.fear ?? a.fearFrom ?? ctx.camera.position;
       want = this.#escape(a, sp, from, ctx);
       if (herd?.mid) {
         // (Keeping with the herd as it runs.)
@@ -1640,7 +1675,9 @@ export class Wildlife {
       speed = sp.run * (a.young ? 0.85 : 1);
       a.state = 'flee';
       a.detour = null;
-      if (t.d > sp.calm && herd) herd.fleeTime = Math.min(herd.fleeTime, 0.5);
+      // (Only well clear of you, a long way off, do they settle again.)
+      if (t.d > sp.calm * 3 && herd) herd.fleeTime = Math.min(herd.fleeTime, 0.5);
+      if (t.d > sp.calm * 3 && !herd) a.fear = Math.min(a.fear, 0.5);
     } else if (lured) {
       want = Math.atan2(p.x - a.x, p.z - a.z);
       speed = t.d > 2.6 ? sp.walk * (t.d > 7 ? 2 : 1.3) : 0;
@@ -1665,7 +1702,7 @@ export class Wildlife {
       // You coming near catch its eye: it stops, head up, and watches you
       // a while (a rabbit sits up), then goes back to what it was doing.
       a.alertCool = Math.max(0, a.alertCool - dt);
-      if (t.d < sp.flee * (ctx.tame ? 1.3 : 1.8) && a.alertCool <= 0 && a.state !== 'alert' && a.state !== 'rest') {
+      if (t.d < sp.flee * (ctx.tame ? 1.3 : 1.8) * (1 - 0.55 * (onFoot ? (p.cover ?? 0) : 0)) && a.alertCool <= 0 && a.state !== 'alert' && a.state !== 'rest') {
         a.state = 'alert';
         a.timer = rnd(2.5, 6);
         a.alertCool = rnd(15, 35);
@@ -1781,13 +1818,17 @@ export class Wildlife {
     // Where it looks: at you when alert, about it when looking round, a
     // little from side to side as it grazes, and the way it's turning.
     let yaw = 0;
-    if (!fleeing && (a.state === 'alert' || a.state === 'freeze' || a.state === 'stalk' || a.state === 'wary')) {
+    if (!fleeing && a.state === 'alert' && a.lookAround) {
+      // (Startled by something it didn't see: head up, looking all about for it.)
+      yaw = Math.sin(this.time * 1.3 + a.phase) * 1.1;
+    } else if (!fleeing && (a.state === 'alert' || a.state === 'freeze' || a.state === 'stalk' || a.state === 'wary')) {
       const c = ctx.camera.position;
       yaw = Math.max(-1.1, Math.min(1.1, angleTo(a.heading, Math.atan2(c.x - a.x, c.z - a.z))));
     } else if (a.state === 'look') yaw = Math.sin(this.time * 0.8 + a.phase) * 0.9;
     else if (a.state === 'graze') yaw = Math.sin(this.time * 0.7 + a.phase) * 0.15;
     else yaw = Math.max(-0.5, Math.min(0.5, angleTo(a.heading, want) * 0.7));
     a.headYaw += (yaw - a.headYaw) * Math.min(1, dt * 3);
+    if (a.state !== 'alert') a.lookAround = false;
     // Lying down (and getting up again before it moves off).
     a.lie += ((a.state === 'rest' && !fleeing ? 1 : 0) - a.lie) * Math.min(1, dt * (fleeing ? 4 : 0.9));
     speed *= 1 - smoothstep(0.1, 0.5, a.lie);

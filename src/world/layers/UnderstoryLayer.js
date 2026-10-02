@@ -104,7 +104,7 @@ export function createUnderstoryLayer(config) {
         for (let i = 0; i < n; i++) {
           const gi = cx * n + i, gj = cz * n + j;
           const keep = hash2(gi, gj, seed);
-          if (keep > 0.6) continue;
+          if (keep > 0.95) continue;
           const lx = (i + hash2(gi, gj, seed + 1)) * G, lz = (j + hash2(gi, gj, seed + 2)) * G;
           // (The forests looked up once per 8 m patch.)
           const c = Math.floor(lx / 8) * 64 + Math.floor(lz / 8);
@@ -114,7 +114,8 @@ export function createUnderstoryLayer(config) {
           }
           const r = hash2(gi, gj, seed + 3);
           // Jungle: all three kinds; elsewhere, ferns.
-          const jungle = here[0] * 0.6, ferns = here[1];
+          // (The jungle floor crowded with plants: hardly a bare patch.)
+          const jungle = here[0] * 0.92, ferns = here[1];
           if (keep > Math.max(jungle, ferns * 0.6)) continue;
           const kind = keep < jungle ? Math.floor(r * 3) : 2;
           const y = groundHeightAt(lx, lz, surface);

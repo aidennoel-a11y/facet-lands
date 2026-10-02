@@ -314,6 +314,7 @@ export const BIOMES = {
         { type: 'junglePalm', weight: 0.7, minHeight: -99, maxHeight: 999 },
         { type: 'treeFern', weight: 0.6, minHeight: -99, maxHeight: 999 },
         { type: 'mangrove', weight: 0.25, minHeight: -99, maxHeight: 999 },
+        { type: 'bush', weight: 1.1, minHeight: -99, maxHeight: 999 }, // (thickets among the trunks)
       ],
     },
   },

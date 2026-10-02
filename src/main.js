@@ -4,7 +4,7 @@ import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
-import { createGrassLayer, grassClearings } from './world/layers/GrassLayer.js';
+import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
 import { caveNightVision, createCaveLayer } from './world/layers/CaveLayer.js';
 import { StartMenu, rememberWorld } from './ui/StartMenu.js';
@@ -996,6 +996,19 @@ function marshMist(dt) {
 // Grass never grows up through what you've built: the spots under the
 // things nearest you are cleared (see GrassLayer).
 const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, grindstone: 0.7, dryingRack: 0.8, tanningRack: 0.9, plot: 1.3, snare: 0.4, stake: 0.3 };
+// The grass round you and the bigger animals near you bends away from them.
+const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'starling', 'crow', 'gull', 'hawk', 'wolfPup']);
+function pushGrass() {
+  const p = camera.position, list = [];
+  if (controls.mode === 'walk') list.push([0, p.x, p.z, 0.9]);
+  for (const a of wildlife.animals) {
+    if (!a.alive || SMALL.has(a.kind)) continue;
+    const d = Math.hypot(a.x - p.x, a.z - p.z);
+    if (d < 70) list.push([d, a.x, a.z, 0.7 + 0.55 * (a.scale ?? 1)]);
+  }
+  list.sort((a, b) => a[0] - b[0]);
+  grassPushers.value.forEach((v, k) => (list[k] ? v.set(list[k][1], list[k][2], list[k][3], 0) : v.set(0, 0, 0, 0)));
+}
 function clearGrass() {
   const p = camera.position;
   const near = [];
@@ -1179,6 +1192,7 @@ function tick(now) {
   // Rain closes the view in, and so does the mist that lies over the
   // wetlands at dawn.
   clearGrass();
+  pushGrass();
   const mist = marshMist(dt);
   scene.fog.near = openFog.near * (1 - 0.75 * localRain) * (1 - 0.85 * mist);
   scene.fog.far = openFog.far * (1 - 0.5 * localRain) * (1 - 0.75 * mist);

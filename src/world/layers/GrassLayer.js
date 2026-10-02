@@ -14,6 +14,14 @@ export const GRASS_CLEARINGS = 24;
 export const grassClearings = { value: Array.from({ length: GRASS_CLEARINGS }, () => new Vector4(0, 0, 0, 0)) };
 
 /**
+ * What's pushing through the grass (x, z, radius, 0): you, and the bigger
+ * animals near you. The tufts round each bend away from it and lie over
+ * (see main, which fills these in each moment; unused ones radius 0).
+ */
+export const GRASS_PUSHERS = 12;
+export const grassPushers = { value: Array.from({ length: GRASS_PUSHERS }, () => new Vector4(0, 0, 0, 0)) };
+
+/**
  * One tuft: a handful of single-triangle blades leaning out from a small
  * patch. Vertex colours run dark at the root to bright at the tip; the
  * instance colour (the ground colour under the tuft) tints the whole thing
@@ -163,8 +171,9 @@ export function createGrassLayer(config, { far = false } = {}) {
   material.onBeforeCompile = (shader, renderer) => {
     previous?.call(material, shader, renderer);
     shader.uniforms.uClearings = grassClearings;
+    shader.uniforms.uPushers = grassPushers;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\nuniform vec4 uClearings[${GRASS_CLEARINGS}];`)
+      .replace('#include <common>', `#include <common>\nuniform vec4 uClearings[${GRASS_CLEARINGS}];\nuniform vec4 uPushers[${GRASS_PUSHERS}];`)
       .replace(
         '#include <project_vertex>',
         /* glsl */ `{
@@ -174,13 +183,31 @@ export function createGrassLayer(config, { far = false } = {}) {
             vec4 c = uClearings[i];
             if (c.z > 0.0) keep = min(keep, smoothstep(c.z * 0.85, c.z + 0.35, distance(tuft, c.xy)));
           }
+          // Bent away from whatever is pushing through it (the bend in the
+          // tuft's own frame: the push turned back through its rotation).
+          vec2 push = vec2(0.0);
+          for (int i = 0; i < ${GRASS_PUSHERS}; i++) {
+            vec4 q = uPushers[i];
+            if (q.z <= 0.0) continue;
+            vec2 off = tuft - q.xy;
+            float d = length(off);
+            float f = 1.0 - smoothstep(q.z * 0.4, q.z * 1.6, d);
+            if (f > 0.0) push += (off / max(d, 0.05)) * f;
+          }
+          float pushed = min(1.0, length(push));
+          if (pushed > 0.0) {
+            vec3 local = transpose(mat3(instanceMatrix)) * vec3(push.x, 0.0, push.y);
+            vec2 lp = normalize(local.xz) * pushed;
+            transformed.xz += lp * transformed.y * 0.9;
+            transformed.y *= 1.0 - 0.45 * pushed;
+          }
           transformed *= keep;
         }
         #include <project_vertex>`,
       );
   };
   const previousKey = material.customProgramCacheKey?.bind(material);
-  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|clearings`;
+  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|clearings-push`;
 
   const layer = {
     name: far ? 'farGrass' : 'grass',
