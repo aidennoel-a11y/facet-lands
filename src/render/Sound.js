@@ -284,6 +284,10 @@ export class Sound {
     set(this.beds.wind, (0.075 * peak * (0.35 + e.wind) + 0.06 * e.wind * e.wind * (0.7 + 0.6 * gust)) * (0.7 + 0.3 * quiet) * lie, 0.8);
     set(this.beds.gust, (0.03 * e.high * e.wind + 0.015 * e.wind * e.wind) * (0.4 + 1.3 * gust) * quiet * lie, 0.6);
     this.beds.wind.filter.frequency.setTargetAtTime(300 + 260 * e.wind + 160 * gust + 120 * Math.sin(t * 0.13), t, 1);
+    // How much the loud sounds round you (the surf, the wind on the tops,
+    // a storm, a waterfall) drown out the quieter ones (see call).
+    const windLoud = this.beds.wind.gain.gain.value + this.beds.gust.gain.gain.value;
+    this.mask = Math.min(0.75, (this.seaLoud ?? 0) * 1.4 + windLoud * 5 + 1.5 * (e.storm ?? 0) * 0.1 + 2.5 * 0.2 * (e.fall ?? 0));
     set(this.beds.whistle, 0.022 * (e.exposure ?? 0) * e.wind * (0.45 + 0.9 * gust) * quiet, 0.8);
     this.beds.whistle.filter.frequency.setTargetAtTime(700 + 450 * gust + 180 * Math.sin(t * 0.61) + 90 * Math.sin(t * 1.7), t, 0.4);
     set(this.beds.rustle, 0.05 * (e.canopy ?? 0) * (1 - 0.75 * (e.bare ?? 0)) * (0.15 + e.wind) * (0.25 + 1.1 * gust) * quiet, 0.5);
@@ -349,6 +353,9 @@ export class Sound {
         'rock-coast': 0.4 * rocky * (0.6 + 0.4 * windy),
         'rough-sea': 0.4 * Math.max(e.storm ?? 0, 0.6 * windy ** 2),
       };
+      let sea = 0;
+      for (const name of SEA) sea += levels[name] * e.ocean * quiet;
+      this.seaLoud = sea;
       for (const name of SEA) {
         const b = this.shore[name];
         b.gain.gain.setTargetAtTime(levels[name] * e.ocean * quiet, t, 0.8);
@@ -528,7 +535,28 @@ export class Sound {
    * (a spring peeper); and not creatures: 'splash', 'bigsplash', 'rumble' (a
    * volcano), 'crackle' (a fire).
    */
+  /**
+   * Where the next call comes from (out in the world): it's then heard
+   * through the land between (see `hearing`: woods and hills soften and
+   * muffle it, open water carries it), and drowned by the loud sounds
+   * round you (the surf, a gale on the tops).
+   */
+  from(x, z) {
+    this._from = this._from ?? {};
+    this._from.x = x;
+    this._from.z = z;
+    this._from.set = true;
+  }
+
   call(kind, pan = 0, volume = 1) {
+    const src = this._from?.set ? this._from : null;
+    if (src) src.set = false;
+    let cutoff = 20000;
+    if (src && this.hearing) {
+      const h = this.hearing(src.x, src.z);
+      volume *= h.gain * (1 - (this.mask ?? 0));
+      cutoff = h.cutoff;
+    }
     if (!this.ctx || !this.enabled || volume < 0.02) return;
     const ctx = this.ctx;
     const t = ctx.currentTime + 0.02;
@@ -538,7 +566,7 @@ export class Sound {
     // of its echo than of it.)
     const air = ctx.createBiquadFilter();
     air.type = 'lowpass';
-    air.frequency.value = 1500 + 17000 * Math.pow(Math.min(1, volume), 1.6);
+    air.frequency.value = Math.min(cutoff, 1500 + 17000 * Math.pow(Math.min(1, volume), 1.6));
     air.Q.value = 0.5;
     out.connect(air);
     const send = ctx.createGain();

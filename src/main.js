@@ -84,6 +84,7 @@ const weather = new Weather('fair');
 const rain = new Rain(scene);
 const lightning = new Lightning(scene);
 const sound = new Sound();
+sound.hearing = (x, z) => hearing(x, z); // (the land between you and a sound: see hearing)
 
 // Ray-marched ambient occlusion and light shafts, drawn after the scene.
 const rayEffects = new RayEffects(renderer);
@@ -394,6 +395,36 @@ function surfSound() {
     sound.call('wave', panTowards(camera, px / loud, pz / loud), Math.min(0.4, 0.1 + loud * 0.12)); // (over the rocky coast's own roar)
   }
 }
+/**
+ * How the land between you and a sound at (x, z) changes it (see
+ * Sound.from): thick woods soak it up and take its highs; a hill or a
+ * ridge in the way all but cuts it off, leaving the low rumble; over open
+ * water it carries, clear, further than it would. { gain, cutoff (Hz) }.
+ */
+const heard = { gain: 1, cutoff: 20000 };
+function hearing(x, z) {
+  const c = camera.position, d = Math.hypot(x - c.x, z - c.z);
+  heard.gain = 1;
+  heard.cutoff = 20000;
+  if (d < 10 || sheltered) return heard;
+  const n = Math.min(10, Math.ceil(d / 14)), step = d / n;
+  const sy = chunks.groundHeightAt(x, z) + 1;
+  let woods = 0, blocked = 0, water = 0;
+  for (let k = 1; k < n; k++) {
+    const u = k / n, px = c.x + (x - c.x) * u, pz = c.z + (z - c.z) * u;
+    const g = chunks.groundHeightAt(px, pz);
+    if (!Number.isFinite(g)) continue;
+    const line = c.y + ((Number.isFinite(sy) ? sy : c.y) - c.y) * u;
+    if (g > line + 1.5) blocked += Math.min(1, (g - line - 1.5) / 6);
+    if (waterAt(px, pz)) water++;
+    else woods += generator.getForestDensity(px, pz) * step;
+  }
+  const wf = water / Math.max(1, n - 1), bf = Math.min(1, blocked / Math.max(1, (n - 1) * 0.35));
+  heard.gain = Math.exp(-woods * 0.012) * (1 - 0.75 * bf) * (1 + 0.8 * wf * Math.min(1, d / 60));
+  heard.cutoff = Math.max(500, 20000 * Math.exp(-woods / 70) * (1 - 0.85 * bf));
+  return heard;
+}
+
 /** What's underfoot at (x, z), for the sound of a footstep (see Sound.step). */
 function stepSurface(x, z) {
   const y = chunks.groundHeightAt(x, z);
@@ -1357,7 +1388,7 @@ function tick(now) {
     camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, rocks, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
     rain: localRain, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
-    sheltered, sound, pan: (x, z) => panTowards(camera, x, z), tame: peaceful?.checked ?? WORLD.tameWildlife,
+    sheltered, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), tame: peaceful?.checked ?? WORLD.tameWildlife,
     player: game.player, structures: game.structures,
   };
   wildlife.update(dt, life);
@@ -1366,7 +1397,7 @@ function tick(now) {
   // Fire, smoke and dust, lit by the light of the sky.
   ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
   const night = dayNight._w?.night ?? 0;
-  const air = { time: now / 1000, camera, generator, wind: clouds.wind, rain: localRain, light: ambientLight, night, sound, pan: (x, z) => panTowards(camera, x, z), ground: (x, z) => generator.getBaseHeight(x, z) };
+  const air = { time: now / 1000, camera, generator, wind: clouds.wind, rain: localRain, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
   volcanoes.update(dt, air);
   sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y, fog: scene.fog.color });

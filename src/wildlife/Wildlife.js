@@ -395,6 +395,7 @@ export class Wildlife {
       a.state = sp.bird ? 'falling' : 'dead';
       a.deadTime = 0;
       a.side = a.side ?? (Math.random() < 0.5 ? 1 : -1);
+      a.roll = Math.atan2(Math.sin(a.roll ?? 0), Math.cos(a.roll ?? 0)) * 0.3; // (from wherever it was, near upright)
       a.vy = 0;
       a.feet = null;
       // (Going down like a ragdoll: carried on a little by its own speed,
@@ -1562,6 +1563,25 @@ export class Wildlife {
     }
   }
 
+  // Where a fallen creature lies: on the ground; or, in water deeper than
+  // it lies, floating, low in it, bobbing, drifting with the current.
+  #lie(a, sp, dt, ctx) {
+    const y = ctx.ground(a.x, a.z);
+    const w = ctx.waterAt?.(a.x, a.z), half = (sp.height ?? 1) * a.scale * 0.3;
+    if (w && !w.frozen && w.level - (y === y ? y : -Infinity) > half * 1.2) {
+      const float = w.level - half * 0.8 + Math.sin(this.time * 1.3 + (a.phase ?? 0)) * 0.03;
+      a.y = a.floating ? a.y + (float - a.y) * Math.min(1, dt * 2) : Math.min(a.y, float);
+      a.floating = true;
+      if (w.fx || w.fz) {
+        const nx = a.x + (w.fx ?? 0) * (w.speed ?? 0) * 0.4 * dt, nz = a.z + (w.fz ?? 0) * (w.speed ?? 0) * 0.4 * dt;
+        if (ctx.waterAt(nx, nz)) (a.x = nx), (a.z = nz);
+      }
+      return;
+    }
+    a.floating = false;
+    if (y === y) a.y = y;
+  }
+
   #threat(a, ctx) {
     const c = ctx.camera.position;
     return { d: Math.hypot(a.x - c.x, a.z - c.z), d3: Math.hypot(a.x - c.x, a.y - c.y, a.z - c.z), above: c.y - a.y };
@@ -1696,8 +1716,7 @@ export class Wildlife {
       const p = ctx.player, c = ctx.camera.position;
       const d = Math.hypot(a.x - c.x, a.z - c.z);
       if (!ctx.tame && p?.mode === 'walk' && (d < 7 || (p.sprint && d < 20) || a.hits)) this.#enrage(a);
-      const y = ctx.ground(a.x, a.z);
-      if (y === y) a.y = y;
+      this.#lie(a, sp, dt, ctx);
       return;
     }
     if (!a.alive) {
@@ -1711,7 +1730,9 @@ export class Wildlife {
         // past its balance), sliding on with its speed, then a dull bounce or
         // two as it lands on its side, and still.
         R.t += dt;
-        const g = 14 * Math.sin(Math.abs(a.roll) + 0.15) * Math.sign(R.w || a.side);
+        // (Always over towards the side it's falling to: a bounce sends it
+        // back a little, and it falls again; never round and round.)
+        const g = 14 * Math.max(0.15, Math.sin(Math.min(Math.PI / 2, Math.abs(a.roll)) + 0.15)) * a.side;
         R.w += g * dt;
         a.roll += R.w * dt;
         const flat = a.side * Math.PI * 0.5;
@@ -1726,9 +1747,10 @@ export class Wildlife {
           if (ctx.ground(nx, nz) === ctx.ground(nx, nz)) (a.x = nx), (a.z = nz);
           R.v *= Math.exp(-3.5 * dt);
         }
+        // (Kept to the quarter turn between upright and its side.)
+        if (a.roll * a.side < -0.3) (a.roll = -0.3 * a.side), (R.w = 0);
       } else a.roll += (a.side * Math.PI * 0.5 - a.roll) * Math.min(1, dt * 5);
-      const y = ctx.ground(a.x, a.z);
-      if (y === y) a.y = y;
+      this.#lie(a, sp, dt, ctx);
       return;
     }
     if (sp.water) return this.#duck(a, sp, dt, ctx);
@@ -2289,7 +2311,7 @@ export class Wildlife {
     // A quack now and then, near you.
     if ((a.callWait = (a.callWait ?? rnd(5, 30)) - dt) <= 0) {
       a.callWait = rnd(12, 40);
-      if (t.d < 120) ctx.sound?.call('quack', ctx.pan(a.x, a.z), Math.min(0.6, (16 / (t.d + 8)) ** 2));
+      if (t.d < 160) ctx.sound?.call('quack', ctx.pan(a.x, a.z), Math.min(0.6, (40 / (t.d + 20)) ** 2)); // (a duck's quack carries, over the water)
     }
     // Paddling: slowly, turning now and then, keeping on the water near its patch.
     a.timer -= dt;
@@ -2443,13 +2465,24 @@ export class Wildlife {
         a.hop = rnd(0.5, 1.5);
         a.heading += rnd(-1, 1);
         const nx = a.x + Math.sin(a.heading) * 0.6, nz = a.z + Math.cos(a.heading) * 0.6, ny = ctx.ground(nx, nz);
-        if (ny > ctx.seaLevel + 0.2 && Math.hypot(nx - (a.trunk?.x ?? nx), nz - (a.trunk?.z ?? nz)) < 4) (a.x = nx), (a.z = nz), (a.y = ny + 0.05);
+        if (ny > ctx.seaLevel + 0.2 && Math.hypot(nx - (a.trunk?.x ?? nx), nz - (a.trunk?.z ?? nz)) < 4) a.amble = { t: 0, fx: a.x, fz: a.z, fy: a.y, tx: nx, tz: nz, ty: ny + 0.05 };
+      }
+      // (Walking there, not jumping: a few steps' worth, bobbing.)
+      if (a.amble) {
+        const M = a.amble;
+        M.t += dt / 0.5;
+        const u = Math.min(1, M.t);
+        a.x = M.fx + (M.tx - M.fx) * u;
+        a.z = M.fz + (M.tz - M.fz) * u;
+        a.y = M.fy + (M.ty - M.fy) * u + Math.abs(Math.sin(u * Math.PI * 2)) * 0.03;
+        if (u >= 1) a.amble = null;
       }
       if ((a.timer <= 0 || t.d < SPECIES.monkey.flee * 1.4) && a.trunk) {
         if (t.d < SPECIES.monkey.flee * 1.4) ctx.sound?.call('chatter', ctx.pan(a.x, a.z), 0.7);
         a.x = a.trunk.x;
         a.z = a.trunk.z;
         a.state = 'climb';
+        a.amble = null;
         a.climb = { from: a.y, to: a.trunk.top, up: true };
       }
     }
@@ -2465,14 +2498,24 @@ export class Wildlife {
       if (Math.random() < dt * 0.8) a.heading += rnd(-1.2, 1.2);
       if (a.state === 'ground') {
         a.hop = (a.hop ?? 0) - dt;
-        if (a.hop <= 0) {
-          a.hop = rnd(0.4, 1.4);
-          const d = rnd(0.2, 0.5);
+        const H = a.hopping && this.time - a.hopping.at < 0.5 ? a.hopping : null; // (not one left over from before it flew)
+        if (H) {
+          // In the air: a quick little hop, both feet together.
+          H.t += dt / 0.16;
+          const u = Math.min(1, H.t);
+          a.x = H.fx + (H.tx - H.fx) * u;
+          a.z = H.fz + (H.tz - H.fz) * u;
+          a.y = H.fy + (H.ty - H.fy) * u + Math.sin(u * Math.PI) * 0.06 * a.scale;
+          if (u >= 1) a.hopping = null;
+        } else if (a.hop <= 0) {
+          // (Sometimes two or three hops together, then a pause to peck.)
+          a.hop = Math.random() < 0.5 ? rnd(0.08, 0.2) : rnd(0.5, 1.6);
+          const d = rnd(0.12, 0.3);
           const nx = a.x + Math.sin(a.heading) * d, nz = a.z + Math.cos(a.heading) * d;
           const ny = ctx.ground(nx, nz);
-          if (ny > ctx.seaLevel + 0.2) (a.x = nx), (a.z = nz), (a.y = ny + 0.07 * a.scale);
+          if (ny > ctx.seaLevel + 0.2) a.hopping = { t: 0, at: this.time, fx: a.x, fz: a.z, fy: a.y, tx: nx, tz: nz, ty: ny + 0.07 * a.scale };
         }
-      }
+      } else a.hopping = null;
       if (scared || a.timer <= 0) {
         // Off to another tree, or down to the ground beneath one (and
         // well away if you frightened it).
