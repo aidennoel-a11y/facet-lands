@@ -52,6 +52,7 @@ import { addCloudShadow, cloudShadowUniforms } from './render/cloudShadow.js';
 import { Minimap } from './ui/Minimap.js';
 import { BiomeMap } from './ui/BiomeMap.js';
 import { Multiplayer } from './net/Multiplayer.js';
+import { WorldSync } from './net/WorldSync.js';
 import { applyQuality, MAX_VIEW } from './quality.js';
 
 // --- Renderer, scene, camera -------------------------------------------------
@@ -557,6 +558,13 @@ const game = new Game({
     const h = chunks.groundHeightAt(x, z);
     return Number.isFinite(h) ? Math.max(h, rocks.surfaceAt(x, z)) : generator.getHeight(x, z);
   },
+});
+// Online, one world for everyone: what's done to it, the sky, the animals
+// and their calls (see net/WorldSync).
+const sync = new WorldSync({
+  mp, game, trees, mushrooms, torches, weather, clouds, seasons, wildlife, sound,
+  pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)),
+  windStrength: () => windStrength.value,
 });
 chunks.addLayer(game.items.layer);
 game.loadWorld(WORLD.seed);
@@ -1389,7 +1397,8 @@ function tick(now) {
   chunks.update(camera.position, now / 1000, dir);
   weather.spring = seasonUniforms.uSpring.value;
   weather.update(dt, dayNight.hour);
-  const wind = updateWind(now / 1000, 0.95 * weather.storm + 0.35 * weather.rain);
+  // (Online, by the room's clock: the same gusts for everyone.)
+  const wind = updateWind(mp.roomTime() ?? now / 1000, 0.95 * weather.storm + 0.35 * weather.rain);
   // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)
   // (Out on high open ground in a storm, not under a roof: the lightning may find you.)
   lightning.exposed = controls.mode === 'walk' && !sheltered && (game.sheltered ?? 0) < 0.5 ? 0.12 * (around.env?.exposure ?? 0) * (1 - (around.env?.canopy ?? 0)) : 0;
@@ -1486,12 +1495,16 @@ function tick(now) {
     rain: localRain, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
     sheltered, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), tame: peaceful?.checked ?? WORLD.tameWildlife,
     player: game.player, structures: game.structures,
+    // (Online: the others, for the host's animals to mind; their calls, to be heard by everyone.)
+    others: sync.others(), netTime: mp.roomTime(),
+    emit: (n, x, z, v, d) => sync.emit(n, x, z, v, d), emitTo: (id, what) => sync.emitTo(id, what),
   };
   wildlife.update(dt, life);
   mp.update(dt, {
     x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: camera.rotation.y, pitch: camera.rotation.x,
     crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk',
   });
+  sync.update();
   fish.update(dt, { ...life, traces, autumn, ground: (x, z) => chunks.groundHeightAt(x, z) });
   traces.update(dt);
   // Fire, smoke and dust, lit by the light of the sky.
@@ -1581,7 +1594,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, mp, game, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, mp, sync, game, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

@@ -641,6 +641,62 @@ export class Structures {
     }));
   }
 
+  /** A structure's name online: what it is and where (they never move). */
+  static key(s) {
+    const r = (v) => (+(+v).toFixed(2)).toFixed(1); // (the same from a structure and from its record, rounded to centimetres)
+    return `${s.type}:${r(s.x)}:${r(s.y)}:${r(s.z)}`;
+  }
+
+  /**
+   * One structure as someone else has it (online: built, lit, opened,
+   * worked at): made, or brought up to date. (Its record as in toJSON.)
+   */
+  apply(rec) {
+    if (!KINDS[rec.type]) return;
+    const key = Structures.key(rec);
+    const s = this.list.find((o) => Structures.key(o) === key);
+    const quiet = this.onChange;
+    this.onChange = null;
+    try {
+      if (!s) {
+        this.build({ type: rec.type, x: rec.x, y: rec.y, z: rec.z, rot: rec.rot, tilt: rec.tilt }, { lit: rec.lit, fuel: rec.fuel, burnt: rec.burnt, contents: rec.contents, open: rec.open, caught: rec.caught, jobs: rec.jobs ?? [], len: rec.len, crop: rec.crop ?? null, growth: rec.growth ?? 0, watered: rec.watered ?? 0 });
+        return;
+      }
+      s.fuel = rec.fuel;
+      s.burnt = rec.burnt;
+      if (rec.lit && !s.lit) this.light(s);
+      else if (!rec.lit && s.lit) (s.lit = false), this.#douse(s);
+      s.fuel = rec.fuel;
+      if (s.door && !!rec.open !== !!s.open) {
+        s.open = !!rec.open;
+        s.door.rotation.y = s.open ? -Math.PI / 2 : 0;
+      }
+      if (s.contents && rec.contents) rec.contents.forEach((st, i) => (s.contents.slots[i] = st));
+      s.jobs = (rec.jobs ?? []).map((j) => ({ ...j }));
+      this.#showJobs(s);
+      s.caught = !!rec.caught;
+      if (s.catchMesh) s.catchMesh.visible = s.caught;
+      if (s.type === 'plot') {
+        s.crop = rec.crop ?? null;
+        s.growth = rec.growth ?? 0;
+        s.watered = rec.watered ?? 0;
+        this.#showCrop(s);
+      }
+    } finally {
+      this.onChange = quiet;
+    }
+  }
+
+  /** Takes down a structure by its key (someone else did, online). */
+  removeKey(key) {
+    const s = this.list.find((o) => Structures.key(o) === key);
+    if (!s) return;
+    const quiet = this.onChange;
+    this.onChange = null;
+    this.remove(s);
+    this.onChange = quiet;
+  }
+
   load(list) {
     for (const s of [...this.list]) this.remove(s);
     const quiet = this.onChange;

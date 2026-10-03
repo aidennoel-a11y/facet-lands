@@ -365,7 +365,7 @@ export class Game {
       const a = t.animal, i = this.hotbar.index, held = this.inventory.slots[i];
       if (held?.id === 'shears') {
         if (a.young || (a.sheared && this.wildlife.time - a.sheared <= 480)) return this.hotbar?.flash(t.text);
-        a.sheared = this.wildlife.time;
+        this.wildlife.shear(a);
         this.inventory.wear(i, 1);
         this.#give('wool', 2 + Math.floor(Math.random() * 2), a);
         this.sound?.call('shear', 0, 0.5);

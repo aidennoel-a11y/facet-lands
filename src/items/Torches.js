@@ -173,6 +173,32 @@ export class Torches {
     return this.removeNear(best.group.position, 0.01);
   }
 
+  /** A torch's name online: where it is. */
+  static key(t) {
+    return `${t.point.x.toFixed(2)}:${t.point.y.toFixed(2)}:${t.point.z.toFixed(2)}`;
+  }
+
+  /** The torches as records: [{ k, p: [x, y, z, nx, ny, nz], lit }] (online: see WorldSync). */
+  records() {
+    return this.torches.map((t) => ({ k: Torches.key(t), p: [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)), lit: !!t.lit }));
+  }
+
+  /** A torch as someone else has it (online): put up, or lit or put out. */
+  apply(rec) {
+    const [x, y, z, nx, ny, nz] = rec.p;
+    const point = new Vector3(x, y, z);
+    const t = this.torches.find((t) => t.point.distanceTo(point) < 0.02);
+    if (t) {
+      if (!!t.lit !== !!rec.lit) this.light(t, !!rec.lit);
+    } else this.place(point, new Vector3(nx, ny, nz), true, !!rec.lit);
+  }
+
+  /** Takes a torch down by its key (someone else did, online). */
+  removeKey(key) {
+    const t = this.torches.find((t) => Torches.key(t) === key);
+    if (t) this.removeNear(t.group.position, 0.01);
+  }
+
   /** Swaps to the saved torches of another world. */
   loadWorld(seed) {
     for (const t of this.torches) this.scene.remove(t.group);

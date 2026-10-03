@@ -95,6 +95,7 @@ class Remote {
     const speed = b === a ? 0 : Math.hypot(b.s[0] - a.s[0], b.s[2] - a.s[2]) / span;
     this.root.visible = true;
     this.root.position.set(x, y, z);
+    (this.yaw = yaw), (this.speed = speed), (this.flags = flags); // (for the animals: see WorldSync.others)
     this.root.rotation.y = yaw + Math.PI; // (the camera looks down -z; the model faces +z)
     const crouch = flags & FLAG.crouch, swim = flags & FLAG.swim;
     this.walk += dt * Math.min(9, speed * 1.6);
@@ -159,6 +160,25 @@ export class Multiplayer {
     this.sendWait = 0;
     this.onChange = null; // (called when someone comes or goes)
     this.onHour = null; // (the host set the time: (hour) => …)
+    this.onWorld = null; // (the world's own news: edits, the sky, the animals, sounds: (msg) => …; see WorldSync)
+    this.hostId = null;
+    this.clockAt = 0; // (the room's clock, in seconds, at clockFrom: see roomTime)
+    this.clockFrom = 0;
+  }
+
+  /** Whether you're the one running the sky and the animals (or playing alone). */
+  get isHost() {
+    return !this.connected || this.hostId === this.id;
+  }
+
+  /** The room's shared clock, seconds since it opened (null when not online). */
+  roomTime() {
+    return this.connected ? this.clockAt + performance.now() / 1000 - this.clockFrom : null;
+  }
+
+  /** Sends a message to the room (if you're in one). */
+  send(msg) {
+    if (this.connected) this.ws.send(JSON.stringify(msg));
   }
 
   get connected() {
@@ -181,14 +201,22 @@ export class Multiplayer {
     return this.#open(url, { t: 'join', code, name });
   }
 
-  #open(typed, hello) {
+  async #open(typed, hello) {
     this.leave();
-    let url;
-    try {
-      url = serverAddress(typed);
-    } catch (e) {
-      return Promise.reject(e);
+    const url = serverAddress(typed); // (throws, with the reason, if it can't be one)
+    // (A connection dropped before the server answers, as happens with a
+    // free server waking up or a busy page: tried again, a couple of times.)
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.#connect(url, hello);
+      } catch (e) {
+        if (!e.retry || attempt >= 3) throw e;
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+      }
     }
+  }
+
+  #connect(url, hello) {
     return new Promise((resolve, reject) => {
       let ws;
       try {
@@ -197,18 +225,26 @@ export class Multiplayer {
         return reject(new Error("That isn't a server address (it starts wss:// or ws://)."));
       }
       this.ws = ws;
+      let done = false;
+      const fail = (message, retry = false) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        ws.close();
+        reject(Object.assign(new Error(message), { retry }));
+      };
       // (A server asleep, a free one, can take a while to wake: and the page
       // may be busy building the world meanwhile.)
-      let timer = setTimeout(() => (ws.close(), reject(new Error("Couldn't reach the server."))), 60000);
+      let timer = setTimeout(() => fail("Couldn't reach the server."), 60000);
       ws.onopen = () => {
         clearTimeout(timer);
-        timer = setTimeout(() => (ws.close(), reject(new Error("The server didn't answer."))), 30000);
+        timer = setTimeout(() => fail("The server didn't answer.", true), 30000);
         ws.send(JSON.stringify(hello));
       };
-      ws.onerror = () => (clearTimeout(timer), reject(new Error("Couldn't reach the server.")));
+      ws.onerror = () => fail("Couldn't reach the server.", true);
       ws.onclose = () => {
-        clearTimeout(timer);
         if (this.ws === ws) this.#reset();
+        fail('Lost the connection to the server.', true); // (before it answered: see #open)
       };
       ws.onmessage = (e) => {
         let msg;
@@ -219,17 +255,21 @@ export class Multiplayer {
         }
         if (msg.t === 'welcome') {
           clearTimeout(timer);
+          done = true;
           this.id = msg.id;
           this.code = msg.code;
           this.welcomedAt = performance.now() / 1000;
           this.hourAtWelcome = msg.hour;
           this.dayLength = msg.dayLength;
+          this.hostId = msg.host ?? msg.id;
+          this.clockAt = (msg.time ?? 0) / 1000;
+          this.clockFrom = performance.now() / 1000;
+          this.welcome = msg;
           for (const p of msg.players) this.#add(p);
           this.onChange?.();
           resolve(msg);
         } else if (msg.t === 'error') {
-          clearTimeout(timer);
-          if (this.id === null) (ws.close(), reject(new Error(msg.message)));
+          if (this.id === null) fail(msg.message);
         } else this.#receive(msg);
       };
     });
@@ -255,7 +295,10 @@ export class Multiplayer {
       this.onChange?.();
     } else if (msg.t === 'hour') {
       this.onHour?.(msg.hour);
-    }
+    } else if (msg.t === 'host') {
+      this.hostId = msg.id;
+      this.onChange?.();
+    } else this.onWorld?.(msg);
   }
 
   /** Tells the room you've set the time (the host only: the others follow). */
@@ -285,6 +328,8 @@ export class Multiplayer {
     this.id = null;
     this.code = null;
     this.ws = null;
+    this.hostId = null;
+    this.welcome = null;
     if (was) this.onChange?.();
   }
 

@@ -1,8 +1,11 @@
 // The Facet Lands multiplayer server: rooms of players walking the same
 // world. The world itself is never sent: every player builds it from its
-// seed. The server only passes on where everyone is (about fifteen times
-// a second) and keeps the room's clock, so the sun is in the same place
-// for all of them.
+// seed. The server passes on where everyone is (about fifteen times a
+// second), keeps the room's clock (so the sun is in the same place for all
+// of them), and keeps what's been done to the world (trees felled, things
+// picked up or dropped, built, lit) so whoever joins later finds it so.
+// The host (the first in; if they go, the next) runs the sky and the
+// animals: their weather and wildlife go out to the others.
 //
 //   npm install && npm start          (PORT=8787 by default)
 //
@@ -12,11 +15,19 @@
 //     { t: 'join', code, name }                                          join one
 //     { t: 'state', s: [x, y, z, yaw, pitch, flags] }                    where you are
 //     { t: 'hour', hour }                                                the host set the time
+//     { t: 'edit', e }        something done to the world (see mergeEdit), to keep and pass on
+//     { t: 'sky', sky }       the host's weather (kept, passed on)
+//     { t: 'wild', w }        the host's animals (passed on)
+//     { t: 'fx', fx }         sounds and the like, where they happen (passed on)
+//     { t: 'tohost', m }      to the host only (a guest's arrow in an animal, say)
 //   server -> client
-//     { t: 'welcome', id, code, world, hour, dayLength, players: [{ id, name, colour, s }] }
-//     { t: 'joined', id, name, colour }     { t: 'left', id }
+//     { t: 'welcome', id, code, host, world, hour, dayLength, time, edits, sky, players: [{ id, name, colour, s }] }
+//     { t: 'joined', id, name, colour }     { t: 'left', id }    { t: 'host', id } (a new host)
 //     { t: 'states', list: [[id, s], ...] } everyone's latest, ~15 times a second
 //     { t: 'hour', hour }                   { t: 'error', message }
+//     { t: 'edit' | 'sky' | 'wild' | 'fx', ..., from }  { t: 'tohost', m, from }
+//   (`time`: milliseconds since the room opened, its shared clock for the
+//   wind and the drifting clouds.)
 //
 // And over plain HTTP, GET /worlds: the worlds open now, for the game's list.
 import { createServer } from 'node:http';
@@ -45,6 +56,26 @@ function hourOf(room) {
   return (((room.hour + hours) % 24) + 24) % 24;
 }
 
+// What's been done to the world: sets of keys (trees felled, things taken
+// off the ground, mushrooms picked) and records by key (stumps, things
+// built, torches, things dropped). An edit: { add: { felled: [...], ... },
+// put: { stumps: [rec], ... }, del: { stumps: [key], ... } } (each record
+// carries its own key, `k`).
+const SETS = ['felled', 'taken', 'mushrooms'];
+const MAPS = ['stumps', 'structures', 'torches', 'drops'];
+const newEdits = () => ({ ...Object.fromEntries(SETS.map((k) => [k, new Set()])), ...Object.fromEntries(MAPS.map((k) => [k, new Map()])) });
+function mergeEdit(edits, e) {
+  for (const k of SETS) for (const key of e.add?.[k] ?? []) if (typeof key === 'string') edits[k].add(key);
+  for (const k of MAPS) {
+    for (const rec of e.put?.[k] ?? []) if (rec && typeof rec.k === 'string') edits[k].set(rec.k, rec);
+    for (const key of e.del?.[k] ?? []) edits[k].delete(key);
+  }
+}
+const editsJSON = (edits) => ({
+  add: Object.fromEntries(SETS.map((k) => [k, [...edits[k]]])),
+  put: Object.fromEntries(MAPS.map((k) => [k, [...edits[k].values()]])),
+});
+
 const send = (ws, msg) => ws.readyState === 1 && ws.send(JSON.stringify(msg));
 function broadcast(room, msg, except = null) {
   const text = JSON.stringify(msg);
@@ -62,7 +93,8 @@ function enter(room, ws, name) {
   ws.room = room;
   ws.player = player;
   send(ws, {
-    t: 'welcome', id: player.id, code: room.code, world: room.world, hour: hourOf(room), dayLength: room.dayLength,
+    t: 'welcome', id: player.id, code: room.code, host: room.host ?? player.id, world: room.world, hour: hourOf(room), dayLength: room.dayLength,
+    time: Date.now() - room.born, edits: editsJSON(room.edits), sky: room.sky,
     players: [...room.players.values()].filter((p) => p !== player).map((p) => ({ id: p.id, name: p.name, colour: p.colour, s: p.s })),
   });
   broadcast(room, { t: 'joined', id: player.id, name: player.name, colour: player.colour }, player);
@@ -74,7 +106,11 @@ function leave(ws) {
   if (!room || !player) return;
   room.players.delete(player.id);
   broadcast(room, { t: 'left', id: player.id });
-  if (room.host === player.id) room.host = room.players.keys().next().value ?? null; // (the clock passes on)
+  if (room.host === player.id) {
+    // (The clock, the sky and the animals pass on.)
+    room.host = room.players.keys().next().value ?? null;
+    if (room.host !== null) broadcast(room, { t: 'host', id: room.host });
+  }
   if (!room.players.size) room.emptySince = Date.now();
   ws.room = ws.player = null;
 }
@@ -93,7 +129,7 @@ function onMessage(ws, data) {
     const seed = clean(msg.world?.seed, 40);
     if (!seed) return send(ws, { t: 'error', message: 'No seed.' });
     const room = {
-      code: newCode(), players: new Map(), host: null, emptySince: null,
+      code: newCode(), players: new Map(), host: null, emptySince: null, born: Date.now(), edits: newEdits(), sky: null,
       world: { name: clean(msg.world?.name, 40) || 'A world', seed, mode: ['survival', 'creative'].includes(msg.world?.mode) ? msg.world.mode : 'survival' },
       hour: Number.isFinite(msg.hour) ? msg.hour : 9, hourAt: Date.now(), dayLength: Number.isFinite(msg.dayLength) && msg.dayLength > 0 ? msg.dayLength : 24,
     };
@@ -108,6 +144,21 @@ function onMessage(ws, data) {
     ws.room.hour = msg.hour;
     ws.room.hourAt = Date.now();
     broadcast(ws.room, { t: 'hour', hour: msg.hour }, ws.player);
+  } else if (!ws.room || !ws.player) {
+    // (Nothing below until you're in a room.)
+  } else if (msg.t === 'edit' && msg.e && typeof msg.e === 'object') {
+    mergeEdit(ws.room.edits, msg.e);
+    broadcast(ws.room, { t: 'edit', e: msg.e, from: ws.player.id }, ws.player);
+  } else if (msg.t === 'sky' && ws.room.host === ws.player.id && msg.sky && typeof msg.sky === 'object') {
+    ws.room.sky = msg.sky;
+    broadcast(ws.room, { t: 'sky', sky: msg.sky }, ws.player);
+  } else if (msg.t === 'wild' && ws.room.host === ws.player.id && msg.w) {
+    broadcast(ws.room, { t: 'wild', w: msg.w }, ws.player);
+  } else if (msg.t === 'fx' && Array.isArray(msg.fx)) {
+    broadcast(ws.room, { t: 'fx', fx: msg.fx, from: ws.player.id }, ws.player);
+  } else if (msg.t === 'tohost' && msg.m) {
+    const host = ws.room.players.get(ws.room.host);
+    if (host && host !== ws.player) send(host.ws, { t: 'tohost', m: msg.m, from: ws.player.id });
   }
 }
 
@@ -122,11 +173,17 @@ const http = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' });
   res.end(`Facet Lands server: ${rooms.size} world${rooms.size === 1 ? '' : 's'} open\n`);
 });
-const wss = new WebSocketServer({ server: http, maxPayload: 16 * 1024 });
+const wss = new WebSocketServer({ server: http, maxPayload: 4 * 1024 * 1024 });
 wss.on('connection', (ws) => {
   ws.alive = true;
   ws.on('pong', () => (ws.alive = true));
-  ws.on('message', (data) => onMessage(ws, data));
+  ws.on('message', (data) => {
+    try {
+      onMessage(ws, data);
+    } catch (e) {
+      console.error('message failed:', e); // (one bad message never takes the server down)
+    }
+  });
   ws.on('close', () => leave(ws));
   ws.on('error', () => leave(ws));
 });

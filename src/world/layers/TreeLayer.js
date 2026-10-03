@@ -242,6 +242,22 @@ export function createTreeLayer({ rocks = null } = {}) {
       return out.premultiply(hit.group.matrixWorld);
     },
 
+    /** Takes away a tree by its key (felled by someone else, online): now, if it's drawn, else when it is. */
+    removeKey(key) {
+      if (layer.removed.has(key)) return;
+      layer.removed.add(key);
+      const [cx, cz, type] = key.split(',');
+      const group = groups.get(`${cx},${cz}`);
+      const size = layer.chunkSize;
+      if (!group || !size) return;
+      for (const t of group.userData.placed[type] ?? []) {
+        if (t.removed || treeKey(+cx, +cz, type, t) !== key) continue;
+        layer.removed.delete(key);
+        layer.remove({ key, type, t, x: +cx * size + t.x, z: +cz * size + t.z, group });
+        return;
+      }
+    },
+
     /** Takes a tree away, for good (felled): no longer drawn, nor in the way. */
     remove(hit) {
       layer.removed.add(hit.key);

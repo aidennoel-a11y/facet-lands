@@ -81,6 +81,41 @@ export class Weather {
     this.hurry = 6; // picked by hand: change over a couple of seconds, not a minute
   }
 
+  /** The weather as it is, for the others online to follow (see follow). */
+  toSky() {
+    const r = (v) => +v.toFixed(3);
+    return { kind: this.kind, upcoming: this.upcoming, auto: this.auto, nextChange: r(this.nextChange), sunset: r(this.sunsetQuality), cover: r(this.cover), rain: r(this.rain), storm: r(this.storm), hurry: r(this.hurry) };
+  }
+
+  /**
+   * Online, not the host: the weather is the host's (`sky` from toSky). It
+   * changes when theirs does, never by itself; the first time (just
+   * joined), it's simply so, everywhere.
+   */
+  follow(sky) {
+    if (!sky || !WEATHER[sky.kind]) return;
+    const first = !this.following;
+    this.following = true;
+    this.kind = sky.kind;
+    this.auto = sky.auto !== false;
+    this.upcoming = WEATHER[sky.upcoming] ? sky.upcoming : null;
+    this.nextChange = sky.nextChange;
+    this.sunsetQuality = sky.sunset;
+    if (sky.hurry > 0) this.hurry = sky.hurry; // (picked by hand there: here too, quickly)
+    if (first) {
+      this.cover = sky.cover;
+      this.rain = sky.rain;
+      this.storm = sky.storm;
+      for (let k = 0; k < HISTORY; k++) this.history.set([this.cover, this.rain, this.storm], k * 3);
+      this.filled = HISTORY;
+    } else {
+      // (Kept close to theirs: the easing here runs a little differently.)
+      this.cover += (sky.cover - this.cover) * 0.3;
+      this.rain += (sky.rain - this.rain) * 0.3;
+      this.storm += (sky.storm - this.storm) * 0.3;
+    }
+  }
+
   setSunset(mode) {
     this.sunsetMode = mode;
   }
@@ -154,17 +189,19 @@ export class Weather {
       // (see `coming`): showers and far-off lightning out on the horizon.
       // (Decided a change ahead, so the clouds bringing it can be seen
       // coming from far upwind: see at.)
-      if (!this.upcoming) this.upcoming = Weather.#pick(NEXT[this.kind], this.spring);
-      if (this.nextChange <= 0) {
+      if (!this.upcoming && !this.following) this.upcoming = Weather.#pick(NEXT[this.kind], this.spring);
+      // (Following the host's weather online: it changes when theirs does.)
+      if (this.nextChange <= 0 && this.following) this.nextChange = 0;
+      else if (this.nextChange <= 0) {
         this.kind = this.upcoming;
         this.upcoming = Weather.#pick(NEXT[this.kind], this.spring);
         this.nextChange = 100 + Math.random() * 140;
       }
-    } else {
+    } else if (!this.following) {
       this.upcoming = null;
     }
     // Roll the evening's sunset as the afternoon begins.
-    if (this._lastHour !== null && this._lastHour < 14 && hour >= 14) this.sunsetQuality = Math.random();
+    if (this._lastHour !== null && this._lastHour < 14 && hour >= 14 && !this.following) this.sunsetQuality = Math.random();
     this._lastHour = hour;
 
     const target = WEATHER[this.kind];

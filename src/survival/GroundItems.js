@@ -181,7 +181,7 @@ export class GroundItems {
   }
 
   /** Drops a stack at (x, y, z): it falls and settles on the ground. `stuck`: a spear standing where it landed. */
-  drop(stack, x, y, z, { vy = 0, turn = Math.random() * Math.PI * 2, tilt = null } = {}) {
+  drop(stack, x, y, z, { vy = 0, turn = Math.random() * Math.PI * 2, tilt = null, uid = null } = {}) {
     const mesh = new Mesh(this.model(stack.id), this.material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -189,9 +189,32 @@ export class GroundItems {
     mesh.rotation.set(0, turn, 0);
     if (tilt) mesh.quaternion.copy(tilt);
     this.dropGroup.add(mesh);
-    const d = { stack, x, y, z, vy, mesh, settled: false, stuck: !!tilt, age: 0 };
+    // (Each with its own name, to be known by online: see WorldSync.)
+    const d = { stack, x, y, z, vy, mesh, settled: false, stuck: !!tilt, age: 0, uid: uid ?? `${this.uidPrefix ?? 'me'}.${(this.nextUid = (this.nextUid ?? 0) + 1)}` };
     this.drops.push(d);
     return d;
+  }
+
+  /** Takes away a dropped stack by its uid (someone else picked it up, online). */
+  removeDrop(uid) {
+    const d = this.drops.find((d) => d.uid === uid);
+    if (!d) return;
+    this.drops.splice(this.drops.indexOf(d), 1);
+    this.dropGroup.remove(d.mesh);
+  }
+
+  /** Something on the ground taken by someone else (online), by its key. */
+  takeKey(key) {
+    this.taken.add(key);
+    for (const { items } of [...this.chunks.values(), ...this.caves.values()]) {
+      for (const it of items ?? []) {
+        if (it.key !== key || it.gone) continue;
+        it.gone = true;
+        it.mesh.setMatrixAt(it.index, hidden);
+        it.mesh.instanceMatrix.needsUpdate = true;
+        return;
+      }
+    }
   }
 
   /** @param ground (x, z) => height */

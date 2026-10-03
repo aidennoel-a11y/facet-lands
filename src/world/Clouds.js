@@ -137,6 +137,8 @@ export class Clouds {
       cloud.userData.rank = wispy ? rand() * 0.55 : 0.03 + rand() * 0.95;
       cloud.rotation.y = rand() * Math.PI * 2;
       cloud.position.set((rand() - 0.5) * range, minHeight + rand() * (maxHeight - minHeight), (rand() - 0.5) * range);
+      cloud.userData.x0 = cloud.position.x; // (where it started: it's there plus the drift, see update)
+      cloud.userData.z0 = cloud.position.z;
       const box = shapes[shape].boundingBox;
       cloud.userData.baseY = cloud.position.y;
       cloud.userData.bottom = box.min.y * cloud.scale.y; // flat base, below the centre
@@ -172,6 +174,11 @@ export class Clouds {
     this.clearance = 18; // metres between a cloud's base and the ground below it
     this._next = 0;
     this.overcast = 0;
+    // How far they've drifted, in seconds at full wind speed: every cloud
+    // is where it started plus the wind times this (wrapped round you), so
+    // online, with the host's drift, everyone has the same clouds overhead.
+    this.travel = 0;
+    this.travelTarget = null; // (online: the host's, eased towards)
   }
 
   /** Height a cloud needs so its base clears the land under and just ahead of it. */
@@ -214,6 +221,12 @@ export class Clouds {
     const wind = Math.hypot(this.wind.x, this.wind.z) || 1;
     const drift = wind * speed;
     const ease = Math.min(1, dt / 6); // (and no cloud changes in a blink as you move about)
+    this.travel += speed * dt;
+    if (this.travelTarget !== null) {
+      this.travelTarget += speed * dt;
+      const gap = this.travelTarget - this.travel;
+      this.travel += Math.abs(gap) > 600 ? gap : gap * Math.min(1, dt * 0.3); // (a long way out: just there)
+    }
     for (const cloud of this.clouds) {
       const d = cloud.userData;
       if (sky?.weather) {
@@ -235,13 +248,11 @@ export class Clouds {
         cloud.scale.set(base.x * k, base.y * (0.35 + 0.65 * grown) * (1 + 0.5 * d.overcast), base.z * k);
       }
       const p = cloud.position;
-      p.x += this.wind.x * speed * dt;
-      p.z += this.wind.z * speed * dt;
-      let wrapped = false;
-      if (p.x - focus.x > half) (p.x -= this.range), (wrapped = true);
-      else if (p.x - focus.x < -half) (p.x += this.range), (wrapped = true);
-      if (p.z - focus.z > half) (p.z -= this.range), (wrapped = true);
-      else if (p.z - focus.z < -half) (p.z += this.range), (wrapped = true);
+      const wrap = (v, f) => f + ((((v - f + half) % this.range) + this.range) % this.range) - half;
+      const nx = wrap(d.x0 + this.wind.x * this.travel, focus.x), nz = wrap(d.z0 + this.wind.z * this.travel, focus.z);
+      const wrapped = Math.abs(nx - p.x) > half || Math.abs(nz - p.z) > half;
+      p.x = nx;
+      p.z = nz;
       if (wrapped) cloud.userData.snap = true;
       if (wrapped || cloud.userData.generator !== generator) {
         cloud.userData.targetY = this.#targetHeight(cloud, generator);

@@ -133,6 +133,18 @@ export function createMushroomLayer() {
       it.mesh.instanceMatrix.needsUpdate = true;
     },
 
+    /** Picked by someone else (online), by its key. */
+    takeKey(key) {
+      layer.taken.add(key);
+      const [cx, cz] = key.split(',');
+      for (const it of chunks.get(`${cx},${cz}`) ?? []) {
+        if (it.key !== key || it.gone) continue;
+        it.gone = true;
+        it.mesh.setMatrixAt(it.index, hidden);
+        it.mesh.instanceMatrix.needsUpdate = true;
+      }
+    },
+
     reuseKey: ({ lod }) => (lod > 0 ? 'none' : 'near'),
 
     build({ cx, cz, lod, prepared, groundHeightAt, generator, config }) {

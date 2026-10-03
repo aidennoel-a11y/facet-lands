@@ -259,6 +259,11 @@ export class Felling {
     return this.stumps.map(({ key, type, m, cut }) => ({ key, type, m, cut }));
   }
 
+  /** One stump more (someone else's felling, online), unless it's there already. */
+  addStump(st) {
+    if (st?.m?.length === 16 && !this.stumps.some((o) => o.key === st.key)) this.#stump(st.key, st.type, new Matrix4().fromArray(st.m), st.cut);
+  }
+
   loadStumps(list) {
     for (const st of this.stumps) st.mesh.dispose();
     this.stumpGroup.clear();

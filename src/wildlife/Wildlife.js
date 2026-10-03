@@ -243,6 +243,7 @@ export class Wildlife {
    * Returns the lamb, if there is one.
    */
   feed(a) {
+    if (a.mirrored) return this.onAct?.('feed', a), null;
     a.fed = this.time;
     const mate = this.animals.find((m) => m !== a && m.tame && m.alive && !m.young && m.kind === a.kind && this.time - (m.fed ?? -1e9) < 90 && Math.hypot(m.x - a.x, m.z - a.z) < 10);
     if (!mate || a.young) return null;
@@ -261,6 +262,25 @@ export class Wildlife {
   loadTame(list) {
     for (const a of this.animals) if (a.tame) a.gone = true;
     this.pendingTame = list ?? [];
+  }
+
+  /** Shears a sheep (online, the host's: theirs to shear). */
+  shear(a) {
+    a.sheared = this.time;
+    if (a.mirrored) this.onAct?.('shear', a);
+  }
+
+  /** The host, online: what one of the others did to one of the animals (see onAct). */
+  act(k, id, o = {}) {
+    const a = this.animals.find((a) => a.id === id && !a.gone);
+    if (!a) return;
+    if (k === 'wound') {
+      const v = (p) => (p ? { x: p[0], y: p[1], z: p[2] } : null);
+      this.wound(a, { head: !!o.head, sharp: Number(o.sharp) || 1, from: v(o.from), hit: o.local ? { local: v(o.local), frame: o.frame } : null });
+    } else if (k === 'butcher' && !a.alive) {
+      a.gone = true;
+    } else if (k === 'feed') this.feed(a);
+    else if (k === 'shear') a.sheared = this.time;
   }
 
   /** Puts a creature at (x, z) (for testing; `o` as #spawnWalker). */
@@ -366,6 +386,12 @@ export class Wildlife {
    */
   wound(a, { head = false, from, hit = null, sharp = 1 } = {}) {
     if (!a.alive) return 'dead';
+    // (Online, the host's animal: it's the host's to wound; and here, for
+    // now, as it will be there.)
+    if (a.mirrored) {
+      this.onAct?.('wound', a, { head, sharp, from: from ? [from.x, from.y, from.z] : null, local: hit?.local ? [hit.local.x, hit.local.y, hit.local.z] : null, frame: hit?.frame ?? null });
+      a.localUntil = this.time + 1.5;
+    }
     const sp = SPECIES[a.kind];
     // Where it went in: a mark, and it flinches.
     if (hit?.local) {
@@ -464,6 +490,7 @@ export class Wildlife {
   butcher(a) {
     if (a.alive || a.gone) return null;
     a.gone = true;
+    if (a.mirrored) this.onAct?.('butcher', a);
     const stuck = this.#unstick(a);
     const got = { ...(YIELD[a.kind] ?? { rawMeat: 1 }) };
     if (a.young) for (const k of Object.keys(got)) got[k] = Math.max(1, Math.floor(got[k] / 2));
@@ -674,13 +701,19 @@ export class Wildlife {
     this.ctx = ctx;
     const hidden = ctx.sheltered;
     this.hidden = hidden;
-    if (hidden) {
-      for (const rig of Object.values(this.rigs)) for (const m of Object.values(rig.meshes)) m.visible = false;
-      this.woundMesh.visible = false;
-      for (const a of this.animals) for (const st of a.stuck ?? []) st.mesh.visible = false;
+    // Online, not the host: the animals are the host's, drawn as they send them (see mirror).
+    if (this.mirror) {
+      if (hidden) this.#hideAll();
+      else this.#mirrorStep(dt, ctx);
+      this.#draw();
       return;
     }
-    for (const a of this.animals) for (const st of a.stuck ?? []) st.mesh.visible = true;
+    // (Under a roof or in a cave, they're out of sight: and with no one else
+    // about, they wait for you. Online, they go on, for the others.)
+    if (hidden && !ctx.others?.length) return this.#hideAll();
+    for (const a of this.animals) for (const st of a.stuck ?? []) st.mesh.visible = !hidden;
+    for (const a of this.animals) if (a.id === undefined) a.id = this.nextId = (this.nextId ?? 0) + 1;
+    const views = this.#views(ctx);
     this.wait -= dt;
     this.crowCooldown -= dt;
     if (this.wait <= 0) {
@@ -701,23 +734,229 @@ export class Wildlife {
       }
       this.pendingTame = left;
     }
-    for (const herd of this.herds) this.#herd(herd, dt, ctx);
-    for (const flock of this.flocks) this.#flock(flock, dt, ctx);
+    // (Each one minds whoever is nearest it: you, or, online, one of the others.)
+    for (const herd of this.herds) this.#herd(herd, dt, this.#near(herd.members[0] ?? herd.mid, views));
+    for (const flock of this.flocks) this.#flock(flock, dt, this.#near(flock.centre, views));
     for (const a of this.animals) {
-      if (SPECIES[a.kind].ground) this.#walker(a, dt, ctx);
-      else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES.snake, dt, ctx);
-      else if (a.flock) this.#flockBird(a, dt, ctx);
-      else if (a.circling) this.#circler(a, dt, ctx);
-      else if (a.kind === 'monkey') this.#monkey(a, dt, ctx);
-      else this.#songbird(a, dt, ctx);
+      const c = this.#near(a, views);
+      if (SPECIES[a.kind].ground) this.#walker(a, dt, c);
+      else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES.snake, dt, c);
+      else if (a.flock) this.#flockBird(a, dt, c);
+      else if (a.circling) this.#circler(a, dt, c);
+      else if (a.kind === 'monkey') this.#monkey(a, dt, c);
+      else this.#songbird(a, dt, c);
     }
-    this.#vocalize(dt, ctx);
+    this.#vocalize(dt, views);
     // (Those flown off out of sight, or home to roost.)
     if (this.animals.some((a) => a.gone)) {
       for (const a of this.animals) if (a.gone) this.#unstick(a);
       this.animals = this.animals.filter((a) => !a.gone);
     }
     this.#draw();
+  }
+
+  #hideAll() {
+    for (const rig of Object.values(this.rigs)) for (const m of Object.values(rig.meshes)) m.visible = false;
+    this.woundMesh.visible = false;
+    for (const a of this.animals) for (const st of a.stuck ?? []) st.mesh.visible = false;
+  }
+
+  // --- Online -----------------------------------------------------------------
+  //
+  // The host runs every animal, around everyone in the world: each minds
+  // whoever is nearest it (flees them, stalks them, bites them), as if
+  // they were you; and what it does goes out to the others, who draw it
+  // (see snapshot, receive). Its calls are heard by everyone, from where
+  // it is (see ctx.emit).
+
+  // What each animal sees of whoever is nearest it: `ctx` for you, and,
+  // online, one like it for each of the others (`ctx.others`: [{ id, x, y
+  // (feet), z, yaw, crouch, sprint, swim, fly, speed }]). Their sounds are
+  // sent out (ctx.emit(name, x, z, volume, distance from who it's for));
+  // their bites too (ctx.emitTo(id, what)).
+  #views(ctx) {
+    const others = ctx.others ?? [];
+    if (!others.length || !ctx.emit) return (this.views = [ctx]);
+    const last = { x: 0, z: 0 };
+    const cam = ctx.camera.position;
+    const views = [{
+      ...ctx,
+      pan: (x, z) => ((last.x = x), (last.z = z), ctx.pan(x, z)),
+      sound: { call: (n, p, v) => (ctx.sound?.call(n, p, v), ctx.emit(n, last.x, last.z, v, Math.hypot(last.x - cam.x, last.z - cam.z))) },
+    }];
+    this.viewCache = this.viewCache ?? new Map();
+    for (const o of others) {
+      let v = this.viewCache.get(o.id);
+      if (!v) {
+        const at = { x: 0, z: 0 };
+        const position = new Vector3();
+        v = {
+          position, at,
+          player: {
+            alive: true, cover: 0, lure: false,
+            damage: (amount, kind) => ctx.emitTo(o.id, { k: 'hurt', amount, kind }),
+            poison: () => ctx.emitTo(o.id, { k: 'poison' }),
+          },
+          sound: { call: (n, p, vol) => ctx.emit(n, at.x, at.z, vol, Math.hypot(at.x - position.x, at.z - position.z)) },
+          pan: (x, z) => ((at.x = x), (at.z = z), 0),
+        };
+        this.viewCache.set(o.id, v);
+      }
+      v.position.set(o.x, o.y + 1.6, o.z);
+      Object.assign(v.player, { x: o.x, y: o.y + 1.6, z: o.z, mode: o.fly ? 'fly' : 'walk', crouch: !!o.crouch, moving: (o.speed ?? 0) > 0.3, sprint: !!o.sprint });
+      views.push({
+        ...ctx, ground: v.ground ?? (v.ground = (x, z) => { const y = ctx.ground(x, z); return y === y ? y : ctx.generator.getBaseHeight(x, z); }), camera: { position: v.position }, forward: { x: -Math.sin(o.yaw ?? 0), y: 0, z: -Math.cos(o.yaw ?? 0) }, sheltered: false,
+        player: v.player, sound: v.sound, pan: v.pan, other: o.id,
+      });
+    }
+    return (this.views = views);
+  }
+
+  // The view of whoever's nearest a point.
+  #near(p, views) {
+    if (views.length === 1 || !p) return views[0];
+    let best = views[0], bd = Infinity;
+    for (const v of views) {
+      const c = v.camera.position, d = (c.x - p.x) ** 2 + (c.z - p.z) ** 2;
+      if (d < bd) (bd = d), (best = v);
+    }
+    return best;
+  }
+
+  // How far a point is from the nearest of everyone.
+  #nearest(x, z) {
+    let d = Infinity;
+    for (const v of this.views ?? [this.ctx]) d = Math.min(d, Math.hypot(v.camera.position.x - x, v.camera.position.z - z));
+    return d;
+  }
+
+  /**
+   * The host's animals near any of `points` ([{ x, z }]), to send to the
+   * others: { a: [[id, kind, x, y, z, heading, pitch, roll, scale, flags,
+   * state, speed, headDown, headYaw, lie, crouch, gait, strideLen, side,
+   * coil, display, rear, drop, tint], ...] }.
+   */
+  snapshot(points, reach = 380) {
+    const r2 = (v) => Math.round(v * 100) / 100, r3 = (v) => Math.round((v ?? 0) * 1000) / 1000;
+    const out = [];
+    for (const a of this.animals) {
+      if (a.gone || a.id === undefined || !points.some((p) => Math.abs(p.x - a.x) < reach && Math.abs(p.z - a.z) < reach)) continue;
+      const flags = (a.alive ? 1 : 0) | (a.down ? 2 : 0) | (a.antlers ? 4 : 0) | (a.flying ? 8 : 0) | (a.swimming ? 16 : 0) | (a.landed ? 32 : 0)
+        | (a.circling ? 64 : 0) | (a.tame ? 128 : 0) | (a.young ? 256 : 0) | (a.sheared ? 512 : 0) | (a.flapping > 0 ? 1024 : 0) | (a.tom ? 2048 : 0);
+      out.push([
+        a.id, a.kind, r2(a.x), r2(a.y), r2(a.z), r3(a.heading), r3(a.pitch), r3(a.roll), r3(a.scale), flags,
+        a.state ?? '', r2(a.speed ?? 0), r3(a.headDown), r3(a.headYaw), r3(a.lie), r3(a.crouch), a.gait ?? '', r3(a.strideLen ?? 1), a.side ?? 1,
+        r3(a.coil), r3(a.display), r3(a.rear), r3(a.drop), a.tint ?? 0,
+      ]);
+    }
+    return { a: out };
+  }
+
+  /** Online, not the host: the host's animals as they are at room time `t` (see snapshot). */
+  receive(w, t) {
+    this.byId = this.byId ?? new Map();
+    const seen = new Set();
+    for (const r of w.a ?? []) {
+      const [id, kind] = r;
+      if (!SPECIES[kind]) continue;
+      seen.add(id);
+      let a = this.byId.get(id);
+      if (!a) {
+        a = { id, kind, x: r[2], y: r[3], z: r[4], heading: r[5], pitch: r[6], roll: r[7], scale: r[8], alive: true, health: 1, phase: Math.random() * TAU, flap: 0, cycle: Math.random(), samples: [], mirrored: true };
+        this.byId.set(id, a);
+        this.animals.push(a);
+      }
+      a.samples.push({ t, r });
+      if (a.samples.length > 12) a.samples.shift();
+      a.missed = 0;
+    }
+    // (Not in it twice running: gone, or out of reach.)
+    for (const a of this.animals) {
+      if (seen.has(a.id) || !a.mirrored) continue;
+      if ((a.missed = (a.missed ?? 0) + 1) >= 2) a.gone = true;
+    }
+    for (const a of this.animals) if (a.gone) (this.#unstick(a), this.byId.delete(a.id));
+    this.animals = this.animals.filter((a) => !a.gone);
+  }
+
+  // Each of the host's animals where it was a moment ago (smoothed between
+  // the snapshots either side), its legs and wings going as it moves.
+  #mirrorStep(dt, ctx) {
+    for (const a of this.animals) for (const st of a.stuck ?? []) st.mesh.visible = true;
+    const now = (ctx.netTime ?? 0) - 0.35;
+    const ang = (a, b, u) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * u;
+    for (const a of this.animals) {
+      const S = a.samples;
+      if (!S?.length) continue;
+      let p = S[0], q = S[0];
+      for (const s of S) {
+        if (s.t <= now) p = s;
+        if (s.t >= now) {
+          q = s;
+          break;
+        }
+        q = s;
+      }
+      const u = q.t > p.t ? Math.min(1, Math.max(0, (now - p.t) / (q.t - p.t))) : 1;
+      const A = p.r, B = q.r, L = (i) => A[i] + (B[i] - A[i]) * u;
+      const ox = a.x, oz = a.z;
+      a.x = L(2);
+      a.y = L(3);
+      a.z = L(4);
+      a.heading = ang(A[5], B[5], u);
+      a.pitch = ang(A[6], B[6], u);
+      if (this.time >= (a.localUntil ?? 0)) a.roll = ang(A[7], B[7], u);
+      a.scale = B[8];
+      const f = B[9];
+      const mine = this.time < (a.localUntil ?? 0) && !(f & 1) === !a.alive; // (wounded here just now: as it is here, till the host's news catches up)
+      if (this.time >= (a.localUntil ?? 0) || mine) {
+        a.alive = !!(f & 1);
+        a.down = !!(f & 2);
+        a.state = B[10];
+        a.side = B[18];
+      }
+      a.antlers = !!(f & 4);
+      a.flying = f & 8 ? a.flying ?? { vy: 0 } : null;
+      a.swimming = !!(f & 16);
+      a.landed = !!(f & 32);
+      a.circling = !!(f & 64);
+      a.tame = !!(f & 128);
+      a.young = f & 256 ? a.young || 0.5 : 0;
+      a.sheared = f & 512 ? a.sheared ?? this.time : null;
+      a.flapping = f & 1024 ? 1 : 0;
+      a.tom = !!(f & 2048);
+      a.speed = L(11);
+      a.headDown = L(12);
+      a.headYaw = L(13);
+      a.lie = L(14);
+      a.crouch = L(15);
+      a.gait = B[16] || undefined;
+      a.strideLen = B[17] || 1;
+      a.coil = L(19);
+      a.display = L(20);
+      a.rear = L(21);
+      a.drop = L(22);
+      a.tint = B[23] || undefined;
+      if (!a.alive) a.deadTime = (a.deadTime ?? 0) + dt;
+      const sp = SPECIES[a.kind];
+      const moved = Math.hypot(a.x - ox, a.z - oz);
+      if (moved < 5) {
+        // (Its legs going with how far it's come; its wings beating.)
+        a.cycle = (a.cycle ?? 0) + moved / Math.max(0.1, a.strideLen);
+        if (sp.ground && a.gait) a.rh = rhythm(a.gait, a.cycle, smoothstep(0.03, sp.walk * 0.5, a.speed));
+      }
+      const perched = a.state === 'perch' || a.state === 'ground' || a.landed || a.state === 'dead';
+      if (!perched || a.flying) a.flap += dt * (a.circling ? (a.flapping ? 11 : 0) : 22);
+      if (a.jolt && (a.jolt.t -= dt) <= 0) a.jolt = null;
+      if (sp.serpent) {
+        // (A snake's body follows the way its head has gone.)
+        const model = this.rigs[a.kind].model;
+        a.trail = a.trail ?? [];
+        if (!a.trail.length || Math.hypot(a.x - a.trail[0].x, a.z - a.trail[0].z) > 0.03) a.trail.unshift({ x: a.x, z: a.z, y: a.y });
+        if (a.trail.length > (model.segments * model.spacing * a.scale) / 0.03 + 4) a.trail.pop();
+      }
+      a.feet = null;
+    }
   }
 
   #populate(ctx) {
@@ -734,7 +973,7 @@ export class Wildlife {
     // Gone out of range (the wanderers: the land's own go with their
     // chunk), and the long dead: away.
     this.animals = this.animals.filter((a) => {
-      const far = !a.chunk && !a.keep && Math.hypot(a.x - cx, a.z - cz) > (SPECIES[a.kind].bird ? 520 : 430);
+      const far = !a.chunk && !a.keep && this.#nearest(a.x, a.z) > (SPECIES[a.kind].bird ? 520 : 430);
       const rotted = !a.alive && a.deadTime > 180;
       if (far || rotted) this.#unstick(a);
       return !(far || rotted || a.gone);
@@ -809,7 +1048,7 @@ export class Wildlife {
       }
     }
     // (Come the day, the night's visitors go off, out of sight.)
-    if (day > 0.5) for (const h of this.herds) if (h.night) for (const m of h.members) if (Math.hypot(m.x - cx, m.z - cz) > 120) m.gone = true;
+    if (day > 0.5) for (const h of this.herds) if (h.night) for (const m of h.members) if (this.#nearest(m.x, m.z) > 120) m.gone = true;
 
     // Flocks wheeling over the woods and fields, by day.
     if (day > 0.4 && this.flocks.filter((f) => f.kind === 'starling').length < 1) {
@@ -839,11 +1078,17 @@ export class Wildlife {
 
   // The chunks within about 400 m: each settled once as it comes into
   // range; those left well behind take their animals with them.
+  // (Online, the host's: around each of the others too.)
   #settleAround(ctx) {
+    for (const v of this.views ?? [ctx]) this.#settleNear(v.camera.position, ctx);
+  }
+
+  #settleNear(at, ctx) {
     const C = ctx.chunkSize, R = 3;
-    const ccx = Math.floor(ctx.camera.position.x / C), ccz = Math.floor(ctx.camera.position.z / C);
+    const ccx = Math.floor(at.x / C), ccz = Math.floor(at.z / C);
+    const centres = (this.views ?? [ctx]).map((v) => [Math.floor(v.camera.position.x / C), Math.floor(v.camera.position.z / C)]);
     for (const [key, home] of this.homes) {
-      if (Math.hypot(home.cx - ccx, home.cz - ccz) <= R + 1.5) continue;
+      if (centres.some(([x, z]) => Math.hypot(home.cx - x, home.cz - z) <= R + 1.5)) continue;
       for (const a of home.animals) if (!a.keep) a.gone = true;
       const herds = new Set(home.herds);
       this.herds = this.herds.filter((h) => !herds.has(h));
@@ -1519,10 +1764,11 @@ export class Wildlife {
    * panthers growl, pandas bleat, crocodiles bellow, songbirds sing (each
    * its own song), rabbits thump. A herd calls one at a time.
    */
-  #vocalize(dt, ctx) {
-    const night = 1 - (ctx.day ?? 1);
+  #vocalize(dt, views) {
+    const night = 1 - (views[0].day ?? 1);
     for (const a of this.animals) {
       if (!a.alive || a.gone || a.tame || a.kind === 'monkey') continue;
+      const ctx = this.#near(a, views);
       const holder = a.herd ?? a;
       if (holder.voiceAt === undefined) holder.voiceAt = this.time + rnd(5, 40);
       if (this.time < holder.voiceAt) continue;
@@ -2810,7 +3056,7 @@ export class Wildlife {
       }
     }
     W.instanceMatrix.needsUpdate = true;
-    W.visible = W.count > 0;
+    W.visible = W.count > 0 && !this.hidden;
     for (const rig of Object.values(this.rigs)) {
       for (const m of Object.values(rig.meshes)) {
         m.instanceMatrix.needsUpdate = true;
