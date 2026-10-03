@@ -1,6 +1,7 @@
 @echo off
-rem Facet Lands: updates the game, starts the multiplayer server and the
-rem game, and opens it in the browser. Double-click to run (Windows).
+rem Facet Lands: updates the game, builds it, starts it, and opens it in
+rem the browser. Double-click to run (Windows). Online play uses the game's
+rem own server (online, always there): nothing to set up.
 rem Needs Node.js (nodejs.org) and Git (git-scm.com).
 cd /d "%~dp0"
 title Facet Lands
@@ -12,10 +13,6 @@ echo.
 echo Installing what the game needs (only slow the first time)...
 call npm install --no-audit --no-fund
 if errorlevel 1 goto failed
-pushd server
-call npm install --no-audit --no-fund
-if errorlevel 1 goto failed
-popd
 
 echo.
 echo Building the game...
@@ -23,8 +20,7 @@ call npm run build
 if errorlevel 1 goto failed
 
 echo.
-echo Starting the server and the game (each in its own window: leave them open)...
-start "Facet Lands server" /d "%~dp0server" cmd /k npm start
+echo Starting the game (in its own window: leave it open)...
 start "Facet Lands game" /d "%~dp0." cmd /k npm run preview -- --port 4173 --strictPort
 
 rem (A moment for them to start, then open the game.)
@@ -35,11 +31,9 @@ echo.
 echo ============================================================
 echo  The game is open in your browser: http://localhost:4173
 echo.
-echo  To play online on this computer, in Play online use the server
-echo      ws://localhost:8787
-echo.
-echo  For friends on other computers, run host-online.bat instead.
-echo  To stop: close the "Facet Lands server" and "Facet Lands game" windows.
+echo  Play online: host a world, or click one in the list to join.
+echo  Nothing else to set up: the game's server is online for everyone.
+echo  To stop: close the "Facet Lands game" window.
 echo ============================================================
 echo.
 if /i not "%~1"=="nopause" pause

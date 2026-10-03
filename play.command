@@ -25,8 +25,7 @@ npm run build || { echo "The build failed (see above)."; read -r; exit 1; }
 echo
 echo "============================================================"
 echo " The game opens in your browser: http://localhost:4173"
-echo " To join a world on another computer, in Play online put that"
-echo " computer's address as the server, e.g. ws://192.168.1.42:8787"
+echo " Play online: host a world, or click one in the list to join."
 echo " Leave this window open while you play; close it to stop."
 echo "============================================================"
 npm run preview -- --port 4173 --strictPort

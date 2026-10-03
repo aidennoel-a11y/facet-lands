@@ -117,6 +117,9 @@ class Remote {
   }
 }
 
+/** The game's own server, online for everyone (see server/README.md: it runs on Render). */
+export const DEFAULT_SERVER = 'wss://facet-lands-server.onrender.com';
+
 /**
  * A server address as typed, made into one to connect to: "ws://" or
  * "wss://" put on the front if it's missing ("https://" becomes "wss://",
@@ -137,8 +140,12 @@ export function serverAddress(typed) {
 /** The worlds open on a server: [{ code, name, mode, players }] (see server.mjs, GET /worlds). */
 export async function openWorlds(typed) {
   const url = serverAddress(typed).replace(/^ws/i, 'http') + '/worlds';
-  const res = await fetch(url, { cache: 'no-store' }).catch(() => null);
-  if (!res?.ok) throw new Error("Couldn't reach the server. Is it running (the \"Facet Lands server\" window)?");
+  // (A free server asleep takes up to a minute to wake: so it's waited for.)
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 75000);
+  const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal }).catch(() => null);
+  clearTimeout(timer);
+  if (!res?.ok) throw new Error("Couldn't reach the server. Check you're online, then Refresh.");
   return res.json();
 }
 

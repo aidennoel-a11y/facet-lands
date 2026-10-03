@@ -4,7 +4,7 @@
 // listed in this browser's storage (see WORLDS_KEY); a testing world is
 // never saved.
 
-import { openWorlds } from '../net/Multiplayer.js';
+import { DEFAULT_SERVER, openWorlds } from '../net/Multiplayer.js';
 import { describeHardware, graphicsInfo, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
@@ -191,7 +191,6 @@ export class StartMenu {
     };
     const card = this.#show(`
       <h2 class="sm-head">Play online</h2>
-      <label class="sm-field">Server<input id="sm-server" type="text" maxlength="200" placeholder="ws://localhost:8787" value="${esc(remembered('server') || 'ws://localhost:8787')}" /></label>
       <label class="sm-field">Your name<input id="sm-player" type="text" maxlength="24" value="${esc(remembered('name') || 'Wanderer')}" /></label>
       <button class="sm-btn sm-primary" data-go="host">Host a new world</button>
       <div class="sm-list-head"><span>Open worlds</span><button type="button" class="sm-refresh" data-go="refresh">Refresh</button></div>
@@ -203,13 +202,18 @@ export class StartMenu {
           <button class="sm-btn" data-go="join">Join</button>
         </div>
       </details>
+      <details class="sm-bycode"${remembered('server2') ? ' open' : ''}>
+        <summary>Server settings</summary>
+        <label class="sm-field">Server (empty: the game's own, online)<input id="sm-server" type="text" maxlength="200" placeholder="${DEFAULT_SERVER}" value="${esc(remembered('server2'))}" /></label>
+      </details>
       <p class="sm-note" aria-live="polite">${esc(note)}</p>
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
     const say = (t) => (card.querySelector('.sm-note').textContent = t);
     const read = () => {
-      const url = card.querySelector('#sm-server').value.trim() || 'ws://localhost:8787', name = card.querySelector('#sm-player').value.trim() || 'Wanderer';
+      // (A server of your own, if one's put in Server settings; else the game's.)
+      const own = card.querySelector('#sm-server').value.trim(), url = own || DEFAULT_SERVER, name = card.querySelector('#sm-player').value.trim() || 'Wanderer';
       try {
-        localStorage.setItem('facet-lands:server', url);
+        localStorage.setItem('facet-lands:server2', own);
         localStorage.setItem('facet-lands:name', name);
       } catch {
         // (Not remembered, then.)
@@ -226,7 +230,7 @@ export class StartMenu {
     // The worlds open on the server, each a button to join it.
     const list = card.querySelector('.sm-open');
     const refresh = () => {
-      list.innerHTML = '<li class="sm-none">Looking…</li>';
+      list.innerHTML = '<li class="sm-none">Looking… (the server may take up to a minute to wake if nobody\'s played for a while)</li>';
       openWorlds(read().url)
         .then((worlds) => {
           list.innerHTML = worlds.length
