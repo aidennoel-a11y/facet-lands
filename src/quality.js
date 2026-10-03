@@ -70,14 +70,65 @@ export const QUALITY = {
   },
 };
 
-/** The chosen quality ('low', 'medium' or 'high'), Medium unless chosen. */
+/**
+ * What draws the game here, as the browser tells it: { name (the graphics
+ * hardware, or ''), software (no graphics card being used: the browser is
+ * drawing on the processor, slowly, for want of a driver, or with hardware
+ * acceleration off), suggested ('low', 'medium' or 'high') }. Asked once.
+ */
+let graphics = null;
+export function graphicsInfo() {
+  if (graphics) return graphics;
+  let name = '', software = false;
+  try {
+    const canvas = document.createElement('canvas');
+    // (The strong chip, on a laptop with two.)
+    const gl = canvas.getContext('webgl2', { powerPreference: 'high-performance' }) ?? canvas.getContext('webgl', { powerPreference: 'high-performance' });
+    if (!gl) software = true;
+    else {
+      const info = gl.getExtension('WEBGL_debug_renderer_info');
+      name = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+      // (A context the browser would only give with a "major performance
+      // caveat" is one drawn in software.)
+      const strict = document.createElement('canvas').getContext('webgl2', { failIfMajorPerformanceCaveat: true });
+      if (!strict) software = true;
+      else strict.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+  } catch {
+    software = true;
+  }
+  if (/swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i.test(name)) software = true;
+  // Graphics cards of their own (and Apple's chips) take High; the
+  // graphics built into a processor, Medium; drawing in software, Low.
+  const strong = /nvidia|geforce|rtx|gtx|quadro|radeon rx|radeon pro|arc\(tm\) a|arc a\d|apple m\d|apple gpu/i.test(name);
+  const suggested = software ? 'low' : strong ? 'high' : 'medium';
+  // (Browsers report it like "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 Laptop
+  // GPU (0x000028E0) Direct3D11 vs_5_0 ps_5_0, D3D11)": the middle part's the card.)
+  const parts = name.replace(/^ANGLE \(|\)$/g, '').replace(/ANGLE Metal Renderer: /, '').split(', ');
+  const card = (parts.length > 1 ? parts[1] : parts[0]).replace(/\s*\(0x[0-9a-f]+\).*$/i, '').replace(/\s+(Direct3D|OpenGL|Metal).*$/i, '').trim();
+  graphics = { name: card, software, suggested };
+  return graphics;
+}
+
+/** Whether the quality was chosen (rather than picked to suit the graphics). */
+export function qualityChosen() {
+  try {
+    return !!(new URLSearchParams(location.search).get('quality') ?? localStorage.getItem(KEY));
+  } catch {
+    return false;
+  }
+}
+
+/** The quality: the one chosen on the start menu, or else the one that suits this computer's graphics. */
 export function quality() {
   try {
     const q = new URLSearchParams(location.search).get('quality') ?? localStorage.getItem(KEY);
-    return QUALITY[q] ? q : 'medium';
+    if (QUALITY[q]) return q;
   } catch {
-    return 'medium';
+    // (No storage: picked to suit, then.)
   }
+  return graphicsInfo().suggested;
 }
 
 export function setQuality(q) {

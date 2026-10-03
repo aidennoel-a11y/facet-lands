@@ -58,7 +58,7 @@ import { applyQuality, MAX_VIEW } from './quality.js';
 // (How much to ask of this computer: see quality.js, chosen on the start menu.)
 let QUALITY = applyQuality();
 const canvas = document.getElementById('scene');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.antialias });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.antialias, powerPreference: 'high-performance' }); // (the strong graphics chip, on a laptop with two)
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 // Shadows fade out over the outer edge of the sun's shadow map, rather

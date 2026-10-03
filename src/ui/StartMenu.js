@@ -4,9 +4,10 @@
 // listed in this browser's storage (see WORLDS_KEY); a testing world is
 // never saved.
 
-import { QUALITY, quality, setQuality } from '../quality.js';
+import { graphicsInfo, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
+const esc = (v) => String(v).replace(/[&"<]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;' })[c]);
 
 export const MODES = {
   survival: { name: 'Survival', blurb: 'Hunger, thirst, cold and wild animals. Gather, craft and build to stay alive. No flying.' },
@@ -148,7 +149,8 @@ export class StartMenu {
         <span>Graphics</span>
         ${Object.entries(QUALITY).map(([id, q]) => `<button type="button" class="sm-q${id === quality() ? ' sm-picked' : ''}" data-q="${id}" role="radio" aria-checked="${id === quality()}" title="${q.blurb}">${q.name}</button>`).join('')}
       </div>
-      <p class="sm-qnote">${QUALITY[quality()].blurb}</p>
+      <p class="sm-qnote">${QUALITY[quality()].blurb}${qualityChosen() ? '' : ` <em>Picked to suit your graphics${graphicsInfo().name ? ` (${esc(graphicsInfo().name.slice(0, 60))})` : ''}.</em>`}</p>
+      ${graphicsInfo().software ? `<p class="sm-warn"><strong>Your graphics card isn't being used.</strong> The browser is drawing the game on the processor instead, which is very slow. Install your computer's graphics driver (from its maker's support site), and check hardware acceleration is on in the browser's settings (Chrome: Settings, System, "Use graphics acceleration when available").</p>` : ''}
       <a class="sm-credits" href="sounds/CREDITS.md" target="_blank" rel="noopener">Sound credits</a>`);
     this.#on('[data-go="start"]', () => this.choose());
     // (Put into effect when a world starts: see main's useQuality.)

@@ -1221,3 +1221,29 @@ kbd {
   color: #a89f86;
   font-size: 13px;
 }
+.sm-qnote em {
+  font-style: normal;
+  color: #8f9a74;
+}
+/* No graphics card in use: why it's slow, and what to do. */
+.sm-warn {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  background: rgba(140, 60, 30, 0.35);
+  border-left: 3px solid #d8772a;
+  color: #f2e2c8;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+}
+.sm-warn strong {
+  color: #ffd8a8;
+}
+.sm-quality .sm-q {
+  color: #e8dcb8;
+  background: rgba(96, 112, 82, 0.6);
+}
+.sm-quality .sm-q.sm-picked {
+  color: #fff8e6;
+  background: #7a9a4a;
+}
