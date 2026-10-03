@@ -1247,3 +1247,23 @@ kbd {
   color: #fff8e6;
   background: #7a9a4a;
 }
+.sm-hw {
+  margin: 4px 0 0;
+  text-align: center;
+  color: #7f8a6c;
+  font-size: 12px;
+}
+/* A word that the game has eased its settings to run smoothly. */
+.perf-note {
+  position: fixed;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  background: rgba(20, 22, 18, 0.72);
+  color: #e8dcb8;
+  font: 500 14px 'Barlow', sans-serif;
+  pointer-events: none;
+  transition: opacity 1s;
+  z-index: 20;
+}

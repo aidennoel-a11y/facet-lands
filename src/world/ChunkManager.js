@@ -58,8 +58,10 @@ export class ChunkManager {
     this.wanted = new Map(); // "cx,cz" -> the LOD it should be at
     this.inFlight = new Map(); // "cx,cz" -> job handed to a worker
     this.ready = []; // jobs back from a worker, to put together
+    // (As many as the processor has cores to spare, leaving two for the page
+    // itself and the browser: 2 on a 4-thread laptop, 10 on a 16-thread one.)
     const count = typeof Worker !== 'undefined' && typeof window !== 'undefined'
-      ? Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 2))
+      ? Math.max(1, Math.min(10, (navigator.hardwareConcurrency || 4) - 2))
       : 0;
     for (let k = 0; k < count; k++) {
       try {
@@ -211,7 +213,11 @@ export class ChunkManager {
   }
 
   #processQueue() {
-    const deadline = performance.now() + this.config.chunkBuildBudgetMs;
+    // (With a pile of finished chunks waiting, starting a world or flying
+    // fast, more of the frame goes to putting them in; walking, the usual
+    // small slice, so it stays smooth.)
+    const backlog = this.ready.length > 6;
+    const deadline = performance.now() + this.config.chunkBuildBudgetMs * (backlog ? 2.5 : 1);
     this.#dispatch();
     // Put together what's ready (at least one, so progress is guaranteed).
     let built = 0;

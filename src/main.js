@@ -1234,6 +1234,49 @@ function useQuality() {
   shadow.camera.updateProjectionMatrix();
   PIXEL_RATIO = Math.min(window.devicePixelRatio, QUALITY.pixelRatio);
   resize();
+  perfCheck.step = 0;
+  perfCheck.settle = 0;
+  perfCheck.frames = 0;
+  perfCheck.time = 0;
+}
+
+// Once a world's land is in, a few seconds of play are timed; if this
+// computer can't keep it smooth (under 32 frames a second), the game eases
+// off, a step at a time: first the screen resolution, then the shadows'
+// detail. Never back up again, and only these two (nothing is rebuilt), so
+// no flicker or hitch.
+const perfCheck = { step: 0, settle: 0, frames: 0, time: 0 };
+function checkPerformance(dt) {
+  const P = perfCheck;
+  if (P.step >= 2 || !startMenu?.world || startMenu.open || chunks.pendingCount > 8) return;
+  if ((P.settle += dt) < 3) return;
+  P.frames++;
+  P.time += dt;
+  if (P.time < 8) return;
+  const fps = P.frames / P.time;
+  P.frames = P.time = P.settle = 0;
+  if (fps >= 32) return void (P.step = 2);
+  P.step++;
+  if (PIXEL_RATIO > 1) {
+    PIXEL_RATIO = 1;
+    resize();
+    return perfNote('Lowered the resolution a little to keep it smooth');
+  }
+  const shadow = dayNight.light.shadow;
+  if (shadow.mapSize.x > 1024) {
+    shadow.mapSize.set(shadow.mapSize.x / 2, shadow.mapSize.y / 2);
+    shadow.map?.dispose();
+    shadow.map = null;
+    return perfNote('Softened the shadows a little to keep it smooth');
+  }
+}
+function perfNote(text) {
+  const el = document.createElement('div');
+  el.className = 'perf-note';
+  el.textContent = `${text} (Graphics on the title screen to change).`;
+  document.body.append(el);
+  setTimeout(() => (el.style.opacity = '0'), 5000);
+  setTimeout(() => el.remove(), 6500);
 }
 // Under the water: a murky blue-green haze closing in (darker at night and
 // in the depths), the sky gone, the sounds muffled.
@@ -1338,6 +1381,7 @@ function tick(now) {
   // stamped before the last, which some browsers give, would run things in
   // reverse, a fading flash growing ever brighter.)
   const dt = Math.max(0, Math.min(elapsed, 0.1));
+  checkPerformance(elapsed);
   lastTime = now;
   controls.update(dt);
   playerTraces(dt);

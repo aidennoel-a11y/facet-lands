@@ -149,5 +149,34 @@ export const MAX_VIEW = WORLD.viewDistance;
 export function applyQuality() {
   const preset = QUALITY[quality()];
   Object.assign(WORLD, structuredClone(BASE), preset.world);
+  // Fitted to the rest of the computer: the processor (how long each frame
+  // may spend putting finished land in place: more cores build more of it
+  // at once), and the memory (a far view holds a lot of land).
+  const hw = hardware();
+  WORLD.chunkBuildBudgetMs = hw.threads >= 12 ? 4.5 : hw.threads <= 4 ? 2.5 : 3.5;
+  if (hw.memory && hw.memory <= 4) WORLD.viewDistance = Math.min(WORLD.viewDistance, 11);
   return preset;
+}
+
+/**
+ * The computer, as far as a page can tell: { threads (processor threads),
+ * memory (GB, rounded down, at most 8 as browsers report it; null if
+ * unknown), graphics (see graphicsInfo), pixelRatio (of the screen) }.
+ */
+export function hardware() {
+  return {
+    threads: navigator.hardwareConcurrency || 4,
+    memory: navigator.deviceMemory ?? null,
+    graphics: graphicsInfo(),
+    pixelRatio: window.devicePixelRatio || 1,
+  };
+}
+
+/** A line saying what was found, for the start menu. */
+export function describeHardware() {
+  const hw = hardware();
+  const parts = [hw.graphics.software ? 'no graphics card in use' : hw.graphics.name || 'graphics'];
+  parts.push(`${hw.threads} processor threads`);
+  if (hw.memory) parts.push(`${hw.memory >= 8 ? '8+' : hw.memory} GB memory`);
+  return parts.join(' · ');
 }
