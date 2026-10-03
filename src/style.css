@@ -1267,3 +1267,68 @@ kbd {
   transition: opacity 1s;
   z-index: 20;
 }
+/* The worlds open on a server. */
+.sm-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 6px 0 -2px;
+  color: #c9bfa4;
+  font: 600 15px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sm-refresh {
+  font: 600 13px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: 0;
+  cursor: pointer;
+  color: #e8dcb8;
+  background: rgba(96, 112, 82, 0.6);
+}
+.sm-open {
+  max-height: 210px;
+  overflow-y: auto;
+}
+.sm-bycode summary {
+  cursor: pointer;
+  color: #a89f86;
+  font-size: 13px;
+  margin: 4px 0;
+}
+/* (The start menu's own buttons, over the page's plain button style.) */
+.start-menu button[type='button'] {
+  box-shadow: none;
+  border-radius: 0;
+}
+.start-menu button[type='button'].sm-world {
+  color: #f1ead8;
+  background: rgba(0, 0, 0, 0.25);
+}
+.start-menu button[type='button'].sm-world:hover {
+  background: rgba(194, 101, 42, 0.3);
+}
+.start-menu button[type='button'].sm-refresh,
+.start-menu button[type='button'].sm-q {
+  color: #e8dcb8;
+  background: rgba(96, 112, 82, 0.6);
+}
+.start-menu button[type='button'].sm-q.sm-picked {
+  color: #fff8e6;
+  background: #7a9a4a;
+}
+.start-menu button[type='button'].sm-delete {
+  color: #f6d8c8;
+  background: rgba(150, 50, 36, 0.6);
+  padding: 0 14px;
+  letter-spacing: 0.06em;
+}
+.start-menu button[type='button'].sm-delete:hover {
+  background: rgba(190, 64, 44, 0.85);
+}
+.start-menu button[type='button'].sm-delete[data-confirm] {
+  color: #fff;
+  background: #b8402c;
+}

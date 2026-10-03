@@ -4,6 +4,7 @@
 // listed in this browser's storage (see WORLDS_KEY); a testing world is
 // never saved.
 
+import { openWorlds } from '../net/Multiplayer.js';
 import { describeHardware, graphicsInfo, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
@@ -178,7 +179,8 @@ export class StartMenu {
   }
 
   // Playing together: the server's address and your name (remembered),
-  // then open a world of your own to others, or join one by its code.
+  // then open a world of your own to others, or join one: the worlds open
+  // on the server are listed, to click (or, to join one not listed, its code).
   online(note = '') {
     const remembered = (k) => {
       try {
@@ -187,42 +189,65 @@ export class StartMenu {
         return '';
       }
     };
-    const esc = (v) => String(v).replace(/[&"<]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;' })[c]);
     const card = this.#show(`
       <h2 class="sm-head">Play online</h2>
-      <label class="sm-field">Server<input id="sm-server" type="text" maxlength="200" placeholder="wss://your-server.onrender.com" value="${esc(remembered('server'))}" /></label>
+      <label class="sm-field">Server<input id="sm-server" type="text" maxlength="200" placeholder="ws://localhost:8787" value="${esc(remembered('server') || 'ws://localhost:8787')}" /></label>
       <label class="sm-field">Your name<input id="sm-player" type="text" maxlength="24" value="${esc(remembered('name') || 'Wanderer')}" /></label>
       <button class="sm-btn sm-primary" data-go="host">Host a new world</button>
-      <div class="sm-join">
-        <label class="sm-field">World code<input id="sm-code" type="text" maxlength="6" placeholder="ABC123" autocomplete="off" /></label>
-        <button class="sm-btn" data-go="join">Join</button>
-      </div>
+      <div class="sm-list-head"><span>Open worlds</span><button type="button" class="sm-refresh" data-go="refresh">Refresh</button></div>
+      <ul class="sm-worlds sm-open" aria-live="polite"><li class="sm-none">Looking…</li></ul>
+      <details class="sm-bycode">
+        <summary>Join with a code instead</summary>
+        <div class="sm-join">
+          <label class="sm-field">World code<input id="sm-code" type="text" maxlength="6" placeholder="ABC123" autocomplete="off" /></label>
+          <button class="sm-btn" data-go="join">Join</button>
+        </div>
+      </details>
       <p class="sm-note" aria-live="polite">${esc(note)}</p>
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
+    const say = (t) => (card.querySelector('.sm-note').textContent = t);
     const read = () => {
-      const url = card.querySelector('#sm-server').value.trim(), name = card.querySelector('#sm-player').value.trim() || 'Wanderer';
+      const url = card.querySelector('#sm-server').value.trim() || 'ws://localhost:8787', name = card.querySelector('#sm-player').value.trim() || 'Wanderer';
       try {
         localStorage.setItem('facet-lands:server', url);
         localStorage.setItem('facet-lands:name', name);
       } catch {
         // (Not remembered, then.)
       }
-      if (!url) card.querySelector('.sm-note').textContent = 'Put in the server address first.';
-      return url ? { url, name } : null;
+      return { url, name };
     };
-    this.#on('[data-go="host"]', () => {
+    const join = (code) => {
       const who = read();
-      if (who) this.create(who);
-    });
-    this.#on('[data-go="join"]', () => {
-      const who = read();
-      const code = card.querySelector('#sm-code').value.trim().toUpperCase();
-      if (!who) return;
-      if (!code) return (card.querySelector('.sm-note').textContent = 'Put in the code of the world to join.');
-      card.querySelector('.sm-note').textContent = 'Joining…';
+      say('Joining…');
       this.onJoin({ ...who, code })
         .then((world) => this.#play(world))
         .catch((e) => this.online(e.message));
+    };
+    // The worlds open on the server, each a button to join it.
+    const list = card.querySelector('.sm-open');
+    const refresh = () => {
+      list.innerHTML = '<li class="sm-none">Looking…</li>';
+      openWorlds(read().url)
+        .then((worlds) => {
+          list.innerHTML = worlds.length
+            ? worlds.map((w) => `
+              <li><button type="button" class="sm-world" data-code="${esc(w.code)}">
+                <strong>${esc(w.name)}</strong>
+                <span>${MODES[w.mode]?.name ?? esc(w.mode)} · ${w.players} ${w.players === 1 ? 'player' : 'players'}</span>
+              </button></li>`).join('')
+            : '<li class="sm-none">No worlds open on this server yet: host one!</li>';
+          for (const b of list.querySelectorAll('.sm-world')) b.addEventListener('click', () => join(b.dataset.code));
+        })
+        .catch((e) => (list.innerHTML = `<li class="sm-none">${esc(e.message)}</li>`));
+    };
+    refresh();
+    card.querySelector('#sm-server').addEventListener('change', refresh);
+    this.#on('[data-go="refresh"]', refresh);
+    this.#on('[data-go="host"]', () => this.create(read()));
+    this.#on('[data-go="join"]', () => {
+      const code = card.querySelector('#sm-code').value.trim().toUpperCase();
+      if (!code) return say('Put in the code of the world to join.');
+      join(code);
     });
     this.#on('[data-go="back"]', () => this.choose());
   }
@@ -284,7 +309,7 @@ export class StartMenu {
               <strong>${w.name.replace(/</g, '&lt;')}</strong>
               <span>${MODES[w.mode]?.name ?? w.mode} · seed ${String(w.seed).replace(/</g, '&lt;')} · ${when(w.played)}</span>
             </button>
-            <button type="button" class="sm-delete" data-del="${w.id}" title="Delete this world">✕</button>
+            <button type="button" class="sm-delete" data-del="${w.id}" title="Delete this world">Delete</button>
           </li>`).join('') || '<li class="sm-none">No saved worlds yet.</li>'}
       </ul>
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
@@ -296,7 +321,7 @@ export class StartMenu {
           this.load();
         } else {
           b.dataset.confirm = '1';
-          b.textContent = 'Delete?';
+          b.textContent = 'Really delete?';
         }
       });
     }

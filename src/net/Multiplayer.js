@@ -117,6 +117,31 @@ class Remote {
   }
 }
 
+/**
+ * A server address as typed, made into one to connect to: "ws://" or
+ * "wss://" put on the front if it's missing ("https://" becomes "wss://",
+ * "http://" "ws://"; your own computer, ws://, anywhere else, wss://), and
+ * no trailing slash. Throws, with a helpful message, if it can't be one
+ * (a world code typed in the wrong box, say).
+ */
+export function serverAddress(typed) {
+  let a = String(typed ?? '').trim().replace(/\/+$/, '');
+  if (!a) throw new Error('Put in the server address first.');
+  if (/^[A-Z0-9]{6}$/i.test(a) && !/^(localhost|[\d.]+)$/i.test(a)) throw new Error("That looks like a world code: it goes in the World code box (or pick the world from the list). The server's address is something like ws://localhost:8787.");
+  if (/^https:\/\//i.test(a)) a = 'wss://' + a.slice(8);
+  else if (/^http:\/\//i.test(a)) a = 'ws://' + a.slice(7);
+  else if (!/^wss?:\/\//i.test(a)) a = (/^(localhost|127\.|192\.168\.|10\.|\[?::1)/i.test(a) ? 'ws://' : 'wss://') + a;
+  return a;
+}
+
+/** The worlds open on a server: [{ code, name, mode, players }] (see server.mjs, GET /worlds). */
+export async function openWorlds(typed) {
+  const url = serverAddress(typed).replace(/^ws/i, 'http') + '/worlds';
+  const res = await fetch(url, { cache: 'no-store' }).catch(() => null);
+  if (!res?.ok) throw new Error("Couldn't reach the server. Is it running (the \"Facet Lands server\" window)?");
+  return res.json();
+}
+
 export class Multiplayer {
   constructor(scene) {
     this.scene = scene;
@@ -149,8 +174,14 @@ export class Multiplayer {
     return this.#open(url, { t: 'join', code, name });
   }
 
-  #open(url, hello) {
+  #open(typed, hello) {
     this.leave();
+    let url;
+    try {
+      url = serverAddress(typed);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     return new Promise((resolve, reject) => {
       let ws;
       try {

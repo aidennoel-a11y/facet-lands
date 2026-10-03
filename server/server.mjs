@@ -17,6 +17,8 @@
 //     { t: 'joined', id, name, colour }     { t: 'left', id }
 //     { t: 'states', list: [[id, s], ...] } everyone's latest, ~15 times a second
 //     { t: 'hour', hour }                   { t: 'error', message }
+//
+// And over plain HTTP, GET /worlds: the worlds open now, for the game's list.
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 
@@ -109,7 +111,14 @@ function onMessage(ws, data) {
   }
 }
 
+// Plain web requests: GET /worlds, the open worlds (for the game's list:
+// [{ code, name, mode, players }]); anything else, a line saying it's up.
 const http = createServer((req, res) => {
+  if (req.url?.startsWith('/worlds')) {
+    const list = [...rooms.values()].filter((r) => r.players.size).map((r) => ({ code: r.code, name: r.world.name, mode: r.world.mode, players: r.players.size }));
+    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
+    return res.end(JSON.stringify(list));
+  }
   res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' });
   res.end(`Facet Lands server: ${rooms.size} world${rooms.size === 1 ? '' : 's'} open\n`);
 });
