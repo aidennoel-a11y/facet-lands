@@ -562,7 +562,7 @@ const game = new Game({
 // Online, one world for everyone: what's done to it, the sky, the animals
 // and their calls (see net/WorldSync).
 const sync = new WorldSync({
-  mp, game, trees, mushrooms, torches, weather, clouds, seasons, wildlife, sound,
+  mp, game, trees, mushrooms, torches, weather, clouds, seasons, wildlife, lightning, sound,
   pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)),
   windStrength: () => windStrength.value,
 });
@@ -1496,7 +1496,7 @@ function tick(now) {
     sheltered, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), tame: peaceful?.checked ?? WORLD.tameWildlife,
     player: game.player, structures: game.structures,
     // (Online: the others, for the host's animals to mind; their calls, to be heard by everyone.)
-    others: sync.others(), netTime: mp.roomTime(),
+    others: sync.others(), people: sync.people(), netTime: mp.roomTime(),
     emit: (n, x, z, v, d) => sync.emit(n, x, z, v, d), emitTo: (id, what) => sync.emitTo(id, what),
   };
   wildlife.update(dt, life);
@@ -1594,7 +1594,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, mp, sync, game, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, mp, sync, waterAt, game, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

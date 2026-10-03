@@ -211,6 +211,7 @@ export class Wildlife {
     this.time = 0;
     // What lives in each chunk of the land (see #settle): "cx,cz" -> { animals, herds, birds }.
     this.homes = new Map();
+    this.remoteCrowns = new Map(); // (online, the host's: the trees round the others, "cx,cz" -> crowns, as they send them)
     this.last = null; // where you were, and which way you're heading
     this.heading = null;
   }
@@ -222,6 +223,7 @@ export class Wildlife {
     this.herds = [];
     this.flocks = [];
     this.homes.clear();
+    this.remoteCrowns.clear();
   }
 
   // A sheep become yours: out of its flock, kept (not left behind with its
@@ -1102,9 +1104,9 @@ export class Wildlife {
         if (!home) this.homes.set(key, (home = this.#settle(cx, cz, ctx)));
         // Songbirds on its trees, once they're there (the trees near you).
         // Monkeys: a troop in the jungle's crowns.
-        if (!home.monkeys && ctx.trees.crowns.get(key)) {
+        if (!home.monkeys && this.#crowns(ctx.trees, key)) {
           home.monkeys = true;
-          const list = ctx.trees.crowns.get(key);
+          const list = this.#crowns(ctx.trees, key);
           const w = ctx.generator.getBiomeWeights((cx + 0.5) * C, (cz + 0.5) * C, {});
           if (w.jungle > 0.5 && home.rand() < 0.6) {
             for (let k = 0, n = 3 + Math.floor(home.rand() * 5); k < n && list.length; k++) {
@@ -1124,9 +1126,9 @@ export class Wildlife {
             }
           }
         }
-        if (!home.birds && ctx.day > 0.3 && ctx.trees.crowns.get(key)) {
+        if (!home.birds && ctx.day > 0.3 && this.#crowns(ctx.trees, key)) {
           home.birds = true;
-          const list = ctx.trees.crowns.get(key), n = Math.round(home.rand() * 2.6 * (1 - 0.6 * ctx.winter));
+          const list = this.#crowns(ctx.trees, key), n = Math.round(home.rand() * 2.6 * (1 - 0.6 * ctx.winter));
           for (let k = 0; k < n && list.length; k++) {
             const i = Math.floor(home.rand() * (list.length / 5)) * 5;
             if (list[i + 3] - list[i + 2] < 2.5) continue;
@@ -1541,6 +1543,12 @@ export class Wildlife {
     return null;
   }
 
+  // A chunk's broad-leaved crowns: the trees here, or (online, the host's)
+  // those round one of the others, as they've sent them (see remoteCrowns).
+  #crowns(trees, key) {
+    return trees.crowns.get(key) ?? this.remoteCrowns.get(key);
+  }
+
   // Broad-leaved crowns (see TreeLayer.crowns) within `r` of you: [x, z, bottom, top, radius].
   #crownsNear(ctx, r) {
     const { camera, trees, chunkSize } = ctx;
@@ -1548,7 +1556,7 @@ export class Wildlife {
     const cx = Math.floor(camera.position.x / chunkSize), cz = Math.floor(camera.position.z / chunkSize);
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
-        const list = trees.crowns.get(`${cx + dx},${cz + dz}`);
+        const list = this.#crowns(trees, `${cx + dx},${cz + dz}`);
         if (!list) continue;
         for (let k = 0; k < list.length; k += 5) {
           if (list[k + 3] - list[k + 2] < 2.5) continue; // (not the bushes)

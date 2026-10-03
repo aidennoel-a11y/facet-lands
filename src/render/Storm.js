@@ -143,11 +143,32 @@ export class Lightning {
     this.strike = null; // { age, pulses: [start times], power }
     this.pending = []; // thunder on its way: { at, distance }
     this.time = 0;
+    // Online: the host's storm strikes around any of you (`centres()`: the
+    // others' positions), and each strike goes out (`onBolt`); the others'
+    // own storms only follow theirs (`follower`, see strikeAt).
+    this.centres = null;
+    this.onBolt = null;
+    this.follower = false;
+  }
+
+  /** A strike just as the host's (online): at (x, z), the bolt shaped by `seed`, flashing in `pulses`. */
+  strikeAt(x, z, seed, pulses) {
+    if (!this._camera) return;
+    if (this.strike) this.#end();
+    this.#start(this._camera, this._ground, { x, z, seed, pulses });
   }
 
   /** A jagged bolt with a few forks, as a flat ribbon (drawn facing the camera). */
-  #boltGeometry(height) {
+  #boltGeometry(height, seed) {
     const positions = [];
+    // (Shaped by its seed: the same bolt for everyone online.)
+    let t = seed >>> 0;
+    const random = () => {
+      t = (t + 0x6d2b79f5) >>> 0;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
     const ribbon = (points, width) => {
       for (let i = 0; i < points.length - 1; i++) {
         const [ax, ay] = points[i], [bx, by] = points[i + 1];
@@ -158,7 +179,7 @@ export class Lightning {
     const path = (x, y, length, steps, spread) => {
       const pts = [[x, y]];
       for (let i = 1; i <= steps; i++) {
-        x += (Math.random() - 0.5) * spread;
+        x += (random() - 0.5) * spread;
         y -= length / steps;
         pts.push([x, y]);
       }
@@ -168,8 +189,8 @@ export class Lightning {
     ribbon(main, 3.2);
     ribbon(main, 9); // faint glow around it (drawn additively, so it just brightens)
     for (let f = 0; f < 3; f++) {
-      const from = main[3 + Math.floor(Math.random() * 12)];
-      ribbon(path(from[0], from[1], height * (0.15 + Math.random() * 0.25), 7, 18), 1.6);
+      const from = main[3 + Math.floor(random() * 12)];
+      ribbon(path(from[0], from[1], height * (0.15 + random() * 0.25), 7, 18), 1.6);
     }
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
@@ -187,6 +208,8 @@ export class Lightning {
    */
   update(dt, storm, camera, dayNight, ground, sound, sheltered) {
     this.time += dt;
+    this._camera = camera;
+    this._ground = ground;
     // Thunder arriving.
     for (let i = this.pending.length - 1; i >= 0; i--) {
       if (this.time >= this.pending[i].at) {
@@ -198,7 +221,7 @@ export class Lightning {
 
     if (!this.strike) {
       this.wait -= dt * storm;
-      if (storm > 0.3 && this.wait <= 0) this.#start(camera, ground);
+      if (storm > 0.3 && this.wait <= 0 && !this.follower) this.#start(camera, ground);
     }
 
     let flash = 0;
@@ -215,19 +238,31 @@ export class Lightning {
     dayNight.flash = sheltered ? 0 : flash;
   }
 
-  #start(camera, ground) {
-    const angle = Math.random() * Math.PI * 2;
-    // (Now and then one strikes close by: the thunder all but at once. And
-    // out in the open up high, the tallest thing about, it may come down
-    // right by you: see `exposed`, set from outside, 0..1.)
-    const near = Math.random() < 0.35 * (this.exposed ?? 0);
-    const distance = near ? 1.5 + Math.random() * 10 : Math.random() < 0.1 ? 90 + Math.random() * 160 : 250 + Math.random() * 1300;
-    const x = camera.position.x + Math.cos(angle) * distance;
-    const z = camera.position.z + Math.sin(angle) * distance;
+  #start(camera, ground, given = null) {
+    let x, z, seed, pulses;
+    if (given) ({ x, z, seed, pulses } = given);
+    else {
+      // (Online, the host's storm: round you or one of the others.)
+      const others = this.centres?.() ?? [];
+      const k = Math.floor(Math.random() * (others.length + 1));
+      const centre = k < others.length ? others[k] : camera.position;
+      const angle = Math.random() * Math.PI * 2;
+      // (Now and then one strikes close by: the thunder all but at once. And
+      // out in the open up high, the tallest thing about, it may come down
+      // right by you: see `exposed`, set from outside, 0..1.)
+      const near = centre === camera.position && Math.random() < 0.35 * (this.exposed ?? 0);
+      const r = near ? 1.5 + Math.random() * 10 : Math.random() < 0.1 ? 90 + Math.random() * 160 : 250 + Math.random() * 1300;
+      x = centre.x + Math.cos(angle) * r;
+      z = centre.z + Math.sin(angle) * r;
+      seed = Math.floor(Math.random() * 4294967296);
+      pulses = [0, 0.12 + Math.random() * 0.1, 0.3 + Math.random() * 0.25].slice(0, 2 + Math.floor(Math.random() * 2));
+      this.onBolt?.({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, seed, pulses: pulses.map((p) => Math.round(p * 1000) / 1000) });
+    }
+    const distance = Math.hypot(x - camera.position.x, z - camera.position.z);
     const base = ground(x, z);
     this.onStrike?.(x, base, z, distance); // (it may start a fire: see main)
     const top = Math.max(base + 220, 320); // from inside the cloud deck
-    this.bolt = new Mesh(this.#boltGeometry(top - base), this.material);
+    this.bolt = new Mesh(this.#boltGeometry(top - base, seed), this.material);
     this.bolt.position.set(x, base, z);
     // Face the camera (turning about the vertical only).
     this.bolt.rotation.y = Math.atan2(camera.position.x - x, camera.position.z - z);
@@ -235,7 +270,7 @@ export class Lightning {
     this.bolt.renderOrder = 4;
     this.scene.add(this.bolt);
     const power = Math.min(1, 0.45 + 0.55 * (1 - (distance - 250) / 1300));
-    this.strike = { age: 0, pulses: [0, 0.12 + Math.random() * 0.1, 0.3 + Math.random() * 0.25].slice(0, 2 + Math.floor(Math.random() * 2)), power };
+    this.strike = { age: 0, pulses, power };
     this.pending.push({ at: this.time + distance / 343, distance, x, z });
     this.wait = 3 + Math.random() * 12;
   }

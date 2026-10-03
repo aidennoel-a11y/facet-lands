@@ -31,7 +31,7 @@ function structureSign(rec) {
 
 export class WorldSync {
   /**
-   * @param o  { mp, game, trees, mushrooms, torches, weather, clouds, seasons, wildlife, sound, pan(x, z), windStrength() }
+   * @param o  { mp, game, trees, mushrooms, torches, weather, clouds, seasons, wildlife, lightning, sound, pan(x, z), windStrength() }
    */
   constructor(o) {
     Object.assign(this, o);
@@ -39,6 +39,11 @@ export class WorldSync {
     this.mp.onWorld = (msg) => this.#receive(msg);
     // (Arrows in the host's animals, a guest's butchering, shearing, feeding: to the host.)
     this.wildlife.onAct = (k, a, data = {}) => this.mp.send({ t: 'tohost', m: { k, id: a.id, ...data } });
+    // (Your felling, blow by blow, the fall, the trunk cut up: for the others to see.)
+    this.game.felling.onEvent = (e) => this.online && this.fx.push(e);
+    // (The host's storm strikes round any of you, and each strike goes out.)
+    this.lightning.centres = () => this.others();
+    this.lightning.onBolt = (b) => this.online && this.mp.isHost && this.fx.push({ k: 'bolt', ...b });
   }
 
   reset() {
@@ -50,6 +55,8 @@ export class WorldSync {
     this.wildWait = 0;
     this.fx = [];
     this.wasHost = null;
+    this.crownsSent = new Set();
+    this.crownWait = 0;
   }
 
   get online() {
@@ -127,7 +134,8 @@ export class WorldSync {
       for (const f of msg.fx) this.#play(f);
     } else if (msg.t === 'tohost' && this.mp.isHost) {
       const m = msg.m;
-      if (m && Number.isFinite(m.id)) this.wildlife.act(m.k, m.id, m);
+      if (m?.k === 'crowns' && typeof m.key === 'string' && Array.isArray(m.list)) this.wildlife.remoteCrowns.set(m.key, m.list);
+      else if (m && Number.isFinite(m.id)) this.wildlife.act(m.k, m.id, m);
     }
   }
 
@@ -158,6 +166,18 @@ export class WorldSync {
       else if (f.k === 'poison') this.game.player.poison();
       return;
     }
+    if (f.k === 'chop' || f.k === 'fell' || f.k === 'trunk') {
+      // (Someone else felling: the blows, the tree coming down, the trunk cut up.)
+      this.game.felling.remote(f);
+      if (f.k === 'chop') {
+        const hit = this.trees.findKey(f.key), cam = this.game.camera.position;
+        const d = hit ? Math.hypot(hit.x - cam.x, hit.z - cam.z) : Infinity;
+        if (d < 120) this.sound.call('chop', this.pan(hit.x, hit.z), Math.min(0.5, 6 / (d + 6)));
+      }
+      return;
+    }
+    if (f.k === 'bolt') return this.lightning.strikeAt(f.x, f.z, f.seed, f.pulses);
+    if (!f.n) return;
     const cam = this.game.camera.position;
     const d = Math.hypot(f.x - cam.x, f.z - cam.z);
     const fall = (r) => 1 / (1 + (r / 25) ** 2);
@@ -179,6 +199,7 @@ export class WorldSync {
         // (Off line again: the animals and the sky are yours.)
         this.wildlife.mirror = false;
         this.weather.following = false;
+        this.lightning.follower = false;
         this.clouds.travelTarget = null;
         this.reset();
       }
@@ -197,6 +218,8 @@ export class WorldSync {
         this.wildlife.clear();
         this.wildlife.mirror = true;
       }
+      this.lightning.follower = !host; // (the host's storm strikes for everyone)
+      this.crownsSent.clear(); // (a new host: the trees round you, for its animals, again)
       this.wasHost = host;
     }
     // (Once the world's loaded: the world as the room has it, then yours from here on.)
@@ -214,15 +237,22 @@ export class WorldSync {
       if (w?.sky) this.#followSky(w.sky);
       this.game.items.uidPrefix = `p${this.mp.id}r${Math.floor(Math.random() * 1e6)}`;
     }
-    if ((this.editWait -= dt) <= 0) {
-      this.editWait = EDIT_EVERY;
-      this.#edits();
-    }
+    // (Before the edits: a tree's fall goes out before the news that it's gone.)
     if (this.fx.length) {
       this.mp.send({ t: 'fx', fx: this.fx });
       this.fx = [];
     }
-    if (!host) return;
+    if ((this.editWait -= dt) <= 0) {
+      this.editWait = EDIT_EVERY;
+      this.#edits();
+    }
+    if (!host) {
+      if ((this.crownWait -= dt) <= 0) {
+        this.crownWait = 2;
+        this.#sendCrowns();
+      }
+      return;
+    }
     if ((this.skyWait -= dt) <= 0) {
       this.skyWait = SKY_EVERY;
       this.mp.send({ t: 'sky', sky: { weather: this.weather.toSky(), travel: +this.clouds.travel.toFixed(2), wind: this.windStrength?.() ?? 0.5, season: +this.seasons.time.toFixed(4), at: this.mp.roomTime() } });
@@ -234,6 +264,29 @@ export class WorldSync {
       w.t = +this.mp.roomTime().toFixed(3);
       this.mp.send({ t: 'wild', w });
     }
+  }
+
+  // A guest's: the trees round you, chunk by chunk, to the host, so its
+  // songbirds and monkeys can settle in them (see Wildlife.remoteCrowns).
+  #sendCrowns() {
+    const C = this.game.config?.chunkSize ?? 64, cam = this.game.camera.position;
+    const ccx = Math.floor(cam.x / C), ccz = Math.floor(cam.z / C);
+    for (let dz = -3; dz <= 3; dz++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        const key = `${ccx + dx},${ccz + dz}`;
+        if (this.crownsSent.has(key)) continue;
+        const list = this.trees.crowns.get(key);
+        if (!list) continue;
+        this.crownsSent.add(key);
+        this.mp.send({ t: 'tohost', m: { k: 'crowns', key, list: Array.from(list, (v) => Math.round(v * 10) / 10) } });
+      }
+    }
+  }
+
+  /** Where the others are (online; anyone): [{ x, z }], for the frogs to dive from. */
+  people() {
+    if (!this.online) return [];
+    return [...this.mp.others.values()].filter((r) => r.root.visible).map((r) => ({ x: r.root.position.x, z: r.root.position.z }));
   }
 
   /** The others, for the host's animals to mind (see Wildlife: ctx.others). */

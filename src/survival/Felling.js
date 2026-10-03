@@ -106,6 +106,37 @@ export class Felling {
     this.chipGeometry = new BoxGeometry(0.06, 0.03, 0.08);
     this.chipMaterial = new MeshLambertMaterial({ color: 0xd8b882, flatShading: true });
     this.shaking = null;
+    this.onEvent = null; // (online: a blow, a fall, a trunk cut up, for the others to see: see remote)
+  }
+
+  /**
+   * Someone else's felling (online), as they did it: { k: 'chop', key,
+   * from: [x, z], at } a blow (chips, the tree shaking); { k: 'fell', key,
+   * cut, away, angle, speed, heft, hold } the tree coming down, the same
+   * way; { k: 'trunk', key } its fallen trunk cut up into logs.
+   */
+  remote(e) {
+    if (e.k === 'trunk') {
+      const f = this.falling.find((f) => f.hit.key === e.key);
+      if (!f) return;
+      this.scene.remove(f.group);
+      for (const m of f.group.children) m.dispose();
+      this.falling.splice(this.falling.indexOf(f), 1);
+      return;
+    }
+    const hit = this.trees.findKey(e.key);
+    if (!hit) {
+      if (e.k === 'fell') this.trees.removeKey(e.key); // (not drawn here: just gone)
+      return;
+    }
+    if (e.k === 'chop') {
+      const from = { x: e.from?.[0] ?? hit.x, z: e.from?.[1] ?? hit.z };
+      this.#chips(hit.x, (e.at ?? hit.y + 0.8), hit.z, from);
+      this.shaking = { hit, time: 0.3, matrix: this.trees.matrixOf(hit).clone(), from };
+    } else if (e.k === 'fell') {
+      if (hit.bush) return this.trees.remove(hit);
+      this.#fell(hit, e.cut, e);
+    }
   }
 
   /** How many blows a tree takes. */
@@ -129,6 +160,7 @@ export class Felling {
     }
     state.blows += power;
     this.#chips(hit.x, hit.y + state.cut, hit.z, from);
+    if (state.blows < this.blows(hit)) this.onEvent?.({ k: 'chop', key: hit.key, from: [from.x, from.z], at: hit.y + state.cut });
     if (state.blows < this.blows(hit)) {
       this.shaking = { hit, time: 0.3, matrix: this.trees.matrixOf(hit).clone(), from: { x: from.x, z: from.z } };
       if (!hit.bush) this.#notch(hit, state, from);
@@ -140,9 +172,26 @@ export class Felling {
       this.trees.remove(hit);
       return 'bush';
     }
-    // Down it comes: the tree above the cut falls, a stump stays.
+    // Which way: away from you, pulled round by the way it leans and by the wind.
+    let fx = hit.x - from.x, fz = hit.z - from.z;
+    const d = Math.hypot(fx, fz) || 1;
+    fx = fx / d + (hit.t.leanX ?? 0) * 3 + wind.x * 0.04 + rnd(-0.25, 0.25);
+    fz = fz / d + (hit.t.leanZ ?? 0) * 3 + wind.z * 0.04 + rnd(-0.25, 0.25);
+    const how = {
+      away: Math.atan2(fx, fz), angle: rnd(0.015, 0.04), speed: rnd(0.02, 0.08),
+      heft: rnd(0.8, 1.25), // (how its weight's spread: a heavy crown falls faster than a bare pole)
+      hold: rnd(0.4, 1.4), // (the hinge of wood left at the cut holds it a moment)
+    };
+    this.onEvent?.({ k: 'fell', key: hit.key, cut: state.cut, ...how });
+    this.#fell(hit, state.cut, how);
+    return 'fell';
+  }
+
+  // Down it comes: the tree above the cut (`cutAt` metres up) falls,
+  // tipping towards `away` (as `how` says), and a stump stays.
+  #fell(hit, cutAt, how) {
     const world = this.trees.matrixOf(hit).clone();
-    const cut = state.cut / hit.t.sy; // (in the tree's own units)
+    const cut = cutAt / hit.t.sy; // (in the tree's own units)
     const whole = treeGeometry(hit.type, this.trees.bare);
     const falling = clipGeometry(whole, cut, true);
     const leaves = LEAF_GEOMETRIES[hit.type] ? clipGeometry(LEAF_GEOMETRIES[hit.type], cut, true) : null;
@@ -164,27 +213,17 @@ export class Felling {
     group.position.copy(pivot);
     this.scene.add(group);
     this.trees.remove(hit);
-    // Which way: away from you, pulled round by the way it leans and by the wind.
-    let fx = hit.x - from.x, fz = hit.z - from.z;
-    const d = Math.hypot(fx, fz) || 1;
-    fx = fx / d + (hit.t.leanX ?? 0) * 3 + wind.x * 0.04 + rnd(-0.25, 0.25);
-    fz = fz / d + (hit.t.leanZ ?? 0) * 3 + wind.z * 0.04 + rnd(-0.25, 0.25);
-    const away = Math.atan2(fx, fz);
+    const away = how.away;
     const axis = new Vector3(Math.cos(away), 0, -Math.sin(away)); // (tipping about this, the top swings out along `away`)
     const prof = this.trees.profile(hit.type);
-    const top = (prof?.top ?? 8) * hit.t.sy - state.cut;
+    const top = (prof?.top ?? 8) * hit.t.sy - cutAt;
     this.falling.push({
       group, pivot, axis, dir: new Vector3(Math.sin(away), 0, Math.cos(away)), length: Math.max(2.5, top), hit, bounces: 0, time: 0, chops: 0, fallen: false,
-      angle: rnd(0.015, 0.04), speed: rnd(0.02, 0.08),
-      // (How its weight's spread: a heavy crown falls faster than a bare pole.)
-      heft: rnd(0.8, 1.25) * (prof && !prof.cone ? 1.1 : 1),
-      // (The hinge of wood left at the cut holds it a moment.)
-      hold: rnd(0.4, 1.4),
-      crown: prof ? { bottom: prof.bottom * hit.t.sy - state.cut, top, radius: prof.radius * hit.t.s, cone: prof.cone } : null,
+      angle: how.angle, speed: how.speed, heft: how.heft * (prof && !prof.cone ? 1.1 : 1), hold: how.hold,
+      crown: prof ? { bottom: prof.bottom * hit.t.sy - cutAt, top, radius: prof.radius * hit.t.s, cone: prof.cone } : null,
       trunk: this.trees.trunkRadius(hit.type) * hit.t.s,
       leaves: leafMesh, leafLocal: local.clone(), leafBase: leaves ? Float32Array.from(leaves.attributes.position.array) : null,
     });
-    return 'fell';
   }
 
   // The cut in a standing trunk, where the axe has been biting: a dark
@@ -334,6 +373,7 @@ export class Felling {
       this.scene.remove(f.group);
       for (const m of f.group.children) m.dispose();
       this.falling.splice(this.falling.indexOf(f), 1);
+      this.onEvent?.({ k: 'trunk', key: f.hit.key });
       return true;
     }
     if (f.chops < 3) return false;
@@ -362,6 +402,7 @@ export class Felling {
     this.scene.remove(f.group);
     for (const m of f.group.children) m.dispose();
     this.falling.splice(this.falling.indexOf(f), 1);
+    this.onEvent?.({ k: 'trunk', key: f.hit.key });
     return true;
   }
 
@@ -420,7 +461,7 @@ export class Felling {
             onLand?.(x, f.pivot.y, z, f.length);
           }
           if (f.bounces < 2 && f.speed > 0.35) {
-            f.speed *= -rnd(0.15, 0.28);
+            f.speed *= -(0.15 + 0.13 * ((f.heft * 7.3 + f.bounces * 0.37) % 1)); // (the same bounce for everyone)
             f.bounces++;
           } else {
             f.fallen = true;

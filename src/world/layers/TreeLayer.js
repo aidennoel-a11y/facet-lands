@@ -242,20 +242,25 @@ export function createTreeLayer({ rocks = null } = {}) {
       return out.premultiply(hit.group.matrixWorld);
     },
 
-    /** Takes away a tree by its key (felled by someone else, online): now, if it's drawn, else when it is. */
-    removeKey(key) {
-      if (layer.removed.has(key)) return;
-      layer.removed.add(key);
+    /** A standing tree by its key, as `pick` finds it (online: one someone else is felling), or null. */
+    findKey(key) {
       const [cx, cz, type] = key.split(',');
       const group = groups.get(`${cx},${cz}`);
       const size = layer.chunkSize;
-      if (!group || !size) return;
+      if (!group || !size || layer.removed.has(key)) return null;
       for (const t of group.userData.placed[type] ?? []) {
         if (t.removed || treeKey(+cx, +cz, type, t) !== key) continue;
-        layer.removed.delete(key);
-        layer.remove({ key, type, t, x: +cx * size + t.x, z: +cz * size + t.z, group });
-        return;
+        const prof = profileOf(type), bush = NO_COLLIDE.has(type);
+        return { key, type, t, x: +cx * size + t.x, y: t.y, z: +cz * size + t.z, group, bush, radius: bush ? (prof?.radius ?? 0.8) * t.s * 0.8 : (TRUNK_RADIUS[type] ?? 0.3) * t.s };
       }
+      return null;
+    },
+
+    /** Takes away a tree by its key (felled by someone else, online): now, if it's drawn, else when it is. */
+    removeKey(key) {
+      const hit = layer.findKey(key);
+      if (hit) layer.remove(hit);
+      else layer.removed.add(key);
     },
 
     /** Takes a tree away, for good (felled): no longer drawn, nor in the way. */
