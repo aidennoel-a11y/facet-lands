@@ -59,6 +59,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       const colourHeight = ground + jitter;
       if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > 140) continue;
       if (generator.onSinter && generator.getBiomeWeights(wx, wz, {}).volcanic > 0.5 && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
+      if (generator.onLiveLava?.(wx, wz)) continue; // nor on a lava flow
       // How much grass the biome here grows.
       const oasis = generator.oasisAt ? generator.oasisAt(wx, wz) : 0;
       if (keep > density * Math.max(generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass, oasis)) continue;

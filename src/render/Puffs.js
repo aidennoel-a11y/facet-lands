@@ -42,6 +42,7 @@ export class Puffs {
         uGlow: { value: 1 }, // how bright the glowing ones are (brighter at night)
         uLight: { value: new Color(1, 1, 1) },
         uOpacity: { value: opacity },
+        uGravity: { value: 0 }, // (m/s²: spatter flung up falls back)
       },
     ]);
     const material = new ShaderMaterial({
@@ -59,6 +60,7 @@ export class Puffs {
         uniform vec3 uWind;
         uniform float uReveal;
         uniform float uAmount;
+        uniform float uGravity;
         varying vec4 vColour;
         varying float vAlpha;
         varying float vShade;
@@ -68,6 +70,7 @@ export class Puffs {
           float t = age * aLife.x;
           float size = mix(aLife.z, aLife.w, age) * step(length(aOffset.xz), uReveal) * step(0.001, uAmount);
           vec3 centre = uCentre + aOffset + aVelocity * t + uWind * t;
+          centre.y -= 0.5 * uGravity * t * t;
           vec4 mvPosition = viewMatrix * vec4(centre + position * size, 1.0);
           gl_Position = projectionMatrix * mvPosition;
           vColour = aColour;

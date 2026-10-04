@@ -102,18 +102,74 @@ export class Wildfires {
 }
 
 /**
- * Volcanoes that are awake (those with lava in their craters): a plume of
- * grey smoke rising from the crater and leaning away on the wind, seen
- * from far off; at night glowing ash flung up out of it; and now and then
- * a deep rumble when you're near, the ground trembling.
+ * The volcanoes' own life, by what state each is in (see TerrainGenerator's
+ * cones):
+ *  - erupting: a fountain of molten lava spraying up out of the crater and
+ *    falling back, a plume of grey smoke leaning away on the wind, glowing
+ *    ash flung up at night, rumbling, the ground trembling;
+ *  - simmering: its lava lake smoking, a little glowing ash by night;
+ *  - dead, with a lake in its crater: a few wisps of steam off the water;
+ *  - and where a live flow meets water, a cloud of steam boiling up.
  */
 export class Volcanoes {
   constructor(scene) {
     this.scene = scene;
-    this.active = new Map(); // key -> { plume, ash, c, rim }
+    this.active = new Map(); // key -> { c, parts: [Puffs], kind }
     this.wait = 0;
     this.shake = 0;
     this.rumbleWait = rnd(10, 30);
+  }
+
+  // What a volcano gives off, as Puffs centred on its crater (and on where its flow meets water).
+  #make(c, generator) {
+    const parts = [];
+    const add = (p, x, y, z, role) => (p.uniforms.uCentre.value.set(x, y, z), (p.role = role), parts.push(p));
+    const rim = generator.getBaseHeight(c.x + c.rc * 1.05, c.z);
+    const pool = generator.getBaseHeight(c.x, c.z) + c.depth * 0.3; // (the lava lake's, or the water's, level)
+    if (c.state === 'erupting' || c.state === 'simmering') {
+      const erupting = c.state === 'erupting';
+      add(new Puffs(this.scene, erupting ? 60 : 30, () => {
+        const a = Math.random() * Math.PI * 2, d = Math.random() * c.rc * 0.5;
+        const grey = erupting ? rnd(0.36, 0.55) : rnd(0.5, 0.68);
+        return { offset: [Math.cos(a) * d, -rnd(0, 10), Math.sin(a) * d], velocity: [0, erupting ? rnd(6, 10) : rnd(3, 5), 0], period: rnd(22, 30), phase: Math.random(), from: rnd(8, 16), to: erupting ? rnd(45, 70) : rnd(25, 40), colour: new Color(grey, grey * 0.98, grey * 0.96), glow: 0 };
+      }, { opacity: erupting ? 0.55 : 0.4 }), c.x, rim, c.z, 'plume');
+      add(new Puffs(this.scene, erupting ? 50 : 12, () => {
+        const a = Math.random() * Math.PI * 2, out = rnd(0, 7);
+        return { offset: [rnd(-1, 1) * c.rc * 0.2, -5, rnd(-1, 1) * c.rc * 0.2], velocity: [Math.cos(a) * out, rnd(18, 30), Math.sin(a) * out], period: rnd(3, 5), phase: Math.random(), from: rnd(1, 2), to: 0.3, colour: FLAMES[Math.floor(Math.random() * 3)], glow: 1 };
+      }, { opacity: 0.95 }), c.x, rim, c.z, 'ash');
+    }
+    if (c.state === 'erupting') {
+      // The fountain: molten spatter flung up out of the vent, arcing and
+      // falling back (orange, and blackening as it cools).
+      const fountain = new Puffs(this.scene, 220, () => {
+        const v = rnd(18, 40), a = Math.random() * Math.PI * 2, out = rnd(0, 3.2);
+        const dark = Math.random() < 0.25;
+        return {
+          offset: [rnd(-1.5, 1.5), 0, rnd(-1.5, 1.5)], velocity: [Math.cos(a) * out, v, Math.sin(a) * out], period: (2 * v) / 9.8, phase: Math.random(),
+          from: rnd(1.2, 2.6), to: rnd(0.4, 0.9), colour: dark ? new Color(0.07, 0.03, 0.02) : new Color(1, rnd(0.3, 0.48), rnd(0.03, 0.08)), glow: dark ? 0 : 1,
+        };
+      }, { opacity: 1 });
+      fountain.uniforms.uGravity.value = 9.8;
+      add(fountain, c.x, pool, c.z, 'fountain');
+      // Where its flow runs into water: steam boiling up.
+      const end = generator.lavaEnd?.(c);
+      if (end?.water) {
+        add(new Puffs(this.scene, 40, () => {
+          const a = Math.random() * Math.PI * 2, d = Math.random() * 4;
+          const w = rnd(0.85, 0.97);
+          return { offset: [Math.cos(a) * d, 0, Math.sin(a) * d], velocity: [0, rnd(2.5, 5), 0], period: rnd(5, 9), phase: Math.random(), from: rnd(1.5, 3), to: rnd(8, 14), colour: new Color(w, w, w), glow: 0 };
+        }, { opacity: 0.32 }), end.x, generator.getBaseHeight(end.x, end.z) + 0.5, end.z, 'steam');
+      }
+    }
+    if (c.state === 'dead' && c.lake) {
+      // A few wisps of steam off the crater lake.
+      add(new Puffs(this.scene, 24, () => {
+        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * c.rc * 0.5;
+        const w = rnd(0.86, 0.96);
+        return { offset: [Math.cos(a) * d, 0, Math.sin(a) * d], velocity: [0, rnd(0.8, 1.6), 0], period: rnd(6, 11), phase: Math.random(), from: rnd(0.6, 1.2), to: rnd(3, 6), colour: new Color(w, w, w), glow: 0 };
+      }, { opacity: 0.3 }), c.x, pool + 0.3, c.z, 'wisps');
+    }
+    return parts;
   }
 
   /** @param ctx { time, camera, generator, wind: { x, z }, light (Color), night (0..1), sound, pan(x, z) } */
@@ -123,44 +179,38 @@ export class Volcanoes {
     if (this.wait <= 0 && ctx.generator) {
       this.wait = 3;
       const near = ctx.generator.volcanoes(cam.x - 3000, cam.z - 3000, cam.x + 3000, cam.z + 3000)
-        .filter((c) => c.lava)
+        .filter((c) => c.lava || c.lake)
         .sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z))
         .slice(0, 3);
       const keep = new Set();
       for (const c of near) {
         const key = `${Math.round(c.x)},${Math.round(c.z)}`;
         keep.add(key);
-        if (this.active.has(key)) continue;
-        const rim = ctx.generator.getBaseHeight(c.x + c.rc * 1.05, c.z);
-        const plume = new Puffs(this.scene, 60, () => {
-          const a = Math.random() * Math.PI * 2, d = Math.random() * c.rc * 0.5;
-          const grey = rnd(0.42, 0.62);
-          return { offset: [Math.cos(a) * d, -rnd(0, 10), Math.sin(a) * d], velocity: [0, rnd(6, 10), 0], period: rnd(22, 30), phase: Math.random(), from: rnd(10, 18), to: rnd(45, 70), colour: new Color(grey, grey * 0.98, grey * 0.96), glow: 0 };
-        }, { opacity: 0.55 });
-        const ash = new Puffs(this.scene, 50, () => {
-          const a = Math.random() * Math.PI * 2, out = rnd(0, 7);
-          return { offset: [rnd(-1, 1) * c.rc * 0.2, -5, rnd(-1, 1) * c.rc * 0.2], velocity: [Math.cos(a) * out, rnd(18, 30), Math.sin(a) * out], period: rnd(3, 5), phase: Math.random(), from: rnd(1, 2), to: 0.3, colour: FLAMES[Math.floor(Math.random() * 3)], glow: 1 };
-        }, { opacity: 0.95 });
-        for (const p of [plume, ash]) p.uniforms.uCentre.value.set(c.x, rim, c.z);
-        this.active.set(key, { plume, ash, c });
+        if (!this.active.has(key)) this.active.set(key, { c, parts: this.#make(c, ctx.generator) });
       }
       for (const [key, v] of this.active) {
         if (keep.has(key)) continue;
-        v.plume.dispose();
-        v.ash.dispose();
+        for (const p of v.parts) p.dispose();
         this.active.delete(key);
       }
     }
     let nearest = Infinity;
-    for (const { plume, ash, c } of this.active.values()) {
-      plume.uniforms.uTime.value = ash.uniforms.uTime.value = ctx.time;
-      plume.uniforms.uWind.value.set(ctx.wind.x * 1.4, 0, ctx.wind.z * 1.4);
-      plume.uniforms.uLight.value.copy(ctx.light);
-      ash.uniforms.uAmount.value = smoothstep(0.2, 0.7, ctx.night);
-      ash.uniforms.uGlow.value = 1.5;
-      nearest = Math.min(nearest, Math.hypot(c.x - cam.x, c.z - cam.z));
+    for (const { parts, c } of this.active.values()) {
+      for (const p of parts) {
+        const u = p.uniforms;
+        u.uTime.value = ctx.time;
+        u.uLight.value.copy(ctx.light);
+        if (p.role === 'plume') u.uWind.value.set(ctx.wind.x * 1.4, 0, ctx.wind.z * 1.4);
+        else if (p.role === 'steam' || p.role === 'wisps') u.uWind.value.set(ctx.wind.x * 0.5, 0, ctx.wind.z * 0.5);
+        if (p.role === 'ash') {
+          u.uAmount.value = smoothstep(0.2, 0.7, ctx.night);
+          u.uGlow.value = 1.5;
+        }
+        if (p.role === 'fountain') u.uGlow.value = 1.2 + 0.6 * ctx.night;
+      }
+      if (c.lava) nearest = Math.min(nearest, Math.hypot(c.x - cam.x, c.z - cam.z) * (c.state === 'erupting' ? 1 : 1.6));
     }
-    // A rumble now and then when you're near one; the ground trembles.
+    // A rumble now and then when you're near one awake; the ground trembles.
     this.shake = Math.max(0, this.shake - dt / 2.5);
     this.rumbleWait -= dt;
     if (nearest < 1600 && this.rumbleWait <= 0) {
@@ -172,7 +222,7 @@ export class Volcanoes {
   }
 
   clear() {
-    for (const v of this.active.values()) (v.plume.dispose(), v.ash.dispose());
+    for (const v of this.active.values()) for (const p of v.parts) p.dispose();
     this.active.clear();
   }
 }

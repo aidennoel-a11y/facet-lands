@@ -59,7 +59,6 @@ const TIDE_LIP = 0.8;
 const CAVE_DARK = new Color(0x3b3842); // the back of a sea cave, out of the light
 const OASIS = new Color(0x7fa84a); // the green round an oasis
 const BASALT = new Color(0x1c1a1b); // fresh black basalt
-const EMBER = new Color(0x6a1e0c); // rock glowing beside molten lava
 const WET_ROCK = new Color(0x5e5a60); // rock shelves the sea washes over
 const POOL_FLOOR = new Color(0x3f5a3a); // weed on a tide pool's floor
 const SHORE = {
@@ -1010,6 +1009,8 @@ export class TerrainGenerator {
     const amount = (0.32 + 0.8 * smoothstep(50, 170, base)) * soft;
     let r = (this.roughNoise.noise2D(x * 0.13, z * 0.13) + 0.45 * this.roughNoise.noise2D(x * 0.29 + 17, z * 0.29 - 9)) * amount;
     r += (this.roughNoise.noise2D(x * 0.05 - 31, z * 0.05 + 11) * 0.7 + this.roughNoise.noise2D(x * 0.021 + 5, z * 0.021 - 40) * 0.9) * soft;
+    // (A live lava flow's channel and levees lie smooth, the banks level either side.)
+    if (this._weights.volcanic > 0.05) r *= 1 - this.#lavaCalm(x, z);
     return Math.max(r * shore, sea + 0.25 - base);
   }
 
@@ -1314,7 +1315,46 @@ export class TerrainGenerator {
       const legs = this.#archLegs(x, z);
       if (legs > height) height = legs;
     }
+    // A live lava flow runs level across: the ground either side of it, out
+    // past its levees, as high as at its middle (so its banks stand level
+    // with each other, wherever it crosses the slope), easing back into the
+    // flank beyond.
+    if (w.volcanic > 0.05 && !this._levelling) {
+      const level = this.#lavaLevel(x, z);
+      if (level) {
+        height += (level.target - height) * level.k;
+        this.getBiomeWeights(x, z, this._weights, field.value); // (the middle's were looked at: this point's again)
+      }
+    }
     return height;
+  }
+
+  // Beside a live lava flow: { target (the height the land there would have
+  // with the flow's middle as level as its banks), k (how much: 1 by the
+  // flow, 0 well off it) }, or null.
+  #lavaLevel(x, z) {
+    for (const c of this.#conesNear(x, z)) {
+      if (!c.active) continue;
+      const d = Math.hypot(x - c.x, z - c.z);
+      const p = this.lavaPath(c, d);
+      if (!p) continue;
+      const angle = Math.atan2(z - c.z, x - c.x);
+      let da = angle - p.angle;
+      da = Math.atan2(Math.sin(da), Math.cos(da));
+      const lateral = Math.abs(da * d);
+      if (lateral > p.half * 3.4) continue;
+      this._levelling = true;
+      let middle;
+      try {
+        middle = this.landHeight(c.x + Math.cos(p.angle) * d, c.z + Math.sin(p.angle) * d);
+      } finally {
+        this._levelling = false;
+      }
+      // (The middle's height has the channel cut into it: put that back, and this point's own instead.)
+      const here = this.#lavaChannel(c, d, angle)?.dh ?? 0, there = this.#lavaChannel(c, d, p.angle)?.dh ?? 0;
+      return { target: middle - there + here, k: 1 - smoothstep(p.half * 2.2, p.half * 3.4, lateral) };
+    }
+    return null;
   }
 
   // Islands: one to a 640 m cell or none, standing only where the water
@@ -1931,17 +1971,24 @@ export class TerrainGenerator {
         for (let k = 0; k < count; k++) {
           flows.push({ a: hash2(i + k, j, s + 5) * Math.PI * 2, len: R * (1.3 + 0.8 * hash2(i, j + k, s + 6)), thick: 3 + 4 * hash2(i - k, j, s + 7) });
         }
+        // What state it's in: four in ten dead (half of those holding a
+        // crater lake, steaming a little), four in ten erupting (a fountain
+        // of lava in the crater and a live flow down one flank, over its
+        // first tongue of old lava), one in ten blown apart (a broad,
+        // ruined crater, one side of its rim gone), and one in ten
+        // simmering (a lake of molten lava in the crater, smoking).
+        const r = hash2(i, j, s + 13);
+        const state = r < 0.4 ? 'dead' : r < 0.8 ? 'erupting' : r < 0.9 ? 'blown' : 'simmering';
+        const blown = state === 'blown';
         cone = {
-          x, z, R, seed: hash2(i, j, s + 10) * 10,
-          H: 130 + 110 * hash2(i, j, s + 8),
-          rc: R * (0.16 + 0.06 * hash2(i, j, s + 9)),
-          depth: 30 + 25 * hash2(i, j, s + 11),
-          // Half the craters hold molten lava (and of those, most spill a
-          // live flow down one flank, over its first tongue of old lava);
-          // of the rest, some hold a lake.
-          lava: hash2(i, j, s + 13) < 0.5,
-          active: hash2(i, j, s + 13) < 0.5 && hash2(i, j, s + 14) < 0.6,
-          lake: hash2(i, j, s + 13) >= 0.5 && hash2(i, j, s + 12) < 0.7,
+          x, z, R, seed: hash2(i, j, s + 10) * 10, state,
+          H: (130 + 110 * hash2(i, j, s + 8)) * (blown ? 0.55 : 1),
+          rc: R * (blown ? 0.42 + 0.08 * hash2(i, j, s + 9) : 0.16 + 0.06 * hash2(i, j, s + 9)),
+          depth: (30 + 25 * hash2(i, j, s + 11)) * (blown ? 1.4 : 1),
+          breach: hash2(i, j, s + 15) * Math.PI * 2, // (blown: the side its rim's gone from)
+          lava: state === 'erupting' || state === 'simmering',
+          active: state === 'erupting',
+          lake: state === 'dead' && hash2(i, j, s + 12) < 0.5,
           flows,
         };
       }
@@ -1988,17 +2035,34 @@ export class TerrainGenerator {
         if (t < 1) {
           out.cone = Math.max(out.cone, 1 - smoothstep(0.75, 1, t));
           // Concave flanks up to the rim, furrowed by gullies, then the crater bowl.
-          const rimH = c.H * Math.pow(1 - c.rc / c.R, 1.5);
+          let rimH = c.H * Math.pow(1 - c.rc / c.R, 1.5);
+          // (Blown apart: the rim ragged, broken down low on one side, where the blast went out.)
+          let ruin = 1;
+          if (c.state === 'blown') {
+            let db = angle - c.breach;
+            db = Math.abs(Math.atan2(Math.sin(db), Math.cos(db)));
+            ruin = (0.25 + 0.75 * smoothstep(0.35, 1.3, db)) * (0.8 + 0.35 * this.volcanoNoise.ridged(angle * 3 + c.seed, t * 4, 2, 2, 0.5, 1));
+            rimH *= ruin;
+          }
           if (d < c.rc) {
-            h = rimH - c.depth * Math.pow(1 - (d / c.rc) ** 2, 0.7);
+            h = rimH - c.depth * Math.pow(1 - (d / c.rc) ** 2, 0.7) * (c.state === 'blown' ? Math.min(1, ruin + 0.3) : 1);
             out.crater = Math.max(out.crater, 1);
           } else {
-            h = c.H * Math.pow(1 - t, 1.5) * (0.95 + 0.05 * this.volcanoNoise.noise2D(angle * 5 + c.seed, t * 3));
+            // (Across a live flow, the flank's furrows follow the flow: its two banks alike.)
+            const lp = c.active ? this.lavaPath(c, d) : null;
+            let na = angle;
+            if (lp) {
+              let dl = angle - lp.angle;
+              dl = Math.atan2(Math.sin(dl), Math.cos(dl));
+              if (Math.abs(dl * d) < lp.half * 3) na = lp.angle;
+              else if (Math.abs(dl * d) < lp.half * 5) na = lp.angle + dl * smoothstep(lp.half * 3, lp.half * 5, Math.abs(dl * d));
+            }
+            h = c.H * Math.pow(1 - t, 1.5) * (0.95 + 0.05 * this.volcanoNoise.noise2D(na * 5 + c.seed, t * 3)) * (c.state === 'blown' ? 0.6 + 0.4 * Math.min(1, ruin + smoothstep(0.5, 1, t)) : 1);
             out.crater = Math.max(out.crater, 1 - smoothstep(c.rc, c.rc * 1.6, d));
           }
         }
-        // A live flow: a channel down the flank, walled by blocky basalt,
-        // in places roofed over into a lava tube (skylights here and there).
+        // A live flow: a channel down the flank between levees of fresh
+        // lava, in places roofed over into a lava tube (skylights here and there).
         if (c.active && c.flows.length) {
           const ch = this.#lavaChannel(c, d, angle);
           if (ch) {
@@ -2017,8 +2081,10 @@ export class TerrainGenerator {
           const across = (da * d) / halfW;
           if (across >= 1) continue;
           const mask = (1 - smoothstep(0.55, 1, across)) * (1 - smoothstep(0.8 * f.len, f.len, d)) * smoothstep(c.R * 0.3, c.R * 0.5, d);
+          // (Beside the live flow, smooth: its banks stand level with each other.)
+          const live = c.active && f === c.flows[0] ? 1 - smoothstep(0.35, 0.8, across) : 0;
           const rough = 0.75 + 0.25 * this.volcanoNoise.ridged(x * 0.04, z * 0.04, 2, 2, 0.5, 0.02);
-          h += f.thick * mask * rough;
+          h += f.thick * mask * (rough + (0.9 - rough) * live);
           out.lava = Math.max(out.lava, mask);
         }
         out.height = Math.max(out.height, h);
@@ -2031,7 +2097,7 @@ export class TerrainGenerator {
    * A live lava flow's path (volcano `c`'s first tongue): from the crater's
    * rim down the flank, wandering a little. For a distance `d` from the
    * summit: { angle (of its middle line), half (its channel's half-width),
-   * tube (0..1, roofed over there) }, or null past its ends.
+   * tube (0: it's open all the way) }, or null past its ends.
    */
   lavaPath(c, d) {
     const f = c.flows[0];
@@ -2039,56 +2105,82 @@ export class TerrainGenerator {
     if (d < d0 || d > d1) return null;
     const u = (d - d0) / (d1 - d0);
     const angle = f.a + 0.07 * Math.sin(d * 0.018 + c.seed) + 0.04 * Math.sin(d * 0.047 - c.seed * 2);
-    // Two stretches roofed over into tubes, a skylight every so often.
-    const t1 = 0.3 + 0.15 * ((c.seed * 7.3) % 1), t2 = 0.62 + 0.12 * ((c.seed * 3.1) % 1);
-    const inTube = (u > t1 && u < t1 + 0.14) || (u > t2 && u < t2 + 0.1);
-    const skylight = ((d * 0.07 + c.seed) % 1) < 0.28;
-    return { angle, half: 3.2 + d * 0.012, tube: inTube && !skylight ? 1 : 0, d0, d1 };
+    // (Open all the way down: one river of lava, no tubes.)
+    return { angle, half: 3.2 + d * 0.012, tube: 0, d0, d1, u };
+  }
+
+  // How much (x, z) is on a live lava flow or its levees (1), fading out beyond them (0).
+  #lavaCalm(x, z) {
+    let calm = 0;
+    for (const c of this.#conesNear(x, z)) {
+      if (!c.active) continue;
+      const d = Math.hypot(x - c.x, z - c.z);
+      const p = this.lavaPath(c, d);
+      if (!p) continue;
+      let da = Math.atan2(z - c.z, x - c.x) - p.angle;
+      da = Math.atan2(Math.sin(da), Math.cos(da));
+      calm = Math.max(calm, 1 - smoothstep(p.half * 2, p.half * 3.2, Math.abs(da * d)));
+    }
+    return calm;
+  }
+
+  /** Whether (x, z) is on a live lava flow or its levees (nothing grows or lies there). */
+  onLiveLava(x, z) {
+    for (const c of this.#conesNear(x, z)) {
+      if (!c.active) continue;
+      const d = Math.hypot(x - c.x, z - c.z);
+      const p = this.lavaPath(c, d);
+      if (!p) continue;
+      let da = Math.atan2(z - c.z, x - c.x) - p.angle;
+      da = Math.atan2(Math.sin(da), Math.cos(da));
+      if (Math.abs(da * d) < p.half * 2) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Where volcano c's live flow ends: down its path from the crater until
+   * it meets water (a river, a lake, the sea), where it stops, steaming,
+   * crusting over. { d (its distance from the summit), x, z, water
+   * (whether it ran into water) }. (Remembered.)
+   */
+  lavaEnd(c) {
+    if (c._end) return c._end;
+    const f = c.flows[0];
+    let end = { d: f.len * 0.85, x: c.x + Math.cos(f.a) * f.len * 0.85, z: c.z + Math.sin(f.a) * f.len * 0.85, water: false };
+    for (let d = c.rc * 1.02; d < f.len * 0.85; d += 2) {
+      const p = this.lavaPath(c, d);
+      if (!p) continue;
+      const x = c.x + Math.cos(p.angle) * d, z = c.z + Math.sin(p.angle) * d;
+      if (this.getBaseHeight(x, z) < this.rivers.seaLevel + 0.3 || this.rivers.at(x, z, p.half * 0.5)) {
+        end = { d, x, z, water: true };
+        break;
+      }
+    }
+    return (c._end = end);
   }
 
   // The live flow's channel at (distance d, angle) from volcano c's summit:
-  // { dh (height change), open (0..1, open lava there), block (0..1, on a basalt block) }.
+  // { dh (height change), open (0..1, open lava there), block (0..1, on its
+  // fresh black levees) }. A
+  // shallow channel, the lava brimming in it, between two low levees of
+  // cooled lava the same height either side (or roofed over, a tube).
   #lavaChannel(c, d, angle) {
     const p = this.lavaPath(c, d);
     if (!p) return null;
     let da = angle - p.angle;
     da = Math.atan2(Math.sin(da), Math.cos(da));
-    const lateral = da * d;
-    if (Math.abs(lateral) > p.half + 14) return null;
-    const across = Math.abs(lateral) / p.half;
-    let dh = 0, open = 0, block = 0;
-    // The channel, cut three metres down with steep sides (or roofed over).
-    if (across < 1.25) {
-      const cut = 3 * (1 - smoothstep(0.8, 1.25, across));
-      if (!p.tube) {
-        dh -= cut;
-        open = 1 - smoothstep(0.75, 1, across);
-      } else {
-        dh += 0.6 * (1 - smoothstep(0.9, 1.25, across)); // (the tube's roof, a low hump)
-      }
-    }
-    // Blocks of basalt standing along both banks: squarish, flat-topped,
-    // two to ten metres high, set square to the flow.
-    const B = 7, s = this.seed ^ 0xb1c5;
-    const k0 = Math.floor(d / B);
-    for (let k = k0 - 1; k <= k0 + 1; k++) {
-      for (const side of [-1, 1]) {
-        const hh = hash2(k, side, s + Math.floor(c.seed * 1000));
-        if (hh > 0.75) continue;
-        const bd = (k + 0.5) * B, bl = side * (p.half + 1.6 + 3 * hash2(k, side + 5, s));
-        const size = 1.6 + 1.5 * hash2(k, side + 9, s);
-        const u = (d - bd) / size, v = (lateral - bl) / (size * (0.8 + 0.4 * hh));
-        const q = Math.pow(Math.abs(u), 6) + Math.pow(Math.abs(v), 6);
-        if (q >= 1) continue;
-        const H = (2 + 8 * hash2(k, side + 13, s)) * (1 - 0.4 * ((d - p.d0) / (p.d1 - p.d0)));
-        const top = H * (1 - Math.pow(q, 4)) * (1 - 0.12 * u); // (tops tilted a touch)
-        if (top > dh) {
-          dh = Math.max(dh, top);
-          block = 1;
-        }
-      }
-    }
-    return { dh, open, block };
+    const across = Math.abs(da * d) / p.half;
+    if (across > 2.4) return null;
+    let dh = 0, open = 0;
+    if (!p.tube) {
+      dh -= 1.2 * (1 - smoothstep(0.85, 1.15, across)); // (the channel's floor)
+      open = 1 - smoothstep(0.85, 1.05, across);
+    } else dh += 0.6 * (1 - smoothstep(0.9, 1.25, across)); // (the tube's roof, a low hump)
+    // The levees: a smooth ridge along each bank, alike on both sides.
+    const levee = Math.max(0, 1 - Math.abs(across - 1.35) / 0.6) ** 2 * (1 - smoothstep(0.85, 1.0, d / p.d1));
+    dh += 1.1 * levee;
+    return { dh, open, block: Math.min(1, levee * 2 + open) };
   }
 
   /** The volcanoes that could reach into (x, z)'s 1.1 km cell (remembered per cell). */
@@ -3138,7 +3230,17 @@ export class TerrainGenerator {
    */
   pickBiome(x, z, r) {
     const w = this.getBiomeWeights(x, z, {});
+    // (A redwood forest's own: wherever it has much of a share, it's all
+    // redwood, no other forest's trees mixed in at its edges.)
+    if (w.redwood > 0.1) return this.biomes.redwood;
+    // (Nor palms anywhere near one: the jungle's and the mangrove coast's
+    // trees are left out of the pick wherever the redwoods reach.)
+    const skip = w.redwood > 0.005 ? (id) => id === 'mangrove' || id === 'jungle' : () => false;
+    let total = 0;
+    for (const id in w) if (!skip(id)) total += w[id];
+    r *= total;
     for (const id in w) {
+      if (skip(id)) continue;
       r -= w[id];
       if (r < 0) return this.biomes[id];
     }
@@ -3329,10 +3431,8 @@ export class TerrainGenerator {
       const v = this.getVolcanic(x, z);
       if (v.cone > 0) out.lerp(SCREE, 0.8 * v.cone); // bare cinder slopes
       if (v.lava > 0) out.lerp(LAVA, 0.85 * v.lava);
-      // Beside a live flow: black blocks of fresh basalt, the channel's
-      // walls glowing dull red from the lava in it.
-      if (v.blocks > 0) out.lerp(BASALT, 0.9);
-      if (v.channel > 0) out.lerp(EMBER, 0.8 * Math.min(1, v.channel * 1.5));
+      // Beside a live flow: its levees of fresh black lava.
+      if (v.blocks > 0) out.lerp(BASALT, 0.9 * v.blocks);
       if (v.crater > 0) out.lerp(CINDER, 0.6 * v.crater);
     }
     // Badlands: the ridges and buttes banded cream, buff, rose and grey

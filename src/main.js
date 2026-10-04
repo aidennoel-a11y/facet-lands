@@ -1394,7 +1394,7 @@ function tick(now) {
   controls.update(dt);
   playerTraces(dt);
   camera.getWorldDirection(dir);
-  chunks.update(camera.position, now / 1000, dir);
+  chunks.update(camera.position, mp.roomTime() ?? now / 1000, dir); // (online, by the room's clock: the lava creeping, the water rippling, the same for all)
   weather.spring = seasonUniforms.uSpring.value;
   weather.update(dt, dayNight.hour);
   // (Online, by the room's clock: the same gusts for everyone.)

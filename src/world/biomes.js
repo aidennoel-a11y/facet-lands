@@ -442,7 +442,8 @@ export const BIOMES = {
 
   // Redwood forest: groves of giant redwoods in the heart of a pine forest
   // near a lake or the sea, their trunks soaring bare to far-off crowns,
-  // the floor beneath deep in shade, rust-brown litter and ferns.
+  // the floor beneath deep in shade, rust-brown litter and ferns, mossy
+  // boulders here and there among them.
   redwood: {
     id: 'redwood',
     name: 'Redwood forest',
@@ -468,9 +469,7 @@ export const BIOMES = {
       density: 0.31, // (giants: half as many as a pine forest's trees)
       clumped: false,
       species: [
-        { type: 'redwood', weight: 1.4, minHeight: -99, maxHeight: 140 },
-        { type: 'spruce', weight: 0.25, minHeight: -99, maxHeight: 160 },
-        { type: 'pine', weight: 0.15, minHeight: -99, maxHeight: 160 },
+        { type: 'redwood', weight: 1, minHeight: -99, maxHeight: 999 }, // (nothing but redwoods)
       ],
     },
   },
