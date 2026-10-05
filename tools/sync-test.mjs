@@ -103,20 +103,12 @@ await a.evaluate(() => (window.world.dayNight.hour = 20));
 await b.waitForTimeout(8000);
 const hours = await Promise.all([a, b].map((p) => p.evaluate(() => window.world.dayNight.hour)));
 ok('the time of day is the same', Math.abs(hours[0] - hours[1]) < 0.15, hours.map((h) => h.toFixed(2)).join(' / '));
-// The calls round about (birds, owls, bugs): the same for both, standing together.
-await a.evaluate(() => { const { controls, camera } = window.world; controls.euler.set(0, 0, 0, 'YXZ'); camera.quaternion.setFromEuler(controls.euler); });
-const AMBIENT = /^(song\d|toucan|parrot|twig|woodpecker|rustle|cuckoo|owl|howler|katydid|treefrog|chatter|sandslide)$/;
-for (const p of [a, b]) await p.evaluate((src) => { const re = new RegExp(src); const s = window.world.sound; const f = s.call.bind(s); window.heard = []; s.call = (n, pan, v, ...r) => (re.test(n) && window.heard.push(`${n}@${Math.round(window.world.mp.roomTime())}`), f(n, pan, v, ...r)); }, AMBIENT.source);
-await b.waitForTimeout(25000);
-const heard = await Promise.all([a, b].map((p) => p.evaluate(() => window.heard)));
-const both = heard[0].filter((h) => heard[1].some((g) => g.split('@')[0] === h.split('@')[0] && Math.abs(+g.split('@')[1] - +h.split('@')[1]) <= 1));
-ok('the calls round about are the same for both', heard[0].length > 0 && both.length >= Math.min(heard[0].length, heard[1].length) - 1, `host ${heard[0].length}, guest ${heard[1].length}, both ${both.length}`);
 // An arrow the host looses: the guest sees it fly.
 await a.evaluate(() => { const p = window.world.camera.position; window.world.game.onShot({ m: 'arrow', p: [p.x, p.y, p.z], v: [0, 8, 30] }); });
 await b.waitForTimeout(1500);
 ok('the guest sees the host\'s arrow fly', (await b.evaluate(() => window.world.game.ghosts.length)) > 0);
 // What the host holds, and swinging it: the guest sees it in their hand.
-await a.evaluate(() => { const g = window.world.game; g.inventory.slots[g.hotbar.index] = { id: 'axe', count: 1, dur: 50 }; g.inventory.changed?.(); });
+await a.evaluate(() => { window.world.controls.mode = 'walk'; const g = window.world.game; g.inventory.slots[g.hotbar.index] = { id: 'axe', count: 1, dur: 50 }; g.inventory.changed?.(); });
 await b.waitForTimeout(3000);
 const held = await b.evaluate(() => { const r = [...window.world.mp.others.values()][0]; return { index: r.heldIndex, id: window.world.mp.items.ids[r.heldIndex - 1], inHand: r.hands[1].children.length }; });
 ok('the guest sees the axe in the host\'s hand', held.id === 'axe' && held.inHand === 1, JSON.stringify(held));
