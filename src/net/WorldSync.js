@@ -1,3 +1,4 @@
+import { Quaternion } from 'three';
 import { Structures } from '../survival/Structures.js';
 import { Torches } from '../items/Torches.js';
 
@@ -43,6 +44,12 @@ export class WorldSync {
     this.game.felling.onEvent = (e) => this.online && this.fx.push(e);
     // (The host's storm strikes round any of you, and each strike goes out.)
     this.lightning.centres = () => this.others();
+    // (Your spears and arrows: for the others to see fly, and hear.)
+    this.game.onShot = (f) => {
+      if (!this.online) return;
+      this.fx.push({ k: 'shot', ...f });
+      this.emit('whoosh', f.p[0], f.p[2], 0.5, 1, true);
+    };
     this.lightning.onBolt = (b) => this.online && this.mp.isHost && this.fx.push({ k: 'bolt', ...b });
   }
 
@@ -79,7 +86,9 @@ export class WorldSync {
     for (const t of this.torches.records()) now.torches.set(t.k, [t, String(t.lit)]);
     for (const d of g.items.drops) {
       const r2 = (v) => Math.round(v * 100) / 100;
-      now.drops.set(d.uid, [{ k: d.uid, stack: d.stack, x: r2(d.x), y: r2(d.y), z: r2(d.z) }, `${d.stack.id}:${d.stack.count}`]);
+      // (Which way it lies: stuck in the ground as it went in, or turned as it fell.)
+      const q = d.stuck ? d.mesh.quaternion.toArray().map(r2) : undefined;
+      now.drops.set(d.uid, [{ k: d.uid, stack: d.stack, x: r2(d.x), y: r2(d.y), z: r2(d.z), q, turn: q ? undefined : r2(d.mesh.rotation.y) }, `${d.stack.id}:${d.stack.count}`]);
     }
     return now;
   }
@@ -118,7 +127,10 @@ export class WorldSync {
     for (const key of e.del?.torches ?? []) (this.sent.torches.delete(key), this.torches.removeKey(key));
     for (const d of e.put?.drops ?? []) {
       this.sent.drops.set(d.k, `${d.stack?.id}:${d.stack?.count}`);
-      if (d.stack && !g.items.drops.some((o) => o.uid === d.k)) g.items.drop(d.stack, d.x, d.y + 0.05, d.z, { uid: d.k });
+      if (!d.stack || g.items.drops.some((o) => o.uid === d.k)) continue;
+      const tilt = Array.isArray(d.q) && d.q.length === 4 ? new Quaternion(...d.q) : null;
+      const dropped = g.items.drop(d.stack, d.x, d.y + (tilt ? 0 : 0.05), d.z, { uid: d.k, tilt, turn: Number.isFinite(d.turn) ? d.turn : undefined });
+      if (tilt) dropped.settled = true;
     }
     for (const key of e.del?.drops ?? []) (this.sent.drops.delete(key), g.items.removeDrop(key));
   }
@@ -185,6 +197,7 @@ export class WorldSync {
       }
       return;
     }
+    if (f.k === 'shot') return this.game.ghostShot(f);
     if (f.k === 'bolt') return this.lightning.strikeAt(f.x, f.z, f.seed, f.pulses);
     if (!f.n) return;
     const cam = this.game.camera.position;

@@ -229,7 +229,7 @@ export const bonesModel = () =>
 // --- More tools and things ------------------------------------------------------
 
 /** A bow, held upright: a bent stave and its string. */
-export function bowModel() {
+export function bowModel(string = true) {
   const b = new Parts(41);
   const n = 7;
   for (let k = 0; k < n; k++) {
@@ -237,7 +237,7 @@ export function bowModel() {
     const p0 = [0, Math.sin(a0) * 0.55, -Math.cos(a0) * 0.18 + 0.18], p1 = [0, Math.sin(a1) * 0.55, -Math.cos(a1) * 0.18 + 0.18];
     b.log(p0, p1, 0.018, 0x8a5d38, 0x8a5d38, 5);
   }
-  b.add(new CylinderGeometry(0.004, 0.004, 1.02, 3), 0xe8e0cc, [0, 0, 0.055]);
+  if (string) b.add(new CylinderGeometry(0.004, 0.004, 1.02, 3), 0xe8e0cc, [0, 0, 0.055]); // (in your hand, drawn back: see Game)
   return b.build();
 }
 

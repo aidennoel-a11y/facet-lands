@@ -1,11 +1,11 @@
-import { BufferGeometry, Float32BufferAttribute, Group, Line, LineBasicMaterial, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Vector3 } from 'three';
+import { BufferGeometry, CylinderGeometry, Float32BufferAttribute, Group, Line, LineBasicMaterial, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Vector3 } from 'three';
 import { seasonUniforms } from '../render/Seasons.js';
 import { Felling } from './Felling.js';
 import { GroundItems } from './GroundItems.js';
 import { Hud } from './Hud.js';
 import { Inventory } from './Inventory.js';
 import { BLADES, GRINDS, ITEMS, RECIPES, stackOf, weightOf } from './items.js';
-import { bobberModel } from './models.js';
+import { bobberModel, bowModel } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
 
@@ -76,6 +76,7 @@ export class Game {
     };
     this.felling = new Felling(o.scene, o.trees, this.items);
     this.flying = []; // spears and arrows in flight: { kind, mesh, pos, vel, stack, life }
+    this.ghosts = []; // (online: the others' in flight, only to be seen: see ghostShot)
     this.harvested = new Map(); // tree key -> time picked (the fruit comes again after a while)
     this.time = 0;
     this.cooldown = 0;
@@ -867,6 +868,7 @@ export class Game {
       if (!near) return this.sound?.call('whoosh', 0, 0.2);
       if (near.k === 'animal') return this.#strike(i, animal, origin);
       this.inventory.wear(i, 1);
+      if (this.anim?.kind === 'chop') this.anim.bite = true; // (the blade sticks a moment: see drawHeld)
       this.sound?.call('chop', 0, 0.7);
       const ground = (x, z) => this.groundAt(x, z);
       this.dirty = true;
@@ -1010,7 +1012,54 @@ export class Game {
     pos.y -= 0.12;
     mesh.position.copy(pos);
     this.scene.add(mesh);
-    this.flying.push({ kind, mesh, pos, vel: direction.clone().multiplyScalar(speed).add(new Vector3(0, kind === 'spear' ? 1.2 : kind === 'arrow' ? 0.4 : 0.1, 0)), stack, life: 7 });
+    const vel = direction.clone().multiplyScalar(speed).add(new Vector3(0, kind === 'spear' ? 1.2 : kind === 'arrow' ? 0.4 : 0.1, 0));
+    this.flying.push({ kind, mesh, pos, vel, stack, life: 7 });
+    // (Online: for the others to see it fly.)
+    const r = (v) => Math.round(v * 100) / 100;
+    this.onShot?.({ m: kind === 'spear' ? stack.id : kind, p: [r(pos.x), r(pos.y), r(pos.z)], v: [r(vel.x), r(vel.y), r(vel.z)] });
+  }
+
+  /**
+   * Someone else's spear or arrow, online, flying as theirs does: only to
+   * be seen (where it ends up comes as a dropped item, and what it hit,
+   * from them).
+   */
+  ghostShot(f) {
+    if (!ITEMS[f.m] || !Array.isArray(f.p) || !Array.isArray(f.v)) return;
+    const mesh = new Mesh(this.items.model(f.m), this.items.material);
+    mesh.castShadow = true;
+    const pos = new Vector3(...f.p);
+    mesh.position.copy(pos);
+    this.scene.add(mesh);
+    this.ghosts.push({ mesh, pos, vel: new Vector3(...f.v), life: 7 });
+  }
+
+  #flyGhosts(dt) {
+    for (const g of this.ghosts) {
+      g.life -= dt;
+      const step = g.vel.length() * dt;
+      dir.copy(g.vel).normalize();
+      // (Into a creature, or the ground: gone, as theirs stops there.)
+      const ground = this.groundAt(g.pos.x, g.pos.z, g.pos.y + 1);
+      if (this.wildlife.aim(g.pos, dir, step + 0.3) || (Number.isFinite(ground) && g.pos.y < ground + 0.1) || g.life <= 0) {
+        g.done = true;
+        const d = Math.hypot(g.pos.x - this.camera.position.x, g.pos.z - this.camera.position.z);
+        if (d < 40) this.sound?.call('thunk', 0, 0.3 * Math.min(1, 6 / (d + 3)));
+        continue;
+      }
+      g.pos.addScaledVector(g.vel, dt);
+      g.vel.y -= 9.8 * dt;
+      g.mesh.position.copy(g.pos);
+      g.mesh.quaternion.setFromUnitVectors(FORWARD, dir);
+      const w = this.waterAt(g.pos.x, g.pos.z);
+      if (w && g.pos.y < w.level && !g.wet) {
+        g.wet = true;
+        g.vel.multiplyScalar(0.25);
+        this.traces?.splash(g.pos.x, w.level, g.pos.z, 6, 1.5, 0.6);
+      }
+    }
+    for (const g of this.ghosts) if (g.done) this.scene.remove(g.mesh);
+    this.ghosts = this.ghosts.filter((g) => !g.done);
   }
 
   #throw(i, ray) {
@@ -1029,6 +1078,7 @@ export class Game {
     this.drawing = null;
     if (draw < 0.15 || !this.inventory.remove('arrow', 1)) return;
     this.inventory.wear(i, 1);
+    this.#animate('loose', 0.25);
     this.#launch('arrow', Inventory.stack('arrow', 1), origin, direction, 16 + 34 * draw);
     this.cooldown = 0.35;
     this.sound?.call('whoosh', 0, 0.35 + 0.3 * draw);
@@ -1349,6 +1399,7 @@ export class Game {
       this.sound?.call('treefall', 0, Math.min(1, 0.4 + size / 20) / (1 + d / 30));
     });
     this.#flyAll(dt);
+    this.#flyGhosts(dt);
     const lights = this.structures.update(dt, ctx);
     const walking = this.walking;
     const i = this.hotbar.index;
@@ -1565,6 +1616,35 @@ export class Game {
 
   #animate(kind, duration) {
     this.anim = { kind, t: 0, duration };
+    this.anims = (this.anims ?? 0) + 1; // (online: a new one, for the others to see: see pose)
+  }
+
+  /**
+   * How you stand, for the others to see online: what's in your hand (its
+   * id, or null), what you're doing with it (chop, throw, thrust, cast,
+   * kick, use, loose; `n`: which one, so two chops running are two) and
+   * how far a bow's drawn (0..1).
+   */
+  pose() {
+    const held = this.heldId;
+    const draw = this.drawing && held === 'bow' ? Math.min(1, (this.time - this.drawing.since) / 0.9) : 0;
+    return { held, act: this.anim?.kind ?? null, n: this.anims ?? 0, draw };
+  }
+
+  /** Where an item sits in a hand (`mesh` of it, in the hand's frame: forward is -z, up +y). */
+  static holdPose(id, mesh) {
+    if (AXES[id] || PICKS[id]) {
+      // (Blade forward, the handle in your fist near its end.)
+      mesh.rotation.set(0, Math.PI / 2, 0);
+      mesh.scale.setScalar(0.62);
+      mesh.position.set(0, -0.06, 0);
+    } else if (SPEARS.has(id)) mesh.rotation.set(0, Math.PI, 0), mesh.scale.setScalar(0.7), mesh.position.set(0, 0, -0.2);
+    else if (id === 'bow') mesh.rotation.set(0, 0, 0.25), mesh.scale.setScalar(0.75), mesh.position.set(-0.12, 0.1, -0.05);
+    else if (id === 'crossbow') mesh.rotation.set(0, Math.PI, 0), mesh.scale.setScalar(0.9), mesh.position.set(-0.14, 0.08, -0.12);
+    else if (id === 'fishingRod') mesh.rotation.set(-1.05, 0, 0), mesh.scale.setScalar(0.75), mesh.position.set(0, -0.05, 0);
+    else if (id === 'torch') mesh.rotation.set(0, 0, Math.PI / 2 - 0.2), mesh.scale.setScalar(0.7);
+    else if (id === 'log') mesh.rotation.set(0, Math.PI / 2 - 0.25, 0.15), mesh.scale.setScalar(0.85), mesh.position.set(0.05, 0.22, 0.25); // (on your shoulder)
+    else mesh.scale.setScalar(ITEMS[id]?.place ? 0.35 : 0.8);
   }
 
   #drawHeld(dt, held, walking) {
@@ -1573,33 +1653,34 @@ export class Game {
       this.heldId = id;
       this.grip.clear();
       this.rodTip = null;
+      this.bowString = null;
       if (id) {
-        const geometry = id === 'torch' ? this.items.model('stick') : this.items.model(id);
+        // (The bow without its string: that's drawn back, below.)
+        const geometry = id === 'torch' ? this.items.model('stick') : id === 'bow' ? (this.bareBow ??= bowModel(false)) : this.items.model(id);
         const mesh = new Mesh(geometry, this.handMaterial);
         mesh.renderOrder = 999;
         mesh.onBeforeRender = this.nearest.before;
         mesh.onAfterRender = this.nearest.after;
         this.handFlame.renderOrder = 1000;
         // Each held its own way (in your hand's frame: forward is -z).
-        if (AXES[id] || PICKS[id]) {
-          // (Blade forward, the handle in your fist near its end.)
-          mesh.rotation.set(0, Math.PI / 2, 0);
-          mesh.scale.setScalar(0.62);
-          mesh.position.set(0, -0.06, 0);
-        } else if (SPEARS.has(id)) mesh.rotation.set(0, Math.PI, 0), mesh.scale.setScalar(0.7), mesh.position.set(0, 0, -0.2);
-        else if (id === 'bow') mesh.rotation.set(0, 0, 0.25), mesh.scale.setScalar(0.75), mesh.position.set(-0.12, 0.1, -0.05);
-        else if (id === 'crossbow') mesh.rotation.set(0, Math.PI, 0), mesh.scale.setScalar(0.9), mesh.position.set(-0.14, 0.08, -0.12);
-        else if (id === 'fishingRod') {
-          mesh.rotation.set(-1.05, 0, 0), mesh.scale.setScalar(0.75), mesh.position.set(0, -0.05, 0);
+        Game.holdPose(id, mesh);
+        if (id === 'fishingRod') {
           this.rodTip = new Group();
           this.rodTip.position.set(0, 1.8, 0);
           mesh.add(this.rodTip);
         } else if (id === 'torch') {
-          mesh.rotation.set(0, 0, Math.PI / 2 - 0.2), mesh.scale.setScalar(0.7);
           this.handFlame.position.set(0.02, 0.33, 0);
           this.grip.add(this.handFlame);
-        } else if (id === 'log') mesh.rotation.set(0, Math.PI / 2 - 0.25, 0.15), mesh.scale.setScalar(0.85), mesh.position.set(0.05, 0.22, 0.25); // (on your shoulder)
-        else mesh.scale.setScalar(ITEMS[id].place ? 0.35 : 0.8);
+        } else if (id === 'bow') {
+          // Its string, in two (drawn back to a point as you draw), and an
+          // arrow on it while you do.
+          const near = (m) => ((m.renderOrder = 999), (m.onBeforeRender = this.nearest.before), (m.onAfterRender = this.nearest.after), mesh.add(m), m);
+          this.stringMaterial ??= new MeshBasicMaterial({ color: 0xe8e0cc });
+          this.stringGeometry ??= new CylinderGeometry(0.005, 0.005, 1, 3).translate(0, 0.5, 0);
+          this.bowString = [0, 1].map(() => near(new Mesh(this.stringGeometry, this.stringMaterial)));
+          this.nocked = near(new Mesh(this.items.model('arrow'), this.handMaterial));
+          this.nocked.rotation.set(0, Math.PI, 0); // (its point forward)
+        }
         this.grip.add(mesh);
       }
     }
@@ -1609,33 +1690,72 @@ export class Game {
     const heavy = id === 'log' ? 0.05 : 0;
     this.hand.position.set(0.3 + Math.sin(this.bob) * 0.015, -0.33 - Math.abs(Math.cos(this.bob)) * (0.02 + heavy) - low, -0.62);
     // Resting pose, and the swing on top of it.
-    let rx = AXES[id] || PICKS[id] ? -0.25 : 0, rz = AXES[id] || PICKS[id] ? 0.12 : 0, px = 0, py = 0, pz = 0;
+    let rx = AXES[id] || PICKS[id] ? -0.25 : 0, ry = 0, rz = AXES[id] || PICKS[id] ? 0.12 : 0, px = 0, py = 0, pz = 0;
     const a = this.anim;
     if (a) {
       a.t += dt;
       const u = Math.min(1, a.t / a.duration);
       if (a.kind === 'chop') {
-        // Up over the shoulder, a hard stroke down and across, and back.
-        const lift = u < 0.5 ? Math.sin((u / 0.5) * Math.PI / 2) : u < 0.62 ? 1 - ((u - 0.5) / 0.12) * 2.2 : -1.2 + ((u - 0.62) / 0.38) * 1.2;
+        // Wound up back over the shoulder (a beat at the top), a hard
+        // stroke down and across; biting into the wood with a jolt, it
+        // sticks a moment, and is worked free and brought back.
+        const back = a.bite ? 0.74 : 0.58;
+        let lift;
+        if (u < 0.42) lift = Math.sin((u / 0.42) * Math.PI / 2);
+        else if (u < 0.5) lift = 1 + 0.06 * Math.sin(((u - 0.42) / 0.08) * Math.PI);
+        else if (u < 0.58) lift = 1 - ((u - 0.5) / 0.08) * 1.9;
+        else if (u < back) lift = -0.9 + 0.05 * Math.sin((u - 0.58) * 120) * ((back - u) / 0.16);
+        else lift = -0.9 * (1 - (u - back) / (1 - back));
         rx += lift * 1.2;
         rz += lift * -0.35;
-        py += Math.max(0, lift) * 0.12;
-        pz += Math.max(0, lift) * 0.1;
+        ry += Math.min(0, lift) * 0.25; // (across you)
+        px -= Math.min(0, lift) * 0.06;
+        py += Math.max(0, lift) * 0.14;
+        pz += Math.max(0, lift) * 0.12;
       } else if (a.kind === 'thrust' || a.kind === 'throw') {
         const out = u < 0.3 ? -u / 0.3 * 0.12 : u < 0.5 ? -0.12 + ((u - 0.3) / 0.2) * 0.5 : 0.38 * (1 - (u - 0.5) / 0.5);
         pz -= out;
         if (a.kind === 'throw') py += out * 0.4;
       } else if (a.kind === 'cast') {
         rx += u < 0.4 ? (u / 0.4) * 0.9 : 0.9 - ((u - 0.4) / 0.6) * 1.3;
+      } else if (a.kind === 'loose') {
+        // (The string snapping forward, the bow jumping in your hand.)
+        rx += Math.sin(u * Math.PI) * 0.12;
+        pz -= Math.sin(u * Math.PI) * 0.03;
       } else if (a.kind === 'kick') {
         rx -= Math.sin(u * Math.PI) * 0.25;
         pz += Math.sin(u * Math.PI) * 0.06;
       } else py += Math.sin(u * Math.PI) * 0.08;
       if (u >= 1) this.anim = null;
     }
-    if (this.drawing && id === 'bow') pz += Math.min(1, (this.time - this.drawing.since) / 0.9) * 0.12;
+    if (id === 'bow' && this.bowString) {
+      // Drawing: the bow brought up in front of you and stood upright, the
+      // arrow on the string and pulled back to your cheek; held at full
+      // draw, your arm starts to tremble.
+      const held = this.drawing ? this.time - this.drawing.since : 0;
+      const draw = Math.min(1, held / 0.9), e = draw * draw * (3 - 2 * draw);
+      px -= 0.2 * e;
+      py += 0.06 * e;
+      pz += 0.03 * e;
+      rz -= 0.22 * e;
+      if (held > 0.9) {
+        const shake = Math.min(0.012, 0.002 + (held - 0.9) * 0.004);
+        px += Math.sin(this.time * 23) * shake;
+        py += Math.sin(this.time * 31 + 1) * shake * 0.8;
+      }
+      const nock = 0.055 + 0.42 * e;
+      for (const [k, m] of this.bowString.entries()) {
+        const ty = k ? -0.375 : 0.375;
+        v.set(0, -ty, nock - 0.048);
+        m.position.set(0, ty, 0.048);
+        m.scale.set(1, v.length(), 1);
+        m.quaternion.setFromUnitVectors(UP, v.normalize());
+      }
+      this.nocked.visible = !!this.drawing;
+      this.nocked.position.set(0.02, 0, nock - 0.375);
+    }
     if (this.winding && id === 'crossbow') (rx += 0.7 * Math.min(1, this.winding.t * 4)), (py -= 0.08), (pz += 0.04 * Math.sin(this.winding.t * 14));
-    this.grip.rotation.set(rx, 0, rz);
+    this.grip.rotation.set(rx, ry, rz);
     this.grip.position.set(px, py, pz);
     if (this.heldId === 'torch') {
       const f = 0.85 + 0.15 * Math.sin(this.time * 17) * Math.sin(this.time * 7);

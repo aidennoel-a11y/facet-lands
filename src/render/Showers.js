@@ -188,8 +188,7 @@ export class Showers {
   }
 
   /** Where one of the heavier showers stands, well away, for far lightning to strike inside it (or null). */
-  pick(from) {
-    const far = this.list.filter((s) => s.rain > 0.5 && Math.hypot(s.x - from.x, s.z - from.z) > 500);
-    return far.length ? far[Math.floor(Math.random() * far.length)] : null;
+  pick(from, chance = () => true) {
+    return this.list.find((s) => s.rain > 0.5 && Math.hypot(s.x - from.x, s.z - from.z) > 500 && chance(s)) ?? null;
   }
 }

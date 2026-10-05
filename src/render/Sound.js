@@ -26,6 +26,13 @@ const CLIPS = {
   'bird-cardinal': 3, 'bird-bluebird': 3, 'bird-goldfinch': 3,
 };
 
+// (A number 0..1 for these, the same for everyone online.)
+function hash01(...n) {
+  let h = n.reduce((h, v) => Math.imul(h ^ Math.round(v), 0x85ebca6b) ^ (h >>> 13), 0x27d4eb2f);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  return ((h ^ (h >>> 12)) >>> 0) / 4294967296;
+}
+
 export class Sound {
   constructor() {
     this.enabled = true;
@@ -221,7 +228,8 @@ export class Sound {
     this.cicadaDepth.gain.value = 0;
     throb.connect(this.cicadaDepth).connect(this.beds.cicada.gain.gain);
     throb.start();
-    this.next = { forest: 0, jungle: 0, night: 0, owl: 0, desert: 0, woodpecker: 0 };
+    this.next = { stream: 0 };
+    this.heardSlot = {}; // (the calls round about: see ambience)
     // A bees' nest: a low, beating hum (a few saw tones a little out of tune).
     const hum = ctx.createBiquadFilter();
     hum.type = 'lowpass';
@@ -388,67 +396,68 @@ export class Sound {
     // Birds sing in the woods by day, most at dawn; crickets chirp in the
     // grass at night; frogs croak in the wetlands, from dusk on.
     const birds = (e.woods * 0.7 + e.jungle + 0.25 * e.grass) * Math.max(e.day * 0.6, e.dawn * 1.6) * (1 - e.rain) * quiet * (1 - 0.85 * Math.min(1, Math.max(0, (e.high - 0.4) / 0.4)));
-    if (birds > 0.05 && t > this.nextBird) {
+    // (When each call comes, which it is and from which way: worked out from
+    // the clock (online, the room's: e.clock) and where you are, not by
+    // chance, so two people standing together hear the same calls from the
+    // same way. `due(code, every)`: once every so often, a number 0..1 for
+    // each thing to settle (r(1), r(2), ...), or null.)
+    const T = e.clock ?? t, cell = e.cell ?? [0, 0];
+    const due = (code, every) => {
+      const slot = Math.floor(T / every);
+      if (this.heardSlot[code] === slot) return null;
+      const r = (k) => hash01(slot, code, k, cell[0], cell[1]);
+      const at = (slot + 0.8 * r(0)) * every;
+      if (T < at) return null;
+      this.heardSlot[code] = slot;
+      return T - at < 1 ? r : null;
+    };
+    // (A way round you, as a pan: from the bearing, as you're facing.)
+    const way = (a) => (e.panTo ? e.panTo(a * Math.PI * 2) : a * 1.6 - 0.8);
+    let r;
+    if (birds > 0.05 && (r = due(1, 2.5)) && r(1) < 0.25 * Math.min(2, birds)) {
       // Each kind of country its own birds: robins, chickadees, cardinals,
       // warblers and doves in the woods; thrushes in the pines; meadowlarks
       // over the grass; whoops, toucans and parrots in the jungle.
-      const r = Math.random() * (e.woods + e.jungle + 0.25 * e.grass + 1e-6);
-      const pick = (list) => list[Math.floor(Math.random() * list.length)];
-      if (r < e.jungle) {
-        const k = Math.random();
-        this.call(k < 0.4 ? 'song7' : k < 0.7 ? 'toucan' : 'parrot', Math.random() * 1.6 - 0.8, 0.3 + 0.5 * Math.random());
-      } else if (r < e.jungle + e.woods) this.call(`song${pick((e.pine ?? 0) > 0.5 ? [5, 5, 1, 3] : [0, 0, 1, 2, 3, 4, 5])}`, Math.random() * 1.6 - 0.8, 0.3 + 0.6 * Math.random());
-      else this.call(`song${pick([6, 6, 3, 4])}`, Math.random() * 1.6 - 0.8, 0.3 + 0.5 * Math.random());
-      this.nextBird = t + (2 + Math.random() * 6) / Math.min(2, birds);
+      const w = r(2) * (e.woods + e.jungle + 0.25 * e.grass + 1e-6);
+      const pick = (list) => list[Math.floor(r(3) * list.length)];
+      if (w < e.jungle) {
+        const k = r(4);
+        this.call(k < 0.4 ? 'song7' : k < 0.7 ? 'toucan' : 'parrot', way(r(5)), 0.3 + 0.5 * r(6));
+      } else if (w < e.jungle + e.woods) this.call(`song${pick((e.pine ?? 0) > 0.5 ? [5, 5, 1, 3] : [0, 0, 1, 2, 3, 4, 5])}`, way(r(5)), 0.3 + 0.6 * r(6));
+      else this.call(`song${pick([6, 6, 3, 4])}`, way(r(5)), 0.3 + 0.5 * r(6));
     }
-    const N = this.next, calm = 1 - Math.min(1, e.wind * 2.5);
+    const calm = 1 - Math.min(1, e.wind * 2.5);
     // A forest on a still day: hardly a sound, but now and then a twig
     // snapping off among the trees, a woodpecker drumming, a rustle in the
     // leaves, a cuckoo far off.
-    if (e.woods > 0.4 && calm > 0.4 && e.rain < 0.3 && t > N.forest) {
-      const k = Math.random();
-      const pan = Math.random() * 1.8 - 0.9;
-      if (k < 0.35) this.call('twig', pan, 0.12 + 0.2 * Math.random());
-      else if (k < 0.6 && e.day > 0.5) this.call('woodpecker', pan, 0.2 + 0.3 * Math.random());
-      else if (k < 0.85) this.call('rustle', pan, 0.15 + 0.2 * Math.random());
+    if (e.woods > 0.4 && calm > 0.4 && e.rain < 0.3 && (r = due(2, 9))) {
+      const k = r(1), pan = way(r(2));
+      if (k < 0.35) this.call('twig', pan, 0.12 + 0.2 * r(3));
+      else if (k < 0.6 && e.day > 0.5) this.call('woodpecker', pan, 0.2 + 0.3 * r(3));
+      else if (k < 0.85) this.call('rustle', pan, 0.15 + 0.2 * r(3));
       else if (e.day > 0.5) this.call('cuckoo', pan, 0.25);
-      N.forest = t + 4 + Math.random() * 10;
     }
     // Owls in the woods at night.
-    if (e.woods + e.jungle * 0.5 > 0.4 && e.day < 0.2 && e.rain < 0.3 && t > N.owl) {
-      this.call('owl', Math.random() * 1.6 - 0.8, 0.25 + 0.3 * Math.random());
-      N.owl = t + 12 + Math.random() * 30;
-    }
+    if (e.woods + e.jungle * 0.5 > 0.4 && e.day < 0.2 && e.rain < 0.3 && (r = due(3, 25))) this.call('owl', way(r(1)), 0.25 + 0.3 * r(2));
     // The jungle, alive: howler monkeys roaring far off, by day and by
     // night; at night the katydids and tree frogs all round.
-    if (e.jungle * lowland > 0.3 && t > N.jungle) {
-      const k = Math.random(), pan = Math.random() * 1.8 - 0.9;
-      if (k < 0.25) this.call('howler', pan, 0.15 + 0.2 * Math.random());
-      else if (e.day < 0.3) this.call(k < 0.65 ? 'katydid' : 'treefrog', pan, 0.3 + 0.4 * Math.random());
-      else this.call('chatter', pan, 0.1 + 0.15 * Math.random());
-      N.jungle = t + (e.day < 0.3 ? 0.4 + Math.random() * 1.6 : 5 + Math.random() * 12) / Math.max(0.4, e.jungle);
+    if (e.jungle * lowland > 0.3 && (r = e.day < 0.3 ? due(4, 1.4) : due(5, 11)) && r(3) < Math.min(1, e.jungle / 0.6)) {
+      const k = r(1), pan = way(r(2));
+      if (k < 0.25) this.call('howler', pan, 0.15 + 0.2 * r(4));
+      else if (e.day < 0.3) this.call(k < 0.65 ? 'katydid' : 'treefrog', pan, 0.3 + 0.4 * r(4));
+      else this.call('chatter', pan, 0.1 + 0.15 * r(4));
     }
     // Bugs in the night: katydids in the woods and the grass, mosquitoes
     // and tree frogs in the wetlands.
-    if (e.day < 0.25 && lowland > 0.5 && (e.woods + e.grass + (e.wetland ?? 0)) > 0.3 && e.rain < 0.3 && t > N.night) {
-      this.call((e.wetland ?? 0) > 0.4 && Math.random() < 0.5 ? 'treefrog' : 'katydid', Math.random() * 1.8 - 0.9, (0.2 + 0.3 * Math.random()) * quiet);
-      N.night = t + 1.5 + Math.random() * 4;
+    if (e.day < 0.25 && lowland > 0.5 && (e.woods + e.grass + (e.wetland ?? 0)) > 0.3 && e.rain < 0.3 && (r = due(6, 3.5))) {
+      this.call((e.wetland ?? 0) > 0.4 && r(1) < 0.5 ? 'treefrog' : 'katydid', way(r(2)), (0.2 + 0.3 * r(3)) * quiet);
     }
     // Sand trickling down the dunes as the wind blows.
-    if (desert > 0.4 && e.wind > 0.25 && t > N.desert) {
-      this.call('sandslide', Math.random() * 1.6 - 0.8, 0.5 * desert * e.wind);
-      N.desert = t + 3 + Math.random() * 8;
-    }
+    if (desert > 0.4 && e.wind > 0.25 && (r = due(7, 7))) this.call('sandslide', way(r(1)), 0.5 * desert * e.wind);
     const crickets = lowland * (e.grass + 0.6 * e.woods + 0.5 * e.jungle) * (1 - e.day) * (1 - e.rain) * quiet;
-    if (crickets > 0.08 && t > this.nextCricket) {
-      this.#cricket(crickets);
-      this.nextCricket = t + 0.25 + Math.random() * 1.2 / crickets;
-    }
+    if (crickets > 0.08 && (r = due(8, 0.5)) && r(1) < Math.min(1, crickets * 0.7)) this.#cricket(crickets);
     const frogs = lowland * e.wetland * Math.max(1 - e.day, e.dusk) * quiet;
-    if (frogs > 0.08 && t > this.nextFrog) {
-      this.#croak(frogs);
-      this.nextFrog = t + 0.3 + Math.random() * 2.2 / frogs;
-    }
+    if (frogs > 0.08 && (r = due(9, 0.6)) && r(1) < Math.min(1, frogs * 0.5)) this.#croak(frogs);
   }
 
   // A few notes of birdsong: quick whistled sweeps, from somewhere nearby.

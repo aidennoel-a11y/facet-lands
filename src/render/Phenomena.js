@@ -2,7 +2,23 @@ import { Color, CylinderGeometry, DoubleSide, IcosahedronGeometry, InstancedBuff
 import { Puffs } from './Puffs.js';
 import { cloudShadowUniforms } from './cloudShadow.js';
 
-const rnd = (a, b) => a + Math.random() * (b - a);
+// (Seeded, so what a volcano or a fire gives off is the same for everyone
+// online: reseeded from where it is before it's made. See reseed.)
+let seedState = 1;
+const random = () => {
+  let t = (seedState = (seedState + 0x6d2b79f5) | 0);
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const reseed = (...n) => (seedState = n.reduce((h, v) => (Math.imul(h ^ Math.round(v), 0x9e3779b1) ^ (h >>> 13)) | 0, 0x2545f491));
+const rnd = (a, b) => a + random() * (b - a);
+// (A number 0..1 for these, the same for everyone.)
+const hash01 = (...n) => {
+  let h = n.reduce((h, v) => Math.imul(h ^ Math.round(v), 0x85ebca6b) ^ (h >>> 13), 0x27d4eb2f);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  return ((h ^ (h >>> 12)) >>> 0) / 4294967296;
+};
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -28,17 +44,18 @@ export class Wildfires {
 
   /** A fire at (x, y, z) (where lightning struck, and it caught). */
   ignite(x, y, z, ground) {
+    reseed(x, z, 7);
     if (this.fires.length >= 3) return;
     const R = rnd(10, 16);
     const flames = new Puffs(this.scene, 64, () => {
-      const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * R;
+      const a = random() * Math.PI * 2, d = Math.sqrt(random()) * R;
       const ox = Math.cos(a) * d, oz = Math.sin(a) * d;
-      return { offset: [ox, ground(x + ox, z + oz) - y + 0.2, oz], velocity: [0, rnd(2, 3.5), 0], period: rnd(0.8, 1.4), phase: Math.random(), from: rnd(1.1, 2), to: 0.2, colour: FLAMES[Math.floor(Math.random() * 3)], glow: 1 };
+      return { offset: [ox, ground(x + ox, z + oz) - y + 0.2, oz], velocity: [0, rnd(2, 3.5), 0], period: rnd(0.8, 1.4), phase: random(), from: rnd(1.1, 2), to: 0.2, colour: FLAMES[Math.floor(random() * 3)], glow: 1 };
     }, { opacity: 0.9 });
     const smoke = new Puffs(this.scene, 30, () => {
-      const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * R * 0.7;
+      const a = random() * Math.PI * 2, d = Math.sqrt(random()) * R * 0.7;
       const ox = Math.cos(a) * d, oz = Math.sin(a) * d;
-      return { offset: [ox, ground(x + ox, z + oz) - y + 1.5, oz], velocity: [0, rnd(3, 5), 0], period: rnd(8, 13), phase: Math.random(), from: rnd(1.5, 3), to: rnd(9, 15), colour: SMOKE.clone().multiplyScalar(rnd(0.8, 1.4)), glow: 0 };
+      return { offset: [ox, ground(x + ox, z + oz) - y + 1.5, oz], velocity: [0, rnd(3, 5), 0], period: rnd(8, 13), phase: random(), from: rnd(1.5, 3), to: rnd(9, 15), colour: SMOKE.clone().multiplyScalar(rnd(0.8, 1.4)), glow: 0 };
     }, { opacity: 0.5 });
     for (const p of [flames, smoke]) p.uniforms.uCentre.value.set(x, y, z);
     const burn = { x, z, r: 0, amount: 0, age: 0, R };
@@ -116,11 +133,11 @@ export class Volcanoes {
     this.active = new Map(); // key -> { c, parts: [Puffs], kind }
     this.wait = 0;
     this.shake = 0;
-    this.rumbleWait = rnd(10, 30);
   }
 
   // What a volcano gives off, as Puffs centred on its crater (and on where its flow meets water).
   #make(c, generator) {
+    reseed(c.x, c.z, 3);
     const parts = [];
     const add = (p, x, y, z, role) => (p.uniforms.uCentre.value.set(x, y, z), (p.role = role), parts.push(p));
     const rim = generator.getBaseHeight(c.x + c.rc * 1.05, c.z);
@@ -130,33 +147,33 @@ export class Volcanoes {
       // (heavier from one erupting). No glowing spatter or ash: just smoke and steam.
       const erupting = c.state === 'erupting';
       add(new Puffs(this.scene, erupting ? 60 : 30, () => {
-        const a = Math.random() * Math.PI * 2, d = Math.random() * c.rc * 0.5;
+        const a = random() * Math.PI * 2, d = random() * c.rc * 0.5;
         const grey = erupting ? rnd(0.36, 0.55) : rnd(0.5, 0.68);
-        return { offset: [Math.cos(a) * d, -rnd(0, 10), Math.sin(a) * d], velocity: [0, erupting ? rnd(6, 10) : rnd(3, 5), 0], period: rnd(22, 30), phase: Math.random(), from: rnd(8, 16), to: erupting ? rnd(45, 70) : rnd(25, 40), colour: new Color(grey, grey * 0.98, grey * 0.96), glow: 0 };
+        return { offset: [Math.cos(a) * d, -rnd(0, 10), Math.sin(a) * d], velocity: [0, erupting ? rnd(6, 10) : rnd(3, 5), 0], period: rnd(22, 30), phase: random(), from: rnd(8, 16), to: erupting ? rnd(45, 70) : rnd(25, 40), colour: new Color(grey, grey * 0.98, grey * 0.96), glow: 0 };
       }, { opacity: erupting ? 0.55 : 0.4 }), c.x, rim, c.z, 'plume');
     }
     if (c.state === 'erupting') {
       // Steam off the lava lake, and where its flow runs into water, steam boiling up.
       add(new Puffs(this.scene, 20, () => {
-        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * c.rc * 0.5;
+        const a = random() * Math.PI * 2, d = Math.sqrt(random()) * c.rc * 0.5;
         const w = rnd(0.82, 0.95);
-        return { offset: [Math.cos(a) * d, 0, Math.sin(a) * d], velocity: [0, rnd(1.5, 3), 0], period: rnd(6, 10), phase: Math.random(), from: rnd(1, 2), to: rnd(5, 9), colour: new Color(w, w, w), glow: 0 };
+        return { offset: [Math.cos(a) * d, 0, Math.sin(a) * d], velocity: [0, rnd(1.5, 3), 0], period: rnd(6, 10), phase: random(), from: rnd(1, 2), to: rnd(5, 9), colour: new Color(w, w, w), glow: 0 };
       }, { opacity: 0.3 }), c.x, pool + 0.3, c.z, 'wisps');
       const end = generator.lavaEnd?.(c);
       if (end?.water) {
         add(new Puffs(this.scene, 40, () => {
-          const a = Math.random() * Math.PI * 2, d = Math.random() * 4;
+          const a = random() * Math.PI * 2, d = random() * 4;
           const w = rnd(0.85, 0.97);
-          return { offset: [Math.cos(a) * d, 0, Math.sin(a) * d], velocity: [0, rnd(2.5, 5), 0], period: rnd(5, 9), phase: Math.random(), from: rnd(1.5, 3), to: rnd(8, 14), colour: new Color(w, w, w), glow: 0 };
+          return { offset: [Math.cos(a) * d, 0, Math.sin(a) * d], velocity: [0, rnd(2.5, 5), 0], period: rnd(5, 9), phase: random(), from: rnd(1.5, 3), to: rnd(8, 14), colour: new Color(w, w, w), glow: 0 };
         }, { opacity: 0.32 }), end.x, generator.getBaseHeight(end.x, end.z) + 0.5, end.z, 'steam');
       }
     }
     if (c.state === 'dead' && c.lake) {
       // A few wisps of steam off the crater lake.
       add(new Puffs(this.scene, 24, () => {
-        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * c.rc * 0.5;
+        const a = random() * Math.PI * 2, d = Math.sqrt(random()) * c.rc * 0.5;
         const w = rnd(0.86, 0.96);
-        return { offset: [Math.cos(a) * d, 0, Math.sin(a) * d], velocity: [0, rnd(0.8, 1.6), 0], period: rnd(6, 11), phase: Math.random(), from: rnd(0.6, 1.2), to: rnd(3, 6), colour: new Color(w, w, w), glow: 0 };
+        return { offset: [Math.cos(a) * d, 0, Math.sin(a) * d], velocity: [0, rnd(0.8, 1.6), 0], period: rnd(6, 11), phase: random(), from: rnd(0.6, 1.2), to: rnd(3, 6), colour: new Color(w, w, w), glow: 0 };
       }, { opacity: 0.3 }), c.x, pool + 0.3, c.z, 'wisps');
     }
     return parts;
@@ -197,9 +214,11 @@ export class Volcanoes {
     }
     // A rumble now and then when you're near one awake; the ground trembles.
     this.shake = Math.max(0, this.shake - dt / 2.5);
-    this.rumbleWait -= dt;
-    if (nearest < 1600 && this.rumbleWait <= 0) {
-      this.rumbleWait = rnd(25, 70);
+    // (When, by the clock: online, the room's, so everyone near hears it at once.)
+    const T = ctx.netTime ?? ctx.time, slot = Math.floor(T / 45), at = slot * 45 + 40 * hash01(slot, 11);
+    const due = T >= at && this.rumbled !== slot && hash01(slot, 12) < 0.75;
+    if (due) this.rumbled = slot;
+    if (nearest < 1600 && due && T - at < 2) {
       const near = 1 - nearest / 1600;
       ctx.sound?.call('rumble', 0, 0.3 + 0.7 * near);
       this.shake = near;
@@ -271,7 +290,6 @@ const wallFragment = /* glsl */ `
 export class Sandstorm {
   constructor(scene, Rain) {
     this.state = 'idle';
-    this.wait = rnd(30, 90);
     this.amount = 0;
     this.distance = 0;
     // (Two banks, one a little behind the other, for depth.)
@@ -314,14 +332,19 @@ export class Sandstorm {
     const w = Math.hypot(ctx.wind.x, ctx.wind.z) || 1;
     const ux = ctx.wind.x / w, uz = ctx.wind.z / w; // (downwind)
     if (this.state === 'idle') {
-      this.wait -= dt;
-      if (this.wait <= 0) {
-        this.wait = rnd(60, 150);
-        if (ctx.desert > 0.6 && ctx.rain < 0.05 && Math.random() < 0.25) this.start();
+      // A storm's chance every four minutes, by the clock (online, the
+      // room's: everyone out in the desert sees the same one roll in).
+      const T = ctx.netTime ?? ctx.time, n = Math.floor(T / 240), t0 = n * 240 + 60 * hash01(n, 21), age = T - t0;
+      this.dur = 60 + 60 * hash01(n, 22);
+      if (hash01(n, 20) < 0.25 && ctx.desert > 0.6 && ctx.rain < 0.05 && this.storm !== n && age >= 0 && age < 47 + this.dur) {
+        this.storm = n;
+        this.forced = false;
+        if (age < 47) (this.state = 'coming'), (this.distance = 1500 - 32 * age);
+        else (this.state = 'in'), (this.until = 47 + this.dur - age);
       }
     } else if (this.state === 'coming') {
       this.distance -= 32 * dt;
-      if (this.distance <= 0 || (ctx.desert < 0.3 && !this.forced)) (this.state = 'in'), (this.until = rnd(60, 120));
+      if (this.distance <= 0 || (ctx.desert < 0.3 && !this.forced)) (this.state = 'in'), (this.until = this.forced ? rnd(60, 120) : this.dur);
     } else if (this.state === 'in') {
       this.until -= dt;
       this.amount = Math.min(1, this.amount + dt / 8);
@@ -368,11 +391,14 @@ export class Sandstorm {
 export class DustDevils {
   constructor(scene) {
     this.scene = scene;
-    this.devils = [];
-    this.wait = rnd(15, 40);
+    this.devils = []; // (one asked for, for testing: see spawn)
+    this.shown = new Map(); // the land's own, by when and where: key -> devil (see update)
+    this.desert = new Map(); // (whether a cell's spot is desert: worked out once)
     const N = 160;
     const seeds = new Float32Array(N * 4);
-    for (let k = 0; k < N; k++) seeds.set([Math.random(), Math.random() * Math.PI * 2, 0.4 + 0.6 * Math.random(), 0.5 + Math.random()], k * 4);
+    let t = 0x5eed; // (the same specks for everyone)
+    const random = () => ((t = (Math.imul(t ^ (t >>> 15), 1 | t) + 0x6d2b79f5) >>> 0), (t >>> 8) / 16777216);
+    for (let k = 0; k < N; k++) seeds.set([random(), random() * Math.PI * 2, 0.4 + 0.6 * random(), 0.5 + random()], k * 4);
     const geometry = new IcosahedronGeometry(1, 0);
     geometry.setAttribute('aSeed', new InstancedBufferAttribute(seeds, 4));
     this.geometry = geometry;
@@ -440,39 +466,90 @@ export class DustDevils {
   /** One near (x, z) now (`near`: closer, for testing). */
   spawn(x, z, near = false) {
     if (this.devils.length >= 3) this.devils[0].life = Math.min(this.devils[0].life, this.devils[0].age + 6); // (the oldest dies away)
-    const a = Math.random() * Math.PI * 2, d = near ? rnd(30, 50) : rnd(60, 160);
-    this.devils.push({ x: x + Math.cos(a) * d, z: z + Math.sin(a) * d, age: 0, life: rnd(30, 55), height: rnd(25, 45), radius: rnd(3, 6), turn: Math.random() * Math.PI * 2, mesh: this.#make() });
+    const a = random() * Math.PI * 2, d = near ? rnd(30, 50) : rnd(60, 160);
+    this.devils.push({ x: x + Math.cos(a) * d, z: z + Math.sin(a) * d, age: 0, life: rnd(30, 55), height: rnd(25, 45), radius: rnd(3, 6), turn: random() * Math.PI * 2, mesh: this.#make() });
   }
 
-  /** @param ctx { time, camera, dry (0..1: how much savanna and desert here), hour, rain, winter, wind: { x, z }, light, ground(x, z) } */
+  /**
+   * The land's dust devils: now and then, in a hot, dry desert afternoon,
+   * one whirls up somewhere out on the sand or the dunes, wanders over it
+   * on the breeze for half a minute or so and dies away. Rare (a few an
+   * afternoon). Each 400 m of desert has its chance every five minutes,
+   * and where and when it rises, and where it wanders, are worked out from
+   * the clock (online, the room's: ctx.netTime), so everyone sees the same.
+   *
+   * @param ctx { time, netTime, camera, generator, seed, hour, rain, winter, wind: { x, z }, light, ground(x, z) }
+   */
   update(dt, ctx) {
-    this.wait -= dt;
-    if (this.wait <= 0) {
-      this.wait = rnd(20, 60);
-      const afternoon = ctx.hour > 12 && ctx.hour < 17.5;
-      if (afternoon && ctx.dry > 0.5 && ctx.rain < 0.05 && ctx.winter < 0.4 && Math.random() < 0.5) this.spawn(ctx.camera.position.x, ctx.camera.position.z);
+    const T = ctx.netTime ?? ctx.time, cam = ctx.camera.position, S = 400, P = 300;
+    const h = (i, j, n, salt) => {
+      let x = Math.imul((i | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((j | 0) + 0x632be5ab, 0xc2b2ae35) ^ Math.imul((n | 0) + salt, 0x27d4eb2f) ^ (ctx.seed | 0);
+      x = Math.imul(x ^ (x >>> 15), 0x2c1b3c6d);
+      x = Math.imul(x ^ (x >>> 12), 0x297a2d39);
+      return ((x ^ (x >>> 15)) >>> 0) / 4294967296;
+    };
+    const fit = ctx.hour > 12 && ctx.hour < 17.5 && ctx.rain < 0.05 && ctx.winter < 0.4;
+    const want = new Map();
+    if (fit && ctx.generator) {
+      const ci = Math.floor(cam.x / S), cj = Math.floor(cam.z / S);
+      for (let j = cj - 1; j <= cj + 1; j++) {
+        for (let i = ci - 1; i <= ci + 1; i++) {
+          for (let n = Math.floor(T / P) - 1; n <= Math.floor(T / P); n++) {
+            if (h(i, j, n, 1) > 0.12) continue; // (most chances, nothing)
+            const t0 = n * P + h(i, j, n, 2) * 200, life = 30 + 25 * h(i, j, n, 3), age = T - t0;
+            if (age < 0 || age > life) continue;
+            const x0 = (i + 0.1 + 0.8 * h(i, j, n, 4)) * S, z0 = (j + 0.1 + 0.8 * h(i, j, n, 5)) * S;
+            // (Only out on the desert's sand and dunes.)
+            const key = `${i},${j}`;
+            if (!this.desert.has(key)) this.desert.set(key, ctx.generator.getBiomeWeights(x0, z0, {}).desert > 0.6);
+            if (!this.desert.get(key)) continue;
+            // Wandering on the breeze, this way and that.
+            const turn = h(i, j, n, 6) * Math.PI * 2;
+            const x = x0 + ctx.wind.x * 0.3 * age + Math.cos(turn) * 1.1 * age + 6 * Math.sin(age * 0.11 + turn);
+            const z = z0 + ctx.wind.z * 0.3 * age + Math.sin(turn) * 1.1 * age + 6 * Math.cos(age * 0.13 + turn);
+            want.set(`${key},${n}`, { x, z, age, life, height: 25 + 20 * h(i, j, n, 7), radius: 3 + 3 * h(i, j, n, 8) });
+          }
+        }
+      }
+      if (this.desert.size > 400) this.desert.clear();
     }
+    // (Made and done away with as they come and go.)
+    for (const [key, d] of this.shown) {
+      if (want.has(key)) continue;
+      this.#dispose(d);
+      this.shown.delete(key);
+    }
+    for (const [key, w] of want) {
+      let d = this.shown.get(key);
+      if (!d) this.shown.set(key, (d = { mesh: this.#make() }));
+      Object.assign(d, w);
+      this.#show(d, ctx, T);
+    }
+    // (One asked for, for testing: wandering by itself.)
     for (const d of this.devils) {
       d.age += dt;
-      // Wandering over the ground on the breeze.
-      d.turn += (Math.random() - 0.5) * dt * 0.8;
       d.x += (ctx.wind.x * 0.3 + Math.cos(d.turn) * 1.1) * dt;
       d.z += (ctx.wind.z * 0.3 + Math.sin(d.turn) * 1.1) * dt;
-      const u = d.mesh.material.uniforms;
-      const y = ctx.ground(d.x, d.z);
-      u.uCentre.value.set(d.x, Number.isFinite(y) ? y - 0.5 : ctx.camera.position.y - 2, d.z);
-      u.uTime.value = ctx.time;
-      u.uHeight.value = d.height;
-      u.uRadius.value = d.radius;
-      u.uAmount.value = Math.min(1, d.age / 4) * (1 - smoothstep(d.life - 6, d.life, d.age));
-      u.uLight.value.copy(ctx.light);
-      if (d.age >= d.life) {
-        this.scene.remove(d.mesh);
-        d.mesh.material.dispose();
-        d.mesh.dispose();
-        d.done = true;
-      }
+      this.#show(d, ctx, T);
+      if (d.age >= d.life) (this.#dispose(d), (d.done = true));
     }
     this.devils = this.devils.filter((d) => !d.done);
+  }
+
+  #show(d, ctx, T) {
+    const u = d.mesh.material.uniforms;
+    const y = ctx.ground(d.x, d.z);
+    u.uCentre.value.set(d.x, Number.isFinite(y) ? y - 0.5 : ctx.camera.position.y - 2, d.z);
+    u.uTime.value = T;
+    u.uHeight.value = d.height;
+    u.uRadius.value = d.radius;
+    u.uAmount.value = Math.min(1, d.age / 4) * (1 - smoothstep(d.life - 6, d.life, d.age));
+    u.uLight.value.copy(ctx.light);
+  }
+
+  #dispose(d) {
+    this.scene.remove(d.mesh);
+    d.mesh.material.dispose();
+    d.mesh.dispose();
   }
 }

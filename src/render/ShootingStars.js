@@ -8,6 +8,13 @@ const a = new Vector3(), b = new Vector3(), side = new Vector3(), look = new Vec
  * Shooting stars on a clear night: now and then one streaks across the
  * sky, a bright head trailing a fading tail, and is gone in under a second.
  */
+// (A number 0..1 for these, the same for everyone online.)
+function hash01(...n) {
+  let h = n.reduce((h, v) => Math.imul(h ^ Math.round(v), 0x85ebca6b) ^ (h >>> 13), 0x27d4eb2f);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  return ((h ^ (h >>> 12)) >>> 0) / 4294967296;
+}
+
 export class ShootingStars {
   constructor(scene) {
     this.geometry = new BufferGeometry();
@@ -39,26 +46,28 @@ export class ShootingStars {
     this.mesh.visible = false;
     this.mesh.renderOrder = 0;
     scene.add(this.mesh);
-    this.wait = 5 + Math.random() * 20;
     this.star = null;
   }
 
   /**
    * @param dark   how dark and clear the night is (0 by day or under cloud .. 1)
    */
-  update(dt, camera, dark) {
+  update(dt, camera, dark, clock = performance.now() / 1000) {
     if (!this.star) {
       this.mesh.visible = false;
       if (dark < 0.5) return;
-      this.wait -= dt * dark;
-      if (this.wait > 0) return;
-      this.wait = 6 + Math.random() * 35;
+      // (When, and where in the sky: by the clock (online, the room's), so
+      // everyone looking up sees the same one. A chance every 20 seconds.)
+      const slot = Math.floor(clock / 20), r = (k) => hash01(slot, k);
+      const at = slot * 20 + 18 * r(0);
+      if (this.slot === slot || clock < at || clock - at > 0.3 || r(1) > 0.6 * dark) return;
+      this.slot = slot;
       // Somewhere up the sky, falling slantwise across it.
-      const az = Math.random() * Math.PI * 2, el = 0.45 + Math.random() * 0.7;
+      const az = r(2) * Math.PI * 2, el = 0.45 + r(3) * 0.7;
       const from = new Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
-      const across = new Vector3(-Math.sin(az), 0, Math.cos(az)).multiplyScalar(Math.random() < 0.5 ? 1 : -1);
+      const across = new Vector3(-Math.sin(az), 0, Math.cos(az)).multiplyScalar(r(4) < 0.5 ? 1 : -1);
       const dir = across.multiplyScalar(0.8).addScaledVector(new Vector3(0, -1, 0), 0.5).normalize();
-      this.star = { from, dir, age: 0, life: 0.5 + Math.random() * 0.6, sweep: 0.25 + Math.random() * 0.25, bright: 0.6 + Math.random() * 0.4 };
+      this.star = { from, dir, age: 0, life: 0.5 + r(5) * 0.6, sweep: 0.25 + r(6) * 0.25, bright: 0.6 + r(7) * 0.4 };
     }
     const s = this.star;
     s.age += dt;

@@ -29,6 +29,7 @@ import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
 import { Game } from './survival/Game.js';
+import { ITEMS } from './survival/items.js';
 import { PlayerControls } from './controls/PlayerControls.js';
 import { PlayerBody } from './player/PlayerBody.js';
 import { DayNight } from './render/DayNight.js';
@@ -184,7 +185,9 @@ lightning.onStrike = (x, y, z, distance) => {
   const w = generator.getBiomeWeights(x, z, {});
   if (w.desert > 0.4 || seasonUniforms.uWinter.value * generator.getSeasonality(x, z) > 0.4) return;
   const summer = 1 - seasonUniforms.uSpring.value - seasonUniforms.uWinter.value;
-  if (Math.random() < 0.18 + 0.2 * summer + 0.15 * w.savanna) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
+  // (Whether it catches: by where it struck, so it's the same for everyone online.)
+  const chance = (((Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1) + 1) % 1;
+  if (chance < 0.18 + 0.2 * summer + 0.15 * w.savanna) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
 };
 const fires = new Wildfires(scene);
 const volcanoes = new Volcanoes(scene);
@@ -517,8 +520,31 @@ const controls = new PlayerControls(camera, canvas, {
     controls.speedFactor = trees.leaves(position, radius, feet, controls.eyeHeight + 0.1);
     game.structures.collide(position, radius, feet);
     generator.caves.collide(position, radius, feet);
+    bodiesCollide(position, radius, feet);
   },
 });
+
+// No walking through the animals (standing ones), nor through the others online.
+function bodiesCollide(position, radius, feet) {
+  const push = (x, z, r, bottom, top) => {
+    if (feet > top || feet + controls.eyeHeight < bottom) return;
+    const dx = position.x - x, dz = position.z - z, d = Math.hypot(dx, dz), min = r + radius;
+    if (d >= min || d < 1e-4) return;
+    position.x = x + (dx / d) * min;
+    position.z = z + (dz / d) * min;
+  };
+  for (const a of wildlife.animals) {
+    const sp = Wildlife.species(a.kind);
+    if (!sp?.ground || !a.alive || a.down || a.gone || (a.lie ?? 0) > 0.5) continue;
+    if (Math.abs(a.x - position.x) > 4 || Math.abs(a.z - position.z) > 4) continue;
+    push(a.x, a.z, (sp.radius ?? 0.4) * a.scale, a.y - 0.2, a.y + (sp.height ?? 1) * a.scale);
+  }
+  for (const r of mp.others.values()) {
+    if (!r.root.visible) continue;
+    const p = r.root.position;
+    push(p.x, p.z, 0.35, p.y - 0.2, p.y + 1.8);
+  }
+}
 placeCamera();
 // (A spot asked for in the address: see TEST above.)
 function testView() {
@@ -561,6 +587,8 @@ const game = new Game({
     return Number.isFinite(h) ? Math.max(h, rocks.surfaceAt(x, z)) : generator.getHeight(x, z);
   },
 });
+// (Online: what the others hold, drawn in their hands: see Multiplayer.)
+mp.items = { ids: Object.keys(ITEMS), geometry: (id) => game.items.model(id), material: game.items.material, holdPose: Game.holdPose };
 // Online, one world for everyone: what's done to it, the sky, the animals
 // and their calls (see net/WorldSync).
 const sync = new WorldSync({
@@ -1086,17 +1114,25 @@ function lavaHeat(dt) {
 // Weather you can see coming: rain hanging under the clouds that bring it
 // (see Showers), and before a storm, lightning flickering inside it far
 // off, the thunder a long, low rumble arriving seconds later.
+// (A number 0..1 for these, the same for everyone online.)
+function hash01(...n) {
+  let h = n.reduce((h, v) => Math.imul(h ^ Math.round(v), 0x85ebca6b) ^ (h >>> 13), 0x27d4eb2f);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  return ((h ^ (h >>> 12)) >>> 0) / 4294967296;
+}
 const showers = new Showers(scene, clouds);
 let localRain = 0; // the rain where you are: the weather's, or a shower's overhead
-const far = { wait: 3 };
+const far = { slot: 0 };
 function farLightning(dt) {
   showers.flash = Math.max(0, showers.flash - dt * 6);
   const storm = weather.approaching.storm;
   if (storm > 0.1 && !sheltered) {
-    far.wait -= dt * storm;
-    if (far.wait <= 0) {
-      far.wait = 2 + Math.random() * 7;
-      const s = showers.pick(camera.position);
+    // (Every few seconds, a chance in each heavy shower far off, by the clock:
+    // online, the room's, so everyone sees the same flicker in the same cloud.)
+    const T = mp.roomTime() ?? performance.now() / 1000, slot = Math.floor(T / 3);
+    if (slot !== far.slot) {
+      far.slot = slot;
+      const s = showers.pick(camera.position, (s) => hash01(slot, Math.round(s.x / 300), Math.round(s.z / 300)) < 0.12 * storm);
       if (s) {
         showers.flash = 1;
         showers.flashAt = s;
@@ -1420,11 +1456,12 @@ function tick(now) {
   controls.update(dt);
   playerTraces(dt);
   camera.getWorldDirection(dir);
-  chunks.update(camera.position, mp.roomTime() ?? now / 1000, dir); // (online, by the room's clock: the lava creeping, the water rippling, the same for all)
+  const worldNow = mp.roomTime() ?? now / 1000; // (online, the room's clock: the same for everyone)
+  chunks.update(camera.position, worldNow, dir); // (online, by the room's clock: the lava creeping, the water rippling, the same for all)
   weather.spring = seasonUniforms.uSpring.value;
   weather.update(dt, dayNight.hour);
   // (Online, by the room's clock: the same gusts for everyone.)
-  const wind = updateWind(mp.roomTime() ?? now / 1000, 0.95 * weather.storm + 0.35 * weather.rain);
+  const wind = updateWind(worldNow, 0.95 * weather.storm + 0.35 * weather.rain);
   // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)
   // (Out on high open ground in a storm, not under a roof: the lightning may find you.)
   lightning.exposed = controls.mode === 'walk' && !sheltered && (game.sheltered ?? 0) < 0.5 ? 0.12 * (around.env?.exposure ?? 0) * (1 - (around.env?.canopy ?? 0)) : 0;
@@ -1469,7 +1506,7 @@ function tick(now) {
   seasons.update(dayNight.playing ? dt / (WORLD.dayLengthMinutes * 60) : 0, dt);
   // In a cold winter, it snows (over the lands that have one).
   const snow = seasonUniforms.uWinter.value * coldHere(dt);
-  rain.update(now / 1000, camera.position, localRain, clouds.wind, wind, dayNight.horizon, snow);
+  rain.update(worldNow, camera.position, localRain, clouds.wind, wind, dayNight.horizon, snow);
   // Water: the sun's glitter on it (not behind cloud), rings where the rain falls; the waterfalls' mist in the daylight.
   sparkleUniforms.uSunView.value.copy(dayNight.lightDirection).transformDirection(camera.matrixWorldInverse);
   sparkleUniforms.uSunColor.value.copy(dayNight.light.color);
@@ -1490,7 +1527,7 @@ function tick(now) {
     summer: Math.max(0, 1 - seasonUniforms.uWinter.value - seasonUniforms.uSpring.value - seasonUniforms.uAutumn.value),
     planPoint: (origin, direction, reach) => solidHit(origin, direction, reach)?.point ?? null,
   });
-  torches.update(now / 1000, camera.position, gameLights);
+  torches.update(worldNow, camera.position, gameLights);
   updateVisibility();
   const haze = heatHaze(dt);
   sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater);
@@ -1529,6 +1566,7 @@ function tick(now) {
   mp.update(dt, {
     x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x, // (the way you look: yaw first, then pitch)
     crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk',
+    pose: game.pose(), // (what's in your hand, what you're doing with it)
   });
   sync.update();
   fish.update(dt, { ...life, traces, autumn, ground: (x, z) => chunks.groundHeightAt(x, z) });
@@ -1536,15 +1574,19 @@ function tick(now) {
   // Fire, smoke and dust, lit by the light of the sky.
   ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
   const night = dayNight._w?.night ?? 0;
-  const air = { time: now / 1000, camera, generator, wind: clouds.wind, rain: localRain, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
+  const air = { time: worldNow, netTime: worldNow, camera, generator, wind: clouds.wind, rain: localRain, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
   volcanoes.update(dt, air);
   sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y, fog: scene.fog.color });
-  devils.update(dt, { ...air, dry: sheltered ? 0 : mistState.devilCountry ?? 0, hour: dayNight.hour, winter: seasonUniforms.uWinter.value, ground: (x, z) => chunks.groundHeightAt(x, z) });
-  shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)));
+  devils.update(dt, { ...air, seed: generator.seed, hour: dayNight.hour, winter: seasonUniforms.uWinter.value, ground: (x, z) => chunks.groundHeightAt(x, z) });
+  shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)), worldNow);
   insects.update(dt, life);
   env.buzz = insects.buzz.level;
   env.buzzPan = insects.buzz.pan;
+  // (The calls round about by the room's clock and where you are: see Sound's ambience.)
+  env.clock = worldNow;
+  env.cell = [Math.round(camera.position.x / 150), Math.round(camera.position.z / 150)];
+  env.panTo = (a) => panTowards(camera, camera.position.x + Math.cos(a) * 40, camera.position.z + Math.sin(a) * 40);
   sound.ambience(env);
   // (The ground trembles as a volcano rumbles.)
   lavaHeat(dt);

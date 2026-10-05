@@ -1,4 +1,4 @@
-import { CanvasTexture, Group, LinearFilter, Mesh, MeshLambertMaterial, Sprite, SpriteMaterial } from 'three';
+import { CanvasTexture, Group, LinearFilter, Matrix4, Mesh, MeshLambertMaterial, Sprite, SpriteMaterial, Vector3 } from 'three';
 import * as Models from '../wildlife/models.js';
 
 // Playing together: a connection to a Facet Lands server (see
@@ -13,6 +13,16 @@ import * as Models from '../wildlife/models.js';
 const SEND_EVERY = 1 / 15;
 const DELAY = 0.15; // (how far behind the others are drawn, in seconds: smooth through a late update)
 const FLAG = { crouch: 1, sprint: 2, swim: 4, fly: 8 };
+// (Also in the flags, above those: what you're doing with what's in your
+// hand (bits 4-6, one of ACTS; bit 7 flips with each new one), what that
+// is (bits 8-15: its place in the list of items, 0 nothing) and how far a
+// bow's drawn (bits 16-19, 0..15).)
+const ACTS = [null, 'chop', 'throw', 'thrust', 'cast', 'kick', 'use', 'loose'];
+const ACT_TIME = { chop: 0.62, throw: 0.5, thrust: 0.4, cast: 0.5, kick: 0.3, use: 0.35, loose: 0.25 };
+// (A hand's frame, as Game holds things in yours: forward -z, up +y; on an
+// arm, when it's held out in front, its forward is down the arm, its up is
+// the arm's +z.)
+const HAND = new Matrix4().makeBasis(new Vector3(-1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, 1, 0));
 
 /** A name over someone's head: a sprite with their name on a dark tag. */
 function nameTag(name, colour) {
@@ -58,6 +68,17 @@ class Remote {
     this.legs.forEach((l, k) => l.position.set(k ? -0.09 : 0.09, -0.04, 0));
     this.body.add(this.head, ...this.arms, ...this.legs);
     this.root.add(this.body);
+    // (Their hands, to hold what they're holding.)
+    this.hands = this.arms.map((arm) => {
+      const g = new Group();
+      g.position.set(0, -0.62, 0.03);
+      g.quaternion.setFromRotationMatrix(HAND);
+      arm.add(g);
+      return g;
+    });
+    this.heldIndex = 0;
+    this.actKey = 0;
+    this.act = null;
     for (const m of [this.body, this.head, ...this.arms, ...this.legs]) (m.castShadow = true), (m.receiveShadow = true);
     this.tag = nameTag(name, colour);
     this.tag.position.y = 2.15;
@@ -73,7 +94,7 @@ class Remote {
   }
 
   // Drawn where they were DELAY ago, between the two updates either side.
-  update(dt, now) {
+  update(dt, now, items) {
     const t = now - DELAY, S = this.snaps;
     if (!S.length) return;
     let a = S[0], b = S[0];
@@ -109,6 +130,65 @@ class Remote {
     this.body.rotation.x = swim ? 1.2 : crouch ? 0.35 : Math.min(0.25, speed * 0.03);
     this.head.rotation.x = Math.max(-0.8, Math.min(0.8, -pitch - this.body.rotation.x * (swim ? 0.9 : 0.5)));
     this.tag.position.y = crouch ? 1.75 : swim ? 1.0 : 2.15;
+    this.#hands(dt, flags, pitch, swim, items);
+  }
+
+  // What's in their hand, and what they're doing with it: swinging an axe,
+  // drawing a bow, throwing a spear.
+  #hands(dt, flags, pitch, swim, items) {
+    const heldIndex = (flags >> 8) & 255, act = (flags >> 4) & 7, draw = ((flags >> 16) & 15) / 15;
+    const id = items?.ids[heldIndex - 1] ?? null;
+    if (heldIndex !== this.heldIndex && items) {
+      this.heldIndex = heldIndex;
+      for (const h of this.hands) h.clear();
+      if (id) {
+        const mesh = new Mesh(items.geometry(id), items.material);
+        mesh.castShadow = true;
+        items.holdPose(id, mesh);
+        // (A bow in the left hand; anything else in the right.)
+        this.hands[id === 'bow' ? 0 : 1].add(mesh);
+      }
+    }
+    const key = (flags >> 4) & 15;
+    if (key !== this.actKey) {
+      this.actKey = key;
+      if (act) this.act = { kind: ACTS[act], t: 0 };
+    }
+    const [left, right] = this.arms;
+    right.rotation.z = 0;
+    right.position.z = 0;
+    left.rotation.z = 0;
+    if (swim) return (this.act = null);
+    // (Carrying something: that arm a little forward.)
+    if (id) (id === 'bow' ? left : right).rotation.x = -0.35 + 0.3 * (id === 'bow' ? left : right).rotation.x;
+    // Drawing a bow: both arms up, the bow held out at whatever they're
+    // looking at, the string hand pulled back to the cheek.
+    if (id === 'bow' && draw > 0) {
+      const aim = -Math.PI / 2 - pitch;
+      left.rotation.x = aim;
+      right.rotation.x = aim;
+      right.rotation.z = 0.35;
+      right.position.z = -0.25 * draw;
+    }
+    const a = this.act;
+    if (!a) return;
+    a.t += dt;
+    const u = Math.min(1, a.t / ACT_TIME[a.kind]);
+    if (a.kind === 'chop') {
+      // Both hands on the haft: up over the head, a hard stroke down, and back.
+      const lift = u < 0.42 ? Math.sin((u / 0.42) * Math.PI / 2) : u < 0.5 ? 1 : u < 0.58 ? 1 - ((u - 0.5) / 0.08) * 1.7 : -0.7 * (1 - (u - 0.58) / 0.42);
+      right.rotation.x = left.rotation.x = -1.1 - 1.3 * lift;
+      right.rotation.z = 0.25;
+      left.rotation.z = -0.25;
+      this.body.rotation.x += Math.max(0, -lift) * 0.3;
+    } else if (a.kind === 'throw') {
+      // Drawn back over the shoulder, and hurled.
+      right.rotation.x = u < 0.4 ? -0.4 - 2.4 * (u / 0.4) : -2.8 + 1.8 * Math.min(1, (u - 0.4) / 0.2);
+    } else if (a.kind === 'thrust') right.rotation.x = -0.4 - 1.1 * Math.sin(u * Math.PI);
+    else if (a.kind === 'cast') right.rotation.x = -0.4 - 2.0 * Math.sin(u * Math.PI);
+    else if (a.kind === 'loose') left.rotation.x = -Math.PI / 2 - pitch + 0.15 * Math.sin(u * Math.PI);
+    else right.rotation.x -= 0.5 * Math.sin(u * Math.PI);
+    if (u >= 1) this.act = null;
   }
 
   dispose(scene) {
@@ -321,12 +401,18 @@ export class Multiplayer {
    */
   update(dt, me) {
     const now = performance.now() / 1000;
-    for (const r of this.others.values()) r.update(dt, now);
+    for (const r of this.others.values()) r.update(dt, now, this.items);
     if (!this.connected) return;
     this.sendWait -= dt;
     if (this.sendWait > 0) return;
     this.sendWait = SEND_EVERY;
-    const flags = (me.crouch ? FLAG.crouch : 0) | (me.sprint ? FLAG.sprint : 0) | (me.swim ? FLAG.swim : 0) | (me.fly ? FLAG.fly : 0);
+    let flags = (me.crouch ? FLAG.crouch : 0) | (me.sprint ? FLAG.sprint : 0) | (me.swim ? FLAG.swim : 0) | (me.fly ? FLAG.fly : 0);
+    // (What's in your hand and what you're doing with it: see ACTS.)
+    const p = me.pose;
+    if (p && this.items) {
+      const act = Math.max(0, ACTS.indexOf(p.act));
+      flags |= (act << 4) | ((p.n & 1) << 7) | ((this.items.ids.indexOf(p.held) + 1) << 8) | (Math.round(p.draw * 15) << 16);
+    }
     this.ws.send(JSON.stringify({ t: 'state', s: [me.x, me.y, me.z, me.yaw, me.pitch, flags] }));
   }
 

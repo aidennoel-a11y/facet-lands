@@ -716,6 +716,8 @@ export class Wildlife {
     for (const a of this.animals) for (const st of a.stuck ?? []) st.mesh.visible = !hidden;
     for (const a of this.animals) if (a.id === undefined) a.id = this.nextId = (this.nextId ?? 0) + 1;
     const views = this.#views(ctx);
+    // (Online: its cries when wounded, its growl, a tamed sheep's baa go out to the others too.)
+    this.ctx = views[0];
     this.wait -= dt;
     this.crowCooldown -= dt;
     if (this.wait <= 0) {
@@ -747,6 +749,17 @@ export class Wildlife {
       else if (a.circling) this.#circler(a, dt, c);
       else if (a.kind === 'monkey') this.#monkey(a, dt, c);
       else this.#songbird(a, dt, c);
+    }
+    // (No walking through anyone: a creature standing in the way of one of you is pushed aside.)
+    for (const a of this.animals) {
+      const sp = SPECIES[a.kind];
+      if (!sp.ground || !a.alive || a.gone) continue;
+      for (const v of views) {
+        const c = v.camera.position, dx = a.x - c.x, dz = a.z - c.z;
+        if (Math.abs(dx) > 4 || Math.abs(dz) > 4 || c.y - 1.7 > a.y + (sp.height ?? 1) * a.scale || c.y < a.y) continue;
+        const d = Math.hypot(dx, dz), min = (sp.radius ?? 0.4) * a.scale + 0.35;
+        if (d < min && d > 1e-4) (a.x = c.x + (dx / d) * min), (a.z = c.z + (dz / d) * min);
+      }
     }
     this.#vocalize(dt, views);
     // (Those flown off out of sight, or home to roost.)
@@ -946,6 +959,10 @@ export class Wildlife {
         // (Its legs going with how far it's come; its wings beating.)
         a.cycle = (a.cycle ?? 0) + moved / Math.max(0.1, a.strideLen);
         if (sp.ground && a.gait) a.rh = rhythm(a.gait, a.cycle, smoothstep(0.03, sp.walk * 0.5, a.speed));
+        // (Its footfalls, heard and left in the ground here as there: twice a stride.)
+        const step = Math.floor(a.cycle * 2);
+        if (sp.ground && a.alive && !a.swimming && a.lastStep !== undefined && step !== a.lastStep) ctx.step?.(a, a.x, a.z, a.speed > sp.walk * 2);
+        a.lastStep = step;
       }
       const perched = a.state === 'perch' || a.state === 'ground' || a.landed || a.state === 'dead';
       if (!perched || a.flying) a.flap += dt * (a.circling ? (a.flapping ? 11 : 0) : 22);
