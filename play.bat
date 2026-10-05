@@ -8,6 +8,12 @@ title Facet Lands
 
 echo Getting the latest version...
 git pull origin claude/sharp-cerf-ujjlr6
+if errorlevel 1 (
+  echo.
+  echo !! Couldn't update ^(see above^): playing the version you have.
+  echo !! Online, the others may be on a newer one: then little is shared.
+  echo.
+)
 
 echo.
 echo Installing what the game needs (only slow the first time)...

@@ -1342,3 +1342,12 @@ kbd {
   z-index: 5;
   background: radial-gradient(ellipse at center, rgba(255, 70, 0, 0) 40%, rgba(230, 50, 0, 0.45) 75%, rgba(170, 20, 0, 0.85) 100%);
 }
+
+.mp-badge.warn {
+  background: rgba(150, 40, 20, 0.92);
+  max-width: min(640px, 90vw);
+  white-space: normal;
+}
+
+.start-menu .sm-version { font-size: 12px; opacity: 0.6; margin: 4px 0 0; }
+.start-menu .sm-old { color: #e0603a; font-style: normal; font-weight: 600; }

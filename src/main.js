@@ -79,7 +79,8 @@ mpBadge.hidden = true;
 document.body.append(mpBadge);
 mp.onChange = () => {
   mpBadge.hidden = !mp.connected;
-  if (mp.connected) mpBadge.textContent = `Online · ${mp.code} · ${mp.count} ${mp.count === 1 ? 'player' : 'players'}`;
+  if (mp.connected) mpBadge.textContent = `Online · ${mp.code} · ${mp.count} ${mp.count === 1 ? 'player' : 'players'}${mp.warning ? ' · ⚠ ' + mp.warning : ''}`;
+  mpBadge.classList.toggle('warn', !!mp.warning);
 };
 mp.onHour = (hour) => {
   dayNight.hour = hour;
@@ -527,8 +528,7 @@ function testView() {
   camera.position.set(x, y, z);
   camera.rotation.order = 'YXZ';
   camera.rotation.set(+(TEST.get('pitch') ?? -0.3), +(TEST.get('yaw') ?? 0), 0);
-  if (controls.yaw !== undefined) controls.yaw = camera.rotation.y;
-  if (controls.pitch !== undefined) controls.pitch = camera.rotation.x;
+  controls.euler.set(camera.rotation.x, camera.rotation.y, 0, 'YXZ');
 }
 testView();
 const body = new PlayerBody(scene);
@@ -567,6 +567,7 @@ const sync = new WorldSync({
   mp, game, trees, mushrooms, torches, weather, clouds, seasons, wildlife, lightning, sound,
   pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)),
   windStrength: () => windStrength.value,
+  dayNight, dayLength: () => WORLD.dayLengthMinutes,
 });
 chunks.addLayer(game.items.layer);
 game.loadWorld(WORLD.seed);
@@ -1522,11 +1523,11 @@ function tick(now) {
     player: game.player, structures: game.structures,
     // (Online: the others, for the host's animals to mind; their calls, to be heard by everyone.)
     others: sync.others(), people: sync.people(), netTime: mp.roomTime(),
-    emit: (n, x, z, v, d) => sync.emit(n, x, z, v, d), emitTo: (id, what) => sync.emitTo(id, what),
+    emit: (n, x, z, v, d, heard) => sync.emit(n, x, z, v, d, heard), emitTo: (id, what) => sync.emitTo(id, what),
   };
   wildlife.update(dt, life);
   mp.update(dt, {
-    x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: camera.rotation.y, pitch: camera.rotation.x,
+    x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x, // (the way you look: yaw first, then pitch)
     crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk',
   });
   sync.update();
@@ -1649,7 +1650,7 @@ function applyMode(mode) {
   if (mode === 'creative') game.survival.reset();
 }
 function whereYouAre() {
-  return { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: camera.rotation.y, pitch: camera.rotation.x };
+  return { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x };
 }
 function saveWorld(world) {
   if (!world || world.mode === 'testing') return;
@@ -1683,8 +1684,7 @@ if (!TEST.size) {
         camera.position.set(c.x, c.y, c.z);
         camera.rotation.order = 'YXZ';
         camera.rotation.set(c.pitch ?? 0, c.yaw ?? 0, 0);
-        if (controls.yaw !== undefined) controls.yaw = c.yaw ?? 0;
-        if (controls.pitch !== undefined) controls.pitch = c.pitch ?? 0;
+        controls.euler.set(c.pitch ?? 0, c.yaw ?? 0, 0, 'YXZ'); // (the controls look on from there)
       }
     },
     onSave: (world) => saveWorld(world),

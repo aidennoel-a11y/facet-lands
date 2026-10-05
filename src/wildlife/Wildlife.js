@@ -784,7 +784,7 @@ export class Wildlife {
     const views = [{
       ...ctx,
       pan: (x, z) => ((last.x = x), (last.z = z), ctx.pan(x, z)),
-      sound: { call: (n, p, v) => (ctx.sound?.call(n, p, v), ctx.emit(n, last.x, last.z, v, Math.hypot(last.x - cam.x, last.z - cam.z))) },
+      sound: { call: (n, p, v) => (ctx.sound?.call(n, p, v), ctx.emit(n, last.x, last.z, v, Math.hypot(last.x - cam.x, last.z - cam.z), true)) }, // (heard here already)
     }];
     this.viewCache = this.viewCache ?? new Map();
     for (const o of others) {

@@ -31,7 +31,7 @@ function structureSign(rec) {
 
 export class WorldSync {
   /**
-   * @param o  { mp, game, trees, mushrooms, torches, weather, clouds, seasons, wildlife, lightning, sound, pan(x, z), windStrength() }
+   * @param o  { mp, game, trees, mushrooms, torches, weather, clouds, seasons, wildlife, lightning, sound, pan(x, z), windStrength(), dayNight, dayLength() (minutes) }
    */
   constructor(o) {
     Object.assign(this, o);
@@ -148,6 +148,15 @@ export class WorldSync {
     const travel = sky.travel + late * 0.5 * (0.25 + 0.75 * (sky.wind ?? 0.5));
     if (this.clouds.travelTarget === null) this.clouds.travel = travel;
     this.clouds.travelTarget = travel;
+    // The time of day: the host's, as it is now (it ran on while this came).
+    // (Kept to it all along: a slower computer's clock would fall behind.)
+    if (Number.isFinite(sky.hour) && this.dayNight) {
+      const rate = sky.playing ? 24 / (this.dayLength() * 60) : 0;
+      const target = (((sky.hour + late * rate) % 24) + 24) % 24;
+      let diff = target - this.dayNight.hour;
+      diff = ((diff + 36) % 24) - 12; // (the short way round midnight)
+      this.dayNight.hour = (this.dayNight.hour + (Math.abs(diff) > 0.1 ? diff : diff * 0.5) + 24) % 24;
+    }
     if (Number.isFinite(sky.season) && this.seasons.auto) {
       let d = sky.season - this.seasons.time;
       d = ((d % 4) + 6) % 4 - 2;
@@ -255,7 +264,7 @@ export class WorldSync {
     }
     if ((this.skyWait -= dt) <= 0) {
       this.skyWait = SKY_EVERY;
-      this.mp.send({ t: 'sky', sky: { weather: this.weather.toSky(), travel: +this.clouds.travel.toFixed(2), wind: this.windStrength?.() ?? 0.5, season: +this.seasons.time.toFixed(4), at: this.mp.roomTime() } });
+      this.mp.send({ t: 'sky', sky: { weather: this.weather.toSky(), travel: +this.clouds.travel.toFixed(2), wind: this.windStrength?.() ?? 0.5, season: +this.seasons.time.toFixed(4), hour: +this.dayNight.hour.toFixed(4), playing: this.dayNight.playing !== false, at: this.mp.roomTime() } });
     }
     if (this.mp.others.size && (this.wildWait -= dt) <= 0) {
       this.wildWait = WILD_EVERY;
@@ -298,9 +307,16 @@ export class WorldSync {
     }));
   }
 
-  /** An animal's sound, for the others to hear from where it is (see Wildlife: ctx.emit). */
-  emit(n, x, z, v, d) {
-    if (this.online && this.fx.length < 60) this.fx.push({ n, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, v: Math.round(v * 100) / 100, d: Math.round(d) });
+  /**
+   * An animal's sound, for everyone to hear from where it is (see
+   * Wildlife: ctx.emit): the others, and you too (unless `heard`: it was
+   * made for you, and you've heard it), as loud as it is from where you are.
+   */
+  emit(n, x, z, v, d, heard = false) {
+    if (!this.online) return;
+    const f = { n, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, v: Math.round(v * 100) / 100, d: Math.round(d) };
+    if (this.fx.length < 60) this.fx.push(f);
+    if (!heard) this.#play(f);
   }
 
   /** Something for one of the others alone (a bite: see Wildlife: ctx.emitTo). */

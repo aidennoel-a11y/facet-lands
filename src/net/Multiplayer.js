@@ -118,6 +118,13 @@ class Remote {
   }
 }
 
+/**
+ * The version of what goes between the game and the server (server.mjs's
+ * VERSION): raised whenever that changes, so a game and a server, or two
+ * players, that don't match say so instead of quietly not sharing things.
+ */
+export const VERSION = 3;
+
 /** The game's own server, online for everyone (see server/README.md: it runs on Render). */
 export const DEFAULT_SERVER = 'wss://facet-lands-server.onrender.com';
 
@@ -194,11 +201,11 @@ export class Multiplayer {
    * its code. Resolves with the welcome: { code, world, hour, dayLength }.
    */
   host(url, name, world, hour, dayLength) {
-    return this.#open(url, { t: 'host', name, world, hour, dayLength });
+    return this.#open(url, { t: 'host', name, world, hour, dayLength, v: VERSION });
   }
 
   join(url, code, name) {
-    return this.#open(url, { t: 'join', code, name });
+    return this.#open(url, { t: 'join', code, name, v: VERSION });
   }
 
   async #open(typed, hello) {
@@ -265,6 +272,8 @@ export class Multiplayer {
           this.clockAt = (msg.time ?? 0) / 1000;
           this.clockFrom = performance.now() / 1000;
           this.welcome = msg;
+          // (A server from before the world was shared passes on only where everyone is.)
+          this.warning = (msg.version ?? 0) < VERSION ? 'The online server is out of date: only positions are shared. It updates itself from the latest version (on Render): wait a few minutes and join again.' : null;
           for (const p of msg.players) this.#add(p);
           this.onChange?.();
           resolve(msg);
@@ -330,6 +339,7 @@ export class Multiplayer {
     this.ws = null;
     this.hostId = null;
     this.welcome = null;
+    this.warning = null;
     if (was) this.onChange?.();
   }
 

@@ -93,6 +93,16 @@ if (wild[1].length) {
   await b.waitForTimeout(2000);
   ok('… and stays dead for the guest', (await b.evaluate((id) => window.world.wildlife.animals.find((x) => x.id === id)?.alive, target[0])) === false);
 }
+// The way the host looks (turned, and looking down): as the guest sees them.
+await a.evaluate(() => { const { controls, camera } = window.world; controls.euler.set(-0.6, 1.2, 0, 'YXZ'); camera.quaternion.setFromEuler(controls.euler); });
+await b.waitForTimeout(5000);
+const seen = await b.evaluate(() => [...window.world.mp.others.values()][0]?.yaw);
+ok('the guest sees which way the host looks', Math.abs(Math.atan2(Math.sin(seen - 1.2), Math.cos(seen - 1.2))) < 0.1, `host 1.20, guest sees ${seen?.toFixed(2)}`);
+// The time of day: the host's clock jumps (no message sent for it): the guest follows.
+await a.evaluate(() => (window.world.dayNight.hour = 20));
+await b.waitForTimeout(8000);
+const hours = await Promise.all([a, b].map((p) => p.evaluate(() => window.world.dayNight.hour)));
+ok('the time of day is the same', Math.abs(hours[0] - hours[1]) < 0.15, hours.map((h) => h.toFixed(2)).join(' / '));
 console.log('errors', errs.slice(0, 6));
 await b.screenshot({ path: process.argv[3] ?? 'sync-guest.png' });
 await A.browser.close();

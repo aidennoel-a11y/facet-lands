@@ -1,0 +1,32 @@
+Facet Lands on a Mac: set it up once so it keeps itself up to date
+==================================================================
+
+A copy downloaded as a zip can't update itself, and to play online
+everyone needs the same, latest version. So, once:
+
+1. Make a GitHub access token (it's the "password" git asks for):
+   github.com -> your picture -> Settings -> Developer settings ->
+   Personal access tokens -> Tokens (classic) -> Generate new token
+   (classic). Tick "repo", Generate, and copy the token.
+
+2. Open Terminal and paste (one line at a time):
+
+     cd ~
+     git clone -b claude/sharp-cerf-ujjlr6 https://github.com/aidennoel-a11y/Claudetest.git Facet-Lands
+
+   When it asks: Username = your GitHub name, Password = the token
+   (paste it; nothing shows as you do, that's normal). The Mac keeps
+   it in its keychain, so you're only asked once.
+   (If it says git isn't installed, click Install in the box that
+   pops up, then do this step again.)
+
+3. Then, every time you play:
+
+     cd ~/Facet-Lands
+     bash play.command
+
+   It gets the latest version, builds it and opens the game.
+   (Or double-click play.command in the Facet-Lands folder.)
+
+The game shows its version on the Play online screen: both computers
+should show the same number.

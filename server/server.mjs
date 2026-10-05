@@ -11,8 +11,8 @@
 //
 // Messages (JSON, one per WebSocket frame):
 //   client -> server
-//     { t: 'host', name, world: { name, seed, mode }, hour, dayLength }  make a room
-//     { t: 'join', code, name }                                          join one
+//     { t: 'host', name, world: { name, seed, mode }, hour, dayLength, v }  make a room (v: the game's version)
+//     { t: 'join', code, name, v }                                         join one (only on the host's version)
 //     { t: 'state', s: [x, y, z, yaw, pitch, flags] }                    where you are
 //     { t: 'hour', hour }                                                the host set the time
 //     { t: 'edit', e }        something done to the world (see mergeEdit), to keep and pass on
@@ -34,6 +34,10 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 
 const PORT = Number(process.env.PORT) || 8787;
+// The version of the game this server speaks (net/Multiplayer.js's
+// VERSION): raised whenever what goes between them changes. A world is
+// only joined by players on the same version as its host.
+const VERSION = 3;
 const TICK = 1000 / 15; // (how often everyone's positions go out)
 const MAX_PLAYERS = 16;
 const COLOURS = ['#d8572a', '#3a86c8', '#e0b030', '#5aa34a', '#a35ac8', '#d84a8a', '#3ab0a8', '#8a6a4a'];
@@ -93,7 +97,7 @@ function enter(room, ws, name) {
   ws.room = room;
   ws.player = player;
   send(ws, {
-    t: 'welcome', id: player.id, code: room.code, host: room.host ?? player.id, world: room.world, hour: hourOf(room), dayLength: room.dayLength,
+    t: 'welcome', id: player.id, code: room.code, host: room.host ?? player.id, world: room.world, hour: hourOf(room), dayLength: room.dayLength, version: VERSION,
     time: Date.now() - room.born, edits: editsJSON(room.edits), sky: room.sky,
     players: [...room.players.values()].filter((p) => p !== player).map((p) => ({ id: p.id, name: p.name, colour: p.colour, s: p.s })),
   });
@@ -129,7 +133,7 @@ function onMessage(ws, data) {
     const seed = clean(msg.world?.seed, 40);
     if (!seed) return send(ws, { t: 'error', message: 'No seed.' });
     const room = {
-      code: newCode(), players: new Map(), host: null, emptySince: null, born: Date.now(), edits: newEdits(), sky: null,
+      code: newCode(), players: new Map(), host: null, emptySince: null, born: Date.now(), edits: newEdits(), sky: null, version: Number(msg.v) || 0,
       world: { name: clean(msg.world?.name, 40) || 'A world', seed, mode: ['survival', 'creative'].includes(msg.world?.mode) ? msg.world.mode : 'survival' },
       hour: Number.isFinite(msg.hour) ? msg.hour : 9, hourAt: Date.now(), dayLength: Number.isFinite(msg.dayLength) && msg.dayLength > 0 ? msg.dayLength : 24,
     };
@@ -139,6 +143,10 @@ function onMessage(ws, data) {
   } else if (msg.t === 'join' && !ws.room) {
     const room = rooms.get(clean(msg.code, 6).toUpperCase());
     if (!room) return send(ws, { t: 'error', message: 'No world with that code is open.' });
+    if ((Number(msg.v) || 0) !== room.version) {
+      const theirs = (Number(msg.v) || 0) < room.version ? 'Your game is older than' : 'Your game is newer than';
+      return send(ws, { t: 'error', message: `${theirs} the host's, so you can't join this world. Both of you: update the game (run play.bat on Windows, play.command on a Mac), then try again.` });
+    }
     enter(room, ws, msg.name);
   } else if (msg.t === 'hour' && ws.room && ws.room.host === ws.player?.id && Number.isFinite(msg.hour)) {
     ws.room.hour = msg.hour;
@@ -166,12 +174,12 @@ function onMessage(ws, data) {
 // [{ code, name, mode, players }]); anything else, a line saying it's up.
 const http = createServer((req, res) => {
   if (req.url?.startsWith('/worlds')) {
-    const list = [...rooms.values()].filter((r) => r.players.size).map((r) => ({ code: r.code, name: r.world.name, mode: r.world.mode, players: r.players.size }));
+    const list = [...rooms.values()].filter((r) => r.players.size).map((r) => ({ code: r.code, name: r.world.name, mode: r.world.mode, players: r.players.size, version: r.version }));
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
     return res.end(JSON.stringify(list));
   }
   res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' });
-  res.end(`Facet Lands server: ${rooms.size} world${rooms.size === 1 ? '' : 's'} open\n`);
+  res.end(`Facet Lands server, version ${VERSION}: ${rooms.size} world${rooms.size === 1 ? '' : 's'} open\n`);
 });
 const wss = new WebSocketServer({ server: http, maxPayload: 4 * 1024 * 1024 });
 wss.on('connection', (ws) => {

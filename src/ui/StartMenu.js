@@ -4,7 +4,7 @@
 // listed in this browser's storage (see WORLDS_KEY); a testing world is
 // never saved.
 
-import { DEFAULT_SERVER, openWorlds } from '../net/Multiplayer.js';
+import { DEFAULT_SERVER, VERSION, openWorlds } from '../net/Multiplayer.js';
 import { describeHardware, graphicsInfo, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
@@ -207,6 +207,7 @@ export class StartMenu {
         <label class="sm-field">Server (empty: the game's own, online)<input id="sm-server" type="text" maxlength="200" placeholder="${DEFAULT_SERVER}" value="${esc(remembered('server2'))}" /></label>
       </details>
       <p class="sm-note" aria-live="polite">${esc(note)}</p>
+      <p class="sm-version">Game version ${VERSION} (everyone playing together needs the same)</p>
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
     const say = (t) => (card.querySelector('.sm-note').textContent = t);
     const read = () => {
@@ -237,7 +238,7 @@ export class StartMenu {
             ? worlds.map((w) => `
               <li><button type="button" class="sm-world" data-code="${esc(w.code)}">
                 <strong>${esc(w.name)}</strong>
-                <span>${MODES[w.mode]?.name ?? esc(w.mode)} · ${w.players} ${w.players === 1 ? 'player' : 'players'}</span>
+                <span>${MODES[w.mode]?.name ?? esc(w.mode)} · ${w.players} ${w.players === 1 ? 'player' : 'players'}${(w.version ?? 0) !== VERSION ? ` · <em class="sm-old">${(w.version ?? 0) < VERSION ? 'host needs to update' : 'you need to update'}</em>` : ''}</span>
               </button></li>`).join('')
             : '<li class="sm-none">No worlds open on this server yet: host one!</li>';
           for (const b of list.querySelectorAll('.sm-world')) b.addEventListener('click', () => join(b.dataset.code));
