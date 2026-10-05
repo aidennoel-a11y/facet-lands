@@ -26,7 +26,8 @@ await page.screenshot({ path: `${out}-full.png` });
 await page.evaluate(() => { window.world.game.drawing = null; });
 await set('axe');
 await page.waitForTimeout(800);
-for (const [k, t] of [['up', 0.45], ['bite', 0.62]]) {
+await page.screenshot({ path: `${out}-axe.png` });
+for (const [k, t] of [['up', 0.3], ['down', 0.55], ['bite', 0.62], ['back', 0.85]]) {
   await page.evaluate((t) => { const g = window.world.game; g.anim = { kind: 'chop', t: t * 0.62, duration: 0.62, bite: true }; g.anim.duration = 1e9; g.anim.t = t * 1e9; }, t);
   await page.waitForTimeout(200);
   await page.screenshot({ path: `${out}-chop-${k}.png` });

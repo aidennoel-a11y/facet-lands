@@ -1734,7 +1734,7 @@ export class Game {
       // draw, your arm starts to tremble.
       const held = this.drawing ? this.time - this.drawing.since : 0;
       const draw = Math.min(1, held / 0.9), e = draw * draw * (3 - 2 * draw);
-      px -= 0.2 * e;
+      px -= 0.15 * e; // (just left of your aim, the arrow pointing at it)
       py += 0.06 * e;
       pz += 0.03 * e;
       rz -= 0.22 * e;
