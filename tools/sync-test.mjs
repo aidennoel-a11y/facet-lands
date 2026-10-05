@@ -106,7 +106,7 @@ ok('the time of day is the same', Math.abs(hours[0] - hours[1]) < 0.15, hours.ma
 // An arrow the host looses: the guest sees it fly.
 await b.evaluate(() => { const g = window.world.game, f = g.ghostShot.bind(g); window.shots = 0; g.ghostShot = (r) => (f(r), (window.shots += g.ghosts.length)); });
 await a.evaluate(() => { const p = window.world.camera.position; window.world.game.onShot({ m: 'arrow', p: [p.x, p.y, p.z], v: [0, 8, 30] }); });
-await b.waitForTimeout(1500);
+await b.waitForTimeout(6000); // (sent on the host's next frame: slow, two browsers drawing on one computer)
 ok('the guest sees the host\'s arrow fly', (await b.evaluate(() => window.shots)) > 0);
 // What the host holds, and swinging it: the guest sees it in their hand.
 await a.evaluate(() => { window.world.controls.mode = 'walk'; const g = window.world.game; g.inventory.slots[g.hotbar.index] = { id: 'axe', count: 1, dur: 50 }; g.inventory.changed?.(); });
