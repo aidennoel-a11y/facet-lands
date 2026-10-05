@@ -104,12 +104,11 @@ export class Wildfires {
 /**
  * The volcanoes' own life, by what state each is in (see TerrainGenerator's
  * cones):
- *  - erupting: a fountain of molten lava spraying up out of the crater and
- *    falling back, a plume of grey smoke leaning away on the wind, glowing
- *    ash flung up at night, rumbling, the ground trembling;
- *  - simmering: its lava lake smoking, a little glowing ash by night;
- *  - dead, with a lake in its crater: a few wisps of steam off the water;
- *  - and where a live flow meets water, a cloud of steam boiling up.
+ *  - erupting: a plume of smoke leaning on the wind, steam off its lava
+ *    lake and where its flow runs into water (no glowing spatter or ash),
+ *    rumbling, the ground trembling;
+ *  - simmering: its lava lake smoking;
+ *  - dead, with a lake in its crater: a few wisps of steam off the water.
  */
 export class Volcanoes {
   constructor(scene) {
@@ -127,31 +126,22 @@ export class Volcanoes {
     const rim = generator.getBaseHeight(c.x + c.rc * 1.05, c.z);
     const pool = generator.getBaseHeight(c.x, c.z) + c.depth * 0.3; // (the lava lake's, or the water's, level)
     if (c.state === 'erupting' || c.state === 'simmering') {
+      // Smoke: a plume rising from the crater and leaning away on the wind
+      // (heavier from one erupting). No glowing spatter or ash: just smoke and steam.
       const erupting = c.state === 'erupting';
       add(new Puffs(this.scene, erupting ? 60 : 30, () => {
         const a = Math.random() * Math.PI * 2, d = Math.random() * c.rc * 0.5;
         const grey = erupting ? rnd(0.36, 0.55) : rnd(0.5, 0.68);
         return { offset: [Math.cos(a) * d, -rnd(0, 10), Math.sin(a) * d], velocity: [0, erupting ? rnd(6, 10) : rnd(3, 5), 0], period: rnd(22, 30), phase: Math.random(), from: rnd(8, 16), to: erupting ? rnd(45, 70) : rnd(25, 40), colour: new Color(grey, grey * 0.98, grey * 0.96), glow: 0 };
       }, { opacity: erupting ? 0.55 : 0.4 }), c.x, rim, c.z, 'plume');
-      add(new Puffs(this.scene, erupting ? 50 : 12, () => {
-        const a = Math.random() * Math.PI * 2, out = rnd(0, 7);
-        return { offset: [rnd(-1, 1) * c.rc * 0.2, -5, rnd(-1, 1) * c.rc * 0.2], velocity: [Math.cos(a) * out, rnd(18, 30), Math.sin(a) * out], period: rnd(3, 5), phase: Math.random(), from: rnd(1, 2), to: 0.3, colour: FLAMES[Math.floor(Math.random() * 3)], glow: 1 };
-      }, { opacity: 0.95 }), c.x, rim, c.z, 'ash');
     }
     if (c.state === 'erupting') {
-      // The fountain: molten spatter flung up out of the vent, arcing and
-      // falling back (orange, and blackening as it cools).
-      const fountain = new Puffs(this.scene, 220, () => {
-        const v = rnd(18, 40), a = Math.random() * Math.PI * 2, out = rnd(0, 3.2);
-        const dark = Math.random() < 0.25;
-        return {
-          offset: [rnd(-1.5, 1.5), 0, rnd(-1.5, 1.5)], velocity: [Math.cos(a) * out, v, Math.sin(a) * out], period: (2 * v) / 9.8, phase: Math.random(),
-          from: rnd(1.2, 2.6), to: rnd(0.4, 0.9), colour: dark ? new Color(0.07, 0.03, 0.02) : new Color(1, rnd(0.3, 0.48), rnd(0.03, 0.08)), glow: dark ? 0 : 1,
-        };
-      }, { opacity: 1 });
-      fountain.uniforms.uGravity.value = 9.8;
-      add(fountain, c.x, pool, c.z, 'fountain');
-      // Where its flow runs into water: steam boiling up.
+      // Steam off the lava lake, and where its flow runs into water, steam boiling up.
+      add(new Puffs(this.scene, 20, () => {
+        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * c.rc * 0.5;
+        const w = rnd(0.82, 0.95);
+        return { offset: [Math.cos(a) * d, 0, Math.sin(a) * d], velocity: [0, rnd(1.5, 3), 0], period: rnd(6, 10), phase: Math.random(), from: rnd(1, 2), to: rnd(5, 9), colour: new Color(w, w, w), glow: 0 };
+      }, { opacity: 0.3 }), c.x, pool + 0.3, c.z, 'wisps');
       const end = generator.lavaEnd?.(c);
       if (end?.water) {
         add(new Puffs(this.scene, 40, () => {
@@ -202,11 +192,6 @@ export class Volcanoes {
         u.uLight.value.copy(ctx.light);
         if (p.role === 'plume') u.uWind.value.set(ctx.wind.x * 1.4, 0, ctx.wind.z * 1.4);
         else if (p.role === 'steam' || p.role === 'wisps') u.uWind.value.set(ctx.wind.x * 0.5, 0, ctx.wind.z * 0.5);
-        if (p.role === 'ash') {
-          u.uAmount.value = smoothstep(0.2, 0.7, ctx.night);
-          u.uGlow.value = 1.5;
-        }
-        if (p.role === 'fountain') u.uGlow.value = 1.2 + 0.6 * ctx.night;
       }
       if (c.lava) nearest = Math.min(nearest, Math.hypot(c.x - cam.x, c.z - cam.z) * (c.state === 'erupting' ? 1 : 1.6));
     }

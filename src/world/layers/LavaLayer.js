@@ -76,12 +76,49 @@ export function createLavaLayer(config) {
   };
   material.customProgramCacheKey = () => 'lava-flow';
 
+  // The flows built, to settle onto the land as it's drawn (see drape).
+  const meshes = new Set();
+  let drapeWait = 0;
+
+  // Far off, the land is drawn coarsely, its big triangles lying below the
+  // true slope: a flow there would float over them. So each strip of it
+  // across the flow settles onto the land as drawn either side of it
+  // (`ground`: (x, z) => the height of the land as drawn), never higher
+  // than its own level.
+  const drape = (mesh, ground) => {
+    const { rows, rowOf, dipOf } = mesh.userData.drape;
+    const ys = rows.map((r) => {
+      let g = -Infinity;
+      for (const [x, z] of r.pts) {
+        const h = ground(x, z);
+        if (!Number.isFinite(h)) return r.y;
+        g = Math.max(g, h);
+      }
+      return Math.min(r.y, g + 0.25);
+    });
+    const pos = mesh.geometry.attributes.position;
+    let changed = false;
+    for (let i = 0; i < rowOf.length; i++) {
+      if (rowOf[i] < 0) continue;
+      const y = ys[rowOf[i]] - dipOf[i];
+      if (pos.getY(i) !== y) (pos.setY(i, y), (changed = true));
+    }
+    if (changed) pos.needsUpdate = true;
+  };
+
   return {
     name: 'lava',
     material,
+    ground: null, // (set from outside: the land's height as drawn)
 
     update(time) {
       uniforms.uTime.value = time;
+      // (Twice a second: the land round you is drawn more finely as you come nearer.)
+      drapeWait -= 1;
+      if (this.ground && drapeWait <= 0) {
+        drapeWait = 30;
+        for (const mesh of meshes) drape(mesh, this.ground);
+      }
     },
 
     reuseKey: ({ lod }) => (lod > 3 ? 'none' : 'lava'),
@@ -93,10 +130,15 @@ export function createLavaLayer(config) {
       // (Each volcano's lava is built with the chunk holding its summit.)
       const cones = generator.volcanoes(x0, z0, x0 + size, z0 + size).filter((c) => c.lava && c.x >= x0 && c.x < x0 + size && c.z >= z0 && c.z < z0 + size);
       if (!cones.length) return null;
-      const positions = [], lava = [];
-      const push = (x, y, z, along, across, edge, cool) => {
-        positions.push(x - x0, y, z - z0);
+      const positions = [], lava = [], rowOf = [], dipOf = [], rows = [];
+      // (`r`: the strip across the flow a point's on, see drape; -1 the lake.
+      // A flow's edges dip down under its banks, so they never stand out of the ground.)
+      const push = (x, y, z, along, across, edge, cool, r) => {
+        const dip = r >= 0 && edge > 0.99 ? 0.8 : 0;
+        positions.push(x - x0, y - dip, z - z0);
         lava.push(along, across, edge, cool);
+        rowOf.push(r);
+        dipOf.push(dip);
       };
       for (const c of cones) {
         // The lake: a disc in the crater, below its rim (in rings, so its edge can crust).
@@ -107,15 +149,14 @@ export function createLavaLayer(config) {
             const a0 = (k / n) * Math.PI * 2, a1 = ((k + 1) / n) * Math.PI * 2;
             const pt = (a, f) => [c.x + Math.cos(a) * r * f, level, c.z + Math.sin(a) * r * f, Math.cos(a) * r * f, Math.sin(a) * r * f, f, -1];
             const p00 = pt(a0, rings[i]), p01 = pt(a1, rings[i]), p10 = pt(a0, rings[i + 1]), p11 = pt(a1, rings[i + 1]);
-            push(...p00); push(...p11); push(...p10);
-            push(...p00); push(...p01); push(...p11);
+            for (const q of [p00, p11, p10, p00, p01, p11]) push(...q, -1);
           }
         }
         // The live flow: along its channel (under the roof where it's a
         // tube), down to where it meets water.
         if (c.active && c.flows.length) {
           let prev = null;
-          const f = c.flows[0], end = generator.lavaEnd(c), d0 = c.rc * 1.02;
+          const f = c.flows[0], end = generator.lavaEnd(c), d0 = c.rc * 0.6; // (from the lake's edge, out through the notch in the rim)
           for (let d = d0; d < end.d; d += 3) {
             const p = generator.lavaPath(c, d);
             if (!p) continue;
@@ -123,17 +164,15 @@ export function createLavaLayer(config) {
             const px = c.x + ca * d, pz = c.z + sa * d;
             const floor = generator.getBaseHeight(px, pz) - (p.tube ? 3.6 : 0);
             // (Brimming in its channel, level with the land it cut; cooling as it goes, crusted over at its end.)
-            const y = floor + 1.15;
+            const y = floor + 1.0;
             const half = p.half * 1.12; // (its edges tucked under the levees)
             const cool = Math.min(1, 0.6 * ((d - d0) / (f.len * 0.85 - d0)) + (end.water ? Math.max(0, 1 - (end.d - d) / 30) : 0));
-            const row = [-1, -0.5, 0, 0.5, 1].map((t) => [px - sa * half * t, y, pz + ca * half * t, d, half * t, Math.abs(t), cool]);
+            const pts = [-1, -0.5, 0, 0.5, 1].map((t) => [px - sa * half * t, y, pz + ca * half * t, d, half * t, Math.abs(t), cool, rows.length]);
+            rows.push({ y, pts: pts.map((q) => [q[0], q[2]]) });
             if (prev) {
-              for (let k = 0; k < 4; k++) {
-                push(...prev[k]); push(...row[k]); push(...prev[k + 1]);
-                push(...prev[k + 1]); push(...row[k]); push(...row[k + 1]);
-              }
+              for (let k = 0; k < 4; k++) for (const q of [prev[k], pts[k], prev[k + 1], prev[k + 1], pts[k], pts[k + 1]]) push(...q);
             }
-            prev = row;
+            prev = pts;
           }
         }
       }
@@ -143,10 +182,14 @@ export function createLavaLayer(config) {
       geometry.computeBoundingSphere();
       const mesh = new Mesh(geometry, material);
       mesh.name = 'lava';
+      mesh.userData.drape = { rows, rowOf, dipOf, x0, z0 };
+      meshes.add(mesh);
+      if (this.ground) drape(mesh, this.ground);
       return mesh;
     },
 
     dispose(mesh) {
+      meshes.delete(mesh);
       mesh.geometry.dispose();
     },
   };

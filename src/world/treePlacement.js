@@ -102,6 +102,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (biome.id === 'volcanic' && hash2(gi, gj, seed + 15) < 0.92 * generator.getVolcanic(wx, wz).cone) continue; // cinder cones are nearly bare
       if (biome.id === 'volcanic' && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
       if (generator.onLiveLava?.(wx, wz)) continue; // nor on a lava flow
+      if (biome.id === 'volcanic' && generator.blastAt && hash2(gi, gj, seed + 17) < 0.9 * generator.blastAt(wx, wz)) continue; // (blasted bare round a volcano that blew apart: only a few have grown back)
       if (biome.id === 'blackHills' && generator.getFormation(wx, wz) > 3) continue; // nor up on the granite spires and domes
       // Open plains are treeless: grass as far as you can see.
       if (biome.id === 'temperate' && hash2(gi, gj, seed + 16) < smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) continue;

@@ -200,7 +200,9 @@ chunks.addLayer(createCoralLayer(WORLD));
 chunks.addLayer(createLeafLayer());
 const mushrooms = createMushroomLayer();
 chunks.addLayer(mushrooms);
-chunks.addLayer(createLavaLayer(WORLD));
+const lavaLayer = createLavaLayer(WORLD);
+lavaLayer.ground = (x, z) => chunks.groundHeightAt(x, z); // (flows settle onto the land as drawn: see LavaLayer)
+chunks.addLayer(lavaLayer);
 const seaCoast = createSeaCoastLayer(WORLD, terrainMaterial);
 chunks.addLayer(seaCoast);
 chunks.addLayer(createKelpLayer(WORLD));

@@ -78,7 +78,45 @@ const BASALT_SHAPES = [
   rockGeometry(404, 'ico', BASALT),
   rockGeometry(505, 'dodeca', BASALT),
 ];
-const ALL_SHAPES = [...ROCK_SHAPES, ...SAND_SHAPES, ...BASALT_SHAPES];
+/** And black and brown, scoria and baked rock: the debris a volcano blew out. */
+const SCORIA = [0x231f1f, 0x4a3324, 0x2e2a29, 0x5c3f2b, 0x1b1818, 0x6a4a33];
+const SCORIA_SHAPES = [
+  rockGeometry(101, 'dodeca', SCORIA),
+  rockGeometry(202, 'ico', SCORIA),
+  rockGeometry(303, 'dodeca', SCORIA),
+  rockGeometry(404, 'ico', SCORIA),
+  rockGeometry(505, 'dodeca', SCORIA),
+];
+/**
+ * A jagged spire of black lava rock: a rock drawn up into a point, leaning
+ * a little, its faces split and sharp.
+ */
+function spikeGeometry(seed, base) {
+  const g = rockGeometry(seed, base, BASALT);
+  const rand = mulberry32(seed + 7);
+  const lean = (rand() - 0.5) * 0.5;
+  const pos = g.attributes.position;
+  const moved = new Map();
+  for (let i = 0; i < pos.count; i++) {
+    const key = `${pos.getX(i).toFixed(3)},${pos.getY(i).toFixed(3)},${pos.getZ(i).toFixed(3)}`;
+    if (!moved.has(key)) {
+      const y = pos.getY(i), up = Math.max(0, (y + 0.45) / 1.45); // (0 at its foot .. 1 at the top)
+      const pinch = 1 - 0.8 * up;
+      moved.set(key, [pos.getX(i) * pinch + lean * up * 1.4, -0.45 + up * 2.6 * (0.85 + 0.3 * rand()), pos.getZ(i) * pinch]);
+    }
+    pos.setXYZ(i, ...moved.get(key));
+  }
+  g.computeVertexNormals();
+  return g;
+}
+const SPIKE_SHAPES = [
+  spikeGeometry(111, 'dodeca'),
+  spikeGeometry(222, 'ico'),
+  spikeGeometry(333, 'dodeca'),
+  spikeGeometry(444, 'ico'),
+  spikeGeometry(555, 'dodeca'),
+];
+const ALL_SHAPES = [...ROCK_SHAPES, ...SAND_SHAPES, ...BASALT_SHAPES, ...SCORIA_SHAPES, ...SPIKE_SHAPES];
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));

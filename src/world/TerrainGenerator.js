@@ -2017,8 +2017,11 @@ export class TerrainGenerator {
    * slopes) }, reusing one object.
    */
   getVolcanic(x, z) {
-    const out = this._volc ?? (this._volc = { height: 0, lava: 0, crater: 0, cone: 0, channel: 0, blocks: 0 });
+    const out = this._volc ?? (this._volc = { height: 0, lava: 0, crater: 0, cone: 0, channel: 0, blocks: 0, cold: 0, flowSide: 0, dead: 0 });
     out.height = 0;
+    out.cold = 0;
+    out.flowSide = 0;
+    out.dead = 0;
     out.channel = 0;
     out.blocks = 0;
     out.lava = 0;
@@ -2032,6 +2035,16 @@ export class TerrainGenerator {
         const angle = Math.atan2(dz, dx);
         let h = 0;
         const t = d / c.R;
+        // (Black rock strewn thick over a dead volcano, and along both sides of a live flow: see rockCandidates.)
+        if (c.state === 'dead') out.dead = Math.max(out.dead, 1 - smoothstep(c.R * 0.8, c.R * 1.7, d));
+        if (c.active && c.flows.length) {
+          const lp = this.lavaPath(c, d);
+          if (lp) {
+            let dl = angle - lp.angle;
+            dl = Math.abs(Math.atan2(Math.sin(dl), Math.cos(dl)) * d);
+            out.flowSide = Math.max(out.flowSide, smoothstep(lp.half * 1.7, lp.half * 2.3, dl) * (1 - smoothstep(lp.half * 4, lp.half * 9, dl)));
+          }
+        }
         if (t < 1) {
           out.cone = Math.max(out.cone, 1 - smoothstep(0.75, 1, t));
           // Concave flanks up to the rim, furrowed by gullies, then the crater bowl.
@@ -2044,6 +2057,8 @@ export class TerrainGenerator {
             ruin = (0.25 + 0.75 * smoothstep(0.35, 1.3, db)) * (0.8 + 0.35 * this.volcanoNoise.ridged(angle * 3 + c.seed, t * 4, 2, 2, 0.5, 1));
             rimH *= ruin;
           }
+          // (A dead or blown volcano's bowl: black volcanic rock.)
+          if (c.state === 'dead' || c.state === 'blown') out.cold = Math.max(out.cold, 1 - smoothstep(c.rc * 0.95, c.rc * 1.25, d));
           if (d < c.rc) {
             h = rimH - c.depth * Math.pow(1 - (d / c.rc) ** 2, 0.7) * (c.state === 'blown' ? Math.min(1, ruin + 0.3) : 1);
             out.crater = Math.max(out.crater, 1);
@@ -2064,6 +2079,17 @@ export class TerrainGenerator {
         // A live flow: a channel down the flank between levees of fresh
         // lava, in places roofed over into a lava tube (skylights here and there).
         if (c.active && c.flows.length) {
+          // Where it spills out of the crater: the rim notched down to the
+          // lava lake's level, so the lake runs out through the gap into
+          // the flow, all at one height.
+          const lp0 = this.lavaPath(c, d);
+          if (lp0 && d < c.rc * 2.2) {
+            let dl = angle - lp0.angle;
+            dl = Math.atan2(Math.sin(dl), Math.cos(dl));
+            const lake = c.H * Math.pow(1 - c.rc / c.R, 1.5) - c.depth * 0.7;
+            const k = 1 - smoothstep(lp0.half * 1.3, lp0.half * 2.4, Math.abs(dl * d));
+            if (h > lake) h -= (h - lake) * k;
+          }
           const ch = this.#lavaChannel(c, d, angle);
           if (ch) {
             h += ch.dh;
@@ -2101,7 +2127,7 @@ export class TerrainGenerator {
    */
   lavaPath(c, d) {
     const f = c.flows[0];
-    const d0 = c.rc * 1.02, d1 = f.len * 0.85;
+    const d0 = c.rc * 0.55, d1 = f.len * 0.85; // (from out in the crater's lava lake)
     if (d < d0 || d > d1) return null;
     const u = (d - d0) / (d1 - d0);
     const angle = f.a + 0.07 * Math.sin(d * 0.018 + c.seed) + 0.04 * Math.sin(d * 0.047 - c.seed * 2);
@@ -2122,6 +2148,25 @@ export class TerrainGenerator {
       calm = Math.max(calm, 1 - smoothstep(p.half * 2, p.half * 3.2, Math.abs(da * d)));
     }
     return calm;
+  }
+
+  /**
+   * How thick the debris a blown-apart volcano threw out lies at (x, z)
+   * (0..1): heaped round the ruined crater and out the way the blast went,
+   * thinning out a long way off.
+   */
+  blastAt(x, z) {
+    let b = 0;
+    for (const c of this.#conesNear(x, z)) {
+      if (c.state !== 'blown') continue;
+      const d = Math.hypot(x - c.x, z - c.z);
+      if (d > c.R * 3.2) continue;
+      let da = Math.atan2(z - c.z, x - c.x) - c.breach;
+      da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
+      const reach = c.R * (1.4 + 1.8 * (1 - smoothstep(0.3, 1.4, da))); // (furthest out the way it blew)
+      b = Math.max(b, (1 - smoothstep(c.rc * 0.6, reach, d)) * (d < c.rc * 0.5 ? 0.5 : 1));
+    }
+    return b;
   }
 
   /** Whether (x, z) is on a live lava flow or its levees (nothing grows or lies there). */
@@ -2178,7 +2223,8 @@ export class TerrainGenerator {
       open = 1 - smoothstep(0.85, 1.05, across);
     } else dh += 0.6 * (1 - smoothstep(0.9, 1.25, across)); // (the tube's roof, a low hump)
     // The levees: a smooth ridge along each bank, alike on both sides.
-    const levee = Math.max(0, 1 - Math.abs(across - 1.35) / 0.6) ** 2 * (1 - smoothstep(0.85, 1.0, d / p.d1));
+    // (None up in the crater: there the lake runs out between the notch's walls.)
+    const levee = Math.max(0, 1 - Math.abs(across - 1.35) / 0.6) ** 2 * (1 - smoothstep(0.85, 1.0, d / p.d1)) * smoothstep(c.rc, c.rc * 1.4, d);
     dh += 1.1 * levee;
     return { dh, open, block: Math.min(1, levee * 2 + open) };
   }
@@ -3433,7 +3479,8 @@ export class TerrainGenerator {
       if (v.lava > 0) out.lerp(LAVA, 0.85 * v.lava);
       // Beside a live flow: its levees of fresh black lava.
       if (v.blocks > 0) out.lerp(BASALT, 0.9 * v.blocks);
-      if (v.crater > 0) out.lerp(CINDER, 0.6 * v.crater);
+      if (v.crater > 0) out.lerp(CINDER, 0.6 * v.crater * (1 - v.cold));
+      if (v.cold > 0) out.lerp(BASALT, 0.85 * v.cold); // (a dead crater's bowl: black volcanic rock)
     }
     // Badlands: the ridges and buttes banded cream, buff, rose and grey
     // (only the floor between them grassed).
