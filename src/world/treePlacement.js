@@ -102,7 +102,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (biome.id === 'volcanic' && hash2(gi, gj, seed + 15) < 0.92 * generator.getVolcanic(wx, wz).cone) continue; // cinder cones are nearly bare
       if (biome.id === 'volcanic' && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
       if (generator.onLiveLava?.(wx, wz)) continue; // nor on a lava flow
-      if (biome.id === 'volcanic' && generator.blastAt && hash2(gi, gj, seed + 17) < 0.9 * generator.blastAt(wx, wz)) continue; // (blasted bare round a volcano that blew apart: only a few have grown back)
+      if (generator.blastAt && (biome.id === 'volcanic' || biome.id === 'temperate' || biome.id === 'pine' || biome.id === 'smoky') && hash2(gi, gj, seed + 17) < 0.9 * generator.blastAt(wx, wz)) continue; // (blasted bare round a volcano that blew apart: only a few have grown back)
       if (biome.id === 'blackHills' && generator.getFormation(wx, wz) > 3) continue; // nor up on the granite spires and domes
       // Open plains are treeless: grass as far as you can see.
       if (biome.id === 'temperate' && hash2(gi, gj, seed + 16) < smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) continue;
@@ -165,6 +165,11 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       }
       species ??= trees.species[trees.species.length - 1];
       if (oasis > 0.2) species = { type: hash2(gi, gj, seed + 17) < 0.8 ? 'junglePalm' : 'dryBush' };
+      // Round an awake volcano: nothing on its cone, and only dead trees
+      // (burnt snags, dead pines) down its foot and beside its lava flows.
+      const scorch = generator.scorchAt ? generator.scorchAt(wx, wz) : 0; // (whatever country it's burnt into)
+      if (scorch >= 2) continue;
+      if (scorch >= 1) species = { type: hash2(gi, gj, seed + 26) < 0.6 ? 'charredSnag' : 'deadPine' };
       // Thickets of bamboo along the jungle's edges.
       if (biome.id === 'jungle' || biome.id === 'temperate' || biome.id === 'wetland') {
         const j = generator.getBiomeWeights(wx, wz, {}).jungle;

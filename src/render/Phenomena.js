@@ -124,7 +124,7 @@ export class Volcanoes {
     const parts = [];
     const add = (p, x, y, z, role) => (p.uniforms.uCentre.value.set(x, y, z), (p.role = role), parts.push(p));
     const rim = generator.getBaseHeight(c.x + c.rc * 1.05, c.z);
-    const pool = generator.getBaseHeight(c.x, c.z) + c.depth * 0.3; // (the lava lake's, or the water's, level)
+    const pool = generator.craterLevel(c); // (the lava lake's, or the water's, level)
     if (c.state === 'erupting' || c.state === 'simmering') {
       // Smoke: a plume rising from the crater and leaning away on the wind
       // (heavier from one erupting). No glowing spatter or ash: just smoke and steam.

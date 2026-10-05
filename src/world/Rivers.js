@@ -536,7 +536,7 @@ export class Rivers {
     const x0 = rx * REGION, z0 = rz * REGION;
     for (const c of g.volcanoes(x0, z0, x0 + REGION, z0 + REGION)) {
       if (!c.lake || c.x < x0 || c.x >= x0 + REGION || c.z < z0 || c.z >= z0 + REGION) continue;
-      const pond = { x: c.x, z: c.z, r: c.rc * 0.6, level: g.getBaseHeight(c.x, c.z) + c.depth * 0.35, seed: c.seed, natural: true, crater: true };
+      const pond = { x: c.x, z: c.z, r: c.rc * 0.6, level: g.craterLevel ? g.craterLevel(c) : g.getBaseHeight(c.x, c.z) + c.depth * 0.35, seed: c.seed, natural: true, crater: true };
       const r = pond.r * 1.3 + 30;
       this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
       const m = pond.r * 1.3 + 2;

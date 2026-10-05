@@ -1332,3 +1332,13 @@ kbd {
   color: #fff;
   background: #b8402c;
 }
+
+/* Too near molten lava: the edges of the screen glow red (see main: lavaHeat). */
+.lava-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 5;
+  background: radial-gradient(ellipse at center, rgba(255, 70, 0, 0) 40%, rgba(230, 50, 0, 0.45) 75%, rgba(170, 20, 0, 0.85) 100%);
+}

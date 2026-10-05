@@ -52,7 +52,7 @@ export function rockCandidates(generator, config, cx, cz) {
       const red = bw.redwood;
       // Round a volcano that blew itself apart: a vast field of the
       // boulders and rocks it threw out, black and brown.
-      const blast = bw.volcanic > 0.05 ? generator.blastAt(wx, wz) : 0;
+      const blast = bw.volcanic + bw.temperate + bw.pine + bw.smoky > 0.3 && bw.desert < 0.5 ? generator.blastAt(wx, wz) : 0;
       // Dry country and mesas: sandstone rocks, not grey stone.
       const { mesa, erg, escarp } = generator.getFeatures(wx, wz);
       if (erg > 0.3) continue; // no rocks in a dune sea, just sand
@@ -73,15 +73,15 @@ export function rockCandidates(generator, config, cx, cz) {
       const shoreMax = land < seaLevel + 5.5 ? 1.4 : 0;
       // Round the volcanoes: black basalt blocks heaped along the lava and
       // round the craters.
-      let lavaRock = 0, spiky = 0, strewn = 0;
+      let lavaRock = 0, strewn = 0, toe = 0;
       if (bw.volcanic > 0.2) {
         const v = generator.getVolcanic(wx, wz);
         lavaRock = 0.7 * Math.max(v.lava, 0.8 * v.crater) * bw.volcanic;
-        // Thick along both sides of a live flow, and all over a dead
-        // volcano: black lava rock, with jagged spires among it.
+        // Thick along both sides of a live flow, all over a dead volcano,
+        // and heaped where a flow ends: black lava rock and boulders.
         // (However soft the ground about: thick, whatever it's like.)
-        strewn = Math.max(0.9 * v.flowSide, 0.6 * v.dead);
-        spiky = Math.max(v.flowSide, 0.8 * v.dead);
+        toe = v.toe;
+        strewn = Math.max(0.9 * v.flowSide, 0.6 * v.dead, 1.6 * v.toe);
       }
       // Big boulders fallen into the water at the foot of a cliff that
       // rises straight out of it (sea cliffs, lake cliffs). (Only looked
@@ -136,8 +136,7 @@ export function rockCandidates(generator, config, cx, cz) {
       if (roll > chance * (1 - 0.7 * open)) continue;
 
       const r = hash2(gi, gj, seed + 3);
-      const spike = spiky > 0 && hash2(gi, gj, seed + 21) < 0.22 * spiky;
-      const boulder = surf > 0 || r < lavaRock || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite + 0.4 * red + 0.55 * blast + 0.35 * strewn);
+      const boulder = surf > 0 || r < lavaRock || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite + 0.4 * red + 0.55 * blast + 0.35 * strewn + 0.4 * toe);
       if (boulder && surf <= 0 && hash2(gi, gj, seed + 31) < 0.3 * open) continue; // (and a third fewer boulders out on the grassland)
       if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
       if (generator.nearTidePool?.(wx, wz)) continue; // and tide pools
@@ -150,17 +149,12 @@ export function rockCandidates(generator, config, cx, cz) {
       // Big fallen boulders stand chunkier and taller.
       const sy = size * (0.55 + hash2(gi, gj, seed + 6) * 0.45 + (boulder ? 0.35 * Math.max(foot, cliff) : 0));
       const sz = size * (0.8 + hash2(gi, gj, seed + 7) * 0.5);
-      // (A spire: slimmer, standing up taller.)
-      const spireScale = spike ? 0.7 + 1.1 * hash2(gi, gj, seed + 22) : 1;
       list.push({
-        lx, lz, wx, wz, jitter, boulder: boulder || spike, slope, surf: surf > 0,
-        sx: spike ? Math.max(0.6, sx * 0.6) * spireScale : sx,
-        sy: spike ? Math.max(1, sy) * 1.5 * spireScale : sy,
-        sz: spike ? Math.max(0.6, sz * 0.6) * spireScale : sz,
-        rx: (hash2(gi, gj, seed + 8) - 0.5) * (spike ? 0.2 : 0.5),
+        lx, lz, wx, wz, jitter, boulder, slope, sx, sy, sz, surf: surf > 0,
+        rx: (hash2(gi, gj, seed + 8) - 0.5) * 0.5,
         ry: hash2(gi, gj, seed + 9) * Math.PI * 2,
-        rz: (hash2(gi, gj, seed + 10) - 0.5) * (spike ? 0.2 : 0.5),
-        shape: Math.floor(hash2(gi, gj, seed + 11) * ROCK_SHAPE_COUNT) + (spike ? 4 * ROCK_SHAPE_COUNT : blast > 0.15 ? 3 * ROCK_SHAPE_COUNT : bw.volcanic > 0.5 || strewn > 0.1 ? 2 * ROCK_SHAPE_COUNT : dry ? ROCK_SHAPE_COUNT : 0),
+        rz: (hash2(gi, gj, seed + 10) - 0.5) * 0.5,
+        shape: Math.floor(hash2(gi, gj, seed + 11) * ROCK_SHAPE_COUNT) + (blast > 0.15 ? 3 * ROCK_SHAPE_COUNT : bw.volcanic > 0.5 || strewn > 0.1 ? 2 * ROCK_SHAPE_COUNT : dry ? ROCK_SHAPE_COUNT : 0),
       });
     }
   }

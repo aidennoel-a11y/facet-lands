@@ -142,7 +142,7 @@ export function createLavaLayer(config) {
       };
       for (const c of cones) {
         // The lake: a disc in the crater, below its rim (in rings, so its edge can crust).
-        const level = generator.getBaseHeight(c.x, c.z) + c.depth * 0.3;
+        const level = generator.craterLevel(c);
         const r = c.rc * 0.62, n = 36, rings = [0, 0.55, 0.85, 1];
         for (let i = 0; i < rings.length - 1; i++) {
           for (let k = 0; k < n; k++) {
@@ -166,7 +166,7 @@ export function createLavaLayer(config) {
             // (Brimming in its channel, level with the land it cut; cooling as it goes, crusted over at its end.)
             const y = floor + 1.0;
             const half = p.half * 1.12; // (its edges tucked under the levees)
-            const cool = Math.min(1, 0.6 * ((d - d0) / (f.len * 0.85 - d0)) + (end.water ? Math.max(0, 1 - (end.d - d) / 30) : 0));
+            const cool = Math.min(1, 0.6 * ((d - d0) / (f.len * 0.85 - d0)) + Math.max(0, 1 - (end.d - d) / 40)); // (crusting over towards its end, into the rubble there)
             const pts = [-1, -0.5, 0, 0.5, 1].map((t) => [px - sa * half * t, y, pz + ca * half * t, d, half * t, Math.abs(t), cool, rows.length]);
             rows.push({ y, pts: pts.map((q) => [q[0], q[2]]) });
             if (prev) {

@@ -1059,6 +1059,29 @@ function heatHaze(dt) {
   return heat.value;
 }
 
+// Near molten lava: the edges of the screen glowing red as you come too
+// close (from some 25 m off), its heat burning you closer still (within
+// 6 m), and in it, terribly. (Creative mode takes no harm: see Game.hurt.)
+const lavaGlow = document.createElement('div');
+lavaGlow.className = 'lava-glow';
+document.body.append(lavaGlow);
+let lavaGlowLevel = 0;
+function lavaHeat(dt) {
+  const feet = camera.position.y - controls.eyeHeight;
+  const near = generator.lavaNear?.(camera.position.x, camera.position.z);
+  let target = 0;
+  if (near) {
+    const D = Math.hypot(near.d, Math.max(0, feet - near.y));
+    target = smoothstep(25, 4, D);
+    if (game.mode !== 'creative' && controls.mode === 'walk') {
+      if (near.d <= 0 && feet < near.y + 0.8) game.hurt(dt * 40, 'lava');
+      else if (D < 6) game.hurt(dt * 6 * (1 - D / 6), 'the heat of the lava');
+    }
+  }
+  lavaGlowLevel += (target - lavaGlowLevel) * Math.min(1, dt * 4);
+  lavaGlow.style.opacity = lavaGlowLevel.toFixed(3);
+}
+
 // Weather you can see coming: rain hanging under the clouds that bring it
 // (see Showers), and before a storm, lightning flickering inside it far
 // off, the thunder a long, low rumble arriving seconds later.
@@ -1523,6 +1546,7 @@ function tick(now) {
   env.buzzPan = insects.buzz.pan;
   sound.ambience(env);
   // (The ground trembles as a volcano rumbles.)
+  lavaHeat(dt);
   const tremble = volcanoes.shake > 0 && !controls.swimming ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0;
   camera.position.y += tremble;
   camera.updateMatrixWorld();

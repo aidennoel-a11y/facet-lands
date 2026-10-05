@@ -1010,7 +1010,7 @@ export class TerrainGenerator {
     let r = (this.roughNoise.noise2D(x * 0.13, z * 0.13) + 0.45 * this.roughNoise.noise2D(x * 0.29 + 17, z * 0.29 - 9)) * amount;
     r += (this.roughNoise.noise2D(x * 0.05 - 31, z * 0.05 + 11) * 0.7 + this.roughNoise.noise2D(x * 0.021 + 5, z * 0.021 - 40) * 0.9) * soft;
     // (A live lava flow's channel and levees lie smooth, the banks level either side.)
-    if (this._weights.volcanic > 0.05) r *= 1 - this.#lavaCalm(x, z);
+    if (this._weights.volcanic > 0.05) r *= 1 - Math.max(this.#lavaCalm(x, z), this.#craterCalm(x, z));
     return Math.max(r * shore, sea + 0.25 - base);
   }
 
@@ -1325,8 +1325,63 @@ export class TerrainGenerator {
         height += (level.target - height) * level.k;
         this.getBiomeWeights(x, z, this._weights, field.value); // (the middle's were looked at: this point's again)
       }
+      // A crater holding a lake (of water or of lava): its bowl shaped to
+      // the lake, the floor under it below its level, the shore rising
+      // out of it all round, so it never hangs over the slope.
+      for (const c of this.#conesNear(x, z)) {
+        if (!(c.lake || c.lava)) continue;
+        const d = Math.hypot(x - c.x, z - c.z);
+        // Where a live flow spills out of the crater: the rim notched down
+        // to the lava lake's level, so the lake runs out through the gap
+        // into the flow at one height (its channel cut into the notch's floor).
+        if (c.active && d < c.rc * 2.4) {
+          const p = this.lavaPath(c, d);
+          if (p) {
+            const angle = Math.atan2(z - c.z, x - c.x);
+            let da = angle - p.angle;
+            da = Math.atan2(Math.sin(da), Math.cos(da));
+            const k = 1 - smoothstep(p.half * 1.3, p.half * 2.4, Math.abs(da * d));
+            const target = this.craterLevel(c) + 0.2 + (this.#lavaChannel(c, d, angle)?.dh ?? 0);
+            if (k > 0 && d > c.rc * 0.6 && height > target) {
+              this._notch = height + (target - height) * k; // (applied after the shore, below)
+            }
+          }
+        }
+        if (d > c.rc) {
+          if (this._notch !== undefined) (height = this._notch), (this._notch = undefined);
+          continue;
+        }
+        const L = this.craterLevel(c);
+        // (A water lake's edge wobbles in and out, as Rivers draws it: the bowl follows it.)
+        const a = Math.atan2(z - c.z, x - c.x);
+        const r = c.rc * 0.6 * (c.lake ? 1 + 0.14 * Math.sin(a * 3 + c.seed) + 0.07 * Math.sin(a * 5 + c.seed * 2) : 1);
+        if (d < r) height = Math.min(height, L - 0.5 - 2.5 * (1 - (d / r) ** 2));
+        else {
+          // (The shore: a little above the lake all round, so its edge never hangs over
+          // the slope (a water lake's edge wobbles out a little: the bed's dug there), then the crater's own wall.)
+          height += (Math.max(height, L + 0.3) - height) * (1 - smoothstep(c.rc * 0.85, c.rc, d));
+        }
+        if (this._notch !== undefined) (height = Math.min(height, this._notch)), (this._notch = undefined);
+        this.getBiomeWeights(x, z, this._weights, field.value);
+      }
     }
     return height;
+  }
+
+  /**
+   * The level of the lake in volcano c's crater (of water or of molten
+   * lava): a third of the way up from its floor. (Remembered.)
+   */
+  craterLevel(c) {
+    if (c._level === undefined) {
+      this._levelling = true;
+      try {
+        c._level = this.landHeight(c.x, c.z) + c.depth * (c.lake ? 0.35 : 0.3);
+      } finally {
+        this._levelling = false;
+      }
+    }
+    return c._level;
   }
 
   // Beside a live lava flow: { target (the height the land there would have
@@ -2017,8 +2072,9 @@ export class TerrainGenerator {
    * slopes) }, reusing one object.
    */
   getVolcanic(x, z) {
-    const out = this._volc ?? (this._volc = { height: 0, lava: 0, crater: 0, cone: 0, channel: 0, blocks: 0, cold: 0, flowSide: 0, dead: 0 });
+    const out = this._volc ?? (this._volc = { height: 0, lava: 0, crater: 0, cone: 0, channel: 0, blocks: 0, cold: 0, flowSide: 0, dead: 0, toe: 0 });
     out.height = 0;
+    out.toe = 0;
     out.cold = 0;
     out.flowSide = 0;
     out.dead = 0;
@@ -2043,6 +2099,12 @@ export class TerrainGenerator {
             let dl = angle - lp.angle;
             dl = Math.abs(Math.atan2(Math.sin(dl), Math.cos(dl)) * d);
             out.flowSide = Math.max(out.flowSide, smoothstep(lp.half * 1.7, lp.half * 2.3, dl) * (1 - smoothstep(lp.half * 4, lp.half * 9, dl)));
+          }
+          // (Where it ends: a broad lobe of black rubble it's pushed up, the front of the flow.)
+          const e = this.lavaEnd(c), de = e ? Math.hypot(x - e.x, z - e.z) : Infinity;
+          if (de < 70) {
+            out.toe = Math.max(out.toe, 1 - smoothstep(15, 65, de));
+            h += 2.2 * (1 - smoothstep(8, 45, de)) * (0.7 + 0.3 * this.volcanoNoise.ridged(x * 0.08, z * 0.08, 2, 2, 0.5, 0.02));
           }
         }
         if (t < 1) {
@@ -2079,17 +2141,6 @@ export class TerrainGenerator {
         // A live flow: a channel down the flank between levees of fresh
         // lava, in places roofed over into a lava tube (skylights here and there).
         if (c.active && c.flows.length) {
-          // Where it spills out of the crater: the rim notched down to the
-          // lava lake's level, so the lake runs out through the gap into
-          // the flow, all at one height.
-          const lp0 = this.lavaPath(c, d);
-          if (lp0 && d < c.rc * 2.2) {
-            let dl = angle - lp0.angle;
-            dl = Math.atan2(Math.sin(dl), Math.cos(dl));
-            const lake = c.H * Math.pow(1 - c.rc / c.R, 1.5) - c.depth * 0.7;
-            const k = 1 - smoothstep(lp0.half * 1.3, lp0.half * 2.4, Math.abs(dl * d));
-            if (h > lake) h -= (h - lake) * k;
-          }
           const ch = this.#lavaChannel(c, d, angle);
           if (ch) {
             h += ch.dh;
@@ -2135,6 +2186,16 @@ export class TerrainGenerator {
     return { angle, half: 3.2 + d * 0.012, tube: 0, d0, d1, u };
   }
 
+  // How much (x, z) is in a crater holding a lake (1), fading out over its rim (0): smooth there.
+  #craterCalm(x, z) {
+    let calm = 0;
+    for (const c of this.#conesNear(x, z)) {
+      if (!(c.lake || c.lava)) continue;
+      calm = Math.max(calm, 1 - smoothstep(c.rc * 0.8, c.rc * 1.1, Math.hypot(x - c.x, z - c.z)));
+    }
+    return calm;
+  }
+
   // How much (x, z) is on a live lava flow or its levees (1), fading out beyond them (0).
   #lavaCalm(x, z) {
     let calm = 0;
@@ -2157,16 +2218,76 @@ export class TerrainGenerator {
    */
   blastAt(x, z) {
     let b = 0;
-    for (const c of this.#conesNear(x, z)) {
+    // (It reaches a long way: the cones of the cells two round.)
+    const C = 1100, ci = Math.floor(x / C), cj = Math.floor(z / C);
+    const cones = [];
+    for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) {
+      const c = this.#cone(ci + di, cj + dj);
+      if (c) cones.push(c);
+    }
+    for (const c of cones) {
       if (c.state !== 'blown') continue;
       const d = Math.hypot(x - c.x, z - c.z);
-      if (d > c.R * 3.2) continue;
+      if (d > c.R * 6.4) continue;
       let da = Math.atan2(z - c.z, x - c.x) - c.breach;
       da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
-      const reach = c.R * (1.4 + 1.8 * (1 - smoothstep(0.3, 1.4, da))); // (furthest out the way it blew)
+      const reach = c.R * (2.8 + 3.6 * (1 - smoothstep(0.3, 1.4, da))); // (furthest out the way it blew)
       b = Math.max(b, (1 - smoothstep(c.rc * 0.6, reach, d)) * (d < c.rc * 0.5 ? 0.5 : 1));
     }
     return b;
+  }
+
+  /**
+   * The open molten lava nearest (x, z): { d (metres to its edge across
+   * the land, 0 over it), y (its surface there) }, or null if there's none
+   * within a few hundred metres. (A crater's lava lake, a live flow.)
+   */
+  lavaNear(x, z) {
+    let best = null;
+    for (const c of this.#conesNear(x, z)) {
+      if (!c.lava) continue;
+      const dist = Math.hypot(x - c.x, z - c.z);
+      if (dist > c.R * 4) continue;
+      const lake = Math.max(0, dist - c.rc * 0.62);
+      if (!best || lake < best.d) best = { d: lake, y: this.craterLevel(c) };
+      if (!c.active) continue;
+      const p = this.lavaPath(c, dist), end = this.lavaEnd(c);
+      if (!p || dist > end.d) continue;
+      let da = Math.atan2(z - c.z, x - c.x) - p.angle;
+      da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)) * dist);
+      const d = Math.max(0, da - p.half);
+      if (d < best.d) best = { d, y: this.getBaseHeight(c.x + Math.cos(p.angle) * dist, c.z + Math.sin(p.angle) * dist) + 1.0 };
+    }
+    return best;
+  }
+
+  /**
+   * How an awake volcano (erupting or simmering) has burnt the land at
+   * (x, z): 2 on its cone (nothing grows), 1 round its foot and along
+   * its flow (only dead trees stand), 0 untouched.
+   */
+  scorchAt(x, z) {
+    let s = 0;
+    for (const c of this.#conesNear(x, z)) {
+      if (!c.lava) continue;
+      const d = Math.hypot(x - c.x, z - c.z);
+      if (d < c.R * 1.05) return 2;
+      if (d < c.R * 1.9) s = 1;
+      if (c.active) {
+        const p = this.lavaPath(c, d);
+        if (p) {
+          let da = Math.atan2(z - c.z, x - c.x) - p.angle;
+          da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)) * d);
+          if (da < p.half * 3) return 2;
+          if (da < p.half * 12) s = 1;
+        }
+        const e = this.lavaEnd(c);
+        const de = Math.hypot(x - e.x, z - e.z);
+        if (de < 75) return 2; // (bare over the rubble at its end)
+        if (de < 140) s = 1;
+      }
+    }
+    return s;
   }
 
   /** Whether (x, z) is on a live lava flow or its levees (nothing grows or lies there). */
@@ -2191,6 +2312,16 @@ export class TerrainGenerator {
    */
   lavaEnd(c) {
     if (c._end) return c._end;
+    if (c._ending) return null; // (finding it: the land looked at meanwhile without the rubble at its end)
+    c._ending = true;
+    try {
+      return this.#findLavaEnd(c);
+    } finally {
+      c._ending = false;
+    }
+  }
+
+  #findLavaEnd(c) {
     const f = c.flows[0];
     let end = { d: f.len * 0.85, x: c.x + Math.cos(f.a) * f.len * 0.85, z: c.z + Math.sin(f.a) * f.len * 0.85, water: false };
     for (let d = c.rc * 1.02; d < f.len * 0.85; d += 2) {
@@ -3479,6 +3610,7 @@ export class TerrainGenerator {
       if (v.lava > 0) out.lerp(LAVA, 0.85 * v.lava);
       // Beside a live flow: its levees of fresh black lava.
       if (v.blocks > 0) out.lerp(BASALT, 0.9 * v.blocks);
+      if (v.toe > 0) out.lerp(BASALT, 0.9 * v.toe); // (the black rubble at a flow's end)
       if (v.crater > 0) out.lerp(CINDER, 0.6 * v.crater * (1 - v.cold));
       if (v.cold > 0) out.lerp(BASALT, 0.85 * v.cold); // (a dead crater's bowl: black volcanic rock)
     }
