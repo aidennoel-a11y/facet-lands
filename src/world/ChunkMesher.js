@@ -503,7 +503,8 @@ export function chunkDataBuffers(data) {
  * function giving the height of its actual triangle surface.
  */
 export function chunkFromData(generator, config, cx, cz, resolution, data) {
-  const { heights, groundHeightAt } = chunkSurface(generator, config, cx, cz, resolution, data);
+  const surface = chunkSurface(generator, config, cx, cz, resolution, data);
+  const { heights, groundHeightAt } = surface;
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(data.positions, 3));
   geometry.setAttribute('normal', new BufferAttribute(data.normals, 3));
@@ -511,7 +512,7 @@ export function chunkFromData(generator, config, cx, cz, resolution, data) {
   geometry.setAttribute('aCold', new BufferAttribute(data.colds, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  return { geometry, triangles: data.triangles, heights, groundHeightAt };
+  return { geometry, triangles: data.triangles, heights, groundHeightAt, surface };
 }
 
 /**
@@ -588,7 +589,34 @@ export function chunkSurface(generator, config, cx, cz, resolution, data) {
     // Handy for decoration layers (trees, rocks...) that need heights.
     heights: { gridX, gridY, gridZ, size: n },
     groundHeightAt,
+    get occluder() {
+      return (this._occluder ??= occluderOf(chunkSize, cellSize, gridX, gridY, gridZ, fine));
+    },
   };
+}
+
+/**
+ * The lowest the drawn land gets in each of OCCLUDE x OCCLUDE patches of a
+ * chunk (chunk-local, row by row): what's certainly solid ground there, for
+ * hiding what's behind the hills (see ChunkManager.#cull). From every point
+ * of its triangles (the finer ones along rivers too, so a gorge is never
+ * taken for solid), each counted in the patches within a grid cell and a
+ * half of it, so a triangle reaching into a patch from the next is counted
+ * there too. -Infinity where there's a hole (a cave mouth).
+ */
+export const OCCLUDE = 4;
+function occluderOf(chunkSize, cellSize, gridX, gridY, gridZ, fine) {
+  const S = OCCLUDE, P = chunkSize / S, m = cellSize * 1.5;
+  const mins = new Float32Array(S * S).fill(Infinity);
+  const add = (x, y, z) => {
+    if (!Number.isFinite(y)) y = -Infinity;
+    const i0 = Math.max(0, Math.floor((x - m) / P)), i1 = Math.min(S - 1, Math.floor((x + m) / P));
+    const j0 = Math.max(0, Math.floor((z - m) / P)), j1 = Math.min(S - 1, Math.floor((z + m) / P));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (y < mins[j * S + i]) mins[j * S + i] = y;
+  };
+  for (let k = 0; k < gridY.length; k++) add(gridX[k], gridY[k], gridZ[k]);
+  for (const tris of fine.values()) for (let t = 0; t < tris.length; t += 3) add(tris[t], tris[t + 1], tris[t + 2]);
+  return mins;
 }
 
 // Height of the triangle (a, b, c) at (x, z), or null if (x, z) isn't on it.

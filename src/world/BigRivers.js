@@ -65,6 +65,32 @@ export class BigRivers {
     this._lastZ = NaN;
     this.lastEdge = Infinity; // metres from the nearest river's channel, as of the last carve()
     this.work = 0; // counts regions made ready (see TerrainGenerator.getBaseHeight)
+    this.fresh = { raws: [], finals: [], covered: [], indexed: [] }; // (see takeFresh)
+  }
+
+  /** What's been worked out here since last asked (or null), for the other threads (see Rivers.takeFresh). */
+  takeFresh() {
+    const f = this.fresh;
+    if (!f.raws.length && !f.finals.length && !f.covered.length) return null;
+    this.fresh = { raws: [], finals: [], covered: [], indexed: [] };
+    return { raws: f.raws.map((k) => [k, this.raws.get(k)]), finals: f.finals.map((k) => [k, this.finals.get(k)]), covered: f.covered, indexed: f.indexed };
+  }
+
+  /** What another thread worked out, taken in (see Rivers.share): the same as it'd come out here. */
+  share(d) {
+    for (const [k, v] of d.raws) if (!this.raws.has(k)) this.raws.set(k, v);
+    for (const [k, v] of d.finals) {
+      if (this.finals.has(k)) continue;
+      if (v) v.indexed = false; // (indexed here below, if it was there)
+      this.finals.set(k, v);
+    }
+    for (const k of d.indexed) {
+      const river = this.finals.get(k);
+      if (!river || river.indexed) continue;
+      river.indexed = true;
+      this.#index(river);
+    }
+    for (const k of d.covered) this.covered.add(k);
   }
 
   static #key(i, j) {
@@ -194,6 +220,7 @@ export class BigRivers {
     const k = BigRivers.#key(i, j);
     if (this.raws.has(k)) return this.raws.get(k);
     this.raws.set(k, null);
+    this.fresh.raws.push(k);
     const g = this.generator;
     const rand = mulberry32(hash2(i, j, this.seed) * 4294967296);
     if (rand() > CHANCE) return null;
@@ -317,6 +344,7 @@ export class BigRivers {
     const k = BigRivers.#key(i, j);
     if (this.finals.has(k)) return this.finals.get(k);
     this.finals.set(k, null);
+    this.fresh.finals.push(k);
     const raw = this.#raw(i, j);
     if (!raw) return null;
     const rank = this.#rank(i, j);
@@ -622,6 +650,7 @@ export class BigRivers {
     if (this.covered.has(k)) return;
     this.covered.add(k);
     this.work++;
+    this.fresh.covered.push(k);
     // (While they're worked out, the land they look at leaves out the sea
     // caves: see TerrainGenerator.#seaCliff.)
     const g = this.generator, was = g._riverWork;
@@ -634,6 +663,7 @@ export class BigRivers {
           if (!river || river.indexed) continue;
           river.indexed = true;
           this.#index(river);
+          this.fresh.indexed.push(BigRivers.#key(ri + di, rj + dj));
         }
       }
     } finally {

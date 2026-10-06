@@ -69,6 +69,36 @@ export class Rivers {
     this.riverCells = new Map(); // index cell -> river segments only (streams join these)
     this.list = [];
     this._m = {};
+    // (What's been worked out here since it was last handed on to the
+    // other threads: see takeFresh and share.)
+    this.fresh = { list: [], rivers: [], streams: [], covered: [] };
+    this.src = null;
+  }
+
+  /**
+   * What's been worked out here since last asked (or null): to hand to the
+   * other threads building the same world (see share), so they needn't
+   * work it all out again themselves. (With the great rivers': see BigRivers.)
+   */
+  takeFresh() {
+    const f = this.fresh, big = this.big.takeFresh();
+    if (!f.list.length && !f.rivers.length && !f.streams.length && !f.covered.length && !big) return null;
+    this.fresh = { list: [], rivers: [], streams: [], covered: [] };
+    return { ...f, big };
+  }
+
+  /**
+   * What another thread worked out (from its takeFresh), taken in: its
+   * courses and lakes, for the regions not worked out here already (the
+   * same as they'd come out here), into the index.
+   */
+  share(d) {
+    if (d.big) this.big.share(d.big);
+    const had = (src) => (src[0] === 'r' ? this.riverRegions : this.streamRegions).has(Number(src.slice(1)));
+    for (const river of d.list) if (!had(river.src)) this.#put(river, true);
+    for (const k of d.rivers) this.riverRegions.add(k);
+    for (const k of d.streams) this.streamRegions.add(k);
+    for (const k of d.covered) this.covered.add(k);
   }
 
   #key(i, j) {
@@ -95,12 +125,16 @@ export class Rivers {
       g._noToe--;
     }
     this.covered.add(key);
+    this.fresh.covered.push(key);
   }
 
   #ensureRivers(rx, rz) {
     const k = this.#key(rx, rz);
     if (this.riverRegions.has(k)) return;
     this.riverRegions.add(k);
+    this.fresh.rivers.push(k);
+    const src = this.src;
+    this.src = `r${k}`;
     this.#craterLakes(rx, rz);
     this.#alpineLakes(rx, rz);
     this.#hotSprings(rx, rz);
@@ -128,17 +162,21 @@ export class Rivers {
         made++;
       }
     }
+    this.src = src;
   }
 
   #ensureStreams(rx, rz) {
     const k = this.#key(rx, rz);
     if (this.streamRegions.has(k)) return;
     this.streamRegions.add(k);
+    this.fresh.streams.push(k);
     if (!Rivers.STREAMS) return;
     // Every creek a stream from here could meet must exist first (those
     // close enough to; one further off it may cross rather than join).
     const reach = STREAM_REACH + 1;
     for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) this.#ensureRivers(rx + dx, rz + dz);
+    const src = this.src;
+    this.src = `s${k}`;
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x51ab) * 4294967296);
     let made = 0;
@@ -163,6 +201,7 @@ export class Rivers {
       }
     }
     if (Rivers.CASCADES) this.#cliffFalls(rx, rz, rand, siblings);
+    this.src = src;
   }
 
   /**
@@ -545,10 +584,7 @@ export class Rivers {
     for (const c of g.volcanoes(x0, z0, x0 + REGION, z0 + REGION)) {
       if (!c.lake || c.x < x0 || c.x >= x0 + REGION || c.z < z0 || c.z >= z0 + REGION) continue;
       const pond = { x: c.x, z: c.z, r: c.rc * 0.6, level: g.craterLevel ? g.craterLevel(c) : g.getBaseHeight(c.x, c.z) + c.depth * 0.35, seed: c.seed, natural: true, crater: true };
-      const r = pond.r * 1.3 + 30;
-      this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
-      const m = pond.r * 1.3 + 2;
-      this.list.push({ points: [], pond, tarn: null, kind: 'lake', id: this.list.length, bounds: { minX: pond.x - m, maxX: pond.x + m, minZ: pond.z - m, maxZ: pond.z + m } });
+      this.#put({ points: [], pond, tarn: null, kind: 'lake' });
     }
   }
 
@@ -583,10 +619,7 @@ export class Rivers {
       if (!pond || pond.level < h + 0.3) continue; // it needs a real hollow to hold it
       pond.tint = 1;
       pond.alpine = true;
-      const r = pond.r * 1.3 + 30;
-      this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
-      const m = pond.r * 1.3 + 2;
-      this.list.push({ points: [], pond, tarn: null, kind: 'lake', id: this.list.length, bounds: { minX: pond.x - m, maxX: pond.x + m, minZ: pond.z - m, maxZ: pond.z + m } });
+      this.#put({ points: [], pond, tarn: null, kind: 'lake' });
       return;
     }
   }
@@ -603,10 +636,7 @@ export class Rivers {
       if (!pond) continue;
       pond.tint = 2;
       pond.hot = true;
-      const r = pond.r * 1.3 + 30;
-      this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
-      const m = pond.r * 1.3 + 2;
-      this.list.push({ points: [], pond, tarn: null, kind: 'lake', id: this.list.length, bounds: { minX: pond.x - m, maxX: pond.x + m, minZ: pond.z - m, maxZ: pond.z + m } });
+      this.#put({ points: [], pond, tarn: null, kind: 'lake' });
     }
   }
 
@@ -620,10 +650,7 @@ export class Rivers {
       const pond = this.#pond(o.x, o.z, o.r, rand, Infinity);
       if (!pond) continue;
       pond.oasis = true;
-      const r = pond.r * 1.3 + 30;
-      this.#index(this.cells, { pond }, pond.x - r, pond.z - r, pond.x + r, pond.z + r);
-      const m = pond.r * 1.3 + 2;
-      this.list.push({ points: [], pond, tarn: null, kind: 'lake', id: this.list.length, bounds: { minX: pond.x - m, maxX: pond.x + m, minZ: pond.z - m, maxZ: pond.z + m } });
+      this.#put({ points: [], pond, tarn: null, kind: 'lake' });
     }
   }
 
@@ -652,7 +679,18 @@ export class Rivers {
       p.x = P[k][0];
       p.z = P[k][1];
     });
-    const river = { points, pond, tarn, kind, id: this.list.length };
+    this.#put({ points, pond, tarn, kind });
+  }
+
+  /**
+   * A course (or a lake) into the index and the list, as it is (smoothed
+   * already): yours, or one worked out by another thread (see share).
+   */
+  #put(river, shared = false) {
+    const { points, pond, tarn, kind } = river;
+    river.id = this.list.length;
+    river.src ??= this.src; // (the region it was made for)
+    if (!shared) this.fresh.list.push(river);
     let along = 0; // metres from the source
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i], b = points[i + 1];

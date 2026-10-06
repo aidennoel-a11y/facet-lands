@@ -488,7 +488,7 @@ function placeCamera() {
   // Stand off to the south-east of the peak, looking at it.
   const x = best.x + 300;
   const z = best.z + 360;
-  camera.position.set(x, Math.max(generator.getBaseHeight(x, z) + 50, 70), z);
+  camera.position.set(x, Math.max(generator.landHeight(x, z) + 50, 70), z); // (high above it: the rivers needn't be worked out for this)
   controls.lookAt(new THREE.Vector3(best.x, best.h * 0.5, best.z));
 }
 
@@ -1661,6 +1661,7 @@ function tick(now) {
   const tremble = volcanoes.shake > 0 && !controls.swimming ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0;
   camera.position.y += tremble;
   camera.updateMatrixWorld();
+  chunks.cull(camera.position); // (the land behind the hills not drawn)
   // (Animals only, for testing: everything else hidden, each animal labelled.)
   const animalsOnly = animalsOnlyBox?.checked;
   const hidden = [];
@@ -1746,6 +1747,8 @@ for (const [key, id] of [['weather', 'weather'], ['season', 'season']]) {
   if (el) (el.value = TEST.get(key)), el.dispatchEvent(new Event('change'));
 }
 if (TEST.has('hide')) window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP', key: 'p' }));
+// (For comparing: everything drawn, the land behind the hills too.)
+if (TEST.has('noocclude')) chunks.occlusion = false;
 // (For testing it: the loading screen, as a world starts.)
 if (TEST.has('loadscreen')) startLoading('Test world');
 

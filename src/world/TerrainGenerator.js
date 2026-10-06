@@ -1068,7 +1068,11 @@ export class TerrainGenerator {
   landHeight(x, z) {
     // (First: it looks at the land round about.)
     const smokyLift = this._probing ? 0 : this.#smokyLift(x, z);
-    const field = this.#rangeField(x, z);
+    // (Copied: the biome weights, worked out next, can look at the ranges
+    // round about, the first time they're looked at, into the same
+    // remembered field; this point's would be lost, and the land here
+    // would come out differently the first time it's asked for.)
+    const field = { ...this.#rangeField(x, z) };
     const w = this.getBiomeWeights(x, z, this._weights, field.value);
 
     // Mountain ranges: well apart, from half to twice the usual size

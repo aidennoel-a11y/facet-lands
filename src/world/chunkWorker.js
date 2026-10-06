@@ -135,3 +135,31 @@ self.onmessage = (event) => {
   transfer.push(...chunkDataBuffers(data));
   self.postMessage(out, transfer);
 };
+
+// Rivers: what this worker works out is handed on (before the job's
+// result, so the others have it before they're given their next jobs),
+// and what the others worked out taken in (see ChunkManager.#shareRivers).
+{
+  const handle = self.onmessage, post = self.postMessage.bind(self);
+  self.onmessage = (event) => {
+    const { kind, seed, config, delta } = event.data;
+    if (kind === 'rivers') {
+      if (!world || world.seed !== seed) {
+        world = { seed, generator: new TerrainGenerator(seed, config) };
+        rocks.clear();
+      }
+      world.generator.rivers.share(delta);
+      return;
+    }
+    const out = [];
+    self.postMessage = (message, transfer) => out.push([message, transfer]);
+    try {
+      handle(event);
+    } finally {
+      self.postMessage = post;
+    }
+    const fresh = world?.generator.rivers.takeFresh();
+    if (fresh) post({ kind: 'rivers', seed: world.seed, delta: fresh });
+    for (const [message, transfer] of out) post(message, transfer);
+  };
+}
