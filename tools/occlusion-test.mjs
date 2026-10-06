@@ -45,7 +45,7 @@ for (const yaw of yaws.length ? yaws.map(Number) : [0, 1.57, 3.14, 4.71]) {
 }
 const cost = await page.evaluate(() => {
   const { chunks, camera } = window.world, t = performance.now();
-  for (let k = 0; k < 20; k++) (chunks.cullDirty = true), chunks.cull(camera.position);
+  for (let k = 0; k < 20; k++) (chunks.cullDirty = true), (chunks.culledAt = 0), chunks.cull(camera.position);
   return (performance.now() - t) / 20;
 });
 console.log(`  working it out: ${cost.toFixed(2)} ms a time (here, drawn in software: a real computer is several times quicker)`);
