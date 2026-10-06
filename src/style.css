@@ -1351,3 +1351,68 @@ kbd {
 
 .start-menu .sm-version { font-size: 12px; opacity: 0.6; margin: 4px 0 0; }
 .start-menu .sm-old { color: #e0603a; font-style: normal; font-weight: 600; }
+
+/* --- Loading a world (see main: startLoading): a panel like the title's,
+   over a dark backdrop, a bar filling as the land round you is built ---- */
+.load-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: radial-gradient(ellipse at 50% 40%, #2b3a2c, #141b15 75%);
+  font-family: 'Barlow', system-ui, sans-serif;
+  color: #f1ead8;
+  transition: opacity 0.6s ease;
+}
+.load-screen[hidden] {
+  display: none;
+}
+.load-screen.ls-done {
+  opacity: 0;
+  pointer-events: none;
+}
+.ls-card {
+  width: min(380px, 100%);
+  box-sizing: border-box;
+  padding: 26px 26px 20px;
+  display: grid;
+  gap: 10px;
+  background: linear-gradient(160deg, rgba(46, 58, 44, 0.95), rgba(30, 38, 30, 0.96));
+  clip-path: polygon(0 18px, 22px 0, calc(100% - 40px) 4px, 100% 26px, calc(100% - 6px) calc(100% - 22px), calc(100% - 30px) 100%, 26px calc(100% - 6px), 4px calc(100% - 34px));
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+.ls-head {
+  margin: 0;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #f4ecd6;
+}
+.ls-name {
+  margin: 0;
+  color: #e0823a;
+  font-weight: 600;
+  min-height: 1.2em;
+  overflow-wrap: anywhere;
+}
+.ls-bar {
+  height: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  clip-path: polygon(0 2px, 6px 0, 100% 1px, calc(100% - 3px) 100%, 3px calc(100% - 1px));
+}
+.ls-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #c46a2c, #e8a04c);
+  transition: width 0.4s ease;
+}
+.ls-note {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(241, 234, 216, 0.75);
+}

@@ -80,11 +80,19 @@ export class Rivers {
     const rx = Math.floor(x / REGION), rz = Math.floor(z / REGION);
     const key = this.#key(rx, rz);
     if (this.covered.has(key)) return;
-    for (let dz = -RIVER_REACH; dz <= RIVER_REACH; dz++) {
-      for (let dx = -RIVER_REACH; dx <= RIVER_REACH; dx++) this.#ensureRivers(rx + dx, rz + dz);
-    }
-    for (let dz = -STREAM_REACH; dz <= STREAM_REACH; dz++) {
-      for (let dx = -STREAM_REACH; dx <= STREAM_REACH; dx++) this.#ensureStreams(rx + dx, rz + dz);
+    // (The land they're traced over leaves out the rubble at lava flows'
+    // ends: see TerrainGenerator.lavaEnd.)
+    const g = this.generator;
+    g._noToe = (g._noToe ?? 0) + 1;
+    try {
+      for (let dz = -RIVER_REACH; dz <= RIVER_REACH; dz++) {
+        for (let dx = -RIVER_REACH; dx <= RIVER_REACH; dx++) this.#ensureRivers(rx + dx, rz + dz);
+      }
+      for (let dz = -STREAM_REACH; dz <= STREAM_REACH; dz++) {
+        for (let dx = -STREAM_REACH; dx <= STREAM_REACH; dx++) this.#ensureStreams(rx + dx, rz + dz);
+      }
+    } finally {
+      g._noToe--;
     }
     this.covered.add(key);
   }

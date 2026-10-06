@@ -82,6 +82,9 @@ export class ChunkManager {
     this.tasks = new Map(); // id -> { resolve, reject } for other work handed to the workers (see task)
     // For tuning: main-thread time spent putting chunks together, per layer.
     this.stats = { builds: 0, ms: 0, terrainMs: 0, layers: {} };
+    // (How much more of each frame than usual goes to putting chunks
+    // together: more while a world's loading, behind the loading screen.)
+    this.budgetScale = 1;
   }
 
   /** Changes what's drawn; see `visibility`. Cheap to call every frame. */
@@ -217,7 +220,7 @@ export class ChunkManager {
     // fast, more of the frame goes to putting them in; walking, the usual
     // small slice, so it stays smooth.)
     const backlog = this.ready.length > 6;
-    const deadline = performance.now() + this.config.chunkBuildBudgetMs * (backlog ? 2.5 : 1);
+    const deadline = performance.now() + this.config.chunkBuildBudgetMs * (backlog ? 2.5 : 1) * this.budgetScale;
     this.#dispatch();
     // Put together what's ready (at least one, so progress is guaranteed).
     let built = 0;
@@ -540,6 +543,25 @@ export class ChunkManager {
     }
     if (this.generator.caves?.isHole(x, z)) return NaN; // a cave mouth
     return this.generator.getBaseHeight(x, z); // (no chunk here yet: roughly, without working out the rivers)
+  }
+
+  /**
+   * How much of the land round `position` is in: { done, total } of the
+   * chunks within `rings` of the one you're on, each at the detail it
+   * should be (see the loading screen in main).
+   */
+  readyNear(position, rings) {
+    const { chunkSize } = this.config;
+    const ccx = Math.floor(position.x / chunkSize), ccz = Math.floor(position.z / chunkSize);
+    let done = 0, total = 0;
+    for (let dz = -rings; dz <= rings; dz++) {
+      for (let dx = -rings; dx <= rings; dx++) {
+        total++;
+        const chunk = this.chunks.get(`${ccx + dx},${ccz + dz}`);
+        if (chunk && chunk.lod === this.lodFor(Math.max(Math.abs(dx), Math.abs(dz)))) done++;
+      }
+    }
+    return { done, total };
   }
 
   get loadedCount() {

@@ -2101,7 +2101,10 @@ export class TerrainGenerator {
             out.flowSide = Math.max(out.flowSide, smoothstep(lp.half * 1.7, lp.half * 2.3, dl) * (1 - smoothstep(lp.half * 4, lp.half * 9, dl)));
           }
           // (Where it ends: a broad lobe of black rubble it's pushed up, the front of the flow.)
-          const e = this.lavaEnd(c), de = e ? Math.hypot(x - e.x, z - e.z) : Infinity;
+          // (Not while rivers or a flow's end are being worked out: they
+          // don't need it, and it would set off working out more of them,
+          // and more, far and wide.)
+          const e = this._noToe ? null : this.lavaEnd(c), de = e ? Math.hypot(x - e.x, z - e.z) : Infinity;
           if (de < 70) {
             out.toe = Math.max(out.toe, 1 - smoothstep(15, 65, de));
             h += 2.2 * (1 - smoothstep(8, 45, de)) * (0.7 + 0.3 * this.volcanoNoise.ridged(x * 0.08, z * 0.08, 2, 2, 0.5, 0.02));
@@ -2314,10 +2317,12 @@ export class TerrainGenerator {
     if (c._end) return c._end;
     if (c._ending) return null; // (finding it: the land looked at meanwhile without the rubble at its end)
     c._ending = true;
+    this._noToe = (this._noToe ?? 0) + 1; // (the land along it without any flow's rubble: the same however it's come to)
     try {
       return this.#findLavaEnd(c);
     } finally {
       c._ending = false;
+      this._noToe--;
     }
   }
 

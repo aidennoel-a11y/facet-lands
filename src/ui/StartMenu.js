@@ -102,6 +102,13 @@ export class StartMenu {
     this.onHost = onHost; // ({ url, name, world }) => Promise (the room's open)
     this.onJoin = onJoin; // ({ url, code, name }) => Promise<world> (the room's world)
     this.world = null; // (the world in play)
+    // (The online server, woken now: a free one asleep takes up to a minute
+    // to wake, and by the time you've chosen to play online it's ready.)
+    try {
+      openWorlds(localStorage.getItem('facet-lands:server2') || DEFAULT_SERVER).catch(() => {});
+    } catch {
+      // (Not a server address: you'll be told when you try it.)
+    }
     const root = (this.root = document.createElement('div'));
     root.className = 'start-menu';
     root.innerHTML = `${backdrop()}<div class="sm-card" role="dialog" aria-modal="true"></div>`;

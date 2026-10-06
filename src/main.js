@@ -482,7 +482,7 @@ function placeCamera() {
   for (let i = 0; i < 400; i++) {
     const x = (i % 20) * 160 - 1600;
     const z = Math.floor(i / 20) * 160 - 1600;
-    const h = generator.getBaseHeight(x, z); // (the land before rivers: quick, and near enough)
+    const h = generator.landHeight(x, z); // (the land before any rivers: quick, and near enough)
     if (h > best.h) best = { x, z, h };
   }
   // Stand off to the south-east of the peak, looking at it.
@@ -545,7 +545,8 @@ function bodiesCollide(position, radius, feet) {
     push(p.x, p.z, 0.35, p.y - 0.2, p.y + 1.8);
   }
 }
-placeCamera();
+// (Not behind the title screen: the world you pick is placed when it starts.)
+if (TEST.size) placeCamera();
 // (A spot asked for in the address: see TEST above.)
 function testView() {
   if (!TEST.has('x') && !TEST.has('z')) return;
@@ -661,7 +662,7 @@ const ui = {
 };
 ui.seed.value = WORLD.seed;
 
-function setSeed(seed, saveKey = null) {
+function setSeed(seed, saveKey = null, place = true) {
   WORLD.seed = seed;
   generator = new TerrainGenerator(seed, WORLD);
   game.trees.removed.clear(); // (the new world's felled trees are loaded below)
@@ -676,7 +677,7 @@ function setSeed(seed, saveKey = null) {
   fires.clear();
   volcanoes.clear();
   insects.clear();
-  placeCamera();
+  if (place) placeCamera(); // (not when you'll be put back where you were)
 }
 
 ui.seedForm.addEventListener('submit', (e) => {
@@ -1433,6 +1434,51 @@ let fpsTime = 0;
 let cpuTime = 0;
 renderer.info.autoReset = false; // (counted over the whole frame: see tick)
 
+// --- Loading a world ------------------------------------------------------------
+// After you start or join a world, a screen while the land round you is
+// built: you come in once it's all there (the chunks two out from yours,
+// each at its full detail), not onto bare ground with the land popping in.
+// Meanwhile nothing else is worked out (no animals, weather or player)
+// and the world's drawn only now and then, so the building gets nearly
+// all the time there is.
+const RINGS = 2; // (5 x 5 chunks: 640 m across)
+const loadScreen = document.createElement('div');
+loadScreen.className = 'load-screen';
+loadScreen.hidden = true;
+loadScreen.innerHTML = `<div class="ls-card"><h2 class="ls-head">Building the land</h2><p class="ls-name"></p><div class="ls-bar"><span></span></div><p class="ls-note">Getting ready…</p></div>`;
+document.body.append(loadScreen);
+let loading = null; // { since, drawn }
+function startLoading(name) {
+  loading = { since: performance.now(), drawn: 0 };
+  loadScreen.querySelector('.ls-name').textContent = name ?? '';
+  loadScreen.querySelector('.ls-bar span').style.width = '0%';
+  loadScreen.classList.remove('ls-done');
+  loadScreen.hidden = false;
+  chunks.budgetScale = 8; // (no need to keep it smooth: nothing's moving)
+}
+function loadingFrame(now) {
+  camera.getWorldDirection(dir);
+  chunks.update(camera.position, mp.roomTime() ?? now / 1000, dir);
+  // (Online: what the others do comes in meanwhile, and the time of day.)
+  sync.update();
+  // (Drawn about once a second: so the graphics card has everything ready
+  // to draw before you come in, and the first frames don't stall.)
+  if (now - loading.drawn > 1000) {
+    loading.drawn = now;
+    renderer.render(scene, camera);
+  }
+  const { done, total } = chunks.readyNear(camera.position, RINGS);
+  loadScreen.querySelector('.ls-bar span').style.width = `${Math.round((100 * done) / total)}%`;
+  const waited = (now - loading.since) / 1000;
+  loadScreen.querySelector('.ls-note').textContent = done < total ? `${done} of ${total} pieces of land` : 'Ready';
+  // (In when it's all there; or, if something's gone wrong, after two minutes anyway.)
+  if (done < total && waited < 120) return;
+  loading = null;
+  chunks.budgetScale = 1;
+  loadScreen.classList.add('ls-done');
+  setTimeout(() => loading || (loadScreen.hidden = true), 600);
+}
+
 // (The start menu: on the title screens the world behind isn't seen at all,
 // so nothing is worked out or drawn; paused in a world, a few frames a
 // second are enough to show it there behind the menu.)
@@ -1453,6 +1499,12 @@ function tick(now) {
   const dt = Math.max(0, Math.min(elapsed, 0.1));
   checkPerformance(elapsed);
   lastTime = now;
+  // (A world starting: only the land built, behind the loading screen.)
+  if (loading) {
+    loadingFrame(now);
+    requestAnimationFrame(tick);
+    return;
+  }
   controls.update(dt);
   playerTraces(dt);
   camera.getWorldDirection(dir);
@@ -1678,6 +1730,8 @@ for (const [key, id] of [['weather', 'weather'], ['season', 'season']]) {
   if (el) (el.value = TEST.get(key)), el.dispatchEvent(new Event('change'));
 }
 if (TEST.has('hide')) window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP', key: 'p' }));
+// (For testing it: the loading screen, as a world starts.)
+if (TEST.has('loadscreen')) startLoading('Test world');
 
 // --- Title screen, game modes, saved worlds (see StartMenu) ---------------------
 // (Not for a test address, e.g. the screenshot tool's: that's straight into testing.)
@@ -1715,9 +1769,10 @@ if (!TEST.size) {
     onPlay: (world) => {
       useQuality();
       game.mode = world.mode;
-      setSeed(world.seed, world.mode === 'testing' ? null : world.id);
+      setSeed(world.seed, world.mode === 'testing' ? null : world.id, !world.camera);
       ui.seed.value = world.seed;
       applyMode(world.mode);
+      startLoading(world.name);
       // (Back where you left off.)
       // (Joined online: the room's time of day.)
       if (world.guest && joinedHour !== null) (dayNight.hour = joinedHour), (joinedHour = null);

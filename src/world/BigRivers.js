@@ -626,6 +626,7 @@ export class BigRivers {
     // caves: see TerrainGenerator.#seaCliff.)
     const g = this.generator, was = g._riverWork;
     g._riverWork = true;
+    g._noToe = (g._noToe ?? 0) + 1; // (nor the rubble at lava flows' ends: see TerrainGenerator.lavaEnd)
     try {
       for (let dj = -REACH; dj <= REACH; dj++) {
         for (let di = -REACH; di <= REACH; di++) {
@@ -637,6 +638,7 @@ export class BigRivers {
       }
     } finally {
       g._riverWork = was;
+      g._noToe--;
     }
   }
 
