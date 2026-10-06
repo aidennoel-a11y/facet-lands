@@ -7,6 +7,7 @@ import { chunkDataBuffers, chunkSurface, computeChunkData } from './ChunkMesher.
 import { rockCandidates } from './rockCandidates.js';
 import { packFarTrees, placeTrees } from './treePlacement.js';
 import { placeGrass } from './grassPlacement.js';
+import { placeCorals, placeFlowers, placeLogs, placeUnderstory, surfSpots } from './decorPlacement.js';
 import { waterData } from './waterData.js';
 import { riverData, riverGrid } from './riverData.js';
 import { reedData } from './reedData.js';
@@ -27,7 +28,7 @@ function rocksAt(cx, cz, config) {
 }
 
 self.onmessage = (event) => {
-  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarGrass, wantFarTrees, wantRivers, wantReeds } = event.data;
+  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarGrass, wantFarTrees, wantRivers, wantReeds, wantUnderstory } = event.data;
   if (!world || world.seed !== seed) {
     world = { seed, generator: new TerrainGenerator(seed, config) };
     rocks.clear();
@@ -123,6 +124,23 @@ self.onmessage = (event) => {
   if (wantGrass) {
     out.grass = placeGrass(g, config, cx, cz, groundHeightAt);
     transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer, out.grass.kinds.buffer);
+  }
+  // (The small things, here so the main thread needn't: see decorPlacement.)
+  if (wantGrass) {
+    out.flowers = placeFlowers(g, config, cx, cz, groundHeightAt);
+    if (out.flowers) transfer.push(out.flowers.buffer);
+  }
+  if (wantReeds) {
+    out.logs = placeLogs(g, config, cx, cz, groundHeightAt);
+    if (out.logs) transfer.push(out.logs.pieces.buffer);
+    out.corals = placeCorals(g, config, cx, cz, groundHeightAt, heights.gridY);
+    if (out.corals) transfer.push(out.corals.buffer);
+    // (The surf: only by the sea, any of the chunk's own ground under it; see SeaCoastLayer.)
+    if (g.seaCaves && heights.gridY.some((y) => y < config.seaLevel - 0.5)) out.surf = surfSpots(g, cx * config.chunkSize, cz * config.chunkSize, config.chunkSize, config.seaLevel);
+  }
+  if (wantUnderstory) {
+    out.understory = placeUnderstory(g, config, cx, cz, groundHeightAt);
+    if (out.understory) transfer.push(out.understory.buffer);
   }
   if (wantFarGrass) {
     out.farGrass = placeGrass(g, config, cx, cz, groundHeightAt, true);

@@ -2,6 +2,7 @@ import { BoxGeometry, BufferAttribute, BufferGeometry, CircleGeometry, Color, Co
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
 import { caveRoof, mesaArchAt } from '../TerrainGenerator.js';
+import { surfSpots } from '../decorPlacement.js';
 
 /** A little flat five-armed starfish, base at y = 0, arms reaching out ~1. */
 function starfish() {
@@ -103,31 +104,6 @@ export function createSeaCoastLayer(config, terrainMaterial) {
   surfMaterial.customProgramCacheKey = () => 'surf';
   const block = new BoxGeometry(1, 1, 1);
 
-  // Where the waves meet rock in this chunk: the foot of the cliffs, the
-  // edges of the ledges; each with the way out to sea and how much of a
-  // cliff there is.
-  function surfSpots(generator, x0, z0, size, sea) {
-    const spots = [];
-    const S = 6;
-    for (let j = 0; j < size / S; j++) {
-      for (let i = 0; i < size / S; i++) {
-        const x = x0 + (i + 0.5) * S, z = z0 + (j + 0.5) * S;
-        const h = generator.getBaseHeight(x, z);
-        if (h < sea - 0.4 || h > sea + 3.5) continue;
-        let out = null;
-        for (let k = 0; k < 8 && !out; k++) {
-          const a = (k / 8) * Math.PI * 2;
-          if (generator.getBaseHeight(x + Math.cos(a) * 5, z + Math.sin(a) * 5) < sea - 1) out = [Math.cos(a), Math.sin(a)];
-        }
-        if (!out || generator.getOceanness(x, z) < 0.5) continue;
-        const rock = Math.max(generator.getSeaCliff(x, z), 0.3);
-        if (hash2(Math.floor(x), Math.floor(z), 0x5a1f) > 0.35 + 0.5 * rock) continue;
-        spots.push({ x, z, out, rock });
-      }
-    }
-    return spots;
-  }
-
   function surf(spots, x0, z0, sea) {
     const starts = [], velocities = [], lives = [];
     for (const s of spots) {
@@ -174,7 +150,7 @@ export function createSeaCoastLayer(config, terrainMaterial) {
 
     reuseKey: ({ lod }) => (lod > 3 ? 'none' : lod <= 1 ? 'near' : 'far'),
 
-    build({ cx, cz, lod, generator, groundHeightAt, heights }) {
+    build({ cx, cz, lod, generator, groundHeightAt, heights, prepared }) {
       if (lod > 3 || !generator.seaCaves) return null;
       const size = config.chunkSize, sea = config.seaLevel;
       const x0 = cx * size, z0 = cz * size;
@@ -352,7 +328,8 @@ export function createSeaCoastLayer(config, terrainMaterial) {
       // The surf, near you.
       // (Only by the sea: any of the chunk's own ground under it.)
       if (lod <= 1 && heights?.gridY.some((y) => y < sea - 0.5)) {
-        const spots = surfSpots(generator, x0, z0, size, sea);
+        // (Where: worked out by a chunk worker; here only if it wasn't.)
+        const spots = prepared?.surf ?? surfSpots(generator, x0, z0, size, sea);
         const mesh = surf(spots, x0, z0, sea);
         if (mesh) {
           group.add(mesh);

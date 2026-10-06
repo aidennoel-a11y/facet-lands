@@ -1,6 +1,7 @@
 import { Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2, mulberry32 } from '../../noise/random.js';
+import { placeCorals } from '../decorPlacement.js';
 
 /** A coral shape, white (each coral is tinted by its instance colour), base at y = 0. */
 function shaped(geometry) {
@@ -64,35 +65,18 @@ export function createCoralLayer(config) {
 
     reuseKey: ({ lod }) => (lod > 1 ? 'none' : 'near'),
 
-    build({ cx, cz, lod, heights, generator, groundHeightAt }) {
+    build({ cx, cz, lod, heights, generator, groundHeightAt, prepared }) {
       if (lod > 1) return null;
-      const size = config.chunkSize;
-      const sea = config.seaLevel;
-      let low = Infinity;
-      for (const y of heights.gridY) low = Math.min(low, y);
-      if (low > sea - 0.6) return null; // no sea here
-      const x0 = cx * size, z0 = cz * size;
-      const seed = generator.seed ^ 0xc0a2;
-      const spacing = 1.8;
-      const cells = Math.round(size / spacing);
-      const step = size / cells;
+      // (Where they go: worked out by a chunk worker; here only if it wasn't.)
+      const data = prepared && prepared.corals !== undefined ? prepared.corals : placeCorals(generator, config, cx, cz, groundHeightAt, heights.gridY, shapes.length, CORAL_COLORS.length);
+      if (!data) return null;
       const placed = shapes.map(() => []);
-      for (let j = 0; j < cells; j++) {
-        for (let i = 0; i < cells; i++) {
-          const gi = cx * cells + i, gj = cz * cells + j;
-          if (hash2(gi, gj, seed) > 0.55) continue;
-          const wx = x0 + (i + hash2(gi, gj, seed + 1)) * step, wz = z0 + (j + hash2(gi, gj, seed + 2)) * step;
-          const ground = groundHeightAt(wx - x0, wz - z0);
-          if (!Number.isFinite(ground)) continue;
-          const reef = generator.getReef(wx, wz, ground);
-          if (hash2(gi, gj, seed + 3) > reef) continue;
-          const kind = Math.floor(hash2(gi, gj, seed + 4) * shapes.length);
-          const s = 0.7 + hash2(gi, gj, seed + 5) * 1.1;
-          position.set(wx - x0, ground - 0.05, wz - z0);
-          rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 6) * Math.PI * 2);
-          scale.set(s, s * (0.8 + 0.5 * hash2(gi, gj, seed + 7)), s);
-          placed[kind].push([matrix.compose(position, rotation, scale).clone(), CORAL_COLORS[Math.floor(hash2(gi, gj, seed + 8) * CORAL_COLORS.length)]]);
-        }
+      for (let k = 0; k < data.length; k += 8) {
+        const s = data[k + 5];
+        position.set(data[k + 1], data[k + 2], data[k + 3]);
+        rotation.setFromAxisAngle(up, data[k + 4] * Math.PI * 2);
+        scale.set(s, s * data[k + 6], s);
+        placed[data[k]].push([matrix.compose(position, rotation, scale).clone(), CORAL_COLORS[data[k + 7]]]);
       }
       if (!placed.some((l) => l.length)) return null;
       const group = new Group();

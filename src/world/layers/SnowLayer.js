@@ -89,7 +89,7 @@ export function createSnowLayer(config, rocks) {
       if (cold < 0.3) return null;
       const seed = generator.seed ^ 0x5a0f;
       const surface = { normalY: 1 };
-      const drifts = [], info = [];
+      const drifts = [], info = [], seasonal = new Map();
       // Drifts over the open ground.
       const G = 9;
       for (let j = 0; j < size / G; j++) {
@@ -105,7 +105,10 @@ export function createSnowLayer(config, rocks) {
           q.setFromEuler(e.set(0, hash2(gi, gj, seed + 4) * Math.PI * 2, 0));
           s.set(w, 0.16 + hash2(gi, gj, seed + 5) * 0.3, w * (0.6 + 0.5 * hash2(gi, gj, seed + 6)));
           drifts.push(m4.compose(p, q, s).clone());
-          info.push(generator.getSeasonality(x0 + lx, z0 + lz), 0.15 + 0.7 * hash2(gi, gj, seed + 7));
+          // (How cold its winters are: broad, so looked up once per 16 m patch.)
+          const c = Math.floor(lx / 16) * 64 + Math.floor(lz / 16);
+          if (!seasonal.has(c)) seasonal.set(c, generator.getSeasonality(x0 + Math.floor(lx / 16) * 16 + 8, z0 + Math.floor(lz / 16) * 16 + 8));
+          info.push(seasonal.get(c), 0.15 + 0.7 * hash2(gi, gj, seed + 7));
         }
       }
       // Caps on the boulders.

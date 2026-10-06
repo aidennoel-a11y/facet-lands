@@ -1,6 +1,7 @@
 import { Box3, BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { buildChunkGeometry, chunkFromData } from './ChunkMesher.js';
 
+const LOOKAHEAD = 3; // seconds: the land where you'll be by then is made ready ahead of you
 const NEIGHBOURS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
 
 /**
@@ -85,6 +86,7 @@ export class ChunkManager {
     // (How much more of each frame than usual goes to putting chunks
     // together: more while a world's loading, behind the loading screen.)
     this.budgetScale = 1;
+    this.velocity = { x: 0, z: 0 }; // (how you're moving, for the land ahead: see update)
   }
 
   /** Changes what's drawn; see `visibility`. Cheap to call every frame. */
@@ -136,6 +138,7 @@ export class ChunkManager {
 
   rebuildAll() {
     this.scouted = false;
+    if (this.current) (this.#abort(this.current.job), (this.current = null));
     for (const chunk of this.chunks.values()) this.#unload(chunk);
     this.chunks.clear();
     this.queue.length = 0;
@@ -166,11 +169,27 @@ export class ChunkManager {
     const { chunkSize } = this.config;
     const ccx = Math.floor(position.x / chunkSize);
     const ccz = Math.floor(position.z / chunkSize);
-    const key = `${ccx},${ccz}`;
+    // Where you'll be in a few seconds, going the way you're going: the
+    // land there is made ready ahead of you, a chunk or two at a time as
+    // you go, rather than all at once as you come into it.
+    const now = performance.now();
+    if (this.lastPos) {
+      const dt = Math.max(1e-3, (now - this.lastPos.t) / 1000);
+      const k = Math.min(1, dt * 2); // (smoothed over half a second or so)
+      this.velocity.x += ((position.x - this.lastPos.x) / dt - this.velocity.x) * k;
+      this.velocity.z += ((position.z - this.lastPos.z) / dt - this.velocity.z) * k;
+    }
+    this.lastPos = { x: position.x, z: position.z, t: now };
+    let ahead = LOOKAHEAD;
+    const reach = Math.hypot(this.velocity.x, this.velocity.z) * ahead;
+    if (reach > chunkSize * 2.5) ahead *= (chunkSize * 2.5) / reach; // (flying fast: no further than a few chunks on)
+    const pcx = Math.floor((position.x + this.velocity.x * ahead) / chunkSize);
+    const pcz = Math.floor((position.z + this.velocity.z * ahead) / chunkSize);
+    const key = `${ccx},${ccz}|${pcx},${pcz}`;
     if (key !== this.centerKey) {
       this.centerKey = key;
       this.centre = [ccx, ccz];
-      this.#refreshWanted(ccx, ccz);
+      this.#refreshWanted(ccx, ccz, pcx, pcz);
       for (const chunk of this.chunks.values()) this.#applyVisibility(chunk);
     }
     if (this.queue.length && forward) this.#prioritise(position, forward);
@@ -195,20 +214,23 @@ export class ChunkManager {
     this.queue.sort((a, b) => b.priority - a.priority);
   }
 
-  #refreshWanted(ccx, ccz) {
+  #refreshWanted(ccx, ccz, pcx = ccx, pcz = ccz) {
     const { viewDistance } = this.config;
     const wanted = this.wanted;
     wanted.clear();
     this.queue.length = 0;
 
-    for (let dz = -viewDistance; dz <= viewDistance; dz++) {
-      for (let dx = -viewDistance; dx <= viewDistance; dx++) {
+    // (Round where you are, and round where you're going: each chunk at the
+    // detail the nearer of the two wants.)
+    const x0 = Math.min(ccx, pcx) - viewDistance, x1 = Math.max(ccx, pcx) + viewDistance;
+    const z0 = Math.min(ccz, pcz) - viewDistance, z1 = Math.max(ccz, pcz) + viewDistance;
+    for (let cz = z0; cz <= z1; cz++) {
+      for (let cx = x0; cx <= x1; cx++) {
+        const dx = cx - ccx, dz = cz - ccz, px = cx - pcx, pz = cz - pcz;
         const distance = Math.sqrt(dx * dx + dz * dz);
-        if (distance > viewDistance + 0.5) continue;
-        const cx = ccx + dx;
-        const cz = ccz + dz;
+        if (distance > viewDistance + 0.5 && Math.sqrt(px * px + pz * pz) > viewDistance + 0.5) continue;
         const key = `${cx},${cz}`;
-        const lod = this.lodFor(Math.max(Math.abs(dx), Math.abs(dz)));
+        const lod = Math.min(this.lodFor(Math.max(Math.abs(dx), Math.abs(dz))), this.lodFor(Math.max(Math.abs(px), Math.abs(pz))));
         wanted.set(key, lod);
 
         const existing = this.chunks.get(key);
@@ -239,22 +261,44 @@ export class ChunkManager {
     const deadline = performance.now() + this.config.chunkBuildBudgetMs * (backlog ? 2.5 : 1) * this.budgetScale;
     this.#dispatch();
     // Put together what's ready (at least one, so progress is guaranteed).
-    let built = 0;
-    while (built === 0 || performance.now() < deadline) {
-      let job = this.ready.shift();
-      if (!job) {
-        // Without workers, build one right here.
-        const k = this.#nextLocal();
-        if (k < 0) return;
-        job = this.queue.splice(k, 1)[0];
+    let steps = 0;
+    while (steps === 0 || performance.now() < deadline) {
+      if (!this.current) {
+        let job = this.ready.shift();
+        if (!job) {
+          // Without workers, build one right here.
+          const k = this.#nextLocal();
+          if (k < 0) return;
+          job = this.queue.splice(k, 1)[0];
+        }
+        if (this.#stale(job)) continue;
+        this.current = { job, steps: this.#steps(job) };
       }
-      if (this.#stale(job)) continue;
+      // (One part way through: carried on with, unless it's gone out of range meanwhile.)
+      const { job } = this.current;
+      if (!this.wanted.has(job.key)) {
+        this.#abort(job);
+        this.current = null;
+        continue;
+      }
       const t = performance.now();
-      this.#build(job);
+      const { done } = this.current.steps.next();
       this.stats.ms += performance.now() - t;
-      this.stats.builds++;
-      built++;
+      steps++;
+      if (done) {
+        this.current = null;
+        this.stats.builds++;
+      }
     }
+  }
+
+  // A chunk part way put together, no longer wanted: what was made for it thrown away.
+  #abort(job) {
+    const p = job.partial;
+    if (!p) return;
+    job.partial = null;
+    if (!p.sameMesh) p.chunk.mesh.geometry.dispose();
+    for (const { layer, object } of p.chunk.layerObjects) if (!p.kept.has(object)) layer.dispose?.(object);
   }
 
   /**
@@ -308,6 +352,7 @@ export class ChunkManager {
       wantFarTrees: job.lod > config.treeMaxLod && job.lod <= (config.farTreeMaxLod ?? -1),
       wantRivers: true,
       wantReeds: job.lod <= 1,
+      wantUnderstory: job.lod === 0,
     });
   }
 
@@ -369,7 +414,14 @@ export class ChunkManager {
     return false;
   }
 
-  #build({ key, cx, cz, lod, prepared = null }) {
+  /**
+   * Puts a chunk together, a step at a time (its ground, then each layer:
+   * trees, grass, rocks...), so a chunk with a lot on it is spread over a
+   * few frames instead of making one of them long. Its old self (at
+   * another level of detail) stays till it's all there (see #processQueue).
+   */
+  *#steps(job) {
+    const { key, cx, cz, lod, prepared = null } = job;
     const { chunkSize, lods } = this.config;
     const resolution = lods[lod].resolution;
     // A chunk changing detail level keeps whatever wouldn't change: its
@@ -408,6 +460,8 @@ export class ChunkManager {
       reuseKeys: new Map(), // layer -> its reuse key for this build
     };
     const kept = new Set(); // objects handed over from `previous`
+    job.partial = { chunk, kept, sameMesh }; // (to be thrown away, if it's no longer wanted part way: see #abort)
+    yield;
 
     for (const layer of this.layers) {
       const context = { chunk, cx, cz, lod, resolution, heights, groundHeightAt, generator: this.generator, config: this.config, prepared };
@@ -426,7 +480,10 @@ export class ChunkManager {
         group.add(object);
         chunk.layerObjects.push({ layer, object });
       }
+      // (A pause after each layer that took real work.)
+      if (object && !kept.has(object)) yield;
     }
+    job.partial = null;
 
     // What in it can receive shadows, and the box it all lies in (see setShadowVolume).
     chunk.shadowMeshes = [];
@@ -526,71 +583,98 @@ export class ChunkManager {
     }
     const C = this.config.chunkSize, ex = eye.x, ey = eye.y + 0.5, ez = eye.z; // (a little high: a step up never shows what was hidden)
     const ccx = Math.floor(ex / C), ccz = Math.floor(ez / C);
+    // (Worked in arrays kept from one time to the next: nothing new made
+    // each time, so no pauses to clear away the old.)
+    const sc = (this.cullScratch ??= { n: 0, far: new Float64Array(0), a0: new Float64Array(0), a1: new Float64Array(0), slope: new Float64Array(0), order: [], targets: [] });
+    const grow = (need) => {
+      if (sc.far.length >= need) return;
+      const size = Math.max(need, sc.far.length * 2, 1024);
+      for (const k of ['far', 'a0', 'a1', 'slope']) sc[k] = new Float64Array(size);
+    };
+    // The box (x0, z0)-(x1, z1) seen from the eye: its nearest and farthest
+    // distances and the ways it spans (left in `box`).
+    const box = (this.cullBox ??= { near: 0, far: 0, a0: 0, a1: 0 });
     const span = (x0, z0, x1, z1) => {
-      // Distances to the box's nearest and farthest points, and the ways it spans.
       const dx = Math.max(x0 - ex, 0, ex - x1), dz = Math.max(z0 - ez, 0, ez - z1);
       const fx = Math.max(Math.abs(x0 - ex), Math.abs(x1 - ex)), fz = Math.max(Math.abs(z0 - ez), Math.abs(z1 - ez));
-      const near = Math.hypot(dx, dz), far = Math.hypot(fx, fz);
+      box.near = Math.sqrt(dx * dx + dz * dz);
+      box.far = Math.sqrt(fx * fx + fz * fz);
       const mid = Math.atan2((z0 + z1) / 2 - ez, (x0 + x1) / 2 - ex);
       let lo = 0, hi = 0;
-      for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
+      for (let c = 0; c < 4; c++) {
+        const x = c & 1 ? x1 : x0, z = c & 2 ? z1 : z0;
         let d = Math.atan2(z - ez, x - ex) - mid;
-        d = Math.atan2(Math.sin(d), Math.cos(d));
+        if (d > Math.PI) d -= Math.PI * 2;
+        else if (d < -Math.PI) d += Math.PI * 2;
         if (d < lo) lo = d;
         if (d > hi) hi = d;
       }
-      return { near, far, a0: mid + lo, a1: mid + hi };
+      box.a0 = mid + lo;
+      box.a1 = mid + hi;
     };
-    // The land that blocks the view: patches of the chunks near (finer
-    // nearer), each its lowest point.
-    const occluders = [], targets = [];
+    let n = 0;
+    const addOccluder = (x0, z0, x1, z1, low) => {
+      if (!Number.isFinite(low)) return;
+      span(x0, z0, x1, z1);
+      if (box.near < 20) return; // (right by you: it spans too much to tell)
+      grow(n + 1);
+      sc.far[n] = box.far;
+      sc.a0[n] = box.a0;
+      sc.a1[n] = box.a1;
+      // (The least it rises over the line of sight, anywhere across it.)
+      sc.slope[n] = (low - ey) / (low > ey ? box.far : box.near);
+      n++;
+    };
+    const targets = sc.targets;
+    targets.length = 0;
     for (const chunk of this.chunks.values()) {
       const x0 = chunk.cx * C, z0 = chunk.cz * C;
       const mins = chunk.surface?.occluder;
       if (mins) {
+        // The land that blocks the view: each patch its lowest point (finer near).
         const S = Math.round(Math.sqrt(mins.length));
         if (Math.max(Math.abs(chunk.cx - ccx), Math.abs(chunk.cz - ccz)) <= 4) {
           const P = C / S;
-          for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) occluders.push([x0 + i * P, z0 + j * P, x0 + (i + 1) * P, z0 + (j + 1) * P, mins[j * S + i]]);
+          for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) addOccluder(x0 + i * P, z0 + j * P, x0 + (i + 1) * P, z0 + (j + 1) * P, mins[j * S + i]);
         } else {
-          let low = Infinity;
-          for (const h of mins) low = Math.min(low, h);
-          occluders.push([x0, z0, x0 + C, z0 + C, low]);
+          chunk.occLow ??= mins.reduce((a, b) => Math.min(a, b), Infinity);
+          addOccluder(x0, z0, x0 + C, z0 + C, chunk.occLow);
         }
       }
-      const s = span(x0, z0, x0 + C, z0 + C);
-      if (s.near < 250) {
+      span(x0, z0, x0 + C, z0 + C);
+      if (box.near < 250) {
         if (!chunk.group.visible) chunk.group.visible = true;
         continue;
       }
       const top = chunk.top ?? Infinity;
-      targets.push({ chunk, near: s.near, a0: s.a0, a1: s.a1, slope: (top - ey) / (top > ey ? s.near : s.far) });
+      const t = (chunk.cullTarget ??= {});
+      t.chunk = chunk;
+      t.near = box.near;
+      t.a0 = box.a0;
+      t.a1 = box.a1;
+      t.slope = (top - ey) / (top > ey ? box.near : box.far);
+      targets.push(t);
     }
-    const occ = [];
-    for (const [x0, z0, x1, z1, low] of occluders) {
-      if (!Number.isFinite(low)) continue;
-      const s = span(x0, z0, x1, z1);
-      if (s.near < 20) continue; // (right by you: it spans too much to tell)
-      // (The least it rises over the line of sight, anywhere across it.)
-      occ.push({ far: s.far, a0: s.a0, a1: s.a1, slope: (low - ey) / (low > ey ? s.far : s.near) });
-    }
-    occ.sort((a, b) => a.far - b.far);
+    const order = sc.order;
+    order.length = n;
+    for (let i = 0; i < n; i++) order[i] = i;
+    const far = sc.far;
+    order.sort((a, b) => far[a] - far[b]);
     targets.sort((a, b) => a.near - b.near);
-    const N = 720, step = (Math.PI * 2) / N, sky = (this.sky ??= new Float32Array(N));
+    const N = 720, step = (Math.PI * 2) / N, sky = (this.sky ??= new Float64Array(N));
     sky.fill(-Infinity);
-    const bin = (b) => ((b % N) + N) % N;
     let k = 0;
     for (const t of targets) {
       // (The skyline from the land nearer than it: the ways each patch wholly covers.)
-      for (; k < occ.length && occ[k].far <= t.near; k++) {
-        const o = occ[k];
-        for (let b = Math.ceil(o.a0 / step), end = Math.floor(o.a1 / step); b < end; b++) {
-          const i = bin(b);
-          if (o.slope > sky[i]) sky[i] = o.slope;
+      for (; k < n && far[order[k]] <= t.near; k++) {
+        const o = order[k], slope = sc.slope[o];
+        for (let b = Math.ceil(sc.a0[o] / step), end = Math.floor(sc.a1[o] / step); b < end; b++) {
+          const i = ((b % N) + N) % N;
+          if (slope > sky[i]) sky[i] = slope;
         }
       }
       let hidden = true;
-      for (let b = Math.floor(t.a0 / step), end = Math.floor(t.a1 / step); b <= end && hidden; b++) if (!(sky[bin(b)] > t.slope)) hidden = false;
+      for (let b = Math.floor(t.a0 / step), end = Math.floor(t.a1 / step); b <= end && hidden; b++) if (!(sky[((b % N) + N) % N] > t.slope)) hidden = false;
       if (t.chunk.group.visible === hidden) t.chunk.group.visible = !hidden;
       if (hidden) this.culled++;
     }

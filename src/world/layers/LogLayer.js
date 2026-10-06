@@ -2,6 +2,7 @@ import { BufferAttribute, Color, CylinderGeometry, Group, InstancedMesh, Matrix4
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2, mulberry32 } from '../../noise/random.js';
 import { seasonalWood } from '../../render/Seasons.js';
+import { placeLogs } from '../decorPlacement.js';
 
 const BARK = [0x5a4232, 0x4e3a2c, 0x654a36];
 const WOOD = new Color(0xb89468); // the cut or broken end
@@ -65,7 +66,7 @@ function stump(seed) {
   return paint(g, (cy, n, rand) => (n[1] > 0.9 && cy > 0.7 ? WOOD : cy < 0.25 && rand() < 0.4 ? moss(rand) : bark(rand)), seed);
 }
 
-const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), s = new Vector3(), e = new Euler(0, 0, 0, 'YXZ');
+const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), s = new Vector3(), e = new Euler(0, 0, 0, 'YXZ'), yAxis = new Vector3(0, 1, 0);
 
 /**
  * Fallen logs and old stumps on the forest floor (the woods of the green
@@ -113,60 +114,18 @@ export function createLogLayer(config) {
       return top;
     },
 
-    build({ cx, cz, lod, generator, groundHeightAt }) {
+    build({ cx, cz, lod, generator, groundHeightAt, prepared }) {
       if (lod > 1) return null;
-      const size = config.chunkSize, sea = config.seaLevel;
-      const x0 = cx * size, z0 = cz * size;
-      const G = 9, n = Math.round(size / G), seed = generator.seed ^ 0x106;
-      const placed = shapes.map(() => []), solid = [];
-      for (let j = 0; j < n; j++) {
-        for (let i = 0; i < n; i++) {
-          const gi = cx * n + i, gj = cz * n + j;
-          const keep = hash2(gi, gj, seed);
-          if (keep > 0.2) continue;
-          const lx = (i + 0.15 + 0.7 * hash2(gi, gj, seed + 1)) * G, lz = (j + 0.15 + 0.7 * hash2(gi, gj, seed + 2)) * G;
-          const wx = x0 + lx, wz = z0 + lz;
-          const w = generator.getBiomeWeights(wx, wz, {});
-          const woods = w.temperate * generator.getForestDensity(wx, wz) * (1 - 0.8 * smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) + w.blackHills * 0.6 + w.jungle * 0.9 + w.wetland * 0.3 + w.pine * 0.8;
-          if (keep > 0.2 * smoothstep(0.35, 0.7, woods)) continue;
-          const y = groundHeightAt(lx, lz);
-          if (!(y > sea + 1.2) || y > 150) continue;
-          if (generator.rivers.at(wx, wz, 2)) continue;
-          if (generator.caves.field.nearEntrance(wx, wz, 3)) continue;
-          // Never on a cliff or a steep slope (judged from the land itself,
-          // not this mesh, which far off smooths a cliff into a bank).
-          const gap = 1.5;
-          const gx = generator.getHeight(wx + gap, wz) - generator.getHeight(wx - gap, wz), gz = generator.getHeight(wx, wz + gap) - generator.getHeight(wx, wz - gap);
-          if (Math.hypot(gx, gz) / (2 * gap) > 0.45) continue;
-          const isStump = hash2(gi, gj, seed + 3) < 0.4;
-          const a = hash2(gi, gj, seed + 4) * Math.PI * 2;
-          if (isStump) {
-            const r = 0.35 + 0.25 * hash2(gi, gj, seed + 5);
-            const k = 1;
-            p.set(lx, y - 0.1, lz);
-            q.setFromAxisAngle(new Vector3(0, 1, 0), a);
-            const sy = (0.6 + 0.8 * hash2(gi, gj, seed + 7)) * r / 0.5;
-            s.set(r / 0.5, sy, r / 0.5);
-            placed[k].push(m4.compose(p, q, s).clone());
-            solid.push(1, wx, y - 0.1 + 0.8 * sy, wz, 0, r, 0, 0);
-            continue;
-          }
-          // A log lies along the ground, following its slope.
-          const len = 3 + 4.5 * hash2(gi, gj, seed + 5), r = 0.22 + 0.2 * hash2(gi, gj, seed + 6);
-          const ca = Math.cos(a), sa = Math.sin(a);
-          const ex = lx + ca * len * 0.5, ez = lz - sa * len * 0.5, bx = lx - ca * len * 0.5, bz = lz + sa * len * 0.5;
-          const inside = (x, z) => x >= 0 && z >= 0 && x < size && z < size;
-          if (!inside(ex, ez) || !inside(bx, bz)) continue;
-          const ya = groundHeightAt(ex, ez), yb = groundHeightAt(bx, bz);
-          if (!(ya > sea + 1) || !(yb > sea + 1) || Math.abs(ya - yb) > len * 0.45) continue;
-          const mid = Math.min(y, (ya + yb) / 2);
-          e.set(0, a, Math.atan2(ya - yb, len));
-          q.setFromEuler(e);
-          p.set(lx, mid - r * 0.35, lz);
-          s.set(len, r * 2, r * 2);
-          placed[0].push(m4.compose(p, q, s).clone());
-          solid.push(0, wx, mid - r * 0.35, wz, len, r, a, (ya - yb) / len);
-        }
+      // (Where they lie: worked out by a chunk worker; here only if it wasn't.)
+      const found = prepared && prepared.logs !== undefined ? prepared.logs : placeLogs(generator, config, cx, cz, groundHeightAt);
+      const placed = shapes.map(() => []), solid = found?.solid ?? [];
+      const P = found?.pieces ?? [];
+      for (let k = 0; k < P.length; k += 9) {
+        p.set(P[k + 1], P[k + 2], P[k + 3]);
+        if (P[k] === 1) q.setFromAxisAngle(yAxis, P[k + 4]);
+        else q.setFromEuler(e.set(0, P[k + 4], P[k + 5]));
+        s.set(P[k + 6], P[k + 7], P[k + 8]);
+        placed[P[k]].push(m4.compose(p, q, s).clone());
       }
       solids.set(`${cx},${cz}`, solid);
       if (!placed.some((l) => l.length)) return null;

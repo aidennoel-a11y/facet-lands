@@ -1,5 +1,5 @@
 import { BufferAttribute, BufferGeometry, Color, ConeGeometry, DoubleSide, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
-import { hash2 } from '../../noise/random.js';
+import { placeFlowers } from '../decorPlacement.js';
 import { seasonUniforms } from '../../render/Seasons.js';
 import { addWind } from '../../render/wind.js';
 
@@ -66,45 +66,13 @@ export function createFlowerLayer(config) {
 
     reuseKey: ({ lod }) => (lod > config.grassMaxLod ? 'none' : 'near'),
 
-    build({ cx, cz, lod, generator, groundHeightAt }) {
+    build({ cx, cz, lod, generator, groundHeightAt, prepared }) {
       if (lod > config.grassMaxLod || !generator.getMeadow) return null;
-      const size = config.chunkSize, sea = config.seaLevel;
-      const x0 = cx * size, z0 = cz * size;
-      // (A quick look first: any meadow here at all?)
-      let any = 0;
-      for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, generator.getMeadow(x0 + (i * size) / 4, z0 + (j * size) / 4));
-      if (any < 0.05) return null;
-      const G = 1.0, n = Math.round(size / G), seed = generator.seed ^ 0xf10e;
-      const surface = { normalY: 1 };
+      // (Where they go: worked out by a chunk worker; here only if it wasn't.)
+      const data = prepared && prepared.flowers !== undefined ? prepared.flowers : placeFlowers(generator, config, cx, cz, groundHeightAt, COLOURS.length);
+      if (!data) return null;
       const list = [];
-      let cell = -1, meadow = 0, stream = false;
-      for (let j = 0; j < n; j++) {
-        for (let i = 0; i < n; i++) {
-          const gi = cx * n + i, gj = cz * n + j;
-          const keep = hash2(gi, gj, seed);
-          if (keep > 0.7) continue;
-          const lx = (i + hash2(gi, gj, seed + 1)) * G, lz = (j + hash2(gi, gj, seed + 2)) * G;
-          // (The meadow looked up once per 8 m patch.)
-          const c = Math.floor(lx / 8) * 64 + Math.floor(lz / 8);
-          if (c !== cell) {
-            cell = c;
-            meadow = generator.getMeadow(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4);
-            // (And whether a stream's anywhere near the patch: then each
-            // flower is checked against it.)
-            stream = meadow > 0.05 && !!generator.rivers?.at(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4, 8);
-          }
-          if (keep > 0.7 * meadow) continue;
-          const y = groundHeightAt(lx, lz, surface);
-          if (!(y > sea + 1.5) || surface.normalY < 0.85 || y > 150) continue;
-          if (stream && generator.rivers.at(x0 + lx, z0 + lz, 1.5)) continue; // (not in a stream, nor right on its bank)
-          if (generator.onLiveLava?.(x0 + lx, z0 + lz)) continue; // (nor on a lava flow)
-          // A few colours to a patch.
-          const tone = generator.meadowNoise.noise2D((x0 + lx) * 0.03, (z0 + lz) * 0.03) * 0.5 + 0.5;
-          const pick = Math.floor((tone * 3 + hash2(gi, gj, seed + 3) * 1.6) % COLOURS.length);
-          list.push([lx, y, lz, 0.7 + 0.7 * hash2(gi, gj, seed + 4), hash2(gi, gj, seed + 5), COLOURS[pick], surface.normalX ?? 0, surface.normalZ ?? 0]);
-        }
-      }
-      if (!list.length) return null;
+      for (let k = 0; k < data.length; k += 8) list.push([data[k], data[k + 1], data[k + 2], data[k + 3], data[k + 4], COLOURS[data[k + 5]], data[k + 6], data[k + 7]]);
       const stemMesh = new InstancedMesh(stems, stemMaterial, list.length);
       const headMesh = new InstancedMesh(heads, headMaterial, list.length);
       list.forEach(([x, y, z, sc, r, colour, nx, nz], k) => {

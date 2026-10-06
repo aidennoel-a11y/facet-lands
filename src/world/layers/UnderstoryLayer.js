@@ -1,6 +1,7 @@
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../../noise/random.js';
 import { addWind } from '../../render/wind.js';
+import { placeUnderstory } from '../decorPlacement.js';
 
 /** Collects triangles with a colour per vertex into a geometry. */
 function build(tris) {
@@ -84,46 +85,15 @@ export function createUnderstoryLayer(config) {
 
     reuseKey: ({ lod }) => (lod > 0 ? 'none' : 'near'),
 
-    build({ cx, cz, lod, generator, groundHeightAt }) {
+    build({ cx, cz, lod, generator, groundHeightAt, prepared }) {
       if (lod > 0) return null;
-      const size = config.chunkSize, sea = config.seaLevel;
-      const x0 = cx * size, z0 = cz * size;
-      // (A quick look first: any of the forests that have an understory?)
-      const cover = (x, z) => {
-        const w = generator.getBiomeWeights(x, z, {});
-        return [w.jungle, w.pine * 0.12];
-      };
-      let any = 0;
-      for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, ...cover(x0 + (i * size) / 4, z0 + (j * size) / 4));
-      if (any < 0.02) return null;
-      const G = 2.2, n = Math.round(size / G), seed = generator.seed ^ 0x0d57;
-      const surface = { normalY: 1 };
+      // (Where they grow: worked out by a chunk worker; here only if it wasn't.)
+      const data = prepared && prepared.understory !== undefined ? prepared.understory : placeUnderstory(generator, config, cx, cz, groundHeightAt);
+      if (!data) return null;
       const placed = PLANTS.map(() => []);
-      let cell = -1, here = [0, 0, 0];
-      for (let j = 0; j < n; j++) {
-        for (let i = 0; i < n; i++) {
-          const gi = cx * n + i, gj = cz * n + j;
-          const keep = hash2(gi, gj, seed);
-          if (keep > 0.95) continue;
-          const lx = (i + hash2(gi, gj, seed + 1)) * G, lz = (j + hash2(gi, gj, seed + 2)) * G;
-          // (The forests looked up once per 8 m patch.)
-          const c = Math.floor(lx / 8) * 64 + Math.floor(lz / 8);
-          if (c !== cell) {
-            cell = c;
-            here = cover(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4);
-          }
-          const r = hash2(gi, gj, seed + 3);
-          // Jungle: all three kinds; elsewhere, ferns.
-          // (The jungle floor crowded with plants: hardly a bare patch.)
-          const jungle = here[0] * 0.92, ferns = here[1];
-          if (keep > Math.max(jungle, ferns * 0.6)) continue;
-          const kind = keep < jungle ? Math.floor(r * 3) : 2;
-          const y = groundHeightAt(lx, lz, surface);
-          if (!(y > sea + 1) || surface.normalY < 0.7) continue;
-          if (generator.rivers?.at(x0 + lx, z0 + lz, 1)) continue;
-          const pl = PLANTS[kind];
-          placed[kind].push([lx, y - 0.05, lz, 0.8 + 0.8 * hash2(gi, gj, seed + 4), hash2(gi, gj, seed + 5), pl.colors[Math.floor(hash2(gi, gj, seed + 6) * pl.colors.length)]]);
-        }
+      for (let k = 0; k < data.length; k += 7) {
+        const pl = PLANTS[data[k]];
+        placed[data[k]].push([data[k + 1], data[k + 2], data[k + 3], data[k + 4], data[k + 5], pl.colors[Math.floor(data[k + 6] * pl.colors.length)]]);
       }
       if (!placed.some((l) => l.length)) return null;
       const meshes = placed.map((list, k) => {
