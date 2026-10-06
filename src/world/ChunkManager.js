@@ -456,7 +456,9 @@ export class ChunkManager {
       }
     }
     const range = hi - lo;
-    return steep > 0.7 && range > 40 ? 2 : steep > 0.35 && range > 15 ? 1 : 0;
+    // (Tuned over the world: badlands, mesas, cliffs and the high mountains, not
+    // rolling hills; some one chunk in seven, and one in fourteen of ordinary country.)
+    return range > 70 || (steep > 0.8 && range > 45) ? 2 : steep > 0.55 && range > 25 ? 1 : 0;
   }
 
   /**
