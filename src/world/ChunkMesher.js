@@ -326,7 +326,10 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
       let lo = Infinity, hi = -Infinity;
       for (let k = Math.max(0, t - 4); k <= Math.min(resolution, t + 5); k++) (lo = Math.min(lo, ys[k])), (hi = Math.max(hi, ys[k]));
       // (Plus a little for the bumps between the points of a coarse mesh.)
-      return Math.min(skirtDepth, 0.3 + (hi - lo) * 1.1 + (chunkSize / resolution) * 0.06);
+      // (Far off, deeper if need be: a chunk there may be finer than its
+      // neighbour, over rugged land (see ChunkManager.#resolutionFor), and
+      // there are no caves under it to wall off.)
+      return Math.min(resolution >= detailResolution ? skirtDepth : 40, 0.3 + (hi - lo) * 1.1 + (chunkSize / resolution) * 0.06);
     };
     for (let t = 0; t < resolution; t++) {
       const depth = depthAt(t);

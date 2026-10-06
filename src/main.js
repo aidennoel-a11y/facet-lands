@@ -1749,6 +1749,7 @@ for (const [key, id] of [['weather', 'weather'], ['season', 'season']]) {
 if (TEST.has('hide')) window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP', key: 'p' }));
 // (For comparing: everything drawn, the land behind the hills too.)
 if (TEST.has('noocclude')) chunks.occlusion = false;
+if (TEST.has('norugged')) chunks.noRugged = true; // (rugged land far off no finer than the rest)
 // (For testing it: the loading screen, as a world starts.)
 if (TEST.has('loadscreen')) startLoading('Test world');
 

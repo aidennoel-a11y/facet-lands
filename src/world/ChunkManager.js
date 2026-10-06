@@ -87,6 +87,7 @@ export class ChunkManager {
     // together: more while a world's loading, behind the loading screen.)
     this.budgetScale = 1;
     this.velocity = { x: 0, z: 0 }; // (how you're moving, for the land ahead: see update)
+    this.rugged = new Map(); // (see rebuildAll)
   }
 
   /** Changes what's drawn; see `visibility`. Cheap to call every frame. */
@@ -138,6 +139,7 @@ export class ChunkManager {
 
   rebuildAll() {
     this.scouted = false;
+    this.rugged = new Map(); // "cx,cz" -> how rugged its land is (see #rugged)
     if (this.current) (this.#abort(this.current.job), (this.current = null));
     for (const chunk of this.chunks.values()) this.#unload(chunk);
     this.chunks.clear();
@@ -232,11 +234,12 @@ export class ChunkManager {
         const key = `${cx},${cz}`;
         const lod = Math.min(this.lodFor(Math.max(Math.abs(dx), Math.abs(dz))), this.lodFor(Math.max(Math.abs(px), Math.abs(pz))));
         wanted.set(key, lod);
+        const resolution = this.#resolutionFor(key, lod);
 
         const existing = this.chunks.get(key);
         const pending = this.inFlight.get(key);
-        if ((!existing || existing.lod !== lod) && !(pending && pending.lod === lod)) {
-          this.queue.push({ key, cx, cz, lod, distance });
+        if ((!existing || existing.lod !== lod || existing.resolution !== resolution) && !(pending && pending.lod === lod && pending.resolution === resolution)) {
+          this.queue.push({ key, cx, cz, lod, resolution, distance });
         }
       }
     }
@@ -335,7 +338,7 @@ export class ChunkManager {
     job.id = this.nextId++;
     job.epoch = this.epoch;
     job.worker = worker;
-    job.resolution = config.lods[job.lod].resolution;
+    job.resolution ??= config.lods[job.lod].resolution;
     worker.busy++;
     this.inFlight.set(job.key, job);
     worker.postMessage({
@@ -407,11 +410,53 @@ export class ChunkManager {
   #stale(job) {
     const lod = this.wanted.get(job.key);
     if (lod === undefined) return true;
-    if (this.chunks.get(job.key)?.lod === lod) return true;
-    if (lod === job.lod) return false;
-    if (job.prepared && this.config.lods[lod].resolution !== job.resolution) return true;
+    const resolution = this.#resolutionFor(job.key, lod), built = this.chunks.get(job.key);
+    if (built?.lod === lod && built.resolution === resolution) return true;
+    if (lod === job.lod && resolution === job.resolution) return false;
+    if (job.prepared && resolution !== job.resolution) return true;
     job.lod = lod;
+    job.resolution = resolution;
     return false;
+  }
+
+  /**
+   * The ground's detail for a chunk at level `lod`: the level's own, or,
+   * where the land's rugged (mountains, mesas' walls, sea cliffs, the
+   * badlands: what's seen from far off), finer, up to the level used out
+   * to 640 m. (Only the ground: what stands on it goes by `lod`.) See #rugged.
+   */
+  #resolutionFor(key, lod) {
+    const base = this.config.lods[lod].resolution;
+    const level = this.noRugged ? 0 : this.rugged.get(key);
+    if (!level) return base;
+    const finest = this.config.lods[Math.min(2, this.config.lods.length - 1)].resolution;
+    return Math.max(base, Math.min(finest, base * (level === 2 ? 4 : 2)));
+  }
+
+  /**
+   * How rugged a chunk's land is, from its ground as built: 2 steep and
+   * high (mountainsides, cliffs), 1 broken (badlands, crags), 0 plain or
+   * rolling. Its slopes are looked at some 32 m apart, whatever its
+   * detail, so it comes out the same however it was built.
+   */
+  #rugged(heights, resolution) {
+    const { gridX, gridY, gridZ, size: n } = heights;
+    const cell = this.config.chunkSize / resolution, k = Math.max(1, Math.round(32 / cell));
+    let lo = Infinity, hi = -Infinity, steep = 0;
+    for (let j = 0; j < n; j += k) {
+      for (let i = 0; i < n; i += k) {
+        const a = j * n + i, y = gridY[a];
+        lo = Math.min(lo, y);
+        hi = Math.max(hi, y);
+        for (const b of [i + k < n ? a + k : -1, j + k < n ? a + k * n : -1]) {
+          if (b < 0) continue;
+          const run = Math.hypot(gridX[b] - gridX[a], gridZ[b] - gridZ[a]) || 1;
+          steep = Math.max(steep, Math.abs(gridY[b] - y) / run);
+        }
+      }
+    }
+    const range = hi - lo;
+    return steep > 0.7 && range > 40 ? 2 : steep > 0.35 && range > 15 ? 1 : 0;
   }
 
   /**
@@ -423,7 +468,7 @@ export class ChunkManager {
   *#steps(job) {
     const { key, cx, cz, lod, prepared = null } = job;
     const { chunkSize, lods } = this.config;
-    const resolution = lods[lod].resolution;
+    const resolution = job.resolution ?? lods[lod].resolution;
     // A chunk changing detail level keeps whatever wouldn't change: its
     // terrain if the resolution is the same, and any layer whose output
     // depends on nothing that changed (see layer.reuseKey).
@@ -510,6 +555,12 @@ export class ChunkManager {
 
     this.chunks.set(key, chunk);
     if (merged) this.#tileOf(chunk, true);
+    // (Rugged land, seen for the first time: wanted in finer detail, now and from now on.)
+    if (!this.rugged.has(key)) {
+      this.rugged.set(key, this.#rugged(heights, resolution));
+      const finer = this.#resolutionFor(key, lod);
+      if (finer > resolution && this.wanted.get(key) === lod) this.queue.push({ key, cx, cz, lod, resolution: finer, distance: Math.hypot(cx - (this.centre?.[0] ?? cx), cz - (this.centre?.[1] ?? cz)) });
+    }
     this.#applyVisibility(chunk);
     this.root.add(group);
     this.triangleCount += triangles;
