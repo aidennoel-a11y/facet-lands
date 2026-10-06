@@ -109,7 +109,8 @@ await a.evaluate(() => { const p = window.world.camera.position; window.world.ga
 await b.waitForTimeout(6000); // (sent on the host's next frame: slow, two browsers drawing on one computer)
 ok('the guest sees the host\'s arrow fly', (await b.evaluate(() => window.shots)) > 0);
 // What the host holds, and swinging it: the guest sees it in their hand.
-await a.evaluate(() => { window.world.controls.mode = 'walk'; const g = window.world.game; g.inventory.slots[g.hotbar.index] = { id: 'axe', count: 1, dur: 50 }; g.inventory.changed?.(); });
+console.log('host before the axe', await a.evaluate(() => { const g = window.world.game; return { alive: g.survival.alive, cause: g.survival.cause, mode: window.world.controls.mode }; }));
+await a.evaluate(() => { window.world.controls.mode = 'walk'; const g = window.world.game; g.survival.alive = true; g.survival.health = 100; g.inventory.slots[g.hotbar.index] = { id: 'axe', count: 1, dur: 50 }; g.inventory.changed?.(); });
 await b.waitForTimeout(3000);
 const held = await b.evaluate(() => { const r = [...window.world.mp.others.values()][0]; return { index: r.heldIndex, id: window.world.mp.items.ids[r.heldIndex - 1], inHand: r.hands[1].children.length }; });
 ok('the guest sees the axe in the host\'s hand', held.id === 'axe' && held.inHand === 1, JSON.stringify(held));
