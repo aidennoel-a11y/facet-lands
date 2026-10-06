@@ -1448,8 +1448,8 @@ loadScreen.hidden = true;
 loadScreen.innerHTML = `<div class="ls-card"><h2 class="ls-head">Building the land</h2><p class="ls-name"></p><div class="ls-bar"><span></span></div><p class="ls-note">Getting ready…</p></div>`;
 document.body.append(loadScreen);
 let loading = null; // { since, drawn }
-function startLoading(name) {
-  loading = { since: performance.now(), drawn: 0 };
+function startLoading(name, waiting = false) {
+  loading = { since: performance.now(), drawn: 0, waiting }; // (waiting: the world's still to be set up)
   loadScreen.querySelector('.ls-name').textContent = name ?? '';
   loadScreen.querySelector('.ls-bar span').style.width = '0%';
   loadScreen.classList.remove('ls-done');
@@ -1457,6 +1457,7 @@ function startLoading(name) {
   chunks.budgetScale = 8; // (no need to keep it smooth: nothing's moving)
 }
 function loadingFrame(now) {
+  if (loading.waiting) return;
   camera.getWorldDirection(dir);
   chunks.update(camera.position, mp.roomTime() ?? now / 1000, dir);
   // (Online: what the others do comes in meanwhile, and the time of day.)
@@ -1470,6 +1471,21 @@ function loadingFrame(now) {
   const { done, total } = chunks.readyNear(camera.position, RINGS);
   loadScreen.querySelector('.ls-bar span').style.width = `${Math.round((100 * done) / total)}%`;
   const waited = (now - loading.since) / 1000;
+  // (The rivers and caves round you worked out here too, for the water and
+  // the ground underfoot: done now, behind this screen, rather than as a
+  // stall the moment you come in. Said first, then done the frame after.)
+  if (done >= 1 && loading.warm === undefined) {
+    loading.warm = 0;
+    loadScreen.querySelector('.ls-note').textContent = 'Laying out the rivers…';
+    return;
+  }
+  if (loading.warm === 0) {
+    loading.warm = 1;
+    const p = camera.position;
+    groundAt(p.x, p.y, p.z);
+    waterAt(p.x, p.z);
+    return;
+  }
   loadScreen.querySelector('.ls-note').textContent = done < total ? `${done} of ${total} pieces of land` : 'Ready';
   // (In when it's all there; or, if something's gone wrong, after two minutes anyway.)
   if (done < total && waited < 120) return;
@@ -1767,22 +1783,28 @@ if (TEST.get('mp')) {
 if (!TEST.size) {
   const menu = new StartMenu({
     onPlay: (world) => {
-      useQuality();
-      game.mode = world.mode;
-      setSeed(world.seed, world.mode === 'testing' ? null : world.id, !world.camera);
-      ui.seed.value = world.seed;
-      applyMode(world.mode);
-      startLoading(world.name);
-      // (Back where you left off.)
-      // (Joined online: the room's time of day.)
-      if (world.guest && joinedHour !== null) (dayNight.hour = joinedHour), (joinedHour = null);
-      const c = world.camera;
-      if (c) {
-        camera.position.set(c.x, c.y, c.z);
-        camera.rotation.order = 'YXZ';
-        camera.rotation.set(c.pitch ?? 0, c.yaw ?? 0, 0);
-        controls.euler.set(c.pitch ?? 0, c.yaw ?? 0, 0, 'YXZ'); // (the controls look on from there)
-      }
+      // (The loading screen up first, then the world set up behind it: working
+      // out where you start can take a moment, and the screen shouldn't freeze.)
+      startLoading(world.name, true);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        useQuality();
+        game.mode = world.mode;
+        setSeed(world.seed, world.mode === 'testing' ? null : world.id, !world.camera);
+        ui.seed.value = world.seed;
+        applyMode(world.mode);
+        // (Back where you left off.)
+        // (Joined online: the room's time of day.)
+        if (world.guest && joinedHour !== null) (dayNight.hour = joinedHour), (joinedHour = null);
+        const c = world.camera;
+        if (c) {
+          camera.position.set(c.x, c.y, c.z);
+          camera.rotation.order = 'YXZ';
+          camera.rotation.set(c.pitch ?? 0, c.yaw ?? 0, 0);
+          controls.euler.set(c.pitch ?? 0, c.yaw ?? 0, 0, 'YXZ'); // (the controls look on from there)
+        }
+        loading.since = performance.now();
+        loading.waiting = false;
+      }));
     },
     onSave: (world) => saveWorld(world),
     onQuit: () => mp.leave(),
