@@ -24,9 +24,10 @@ const PALETTE = {
   golden: { top: 0x4a72bc, horizon: 0xf6bd78, hemiSky: 0xf7cf9e, hemiGround: 0x5e4432 },
   twilight: { top: 0x223066, horizon: 0xc8665e, hemiSky: 0xb48ab8, hemiGround: 0x3a3044 },
   twilightDull: { top: 0x2a3860, horizon: 0x7a7488, hemiSky: 0x8a8aa8, hemiGround: 0x303040 },
-  night: { top: 0x070d22, horizon: 0x1a2748, hemiSky: 0x5b6fa8, hemiGround: 0x202838 },
+  night: { top: 0x070d22, horizon: 0x1a2748, hemiSky: 0x7083b8, hemiGround: 0x1c2230 },
 };
-const HEMI_INTENSITY = { day: 1.4, golden: 1.2, twilight: 0.95, night: 0.75 };
+const HEMI_INTENSITY = { day: 1.4, golden: 1.2, twilight: 0.95, night: 0.6 };
+const MOONLESS = new Color(0x020306); // (the sky on a dark night, near the horizon)
 
 // Sunlight: deep orange at the horizon, gold a little higher, near-white by day.
 const SUN_STOPS = [
@@ -448,6 +449,17 @@ export class DayNight {
     if (this._prevHour !== undefined && this.hour < this._prevHour - 12) this.day++;
     this._prevHour = this.hour;
     this.moonPhase = (((this.day + this.hour / 24) / 8) % 1 + 1) % 1;
+    // How much the moon lights the land: 0 with no moon (new, or not up,
+    // or behind thick cloud) .. 1 a full moon high in a clear sky. A night
+    // without one is black: only what's lit by a fire or a torch shows,
+    // and the land fades out a few dozen metres off (see main: nightSight).
+    const full = 0.5 - 0.5 * Math.cos(this.moonPhase * Math.PI * 2);
+    this.moonlight = full * smoothstep(0.02, 0.3, -e) * (1 - 0.85 * overcast);
+    const blackness = night * (1 - this.moonlight);
+    if (blackness > 0) {
+      this.horizon.lerp(MOONLESS, 0.7 * blackness);
+      this.top.lerp(MOONLESS, 0.75 * blackness);
+    }
     this._skyTime += dt;
     const u = this.sky.material.uniforms;
     u.time.value = this._skyTime % 10000;
@@ -473,7 +485,7 @@ export class DayNight {
     mood('hemiSky', w, this.hemi.color, dull);
     mood('hemiGround', w, this.hemi.groundColor, dull);
     greyed(this.hemi.color, overcast * 0.7);
-    this.hemi.intensity = (w.day * HEMI_INTENSITY.day + w.golden * HEMI_INTENSITY.golden + w.twilight * HEMI_INTENSITY.twilight + w.night * HEMI_INTENSITY.night) * (1 - 0.25 * rain - 0.3 * storm) + 0.2 * overcast * w.day * (1 - storm);
+    this.hemi.intensity = (w.day * HEMI_INTENSITY.day + w.golden * HEMI_INTENSITY.golden + w.twilight * HEMI_INTENSITY.twilight + w.night * HEMI_INTENSITY.night * (0.85 + 0.15 * this.moonlight)) * (1 - 0.25 * rain - 0.3 * storm) + 0.2 * overcast * w.day * (1 - storm); // (night: starlight alone enough, once your eyes are used to it, to make out what's near)
     if (this.flash > 0) {
       this.hemi.color.lerp(FLASH, Math.min(1, this.flash));
       this.hemi.intensity += this.flash * 3;
@@ -503,8 +515,8 @@ export class DayNight {
       this._shaftDir.copy(dir);
       light.color.copy(MOON);
       // (A full moon lights the land well; a thin one, barely.)
-      const full = 0.5 - 0.5 * Math.cos(this.moonPhase * Math.PI * 2);
-      light.intensity = 0.8 * (0.3 + 0.7 * full) * smoothstep(0.12, 0.3, -e) * (1 - 0.85 * overcast);
+      // (Strong enough, with so little light from the sky, to cast dark shadows.)
+      light.intensity = 0.75 * full * smoothstep(0.12, 0.3, -e) * (1 - 0.85 * overcast);
     }
 
     // Clouds catch the low sun: gold, then orange-red, pink and purple as it

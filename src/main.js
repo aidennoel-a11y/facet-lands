@@ -566,7 +566,7 @@ torches.loadWorld(WORLD.seed);
 // (See Game: your pack, health, hunger, thirst, warmth; crafting, building,
 // felling and hunting; and the world remembering what you've done.)
 const game = new Game({
-  scene, camera, controls, chunks, trees, rocks, mushrooms, fish, traces, torches, wildlife, sound, config: WORLD,
+  scene, camera, controls, chunks, trees, rocks, logs, mushrooms, fish, traces, torches, wildlife, sound, config: WORLD,
   solidHit: (origin, direction, reach) => solidHit(origin, direction, reach),
   wind: () => clouds.wind,
   // (A campfire left burning in the dry sets the grass alight.)
@@ -1112,6 +1112,46 @@ function lavaHeat(dt) {
   lavaGlow.style.opacity = lavaGlowLevel.toFixed(3);
 }
 
+// --- The dark -------------------------------------------------------------------
+// At night you see only so far: a few dozen metres on a night without a
+// moon (the land fading into black beyond), a few hundred under a bright
+// full one. And your eyes take their time: out of the daylight, or away
+// from a fire, it's black at first, and what little light there is comes
+// up slowly, over ten seconds or so; into the light again, they adjust
+// at once (and the dark round a fire looks blacker). A dark veil over the
+// world (under the HUD) does it, like closing down a camera's exposure.
+const eyes = { adapted: 0, veil: 0 };
+const NIGHT_BLACK = new THREE.Color(0x010204);
+const eyeVeil = document.createElement('div');
+eyeVeil.className = 'eye-veil';
+canvas.after(eyeVeil);
+function nightSight(dt) {
+  const e = dayNight.sunDir.y, moon = dayNight.moonlight ?? 0;
+  const dark = smooth(-0.04, -0.2, e) * (ui.night?.checked ? 0 : 1);
+  // How far you can see: the fog closing in to it.
+  const sight = 90 + 260 * moon;
+  scene.fog.far += (Math.min(scene.fog.far, sight) - scene.fog.far) * dark;
+  scene.fog.near += (Math.min(scene.fog.near, sight * 0.02) - scene.fog.near) * dark;
+  // (Into black, not a glowing haze: the land fades out, and stands dark against the sky.)
+  scene.fog.color.lerp(NIGHT_BLACK, dark * (1 - 0.6 * moon) * 0.9);
+  // How bright it is where you are: daylight, the moon, a fire or a torch near.
+  let lit = 0;
+  for (const l of game.fearLights()) lit = Math.max(lit, 1 - Math.hypot(l.x - camera.position.x, l.z - camera.position.z) / l.r);
+  const cave = caveHaze.amount;
+  const bright = Math.max((1 - dark) * (1 - 0.9 * cave), 0.35 * moon * (1 - cave), 0.6 * lit);
+  // Your eyes come round to it: slowly into the dark, quickly into the light.
+  const want = 1 - bright;
+  eyes.adapted += (want - eyes.adapted) * (want > eyes.adapted ? Math.min(1, dt / 6) : Math.min(1, dt / 0.4));
+  // The veil: as much darker as your eyes have yet to come round to the dark.
+  const veil = Math.max(0, want - eyes.adapted) * 0.85;
+  const edge = 0.4 * Math.max(dark, cave) * (1 - 0.5 * lit); // (and a little darker round the edges)
+  if (Math.abs(veil - eyes.veil) > 0.003 || Math.abs(edge - (eyes.edge ?? 0)) > 0.003) {
+    eyes.veil = veil;
+    eyes.edge = edge;
+    eyeVeil.style.background = veil < 0.003 && edge < 0.003 ? 'none' : `radial-gradient(ellipse at center, rgba(0,0,0,${veil.toFixed(3)}) 35%, rgba(0,0,0,${(1 - (1 - veil) * (1 - edge)).toFixed(3)}) 100%)`;
+  }
+}
+
 // Weather you can see coming: rain hanging under the clouds that bring it
 // (see Showers), and before a storm, lightning flickering inside it far
 // off, the thunder a long, low rumble arriving seconds later.
@@ -1559,6 +1599,7 @@ function tick(now) {
   scene.fog.far = openFog.far * (1 - 0.5 * localRain) * (1 - 0.75 * mist);
   if (mist > 0) scene.fog.color.lerp(MIST, 0.45 * mist);
   smokyHaze(dt);
+  nightSight(dt);
   dayNight.sky.visible = true;
   applyCaveHaze(dt);
   applyUnderwater();

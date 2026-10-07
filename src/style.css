@@ -1416,3 +1416,11 @@ kbd {
   font-size: 14px;
   color: rgba(241, 234, 216, 0.75);
 }
+
+/* The dark at night, and your eyes coming round to it (see main: nightSight):
+   over the world, under everything on screen. */
+.eye-veil {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}

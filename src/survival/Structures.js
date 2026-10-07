@@ -90,7 +90,7 @@ export class Structures {
    * `water(x, z)` the water's level there, or null. (A raft goes on water;
    * nothing else does.)
    */
-  plan(type, point, yaw, ground, water) {
+  plan(type, point, yaw, ground, water, blocked = null) {
     let x = point.x, z = point.z;
     let rot = yaw;
     const kind = KINDS[type];
@@ -159,19 +159,45 @@ export class Structures {
       y = level - 0.12;
     } else if (wet) (ok = false), (why = "Can't build in the water");
     else if (hi - lo > (kind.line ? 1.4 : kind.steep ?? (kind.tilt ? 1.4 : 0.6))) (ok = false), (why = 'The ground is too steep here');
-    if (ok) {
-      for (const s of this.list) {
-        const d = Math.hypot(s.x - x, s.z - z);
-        if (s.type === 'roof' || type === 'roof' || s.type === 'rope') continue; // (a roof goes over things)
-        const r = (KINDS[s.type].line ? KINDS[s.type].len / 2 : 0.6) + (kind.line ? kind.len / 2 : 0.6);
-        if (d < 0.3 || (d < r * 0.5 && !(kind.line && KINDS[s.type].line))) {
+    // Nothing in the way: across its whole footprint (a wall along its
+    // length; a roof just where its posts stand, as it goes over things),
+    // no tree, bush, boulder, log or other thing built.
+    if (ok && type !== 'raft') {
+      const spots = [];
+      if (type === 'roof') for (const [u, v] of kind.posts) spots.push([u, v, 0.2]);
+      else if (kind.line) for (let u = -half[0] + 0.15; u <= half[0] - 0.15 + 1e-6; u += 0.4) spots.push([u, 0, half[1]]);
+      else for (const fu of [-1, -0.5, 0, 0.5, 1]) for (const fv of [-1, -0.5, 0, 0.5, 1]) spots.push([fu * half[0] * 0.85, fv * half[1] * 0.85, 0.12]);
+      for (const [u, v, r] of spots) {
+        const px = x + ax * u + bx * v, pz = z + az * u + bz * v;
+        const what = blocked?.(px, pz, r) ?? this.#builtAt(px, pz, r, type, x, z);
+        if (what) {
           ok = false;
-          why = 'Something is in the way';
+          why = what;
           break;
         }
       }
     }
     return { type, x, y, z, rot, ok, why, tilt };
+  }
+
+  // Whether something already built stands at (px, pz) (within `r`), in the
+  // way of `type` going up at (x, z): why not, or null. (Lengths of the same
+  // wall or fence may meet end to end; a roof goes over things.)
+  #builtAt(px, pz, r, type, x, z) {
+    const kind = KINDS[type];
+    for (const s of this.list) {
+      const k = KINDS[s.type];
+      if (s.type === 'rope' || s.type === 'roof' || type === 'roof') continue;
+      if (kind.line && k.line === kind.line) {
+        if (Math.hypot(s.x - x, s.z - z) < k.len * 0.5) return 'Something is in the way';
+        continue;
+      }
+      const half = k.box ? k.box : [k.circle || k.reach || 0.5, k.circle || k.reach || 0.5];
+      const ax = Math.cos(s.rot), az = -Math.sin(s.rot), bx = Math.sin(s.rot), bz = Math.cos(s.rot);
+      const u = (px - s.x) * ax + (pz - s.z) * az, v = (px - s.x) * bx + (pz - s.z) * bz;
+      if (Math.abs(u) < half[0] + r && Math.abs(v) < half[1] + r) return 'Something is in the way';
+    }
+    return null;
   }
 
   /** Shows the see-through preview of `plan` (or hides it: null). */

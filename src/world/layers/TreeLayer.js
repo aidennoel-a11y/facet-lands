@@ -139,6 +139,7 @@ export function createTreeLayer({ rocks = null } = {}) {
     leafMaterial,
     count: 0, // trees currently loaded, for the HUD
     trunks: new Map(), // "cx,cz" -> [x, z, radius, ...] in world space, for collisions
+    bushes: new Map(), // "cx,cz" -> [x, z, radius, ...]: soft to walk through, but nothing's built in one (see solidAt)
     crowns: new Map(), // "cx,cz" -> [x, z, bottom, top, radius, ...] of broad-leaved crowns (world), for falling leaves
     foliage: new Map(), // "cx,cz" -> [x, z, bottom, top, radius, cone, ...] of every crown (world), for the leaves' hitboxes
     frames: new Map(), // "cx,cz" -> [x, z, y, rot, s, sy, ...] of each swaying crowned tree (world), for swayAt
@@ -281,6 +282,7 @@ export function createTreeLayer({ rocks = null } = {}) {
         }
       };
       cut(layer.trunks.get(key), 3);
+      cut(layer.bushes.get(key), 3);
       cut(layer.crowns.get(key), 5);
       cut(layer.foliage.get(key), 6);
       cut(layer.frames.get(key), 6);
@@ -347,6 +349,27 @@ export function createTreeLayer({ rocks = null } = {}) {
     },
 
     /**
+     * What stands within `r` of (x, z) that nothing can be built over:
+     * 'tree' (a trunk) or 'bush' (its crown), or null.
+     */
+    solidAt(x, z, r, chunkSize) {
+      const cx = Math.floor(x / chunkSize), cz = Math.floor(z / chunkSize);
+      for (const [map, what, k] of [[layer.trunks, 'tree', 1], [layer.bushes, 'bush', 0.8]]) {
+        for (let dz = -1; dz <= 1; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const list = map.get(`${cx + dx},${cz + dz}`);
+            if (!list) continue;
+            for (let i = 0; i < list.length; i += 3) {
+              const min = r + list[i + 2] * k;
+              if ((x - list[i]) ** 2 + (z - list[i + 1]) ** 2 < min * min) return what;
+            }
+          }
+        }
+      }
+      return null;
+    },
+
+    /**
      * Pushes a circle (the walking player) out of any tree trunk it overlaps.
      * Bushes are soft and can be walked through.
      */
@@ -395,9 +418,13 @@ export function createTreeLayer({ rocks = null } = {}) {
         if (kept.length) placed[type] = kept;
       }
 
-      const trunks = [];
+      const trunks = [], bushes = [];
       for (const [type, list] of Object.entries(placed)) {
-        if (NO_COLLIDE.has(type)) continue;
+        if (NO_COLLIDE.has(type)) {
+          const r = profileOf(type)?.radius ?? 0.6;
+          for (const t of list) bushes.push(originX + t.x, originZ + t.z, r * t.s);
+          continue;
+        }
         const r = TRUNK_RADIUS[type] ?? 0.3, off = TRUNK_OFFSET[type] ?? 0;
         // (A tree turned by `rot` about the vertical has its own x axis along (cos rot, -sin rot).)
         for (const t of list) trunks.push(originX + t.x + Math.cos(t.rot) * off * t.s, originZ + t.z - Math.sin(t.rot) * off * t.s, r * t.s);
@@ -491,6 +518,8 @@ export function createTreeLayer({ rocks = null } = {}) {
       layer.count += count;
       layer.foliage.set(group.userData.key, foliage);
       layer.trunks.set(group.userData.key, trunks);
+      layer.bushes.set(group.userData.key, bushes);
+      group.userData.bushes = bushes;
       layer.crowns.set(group.userData.key, crowns);
       layer.frames.set(group.userData.key, frames);
       groups.set(group.userData.key, group);
@@ -501,6 +530,7 @@ export function createTreeLayer({ rocks = null } = {}) {
       layer.count -= group.userData.count;
       // A rebuilt chunk (new LOD) may already have registered its trunks.
       if (layer.trunks.get(group.userData.key) === group.userData.trunks) layer.trunks.delete(group.userData.key);
+      if (layer.bushes.get(group.userData.key) === group.userData.bushes) layer.bushes.delete(group.userData.key);
       if (layer.crowns.get(group.userData.key) === group.userData.crowns) layer.crowns.delete(group.userData.key);
       if (layer.foliage.get(group.userData.key) === group.userData.foliage) layer.foliage.delete(group.userData.key);
       if (layer.frames.get(group.userData.key) === group.userData.frames) layer.frames.delete(group.userData.key);

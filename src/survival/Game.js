@@ -1477,7 +1477,7 @@ export class Game {
       } else if (placing && placing !== 'torch') {
         const at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
         const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate'].includes(placing) ? Math.PI : 0);
-        this.plan = this.structures.plan(placing, at, yaw, ground, (x, z) => this.waterAt(x, z)?.level ?? null);
+        this.plan = this.structures.plan(placing, at, yaw, ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
         const onPlot = placing === 'plot' && t?.kind === 'structure' && t.structure.type === 'plot';
         this.structures.preview(onPlot ? null : this.plan);
         if (!onPlot) prompt = this.plan.ok ? `<kbd>Click</kbd> ${placing === 'plot' ? 'Dig a plot' : `Build ${item.name.toLowerCase()}`}` : this.plan.why;
@@ -1612,6 +1612,22 @@ export class Game {
     this.handFlame.scale.set(1, 1.7, 1);
     this.heldId = null;
     this.anim = null;
+  }
+
+  // What's standing at (x, z), within `r`, that nothing can be built over: why not, or null.
+  #inTheWay(x, z, r) {
+    const what = this.trees.solidAt?.(x, z, r, this.config.chunkSize);
+    if (what === 'tree') return 'A tree is in the way';
+    if (what === 'bush') return 'A bush is in the way';
+    const g = this.chunks.groundHeightAt(x, z);
+    if (Number.isFinite(g)) {
+      for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) {
+        if (this.rocks?.surfaceAt(x + dx, z + dz) > g + 0.15) return 'A rock is in the way';
+        if (this.logs?.surfaceAt(x + dx, z + dz) > g + 0.1) return 'A log is in the way';
+      }
+    }
+    for (const st of this.felling.stumps) if (Math.hypot(st.m[12] - x, st.m[14] - z) < r + 0.55) return 'A stump is in the way';
+    return null;
   }
 
   #animate(kind, duration) {
