@@ -29,13 +29,23 @@ echo.
 echo Starting the game (in its own window: leave it open)...
 start "Facet Lands game" /d "%~dp0." cmd /k npm run preview -- --port 4173 --strictPort
 
-rem (A moment for them to start, then open the game.)
+rem (A moment for them to start, then open the game: in Chrome, if it's
+rem here, as a window of its own, no tabs or address bar, like a game;
+rem else in the usual browser.)
 timeout /t 4 /nobreak >nul
-start "" http://localhost:4173
+set CHROME=
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" >nul 2>&1 && set CHROME=1
+reg query "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" >nul 2>&1 && set CHROME=1
+if defined CHROME (
+  start "" chrome --app=http://localhost:4173 --start-maximized
+) else (
+  echo ^(Chrome isn't installed: opening in your usual browser. Chrome runs the game more smoothly: google.com/chrome^)
+  start "" http://localhost:4173
+)
 
 echo.
 echo ============================================================
-echo  The game is open in your browser: http://localhost:4173
+echo  The game is open in Chrome: http://localhost:4173
 echo.
 echo  Play online: host a world, or click one in the list to join.
 echo  Nothing else to set up: the game's server is online for everyone.

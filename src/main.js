@@ -124,6 +124,10 @@ terrainMaterial.shadowSide = THREE.FrontSide;
 // For testing (and for sharing a spot): ?seed=…&x=…&z=…&y=…&yaw=…&pitch=…
 // &hour=…&vd=… (view distance, chunks)&hide (no panels)&season=0..3&weather=…
 const TEST = new URLSearchParams(location.search);
+// (A test address: one of the game's own settings in it, which goes straight
+// into a world, without the title screen. Anything else in the address,
+// put there by wherever the game's hosted, is no business of the game's.)
+const TESTING = ['seed', 'x', 'z', 'y', 'up', 'yaw', 'pitch', 'hour', 'vd', 'mp', 'hide', 'loadscreen', 'weather', 'season', 'noocclude', 'norugged'].some((k) => TEST.has(k));
 if (TEST.get('seed')) WORLD.seed = TEST.get('seed');
 if (TEST.get('vd')) WORLD.viewDistance = +TEST.get('vd');
 let generator = new TerrainGenerator(WORLD.seed, WORLD);
@@ -546,7 +550,7 @@ function bodiesCollide(position, radius, feet) {
   }
 }
 // (Not behind the title screen: the world you pick is placed when it starts.)
-if (TEST.size) placeCamera();
+if (TESTING) placeCamera();
 // (A spot asked for in the address: see TEST above.)
 function testView() {
   if (!TEST.has('x') && !TEST.has('z')) return;
@@ -1825,7 +1829,7 @@ if (TEST.get('mp')) {
     : mp.join(url, TEST.get('mp'), name).then((w) => (dayNight.hour = w.hour));
   go.catch((e) => console.error('online:', e.message));
 }
-if (!TEST.size) {
+if (!TESTING) {
   const menu = new StartMenu({
     onPlay: (world) => {
       // (The loading screen up first, then the world set up behind it: working

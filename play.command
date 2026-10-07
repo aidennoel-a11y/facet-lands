@@ -36,11 +36,21 @@ echo
 echo "Building the game..."
 npm run build || { echo "The build failed (see above)."; read -r; exit 1; }
 
-# (A moment for it to start, then open it.)
-(sleep 3 && open http://localhost:4173) &
+# (A moment for it to start, then open it: in Chrome, if it's here (its
+# graphics are quicker than Safari's), as a window of its own, no tabs or
+# address bar, like a game; else in the usual browser.)
+open_game() {
+  if [ -d "/Applications/Google Chrome.app" ] || [ -d "$HOME/Applications/Google Chrome.app" ]; then
+    open -na "Google Chrome" --args --app=http://localhost:4173 --start-maximized
+  else
+    echo "(Chrome isn't installed: opening in your usual browser. Chrome runs the game more smoothly: google.com/chrome)"
+    open http://localhost:4173
+  fi
+}
+(sleep 3 && open_game) &
 echo
 echo "============================================================"
-echo " The game opens in your browser: http://localhost:4173"
+echo " The game opens in Chrome: http://localhost:4173"
 echo " Play online: host a world, or click one in the list to join."
 echo " Leave this window open while you play; close it to stop."
 echo "============================================================"
