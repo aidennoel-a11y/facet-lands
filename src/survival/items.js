@@ -30,6 +30,19 @@ export const ITEMS = {
   coal: { name: 'Coal', weight: 0.5, group: 'Materials' },
   goldOre: { name: 'Gold ore', weight: 2, group: 'Materials' },
   goldBar: { name: 'Gold bar', weight: 2.5, group: 'Materials' },
+  // Trophies: what only the great beasts give (see Wildlife BOSSES), each
+  // for its own recipe.
+  grizzlyPelt: { name: "Old Scar's pelt", weight: 4, group: 'Trophies' },
+  alphaFang: { name: "Greymane's fang", weight: 0.2, group: 'Trophies' },
+  paleFur: { name: "The Pale Ghost's fur", weight: 2, group: 'Trophies' },
+  greatAntlers: { name: "The Old Bull's antlers", weight: 6, group: 'Trophies' },
+  greatHide: { name: "Thunderhead's great hide", weight: 6, group: 'Trophies' },
+  crocHide: { name: "Old Jaw's hide", weight: 5, group: 'Trophies' },
+  lionPelt: { name: "Kingmane's pelt", weight: 3, group: 'Trophies' },
+  tigerPelt: { name: "The Striped Shadow's pelt", weight: 3, group: 'Trophies' },
+  venomSac: { name: "The Old Rattler's venom", weight: 0.3, group: 'Trophies' },
+  boarTusk: { name: "Ironhide's tusks", weight: 1.5, group: 'Trophies' },
+  caveBearPelt: { name: "The Cave Bear's pelt", weight: 5, group: 'Trophies' },
   seedWheat: { name: 'Wheat seeds', weight: 0.05, sow: 'wheat', group: 'Farming' },
   seedCorn: { name: 'Corn kernels', weight: 0.05, sow: 'corn', group: 'Farming' },
   seedPotato: { name: 'Seed potato', weight: 0.2, sow: 'potato', group: 'Farming' },
@@ -65,6 +78,12 @@ export const ITEMS = {
   forgedPickaxe: { name: 'Steel pickaxe', tool: true, durability: 400, weight: 2, group: 'Tools' },
   forgedSpear: { name: 'Steel spear', tool: true, durability: 180, weight: 1.6, sharp: 2, group: 'Tools' },
   sword: { name: 'Steel sword', tool: true, durability: 260, weight: 1.6, sharp: 3, group: 'Tools' }, // (quick, deep cuts: see Game.#stab)
+  fangSword: { name: 'Fang sword', tool: true, durability: 360, weight: 1.6, sharp: 4, group: 'Tools' }, // (Greymane's fang set in its hilt: the keenest blade)
+  antlerBow: { name: 'Antler bow', tool: true, durability: 240, weight: 1.4, power: 1.5, group: 'Tools' }, // (stiffer: arrows fly further and strike harder)
+  tuskPickaxe: { name: 'Tusk pickaxe', tool: true, durability: 500, weight: 2.2, group: 'Tools' },
+  poisonArrow: { name: 'Venom arrow', weight: 0.05, venom: true, group: 'Tools' },
+  poisonBolt: { name: 'Venom bolt', weight: 0.08, venom: true, group: 'Tools' },
+  greatSaddle: { name: 'Great saddle', weight: 7, group: 'Tools' }, // (a horse under it gallops further)
   crossbow: { name: 'Crossbow', tool: true, durability: 200, weight: 3, group: 'Tools' },
   bolt: { name: 'Crossbow bolt', weight: 0.08, group: 'Tools' },
   hoe: { name: 'Hoe', tool: true, durability: 80, weight: 1.4, group: 'Tools' },
@@ -84,6 +103,13 @@ export const ITEMS = {
   // (`protect`: how much of a bite or a blow still gets through.)
   armour: { name: 'Leather armour', tool: true, wear: 'armour', durability: 40, protect: 0.55, weight: 4, group: 'Worn' },
   steelArmour: { name: 'Steel armour', tool: true, wear: 'armour', durability: 160, protect: 0.3, weight: 9, group: 'Worn' },
+  // (Steel lined with a great beast's pelt or hide: the best there is.)
+  scarArmour: { name: 'Scar-pelt armour', tool: true, wear: 'armour', durability: 240, protect: 0.22, weight: 10, group: 'Worn' },
+  lionArmour: { name: 'Lion-mane armour', tool: true, wear: 'armour', durability: 240, protect: 0.22, weight: 9, group: 'Worn' },
+  tigerArmour: { name: 'Tiger-stripe armour', tool: true, wear: 'armour', durability: 240, protect: 0.22, weight: 9, group: 'Worn' },
+  crocArmour: { name: 'Croc-scale armour', tool: true, wear: 'armour', durability: 340, protect: 0.16, weight: 11, group: 'Worn' },
+  paleCloak: { name: 'Ghost cloak', tool: true, wear: 'coat', warmth: 0.12, hush: true, weight: 2, group: 'Worn' }, // (pale and soft: the wild notice you less)
+  caveCloak: { name: 'Cave bear cloak', tool: true, wear: 'coat', warmth: 0.05, weight: 4, group: 'Worn' }, // (the warmest thing there is)
   // Built.
   campfire: { name: 'Campfire', place: 'campfire', weight: 12, group: 'Building' },
   furnace: { name: 'Stone furnace', place: 'furnace', weight: 20, group: 'Building' },
@@ -96,6 +122,7 @@ export const ITEMS = {
   snare: { name: 'Snare', place: 'snare', weight: 0.5, group: 'Building' },
   raft: { name: 'Raft', place: 'raft', weight: 25, group: 'Building' },
   roof: { name: 'Thatched roof', place: 'roof', weight: 22, group: 'Building' },
+  hideRoof: { name: 'Great-hide roof', place: 'roof', weight: 14, group: 'Building' }, // (a shelter roofed with Thunderhead's hide)
   fence: { name: 'Fence', place: 'fence', weight: 8, group: 'Building' },
   fenceGate: { name: 'Fence gate', place: 'fenceGate', weight: 7, group: 'Building' },
   anvil: { name: 'Anvil', place: 'anvil', weight: 30, group: 'Building' },
@@ -113,6 +140,9 @@ export const SPAWNABLE = {
 for (const [kind, name] of Object.entries(SPAWNABLE)) {
   ITEMS[`spawn_${kind}`] = { name: `${name} spawner`, tool: true, spawns: kind === 'maleLion' ? 'lion' : kind, male: kind === 'maleLion', weight: 0, group: 'Spawners' };
 }
+// (And the great beasts: see Wildlife BOSSES.)
+const BOSS_SPAWNABLE = { scar: 'Old Scar', greymane: 'Greymane', ghost: 'The Pale Ghost', oldBull: 'The Old Bull', thunderhead: 'Thunderhead', oldJaw: 'Old Jaw', kingmane: 'Kingmane', shadow: 'The Striped Shadow', rattler: 'The Old Rattler', ironhide: 'Ironhide', caveBear: 'The Cave Bear' };
+for (const [id, name] of Object.entries(BOSS_SPAWNABLE)) ITEMS[`spawn_boss_${id}`] = { name: `${name} spawner`, tool: true, spawns: id, boss: id, weight: 0, group: 'Spawners' };
 
 // Tools that can be put to the grindstone (their edges ground back), and how many times.
 export const GRINDS = 3;
@@ -171,6 +201,19 @@ export const RECIPES = [
   { id: 'bolt', needs: { stick: 2, ironBar: 1, feather: 2 }, makes: 6, at: 'anvil', note: 'Six crossbow bolts' },
   { id: 'sword', needs: { steelBar: 2, deerSkin: 1 }, at: 'anvil', note: 'Quick to swing, cuts deep: the best blade there is' },
   { id: 'steelArmour', needs: { steelBar: 4, deerSkin: 2 }, at: 'anvil', note: 'Plates over leather: a bite or a blow does a third of the harm. Heavy' },
+  { id: 'scarArmour', needs: { steelArmour: 1, grizzlyPelt: 1 }, at: 'anvil', note: "Steel lined with Old Scar's pelt: the best armour, and long-lasting" },
+  { id: 'lionArmour', needs: { steelArmour: 1, lionPelt: 1 }, at: 'anvil', note: "Steel lined with Kingmane's pelt: the best armour" },
+  { id: 'tigerArmour', needs: { steelArmour: 1, tigerPelt: 1 }, at: 'anvil', note: "Steel lined with the Striped Shadow's pelt: the best armour" },
+  { id: 'crocArmour', needs: { steelArmour: 1, crocHide: 1 }, at: 'anvil', note: "Old Jaw's scaled hide over steel: the toughest armour of all" },
+  { id: 'fangSword', needs: { sword: 1, alphaFang: 1 }, at: 'anvil', note: "Greymane's fang in the hilt, the edge reground: the keenest blade" },
+  { id: 'antlerBow', needs: { bow: 1, greatAntlers: 1, rope: 1 }, note: "The Old Bull's antler stiffening the bow: further and harder" },
+  { id: 'tuskPickaxe', needs: { forgedPickaxe: 1, boarTusk: 1 }, at: 'anvil', note: "Ironhide's tusks for points: breaks rock fastest, more ore" },
+  { id: 'poisonArrow', needs: { arrow: 6, venomSac: 1 }, makes: 6, note: 'Arrows tipped with venom: a hit lames and weakens' },
+  { id: 'poisonBolt', needs: { bolt: 6, venomSac: 1 }, makes: 6, note: 'Bolts tipped with venom: a hit lames and weakens' },
+  { id: 'greatSaddle', needs: { greatHide: 1, steelBar: 1, rope: 1 }, note: "Thunderhead's hide: a horse under it gallops further and faster" },
+  { id: 'hideRoof', needs: { greatHide: 1, log: 4 }, note: "A shelter roofed with Thunderhead's hide" },
+  { id: 'paleCloak', needs: { paleFur: 1, pelt: 2 }, note: 'Pale and soft: warm, and the wild notice you less' },
+  { id: 'caveCloak', needs: { caveBearPelt: 1, rope: 1 }, note: 'The warmest thing to wear there is' },
 ];
 
 /**
@@ -183,6 +226,7 @@ export const TIERS = [
   { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'fineFlintSteel', 'pot', 'shears', 'saddle', 'anvil'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt'] },
+  { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];
 /** The tier a recipe's in. */
 export const tierOf = (id) => TIERS.find((t) => t.ids.includes(id)) ?? TIERS[0];
@@ -284,3 +328,31 @@ export const ICONS = {
 };
 // (A spawner's icon: a paw print.)
 for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle cx="16" cy="20" r="6" fill="#8a6a4a"/><circle cx="8" cy="12" r="3" fill="#8a6a4a"/><circle cx="14" cy="8" r="3" fill="#8a6a4a"/><circle cx="20" cy="8" r="3" fill="#8a6a4a"/><circle cx="25" cy="13" r="3" fill="#8a6a4a"/>`;
+// (The trophies and what's made of them: the icons of their kin, recoloured.)
+{
+  const re = (id, from, pairs) => (ICONS[id] = pairs.reduce((t, [a, b]) => t.replaceAll(a, b), ICONS[from]));
+  re('grizzlyPelt', 'pelt', [['#9a7a58', '#6a5040'], ['#c4a47a', '#8a6a50']]);
+  re('lionPelt', 'pelt', [['#9a7a58', '#b08a58'], ['#c4a47a', '#5a3a20']]);
+  re('tigerPelt', 'pelt', [['#9a7a58', '#d8782a'], ['#c4a47a', '#1a1210']]);
+  re('paleFur', 'pelt', [['#9a7a58', '#e0dcd2'], ['#c4a47a', '#f4f0e8']]);
+  re('caveBearPelt', 'pelt', [['#9a7a58', '#3a3230'], ['#c4a47a', '#5a504a']]);
+  re('greatHide', 'hide', [['#8a5a3a', '#4a3020'], ['#b06a58', '#6a4430']]);
+  re('crocHide', 'hide', [['#8a5a3a', '#4a5a3a'], ['#b06a58', '#6a7a50']]);
+  ICONS.alphaFang = `<path d="M14 4c4 0 6 3 5 8l-3 16-3-16c-1-5-1-8 1-8z" fill="#f0ead8"/><path d="M15 6c2 0 3 2 2 5" stroke="#c8c0a8" fill="none"/>`;
+  ICONS.greatAntlers = `<path d="M16 28V18M16 18c-6-2-9-8-9-14M16 18c6-2 9-8 9-14M10 12l-5-2M22 12l5-2M9 7l-3-4M23 7l3-4" stroke="#d8c8a0" stroke-width="2.4" fill="none" stroke-linecap="round"/>`;
+  ICONS.venomSac = `<path d="M16 6c6 4 9 9 9 14a9 9 0 0 1-18 0c0-5 3-10 9-14z" fill="#6a8a3a"/><path d="M13 14c2-2 5-2 6 0" stroke="#a8c86a" fill="none"/><circle cx="16" cy="21" r="2.4" fill="#3a5a1a"/>`;
+  ICONS.boarTusk = `<path d="M8 26c0-10 6-18 14-20-4 6-6 12-6 20z" fill="#f0e6d0"/><path d="M14 26c2-8 7-14 12-16-3 5-4 10-4 16z" fill="#e0d4b8"/>`;
+  re('scarArmour', 'steelArmour', [['#9aa4b0', '#6a5040']]);
+  re('lionArmour', 'steelArmour', [['#9aa4b0', '#b08a58']]);
+  re('tigerArmour', 'steelArmour', [['#9aa4b0', '#d8782a']]);
+  re('crocArmour', 'steelArmour', [['#9aa4b0', '#4a5a3a']]);
+  re('fangSword', 'sword', [['#dfe6ee', '#f4f0e4'], ['#8a949e', '#e0d8c0']]);
+  re('antlerBow', 'bow', [['#8a5d38', '#d8c8a0']]);
+  re('tuskPickaxe', 'forgedPickaxe', [['#dfe6ee', '#f0e6d0'], ['#c8c4bc', '#f0e6d0']]);
+  re('poisonArrow', 'arrow', [['#3e4250', '#4a7a2a']]);
+  re('poisonBolt', 'bolt', [['#9aa4b0', '#4a7a2a']]);
+  re('greatSaddle', 'saddle', [['#6a3a20', '#3a2818']]);
+  re('hideRoof', 'roof', [['#c8a860', '#5a3a26'], ['#a88a44', '#3a2818']]);
+  re('paleCloak', 'furCloak', [['#8a7458', '#e8e4dc'], ['#c8b89a', '#ffffff']]);
+  re('caveCloak', 'furCloak', [['#8a7458', '#3a3230']]);
+}

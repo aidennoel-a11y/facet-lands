@@ -8,6 +8,7 @@ import { BLADES, GRINDS, ITEMS, RECIPES, TIERS, stackOf, weightOf, tierOf } from
 import { bobberModel, bowModel } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
+import { Wildlife } from '../wildlife/Wildlife.js';
 
 /** Your longest survival life yet, in days (kept in this browser): records `days`, returns the longest. */
 export function recordRun(days) {
@@ -45,9 +46,10 @@ const NAMES = {
 };
 const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a black bear', cougar: 'a cougar', moose: 'a moose', boar: 'a wild boar', elk: 'a bull elk', deer: 'a buck', bison: 'a bison', snake: 'a rattlesnake', tiger: 'a tiger', jaguar: 'a jaguar', panther: 'a black panther', crocodile: 'a crocodile', panda: 'a giant panda', mountainGoat: 'a mountain goat', lion: 'a lion', hyena: 'a hyena', elephant: 'an elephant', hippo: 'a hippo', camel: 'a camel', scorpion: 'a scorpion', python: 'a python' };
 const AXES = { axe: 1, steelAxe: 2, forgedAxe: 3 };
-const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2 };
+const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2, tuskPickaxe: 3 };
 const SPEARS = new Set(['spear', 'steelSpear', 'forgedSpear']);
-const SWORDS = new Set(['sword']);
+const SWORDS = new Set(['sword', 'fangSword']);
+const BOWS = new Set(['bow', 'antlerBow']);
 // What a horse will come to you for, and eat.
 const HORSE_FOOD = { apple: 25, carrot: 25, wheat: 20, corn: 20, berries: 10 };
 const smooth = (a, b, x) => {
@@ -178,6 +180,7 @@ export class Game {
     this.felling.loadStumps(saved?.stumps);
     this.structures.load(saved?.structures ?? []);
     this.wildlife.loadTame(saved?.tame ?? []);
+    this.wildlife.loadBosses(saved?.bosses ?? {});
     // How far up the crafting tree you've come (in a world saved before
     // there was one: worked out from what's in it).
     this.progress = new Set(saved?.progress ?? []);
@@ -211,6 +214,7 @@ export class Game {
       structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], stumps: this.felling.stumpsJSON(),
       mushrooms: [...(this.mushrooms?.taken ?? [])],
       tame: this.wildlife.tameJSON(),
+      bosses: this.wildlife.bossJSON(),
       clock: this.clock?.get() ?? null,
       progress: [...this.progress],
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
@@ -277,6 +281,7 @@ export class Game {
     this.hud.unlocked = (tier) => this.unlocked(tier);
     this.inventory.onChange(() => {
       for (const id of ['ironBar', 'steelBar']) if (this.inventory.count(id)) this.#learn(id);
+      if (this.inventory.slots.some((s) => s && ITEMS[s.id]?.group === 'Trophies')) this.#learn('trophy');
       if (!this.hud.el('.craft').hidden) this.hud.renderCraft(this.inventory);
       this.hud.renderChest();
       this.dirty = true;
@@ -339,7 +344,7 @@ export class Game {
     if (beast?.kind === 'horse' && beast.tame) {
       const needs = [beast.hunger < 30 ? 'hungry' : '', beast.thirst < 30 ? 'thirsty' : ''].filter(Boolean).join(' and ');
       const text = HORSE_FOOD[held?.id] ? 'Feed the horse'
-        : held?.id === 'saddle' ? (beast.saddled ? 'It has a saddle' : beast.young ? 'Too young for a saddle' : 'Saddle the horse')
+        : held?.id === 'saddle' || held?.id === 'greatSaddle' ? (beast.saddled ? 'It has a saddle' : beast.young ? 'Too young for a saddle' : 'Saddle the horse')
         : beast.saddled ? 'Ride (Shift+E: lead it)' : beast.led ? 'Let it go' : 'Lead it (a saddle to ride it)';
       found.push({ kind: 'horse', distance: carcass.distance, animal: beast, text: needs ? `${text} · ${needs}` : text });
     }
@@ -483,9 +488,9 @@ export class Game {
         this.dirty = true;
         return this.hotbar?.flash(a.hunger > 90 ? 'Fed: it has had its fill' : 'Fed');
       }
-      if (held?.id === 'saddle' && !a.saddled && !a.young) {
-        this.inventory.remove('saddle', 1);
-        a.saddled = true;
+      if ((held?.id === 'saddle' || held?.id === 'greatSaddle') && !a.saddled && !a.young) {
+        this.inventory.remove(held.id, 1);
+        a.saddled = held.id === 'greatSaddle' ? 'great' : true;
         this.dirty = true;
         return this.hotbar?.flash('Saddled: E to ride');
       }
@@ -619,8 +624,8 @@ export class Game {
   press() {
     if (!this.walking || !this.survival.alive || this.hud.busy || this.riding) return;
     const s = this.inventory.slots[this.hotbar.index];
-    if (s?.id === 'bow' && this.cooldown <= 0) {
-      if (!this.inventory.count('arrow')) return this.hotbar?.flash('No arrows (make some: a stick and a flint)');
+    if (BOWS.has(s?.id) && this.cooldown <= 0) {
+      if (!this.inventory.count('arrow') && !this.inventory.count('poisonArrow')) return this.hotbar?.flash('No arrows (make some: a stick and a flint)');
       this.drawing = { since: this.time };
       this.sound?.call('creak', 0, 0.12);
     }
@@ -633,7 +638,7 @@ export class Game {
     const s = this.inventory.slots[i];
     const { origin, direction } = this.#ray(ray);
     // (Letting fly with a bow, and reeling in, don't wait on the cooldown.)
-    if (s?.id === 'bow') return this.#loose(i, origin, direction);
+    if (BOWS.has(s?.id)) return this.#loose(i, origin, direction);
     if (s?.id === 'fishingRod') return this.#fish(i, origin, direction);
     if (s?.id === 'crossbow') return this.#crossbow(i, origin, direction);
     if (this.cooldown > 0) return;
@@ -644,10 +649,10 @@ export class Game {
     if (ITEMS[s.id]?.spawns) {
       const hit = this.solidHit(origin, direction, 60);
       const at = hit?.point ?? origin.clone().addScaledVector(direction, 8);
-      const a = this.wildlife.spawn(ITEMS[s.id].spawns, at.x, at.z);
+      const a = ITEMS[s.id].boss ? this.wildlife.spawnBoss(ITEMS[s.id].boss, at.x, at.z) : this.wildlife.spawn(ITEMS[s.id].spawns, at.x, at.z);
       if (a && ITEMS[s.id].male) (a.antlers = true), (a.scale *= 1.12);
       this.cooldown = 0.3;
-      return this.hotbar?.flash(a ? `A ${ITEMS[s.id].name.replace(' spawner', '').toLowerCase()}` : 'It can\'t stand there');
+      return this.hotbar?.flash(a ? (a.boss ? a.boss.name : `A ${ITEMS[s.id].name.replace(' spawner', '').toLowerCase()}`) : 'It can\'t stand there');
     }
     const stone = BLADES.has(s.id) ? this.structures.pick(origin, direction, REACH)?.structure : null;
     if (stone?.type === 'grindstone') return this.#grind(i, s);
@@ -1132,6 +1137,7 @@ export class Game {
     this.inventory.wear(i, 1);
     this.#wounded(hit, from);
     this.#report(a, outcome, hit.head);
+    if (a.boss) this.#bossFight(a);
   }
 
   // A hit that went in: the sound of it, blood, the mark at the crosshair.
@@ -1141,14 +1147,24 @@ export class Game {
     this.hud.hitMark(hit.head);
   }
 
+  // A fight with a great beast: its name and health at the top of the
+  // screen, till it's dead or you've been out of the fight a while.
+  #bossFight(a) {
+    this.bossFight = { a, until: this.time + 10 };
+  }
+
   #report(a, outcome, head) {
+    if (a.boss) {
+      if (outcome === 'dead') this.hotbar?.flash(`${a.boss.name} is dead`);
+      return;
+    }
     const name = NAMES[a.kind] ?? 'animal';
     const text = { dead: `The ${name} is dead`, down: head ? `A blow to the head: the ${name} is down` : `The ${name} is down: finish it`, lame: `The ${name} is limping`, hit: `You wounded the ${name}` }[outcome];
     if (text) this.hotbar?.flash(text);
   }
 
   // Launching a spear or an arrow along a ray.
-  #launch(kind, stack, origin, direction, speed) {
+  #launch(kind, stack, origin, direction, speed, power = 1) {
     const mesh = new Mesh(this.items.model(kind === 'spear' ? stack.id : kind), this.items.material);
     mesh.castShadow = true;
     const pos = origin.clone().addScaledVector(direction, 0.6);
@@ -1156,7 +1172,7 @@ export class Game {
     mesh.position.copy(pos);
     this.scene.add(mesh);
     const vel = direction.clone().multiplyScalar(speed).add(new Vector3(0, kind === 'spear' ? 1.2 : kind === 'arrow' ? 0.4 : 0.1, 0));
-    this.flying.push({ kind, mesh, pos, vel, stack, life: 7 });
+    this.flying.push({ kind, mesh, pos, vel, stack, life: 7, power });
     // (Online: for the others to see it fly.)
     const r = (v) => Math.round(v * 100) / 100;
     this.onShot?.({ m: kind === 'spear' ? stack.id : kind, p: [r(pos.x), r(pos.y), r(pos.z)], v: [r(vel.x), r(vel.y), r(vel.z)] });
@@ -1219,10 +1235,13 @@ export class Game {
     if (!this.drawing) return;
     const draw = Math.min(1, (this.time - this.drawing.since) / 0.9);
     this.drawing = null;
-    if (draw < 0.15 || !this.inventory.remove('arrow', 1)) return;
+    // (Venom arrows first, if you've any.)
+    const ammo = this.inventory.count('poisonArrow') ? 'poisonArrow' : 'arrow';
+    if (draw < 0.15 || !this.inventory.remove(ammo, 1)) return;
+    const power = ITEMS[this.inventory.slots[i]?.id]?.power ?? 1;
     this.inventory.wear(i, 1);
     this.#animate('loose', 0.25);
-    this.#launch('arrow', Inventory.stack('arrow', 1), origin, direction, 16 + 34 * draw);
+    this.#launch('arrow', Inventory.stack(ammo, 1), origin, direction, (16 + 34 * draw) * power, power);
     this.cooldown = 0.35;
     this.sound?.call('whoosh', 0, 0.35 + 0.3 * draw);
   }
@@ -1236,13 +1255,15 @@ export class Game {
       s.loaded = false;
       this.inventory.wear(i, 1);
       this.inventory.changed();
-      this.#launch('bolt', Inventory.stack('bolt', 1), origin, direction, 75);
+      this.#launch('bolt', Inventory.stack(s.venom ? 'poisonBolt' : 'bolt', 1), origin, direction, 75);
       this.cooldown = 0.3;
       this.#animate('kick', 0.3);
       this.sound?.call('twang', 0, 0.7);
       return;
     }
-    if (!this.inventory.remove('bolt', 1)) return this.hotbar?.flash('No bolts (make them at an anvil)');
+    const venom = this.inventory.count('poisonBolt') > 0;
+    if (!this.inventory.remove(venom ? 'poisonBolt' : 'bolt', 1)) return this.hotbar?.flash('No bolts (make them at an anvil)');
+    s.venom = venom;
     this.winding = { i, t: 0, dur: 2.2 };
     this.sound?.call('winch', 0, 0.5);
     this.hotbar?.flash('Winding the crossbow…');
@@ -1275,10 +1296,14 @@ export class Game {
       const hit = this.wildlife.aim(sp.pos, dir, step + 0.3);
       if (hit && !sp.done) {
         const shot = SHOTS[sp.kind];
-        const sharp = shot.sharp ?? ITEMS[sp.stack.id]?.sharp ?? 1;
+        // (A stiffer bow's arrow strikes harder; venom doubles a hit, and lames.)
+        const venom = !!ITEMS[sp.stack.id]?.venom;
+        const sharp = (shot.sharp ?? ITEMS[sp.stack.id]?.sharp ?? 1) * (sp.power ?? 1) * (venom ? 2 : 1);
         const outcome = this.wildlife.wound(hit.animal, { head: hit.head, from: this.camera.position, hit, sharp });
+        if (venom && hit.animal.alive && !hit.animal.boss) hit.animal.lame = true;
         this.#wounded(hit, sp.pos);
         this.#report(hit.animal, outcome, hit.head);
+        if (hit.animal.boss) this.#bossFight(hit.animal);
         sp.done = true;
         // It stays in it where it went in (till the carcass is butchered);
         // a spear may break.
@@ -1419,7 +1444,7 @@ export class Game {
     a.ridden = true;
     a.led = false;
     this.controls.velocityY = 0;
-    const sp = { walk: 1.5, trot: 5, gallop: 14 };
+    const sp = { walk: 1.5, trot: 5, gallop: a.saddled === 'great' ? 16 : 14 };
     this.controls.vehicle = (dt, input) => {
       if (!a.alive) return this.#dismount();
       const keys = this.controls.keys;
@@ -1603,7 +1628,7 @@ export class Game {
     this.#fishing(dt, held);
     this.#wind(dt, held);
     this.#snares(dt);
-    if (this.drawing && held?.id !== 'bow') this.drawing = null;
+    if (this.drawing && !BOWS.has(held?.id)) this.drawing = null;
 
     // Warm by a fire? How hot and thirsty the country is, and how cold its winters.
     const heat = this.lastHeat;
@@ -1632,6 +1657,13 @@ export class Game {
     this.controls.burden = Math.max(0.45, 1 - heavy * 0.5);
     this.controls.noSprint = heavy > 0.5 || this.survival.energy < 20;
     // The day of this life, the season, the longest yet (survival only).
+    // A great beast you're fighting: its name and health, till it's dead (a
+    // moment more) or you've been out of the fight ten seconds.
+    const bf = this.bossFight;
+    if (bf && bf.a.alive && !bf.a.gone && Math.hypot(bf.a.x - cam.x, bf.a.z - cam.z) < 40) bf.until = Math.max(bf.until, bf.a.hunting || bf.a.charging > 0 ? this.time + 10 : bf.until);
+    if (bf && (!bf.a.alive || bf.a.gone)) bf.until = Math.min(bf.until, (bf.dead ??= this.time) + 3);
+    if (bf && this.time < bf.until) this.hud.boss(bf.a.boss.name, Wildlife.bossHealth(bf.a));
+    else (this.bossFight = null), this.hud.boss(null);
     // Settling a wild horse (how calm it is), or riding one (its wind).
     const calming = this.wildlife.calming;
     if (this.mount) this.hud.meter('Your horse\'s wind', (this.mount.stamina ?? 100) / 100);
@@ -1761,11 +1793,14 @@ export class Game {
     const p = this.camera.position, c = this.controls;
     return {
       x: p.x, y: p.y, z: p.z, mode: c.mode, crouch: c.crouch, moving: c.moving, sprint: c.sprinting, alive: this.survival.alive && !this.riding && !this.climbing,
-      cover: this.#grassCover(p.x, p.z),
+      cover: Math.min(1, this.#grassCover(p.x, p.z) + (ITEMS[this.inventory.worn?.id]?.hush ? 0.35 : 0)),
       lure: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'wheat',
       torch: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'torch',
       food: !!HORSE_FOOD[this.inventory.slots[this.hotbar?.index ?? 0]?.id],
-      damage: (amount, kind) => this.hurt(amount, ATTACKERS[kind] ?? `a ${NAMES[kind] ?? kind}`, { bite: kind !== 'snake' && kind !== 'scorpion' }),
+      damage: (amount, kind, a) => {
+        if (a?.boss) this.#bossFight(a);
+        this.hurt(amount, a?.boss ? a.boss.name : ATTACKERS[kind] ?? `a ${NAMES[kind] ?? kind}`, { bite: kind !== 'snake' && kind !== 'scorpion' });
+      },
       poison: (kind = 'snake') => {
         this.survival.poison();
         this.hotbar?.flash(kind === 'scorpion' ? 'Stung by a scorpion: the venom burns' : 'Bitten by a rattlesnake: the venom burns');
@@ -1876,19 +1911,24 @@ export class Game {
    */
   pose() {
     const held = this.heldId;
-    const draw = this.drawing && held === 'bow' ? Math.min(1, (this.time - this.drawing.since) / 0.9) : 0;
+    const draw = this.drawing && BOWS.has(held) ? Math.min(1, (this.time - this.drawing.since) / 0.9) : 0;
     return { held, act: this.anim?.kind ?? null, n: this.anims ?? 0, draw };
   }
 
   /** Where an item sits in a hand (`mesh` of it, in the hand's frame: forward is -z, up +y). */
   static holdPose(id, mesh) {
-    if (AXES[id] || PICKS[id] || SWORDS.has(id)) {
+    if (SWORDS.has(id)) {
+      // (Held out in front, the blade tipped forward.)
+      mesh.rotation.set(-0.75, Math.PI / 2, 0);
+      mesh.scale.setScalar(0.5);
+      mesh.position.set(0, -0.12, 0);
+    } else if (AXES[id] || PICKS[id]) {
       // (Blade forward, the handle in your fist near its end.)
       mesh.rotation.set(0, Math.PI / 2, 0);
       mesh.scale.setScalar(0.62);
       mesh.position.set(0, -0.06, 0);
     } else if (SPEARS.has(id)) mesh.rotation.set(0, Math.PI, 0), mesh.scale.setScalar(0.7), mesh.position.set(0, 0, -0.2);
-    else if (id === 'bow') mesh.rotation.set(0, 0, 0.25), mesh.scale.setScalar(0.75), mesh.position.set(-0.12, 0.1, -0.05);
+    else if (BOWS.has(id)) mesh.rotation.set(0, 0, 0.25), mesh.scale.setScalar(0.75), mesh.position.set(-0.12, 0.1, -0.05);
     else if (id === 'crossbow') mesh.rotation.set(0, Math.PI, 0), mesh.scale.setScalar(0.9), mesh.position.set(-0.14, 0.08, -0.12);
     else if (id === 'fishingRod') mesh.rotation.set(-1.05, 0, 0), mesh.scale.setScalar(0.75), mesh.position.set(0, -0.05, 0);
     else if (id === 'torch') mesh.rotation.set(0, 0, Math.PI / 2 - 0.2), mesh.scale.setScalar(0.7);
@@ -1905,7 +1945,7 @@ export class Game {
       this.bowString = null;
       if (id) {
         // (The bow without its string: that's drawn back, below.)
-        const geometry = id === 'torch' ? this.items.model('stick') : id === 'bow' ? (this.bareBow ??= bowModel(false)) : this.items.model(id);
+        const geometry = id === 'torch' ? this.items.model('stick') : BOWS.has(id) ? (this.bareBow ??= bowModel(false)) : this.items.model(id);
         const mesh = new Mesh(geometry, this.handMaterial);
         mesh.renderOrder = 999;
         mesh.onBeforeRender = this.nearest.before;
@@ -1920,7 +1960,7 @@ export class Game {
         } else if (id === 'torch') {
           this.handFlame.position.set(0.02, 0.33, 0);
           this.grip.add(this.handFlame);
-        } else if (id === 'bow') {
+        } else if (BOWS.has(id)) {
           // Its string, in two (drawn back to a point as you draw), and an
           // arrow on it while you do.
           const near = (m) => ((m.renderOrder = 999), (m.onBeforeRender = this.nearest.before), (m.onAfterRender = this.nearest.after), mesh.add(m), m);
@@ -1977,7 +2017,7 @@ export class Game {
       } else py += Math.sin(u * Math.PI) * 0.08;
       if (u >= 1) this.anim = null;
     }
-    if (id === 'bow' && this.bowString) {
+    if (BOWS.has(id) && this.bowString) {
       // Drawing: the bow brought up in front of you and stood upright, the
       // arrow on the string and pulled back to your cheek; held at full
       // draw, your arm starts to tremble.

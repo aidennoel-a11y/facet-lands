@@ -8,7 +8,7 @@ const BARS = [
   ['warmth', 'Warmth', '#f06a2a', `<path d="M16 2c1 6 8 8 8 16a8 8 0 0 1-16 0c0-4 2-6 3-8 1 3 3 4 3 4 0-5-1-8 2-12z"/>`],
   ['energy', 'Energy', '#e8d24a', `<path d="M18 2L6 18h8l-2 12 12-16h-8z"/>`],
 ];
-const GROUPS = ['Tools', 'Materials', 'Food', 'Farming', 'Worn', 'Building', 'Spawners'];
+const GROUPS = ['Tools', 'Materials', 'Trophies', 'Food', 'Farming', 'Worn', 'Building', 'Spawners'];
 
 /**
  * What's on screen for staying alive: the bars (health, hunger, thirst,
@@ -36,6 +36,7 @@ export class Hud {
       <div class="hitmark"></div>
       <div class="draw" hidden><i></i></div>
       <div class="meter" hidden><span></span><b><i></i></b></div>
+      <div class="bossbar" hidden><span></span><b><i></i></b></div>
       <div class="hurt-vignette"></div>
       <div class="cold-vignette"></div>
       <div class="sleep-fade"></div>
@@ -133,6 +134,15 @@ export class Hud {
     if (amount === null) return;
     if (this.meterLabel !== label) (this.meterLabel = label), (el.querySelector('span').textContent = label);
     el.querySelector('i').style.width = `${Math.round(Math.max(0, Math.min(1, amount)) * 100)}%`;
+  }
+
+  /** A great beast you're fighting: its name and health (0..1) at the top of the screen; or none (null). */
+  boss(name, health) {
+    const el = this.el('.bossbar');
+    el.hidden = name === null;
+    if (name === null) return;
+    if (this.bossName !== name) (this.bossName = name), (el.querySelector('span').textContent = name);
+    el.querySelector('i').style.width = `${Math.round(Math.max(0, Math.min(1, health)) * 1000) / 10}%`;
   }
 
   draw(amount) {

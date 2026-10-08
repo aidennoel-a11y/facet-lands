@@ -80,7 +80,8 @@ has a spawner for every animal.
 - You gather wood, stone, vines, hides and ore, then hunt with a spear, bow
   or crossbow, fish, farm, cook, and build: campfires, walls, gates, roofs,
   beds, chests, furnaces, rafts.
-- **Progression** follows a crafting tree of four tiers. **Stone** is open
+- **Progression** follows a crafting tree of five tiers (the fifth,
+  Trophies, opens with the first great beast's trophy). **Stone** is open
   from the start. **Camp** opens when you set down a campfire. **Iron**
   opens when you smelt an iron bar. **Steel** opens when you smelt a steel
   bar (from the dark *mountain iron ore* and *coal* found only high in
@@ -97,6 +98,23 @@ has a spawner for every animal.
   gallop while its wind lasts, Space to jump; it carries 40 kg more; it
   won't go into caves. It needs grazing and water, and dies if starved
   (and stays dead).
+- **Great beasts (bosses)**: each 2 km of land has a one-in-ten chance of
+  its biome's great beast, and of a cave bear in one of its caves: Old Scar
+  (a huge grizzly, Smoky Mountains and Black Hills), Greymane (alpha wolf
+  with a pack, pine forest), the Pale Ghost (cougar, redwoods), the Old
+  Bull (moose, parkland), Thunderhead (bison, temperate highlands), Old Jaw
+  (crocodile, wetlands and mangroves), Kingmane (lion, savanna), the
+  Striped Shadow (tiger, jungle), the Old Rattler (rattlesnake, desert and
+  badlands), Ironhide (boar, volcanic highlands) and the Cave Bear. Each is
+  1.45-1.75 times its kind's size, darker or paler, scarred, keeps to its
+  territory, warns before every blow (a long wind-up or threat), kills an
+  unarmoured player in about three hits and takes about ten steel-sword
+  blows. A bar at the top shows its name and health while you fight. It
+  comes back six game days after it's killed. Each drops a unique trophy
+  (plus a big haul of meat and hide or fur), used in the Trophies tier:
+  pelt- and hide-lined armours, the fang sword, the antler bow, venom
+  arrows and bolts, the great saddle, a great-hide roof, the ghost cloak,
+  the cave bear cloak and the tusk pickaxe.
 - Worlds are saved in the browser. Online play goes through a small Node
   WebSocket server (`server/`), which shares the seed, the clock, the
   players and their edits to the world.

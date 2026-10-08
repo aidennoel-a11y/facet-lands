@@ -144,6 +144,31 @@ SPECIES.camel.charger = { close: 0, hit: 12, reach: 1.6, hurt: true, warn: 0.8, 
 // How many blows to the body each size takes to go lame, to go down, and to
 // die (a blow to the head brings one down; one more finishes it).
 const BLOWS = { huge: [6, 10, 13], large: [3, 5, 6], medium: [2, 3, 4], small: [1, 2, 2] };
+
+/**
+ * The great beasts: one of each biome's (and one of the caves'), a bigger,
+ * scarred, darker or paler version of its kind, with a name, keeping to its
+ * territory (see #bosses). `coat`: its colouring (a multiplier: under 1 darker, over 1 paler); `tough`: how many times the blows to bring it
+ * down; `bite` or `hit` (and how often), always telegraphed (a long
+ * wind-up or threat); `prime`: what only it gives when butchered (with a
+ * big `haul`), for the trophy recipes.
+ */
+export const BOSSES = {
+  scar: { kind: 'grizzly', name: 'Old Scar', biomes: ['smoky', 'blackHills'], scale: 1.65, coat: [0.72, 0.68, 0.66], tough: 5, bite: 42, every: 2.4, prime: 'grizzlyPelt', haul: { rawMeat: 14, fur: 5 } },
+  greymane: { kind: 'wolf', name: 'Greymane', biomes: ['pine'], scale: 1.5, coat: [1.45, 1.45, 1.5], tough: 6, bite: 30, every: 1.9, pack: 5, prime: 'alphaFang', haul: { rawMeat: 5, fur: 3 } },
+  ghost: { kind: 'cougar', name: 'The Pale Ghost', biomes: ['redwood'], scale: 1.5, coat: [1.5, 1.48, 1.52], tough: 6, bite: 38, every: 2.0, prime: 'paleFur', haul: { rawMeat: 6, fur: 3 } },
+  oldBull: { kind: 'moose', name: 'The Old Bull', biomes: ['parkland'], scale: 1.45, coat: [0.72, 0.7, 0.68], tough: 4, hit: 55, antlers: true, prime: 'greatAntlers', haul: { rawMeat: 20, hide: 5 } },
+  thunderhead: { kind: 'bison', name: 'Thunderhead', biomes: ['temperate'], scale: 1.5, coat: [0.68, 0.64, 0.62], tough: 4, hit: 55, prime: 'greatHide', primeCount: 2, haul: { rawMeat: 16, hide: 6 } },
+  oldJaw: { kind: 'crocodile', name: 'Old Jaw', biomes: ['wetland', 'mangrove'], scale: 1.75, coat: [0.78, 0.84, 0.72], tough: 4, bite: 48, every: 2.6, prime: 'crocHide', haul: { rawMeat: 14, hide: 5 } },
+  kingmane: { kind: 'lion', name: 'Kingmane', biomes: ['savanna'], scale: 1.5, coat: [0.86, 0.78, 0.72], tough: 5, bite: 40, every: 2.0, antlers: true, prime: 'lionPelt', haul: { rawMeat: 12, fur: 5 } },
+  shadow: { kind: 'tiger', name: 'The Striped Shadow', biomes: ['jungle'], scale: 1.45, coat: [0.8, 0.7, 0.68], tough: 5, bite: 44, every: 2.1, prime: 'tigerPelt', haul: { rawMeat: 12, fur: 5 } },
+  rattler: { kind: 'snake', name: 'The Old Rattler', biomes: ['desert', 'badlands'], scale: 4.6, coat: [0.82, 0.76, 0.68], tough: 18, bite: 30, prime: 'venomSac', primeCount: 3, haul: { rawMeat: 4 } },
+  ironhide: { kind: 'boar', name: 'Ironhide', biomes: ['volcanic'], scale: 1.75, coat: [0.6, 0.6, 0.64], tough: 5, hit: 45, prime: 'boarTusk', haul: { rawMeat: 14, hide: 4 } },
+  caveBear: { kind: 'grizzly', name: 'The Cave Bear', cave: true, scale: 1.75, coat: [0.55, 0.52, 0.52], tough: 6, bite: 45, every: 2.4, prime: 'caveBearPelt', haul: { rawMeat: 15, fur: 6 } },
+};
+const BOSS_KINDS = new Set(Object.values(BOSSES).map((b) => b.kind));
+const BOSS_RESPAWN_DAYS = 6; // (game days before another of the same rises)
+const BOSS_CELL = 2000; // (each 2 km of the land, a one-in-ten chance of its biome's great beast)
 // What a carcass gives when butchered.
 const YIELD = {
   sheep: { rawMeat: 3, wool: 3 }, wolfPup: { rawMeat: 1 }, deer: { rawMeat: 4, hide: 1 }, elk: { rawMeat: 6, hide: 2 }, moose: { rawMeat: 9, hide: 2 },
@@ -219,18 +244,19 @@ export class Wildlife {
         if (model.fore) make('foreUpper', model.fore.upper, sp.max * 2, true), make('foreLower', model.fore.lower, sp.max * 2, true);
         make('hindUpper', model.hind.upper, sp.max * n, true);
         make('hindLower', model.hind.lower, sp.max * n, true);
-        if (sp.tinted) for (const m of Object.values(meshes)) m.setColorAt(0, white);
+        if (sp.tinted || BOSS_KINDS.has(kind)) for (const m of Object.values(meshes)) m.setColorAt(0, white);
         model.body.computeBoundingBox();
       } else if (sp.serpent) {
         make('segment', model.segment, sp.max * model.segments, true);
         make('head', model.head, sp.max, true);
         make('rattle', model.rattle, sp.max, false);
+        if (BOSS_KINDS.has(kind)) for (const m of Object.values(meshes)) m.setColorAt(0, white);
       } else {
         make('body', model.body, sp.max, kind === 'hawk' || kind === 'gull');
         make('wingL', model.wingL, sp.max, kind === 'hawk' || kind === 'gull');
         make('wingR', model.wingR, sp.max, kind === 'hawk' || kind === 'gull');
       }
-      this.rigs[kind] = { model, meshes };
+      this.rigs[kind] = { model, meshes, coloured: sp.tinted || BOSS_KINDS.has(kind) };
     }
     // Wounds: a dark red mark on a creature where each blow or shot went in.
     this.woundMesh = new InstancedMesh(new BoxGeometry(0.07, 0.07, 0.07), new MeshLambertMaterial({ color: 0x8a0c0c, emissive: 0x3a0404 }), 256);
@@ -299,7 +325,7 @@ export class Wildlife {
     }
     if (a.goal?.water && a.thirst > 95) a.goal = null;
     const going = a.ridden && a.speed > sp.walk * 4;
-    a.stamina = Math.max(0, Math.min(100, (a.stamina ?? 100) + dt * (going ? -9 : a.speed > sp.walk * 1.5 ? 2 : 12)));
+    a.stamina = Math.max(0, Math.min(100, (a.stamina ?? 100) + dt * (going ? (a.saddled === 'great' ? -6 : -9) : a.speed > sp.walk * 1.5 ? 2 : 12)));
     // Starving, or dying of thirst.
     if (a.hunger <= 0 || a.thirst <= 0) {
       a.starving = (a.starving ?? 0) + dt;
@@ -325,11 +351,30 @@ export class Wildlife {
     return lamb;
   }
 
+  /** The great beasts brought down, and when (world day): { lair key: day }, to save. */
+  bossJSON() {
+    return { ...(this.bossDeaths ?? {}) };
+  }
+
+  loadBosses(deaths) {
+    this.bossDeaths = { ...(deaths ?? {}) };
+    for (const a of this.animals) if (a.boss) a.gone = true;
+    this.bossLive = new Map();
+  }
+
+  /** A great beast's health left (0..1). */
+  static bossHealth(a) {
+    if (a.mirrored) return a.bossHealth ?? 1;
+    if (!a.alive) return 0;
+    const sp = SPECIES[a.kind], [, , dead] = sp.bird || a.kind === 'snake' ? [1, 1, 1] : BLOWS[sp.bulk];
+    return Math.max(0, 1 - (a.hits ?? 0) / (dead * a.boss.tough));
+  }
+
   /** Your tame animals, to save: [{ kind, x, z, young, sheared }]. */
   tameJSON() {
     return this.animals.filter((a) => a.tame && a.alive && !a.gone).map((a) => ({
       kind: a.kind, x: +a.x.toFixed(1), z: +a.z.toFixed(1), young: a.young ? 0.5 : 0, sheared: a.sheared ? Math.max(0, Math.round(this.time - a.sheared)) : null,
-      ...(a.kind === 'horse' ? { saddled: !!a.saddled, hunger: Math.round(a.hunger ?? 80), thirst: Math.round(a.thirst ?? 80), stallion: !!a.stallion } : {}),
+      ...(a.kind === 'horse' ? { saddled: a.saddled === 'great' ? 'great' : !!a.saddled, hunger: Math.round(a.hunger ?? 80), thirst: Math.round(a.thirst ?? 80), stallion: !!a.stallion } : {}),
     }));
   }
 
@@ -478,7 +523,15 @@ export class Wildlife {
       const dx = a.x - from.x, dz = a.z - from.z, d = Math.hypot(dx, dz) || 1;
       a.jolt = { x: dx / d, z: dz / d, t: 0.3 };
     }
-    const [lame, down, dead] = sp.bird || a.kind === 'rabbit' || a.kind === 'snake' || a.kind === 'duck' || a.kind === 'scorpion' ? [1, 1, 1] : BLOWS[sp.bulk];
+    let [lame, down, dead] = sp.bird || a.kind === 'rabbit' || a.kind === 'snake' || a.kind === 'duck' || a.kind === 'scorpion' ? [1, 1, 1] : BLOWS[sp.bulk];
+    // (A great beast takes many times the blows, never lamed or brought
+    // down before the end; a blow to its head is only a harder one.)
+    if (a.boss) {
+      dead *= a.boss.tough;
+      lame = down = Infinity;
+      if (head) (sharp *= 2), (head = false);
+      a.bossHurt = this.time;
+    }
     let outcome;
     if (a.down) outcome = 'dead';
     else if (head) outcome = dead <= 1 ? 'dead' : 'down';
@@ -488,6 +541,10 @@ export class Wildlife {
     }
     const cry = { deer: 'bleat', elk: 'bleat', sheep: 'baa', boar: 'squeal', moose: 'bellow', bison: 'grunt', rabbit: 'squeak', hare: 'squeak', turkey: 'gobble', duck: 'quack' }[a.kind];
     if (cry) this.ctx?.sound?.call(cry, this.ctx.pan(a.x, a.z), 0.6);
+    if (outcome === 'dead' && a.boss && !a.mirrored) {
+      (this.bossDeaths ??= {})[a.bossKey] = Math.round((this.ctx?.worldDay ?? 0) * 100) / 100;
+      this.onBossDeath?.(a);
+    }
     if (outcome === 'dead') {
       a.alive = false;
       a.down = false;
@@ -520,7 +577,7 @@ export class Wildlife {
     if (outcome === 'lame') a.lame = true;
     const at = from ?? this.ctx?.camera.position ?? a;
     if (sp.predator && !a.lame && !a.down) this.#enrage(a);
-    else if (sp.charger?.hurt && !a.lame && !a.down && !a.young) this.#charge(a);
+    else if ((sp.charger?.hurt || (a.boss && sp.charger)) && !a.lame && !a.down && !a.young) this.#charge(a);
     else if (a.herd) {
       this.#alarm(a.herd, at.x, at.z);
       if (a.lame || a.down) a.hunting = false;
@@ -567,7 +624,8 @@ export class Wildlife {
     a.gone = true;
     if (a.mirrored) this.onAct?.('butcher', a);
     const stuck = this.#unstick(a);
-    const got = { ...(YIELD[a.kind] ?? { rawMeat: 1 }) };
+    const got = { ...(a.boss ? a.boss.haul : YIELD[a.kind] ?? { rawMeat: 1 }) };
+    if (a.boss) got[a.boss.prime] = a.boss.primeCount ?? 1;
     if (a.young) for (const k of Object.keys(got)) got[k] = Math.max(1, Math.floor(got[k] / 2));
     // (Picked at by scavengers first: less of it.)
     if (a.picked) got.rawMeat = Math.max(0, (got.rawMeat ?? 0) - Math.ceil(a.picked));
@@ -639,12 +697,33 @@ export class Wildlife {
     if (a.charging > 0 || (a.chargeCool ?? 0) > 0) return;
     const ch = SPECIES[a.kind].charger;
     a.charging = 5;
-    a.threaten = ch?.warn ?? 0.7;
+    a.threaten = a.boss ? 1.4 : ch?.warn ?? 0.7; // (a great beast's longer: you'll see it coming)
     a.fear = 0;
     a.hibernating = false;
     const cry = ch?.cry ?? { boar: 'squeal', moose: 'bellow', elk: 'bugle', bison: 'grunt', deer: 'snort' }[a.kind];
     this.ctx?.sound?.call(cry ?? 'snort', this.ctx.pan(a.x, a.z), 0.9);
     if (a.herd) a.herd.fleeTime = 0;
+  }
+
+  // A great beast: it comes for you when you're in its territory (a hunter
+  // when you're within 30 m, one that charges within 22), keeps near its
+  // lair, and gives up and goes back to it if you lead it too far away.
+  #bossMind(a, sp, t, ctx) {
+    const p = ctx.player, onFoot = p && p.mode === 'walk' && p.alive && !ctx.tame;
+    const home = Math.hypot(a.x - a.lair.x, a.z - a.lair.z);
+    const youFromLair = p ? Math.hypot(p.x - a.lair.x, p.z - a.lair.z) : Infinity;
+    if (home > 90 || youFromLair > 110) {
+      a.hunting = false;
+      a.charging = 0;
+      a.notice = 0;
+      a.goal = { x: a.lair.x, z: a.lair.z };
+      a.home = a.goal;
+      if (a.herd) a.herd.hunting = false;
+      return;
+    }
+    if (!onFoot) return;
+    if (sp.predator && t.d < 30 && !a.hunting) this.#enrage(a);
+    else if (sp.charger && t.d < 22 && !(a.charging > 0) && (a.chargeCool ?? 0) <= 0) this.#charge(a);
   }
 
   // A wolf or a bear watching for you: it notices you if you're in sight a
@@ -831,7 +910,7 @@ export class Wildlife {
         if (!a) continue;
         this.#tame(a);
         if (t.sheared !== null && t.sheared !== undefined) a.sheared = this.time - t.sheared;
-        if (t.kind === 'horse') Object.assign(a, { saddled: !!t.saddled, hunger: t.hunger ?? 80, thirst: t.thirst ?? 80, stallion: !!t.stallion, stamina: 100 });
+        if (t.kind === 'horse') Object.assign(a, { saddled: t.saddled === 'great' ? 'great' : !!t.saddled, hunger: t.hunger ?? 80, thirst: t.thirst ?? 80, stallion: !!t.stallion, stamina: 100 });
       }
       this.pendingTame = left;
     }
@@ -960,6 +1039,7 @@ export class Wildlife {
         a.id, a.kind, r2(a.x), r2(a.y), r2(a.z), r3(a.heading), r3(a.pitch), r3(a.roll), r3(a.scale), flags,
         a.state ?? '', r2(a.speed ?? 0), r3(a.headDown), r3(a.headYaw), r3(a.lie), r3(a.crouch), a.gait ?? '', r3(a.strideLen ?? 1), a.side ?? 1,
         r3(a.coil), r3(a.display), r3(a.rear), r3(a.drop), a.tint ?? 0,
+        a.boss ? Object.keys(BOSSES).find((k) => BOSSES[k] === a.boss) : '', a.boss ? r3(Wildlife.bossHealth(a)) : 0,
       ]);
     }
     return { a: out };
@@ -980,6 +1060,8 @@ export class Wildlife {
         this.animals.push(a);
       }
       a.samples.push({ t, r });
+      // (A great beast: who it is, and how much is left of it.)
+      if (r[24] && BOSSES[r[24]]) (a.boss = BOSSES[r[24]]), (a.bossHealth = r[25]), (a.coat ??= new Color().setRGB(...a.boss.coat)), (a.antlers = !!a.boss.antlers);
       if (a.samples.length > 12) a.samples.shift();
       a.missed = 0;
     }
@@ -1106,6 +1188,7 @@ export class Wildlife {
       }
       if (best) (best.scavenge = c), (c.claimed = best);
     }
+    this.#bosses(ctx);
     // Horses (wild ones) run from anything that's hunting near them.
     for (const h of this.herds) {
       if (h.kind !== 'horse' || h.fleeTime > 0) continue;
@@ -1763,6 +1846,93 @@ export class Wildlife {
   }
 
 
+  /**
+   * The great beasts' lairs: each 2 km square of the land has a one-in-ten
+   * chance of one (its biome's), and a one-in-ten chance of a cave bear in
+   * one of its caves. One rises when you come within 300 m of its lair (if
+   * it hasn't been brought down in the last few days), and keeps near it.
+   */
+  #lair(i, j, ctx) {
+    this.lairs ??= new Map();
+    const key = `${i},${j}`;
+    if (this.lairs.has(key)) return this.lairs.get(key);
+    const g = ctx.generator, seed = ctx.seed ^ 0xb055;
+    const found = [];
+    if (hash2(i, j, seed) < 0.1) {
+      const x = (i + 0.2 + 0.6 * hash2(i, j, seed + 1)) * BOSS_CELL, z = (j + 0.2 + 0.6 * hash2(i, j, seed + 2)) * BOSS_CELL;
+      const w = g.getBiomeWeights(x, z, {});
+      let best = null, bw = 0.55;
+      for (const [id, b] of Object.entries(BOSSES)) for (const bi of b.biomes ?? []) if ((w[bi] ?? 0) > bw) (bw = w[bi]), (best = id);
+      if (best && g.getBaseHeight(x, z) > ctx.seaLevel + 1) found.push({ key: `${best}@${key}`, boss: best, x, z });
+    }
+    if (hash2(i, j, seed + 7) < 0.1 && g.caves?.mouthsNear) {
+      const m = g.caves.mouthsNear(i * BOSS_CELL, j * BOSS_CELL, (i + 1) * BOSS_CELL, (j + 1) * BOSS_CELL).find((e) => e.mouth.x >= i * BOSS_CELL && e.mouth.x < (i + 1) * BOSS_CELL && e.mouth.z >= j * BOSS_CELL && e.mouth.z < (j + 1) * BOSS_CELL);
+      if (m) found.push({ key: `caveBear@${key}`, boss: 'caveBear', x: m.mouth.x, z: m.mouth.z, cave: true });
+    }
+    this.lairs.set(key, found);
+    return found;
+  }
+
+  #bosses(ctx) {
+    if (this.mirror) return;
+    const c = ctx.camera.position;
+    this.bossLive ??= new Map();
+    this.bossDeaths ??= {};
+    for (const [key, a] of this.bossLive) if (a.gone || !this.animals.includes(a)) this.bossLive.delete(key);
+    const ci = Math.floor(c.x / BOSS_CELL), cj = Math.floor(c.z / BOSS_CELL);
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      for (const lair of this.#lair(ci + di, cj + dj, ctx)) {
+        if (this.bossLive.has(lair.key) || Math.hypot(lair.x - c.x, lair.z - c.z) > 300) continue;
+        const died = this.bossDeaths[lair.key];
+        if (died !== undefined && (ctx.worldDay ?? 0) - died < BOSS_RESPAWN_DAYS) continue;
+        const a = this.#spawnBoss(lair, ctx);
+        if (a) this.bossLive.set(lair.key, a);
+      }
+    }
+  }
+
+  /** A great beast at its lair (testing: `spawnBoss`). */
+  #spawnBoss(lair, ctx) {
+    const def = BOSSES[lair.boss];
+    let x = lair.x, z = lair.z;
+    // (Out of the cave's mouth, onto firm ground; or near the lair's spot.)
+    let a = null;
+    for (let k = 0; k < 10 && !a; k++) {
+      const r = lair.cave ? 6 : k * 4, t = k * 2.4;
+      x = lair.x + Math.sin(t) * r;
+      z = lair.z + Math.cos(t) * r;
+      a = def.kind === 'snake' ? this.#spawnSnake(x, z) : this.#spawnWalker(def.kind, x, z, null);
+    }
+    if (!a) return null;
+    a.boss = def;
+    a.bossKey = lair.key;
+    a.scale = (SPECIES[def.kind].size ?? 1) * def.scale;
+    a.coat = new Color().setRGB(...def.coat); // (darker, or paler: a multiplier on its kind's colours)
+    a.home = { x: lair.x, z: lair.z };
+    a.lair = { x: lair.x, z: lair.z };
+    a.antlers = !!def.antlers;
+    a.aggressive = true;
+    // (Old scars: marks it carries.)
+    a.marks = Array.from({ length: 4 }, (_, k) => ({ head: false, x: (k % 2 ? 0.2 : -0.2) * (k + 1) * 0.3, y: 0.9 + k * 0.05, z: 0.3 - k * 0.25 }));
+    if (def.pack) {
+      const herd = this.#spawnHerd('wolf', { x, z, y: a.y }, def.pack);
+      if (herd) {
+        herd.members.unshift(a);
+        a.herd = herd;
+        a.offset = { x: 0, z: 0 };
+      }
+    }
+    return a;
+  }
+
+  /** Testing: a great beast here (by its id in BOSSES). */
+  spawnBoss(id, x, z) {
+    if (!this.ctx || !BOSSES[id]) return null;
+    const a = this.#spawnBoss({ key: `${id}@test${Math.round(x)},${Math.round(z)}`, boss: id, x, z }, this.ctx);
+    if (a) (this.bossLive ??= new Map()).set(a.bossKey, a);
+    return a;
+  }
+
   #coastSpot(ctx) {
     const { camera, generator: g, seaLevel } = ctx;
     for (let k = 0; k < 10; k++) {
@@ -2276,6 +2446,7 @@ export class Wildlife {
     // (In tall grass you're half hidden: crouched in it, nearly.)
     const cover = onFoot ? (p.cover ?? 0) * (p.crouch ? 1 : 0.6) : 0;
     const reach = sp.flee * stance * (1 - 0.55 * cover) * (t.above > 25 ? 0.5 : 1) * (onFoot ? this.#scent(a, ctx) : 1);
+    if (a.boss) this.#bossMind(a, sp, t, ctx);
     if (sp.predator?.ambush) this.#ambush(a, sp, t, dt, ctx);
     else if (sp.predator && !a.young) this.#stalk(a, sp, t, dt, ctx);
     // Too close to one that stands up for itself (nearer in the rut, or by its young): it charges.
@@ -2313,7 +2484,7 @@ export class Wildlife {
       } else if (onFoot && (p.sprint && t.d < 30)) a.calm = 0;
       else a.calm = Math.max(0, (a.calm ?? 0) - dt / 30);
     }
-    if (!ctx.tame && !a.tame && !lured && !settling && !sp.fearless && !a.hunting && !(a.charging > 0) && !a.stalking && t.d < reach && t.above < 50) {
+    if (!ctx.tame && !a.tame && !a.boss && !lured && !settling && !sp.fearless && !a.hunting && !(a.charging > 0) && !a.stalking && t.d < reach && t.above < 50) {
       if (herd) {
         if (herd.fleeTime <= 0 && a.kind === 'bison') ctx.sound?.call('grunt', ctx.pan(a.x, a.z), 0.6);
         if (herd.fleeTime <= 0 && (a.kind === 'deer' || a.kind === 'elk')) ctx.sound?.call('snort', ctx.pan(a.x, a.z), 0.5);
@@ -2339,7 +2510,7 @@ export class Wildlife {
       if (land || L.t > 1.2) {
         a.leap = null;
         a.air = 0;
-        if (t.d < 2.4 && p?.alive) p.damage(sp.predator.bite * 1.4, a.kind, a);
+        if (t.d < 2.4 * (a.boss ? 1.5 : 1) && p?.alive) p.damage(a.boss?.bite ?? sp.predator.bite * 1.4, a.kind, a);
         a.attackCd = 1;
       }
       const y = ctx.ground(a.x, a.z);
@@ -2384,15 +2555,16 @@ export class Wildlife {
       want = Math.atan2(p.x - a.x, p.z - a.z);
       speed = sp.run * 0.85;
       a.state = 'charge';
-      if (t.d < ch.reach + sp.radius * a.scale && Math.abs(p.y - 1.2 - a.y) < 2.5 && onFoot) {
-        p.damage(ch.hit * rnd(0.8, 1.2), a.kind, a);
+      if (t.d < ch.reach * (a.boss ? 1.3 : 1) + sp.radius * a.scale && Math.abs(p.y - 1.2 - a.y) < 2.5 + (a.boss ? 1 : 0) && onFoot) {
+        p.damage((a.boss?.hit ?? ch.hit) * rnd(0.8, 1.2), a.kind, a);
         if (ch.venom) p.poison?.(a.kind);
         a.charging = 0;
       }
       if (!onFoot || t.d > 40) a.charging = 0;
       if (a.charging <= 0) {
-        a.chargeCool = rnd(15, 30);
-        a.fear = 5;
+        // (A great beast turns and comes again, after a breath: a moment to strike it.)
+        a.chargeCool = a.boss ? rnd(3, 4.5) : rnd(15, 30);
+        a.fear = a.boss ? 0 : 5;
         if (herd) this.#alarm(herd, p.x, p.z);
       }
     } else if (a.hunting) {
@@ -2407,7 +2579,8 @@ export class Wildlife {
         tz += ux * side;
       }
       want = Math.atan2(tx - a.x, tz - a.z);
-      const inReach = pr.reach + sp.radius * a.scale;
+      // (A great beast reaches from further: its head's well out in front of it.)
+      const inReach = pr.reach + sp.radius * a.scale + (a.boss ? 0.45 * a.scale : 0);
       speed = t.d > inReach ? sp.run * (t.d > 25 ? 0.95 : 0.8) : 0;
       a.state = 'hunt';
       a.attackCd = (a.attackCd ?? 0) - dt;
@@ -2422,15 +2595,17 @@ export class Wildlife {
       const close = t.d <= inReach + 0.35 && Math.abs(p.y - 1.2 - a.y) < 2.5;
       if (!close && t.d > inReach + 2) a.ready = false;
       if (close && !a.ready && !(a.windup > 0)) {
-        a.windup = 0.55;
+        a.windup = a.boss ? 0.95 : 0.55; // (a great beast rears and roars: a long, clear wind-up)
+        if (a.boss) ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : 'roar', ctx.pan(a.x, a.z), 0.9);
         a.crouch = 1;
         ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : a.kind === 'hyena' ? 'hyena' : a.kind === 'crocodile' ? 'hiss' : 'growl', ctx.pan(a.x, a.z), 0.8);
       }
       if (a.windup > 0 && (a.windup -= dt) <= 0) (a.ready = true), (a.attackCd = Math.min(a.attackCd, 0));
       if (close && a.ready && a.attackCd <= 0) {
-        a.attackCd = pr.every * rnd(0.85, 1.2);
+        a.attackCd = (a.boss?.every ?? pr.every) * rnd(0.85, 1.2);
         a.lunge = 0.35;
-        p.damage(pr.bite * rnd(0.8, 1.2), a.kind, a);
+        p.damage((a.boss?.bite ?? pr.bite) * rnd(0.8, 1.2), a.kind, a);
+        if (a.boss) a.ready = false; // (every blow of a great beast's is warned of)
       }
     } else if (fleeing) {
       // Running from you: the way that's open (see #escape), with the herd.
@@ -2923,19 +3098,19 @@ export class Wildlife {
     // A rattlesnake rattles; a python, bigger, hisses and draws its head
     // back: either way, a warning before it strikes (a python's no venom,
     // but a heavy, crushing bite).
-    const python = a.kind === 'python', aware = python ? 7 : 5, reach = python ? 2.8 : 1.8;
+    const python = a.kind === 'python' || !!a.boss, aware = a.boss ? 10 : python ? 7 : 5, reach = a.boss ? 3.6 : python ? 2.8 : 1.8;
     if (onFoot && t.d < aware && a.state !== 'flee') {
       if (a.state !== 'coil') (a.state = 'coil'), (a.timer = rnd(4, 8)), (a.warnedAt = this.time);
       a.rattle = (a.rattle ?? 0) - dt;
-      if (a.rattle <= 0) (a.rattle = python ? 1.3 : 0.7), ctx.sound?.call(python ? 'hiss' : 'rattle', ctx.pan(a.x, a.z), Math.min(1, 3 / (t.d + 1)));
+      if (a.rattle <= 0) (a.rattle = python && !a.boss ? 1.3 : 0.7), ctx.sound?.call(python && !a.boss ? 'hiss' : 'rattle', ctx.pan(a.x, a.z), Math.min(1, (a.boss ? 8 : 3) / (t.d + 1)));
       a.heading += angleTo(a.heading, Math.atan2(p.x - a.x, p.z - a.z)) * Math.min(1, dt * 4);
-      if (t.d < reach && a.strikeCd <= 0 && this.time - (a.warnedAt ?? 0) > 0.7) {
+      if (t.d < reach && a.strikeCd <= 0 && this.time - (a.warnedAt ?? 0) > (a.boss ? 1.2 : 0.7)) {
         a.strike = 0.25;
         a.strikeCd = python ? 2.6 : 2.2;
         ctx.sound?.call('hiss', ctx.pan(a.x, a.z), 0.8);
-        p.damage(python ? 20 : 7, a.kind, a);
-        if (!python) p.poison?.();
-        if (Math.random() < (python ? 0.15 : 0.4)) (a.state = 'flee'), (a.timer = rnd(6, 10));
+        p.damage(a.boss?.bite ?? (python ? 20 : 7), a.kind, a);
+        if (!python || a.boss) p.poison?.();
+        if (!a.boss && Math.random() < (python ? 0.15 : 0.4)) (a.state = 'flee'), (a.timer = rnd(6, 10));
       }
     } else if (a.state === 'coil' && (a.timer -= dt) <= 0) (a.state = 'flee'), (a.timer = rnd(5, 9));
     a.coil = (a.coil ?? 0) + ((a.state === 'coil' ? 1 : 0) - (a.coil ?? 0)) * Math.min(1, dt * 4);
@@ -3334,7 +3509,8 @@ export class Wildlife {
         this.#drawSnake(a, rig, ctx);
         continue;
       }
-      const colour = sp.tinted ? (ctx?.winter > 0.5 ? white : HARE_BROWN) : null;
+      // (A great beast's own coat; the rest of its kind as they're made.)
+      const colour = a.coat ?? (sp.tinted ? (ctx?.winter > 0.5 ? white : HARE_BROWN) : rig.coloured ? white : null);
       const put = (mesh, pivot, rx, ry, rz, order = 'YXZ', k = 1) => {
         euler.set(rx, ry, rz, order);
         quat.setFromEuler(euler);
@@ -3573,17 +3749,20 @@ export class Wildlife {
     for (let k = 1; k < n; k++) {
       out.compose(pos.set(a.segs[k].x, a.segs[k].y, a.segs[k].z), orient(k), scl.set(s * (1 - k / n * 0.45), s, s));
       M.segment.setMatrixAt(M.segment.count++, out);
+      if (rig.coloured) M.segment.setColorAt(M.segment.count - 1, a.coat ?? white);
     }
     const lunge = (a.strike ?? 0) > 0 ? Math.sin(((0.25 - a.strike) / 0.25) * Math.PI) * 0.35 * s : 0;
     const h0 = a.segs[0];
     orient(0);
     out.compose(pos.set(h0.x + Math.sin(a.heading) * lunge, h0.y + lunge * 0.3, h0.z + Math.cos(a.heading) * lunge), quat, scl.setScalar(s));
     M.head.setMatrixAt(M.head.count++, out);
+    if (rig.coloured) M.head.setColorAt(M.head.count - 1, a.coat ?? white);
     const tail = a.segs[n];
     orient(n - 1);
     if (a.state === 'coil' && a.alive) quat.multiply(shake.setFromEuler(euler.set(0, 0, Math.sin(this.time * 60) * 0.4)));
     out.compose(pos.set(tail.x, tail.y + coil * 0.08 * s, tail.z), quat, scl.setScalar(s));
     if (M.rattle) M.rattle.setMatrixAt(M.rattle.count++, out);
+    if (M.rattle && rig.coloured) M.rattle.setColorAt(M.rattle.count - 1, a.coat ?? white);
     a.m = null;
     a.hm = null;
   }
