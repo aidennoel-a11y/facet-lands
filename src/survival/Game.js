@@ -48,6 +48,8 @@ const AXES = { axe: 1, steelAxe: 2, forgedAxe: 3 };
 const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2 };
 const SPEARS = new Set(['spear', 'steelSpear', 'forgedSpear']);
 const SWORDS = new Set(['sword']);
+// What a horse will come to you for, and eat.
+const HORSE_FOOD = { apple: 25, carrot: 25, wheat: 20, corn: 20, berries: 10 };
 const smooth = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -120,6 +122,7 @@ export class Game {
     this.drawing = null; // a bow being drawn: { since }
     this.line = null; // a fishing line out
     this.riding = null; // the raft you're on
+    this.mount = null; // the horse you're on
     this.sleeping = null;
     this.snareWait = 1;
     this.age = 0; // (game days this life has lasted: see passDays)
@@ -332,6 +335,14 @@ export class Game {
       const text = held?.id === 'shears' ? (regrown && !beast.young ? 'Shear the sheep' : 'Its wool is still growing back') : held?.id === 'wheat' ? 'Feed the sheep (two fed: a lamb)' : 'Your sheep (shears to shear it, wheat to feed it)';
       found.push({ kind: 'sheep', distance: carcass.distance, animal: beast, text });
     }
+    // A tame horse: to feed, saddle, lead, or ride.
+    if (beast?.kind === 'horse' && beast.tame) {
+      const needs = [beast.hunger < 30 ? 'hungry' : '', beast.thirst < 30 ? 'thirsty' : ''].filter(Boolean).join(' and ');
+      const text = HORSE_FOOD[held?.id] ? 'Feed the horse'
+        : held?.id === 'saddle' ? (beast.saddled ? 'It has a saddle' : beast.young ? 'Too young for a saddle' : 'Saddle the horse')
+        : beast.saddled ? 'Ride (Shift+E: lead it)' : beast.led ? 'Let it go' : 'Lead it (a saddle to ride it)';
+      found.push({ kind: 'horse', distance: carcass.distance, animal: beast, text: needs ? `${text} · ${needs}` : text });
+    }
     const tree = this.trees.pick(origin, direction, reach);
     if (tree && FRUIT[tree.type]) {
       const ripe = seasonUniforms.uFruit.value > 0.6 && seasonUniforms.uRipe.value > 0.7;
@@ -411,6 +422,7 @@ export class Game {
 
   /** E: picks up, picks fruit, drinks, butchers, and uses what you've built (Shift: takes it down). */
   interact(ray, down = false) {
+    if (this.mount) return this.#dismount(true);
     if (this.riding) return this.#getOff(true);
     if (this.climbing) return this.#letGo(true);
     const t = this.#target(ray, down);
@@ -461,6 +473,25 @@ export class Game {
         return this.hotbar?.flash(lamb ? 'A lamb!' : 'Fed');
       }
       return this.hotbar?.flash(t.text);
+    }
+    if (t.kind === 'horse') {
+      const a = t.animal, held = this.inventory.slots[this.hotbar.index];
+      if (HORSE_FOOD[held?.id]) {
+        this.inventory.remove(held.id, 1);
+        a.hunger = Math.min(100, (a.hunger ?? 50) + HORSE_FOOD[held.id]);
+        this.sound?.call('eat', 0, 0.4);
+        this.dirty = true;
+        return this.hotbar?.flash(a.hunger > 90 ? 'Fed: it has had its fill' : 'Fed');
+      }
+      if (held?.id === 'saddle' && !a.saddled && !a.young) {
+        this.inventory.remove('saddle', 1);
+        a.saddled = true;
+        this.dirty = true;
+        return this.hotbar?.flash('Saddled: E to ride');
+      }
+      if (a.saddled && !down) return this.#ride(a);
+      a.led = !a.led;
+      return this.hotbar?.flash(a.led ? 'Leading the horse' : 'You let it go: it will stay about here');
     }
     if (t.kind === 'fruit') {
       if (!t.ripe || t.picked) return this.hotbar?.flash(t.text);
@@ -1378,6 +1409,58 @@ export class Game {
     a.needsUpdate = true;
   }
 
+  // --- A horse ----------------------------------------------------------------------
+
+  // Up into the saddle: W to go (walking, trotting; Shift to gallop, as
+  // long as its wind holds), steering where you look, Space to jump. It
+  // carries what you can't (saddlebags). Not into the caves.
+  #ride(a) {
+    this.mount = a;
+    a.ridden = true;
+    a.led = false;
+    this.controls.velocityY = 0;
+    const sp = { walk: 1.5, trot: 5, gallop: 14 };
+    this.controls.vehicle = (dt, input) => {
+      if (!a.alive) return this.#dismount();
+      const keys = this.controls.keys;
+      const gallop = (keys.has('ShiftLeft') || keys.has('ShiftRight')) && (a.stamina ?? 100) > 4;
+      const yaw = this.controls.euler.y;
+      a.rideWant = yaw + Math.PI - input.strafe * 0.6;
+      a.rideSpeed = input.forward > 0 ? (gallop ? sp.gallop : sp.trot) : input.forward < 0 ? 0 : input.strafe ? sp.walk : 0;
+      if (keys.has('Space') && !a.hop && (a.stamina ?? 100) > 10) {
+        a.hop = { vy: 4.2 };
+        a.stamina -= 8;
+      }
+      const p = this.camera.position;
+      // (On its back: the eye a little behind its withers.)
+      const back = -0.05 * a.scale;
+      p.set(a.x - Math.sin(a.heading) * back, a.y + 2.65 * a.scale, a.z - Math.cos(a.heading) * back);
+      this.controls.grounded = true;
+      this.controls.moving = a.speed > 0.3;
+      if (a.balked && !this.balkSaid) (this.balkSaid = true), this.hotbar?.flash('It won\'t go into the cave');
+      if (!a.balked) this.balkSaid = false;
+    };
+    this.sound?.call('neigh', 0, 0.4);
+    this.hotbar?.flash('Riding: W to go, Shift to gallop, Space to jump, E to get down');
+  }
+
+  // Down from the saddle, beside it.
+  #dismount(say = false) {
+    const a = this.mount;
+    if (!a) return;
+    this.mount = null;
+    a.ridden = false;
+    a.rideSpeed = 0;
+    a.home = { x: a.x, z: a.z };
+    this.controls.vehicle = null;
+    const p = this.camera.position;
+    const side = a.heading + Math.PI / 2;
+    const x = a.x + Math.sin(side) * 1.4, z = a.z + Math.cos(side) * 1.4;
+    p.set(x, this.groundAt(x, z) + this.controls.eyeHeight + 0.1, z);
+    this.dirty = true;
+    if (say) this.hotbar?.flash(a.alive ? 'Down from the saddle' : 'Your horse is dead');
+  }
+
   // --- A raft -----------------------------------------------------------------------
 
   #board(s) {
@@ -1545,10 +1628,15 @@ export class Game {
     const jumped = this.controls.takeJumps();
     // What you carry weighs you down.
     const load = this.inventory.slots.reduce((n, s) => n + weightOf(s), 0);
-    const heavy = Math.max(0, (load - LOAD) / LOAD);
+    const heavy = Math.max(0, (load - LOAD - (this.mount ? 40 : 0)) / LOAD); // (a horse's saddlebags carry 40 kg more)
     this.controls.burden = Math.max(0.45, 1 - heavy * 0.5);
     this.controls.noSprint = heavy > 0.5 || this.survival.energy < 20;
     // The day of this life, the season, the longest yet (survival only).
+    // Settling a wild horse (how calm it is), or riding one (its wind).
+    const calming = this.wildlife.calming;
+    if (this.mount) this.hud.meter('Your horse\'s wind', (this.mount.stamina ?? 100) / 100);
+    else if (calming && !calming.a.tame && calming.calm > 0.02) this.hud.meter('The horse is settling', calming.calm);
+    else this.hud.meter(null, null);
     this.hud.almanac(this.mode === 'survival' && this.survival.alive ? { day: Math.floor(this.age) + 1, season: ctx.season ?? '', longest: Math.max(longestRun(), Math.floor(this.age)) } : null);
     const e = {
       active: walking && this.survival.alive && !this.sleeping,
@@ -1603,6 +1691,7 @@ export class Game {
       }
     } else this.structures.preview(null);
     if (this.riding) prompt = '<kbd>W</kbd> Paddle · <kbd>E</kbd> Get off';
+    if (this.mount) prompt = '<kbd>W</kbd> Ride · <kbd>Shift</kbd> Gallop · <kbd>Space</kbd> Jump · <kbd>E</kbd> Get down';
     if (this.climbing) prompt = '<kbd>W</kbd> Climb · <kbd>S</kbd> Down · <kbd>E</kbd> Let go';
     this.hud.stations = { anvil: !!this.structures.nearest('anvil', cam.x, cam.z, 5) };
     this.hud.prompt(prompt);
@@ -1675,6 +1764,7 @@ export class Game {
       cover: this.#grassCover(p.x, p.z),
       lure: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'wheat',
       torch: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'torch',
+      food: !!HORSE_FOOD[this.inventory.slots[this.hotbar?.index ?? 0]?.id],
       damage: (amount, kind) => this.hurt(amount, ATTACKERS[kind] ?? `a ${NAMES[kind] ?? kind}`, { bite: kind !== 'snake' && kind !== 'scorpion' }),
       poison: (kind = 'snake') => {
         this.survival.poison();
@@ -1687,6 +1777,7 @@ export class Game {
     this.dead = true;
     // What you carried lies where you fell.
     this.#getOff();
+    this.#dismount();
     this.#reel();
     const p = this.camera.position;
     this.inventory.slots.forEach((s, i) => {

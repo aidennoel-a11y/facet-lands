@@ -1383,3 +1383,59 @@ export const bat = () => bird({ body: 0x2a2220, belly: 0x3a302a, head: 0x2a2220,
 
 /** A bald eagle: dark brown, the white head and tail, the yellow hooked beak. */
 export const eagle = () => bird({ body: 0x3a2a1e, belly: 0x342618, head: 0xf2f0ea, beak: 0xe8c040, wing: 0x3e2c1e, tip: 0x241a12, tail: 0xf0eee8, legs: 0xe8c040 });
+
+/**
+ * A horse: a deep chest and long back on long slender legs, a long arched
+ * neck with a dark mane, a long head, a flowing dark tail; bay (brown, the
+ * legs, mane and tail black). A saddled one (`antlers`, drawn with the
+ * body... see horseSaddle) carries a leather saddle and blanket.
+ */
+export function horse() {
+  const coat = 0x7a4a2a, dark = 0x1e1612, pale = 0x8a5a36, hoof = 0x2a2420;
+  return {
+    body: new Blocks()
+      .box(0.5, 0.62, 0.62, coat, [0, 1.36, 0.5], [0, 0, 0], [0.85, 0.9]) // deep chest
+      .box(0.46, 0.56, 0.8, coat, [0, 1.36, -0.08], [0, 0, 0], [0.92, 1]) // the long back
+      .box(0.5, 0.6, 0.5, coat, [0, 1.38, -0.62], [0, 0, 0], [0.85, 0.9]) // round quarters
+      .box(0.36, 0.08, 1.2, pale, [0, 1.06, 0.0]) // belly
+      .box(0.14, 0.14, 0.3, dark, [0, 1.48, -0.94], [-0.7, 0, 0]) // the tail: from the dock...
+      .box(0.16, 0.5, 0.14, dark, [0, 1.1, -1.04], [-0.15, 0, 0], [0.7, 0.8]) // ...flowing down
+      .box(0.12, 0.3, 0.1, dark, [0, 0.74, -1.08], [-0.05, 0, 0])
+      .build(),
+    headPivot: [0, 1.64, 0.74],
+    head: new Blocks()
+      .box(0.22, 0.6, 0.3, coat, [0, 0.18, 0.12], [-0.55, 0, 0], [0.8, 0.85]) // the arched neck
+      .box(0.06, 0.62, 0.16, dark, [0, 0.26, 0.0], [-0.55, 0, 0]) // the mane along it
+      .box(0.22, 0.26, 0.5, coat, [0, 0.48, 0.42], [0.55, 0, 0], [0.85, 0.85]) // the long head
+      .box(0.17, 0.17, 0.2, pale, [0, 0.3, 0.62], [0.55, 0, 0]) // muzzle
+      .box(0.05, 0.03, 0.02, 0x1a1210, [0.05, 0.26, 0.72]) // nostrils
+      .box(0.05, 0.03, 0.02, 0x1a1210, [-0.05, 0.26, 0.72])
+      .eyes(0.04, 0.035, 0.02, 0x2a1a10, [0.11, 0.56, 0.38], 'round')
+      .box(0.05, 0.14, 0.04, coat, [0.07, 0.74, 0.26], [0, 0, 0.15], [0.5, 0.5]) // upright ears
+      .box(0.05, 0.14, 0.04, coat, [-0.07, 0.74, 0.26], [0, 0, -0.15], [0.5, 0.5])
+      .box(0.1, 0.12, 0.08, dark, [0, 0.68, 0.32]) // forelock
+      .build(),
+    antlers: null,
+    saddle: horseSaddle(), // (drawn on a saddled horse: see Wildlife)
+    fore: limb(0.5, 0.52, { top: [0.18, 0.24], knee: [0.11, 0.12], ankle: [0.08, 0.08], color: coat, low: dark, foot: [0.12, 0.08, 0.14, hoof, 0.02] }),
+    hind: limb(0.5, 0.52, { top: [0.2, 0.32], knee: [0.11, 0.13], ankle: [0.08, 0.08], color: coat, low: dark, foot: [0.12, 0.08, 0.14, hoof, 0.02] }),
+    legs: [[0.15, 1.02, 0.56], [-0.15, 1.02, 0.56], [0.15, 1.02, -0.64], [-0.15, 1.02, -0.64]],
+    torso: [[0, 1.36, -0.08, 0.25, 0.32, 0.86]],
+    neck: [0, 0.2, 0.1, 0.12, 0.3, 0.16],
+    skull: [0, 0.46, 0.44, 0.12, 0.14, 0.28],
+  };
+}
+
+/** A saddle and blanket, in a horse's body frame (see horse). */
+export function horseSaddle() {
+  return new Blocks()
+    .box(0.52, 0.04, 0.62, 0x6a3a2a, [0, 1.66, -0.02]) // the blanket
+    .box(0.36, 0.12, 0.48, 0x5a3a20, [0, 1.73, -0.02], [0, 0, 0], [0.9, 0.85]) // the saddle
+    .box(0.3, 0.12, 0.08, 0x4a2e18, [0, 1.8, 0.2]) // its pommel
+    .box(0.32, 0.1, 0.08, 0x4a2e18, [0, 1.8, -0.24]) // its cantle
+    .box(0.03, 0.4, 0.05, 0x3a2414, [0.27, 1.48, 0.0]) // stirrup leathers
+    .box(0.03, 0.4, 0.05, 0x3a2414, [-0.27, 1.48, 0.0])
+    .box(0.08, 0.04, 0.1, 0x8a949e, [0.28, 1.27, 0.0]) // stirrups
+    .box(0.08, 0.04, 0.1, 0x8a949e, [-0.28, 1.27, 0.0])
+    .build();
+}

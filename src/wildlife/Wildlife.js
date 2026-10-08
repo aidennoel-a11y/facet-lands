@@ -102,12 +102,18 @@ const SPECIES = {
   // over the Smoky Mountains and the Black Hills.
   bat: { bird: true, model: Models.bat, max: 40, scale: 0.9, flee: 4, radius: 0.15, health: 1 },
   eagle: { bird: true, model: Models.eagle, max: 3, scale: 5.6, flee: 35, radius: 0.9, health: 16 },
+  // Wild horses: a herd led by a stallion, on the open grassland (the
+  // temperate highlands, the parkland, the savanna, the Black Hills). Shy:
+  // they run from anything hunting and from you coming at them fast. Come
+  // slowly with food in your hand and they settle (see #horse): a tame one
+  // can be led, fed, saddled and ridden (see Game).
+  horse: { ground: true, grade: 0.75, model: Models.horse, max: 30, walk: 1.5, run: 15, flee: 32, calm: 100, radius: 0.55, height: 1.8, health: 160, stride: 2.2, turn: 2.4, size: 1.0, gaits: HOOF, trotBand: 0.35, swims: true, call: 'neigh' },
 };
 // Hunting: how big a quarry each is (see wound), and the ones that will
 // come for you (`predator`: how far off they see you, how near you can come
 // before they come for you anyway, how hard they bite or swipe, how often,
 // and from how far; a cougar ambushes).
-const BULK = { lion: 'large', hyena: 'medium', elephant: 'huge', hippo: 'huge', camel: 'large', scorpion: 'small', python: 'medium', deer: 'large', elk: 'large', moose: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', boar: 'large', wolf: 'medium', coyote: 'medium', sheep: 'medium', cougar: 'medium', fox: 'small', rabbit: 'small', hare: 'small', wolfPup: 'small', turkey: 'small', duck: 'small', snake: 'small' };
+const BULK = { horse: 'large', lion: 'large', hyena: 'medium', elephant: 'huge', hippo: 'huge', camel: 'large', scorpion: 'small', python: 'medium', deer: 'large', elk: 'large', moose: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', boar: 'large', wolf: 'medium', coyote: 'medium', sheep: 'medium', cougar: 'medium', fox: 'small', rabbit: 'small', hare: 'small', wolfPup: 'small', turkey: 'small', duck: 'small', snake: 'small' };
 for (const [kind, sp] of Object.entries(SPECIES)) sp.bulk = BULK[kind] ?? 'small';
 SPECIES.wolf.predator = { sight: 70, close: 22, bite: 11, every: 1.3, reach: 1.4 };
 SPECIES.grizzly.predator = { sight: 55, close: 25, bite: 30, every: 1.7, reach: 2.0 };
@@ -146,7 +152,7 @@ const YIELD = {
   tiger: { rawMeat: 6, fur: 2 }, jaguar: { rawMeat: 4, fur: 1 }, monkey: { rawMeat: 1 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 },
   turkey: { rawMeat: 2, feather: 3 }, duck: { rawMeat: 1, feather: 2 }, snake: { rawMeat: 1 },
   lion: { rawMeat: 5, fur: 2 }, hyena: { rawMeat: 2, fur: 1 }, elephant: { rawMeat: 20, hide: 4 }, hippo: { rawMeat: 14, hide: 3 }, camel: { rawMeat: 7, hide: 2 },
-  python: { rawMeat: 3, hide: 1 }, eagle: { feather: 4 }, bat: {}, scorpion: {},
+  python: { rawMeat: 3, hide: 1 }, eagle: { feather: 4 }, bat: {}, scorpion: {}, horse: { rawMeat: 8, hide: 2 },
 };
 // Those that are small enough to be fed on by the scavengers (and those
 // too big to be dragged off whole).
@@ -206,6 +212,7 @@ export class Wildlife {
         make('body', model.body, sp.max, true);
         make('head', model.head, sp.max, true);
         make('antlers', model.antlers, sp.max, true);
+        make('saddle', model.saddle, sp.max, true);
         make('fan', model.fan, sp.max, true);
         make('wingL', model.wingL, sp.max, false);
         make('wingR', model.wingR, sp.max, false);
@@ -267,7 +274,40 @@ export class Wildlife {
     }
     a.chunk = null;
     a.home = { x: a.x, z: a.z };
-    this.ctx?.sound?.call('baa', this.ctx.pan(a.x, a.z), 0.5);
+    if (a.kind === 'sheep') this.ctx?.sound?.call('baa', this.ctx.pan(a.x, a.z), 0.5);
+  }
+
+  /**
+   * A tame horse's needs: it gets hungry and thirsty (two days without
+   * grazing, a day and a bit without water), grazes when it's left be,
+   * goes to drink when it's thirsty (if there's water near), and tires
+   * galloping (`stamina`). Starved or parched too long, it dies.
+   */
+  #horseNeeds(a, dt, ctx) {
+    const sp = SPECIES.horse;
+    a.hunger = Math.max(0, (a.hunger ?? 80) - dt * (100 / 2880));
+    a.thirst = Math.max(0, (a.thirst ?? 80) - dt * (100 / 1800));
+    if (!a.ridden && !a.led && a.state === 'graze') a.hunger = Math.min(100, a.hunger + dt * 0.7);
+    const w = ctx.waterAt?.(a.x + Math.sin(a.heading) * 1.5, a.z + Math.cos(a.heading) * 1.5);
+    if (w && !a.ridden) a.thirst = Math.min(100, a.thirst + dt * 4);
+    if (a.ridden && w) a.thirst = Math.min(100, a.thirst + dt * 2);
+    // (Thirsty, left be: off to the water, if there's any near.)
+    if (!a.ridden && !a.led && a.thirst < 35 && !a.goal?.water && (a.waterLook = (a.waterLook ?? 0) - dt) <= 0) {
+      a.waterLook = 20;
+      const found = this.#findWater(a.x, a.z, ctx);
+      if (found) (a.goal = { x: found.bx, z: found.bz, water: true }), (a.state = 'walk'), (a.timer = 30);
+    }
+    if (a.goal?.water && a.thirst > 95) a.goal = null;
+    const going = a.ridden && a.speed > sp.walk * 4;
+    a.stamina = Math.max(0, Math.min(100, (a.stamina ?? 100) + dt * (going ? -9 : a.speed > sp.walk * 1.5 ? 2 : 12)));
+    // Starving, or dying of thirst.
+    if (a.hunger <= 0 || a.thirst <= 0) {
+      a.starving = (a.starving ?? 0) + dt;
+      if (a.starving > 300 && a.alive) {
+        this.wound(a, { head: true });
+        this.wound(a, { head: true });
+      }
+    } else a.starving = 0;
   }
 
   /**
@@ -287,7 +327,10 @@ export class Wildlife {
 
   /** Your tame animals, to save: [{ kind, x, z, young, sheared }]. */
   tameJSON() {
-    return this.animals.filter((a) => a.tame && a.alive && !a.gone).map((a) => ({ kind: a.kind, x: +a.x.toFixed(1), z: +a.z.toFixed(1), young: a.young ? 0.5 : 0, sheared: a.sheared ? Math.max(0, Math.round(this.time - a.sheared)) : null }));
+    return this.animals.filter((a) => a.tame && a.alive && !a.gone).map((a) => ({
+      kind: a.kind, x: +a.x.toFixed(1), z: +a.z.toFixed(1), young: a.young ? 0.5 : 0, sheared: a.sheared ? Math.max(0, Math.round(this.time - a.sheared)) : null,
+      ...(a.kind === 'horse' ? { saddled: !!a.saddled, hunger: Math.round(a.hunger ?? 80), thirst: Math.round(a.thirst ?? 80), stallion: !!a.stallion } : {}),
+    }));
   }
 
   /** Brings back your tame animals (once the land's there under them). */
@@ -788,9 +831,11 @@ export class Wildlife {
         if (!a) continue;
         this.#tame(a);
         if (t.sheared !== null && t.sheared !== undefined) a.sheared = this.time - t.sheared;
+        if (t.kind === 'horse') Object.assign(a, { saddled: !!t.saddled, hunger: t.hunger ?? 80, thirst: t.thirst ?? 80, stallion: !!t.stallion, stamina: 100 });
       }
       this.pendingTame = left;
     }
+    this.calming = null; // (the wild horse you're settling, if any: see #walker)
     // (Each one minds whoever is nearest it: you, or, online, one of the others.)
     for (const herd of this.herds) this.#herd(herd, dt, this.#near(herd.members[0] ?? herd.mid, views));
     for (const flock of this.flocks) this.#flock(flock, dt, this.#near(flock.centre, views));
@@ -806,7 +851,7 @@ export class Wildlife {
     // (No walking through anyone: a creature standing in the way of one of you is pushed aside.)
     for (const a of this.animals) {
       const sp = SPECIES[a.kind];
-      if (!sp.ground || !a.alive || a.gone) continue;
+      if (!sp.ground || !a.alive || a.gone || a.ridden) continue;
       for (const v of views) {
         const c = v.camera.position, dx = a.x - c.x, dz = a.z - c.z;
         if (Math.abs(dx) > 4 || Math.abs(dz) > 4 || c.y - 1.7 > a.y + (sp.height ?? 1) * a.scale || c.y < a.y) continue;
@@ -1060,6 +1105,21 @@ export class Wildlife {
         if (d < bd) (bd = d), (best = a);
       }
       if (best) (best.scavenge = c), (c.claimed = best);
+    }
+    // Horses (wild ones) run from anything that's hunting near them.
+    for (const h of this.herds) {
+      if (h.kind !== 'horse' || h.fleeTime > 0) continue;
+      const lead = h.members[0];
+      if (!lead) continue;
+      for (const a of this.animals) {
+        const sp = SPECIES[a.kind];
+        if (!a.alive || !sp.predator || Math.abs(a.x - lead.x) > 45 || Math.abs(a.z - lead.z) > 45) continue;
+        if (Math.hypot(a.x - lead.x, a.z - lead.z) < 45) {
+          this.#alarm(h, a.x, a.z);
+          this.ctx?.sound?.call('neigh', this.ctx.pan(lead.x, lead.z), 0.5);
+          break;
+        }
+      }
     }
     // In the night, a bear comes for the food at your camp (see ctx.caches).
     for (const a of this.animals) {
@@ -1600,6 +1660,24 @@ export class Wildlife {
         own(from);
       }
     }
+    // Wild horses: a herd, a stallion at its head, out on the open grass.
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      const open = (w.temperate > 0.5 && g.getPlainness(p.x, p.z) > 0.25) || w.parkland > 0.5 || w.savanna > 0.5 || w.blackHills > 0.5;
+      if (p.y > ctx.seaLevel + 1 && open && g.getForestDensity(p.x, p.z) < 0.45 && g.getMountainness(p.x, p.z) < 0.45 && rand() < 0.06) {
+        const from = this.animals.length;
+        const herd = this.#spawnHerd('horse', p, 4 + Math.floor(rand() * 6));
+        if (herd) {
+          const stallion = herd.members[0];
+          stallion.stallion = true;
+          stallion.scale *= 1.08;
+          if ((ctx.spring ?? 0) + (ctx.summer ?? 0) > 0.5) this.#addYoung(herd, 1 + Math.floor(rand() * 2), 0.55);
+          home.herds.push(herd);
+        }
+        own(from);
+      }
+    }
     // The savanna's: a pride of lions (lionesses, and one maned male), a
     // clan of hyenas, a herd of elephants with their calves.
     {
@@ -1980,6 +2058,7 @@ export class Wildlife {
         case 'elephant': call = Math.random() < 0.3 ? 'trumpet' : 'rumble'; break;
         case 'hippo': call = 'hippo'; break;
         case 'camel': call = Math.random() < 0.4 ? 'camel' : null; break;
+        case 'horse': call = Math.random() < 0.4 ? 'neigh' : 'snort'; break;
         case 'rabbit': case 'hare': call = Math.random() < 0.2 ? 'thump' : null; break;
         case 'songbird':
           a.voice ??= Math.floor(Math.random() * 7);
@@ -2185,6 +2264,7 @@ export class Wildlife {
       return;
     }
     if (sp.water) return this.#duck(a, sp, dt, ctx);
+    if (a.kind === 'horse' && a.tame) this.#horseNeeds(a, dt, ctx);
     const herd = a.herd;
     const t = this.#threat(a, ctx);
     // How much of a threat you are: running at them, much; walking, some;
@@ -2214,7 +2294,26 @@ export class Wildlife {
       a.followed = (a.followed ?? 0) + dt;
       if (!a.tame && a.followed > 4) this.#tame(a);
     }
-    if (!ctx.tame && !a.tame && !lured && !sp.fearless && !a.hunting && !(a.charging > 0) && !a.stalking && t.d < reach && t.above < 50) {
+    // A wild horse, settling: come up slowly with food in your hand and it
+    // lets you near, its calm growing (see `calming`, for the meter); come
+    // at it fast, or hurt it, and it's gone again. Calm enough: it's yours.
+    const settling = a.kind === 'horse' && !a.tame && !a.young && onFoot && p.food && !p.sprint && t.d < 24 && !(herd?.fleeTime > 0);
+    if (a.kind === 'horse' && !a.tame) {
+      if (settling) {
+        a.fear = 0;
+        const slow = p.crouch || !p.moving ? 1 : 0.6;
+        a.calm = Math.min(1, (a.calm ?? 0) + (dt / 14) * slow * (t.d < 10 ? 1.3 : 1));
+        if (!this.calming || t.d < this.calming.d) this.calming = { a, calm: a.calm, d: t.d };
+        if (a.calm >= 1) {
+          this.#tame(a);
+          this.ctx?.sound?.call('neigh', this.ctx.pan(a.x, a.z), 0.6);
+          a.hunger = a.thirst = 80;
+          a.stamina = 100;
+        }
+      } else if (onFoot && (p.sprint && t.d < 30)) a.calm = 0;
+      else a.calm = Math.max(0, (a.calm ?? 0) - dt / 30);
+    }
+    if (!ctx.tame && !a.tame && !lured && !settling && !sp.fearless && !a.hunting && !(a.charging > 0) && !a.stalking && t.d < reach && t.above < 50) {
       if (herd) {
         if (herd.fleeTime <= 0 && a.kind === 'bison') ctx.sound?.call('grunt', ctx.pan(a.x, a.z), 0.6);
         if (herd.fleeTime <= 0 && (a.kind === 'deer' || a.kind === 'elk')) ctx.sound?.call('snort', ctx.pan(a.x, a.z), 0.5);
@@ -2248,7 +2347,29 @@ export class Wildlife {
       a.feet = null;
       return;
     }
-    if (a.charging > 0 && a.threaten > 0) {
+    if (a.ridden) {
+      // Ridden (see Game): where the rider steers it, as fast as they ask;
+      // a small jump now and then (`hop`). Never into a cave.
+      want = a.rideWant ?? a.heading;
+      speed = a.rideSpeed ?? 0;
+      const cave = ctx.generator.caves?.field?.nearEntrance?.(a.x + Math.sin(want) * 3, a.z + Math.cos(want) * 3, 3);
+      if (cave) (speed = 0), (a.balked = true);
+      else a.balked = false;
+      if (a.hop) {
+        a.hop.vy -= 9.8 * dt;
+        a.air = Math.max(0, (a.air ?? 0) + a.hop.vy * dt);
+        if (a.air <= 0 && a.hop.vy < 0) (a.hop = null), (a.air = 0);
+      }
+      a.state = speed > sp.walk * 1.5 ? 'run' : speed > 0.1 ? 'walk' : 'look';
+      a.timer = 1;
+    } else if (a.led && onFoot) {
+      // Led on a rope: following you, keeping a few steps behind.
+      want = Math.atan2(p.x - a.x, p.z - a.z);
+      speed = t.d > 3.2 ? Math.min(sp.run * 0.6, sp.walk * (t.d > 8 ? 3 : 1.3)) : 0;
+      a.state = speed ? 'walk' : 'look';
+      a.timer = 1;
+      a.home = { x: a.x, z: a.z };
+    } else if (a.charging > 0 && a.threaten > 0) {
       // Standing its ground, facing you, threatening: the warning.
       a.threaten -= dt;
       want = Math.atan2(p.x - a.x, p.z - a.z);
@@ -2369,7 +2490,7 @@ export class Wildlife {
           else (a.state = 'walk'), (a.timer = far > 6 ? rnd(6, 14) : rnd(2, 5));
         } else (a.state = 'graze'), (a.timer = rnd(4, 14));
         const roam = a.tame ? 4 : 15;
-        if (!herd && a.state === 'walk') a.goal = { x: a.home.x + rnd(-roam, roam), z: a.home.z + rnd(-roam, roam) };
+        if (!herd && a.state === 'walk' && !a.goal?.water) a.goal = { x: a.home.x + rnd(-roam, roam), z: a.home.z + rnd(-roam, roam) };
         // (Which way to wander, set once: not turning on the spot.)
         a.wanderHeading = a.heading + rnd(-0.8, 0.8);
       }
@@ -2531,7 +2652,7 @@ export class Wildlife {
     }
     // Turn (slowly from a standstill, as it sets off; not spinning on the
     // spot), speed up or slow down.
-    const urgent = fleeing || a.hunting || a.charging > 0;
+    const urgent = fleeing || a.hunting || a.charging > 0 || a.ridden;
     const rate = sp.turn * (urgent ? 1.5 : 1) * (urgent ? 1 : 0.3 + 0.7 * Math.min(1, a.speed / sp.walk));
     a.heading += Math.max(-rate * dt, Math.min(rate * dt, angleTo(a.heading, want)));
     // (Slowing to take a sharp turn.)
@@ -2562,7 +2683,7 @@ export class Wildlife {
         a.aheadSteep = this.#trueSlope(a.x + sx * (body + 1.5), a.z + sz * (body + 1.5), ctx) > sp.grade * 1.2;
       }
       const steep = !swimming && (a.onSteep ? probe > a.y - 0.05 : Math.abs(probe - a.y) > sp.grade * (body + 1.5) || this.#slope(nx, nz, ctx) > sp.grade * 1.2 || a.aheadSteep);
-      const blocked = !kind || !ahead || (steep && !wet) || (wet && !(fleeing || swimming || a.hunting));
+      const blocked = !kind || !ahead || (steep && !wet) || (wet && !(fleeing || swimming || a.hunting || a.ridden || a.led));
       if (blocked) {
         if (fleeing) (a.herd ?? a).escapeAt = 0; // (another way, then)
         else if (!a.detour) a.detour = { heading: a.heading + (Math.random() < 0.5 ? 1 : -1) * rnd(1.4, 2.2), time: rnd(1.5, 3) };
@@ -2588,7 +2709,7 @@ export class Wildlife {
       }
     }
     const y = ctx.ground(a.x, a.z);
-    if (y === y) a.y = y;
+    if (y === y) a.y = y + (a.air ?? 0);
     const c0 = ctx.camera.position;
     // In deep water: swimming, low in it, only its back and head out.
     const w = sp.swims ? ctx.waterAt?.(a.x, a.z) : null;
@@ -3339,6 +3460,7 @@ export class Wildlife {
     const head = put(M.head, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : deadYaw, 0);
     a.hm = (a.hm ?? new Matrix4()).copy(head);
     if (M.antlers && a.antlers) put(M.antlers, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : 0, 0);
+    if (M.saddle && a.saddled) put(M.saddle, [0, 0, 0], 0, 0, 0);
     // A tom turkey's fan, raised.
     if (M.fan && (a.display ?? 0) > 0.05) {
       part.makeTranslation(0, 0.66, -0.3).multiply(lift.makeRotationX((1 - a.display) * 1.4)).multiply(out.makeTranslation(0, -0.66, 0.3));

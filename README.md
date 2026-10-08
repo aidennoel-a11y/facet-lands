@@ -88,6 +88,15 @@ has a spawner for every animal.
   sword and steel armour. *Gold ore* lies on the tops of mesas (smelted into
   gold bars, for crafting to come). Press Tab to see the tree. The tiers are defined in `TIERS` in
   `src/survival/items.js`.
+- **Horses**: wild herds, each led by a stallion, on the open grassland
+  (temperate highlands, parkland, savanna, Black Hills). They run from
+  predators and from you coming at them fast. Come slowly with food in
+  your hand (an apple, a carrot, wheat, corn, berries) and a meter shows
+  the horse settling; run or strike and it's gone. A tame horse can be
+  fed, led (E), saddled (a crafted saddle) and ridden: W to go, Shift to
+  gallop while its wind lasts, Space to jump; it carries 40 kg more; it
+  won't go into caves. It needs grazing and water, and dies if starved
+  (and stays dead).
 - Worlds are saved in the browser. Online play goes through a small Node
   WebSocket server (`server/`), which shares the seed, the clock, the
   players and their edits to the world.

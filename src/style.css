@@ -1649,3 +1649,30 @@ kbd {
   80% { opacity: 1; }
   100% { opacity: 0; }
 }
+/* A meter under the crosshair: a horse settling, a horse's wind. */
+.meter {
+  position: fixed;
+  left: 50%;
+  top: calc(50% + 26px);
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  color: rgba(232, 228, 220, 0.85);
+  font-size: 11px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.meter b {
+  display: block;
+  width: 90px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+.meter i {
+  display: block;
+  height: 100%;
+  background: rgba(232, 228, 220, 0.85);
+}

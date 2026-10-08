@@ -35,6 +35,7 @@ export class Hud {
       <p class="prompt" hidden></p>
       <div class="hitmark"></div>
       <div class="draw" hidden><i></i></div>
+      <div class="meter" hidden><span></span><b><i></i></b></div>
       <div class="hurt-vignette"></div>
       <div class="cold-vignette"></div>
       <div class="sleep-fade"></div>
@@ -125,6 +126,15 @@ export class Hud {
   }
 
   /** How far a bow's drawn (0..1), or hidden (null). */
+  /** A labelled meter under the crosshair (settling a horse, a horse's wind), or none (null). */
+  meter(label, amount) {
+    const el = this.el('.meter');
+    el.hidden = amount === null;
+    if (amount === null) return;
+    if (this.meterLabel !== label) (this.meterLabel = label), (el.querySelector('span').textContent = label);
+    el.querySelector('i').style.width = `${Math.round(Math.max(0, Math.min(1, amount)) * 100)}%`;
+  }
+
   draw(amount) {
     const el = this.el('.draw');
     el.hidden = amount === null;

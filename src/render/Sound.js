@@ -959,6 +959,11 @@ export class Sound {
       tone(t, 1.6, 'sawtooth', 110, 70, 260, 1.2, 0.35, 18);
       noise(t, 1.5, 380, 1.4, 0.3, 26);
       tone(t + 0.05, 1.4, 'sawtooth', 220, 140, 520, 2, 0.12, 21);
+    } else if (kind === 'neigh') {
+      // A horse's whinny: a high, shaking call falling away, then a snort.
+      tone(t, 1.1, 'sawtooth', 900, 420, 1600, 2.2, 0.12, 14);
+      tone(t, 1.1, 'triangle', 1800, 840, 2400, 2, 0.04, 14);
+      noise(t + 1.1, 0.2, 700, 1.4, 0.12);
     } else if (kind === 'trumpet') {
       // An elephant: a brassy, blaring trumpet, rising and breaking.
       tone(t, 1.1, 'sawtooth', 420, 620, 1400, 1.4, 0.28, 9);

@@ -76,6 +76,7 @@ export const ITEMS = {
   waterskin: { name: 'Waterskin', tool: true, weight: 0.4, holds: 5, group: 'Tools' }, // (water: 0..5 drinks; clean or not)
   pot: { name: 'Iron pot', tool: true, durability: 60, weight: 2, group: 'Tools' },
   bandage: { name: 'Bandage', weight: 0.05, group: 'Tools' },
+  saddle: { name: 'Saddle', weight: 6, group: 'Tools' }, // (on a tame horse: see Game)
   torch: { name: 'Torch', place: 'torch', weight: 0.4, group: 'Tools' },
   // Worn.
   coat: { name: 'Leather coat', tool: true, wear: 'coat', warmth: 0.3, weight: 2, group: 'Worn' },
@@ -107,7 +108,7 @@ export const SPAWNABLE = {
   deer: 'Deer', elk: 'Elk', moose: 'Moose', bison: 'Bison', blackBear: 'Black bear', grizzly: 'Grizzly bear', wolf: 'Wolf', coyote: 'Coyote', fox: 'Fox',
   cougar: 'Cougar', boar: 'Wild boar', sheep: 'Sheep', rabbit: 'Rabbit', hare: 'Hare', turkey: 'Turkey', mountainGoat: 'Mountain goat', snake: 'Rattlesnake',
   tiger: 'Tiger', jaguar: 'Jaguar', panther: 'Black panther', panda: 'Giant panda', crocodile: 'Crocodile', python: 'Python',
-  lion: 'Lioness', maleLion: 'Lion (male)', hyena: 'Hyena', elephant: 'Elephant', hippo: 'Hippo', camel: 'Camel', scorpion: 'Scorpion',
+  horse: 'Horse', lion: 'Lioness', maleLion: 'Lion (male)', hyena: 'Hyena', elephant: 'Elephant', hippo: 'Hippo', camel: 'Camel', scorpion: 'Scorpion',
 };
 for (const [kind, name] of Object.entries(SPAWNABLE)) {
   ITEMS[`spawn_${kind}`] = { name: `${name} spawner`, tool: true, spawns: kind === 'maleLion' ? 'lion' : kind, male: kind === 'maleLion', weight: 0, group: 'Spawners' };
@@ -162,6 +163,7 @@ export const RECIPES = [
   { id: 'roof', needs: { log: 4, vine: 3 }, note: 'Thatch on posts: under a roof with walls round you, you shelter from the weather' },
   { id: 'grindstone', needs: { rock: 6, log: 1, stick: 2 }, note: 'Click it with a worn blade to grind it keen again (three times at most)' },
   { id: 'anvil', needs: { ironBar: 4, log: 1 }, note: 'Forge steel tools at it (stand by it to craft them)' },
+  { id: 'saddle', needs: { deerSkin: 4, rope: 1, ironBar: 1 }, note: 'Put it on a tame horse (E with it in hand), then ride' },
   { id: 'forgedAxe', needs: { steelBar: 2, stick: 1, deerSkin: 1 }, at: 'anvil', note: 'Steel: far longer-lasting, fells trees in half the blows, sharper' },
   { id: 'forgedPickaxe', needs: { steelBar: 2, stick: 2 }, at: 'anvil', note: 'Steel: far longer-lasting, breaks rock faster' },
   { id: 'forgedSpear', needs: { steelBar: 1, log: 1, deerSkin: 1 }, at: 'anvil', note: 'Steel: far longer-lasting; wounds twice as deep' },
@@ -179,7 +181,7 @@ export const RECIPES = [
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'torch', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare'] },
   { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough'] },
-  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'fineFlintSteel', 'pot', 'shears', 'anvil'] },
+  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'fineFlintSteel', 'pot', 'shears', 'saddle', 'anvil'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt'] },
 ];
 /** The tier a recipe's in. */
@@ -275,6 +277,7 @@ export const ICONS = {
   coal: `<path d="M6 20l4-8 7-2 6 5-1 8-9 3z" fill="#1c1a19"/><path d="M10 12l7-2 6 5-7 1z" fill="#34302e"/><path d="M14 18l2-1 1 2z" fill="#5a5450"/>`,
   goldOre: `<path d="M7 21l3-9 8-4 7 6-1 9-10 3z" fill="#e4ded0"/><path d="M10 12l8-4 7 6-8 2z" fill="#f2eee4"/><path d="M12 16l3-1 1 3-3 1zM19 19l3-1v3l-2 1zM16 11l2 0-1 2z" fill="#e0aa28"/>`,
   goldBar: `<path d="M4 20l6-8h18l-6 8z" fill="#f0cc58"/><path d="M4 20h18v4H4z" fill="#c89a30"/><path d="M22 20l6-8v4l-6 8z" fill="#a87c20"/><path d="M9 16h10" stroke="#fff0b8" stroke-width="1.2"/>`,
+  saddle: `<path d="M5 15c3-4 19-4 22 0l-2 5H7z" fill="#6a3a20"/><path d="M8 11h4l1 4H9zM20 11h4l-1 4h-4z" fill="#4a2810"/><path d="M9 20v6M23 20v6" stroke="#3a2414" stroke-width="1.6"/><path d="M7 26h4M21 26h4" stroke="#8a949e" stroke-width="2"/>`,
   sword: `<path d="M8 27l3 3 2-2-3-3z" fill="#4a3020"/><path d="M6 23l7 7 1.6-1.6-7-7z" fill="#8a949e"/><path d="M11 22L26 5l2 1-15 18z" fill="#dfe6ee"/><path d="M26 5l2 1 1-3z" fill="#ffffff"/>`,
   steelArmour: `<path d="M9 5l7 3 7-3 4 6-2 16H7L5 11z" fill="#9aa4b0"/><path d="M9 12h14M9 17h14M9 22h14" stroke="#5a626e" stroke-width="1.4"/><path d="M16 8v19" stroke="#5a626e"/><path d="M9 5l7 3 7-3" fill="none" stroke="#e4e8ee" stroke-width="1.2"/>`,
   tanningRack: `<path d="M5 29V5M27 29V5M5 7h22M5 27h22" stroke="#8a5d38" stroke-width="2.2"/><path d="M9 10h14l-1 14H10z" fill="#c4945a"/><path d="M9 10l-4-3M23 10l4-3M10 24l-5 3M22 24l5 3" stroke="#e8e0cc"/>`,
