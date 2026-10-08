@@ -14,6 +14,7 @@ await page.goto('http://localhost:4173/?seed=polaris&x=399&z=1025&up=0&vd=1&hide
 await page.waitForFunction(() => window.world?.chunks && window.world.chunks.pendingCount === 0, null, { timeout: 600000, polling: 1000 });
 await page.evaluate(() => { if (window.world.controls.mode !== 'walk') document.getElementById('fly')?.click(); });
 await page.waitForFunction(() => { const { camera, generator, controls } = window.world; return controls.mode === 'walk' && camera.position.y - generator.getHeight(camera.position.x, camera.position.z) < 2.2; }, null, { timeout: 120000, polling: 250 });
+await page.waitForTimeout(6000); // (settled on the ground, the land round about built)
 await page.evaluate(() => {
   const { wildlife, camera, game, controls } = window.world;
   wildlife.animals.length = 0;

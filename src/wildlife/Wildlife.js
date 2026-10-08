@@ -897,7 +897,9 @@ export class Wildlife {
     this.crowCooldown -= dt;
     if (this.wait <= 0) {
       this.wait = 0.5;
+      const tp = this.profile ? performance.now() : 0;
       this.#populate(ctx);
+      if (this.profile) this.profile.populate = (this.profile.populate ?? 0) + performance.now() - tp;
     }
     if (this.pendingTame?.length) {
       const left = [];
@@ -918,14 +920,33 @@ export class Wildlife {
     // (Each one minds whoever is nearest it: you, or, online, one of the others.)
     for (const herd of this.herds) this.#herd(herd, dt, this.#near(herd.members[0] ?? herd.mid, views));
     for (const flock of this.flocks) this.#flock(flock, dt, this.#near(flock.centre, views));
+    // (For testing: `profile` set to {}, the time each kind takes, ms, summed.)
+    const prof = this.profile;
+    // (Far off, they think less often: every second frame past 60 m, every
+    // fourth past 150, every eighth past 300, each with the time gone by
+    // since; staggered, so it's never all at once. Close by, or hunting you,
+    // charging, ridden, led: every frame.)
+    this.frame = (this.frame ?? 0) + 1;
     for (const a of this.animals) {
+      const t0 = prof ? performance.now() : 0;
       const c = this.#near(a, views);
-      if (SPECIES[a.kind].ground) this.#walker(a, dt, c);
-      else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES[a.kind], dt, c);
-      else if (a.flock) this.#flockBird(a, dt, c);
-      else if (a.circling) this.#circler(a, dt, c);
-      else if (a.kind === 'monkey') this.#monkey(a, dt, c);
-      else this.#songbird(a, dt, c);
+      a.owed = (a.owed ?? 0) + dt;
+      const cam = c.camera.position, d = Math.max(Math.abs(a.x - cam.x), Math.abs(a.z - cam.z));
+      const busy = a.hunting || a.charging > 0 || a.ridden || a.led || a.leap || a.stalking || (a.boss && d < 150) || !a.alive && a.rag;
+      const every = busy || d < 60 ? 1 : d < 150 ? 2 : d < 300 ? 4 : 8;
+      if (every > 1 && (this.frame + (a.id ?? 0)) % every) {
+        if (prof) prof.skipped = (prof.skipped ?? 0) + 1;
+        continue;
+      }
+      const step = Math.min(a.owed, 0.25);
+      a.owed = 0;
+      if (SPECIES[a.kind].ground) this.#walker(a, step, c);
+      else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES[a.kind], step, c);
+      else if (a.flock) this.#flockBird(a, step, c);
+      else if (a.circling) this.#circler(a, step, c);
+      else if (a.kind === 'monkey') this.#monkey(a, step, c);
+      else this.#songbird(a, step, c);
+      if (prof) prof[a.kind] = (prof[a.kind] ?? 0) + performance.now() - t0;
     }
     // (No walking through anyone: a creature standing in the way of one of you is pushed aside.)
     for (const a of this.animals) {
@@ -938,13 +959,17 @@ export class Wildlife {
         if (d < min && d > 1e-4) (a.x = c.x + (dx / d) * min), (a.z = c.z + (dz / d) * min);
       }
     }
+    const tv = prof ? performance.now() : 0;
     this.#vocalize(dt, views);
+    if (prof) prof.vocalize = (prof.vocalize ?? 0) + performance.now() - tv;
     // (Those flown off out of sight, or home to roost.)
     if (this.animals.some((a) => a.gone)) {
       for (const a of this.animals) if (a.gone) this.#unstick(a);
       this.animals = this.animals.filter((a) => !a.gone);
     }
+    const td = prof ? performance.now() : 0;
     this.#draw();
+    if (prof) prof.draw = (prof.draw ?? 0) + performance.now() - td;
   }
 
   #hideAll() {
@@ -2174,9 +2199,18 @@ export class Wildlife {
     const g = ctx.generator;
     const s = this.#slope(x, z, ctx);
     if (!g) return s;
-    const e = 2;
-    const gx = g.getHeight(x + e, z) - g.getHeight(x - e, z), gz = g.getHeight(x, z + e) - g.getHeight(x, z - e);
-    const t = Math.hypot(gx, gz) / (2 * e);
+    // (The land's own slope, from the terrain itself: costly to work out, and
+    // it never changes, so remembered on a 2 m grid.)
+    if (this.slopeOf !== g) (this.slopes = new Map()), (this.slopeOf = g);
+    if (this.slopes.size > 80000) this.slopes.clear();
+    const key = Math.round(x / 2) * 100003 + Math.round(z / 2);
+    let t = this.slopes.get(key);
+    if (t === undefined) {
+      const e = 2, cx = Math.round(x / 2) * 2, cz = Math.round(z / 2) * 2;
+      const gx = g.getHeight(cx + e, cz) - g.getHeight(cx - e, cz), gz = g.getHeight(cx, cz + e) - g.getHeight(cx, cz - e);
+      t = Math.hypot(gx, gz) / (2 * e);
+      this.slopes.set(key, t);
+    }
     return t === t ? Math.max(s, t) : s;
   }
 
