@@ -978,11 +978,13 @@ const cold = { value: 1, wait: 0 };
 // The first snow: late in the autumn, two days or so before the turn into
 // winter, one snowfall that settles for a while and melts away again,
 // before the winter comes in earnest. (Online, the host's weather brings it.)
+// (And up in the mountains, now and then from mid autumn to mid spring:
+// see highSnow. Up there, it snows instead of raining then.)
 let firstSnowFalling = false;
 function firstSnow() {
   const d = WORLD.daysPerSeason, t = seasons.time;
   const start = 2 + (d - WORLD.seasonTurnDays - 2) / d, end = start + 0.4 / d;
-  const now = seasons.auto && t >= start && t < end;
+  const now = seasons.auto && ((t >= start && t < end) || (seasons.highSnowing && camera.position.y > 70));
   if (now && !firstSnowFalling && weather.auto && !weather.following) {
     firstSnowFalling = true;
     weather.set('rain');
@@ -1663,7 +1665,7 @@ function tick(now) {
   seasons.update(dayNight.playing ? dt / (WORLD.dayLengthMinutes * 60) : 0, dt);
   if (dayNight.playing) game.passDays(dt / (WORLD.dayLengthMinutes * 60));
   // In a cold winter, it snows (over the lands that have one).
-  const snow = Math.max(seasonUniforms.uWinter.value, firstSnowing ? 1 : 0) * coldHere(dt);
+  const snow = Math.max(seasonUniforms.uWinter.value, firstSnowing ? (seasons.highSnowing ? smoothstep(60, 85, camera.position.y) : 1) : 0, seasonUniforms.uHighSnow.value * smoothstep(80, 100, camera.position.y)) * coldHere(dt);
   rain.update(worldNow, camera.position, localRain, clouds.wind, wind, dayNight.horizon, snow);
   // Water: the sun's glitter on it (not behind cloud), rings where the rain falls; the waterfalls' mist in the daylight.
   sparkleUniforms.uSunView.value.copy(dayNight.lightDirection).transformDirection(camera.matrixWorldInverse);
@@ -1673,7 +1675,9 @@ function tick(now) {
   mistLight.value = 0.2 + 0.8 * smoothstep(-0.1, 0.25, dayNight.sunDir.y);
   // Leaves drifting down from the trees round about.
   const autumn = seasonUniforms.uAutumn.value, spring = seasonUniforms.uSpring.value, winter = seasonUniforms.uWinter.value;
-  fallingLeaves.update(dt, camera, trees.crowns, WORLD.chunkSize, (x, z) => chunks.groundHeightAt(x, z), { autumn, spring, winter, summer: Math.max(0, 1 - autumn - spring - winter) }, wind, windDirection.value, sheltered);
+  // (In and near the jungle no leaves turn and fall.)
+  const turning = smoothstep(0.3, 0.6, cold.value);
+  fallingLeaves.update(dt, camera, trees.crowns, WORLD.chunkSize, (x, z) => chunks.groundHeightAt(x, z), { autumn: autumn * turning, spring, winter: winter * turning, summer: Math.max(0, 1 - (autumn + winter) * turning - spring) }, wind, windDirection.value, sheltered);
   body.update(controls, dt);
   const gameLights = game.update(dt, {
     time: now / 1000, wind: clouds.wind, light: ambientLight, day: around.env.day, night: 1 - around.env.day, rain: localRain,

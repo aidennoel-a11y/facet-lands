@@ -102,7 +102,7 @@ self.onmessage = (event) => {
   }
   if (wantReeds) {
     out.reeds = reedData(g, config, cx, cz, groundHeightAt, heights);
-    if (out.reeds) transfer.push(out.reeds.matrices.buffer, out.reeds.shades.buffer, out.reeds.kinds.buffer);
+    if (out.reeds) transfer.push(out.reeds.matrices.buffer, out.reeds.shades.buffer, out.reeds.kinds.buffer, out.reeds.climate.buffer);
   }
   if (wantTrees) {
     // Where the trees stand, off the boulders (as RockLayer.bouldersNear).
@@ -123,7 +123,7 @@ self.onmessage = (event) => {
   }
   if (wantGrass) {
     out.grass = placeGrass(g, config, cx, cz, groundHeightAt);
-    transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer, out.grass.kinds.buffer);
+    transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer, out.grass.kinds.buffer, out.grass.warms.buffer);
   }
   // (The small things, here so the main thread needn't: see decorPlacement.)
   if (wantGrass) {
@@ -144,7 +144,7 @@ self.onmessage = (event) => {
   }
   if (wantFarGrass) {
     out.farGrass = placeGrass(g, config, cx, cz, groundHeightAt, true);
-    transfer.push(out.farGrass.matrices.buffer, out.farGrass.colors.buffer, out.farGrass.kinds.buffer);
+    transfer.push(out.farGrass.matrices.buffer, out.farGrass.colors.buffer, out.farGrass.kinds.buffer, out.farGrass.warms.buffer);
   }
   if (wantFarTrees) {
     out.farTrees = packFarTrees(placeTrees(g, config, cx, cz, groundHeightAt, null), cx, cz, config.chunkSize);

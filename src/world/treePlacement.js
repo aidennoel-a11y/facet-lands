@@ -27,7 +27,17 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
   const originZ = cz * chunkSize;
   const seed = generator.seed ^ 0x7f4a7c15;
 
-  const placed = {}; // species -> [{x, y, z, s, sy, rot, shade}]
+  const placed = {}; // species -> [{x, y, z, s, sy, rot, shade, warm}]
+  // How warm the country is, where a tree stands (0: a real autumn and
+  // winter; 1: the jungle's, and near it: no turning leaves, no snow). On a
+  // 24 m grid, remembered for the chunk.
+  const warmth = new Map();
+  const warmAt = (wx, wz) => {
+    const key = Math.floor(wx / 24) * 65536 + Math.floor(wz / 24);
+    let v = warmth.get(key);
+    if (v === undefined) warmth.set(key, (v = 1 - smoothstep(0.3, 0.6, generator.getSeasonality(Math.floor(wx / 24) * 24 + 12, Math.floor(wz / 24) * 24 + 12))));
+    return v;
+  };
   // Boulders nearby, binned by cell: no tree grows out of a rock.
   const blocked = new Map();
   if (boulders) {
@@ -184,6 +194,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (biome.id === 'mangrove' && species.type === 'mangrove' && ground > seaLevel + 1.3) continue;
 
       const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale;
+      const warm = warmAt(wx, wz);
       if (species.type === 'bamboo') {
         // A thicket: a clump of separate canes, each of its own height and lean.
         const list = (placed.bamboo ??= []);
@@ -195,7 +206,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
           list.push({
             x: cx, y: ground - 0.2, z: cz, s: cs * 0.9, sy: cs * (0.7 + 0.45 * hash2(gi - c, gj + c, seed + 23)),
             rot: a + (hash2(gi + c, gj + c, seed + 24) - 0.5) * 1.2, shade: hash2(gi + c * 3, gj, seed + 25),
-            leanX: Math.cos(a) * 0.03 - gradX * 0.1, leanZ: Math.sin(a) * 0.03 - gradZ * 0.1,
+            leanX: Math.cos(a) * 0.03 - gradX * 0.1, leanZ: Math.sin(a) * 0.03 - gradZ * 0.1, warm,
           });
         }
         continue;
@@ -213,6 +224,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
         // lean downhill on slopes (up to about 12 degrees).
         leanX: (hash2(gi, gj, seed + 9) - 0.5) * 0.08 - gradX * 0.16,
         leanZ: (hash2(gi, gj, seed + 10) - 0.5) * 0.08 - gradZ * 0.16,
+        warm,
       });
     }
   }
@@ -229,14 +241,14 @@ export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'ma
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a
- * Float32Array of [x, y, z (world), size, height, turn, shade] per tree.
+ * Float32Array of [x, y, z (world), size, height, turn, shade, warm] per tree.
  */
 export function packFarTrees(placed, cx, cz, chunkSize) {
   const out = {};
   const ox = cx * chunkSize, oz = cz * chunkSize;
   for (const [type, list] of Object.entries(placed)) {
-    const a = new Float32Array(list.length * 7);
-    list.forEach((t, k) => a.set([ox + t.x, t.y, oz + t.z, t.s, t.sy, t.rot, t.shade], k * 7));
+    const a = new Float32Array(list.length * 8);
+    list.forEach((t, k) => a.set([ox + t.x, t.y, oz + t.z, t.s, t.sy, t.rot, t.shade, t.warm ?? 0], k * 8));
     out[type] = a;
   }
   return out;

@@ -70,7 +70,13 @@ has a spawner for every animal.
   your longest life. A quiet message marks a week, a month and a year
   (a year is four seasons of `daysPerSeason` days: 12 each, the last 2 the
   turn into the next, when the snow melts or the leaves turn, kind by kind;
-  late in the autumn one early snow falls and melts before winter).
+  late in the autumn one early snow falls and melts before winter). The
+  seasons are regional: in and near the jungle nothing turns or freezes;
+  in the mountains (above about 80 m) the leaves turn two or three days
+  sooner, and from mid autumn to mid spring it snows up there now and then,
+  the snow lying almost always through the middle of it. Reeds and cattails
+  brown in the autumn and stand dead in the winter; those in the water are
+  under the ice.
 - You gather wood, stone, vines, hides and ore, then hunt with a spear, bow
   or crossbow, fish, farm, cook, and build: campfires, walls, gates, roofs,
   beds, chests, furnaces, rafts.

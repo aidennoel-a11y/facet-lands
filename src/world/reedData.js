@@ -10,6 +10,11 @@ const rotation = new Quaternion();
 const scale = new Vector3();
 const up = new Vector3(0, 1, 0);
 
+
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
 /**
  * The reeds of chunk (cx, cz): { matrices (16 floats each, chunk-local),
  * shades, kinds (0 cattails, 1 rushes, 2 sedge: see ReedLayer) }, or null
@@ -30,6 +35,16 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
   const matrices = [];
   const shades = [];
   const kinds = [];
+  // How hard the winter is where each clump stands (they die back, and the
+  // water freezes over those standing in it), and whether it stands in the
+  // water: [cold, wet] a clump. (Cold on a 24 m grid, remembered.)
+  const climate = [], colds = new Map();
+  const coldAt = (wx, wz) => {
+    const key = Math.floor(wx / 24) * 65536 + Math.floor(wz / 24);
+    let v = colds.get(key);
+    if (v === undefined) colds.set(key, (v = smoothstep(0.45, 0.75, generator.getSeasonality(Math.floor(wx / 24) * 24 + 12, Math.floor(wz / 24) * 24 + 12))));
+    return v;
+  };
   // (Which kind of clump: mostly rushes and sedge, cattails here and there.)
   const kindOf = (gi, gj, low) => {
     const r = hash2(gi, gj, seed + 8);
@@ -67,6 +82,7 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
         matrices.push(matrix.compose(position, rotation, scale).clone());
         shades.push(0.85 + hash2(gi, gj, seed + 6) * 0.3);
         kinds.push(kindOf(gi, gj, weed));
+        climate.push(coldAt(wx, wz) * (1 - generator.getOceanness(wx, wz)), ground < sea - 0.05 ? 1 : 0);
         continue;
       }
       if (river.stream && generator.getMountainness(wx, wz) > 0.3) continue; // mountain streams: gravel, no reeds
@@ -84,10 +100,11 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
       matrices.push(matrix.compose(position, rotation, scale).clone());
       shades.push(0.85 + hash2(gi, gj, seed + 6) * 0.3);
       kinds.push(kindOf(gi, gj, false));
+      climate.push(coldAt(wx, wz), e < 0 && ground < river.level - 0.05 ? 1 : 0);
     }
   }
   if (!matrices.length) return null;
   const out = new Float32Array(matrices.length * 16);
   matrices.forEach((m, k) => m.toArray(out, k * 16));
-  return { matrices: out, shades: new Float32Array(shades), kinds: new Uint8Array(kinds) };
+  return { matrices: out, shades: new Float32Array(shades), kinds: new Uint8Array(kinds), climate: new Float32Array(climate) };
 }

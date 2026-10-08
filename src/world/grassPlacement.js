@@ -33,6 +33,15 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
   const matrices = new Float32Array(cells * cells * 16);
   const colors = new Float32Array(cells * cells * 3);
   const kinds = new Uint8Array(cells * cells); // 0 tuft, 1 tall seeding stalks, 2 broad clump, 3 sedge, 4 fine golden grass (see GrassLayer)
+  // How warm the country is (in and near the jungle: no straw-coloured
+  // autumn, no winter): on a 24 m grid, remembered for the chunk.
+  const warms = new Float32Array(cells * cells), warmth = new Map();
+  const warmAt = (wx, wz) => {
+    const key = Math.floor(wx / 24) * 65536 + Math.floor(wz / 24);
+    let v = warmth.get(key);
+    if (v === undefined) warmth.set(key, (v = 1 - smoothstep(0.3, 0.6, generator.getSeasonality(Math.floor(wx / 24) * 24 + 12, Math.floor(wz / 24) * 24 + 12))));
+    return v;
+  };
   let count = 0;
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
@@ -106,6 +115,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       const golden = 0.25 * smoothstep(0, 0.8, tint) + 0.06;
       const kind = pick < sedge ? 3 : pick < sedge + golden ? 4 : pick < sedge + golden + 0.35 * stalky ? 1 : pick < sedge + golden + 0.35 * stalky + 0.12 + 0.15 * stalky ? 2 : 0;
       kinds[count] = kind;
+      warms[count] = warmAt(wx, wz);
       position.set(lx, ground - 0.05, lz);
       rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 5) * Math.PI * 2);
       scale.set(s, s * (0.8 + hash2(gi, gj, seed + 6) * 0.5) * (kind === 1 || kind === 3 ? 1 + 0.3 * wet : long), s);
@@ -113,5 +123,5 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       count++;
     }
   }
-  return { matrices: matrices.slice(0, count * 16), colors: colors.slice(0, count * 3), kinds: kinds.slice(0, count), count };
+  return { matrices: matrices.slice(0, count * 16), colors: colors.slice(0, count * 3), kinds: kinds.slice(0, count), warms: warms.slice(0, count), count };
 }

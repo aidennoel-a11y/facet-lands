@@ -484,8 +484,10 @@ export function createTreeLayer({ rocks = null } = {}) {
           scale.set(t.s, t.sy, t.s);
           mesh.setMatrixAt(k, matrix.compose(position, rotation, scale));
           // Slight per-tree brightness/warmth change so forests aren't flat.
+          // (And how warm the country is where it stands, carried in how much
+          // less blue it is than green: see seasonalTrees.)
           const v = 0.82 + t.shade * 0.3;
-          mesh.setColorAt(k, tint.setRGB(v * (0.96 + t.shade * 0.08), v, v * 0.95));
+          mesh.setColorAt(k, tint.setRGB(v * (0.96 + t.shade * 0.08), v, v * (0.95 - 0.1 * (t.warm ?? 0))));
         });
         mesh.computeBoundingSphere();
         mesh.castShadow = lod <= (config.treeShadowLod ?? Infinity); // (out past the shadows' reach, none to cast)

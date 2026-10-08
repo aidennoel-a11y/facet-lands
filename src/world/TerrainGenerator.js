@@ -2548,7 +2548,35 @@ export class TerrainGenerator {
    */
   getSeasonality(x, z) {
     const w = this.getBiomeWeights(x, z, {});
-    return w.temperate + w.pine + 0.9 * w.redwood + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + 0.1 * w.badlands + w.parkland;
+    const s = w.temperate + w.pine + 0.9 * w.redwood + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + 0.1 * w.badlands + w.parkland;
+    // (Near a jungle its warmth reaches out past its edge: no autumn there, and no snow.)
+    return s * (1 - smoothstep(0.05, 0.45, this.jungleNear(x, z)));
+  }
+
+  /**
+   * How near the jungle (x, z) is (0..1): the most jungle there is within
+   * about 450 m. On a 128 m grid (remembered), blended between its points.
+   */
+  jungleNear(x, z) {
+    const G = 128, gx = Math.floor(x / G), gz = Math.floor(z / G), fx = x / G - gx, fz = z / G - gz;
+    const cache = (this._jungleNear ??= new Map());
+    if (cache.size > 60000) cache.clear();
+    const corner = (i, j) => {
+      const key = i * 65536 + j;
+      let v = cache.get(key);
+      if (v === undefined) {
+        const cx = i * G, cz = j * G;
+        v = this.getBiomeWeights(cx, cz, {}).jungle;
+        for (let k = 0; k < 8 && v < 1; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          for (const r of [220, 450]) v = Math.max(v, this.getBiomeWeights(cx + Math.cos(a) * r, cz + Math.sin(a) * r, {}).jungle * (r > 300 ? 0.7 : 1));
+        }
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = corner(gx, gz), b = corner(gx + 1, gz), c = corner(gx, gz + 1), d = corner(gx + 1, gz + 1);
+    return (a * (1 - fx) + b * fx) * (1 - fz) + (c * (1 - fx) + d * fx) * fz;
   }
 
   /** How much (x, z) is a cliffed stretch of the open coast (0..1). */

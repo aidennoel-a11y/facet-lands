@@ -27,12 +27,40 @@ export const seasonUniforms = {
   uMossy: { value: 0 }, // how damp the country round about is: moss on the north sides of the trees (0..1)
   uFruit: { value: 0 }, // the fruit and berries on the trees and bushes: set in early summer, gone by winter (0..1)
   uRipe: { value: 0 }, // and how ripe they are: green, then coloured by late summer (0..1)
-  uFallClock: { value: 0 }, // how far the leaves have come in turning, from the start of the turn into autumn (0..1; each kind in its time)
+  uFallClock: { value: 0 }, // how far on the leaves' turning is: 0 three days before the turn into autumn, 1 two days after it (see uFallSpan)
+  uFallSpan: { value: 7 }, // (that span, in days)
+  uHighSnow: { value: 0 }, // snow lying on the mountains (above 80 m), from mid autumn to mid spring (0..1)
 };
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
+}
+
+/**
+ * Snow in the mountains (above 80 m) at season time `t` (d days a season):
+ * `lying` (0..1), and whether it's `falling` now. From day 4 of autumn to
+ * day 6 of spring: on the shoulders, now and then (some days a snowfall,
+ * lying a day or so before it melts); in the depths (autumn day 6 to spring
+ * day 2), always lying, with fresh falls now and then.
+ */
+export function highSnow(t, d) {
+  const u = (t < 1.6 ? t + 4 : t) * d; // (days since the start of spring, the next spring's counting on)
+  const from = 2 * d + 3.5, to = 4 * d + 6, coreFrom = 2 * d + 6, coreTo = 4 * d + 2;
+  if (u < from - 2 || u > to + 2) return { lying: 0, falling: false };
+  const dayHash = (k) => {
+    const h = Math.sin(k * 127.1 + 311.7) * 43758.5453;
+    return h - Math.floor(h);
+  };
+  let lying = smoothstep(coreFrom - 0.5, coreFrom, u) * (1 - smoothstep(coreTo, coreTo + 0.5, u));
+  let falling = false;
+  for (let k = Math.floor(u) - 2; k <= Math.floor(u); k++) {
+    if (k < from || k > to || dayHash(k) > (k > coreFrom && k < coreTo ? 0.45 : 0.55)) continue;
+    const fall = k + 0.3; // (a snowfall through the morning)
+    lying = Math.max(lying, smoothstep(fall, fall + 0.12, u) * (1 - smoothstep(fall + 1.0, fall + 1.6, u)));
+    if (u > fall - 0.05 && u < fall + 0.15) falling = true;
+  }
+  return { lying, falling };
 }
 
 export class Seasons {
@@ -86,9 +114,19 @@ export class Seasons {
       d = Math.min(d, 4 - d);
       return 1 - smoothstep(0.5 - w / 2, 0.5 + w / 2, d);
     };
-    // The leaves turn kind by kind: the first as autumn comes on, the last a
-    // couple of days into it (see seasonalTrees).
-    seasonUniforms.uFallClock.value = smoothstep(2 - w / 2, 2 - w / 2 + (this.turnDays + 2) / this.daysPerSeason, this.time);
+    // The leaves turn kind by kind: the first as autumn comes on (in the
+    // mountains a few days sooner), the last a couple of days into it (see
+    // seasonalTrees). The clock runs from three days before the turn.
+    const d = this.daysPerSeason, span = 3 + this.turnDays + 2;
+    const start = 2 - w / 2 - 3 / d;
+    seasonUniforms.uFallSpan.value = span;
+    seasonUniforms.uFallClock.value = Math.min(1, Math.max(0, (this.time - start) / (span / d))) * (1 - smoothstep(4 - w, 4, this.time));
+    // Snow on the mountains: from early in the middle of autumn to the middle
+    // of spring it snows up there now and then, and lies a day or so; from
+    // mid autumn to early spring it hardly ever melts away. See highSnow.
+    const hs = highSnow(this.time, d);
+    seasonUniforms.uHighSnow.value = hs.lying;
+    this.highSnowing = hs.falling;
     seasonUniforms.uSpring.value = amount(0);
     seasonUniforms.uAutumn.value = amount(2);
     seasonUniforms.uWinter.value = amount(3);
@@ -107,6 +145,8 @@ const COMMON = /* glsl */ `
   uniform float uMossy;
   uniform float uRipe;
   uniform float uFallClock;
+  uniform float uFallSpan;
+  uniform float uHighSnow;
   float seasonGreen(vec3 c) { return clamp((c.g - max(c.r, c.b)) * 9.0, 0.0, 1.0); }
   float seasonHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   float seasonNoise(vec2 p) {
@@ -167,7 +207,9 @@ export function seasonalTerrain(material, seaLevel) {
             float above = smoothstep(${(seaLevel + 0.4).toFixed(2)}, ${(seaLevel + 1.2).toFixed(2)}, vSeasonWorld.y);
             float settled = uWinter * smoothstep(0.6, 0.85, abs(vSeasonUp)) * smoothstep(patchy - 0.15, patchy + 0.05, uWinter * 1.25 - 0.1);
             float fresh = uSnowfall * smoothstep(0.35, 0.6, abs(vSeasonUp));
-            float snow = smoothstep(0.3, 0.6, vCold) * above * max(settled, fresh);
+            // (And up in the mountains, from mid autumn to mid spring: see highSnow.)
+            float high = uHighSnow * smoothstep(80.0, 96.0, vSeasonWorld.y + 6.0 * (patchy - 0.5)) * smoothstep(0.5, 0.75, abs(vSeasonUp));
+            float snow = smoothstep(0.3, 0.6, vCold) * above * max(max(settled, fresh), high);
             diffuseColor.rgb = mix(c, vec3(0.86, 0.89, 0.93), snow);
           }`,
         );
@@ -261,14 +303,18 @@ export function seasonalWood(material) {
  * its instance's position). Far trees (which give one) keep their crowns in
  * winter, dark with bare twigs: from far off a leafless wood is a grey-brown haze.
  */
-export function seasonalTrees(material, leaves = false, randFrom = null) {
+// `warmFrom`, `yFrom`: (far trees) where its warmth and its height above
+// the sea come from; otherwise from its instance: how warm it is carried in
+// its instance colour (less blue than green: see TreeLayer), its height in
+// its instance's place.
+export function seasonalTrees(material, leaves = false, randFrom = null, warmFrom = null, yFrom = null) {
   return hook(
     material,
     (shader) => {
       shader.vertexShader = shader.vertexShader
         .replace(
           '#include <common>',
-          `#include <common>\nattribute vec3 aSeason;\nattribute vec3 aFall;\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nuniform float uWinter;\nuniform float uFruit;${leaves || randFrom ? '' : '\nattribute float aCrown;\nvarying float vTreeNorth;'}`,
+          `#include <common>\nattribute vec3 aSeason;\nattribute vec3 aFall;\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nvarying float vTreeWarm;\nvarying float vTreeY;\nuniform float uWinter;\nuniform float uFruit;${leaves || randFrom ? '' : '\nattribute float aCrown;\nvarying float vTreeNorth;'}`,
         )
         .replace(
           '#include <begin_vertex>',
@@ -287,24 +333,37 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
           #else
             vTreeRand = 0.5;
           #endif`}
+          // How warm the country is where it stands (no autumn, no winter in
+          // and near the jungle), and how high (the mountains turn sooner).
+          ${warmFrom ? `vTreeWarm = ${warmFrom};` : `#ifdef USE_INSTANCING_COLOR
+            vTreeWarm = clamp((0.95 - instanceColor.b / max(instanceColor.g, 0.001)) / 0.1, 0.0, 1.0);
+          #else
+            vTreeWarm = 0.0;
+          #endif`}
+          ${yFrom ? `vTreeY = ${yFrom};` : `#ifdef USE_INSTANCING
+            vTreeY = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;
+          #else
+            vTreeY = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;
+          #endif`}
           ${leaves || randFrom ? '' : `// Fruit and berries (aSeason.z = 2), each a little block centred on
           // a quarter-metre grid point: grown out from nothing in early summer,
           // gone again by winter.
           if (aSeason.z > 1.5) transformed = mix((floor(position * 4.0) + 0.5) * 0.25, transformed, uFruit);
           // Winter: a deciduous tree's crown (its leaves) shrinks away to
           // nothing, leaving the bare boughs.
-          float bare = smoothstep(0.55, 0.95, uWinter) * aSeason.x;
+          float bare = smoothstep(0.55, 0.95, uWinter) * aSeason.x * (1.0 - vTreeWarm);
           transformed = mix(transformed, vec3(0.0, transformed.y * 0.85, 0.0), bare);`}
 `,
         );
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;${leaves || randFrom ? '' : '\nvarying float vTreeNorth;'}`)
+        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nvarying float vTreeWarm;\nvarying float vTreeY;${leaves || randFrom ? '' : '\nvarying float vTreeNorth;'}`)
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
           {
             vec3 c = diffuseColor.rgb;
             float leafy = vSeason.x; // (the crown of a deciduous tree)
+            float seasonal = 1.0 - vTreeWarm; // (in and near the jungle: no autumn, no winter)
             // Spring: fresh green, and the bushes dotted with little flowers
             // (pink, white, yellow or lilac, bush by bush).
             c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * leafy * 0.7);
@@ -323,17 +382,21 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
             // (Each tree turns quickly once its time comes, so a wood goes over
             // tree by tree rather than every tree half-turned at once.)
             // (And within a tree, bough by bough: patches of the crown first.)
-            float fallLag = 0.6 * fract(sin(dot(vFall, vec3(12.99, 78.23, 37.72))) * 43758.55) + 0.2 * vTreeRand + 0.12 * seasonNoise(vFlowerAt.xz * 1.3 + vFlowerAt.y * 0.7);
-            float turned = smoothstep(fallLag, fallLag + 0.04, uFallClock);
-            c = mix(c, vFall * (0.8 + 0.4 * dot(c, vec3(0.33))), min(uAutumn, turned) * leafy * 0.9);
+            // In days from the start of the clock (three days before the turn
+            // into autumn); up in the mountains, two or three days sooner.
+            float lagDays = 3.0 + 2.4 * fract(sin(dot(vFall, vec3(12.99, 78.23, 37.72))) * 43758.55) + 0.5 * vTreeRand + 0.6 * seasonNoise(vFlowerAt.xz * 1.3 + vFlowerAt.y * 0.7)
+              - 2.6 * smoothstep(80.0, 150.0, vTreeY);
+            float turned = smoothstep(lagDays / uFallSpan, lagDays / uFallSpan + 0.03, uFallClock);
+            c = mix(c, vFall * (0.8 + 0.4 * dot(c, vec3(0.33))), turned * leafy * 0.9 * seasonal);
             ${leaves || randFrom ? '' : `// Moss up the north side of the trunks, in damp country: on about
             // one tree in six.
             c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * step(0.83, fract(vTreeRand * 13.7)) * smoothstep(0.1, 0.8, vTreeNorth) * (0.5 + 0.5 * seasonHash(floor(vFlowerAt.xy * 4.0) + vTreeRand)) * 0.8);`}
             // Winter: bare grey-brown twigs, and snow on the upward faces.
-            c = mix(c, vec3(0.13, 0.1, 0.08), uWinter * leafy * 0.85);
-            c = mix(c, vec3(0.86, 0.89, 0.93), max(uWinter, uSnowfall) * vSeason.y * smoothstep(0.3 - 0.2 * uSnowfall, 0.75, vSeasonUp) * 0.85);
+            c = mix(c, vec3(0.13, 0.1, 0.08), uWinter * leafy * 0.85 * seasonal);
+            float treeSnow = max(max(uWinter, uSnowfall), uHighSnow * smoothstep(80.0, 96.0, vTreeY));
+            c = mix(c, vec3(0.86, 0.89, 0.93), treeSnow * vSeason.y * smoothstep(0.3 - 0.2 * uSnowfall, 0.75, vSeasonUp) * 0.85 * seasonal);
             diffuseColor.rgb = c;
-            ${leaves ? 'diffuseColor.a *= 1.0 - uWinter * vSeason.x; // the leaves have fallen' : ''}
+            ${leaves ? 'diffuseColor.a *= 1.0 - uWinter * vSeason.x * seasonal; // the leaves have fallen' : ''}
           }`,
         );
     },
@@ -347,25 +410,26 @@ export function seasonalGrass(material) {
     material,
     (shader) => {
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uWinter;')
+        .replace('#include <common>', '#include <common>\nuniform float uWinter;\nattribute float aWarm;\nvarying float vGrassSeasonal;')
         .replace(
           '#include <begin_vertex>',
           /* glsl */ `#include <begin_vertex>
+          vGrassSeasonal = 1.0 - aWarm; // (in and near the jungle: no autumn, no winter)
           #ifdef USE_INSTANCING_COLOR
             float grassGreen = clamp((instanceColor.g - max(instanceColor.r, instanceColor.b)) * 9.0, 0.0, 1.0);
-            transformed.y *= 1.0 - 0.85 * uWinter * grassGreen;
+            transformed.y *= 1.0 - 0.85 * uWinter * grassGreen * vGrassSeasonal;
           #endif`,
         );
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${COMMON}`).replace(
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${COMMON}\nvarying float vGrassSeasonal;`).replace(
         '#include <color_fragment>',
         /* glsl */ `#include <color_fragment>
         {
           vec3 c = diffuseColor.rgb;
           float g = seasonGreen(c);
           c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * g * 0.7);
-          c = mix(c, vec3(0.55, 0.38, 0.12), uAutumn * g * 0.6);
-          c = mix(c, vec3(0.7, 0.72, 0.74), uWinter * g * 0.8);
-          c = mix(c, vec3(0.86, 0.89, 0.93), uSnowfall * g * 0.75); // dusted with fresh snow
+          c = mix(c, vec3(0.55, 0.38, 0.12), uAutumn * g * 0.6 * vGrassSeasonal);
+          c = mix(c, vec3(0.7, 0.72, 0.74), uWinter * g * 0.8 * vGrassSeasonal);
+          c = mix(c, vec3(0.86, 0.89, 0.93), uSnowfall * g * 0.75 * vGrassSeasonal); // dusted with fresh snow
           diffuseColor.rgb = c;
         }`,
       );

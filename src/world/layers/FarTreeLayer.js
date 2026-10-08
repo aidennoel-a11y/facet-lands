@@ -207,7 +207,7 @@ export function createFarTreeLayer(config) {
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `#include <begin_vertex>
-        // aSpot: position (world), size; aShape: height, turn, shade.
+        // aSpot: position (world), size; aShape: height, turn, shade, warmth.
         {
           float c = cos(aShape.y), s = sin(aShape.y);
           transformed.xz = mat2(c, -s, s, c) * transformed.xz;
@@ -225,7 +225,7 @@ export function createFarTreeLayer(config) {
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vec3(vShade * (0.96 + (vShade - 0.82) * 0.27), vShade, vShade * 0.95);');
   };
   material.customProgramCacheKey = () => 'far-trees';
-  seasonalTrees(material, false, 'aShape.z');
+  seasonalTrees(material, false, 'aShape.z', 'aShape.w', 'aSpot.y');
 
   // One pool per kind of tree: instances packed at the front, a chunk's
   // handle knowing which slots are its own.
@@ -265,13 +265,13 @@ export function createFarTreeLayer(config) {
   };
   function add(handle, type, detailed, data) {
     const p = pool(type, detailed);
-    const n = data.length / 7;
+    const n = data.length / 8;
     if (p.count + n > p.capacity) grow(p, Math.max(p.capacity * 2, p.count + n));
     const slots = [];
     for (let k = 0; k < n; k++) {
       const i = p.count++;
-      p.spot.array.set([data[k * 7], data[k * 7 + 1], data[k * 7 + 2], data[k * 7 + 3]], i * 4);
-      p.shape.array.set([data[k * 7 + 4], data[k * 7 + 5], data[k * 7 + 6], 0], i * 4);
+      p.spot.array.set([data[k * 8], data[k * 8 + 1], data[k * 8 + 2], data[k * 8 + 3]], i * 4);
+      p.shape.array.set([data[k * 8 + 4], data[k * 8 + 5], data[k * 8 + 6], data[k * 8 + 7]], i * 4); // (w: how warm: see seasonalTrees)
       p.owner[i] = slots;
       p.slot[i] = k;
       slots.push(i);
@@ -333,7 +333,7 @@ export function createFarTreeLayer(config) {
       for (const [type, data] of Object.entries(trees)) {
         if (!data.length || SMALL_PLANTS.has(type)) continue; // (no bushes far off)
         add(handle, type, detailed, data);
-        count += data.length / 7;
+        count += data.length / 8;
       }
       if (!count) return null;
       // A stand-in for the chunk's trees (they're drawn by the pools).

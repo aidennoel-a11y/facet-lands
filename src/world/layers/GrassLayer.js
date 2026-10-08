@@ -228,15 +228,20 @@ export function createGrassLayer(config, { far = false } = {}) {
         let n = 0;
         for (let k = 0; k < count; k++) if (kinds[k] === kind) n++;
         if (!n) return null;
-        const m = new Float32Array(n * 16), c = new Float32Array(n * 3);
+        const m = new Float32Array(n * 16), c = new Float32Array(n * 3), w = new Float32Array(n);
         let at = 0;
         for (let k = 0; k < count; k++) {
           if (kinds[k] !== kind) continue;
           m.set(matrices.subarray(k * 16, k * 16 + 16), at * 16);
           c.set(colors.subarray(k * 3, k * 3 + 3), at * 3);
+          w[at] = placed.warms?.[k] ?? 0;
           at++;
         }
-        const mesh = new InstancedMesh(geometry, material, n);
+        // (Its own copy of the blade, a handful of triangles, to carry each
+        // tuft's warmth: in and near the jungle, no autumn, no winter.)
+        const blade = geometry.clone();
+        blade.setAttribute('aWarm', new InstancedBufferAttribute(w, 1));
+        const mesh = new InstancedMesh(blade, material, n);
         mesh.name = 'grass';
         mesh.instanceMatrix.array.set(m);
         mesh.instanceColor = new InstancedBufferAttribute(c, 3);
@@ -253,7 +258,8 @@ export function createGrassLayer(config, { far = false } = {}) {
 
     dispose(mesh) {
       layer.count -= mesh.userData.count;
-      for (const child of mesh.children) child.dispose();
+      for (const child of mesh.children) child.geometry.dispose(), child.dispose();
+      mesh.geometry.dispose();
       mesh.dispose();
     },
   };
