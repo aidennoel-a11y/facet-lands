@@ -65,7 +65,8 @@ export const WORLD = {
 
   // Sun, moon and sky
   dayLengthMinutes: 24, // one full day/night cycle (real minutes)
-  daysPerSeason: 2, // spring, summer, autumn and winter each last this many days
+  daysPerSeason: 12, // spring, summer, autumn and winter each last this many days (a year: 48)
+  seasonTurnDays: 2, // of which this many are the turn into the next (snow melting, leaves turning)
   startHour: 9.5,
 
   // Shadows follow the camera and cover a square this many metres across.

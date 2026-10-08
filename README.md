@@ -59,7 +59,9 @@ predators hunt at night, and crocodiles lurk in the water.
   seed can never be played in survival again. The goal is to live as long
   as you can: the top right shows the day of this life, the season and
   your longest life. A quiet message marks a week, a month and a year
-  (a year is four seasons of `daysPerSeason` days).
+  (a year is four seasons of `daysPerSeason` days: 12 each, the last 2 the
+  turn into the next, when the snow melts or the leaves turn, kind by kind;
+  late in the autumn one early snow falls and melts before winter).
 - You gather wood, stone, vines, hides and ore, then hunt with a spear, bow
   or crossbow, fish, farm, cook, and build: campfires, walls, gates, roofs,
   beds, chests, furnaces, rafts.

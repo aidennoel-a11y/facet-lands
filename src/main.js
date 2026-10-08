@@ -118,7 +118,7 @@ const light = { direction: dayNight.shaftDirection, color: dayNight.shaftColor, 
 // mouth shows as ground rather than letting the sky through.
 const terrainMaterial = addTilledSoil(seasonalTerrain(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), WORLD.seaLevel));
 // The seasons turn over every few game days (see Seasons).
-const seasons = new Seasons(WORLD.daysPerSeason);
+const seasons = new Seasons(WORLD.daysPerSeason, WORLD.seasonTurnDays);
 // A heightfield has no back faces, so render its front faces into the shadow map.
 terrainMaterial.shadowSide = THREE.FrontSide;
 // For testing (and for sharing a spot): ?seed=…&x=…&z=…&y=…&yaw=…&pitch=…
@@ -960,6 +960,24 @@ function shadowReach(dt) {
 
 // How much the land under you has a cold winter (so snow rather than rain).
 const cold = { value: 1, wait: 0 };
+// The first snow: late in the autumn, two days or so before the turn into
+// winter, one snowfall that settles for a while and melts away again,
+// before the winter comes in earnest. (Online, the host's weather brings it.)
+let firstSnowFalling = false;
+function firstSnow() {
+  const d = WORLD.daysPerSeason, t = seasons.time;
+  const start = 2 + (d - WORLD.seasonTurnDays - 2) / d, end = start + 0.4 / d;
+  const now = seasons.auto && t >= start && t < end;
+  if (now && !firstSnowFalling && weather.auto && !weather.following) {
+    firstSnowFalling = true;
+    weather.set('rain');
+  } else if (!now && firstSnowFalling) {
+    firstSnowFalling = false;
+    weather.set('auto');
+  }
+  return now;
+}
+
 function coldHere(dt) {
   cold.wait -= dt;
   if (cold.wait <= 0) {
@@ -1598,7 +1616,8 @@ function tick(now) {
   // depth of winter it doesn't melt at all; only in the sunshine early and
   // late in the winter (and for good once it's spring).
   const winterNow = seasonUniforms.uWinter.value;
-  const snowing = weather.rain > 0.2 && winterNow > 0.5;
+  const firstSnowing = firstSnow();
+  const snowing = weather.rain > 0.2 && (winterNow > 0.5 || firstSnowing);
   const sunshine = smooth(0.05, 0.25, dayNight.sunDir.y) * (1 - smooth(0.5, 0.8, weather.cover)) * (weather.rain > 0.05 ? 0 : 1);
   const thaw = sunshine * (1 - smooth(0.6, 0.9, winterNow)) / 240 + (winterNow < 0.05 ? 1 / 120 : 0);
   seasonUniforms.uSnowfall.value = Math.min(1, Math.max(0, seasonUniforms.uSnowfall.value + (snowing ? dt / 60 : -dt * thaw)));
@@ -1629,7 +1648,7 @@ function tick(now) {
   seasons.update(dayNight.playing ? dt / (WORLD.dayLengthMinutes * 60) : 0, dt);
   if (dayNight.playing) game.passDays(dt / (WORLD.dayLengthMinutes * 60));
   // In a cold winter, it snows (over the lands that have one).
-  const snow = seasonUniforms.uWinter.value * coldHere(dt);
+  const snow = Math.max(seasonUniforms.uWinter.value, firstSnowing ? 1 : 0) * coldHere(dt);
   rain.update(worldNow, camera.position, localRain, clouds.wind, wind, dayNight.horizon, snow);
   // Water: the sun's glitter on it (not behind cloud), rings where the rain falls; the waterfalls' mist in the daylight.
   sparkleUniforms.uSunView.value.copy(dayNight.lightDirection).transformDirection(camera.matrixWorldInverse);

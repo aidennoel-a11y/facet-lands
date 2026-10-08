@@ -27,6 +27,7 @@ export const seasonUniforms = {
   uMossy: { value: 0 }, // how damp the country round about is: moss on the north sides of the trees (0..1)
   uFruit: { value: 0 }, // the fruit and berries on the trees and bushes: set in early summer, gone by winter (0..1)
   uRipe: { value: 0 }, // and how ripe they are: green, then coloured by late summer (0..1)
+  uFallClock: { value: 0 }, // how far the leaves have come in turning, from the start of the turn into autumn (0..1; each kind in its time)
 };
 
 function smoothstep(a, b, x) {
@@ -36,8 +37,9 @@ function smoothstep(a, b, x) {
 
 export class Seasons {
   /** @param daysPerSeason  game days each season lasts when turning by itself */
-  constructor(daysPerSeason = 2) {
+  constructor(daysPerSeason = 12, turnDays = 2) {
     this.daysPerSeason = daysPerSeason;
+    this.turnDays = turnDays;
     this.time = 0.6; // in seasons: 0 spring, 1 summer, 2 autumn, 3 winter (wrapping)
     this.auto = true;
     this.#apply();
@@ -76,12 +78,17 @@ export class Seasons {
   }
 
   #apply() {
-    // Each season holds for most of its span and blends into the next.
+    // Each season holds for most of its span and turns into the next over
+    // `turnDays` (the snow melting, the leaves turning), about the change.
+    const w = Math.min(0.9, this.turnDays / this.daysPerSeason);
     const amount = (k) => {
       let d = Math.abs(this.time - (k + 0.5));
       d = Math.min(d, 4 - d);
-      return 1 - smoothstep(0.3, 0.7, d);
+      return 1 - smoothstep(0.5 - w / 2, 0.5 + w / 2, d);
     };
+    // The leaves turn kind by kind: the first as autumn comes on, the last a
+    // couple of days into it (see seasonalTrees).
+    seasonUniforms.uFallClock.value = smoothstep(2 - w / 2, 2 - w / 2 + (this.turnDays + 2) / this.daysPerSeason, this.time);
     seasonUniforms.uSpring.value = amount(0);
     seasonUniforms.uAutumn.value = amount(2);
     seasonUniforms.uWinter.value = amount(3);
@@ -99,6 +106,7 @@ const COMMON = /* glsl */ `
   uniform float uSnowfall;
   uniform float uMossy;
   uniform float uRipe;
+  uniform float uFallClock;
   float seasonGreen(vec3 c) { return clamp((c.g - max(c.r, c.b)) * 9.0, 0.0, 1.0); }
   float seasonHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   float seasonNoise(vec2 p) {
@@ -310,7 +318,14 @@ export function seasonalTrees(material, leaves = false, randFrom = null) {
             if (vSeason.z > 1.5) c = mix(vec3(0.42, 0.6, 0.22), c, uRipe);
             // Autumn: each species its own colour (birches yellow, maples
             // scarlet...), the same on every tree of the kind.
-            c = mix(c, vFall * (0.8 + 0.4 * dot(c, vec3(0.33))), uAutumn * leafy * 0.9);
+            // Kind by kind: some (a fixed few, by their colour) turn early,
+            // others days later, each tree a little apart from its fellows.
+            // (Each tree turns quickly once its time comes, so a wood goes over
+            // tree by tree rather than every tree half-turned at once.)
+            // (And within a tree, bough by bough: patches of the crown first.)
+            float fallLag = 0.6 * fract(sin(dot(vFall, vec3(12.99, 78.23, 37.72))) * 43758.55) + 0.2 * vTreeRand + 0.12 * seasonNoise(vFlowerAt.xz * 1.3 + vFlowerAt.y * 0.7);
+            float turned = smoothstep(fallLag, fallLag + 0.04, uFallClock);
+            c = mix(c, vFall * (0.8 + 0.4 * dot(c, vec3(0.33))), min(uAutumn, turned) * leafy * 0.9);
             ${leaves || randFrom ? '' : `// Moss up the north side of the trunks, in damp country: on about
             // one tree in six.
             c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * step(0.83, fract(vTreeRand * 13.7)) * smoothstep(0.1, 0.8, vTreeNorth) * (0.5 + 0.5 * seasonHash(floor(vFlowerAt.xy * 4.0) + vTreeRand)) * 0.8);`}
