@@ -211,7 +211,11 @@ export function createFarTreeLayer(config) {
         {
           float c = cos(aShape.y), s = sin(aShape.y);
           transformed.xz = mat2(c, -s, s, c) * transformed.xz;
-          transformed *= vec3(aSpot.w, aShape.x, aSpot.w);
+          // Fuller with distance: a tree a kilometre or two off is a
+          // pixel or less, and a forest of them would read as thin and
+          // patchy; broadened (and a little taller), they keep its cover.
+          float far = smoothstep(300.0, 1800.0, distance(aSpot.xz, cameraPosition.xz));
+          transformed *= vec3(aSpot.w * (1.0 + 0.9 * far), aShape.x * (1.0 + 0.25 * far), aSpot.w * (1.0 + 0.9 * far));
           transformed += aSpot.xyz;
           vShade = 0.82 + aShape.z * 0.3;
         }`,
