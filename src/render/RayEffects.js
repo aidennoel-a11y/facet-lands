@@ -113,8 +113,11 @@ const fragmentShader = /* glsl */ `
     // March from this pixel towards the sun (or moon) on screen, counting how
     // much open sky the ray passes. Where clouds, trees or mountains block
     // it, the gaps between them become visible beams.
-    if (sunVisible > 0.0 && shaftStrength > 0.0) {
-      vec2 toSun = sunUv - vUv;
+    // (Only where the glow reaches: further from the sun on screen than
+    // that, no ray to march.)
+    vec2 toSun = sunUv - vUv;
+    float glow = pow(max(0.0, 1.0 - length(toSun * vec2(resolution.x / resolution.y, 1.0)) / shaftReach), 2.2);
+    if (sunVisible > 0.0 && shaftStrength > 0.0 && glow > 0.002) {
       vec2 stepUv = toSun / float(${SHAFT_SAMPLES});
       vec2 uv = vUv + stepUv * jitter;
       float light = 0.0;
@@ -126,9 +129,6 @@ const fragmentShader = /* glsl */ `
         total += weight;
         weight *= 0.955;
       }
-      float aspect = resolution.x / resolution.y;
-      float distanceToSun = length(toSun * vec2(aspect, 1.0));
-      float glow = pow(max(0.0, 1.0 - distanceToSun / shaftReach), 2.2);
       color += sunColor * (light / total) * glow * shaftStrength * sunVisible;
     }
 

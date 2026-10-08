@@ -1,4 +1,4 @@
-import { BoxGeometry, Color, DynamicDrawUsage, Euler, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Raycaster, Vector3 } from 'three';
+import { BoxGeometry, Color, DynamicDrawUsage, Euler, Frustum, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Raycaster, Sphere, Vector3 } from 'three';
 import { hash2, mulberry32 } from '../noise/random.js';
 import { chooseGait, footAt, rhythm, solveLeg, stepFeet, strideLength } from './Gait.js';
 import * as Models from './models.js';
@@ -192,6 +192,7 @@ const euler = new Euler(0, 0, 0, 'YXZ'), quat = new Quaternion(), pos = new Vect
 const white = new Color(1, 1, 1), tint = new Color();
 const ik = { rz: 0, a1: 0, a2: 0, kx: 0, ky: 0, kz: 0 }, foot = { x: 0, y: 0, z: 0 };
 const ray = new Raycaster();
+const view = new Frustum(), viewMatrix = new Matrix4(), sphere = new Sphere();
 const shake = new Quaternion();
 
 /**
@@ -3535,9 +3536,23 @@ export class Wildlife {
     const W = this.woundMesh;
     W.count = 0;
     const ctx = this.ctx;
+    // (Only those in view are posed and drawn: one out of sight, more than
+    // a few metres off, isn't. Close by, its shadow might fall in view.)
+    const cam = ctx?.camera;
+    if (cam) view.setFromProjectionMatrix(viewMatrix.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
     for (const a of this.animals) {
       const rig = this.rigs[a.kind], sp = SPECIES[a.kind], M = rig.meshes;
       if (counts[a.kind] >= sp.max) continue;
+      if (cam && !a.ridden) {
+        const h = (sp.height ?? 1) * a.scale, near = Math.abs(a.x - cam.position.x) < 25 && Math.abs(a.z - cam.position.z) < 25;
+        sphere.center.set(a.x, (a.y ?? 0) + h * 0.5, a.z);
+        sphere.radius = Math.max(h, (sp.radius ?? 0.5) * a.scale * 3, sp.serpent ? 3 * a.scale : 0) + 2;
+        if (!near && !view.intersectsSphere(sphere)) {
+          a.m = null;
+          a.hm = null;
+          continue;
+        }
+      }
       counts[a.kind]++;
       if (sp.serpent) {
         this.#drawSnake(a, rig, ctx);

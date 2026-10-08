@@ -945,6 +945,7 @@ function updateVisibility() {
 }
 
 let sheltered = false; // underground: no rain or lightning, sounds muffled
+let shadowTurn = 0, shadowsDirty = true, cloudOwed = 0; // (see the frame: the shadows drawn every other frame)
 
 // Where the sun's (or moon's) shadow map reaches: only chunks there need
 // sample it (see ChunkManager.setShadowVolume). A little bigger than the
@@ -1389,6 +1390,7 @@ function useQuality() {
     shadow.mapSize.set(WORLD.shadowMapSize, WORLD.shadowMapSize);
     shadow.map?.dispose();
     shadow.map = null;
+    shadowsDirty = true;
   }
   Object.assign(shadow.camera, { left: -e, right: e, top: e, bottom: -e });
   shadow.camera.updateProjectionMatrix();
@@ -1427,6 +1429,7 @@ function checkPerformance(dt) {
     shadow.mapSize.set(shadow.mapSize.x / 2, shadow.mapSize.y / 2);
     shadow.map?.dispose();
     shadow.map = null;
+    shadowsDirty = true;
     return perfNote('Softened the shadows a little to keep it smooth');
   }
 }
@@ -1658,7 +1661,12 @@ function tick(now) {
   cloudSky.storm = weather.storm;
   cloudSky.weather = weather;
   cloudSky.viewMatrix = camera.matrixWorldInverse;
-  clouds.update(dt, camera.position, dayNight.horizon, generator, wind, cloudSky);
+  // (Every other frame, with the time since: they drift a few centimetres a frame.)
+  cloudOwed += dt;
+  if (shadowTurn === 0 || cloudOwed > 0.1) {
+    clouds.update(cloudOwed, camera.position, dayNight.horizon, generator, wind, cloudSky);
+    cloudOwed = 0;
+  }
   showers.update(dt, camera, clouds.wind, wind, dayNight.horizon, scene.fog);
   // (Under one of the showers you can see, it's raining on you too.)
   localRain = Math.max(weather.rain, showers.rainAt(camera.position));
@@ -1758,6 +1766,14 @@ function tick(now) {
   camera.position.y += tremble;
   camera.updateMatrixWorld();
   chunks.cull(camera.position); // (the land behind the hills not drawn)
+  // The shadows are drawn afresh every other frame: the sun hardly moves in
+  // a frame, nor what casts them, and that's half the cost of the shadows.
+  // (The shadows and the light that casts them stay together: the frame
+  // between uses the last one's map with the last one's sun.)
+  shadowTurn = (shadowTurn + 1) % 2;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = shadowTurn === 0 || shadowsDirty;
+  shadowsDirty = false;
   // (Animals only, for testing: everything else hidden, each animal labelled.)
   const animalsOnly = animalsOnlyBox?.checked;
   const hidden = [];
