@@ -54,6 +54,8 @@ export class Hud {
       <section class="death" hidden>
         <h2>You died</h2>
         <p class="death-cause"></p>
+        <p class="death-days"></p>
+        <p class="death-best"></p>
         <button type="button" class="respawn">Try again</button>
       </section>`;
     this.el = (sel) => root.querySelector(sel);
@@ -62,7 +64,8 @@ export class Hud {
     this.onTake = null;
     this.onChestMove = null;
     this.onRespawn = null;
-    this.el('.respawn').addEventListener('click', () => this.onRespawn?.());
+    this.onLeave = null;
+    this.el('.respawn').addEventListener('click', () => (this.deathButton === 'leave' ? this.onLeave?.() : this.onRespawn?.()));
     this.sleepAmount = 0;
   }
 
@@ -247,9 +250,19 @@ export class Hud {
 
   // --- The end ---------------------------------------------------------------------
 
-  death(cause) {
+  /**
+   * The death screen: what killed you; in survival, how many days you
+   * lasted and the longest yet. `button`: 'again' (try again), 'new' (a new
+   * life, online) or 'leave' (back to the menu: that life is over).
+   */
+  death({ cause, days = null, longest = null, button = 'again' }) {
     this.closeAll();
+    const n = (d) => `${d} ${d === 1 ? 'day' : 'days'}`;
     this.el('.death-cause').textContent = cause ? `Killed by ${cause}.` : '';
+    this.el('.death-days').textContent = days === null ? '' : `You survived ${n(days)}.`;
+    this.el('.death-best').textContent = longest === null ? '' : days >= longest && days > 0 ? 'Your longest life yet.' : `Your longest: ${n(longest)}.`;
+    this.deathButton = button;
+    this.el('.respawn').textContent = { again: 'Try again', new: 'Start a new life', leave: 'Back to the menu' }[button];
     this.el('.death').hidden = false;
   }
 

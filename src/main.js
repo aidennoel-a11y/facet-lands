@@ -7,7 +7,7 @@ import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
 import { caveNightVision, createCaveLayer } from './world/layers/CaveLayer.js';
-import { StartMenu, rememberWorld } from './ui/StartMenu.js';
+import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
 import { createRiverLayer, mistLight } from './world/layers/RiverLayer.js';
@@ -581,6 +581,7 @@ const game = new Game({
     const days = (h > 6.5 ? 24 - h + 6.5 : 6.5 - h) / 24;
     dayNight.hour = 6.5;
     seasons.update(days, 1);
+    game.passDays(days);
   },
   hudRoot: document.getElementById('hud'),
   generator: () => generator,
@@ -1617,6 +1618,7 @@ function tick(now) {
   // (Under one of the showers you can see, it's raining on you too.)
   localRain = Math.max(weather.rain, showers.rainAt(camera.position));
   seasons.update(dayNight.playing ? dt / (WORLD.dayLengthMinutes * 60) : 0, dt);
+  if (dayNight.playing) game.passDays(dt / (WORLD.dayLengthMinutes * 60));
   // In a cold winter, it snows (over the lands that have one).
   const snow = seasonUniforms.uWinter.value * coldHere(dt);
   rain.update(worldNow, camera.position, localRain, clouds.wind, wind, dayNight.horizon, snow);
@@ -1814,7 +1816,7 @@ function whereYouAre() {
   return { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x };
 }
 function saveWorld(world) {
-  if (!world || world.mode === 'testing') return;
+  if (!world || world.mode === 'testing' || world.dead) return; // (a life that's over is never saved again)
   game.save();
   torches.save?.();
   rememberWorld({ ...world, camera: whereYouAre() });
@@ -1867,6 +1869,19 @@ if (!TESTING) {
       }),
   });
   menu.onlineCode = () => (mp.connected ? mp.code : null);
+  // Survival is for keeps: when you die (but online), that life's world is
+  // wiped at once, before the death screen shows (see Game.#die), and the
+  // way out is back to the menu, where the seed waits for a new life.
+  game.online = () => mp.connected;
+  game.onDeath = ({ days, hardcore }) => {
+    if (!hardcore || !menu.world) return;
+    torches.clearWorld?.();
+    endLife(menu.world, days);
+    menu.world.dead = true;
+  };
+  game.onLeave = () => menu.leaveDead();
+  // (Online, a new life starts where the world began.)
+  game.onNewLife = () => placeCamera();
   startMenu = menu;
   window.addEventListener('beforeunload', () => saveWorld(menu.world));
   // (Every couple of minutes, quietly, too.)

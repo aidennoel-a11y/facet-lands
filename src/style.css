@@ -681,8 +681,9 @@ kbd {
   place-content: center;
   justify-items: center;
   gap: 12px;
-  color: #fff;
-  background: rgba(60, 0, 0, 0.6);
+  color: #e8e4dc;
+  background: rgba(14, 12, 12, 0.82);
+  animation: death-in 2.5s ease-out;
   pointer-events: auto;
   z-index: 20;
 }
@@ -693,9 +694,24 @@ kbd {
   margin: 0;
   font-size: 16px;
 }
+.death p:empty {
+  display: none;
+}
+.death .death-best {
+  font-size: 13px;
+  color: rgba(232, 228, 220, 0.6);
+}
 .death button {
-  color: #fff;
-  background: var(--accent);
+  margin-top: 10px;
+}
+@keyframes death-in {
+  from {
+    opacity: 0;
+  }
+}
+.death button {
+  color: #e8e4dc;
+  background: rgba(120, 100, 88, 0.55);
   font-size: 16px;
   padding: 10px 18px;
 }
@@ -1571,4 +1587,9 @@ kbd {
     justify-self: center;
     transform: rotate(90deg);
   }
+}
+.sm-world .sm-dead {
+  display: block;
+  color: #a89a8a;
+  font-style: italic;
 }

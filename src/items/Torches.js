@@ -213,6 +213,15 @@ export class Torches {
     for (const [x, y, z, nx, ny, nz, lit = 1] of saved) this.place(new Vector3(x, y, z), new Vector3(nx, ny, nz), false, !!lit);
   }
 
+  /** Forgets this world's torches (a survival life that's over: see Game.#die). */
+  clearWorld() {
+    try {
+      localStorage.removeItem(`facet-lands:torches:${this.seed}`);
+    } catch {
+      // (Nothing kept.)
+    }
+  }
+
   #save() {
     if (this.seed === null) return;
     const data = this.torches.map((t) => [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)).concat(t.lit ? 1 : 0));

@@ -8,6 +8,15 @@ import { DEFAULT_SERVER, VERSION, openWorlds } from '../net/Multiplayer.js';
 import { describeHardware, graphicsInfo, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
+// (Whether you've been told that survival is for keeps; `set` to note it.)
+function warned(set = false) {
+  try {
+    if (set) localStorage.setItem('facet-lands:hardcoreWarned', '1');
+    return !!localStorage.getItem('facet-lands:hardcoreWarned');
+  } catch {
+    return true;
+  }
+}
 const esc = (v) => String(v).replace(/[&"<]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;' })[c]);
 
 export const MODES = {
@@ -48,6 +57,23 @@ function forgetWorld(id) {
   } catch {
     // (Nothing to remove.)
   }
+}
+
+/**
+ * A survival life is over: its save is wiped at once (what it built, carried
+ * and changed), and the world is marked as ended, so it can't be carried on.
+ * Its seed is kept, to start a new life on.
+ */
+export function endLife(world, days) {
+  try {
+    localStorage.removeItem(`facet-lands:survival:${world.id}`);
+  } catch {
+    // (Nothing kept.)
+  }
+  const list = savedWorlds().filter((w) => w.id !== world.id);
+  const { camera, ...rest } = world;
+  list.push({ ...rest, dead: true, lastDays: days, played: Date.now() });
+  writeWorlds(list);
 }
 
 /** A low-poly backdrop: a sky of facets over ranges of faceted hills (an SVG). */
@@ -303,6 +329,12 @@ export class StartMenu {
           .catch((e) => this.online(e.message));
         return;
       }
+      // (Once: survival is for keeps.)
+      if (mode === 'survival' && !online && !warned()) {
+        warned(true);
+        card.querySelector('.sm-note').textContent = 'Survival is for keeps: when you die, that life is over, and everything it built and carried is gone. Only the land remains, for a new life. Press Create world again to begin.';
+        return;
+      }
       if (mode !== 'testing') rememberWorld(world);
       this.#play(world);
     });
@@ -320,12 +352,24 @@ export class StartMenu {
             <button type="button" class="sm-world" data-id="${w.id}">
               <strong>${w.name.replace(/</g, '&lt;')}</strong>
               <span>${MODES[w.mode]?.name ?? w.mode} · seed ${String(w.seed).replace(/</g, '&lt;')} · ${when(w.played)}</span>
+              ${w.dead ? `<span class="sm-dead">Died after ${w.lastDays ?? 0} ${w.lastDays === 1 ? 'day' : 'days'} · start a new life here</span>` : ''}
             </button>
             <button type="button" class="sm-delete" data-del="${w.id}" title="Delete this world">Delete</button>
           </li>`).join('') || '<li class="sm-none">No saved worlds yet.</li>'}
       </ul>
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
-    for (const b of card.querySelectorAll('.sm-world')) b.addEventListener('click', () => this.#play(list.find((w) => w.id === b.dataset.id)));
+    for (const b of card.querySelectorAll('.sm-world')) {
+      b.addEventListener('click', () => {
+        let w = list.find((w) => w.id === b.dataset.id);
+        // (A life that ended: a new one, on the same land, from scratch.)
+        if (w.dead) {
+          const { dead, lastDays, camera, ...fresh } = w;
+          w = fresh;
+          rememberWorld(w);
+        }
+        this.#play(w);
+      });
+    }
     for (const b of card.querySelectorAll('.sm-delete')) {
       b.addEventListener('click', () => {
         if (b.dataset.confirm) {
@@ -374,6 +418,14 @@ export class StartMenu {
       this.pauseButton.hidden = true;
       this.title();
     });
+  }
+
+  /** Out of a survival life that's over, back to the title (nothing saved). */
+  leaveDead() {
+    this.onQuit(this.world);
+    this.world = null;
+    this.pauseButton.hidden = true;
+    this.title();
   }
 
   resume() {

@@ -9,6 +9,27 @@ import { bobberModel, bowModel } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
 
+/** Your longest survival life yet, in days (kept in this browser): records `days`, returns the longest. */
+export function recordRun(days) {
+  let best = longestRun();
+  if (days > best) {
+    best = days;
+    try {
+      localStorage.setItem('facet-lands:longest', String(best));
+    } catch {
+      // (No storage: it isn't remembered.)
+    }
+  }
+  return best;
+}
+export function longestRun() {
+  try {
+    return Math.max(0, parseInt(localStorage.getItem('facet-lands:longest') ?? '0', 10) || 0);
+  } catch {
+    return 0;
+  }
+}
+
 const rnd = (a, b) => a + Math.random() * (b - a);
 const v = new Vector3(), dir = new Vector3(), q = new Quaternion(), FORWARD = new Vector3(0, 0, 1);
 
@@ -94,6 +115,11 @@ export class Game {
     this.riding = null; // the raft you're on
     this.sleeping = null;
     this.snareWait = 1;
+    this.age = 0; // (game days this life has lasted: see passDays)
+    this.online = () => false; // (playing online? set by main)
+    this.onDeath = null; // (survival: told first, before the death screen; see #die)
+    this.onLeave = null; // (the death screen's way back to the menu)
+    this.onNewLife = null; // (online: a new life starts at the world's start)
     this.structures.onChange = () => (this.dirty = true);
     this.#heldModel();
     this.#bind();
@@ -105,6 +131,8 @@ export class Game {
 
   /** Starts you afresh: full health, and (but in survival) the test kit. */
   newLife() {
+    this.age = 0;
+    this.dead = false;
     this.survival.reset();
     this.inventory.clear();
     if (this.mode !== 'survival') for (const [id, n] of TEST_KIT) this.inventory.add(Inventory.stack(id, n));
@@ -153,7 +181,9 @@ export class Game {
       this.inventory.load(saved.player.inventory);
       this.survival.reset();
       this.survival.load(saved.player.stats);
+      this.dead = false;
       this.spawn = saved.player.spawn ?? null;
+      this.age = saved.player.age ?? 0;
       this.hud.alive();
       this.controls.frozen = false;
     } else {
@@ -170,7 +200,7 @@ export class Game {
       mushrooms: [...(this.mushrooms?.taken ?? [])],
       tame: this.wildlife.tameJSON(),
       progress: [...this.progress],
-      player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn } : null,
+      player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
     try {
       localStorage.setItem(`facet-lands:survival:${this.saveKey}`, JSON.stringify(data));
@@ -229,6 +259,7 @@ export class Game {
       this.hud.renderChest();
     };
     this.hud.onRespawn = () => this.respawn();
+    this.hud.onLeave = () => this.onLeave?.();
     // (The crafting tree: which tiers you've opened. See #learn.)
     this.hud.unlocked = (tier) => this.unlocked(tier);
     this.inventory.onChange(() => {
@@ -1485,7 +1516,6 @@ export class Game {
       seasonality: heat.seasonality, altitude: cam.y - this.controls.eyeHeight, night: ctx.night, rain: ctx.rain * (1 - shelter.roof), snowing: ctx.snowing && shelter.roof < 0.5,
       shelter: sheltered, exposed, storm: ctx.blizzard ?? 0, dust: (ctx.dust ?? 0) * (1 - sheltered),
     };
-    const wasAlive = this.survival.alive;
     // (In creative there's no hunger, thirst or cold: you stay as you are.)
     if (this.mode !== 'creative') this.survival.update(dt, e);
     if (this.survival.retched) {
@@ -1501,7 +1531,8 @@ export class Game {
       this.spoilWait = 5;
       if (rotted.length) this.hotbar?.flash(`${rotted[0]} has gone off`);
     }
-    if (wasAlive && !this.survival.alive) this.#die();
+    // (However it came: hunger or cold here, or a bite, a fall, a blow since the last frame.)
+    if (!this.survival.alive && !this.dead) this.#die();
 
     // What's under the crosshair: what E would do, and where a thing to be built would go.
     let prompt = null;
@@ -1610,6 +1641,7 @@ export class Game {
   }
 
   #die() {
+    this.dead = true;
     // What you carried lies where you fell.
     this.#getOff();
     this.#reel();
@@ -1620,17 +1652,36 @@ export class Game {
       this.items.drop(s, p.x + Math.cos(a) * 0.8, p.y, p.z + Math.sin(a) * 0.8);
     });
     this.inventory.clear();
-    this.hud.death(this.survival.cause);
+    // In survival, a life is over for good (online, you start a new one in
+    // the same world). The days it lasted, and the longest yet. The world is
+    // told first, so its save is gone before the screen shows: closing the
+    // tab now can't bring you back.
+    const survival = this.mode === 'survival';
+    const days = Math.floor(this.age);
+    const longest = survival ? recordRun(days) : null;
+    const hardcore = survival && !this.online();
+    this.onDeath?.({ days, cause: this.survival.cause, hardcore, survival });
+    if (hardcore) this.saveKey = null; // (nothing more of this life is saved)
+    this.hud.death({ cause: this.survival.cause, days: survival ? days : null, longest, button: hardcore ? 'leave' : survival ? 'new' : 'again' });
     this.#menu(true);
     this.controls.frozen = true;
     this.dirty = true;
   }
 
   respawn() {
+    // (Online in survival: a new life, someone new, from the world's start.)
+    const fresh = this.mode === 'survival';
+    if (fresh) this.spawn = null;
     if (this.spawn) this.camera.position.set(this.spawn.x, this.spawn.y, this.spawn.z);
     this.controls.velocityY = 0;
     this.newLife();
+    if (fresh) this.onNewLife?.();
     this.#menu(false);
+  }
+
+  /** Time going by (game days), for how long this life has lasted. */
+  passDays(days) {
+    if (this.survival.alive && this.mode === 'survival') this.age += days;
   }
 
   // --- What's in your hand, drawn in front of you -----------------------------------------
