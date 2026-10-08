@@ -1,5 +1,5 @@
 import { iconSvg, slotHtml } from '../ui/Hotbar.js';
-import { ITEMS, RECIPES } from './items.js';
+import { ITEMS, RECIPES, TIERS } from './items.js';
 
 const BARS = [
   ['health', 'Health', '#e0413a', `<path d="M16 28S4 20 4 11a6 6 0 0 1 12-2 6 6 0 0 1 12 2c0 9-12 17-12 17z"/>`],
@@ -37,8 +37,9 @@ export class Hud {
       <div class="cold-vignette"></div>
       <div class="sleep-fade"></div>
       <section class="craft" hidden aria-label="Crafting">
-        <header><h2>Crafting</h2><p>Tab or Esc to close · Z for every item</p></header>
-        <ul class="recipes"></ul>
+        <header><h2>Crafting</h2><p>Click to make · Tab or Esc to close · Z for every item</p></header>
+        <div class="tree"></div>
+        <p class="craft-note">Point at something to see what it's for.</p>
       </section>
       <section class="creative" hidden aria-label="Creative: every item">
         <header><h2>Every item</h2><p>Click for a stack in your hotbar · Z or Esc to close</p></header>
@@ -150,18 +151,48 @@ export class Hud {
     return true;
   }
 
+  /**
+   * The crafting tree: the four tiers left to right (see TIERS), each
+   * saying what opens it, and in each what it makes, lit up when you've
+   * what it needs. Click one to make it.
+   */
   renderCraft(inventory) {
-    const list = this.el('.recipes');
-    list.innerHTML = RECIPES.map((r) => {
-      const can = Object.entries(r.needs).every(([id, n]) => inventory.count(id) >= n) && (!r.at || this.stations?.[r.at]);
-      const needs = Object.entries(r.needs)
-        .map(([id, n]) => `<span class="need${inventory.count(id) >= n ? '' : ' short'}" title="${ITEMS[id].name}">${iconSvg(id)}${inventory.count(id)}/${n}</span>`)
-        .join('');
-      return `<li class="${can ? 'can' : ''}"><span class="made">${iconSvg(r.id)}${r.makes ? `<b>×${r.makes}</b>` : ''}</span><span class="what"><b>${ITEMS[r.id].name}</b><small>${r.note}${r.at ? ` · <em class="${this.stations?.[r.at] ? '' : 'short'}">at an ${r.at}</em>` : ''}</small><span class="needs">${needs}</span></span><button type="button" data-craft="${r.id}" ${can ? '' : 'disabled'}>Craft</button></li>`;
-    }).join('');
-    list.onclick = (e) => {
+    const tree = this.el('.tree');
+    const recipe = (id) => RECIPES.find((r) => r.id === id);
+    let before = true; // (the tiers before this one all open)
+    tree.innerHTML = TIERS.map((tier, k) => {
+      const open = this.unlocked ? this.unlocked(tier) : true;
+      const next = before && !open; // (the next one to open: what to do next, said plainly)
+      before = before && open;
+      const cards = tier.ids.map((id) => {
+        const r = recipe(id);
+        const has = Object.entries(r.needs).every(([n, c]) => inventory.count(n) >= c);
+        const station = !r.at || this.stations?.[r.at];
+        const can = open && has && station;
+        const needs = Object.entries(r.needs)
+          .map(([n, c]) => `<span class="need${inventory.count(n) >= c ? '' : ' short'}" title="${ITEMS[n].name}">${iconSvg(n)}${c}</span>`)
+          .join('');
+        const note = `${r.note}${r.at ? ` (at an ${r.at})` : ''}`;
+        return `<button type="button" class="card${can ? ' can' : ''}${open ? '' : ' locked'}" data-craft="${id}" data-note="${ITEMS[id].name}: ${note.replaceAll('"', '&quot;')}" ${can ? '' : 'aria-disabled="true"'}>
+          <span class="made">${iconSvg(id)}${r.makes ? `<b>×${r.makes}</b>` : ''}</span>
+          <span class="what"><b>${ITEMS[id].name}</b>${r.at ? `<em class="${station ? '' : 'short'}">at an ${r.at}</em>` : ''}<span class="needs">${needs}</span></span>
+        </button>`;
+      }).join('');
+      return `<section class="tier${open ? ' open' : ''}${next ? ' next' : ''}">
+        <h3><i>${k + 1}</i>${tier.name}</h3>
+        <p class="unlock">${open ? (tier.unlock ? '✓ Unlocked' : 'From the start') : `🔒 ${tier.tag}`}</p>
+        <div class="cards">${cards}</div>
+      </section>`;
+    }).join('<span class="arrow" aria-hidden="true">›</span>');
+    const note = this.el('.craft-note');
+    tree.onclick = (e) => {
       const b = e.target.closest('[data-craft]');
-      if (b && !b.disabled) this.onCraft?.(b.dataset.craft);
+      if (b && b.classList.contains('can')) this.onCraft?.(b.dataset.craft);
+      else if (b) note.textContent = b.classList.contains('locked') ? `Locked: ${TIERS.find((t) => t.ids.includes(b.dataset.craft)).tag.toLowerCase()} to open this tier` : b.dataset.note;
+    };
+    tree.onmouseover = (e) => {
+      const b = e.target.closest('[data-craft]');
+      if (b) note.textContent = b.dataset.note;
     };
   }
 

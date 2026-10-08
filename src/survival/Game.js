@@ -4,7 +4,7 @@ import { Felling } from './Felling.js';
 import { GroundItems } from './GroundItems.js';
 import { Hud } from './Hud.js';
 import { Inventory } from './Inventory.js';
-import { BLADES, GRINDS, ITEMS, RECIPES, stackOf, weightOf } from './items.js';
+import { BLADES, GRINDS, ITEMS, RECIPES, TIERS, stackOf, weightOf, tierOf } from './items.js';
 import { bobberModel, bowModel } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
@@ -66,6 +66,7 @@ export class Game {
   constructor(o) {
     Object.assign(this, o);
     this.inventory = new Inventory(9);
+    this.progress = new Set(); // what's opened tiers of the crafting tree (see unlocked)
     this.survival = new Survival();
     this.hud = new Hud(o.hudRoot);
     this.items = new GroundItems(o.scene, o.config);
@@ -138,6 +139,15 @@ export class Game {
     this.felling.loadStumps(saved?.stumps);
     this.structures.load(saved?.structures ?? []);
     this.wildlife.loadTame(saved?.tame ?? []);
+    // How far up the crafting tree you've come (in a world saved before
+    // there was one: worked out from what's in it).
+    this.progress = new Set(saved?.progress ?? []);
+    if (!saved?.progress && saved) {
+      const has = (id) => JSON.stringify(saved).includes(`"${id}"`);
+      if (has('campfire') || has('furnace')) this.progress.add('campfire');
+      if (has('ironBar') || has('anvil') || has('steelAxe') || has('steelBar')) this.progress.add('ironBar');
+      if (has('steelBar') || has('forgedAxe') || has('forgedPickaxe') || has('forgedSpear') || has('crossbow')) this.progress.add('steelBar');
+    }
     // You, as you were (or afresh).
     if (saved?.player) {
       this.inventory.load(saved.player.inventory);
@@ -159,6 +169,7 @@ export class Game {
       structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], stumps: this.felling.stumpsJSON(),
       mushrooms: [...(this.mushrooms?.taken ?? [])],
       tame: this.wildlife.tameJSON(),
+      progress: [...this.progress],
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn } : null,
     };
     try {
@@ -218,11 +229,38 @@ export class Game {
       this.hud.renderChest();
     };
     this.hud.onRespawn = () => this.respawn();
+    // (The crafting tree: which tiers you've opened. See #learn.)
+    this.hud.unlocked = (tier) => this.unlocked(tier);
     this.inventory.onChange(() => {
+      for (const id of ['ironBar', 'steelBar']) if (this.inventory.count(id)) this.#learn(id);
       if (!this.hud.el('.craft').hidden) this.hud.renderCraft(this.inventory);
       this.hud.renderChest();
       this.dirty = true;
     });
+  }
+
+  /**
+   * Whether a tier of the crafting tree is open to you: the first always,
+   * each of the others once you've done what opens it (see TIERS: set down
+   * a campfire, made an iron bar, a steel one). In creative or testing,
+   * all of them.
+   */
+  unlocked(tier) {
+    return !tier.unlock || this.mode === 'creative' || this.mode === 'testing' || this.progress.has(tier.unlock);
+  }
+
+  // Something done that may open a tier of the crafting tree (`what`: a
+  // thing set down, or made): if it does, said so.
+  #learn(what) {
+    if (this.progress.has(what)) return;
+    this.progress.add(what);
+    this.dirty = true;
+    const tier = TIERS.find((t) => t.unlock === what);
+    if (tier && this.mode === 'survival') {
+      this.hotbar?.flash(`New things to make: the ${tier.name} tier (Tab)`);
+      this.sound?.call('craft', 0, 0.6);
+    }
+    if (!this.hud.el('.craft').hidden) this.hud.renderCraft(this.inventory);
   }
 
   // A menu opened (let go of the mouse to click in it) or closed.
@@ -492,6 +530,8 @@ export class Game {
   craft(id) {
     const r = RECIPES.find((x) => x.id === id);
     if (!r) return;
+    const tier = tierOf(id);
+    if (!this.unlocked(tier)) return this.hotbar?.flash(`Not yet: ${tier.tag.toLowerCase()} first`);
     if (r.at === 'anvil' && !this.hud.stations?.anvil) return this.hotbar?.flash('Forge that at an anvil: stand by one');
     if (!Object.entries(r.needs).every(([k, n]) => this.inventory.count(k) >= n)) return this.hotbar?.flash('Not enough to make that');
     for (const [k, n] of Object.entries(r.needs)) this.inventory.remove(k, n);
@@ -631,6 +671,7 @@ export class Game {
       if (!plan) return this.hotbar?.flash('Point at the ground nearby');
       if (!plan.ok) return this.hotbar?.flash(plan.why);
       this.structures.build(plan);
+      this.#learn(plan.type);
       this.inventory.take(i);
       this.cooldown = 0.4;
       this.sound?.call('place', 0, 0.5);

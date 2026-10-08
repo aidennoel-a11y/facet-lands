@@ -1424,3 +1424,151 @@ kbd {
   inset: 0;
   pointer-events: none;
 }
+
+/* The crafting tree (see Hud.renderCraft): the tiers left to right. */
+.craft {
+  width: min(1180px, calc(100vw - 2 * var(--gutter)));
+}
+.tree {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+  align-items: start;
+  gap: 6px;
+}
+.tree .arrow {
+  align-self: center;
+  font: 700 28px/1 var(--display);
+  color: rgba(255, 255, 255, 0.35);
+}
+.tier {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.tier h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font: 700 18px/1 var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tier h3 i {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-style: normal;
+  font-size: 13px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+}
+.tier.open h3 i {
+  background: var(--accent);
+}
+.tier .unlock {
+  margin: 0;
+  min-height: 2.4em;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.tier.next .unlock {
+  color: #ffd27a;
+  font-weight: 600;
+}
+.tier .cards {
+  display: grid;
+  gap: 4px;
+}
+.tier .card {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  text-align: left;
+  color: #fff;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: default;
+}
+.tier .card.can {
+  background: rgba(120, 190, 90, 0.18);
+  border-color: rgba(140, 210, 110, 0.6);
+  cursor: pointer;
+}
+.tier .card.can:hover {
+  background: rgba(120, 190, 90, 0.3);
+}
+.tier .card.locked {
+  opacity: 0.4;
+}
+.tier .made {
+  position: relative;
+}
+.tier .made svg {
+  width: 32px;
+  height: 32px;
+}
+.tier .made b {
+  position: absolute;
+  right: -4px;
+  bottom: -2px;
+  font: 700 11px/1 var(--display);
+}
+.tier .what {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.tier .what b {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tier .what em {
+  font-size: 11px;
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.6);
+}
+.tier .what em.short {
+  color: #ff8a80;
+}
+.tier .needs {
+  gap: 6px;
+}
+.tier .need {
+  font-size: 12px;
+}
+.tier .need svg {
+  width: 16px;
+  height: 16px;
+}
+.craft-note {
+  /* (kept in sight while the tree scrolls) */
+  position: sticky;
+  bottom: -16px;
+  margin: 10px -16px -16px;
+  padding: 8px 16px 12px;
+  background: rgb(29, 39, 51);
+  min-height: 1.3em;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+}
+@media (max-width: 760px) {
+  .tree {
+    grid-template-columns: 1fr;
+  }
+  .tree .arrow {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+}

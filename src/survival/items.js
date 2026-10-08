@@ -148,6 +148,20 @@ export const RECIPES = [
   { id: 'bolt', needs: { stick: 2, ironBar: 1, feather: 2 }, makes: 6, at: 'anvil', note: 'Six crossbow bolts' },
 ];
 
+/**
+ * The crafting tree: what you can make, in four tiers, each opened by
+ * something the one before lets you do (see Game: progress). Everything
+ * in RECIPES is in one of them.
+ */
+export const TIERS = [
+  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'torch', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough'] },
+  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'fineFlintSteel', 'pot', 'shears', 'anvil'] },
+  { id: 'steel', name: 'Steel', tag: 'Smelt an iron bar into steel in a furnace', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'crossbow', 'bolt'] },
+];
+/** The tier a recipe's in. */
+export const tierOf = (id) => TIERS.find((t) => t.ids.includes(id)) ?? TIERS[0];
+
 // Faceted little icons, in the game's style.
 const STEEL = (s) => s.replaceAll('#8e8a84', '#b8c0c8').replaceAll('#c8c4bc', '#eef2f6').replaceAll('#5a5e68', '#9aa4b0').replaceAll('#a8acb4', '#e4e8ee');
 const AXE = `<path d="M9 28L22 6l2.4 1.4L11.4 29.4z" fill="#8a5d38"/><path d="M17 8l8-4 3 7-8 4z" fill="#8e8a84"/><path d="M25 4l3 7 1-5z" fill="#c8c4bc"/><path d="M17 10l4 2 1-2-3-3z" fill="#4f6a34"/>`;
