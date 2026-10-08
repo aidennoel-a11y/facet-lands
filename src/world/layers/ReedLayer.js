@@ -154,7 +154,7 @@ export function createReedLayer(config) {
         });
         mesh.instanceColor = new InstancedBufferAttribute(colours, 3);
         mesh.computeBoundingSphere();
-        mesh.castShadow = true;
+        mesh.castShadow = false; // (thin blades: their shadows hardly show, and there are thousands)
         mesh.receiveShadow = true;
         group.add(mesh);
       });

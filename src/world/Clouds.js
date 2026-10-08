@@ -210,7 +210,7 @@ export class Clouds {
    */
   update(dt, focus, skyGlow, generator, windStrength = 1, sky = null) {
     const half = this.range / 2;
-    const speed = 0.5 * (0.25 + 0.75 * windStrength); // (a lazy drift; they never stop entirely)
+    const speed = 0.25 * (0.25 + 0.75 * windStrength); // (a slow, lazy drift; they never stop entirely)
     const cover = sky ? sky.cover : 0.3;
     const storm = sky ? sky.storm : 0;
     this.overcast = Math.min(1, Math.max(0, (cover - 0.5) / 0.45));

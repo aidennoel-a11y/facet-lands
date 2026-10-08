@@ -157,7 +157,7 @@ export class WorldSync {
     this.weather.follow(sky.weather);
     // (The clouds: as far along as theirs, allowing for the time it took to get here.)
     const late = Math.max(0, Math.min(5, (this.mp.roomTime() ?? 0) - (sky.at ?? 0)));
-    const travel = sky.travel + late * 0.5 * (0.25 + 0.75 * (sky.wind ?? 0.5));
+    const travel = sky.travel + late * 0.25 * (0.25 + 0.75 * (sky.wind ?? 0.5)); // (as Clouds drift: see its update)
     if (this.clouds.travelTarget === null) this.clouds.travel = travel;
     this.clouds.travelTarget = travel;
     // The time of day: the host's, as it is now (it ran on while this came).
