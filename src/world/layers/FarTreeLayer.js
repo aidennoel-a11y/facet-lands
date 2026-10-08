@@ -8,6 +8,7 @@ import {
   InstancedBufferGeometry,
   Mesh,
   MeshLambertMaterial,
+  Sphere,
   Vector3,
 } from 'three';
 import { seasonalTrees } from '../../render/Seasons.js';
@@ -227,18 +228,24 @@ export function createFarTreeLayer(config) {
   material.customProgramCacheKey = () => 'far-trees';
   seasonalTrees(material, false, 'aShape.z', 'aShape.w', 'aSpot.y');
 
-  // One pool per kind of tree: instances packed at the front, a chunk's
-  // handle knowing which slots are its own.
+  // One pool per kind of tree in each square of the land (TILE chunks a
+  // side): instances packed at the front, a chunk's handle knowing which
+  // slots are its own. A square out of view (behind you, off to the side)
+  // isn't drawn at all: its pool's bounds are the square's.
+  const TILE = 6;
   const pools = new Map();
-  function pool(type, detailed) {
-    const key = `${type}:${detailed ? 1 : 0}`;
+  function pool(type, detailed, tx, tz) {
+    const key = `${type}:${detailed ? 1 : 0}:${tx},${tz}`;
     let p = pools.get(key);
     if (!p) {
       const geometry = farGeometry(type, detailed);
       p = { geometry, mesh: null, capacity: 0, count: 0, spot: null, shape: null, owner: [], slot: [], lo: Infinity, hi: -1 };
-      grow(p, 4096);
+      grow(p, 256);
+      const size = TILE * config.chunkSize;
+      // (The square, from well below the sea to above the highest trees on the highest peaks.)
+      geometry.boundingSphere = new Sphere(new Vector3((tx + 0.5) * size, 150, (tz + 0.5) * size), Math.hypot(size / 2, size / 2, 300));
       p.mesh = new Mesh(geometry, material);
-      p.mesh.frustumCulled = false; // spread over the whole world
+      p.mesh.frustumCulled = true;
       p.mesh.name = `far ${type}`;
       group.add(p.mesh);
       pools.set(key, p);
@@ -263,8 +270,8 @@ export function createFarTreeLayer(config) {
     p.lo = Math.min(p.lo, i);
     p.hi = Math.max(p.hi, i);
   };
-  function add(handle, type, detailed, data) {
-    const p = pool(type, detailed);
+  function add(handle, type, detailed, data, tx, tz) {
+    const p = pool(type, detailed, tx, tz);
     const n = data.length / 8;
     if (p.count + n > p.capacity) grow(p, Math.max(p.capacity * 2, p.count + n));
     const slots = [];
@@ -307,8 +314,17 @@ export function createFarTreeLayer(config) {
     count: 0,
 
     update() {
-      for (const p of pools.values()) {
+      for (const [key, p] of pools) {
         p.geometry.instanceCount = p.count;
+        p.mesh.visible = p.count > 0;
+        // (A square left behind, long empty: let go of.)
+        p.idle = p.count ? 0 : (p.idle ?? 0) + 1;
+        if (p.idle > 600) {
+          group.remove(p.mesh);
+          p.geometry.dispose();
+          pools.delete(key);
+          continue;
+        }
         if (p.hi < p.lo) continue;
         for (const a of [p.spot, p.shape]) {
           a.clearUpdateRanges();
@@ -332,7 +348,7 @@ export function createFarTreeLayer(config) {
       const detailed = lod <= config.farTreeDetailLod;
       for (const [type, data] of Object.entries(trees)) {
         if (!data.length || SMALL_PLANTS.has(type)) continue; // (no bushes far off)
-        add(handle, type, detailed, data);
+        add(handle, type, detailed, data, Math.floor(cx / TILE), Math.floor(cz / TILE));
         count += data.length / 8;
       }
       if (!count) return null;
