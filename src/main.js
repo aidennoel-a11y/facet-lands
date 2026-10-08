@@ -1303,7 +1303,7 @@ function marshMist(dt) {
 // things nearest you are cleared (see GrassLayer).
 const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, grindstone: 0.7, dryingRack: 0.8, tanningRack: 0.9, plot: 1.3, snare: 0.4, stake: 0.3 };
 // The grass round you and the bigger animals near you bends away from them.
-const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'starling', 'crow', 'gull', 'hawk', 'wolfPup']);
+const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'starling', 'crow', 'gull', 'hawk', 'wolfPup', 'bat', 'eagle', 'scorpion']);
 function pushGrass() {
   const p = camera.position, list = [];
   if (controls.mode === 'walk') list.push([0, p.x, p.z, 0.9]);

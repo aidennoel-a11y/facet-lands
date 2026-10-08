@@ -10,7 +10,7 @@ function smoothstep(a, b, x) {
 const TAU = Math.PI * 2;
 const SWAY = { x: 0, z: 0 };
 // The calls that carry far (see #vocalize).
-const LOUD_CALLS = new Set(['howl', 'bugle', 'roar', 'moose', 'crocBellow', 'jaguar', 'scream', 'yip']);
+const LOUD_CALLS = new Set(['howl', 'bugle', 'roar', 'moose', 'crocBellow', 'jaguar', 'scream', 'yip', 'trumpet', 'hyena', 'hippo']);
 const angleTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 const rnd = (a, b) => a + Math.random() * (b - a);
 
@@ -84,12 +84,30 @@ const SPECIES = {
   crow: { bird: true, model: Models.crow, max: 40, scale: 2.3, flee: 25, radius: 0.35, health: 4 },
   gull: { bird: true, model: Models.gull, max: 12, scale: 3.0, flee: 15, radius: 0.5, health: 6 },
   hawk: { bird: true, model: Models.hawk, max: 4, scale: 4.2, flee: 30, radius: 0.7, health: 12 },
+  // The savanna's: lions (a pride: lionesses and a maned male, lying up by
+  // day, hunting at dusk and in the dark), hyenas (a clan, scavenging, bold
+  // at night), elephants (a herd, peaceful till provoked), hippos (in the
+  // water, and not to be gone near).
+  lion: { ground: true, grade: 0.85, model: Models.lion, max: 14, walk: 1.1, run: 15, flee: 20, calm: 80, radius: 0.4, height: 1.0, health: 170, stride: 1.5, turn: 3, size: 1.12, gaits: DOG, trotBand: 0.15, swims: true, call: 'roar' },
+  hyena: { ground: true, grade: 0.85, model: Models.hyena, max: 14, walk: 1.3, run: 12, flee: 26, calm: 80, radius: 0.32, height: 0.85, health: 70, stride: 1.2, turn: 3.5, size: 1.05, forager: true, gaits: DOG, trotBand: 0.5, scavenger: true, call: 'hyena' },
+  elephant: { ground: true, grade: 0.5, model: Models.elephant, max: 14, walk: 1.1, run: 7, flee: 16, calm: 45, radius: 1.5, height: 3.3, health: 600, stride: 2.6, turn: 1.0, size: 1.0, gaits: HOOF, trotBand: 0.6, swims: true, call: 'trumpet' },
+  hippo: { ground: true, grade: 0.5, model: Models.hippo, max: 10, fearless: true, walk: 0.7, run: 8, flee: 0, calm: 20, radius: 1.0, height: 1.6, health: 420, stride: 1.2, turn: 1.4, size: 1.0, gaits: HOOF, trotBand: 0.7, swims: true, call: 'hippo' },
+  // The desert's camels (a string of them, unbothered), and scorpions
+  // there and in the badlands (small, and their sting poisons).
+  camel: { ground: true, grade: 0.55, model: Models.camel, max: 16, walk: 1.2, run: 10, flee: 22, calm: 60, radius: 0.6, height: 2.2, health: 180, stride: 2.0, turn: 1.8, size: 1.0, gaits: HOOF, trotBand: 0.4, call: 'camel' },
+  scorpion: { ground: true, grade: 1.2, model: Models.scorpion, max: 10, fearless: true, walk: 0.25, run: 1.4, flee: 0, calm: 3, radius: 0.12, height: 0.12, health: 3, stride: 0.06, turn: 4, size: 1.6, gaits: DOG, trotBand: 0.5 },
+  // A python, by the jungle's water and in its trees' roots (see #snake).
+  python: { serpent: true, model: Models.python, max: 6, walk: 0.3, run: 1.0, flee: 3, calm: 10, radius: 0.15, height: 0.2, health: 60, size: 1.0 },
+  // Bats from the caves (at dusk, or startled by a torch), and eagles high
+  // over the Smoky Mountains and the Black Hills.
+  bat: { bird: true, model: Models.bat, max: 40, scale: 0.9, flee: 4, radius: 0.15, health: 1 },
+  eagle: { bird: true, model: Models.eagle, max: 3, scale: 5.6, flee: 35, radius: 0.9, health: 16 },
 };
 // Hunting: how big a quarry each is (see wound), and the ones that will
 // come for you (`predator`: how far off they see you, how near you can come
 // before they come for you anyway, how hard they bite or swipe, how often,
 // and from how far; a cougar ambushes).
-const BULK = { deer: 'large', elk: 'large', moose: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', boar: 'large', wolf: 'medium', coyote: 'medium', sheep: 'medium', cougar: 'medium', fox: 'small', rabbit: 'small', hare: 'small', wolfPup: 'small', turkey: 'small', duck: 'small', snake: 'small' };
+const BULK = { lion: 'large', hyena: 'medium', elephant: 'huge', hippo: 'huge', camel: 'large', scorpion: 'small', python: 'medium', deer: 'large', elk: 'large', moose: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', boar: 'large', wolf: 'medium', coyote: 'medium', sheep: 'medium', cougar: 'medium', fox: 'small', rabbit: 'small', hare: 'small', wolfPup: 'small', turkey: 'small', duck: 'small', snake: 'small' };
 for (const [kind, sp] of Object.entries(SPECIES)) sp.bulk = BULK[kind] ?? 'small';
 SPECIES.wolf.predator = { sight: 70, close: 22, bite: 11, every: 1.3, reach: 1.4 };
 SPECIES.grizzly.predator = { sight: 55, close: 25, bite: 30, every: 1.7, reach: 2.0 };
@@ -99,6 +117,9 @@ SPECIES.tiger.predator = { sight: 70, close: 20, bite: 38, every: 1.4, reach: 1.
 SPECIES.panther.predator = { sight: 60, close: 0, bite: 26, every: 1.2, reach: 1.4, ambush: true };
 SPECIES.jaguar.predator = { sight: 60, close: 0, bite: 32, every: 1.3, reach: 1.5, ambush: true };
 SPECIES.crocodile.predator = { sight: 18, close: 0, bite: 40, every: 1.8, reach: 2.2, ambush: true };
+// (Lions hunt at dusk and in the dark, lying up by day; hyenas are bold only at night.)
+SPECIES.lion.predator = { sight: 60, close: 16, bite: 34, every: 1.4, reach: 1.7, dusk: true };
+SPECIES.hyena.predator = { sight: 45, close: 10, bite: 15, every: 1.1, reach: 1.3, night: true };
 // The ones that stand up for themselves: charge you if you come too close
 // (`close`; `rut`: nearer in the autumn, a bull or buck; `young`: a mother
 // by her calf or piglets in spring), or when hurt (`hurt`), and then make off.
@@ -107,9 +128,16 @@ SPECIES.boar.charger = { close: 5, young: 10, hit: 18, reach: 1.2, hurt: true };
 SPECIES.elk.charger = { close: 0, rut: 10, hit: 22, reach: 2.0 };
 SPECIES.deer.charger = { close: 0, rut: 5, hit: 12, reach: 1.5 };
 SPECIES.bison.charger = { close: 7, young: 10, hit: 35, reach: 2.2 };
+// (An elephant: only if you crowd it, or its calves, or hurt it; a hippo:
+// anywhere near it, near the water; a scorpion stings what steps on it.
+// Each warns first: see `warn` and #charge.)
+SPECIES.elephant.charger = { close: 9, young: 22, hit: 60, reach: 3.2, hurt: true, warn: 1.6, cry: 'trumpet' };
+SPECIES.hippo.charger = { close: 16, young: 20, hit: 50, reach: 2.6, hurt: true, warn: 1.2, cry: 'hippo' };
+SPECIES.scorpion.charger = { close: 1.6, hit: 6, reach: 0.35, warn: 0.9, cry: 'scorpion', venom: true };
+SPECIES.camel.charger = { close: 0, hit: 12, reach: 1.6, hurt: true, warn: 0.8, cry: 'camel' };
 // How many blows to the body each size takes to go lame, to go down, and to
 // die (a blow to the head brings one down; one more finishes it).
-const BLOWS = { large: [3, 5, 6], medium: [2, 3, 4], small: [1, 2, 2] };
+const BLOWS = { huge: [6, 10, 13], large: [3, 5, 6], medium: [2, 3, 4], small: [1, 2, 2] };
 // What a carcass gives when butchered.
 const YIELD = {
   sheep: { rawMeat: 3, wool: 3 }, wolfPup: { rawMeat: 1 }, deer: { rawMeat: 4, hide: 1 }, elk: { rawMeat: 6, hide: 2 }, moose: { rawMeat: 9, hide: 2 },
@@ -117,6 +145,8 @@ const YIELD = {
   fox: { rawMeat: 1, fur: 1 }, rabbit: { rawMeat: 1 }, hare: { rawMeat: 1, fur: 1 }, boar: { rawMeat: 5, hide: 1 }, cougar: { rawMeat: 3, fur: 1 },
   tiger: { rawMeat: 6, fur: 2 }, jaguar: { rawMeat: 4, fur: 1 }, monkey: { rawMeat: 1 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 },
   turkey: { rawMeat: 2, feather: 3 }, duck: { rawMeat: 1, feather: 2 }, snake: { rawMeat: 1 },
+  lion: { rawMeat: 5, fur: 2 }, hyena: { rawMeat: 2, fur: 1 }, elephant: { rawMeat: 20, hide: 4 }, hippo: { rawMeat: 14, hide: 3 }, camel: { rawMeat: 7, hide: 2 },
+  python: { rawMeat: 3, hide: 1 }, eagle: { feather: 4 }, bat: {}, scorpion: {},
 };
 // Those that are small enough to be fed on by the scavengers (and those
 // too big to be dragged off whole).
@@ -288,7 +318,7 @@ export class Wildlife {
   /** Puts a creature at (x, z) (for testing; `o` as #spawnWalker). */
   spawn(kind, x, z, o = {}) {
     if (!this.ctx) return null;
-    return SPECIES[kind]?.serpent ? this.#spawnSnake(x, z) : this.#spawnWalker(kind, x, z, null, o);
+    return SPECIES[kind]?.serpent ? this.#spawnSnake(x, z, kind) : this.#spawnWalker(kind, x, z, null, o);
   }
 
   /** What kind of thing it is, for the names: its bulk, and whether it's a bird. */
@@ -405,7 +435,7 @@ export class Wildlife {
       const dx = a.x - from.x, dz = a.z - from.z, d = Math.hypot(dx, dz) || 1;
       a.jolt = { x: dx / d, z: dz / d, t: 0.3 };
     }
-    const [lame, down, dead] = sp.bird || a.kind === 'rabbit' || a.kind === 'snake' || a.kind === 'duck' ? [1, 1, 1] : BLOWS[sp.bulk];
+    const [lame, down, dead] = sp.bird || a.kind === 'rabbit' || a.kind === 'snake' || a.kind === 'duck' || a.kind === 'scorpion' ? [1, 1, 1] : BLOWS[sp.bulk];
     let outcome;
     if (a.down) outcome = 'dead';
     else if (head) outcome = dead <= 1 ? 'dead' : 'down';
@@ -558,12 +588,18 @@ export class Wildlife {
 
   // A boar, a moose, a bull elk in the rut: it comes at you, head down,
   // for a few seconds (once it's hit you, it's done, and makes off).
+  // (Never without a warning: first it stands its ground and threatens, a
+  // moment, facing you (an elephant rearing and trumpeting, a hippo's
+  // gaping honks, a scorpion's sting arched over): back away, and it may
+  // let you go; stay, and it comes. See `threaten` in #walker.)
   #charge(a) {
     if (a.charging > 0 || (a.chargeCool ?? 0) > 0) return;
+    const ch = SPECIES[a.kind].charger;
     a.charging = 5;
+    a.threaten = ch?.warn ?? 0.7;
     a.fear = 0;
     a.hibernating = false;
-    const cry = { boar: 'squeal', moose: 'bellow', elk: 'bugle', bison: 'grunt', deer: 'snort' }[a.kind];
+    const cry = ch?.cry ?? { boar: 'squeal', moose: 'bellow', elk: 'bugle', bison: 'grunt', deer: 'snort' }[a.kind];
     this.ctx?.sound?.call(cry ?? 'snort', this.ctx.pan(a.x, a.z), 0.9);
     if (a.herd) a.herd.fleeTime = 0;
   }
@@ -589,15 +625,17 @@ export class Wildlife {
     const atDen = den && Math.hypot(p.x - den.x, p.z - den.z) < 30;
     // (A mother bear with her cubs is quick to come at you.)
     const cubs = a.herd && a.kind === 'blackBear' && !a.young && a.herd.members.some((m) => m.young && m.alive);
-    const sight = pr.sight * (p.crouch ? 0.55 : 1) * (0.7 + 0.3 * ctx.day) * (1 - 0.55 * (a.forest ?? 0)) * this.#scent(a, ctx);
-    if (t.d < pr.close * (p.crouch ? 0.7 : 1) * (cubs ? 1.6 : 1) || atDen) a.notice = Math.max(a.notice ?? 0, 2.4);
+    // (Lions by day, hyenas but in the dark: lying up, seldom troubled unless you come right up.)
+    const idle = (pr.dusk && (ctx.dusk ?? 0) < 0.15 && ctx.day > 0.35) || (pr.night && ctx.day > 0.3);
+    const sight = pr.sight * (p.crouch ? 0.55 : 1) * (0.7 + 0.3 * ctx.day) * (1 - 0.55 * (a.forest ?? 0)) * this.#scent(a, ctx) * (idle ? 0.3 : 1);
+    if (t.d < pr.close * (p.crouch ? 0.7 : 1) * (cubs ? 1.6 : 1) * (idle ? 0.5 : 1) || atDen) a.notice = Math.max(a.notice ?? 0, 2.4);
     else if (t.d < sight) a.notice = (a.notice ?? 0) + dt;
     else a.notice = Math.max(0, (a.notice ?? 0) - dt * 0.5);
     // (A warning first: you hear it before it comes.)
     a.stalking = !a.hunting && a.notice > 0.6;
     if (a.stalking && !a.warned) {
       a.warned = true;
-      ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : 'growl', ctx.pan(a.x, a.z), Math.min(0.9, 25 / (t.d + 10)));
+      ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : a.kind === 'hyena' ? 'hyena' : 'growl', ctx.pan(a.x, a.z), Math.min(0.9, 25 / (t.d + 10)));
     }
     if (!a.hunting && a.notice > 2.2) this.#enrage(a);
     if (a.hunting && t.d > pr.sight * 2.5) {
@@ -663,8 +701,23 @@ export class Wildlife {
       ctx.sound?.call('hiss', ctx.pan(a.x, a.z), 0.5);
       return;
     }
-    if (!seen && t.d < 9 && t.d > 3) {
+    if (!seen && t.d < 9 && t.d > 3 && !(a.coiling > 0)) {
+      // (First, crouched to spring, a hiss: a moment to turn and face it.)
+      if (a.coiling === undefined || a.coiling < -3) {
+        a.coiling = 0.7;
+        a.crouch = 1;
+        ctx.sound?.call('hiss', ctx.pan(a.x, a.z), 0.7);
+        return;
+      }
+    }
+    if (a.coiling > 0) {
+      a.coiling -= dt;
+      if (a.coiling > 0 || t.d > 10) return;
+      a.coiling = -10;
+    } else if (a.coiling !== undefined) a.coiling -= dt;
+    if (!seen && t.d < 9 && t.d > 3 && a.coiling !== undefined && a.coiling <= -9.9) {
       // The spring.
+      a.coiling = undefined;
       const ux = (p.x - a.x) / t.d, uz = (p.z - a.z) / t.d, sp2 = Math.min(13, t.d / 0.55);
       a.leap = { vx: ux * sp2, vz: uz * sp2, vy: 3.2, t: 0 };
       a.hunting = true;
@@ -744,7 +797,7 @@ export class Wildlife {
     for (const a of this.animals) {
       const c = this.#near(a, views);
       if (SPECIES[a.kind].ground) this.#walker(a, dt, c);
-      else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES.snake, dt, c);
+      else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES[a.kind], dt, c);
       else if (a.flock) this.#flockBird(a, dt, c);
       else if (a.circling) this.#circler(a, dt, c);
       else if (a.kind === 'monkey') this.#monkey(a, dt, c);
@@ -1083,6 +1136,34 @@ export class Wildlife {
     if (day > 0.3 && count('hawk') < 1) {
       const s = spot(150, 350, (x, z) => g.getMountainness(x, z) > 0.35, 6);
       if (s) this.#spawnCircler('hawk', s);
+    }
+    // An eagle, circling high over the Smoky Mountains and the Black Hills.
+    if (day > 0.3 && count('eagle') < 1) {
+      const s = spot(150, 350, (x, z) => { const w = g.getBiomeWeights(x, z, {}); return w.smoky + w.blackHills > 0.5; }, 6);
+      if (s) this.#spawnCircler('eagle', s);
+    }
+    // Bats out of the caves: streaming out at dusk, or startled out by a
+    // torch carried up to the mouth (harmless: a rush of wings past you).
+    this.batCool = (this.batCool ?? 0) - 0.5;
+    if (this.batCool <= 0 && g.caves?.mouthsNear && count('bat') === 0) {
+      const torch = ctx.player?.torch;
+      if ((ctx.dusk ?? 0) > 0.3 || torch) {
+        this.batMouths ??= new Map();
+        for (const e of g.caves.mouthsNear(cx - 90, cz - 90, cx + 90, cz + 90)) {
+          const m = e.mouth, d = Math.hypot(m.x - cx, m.z - cz), key = `${Math.round(m.x)},${Math.round(m.z)}`;
+          const last = this.batMouths.get(key) ?? -1e9;
+          if (this.time - last < 300 || !(torch ? d < 22 : d < 90)) continue;
+          this.batMouths.set(key, this.time);
+          this.batCool = 20;
+          const a = rnd(0, TAU), y = g.getBaseHeight(m.x, m.z);
+          const to = { x: m.x + Math.sin(a) * 400, z: m.z + Math.cos(a) * 400 };
+          this.#spawnFlock('bat', { x: m.x, y: y - 46, z: m.z }, 12 + Math.floor(rnd(0, 14)), to);
+          const f = this.flocks[this.flocks.length - 1];
+          if (f) (f.alt = rnd(6, 12)), (f.erratic = true);
+          ctx.sound?.call('bats', ctx.pan(m.x, m.z), Math.min(1, 30 / (d + 10)));
+          break;
+        }
+      }
     }
     // At dusk, crows fly over on their way home to roost.
     if (ctx.dusk > 0.25 && this.crowCooldown <= 0 && this.flocks.filter((f) => f.kind === 'crow').length < 1) {
@@ -1519,11 +1600,82 @@ export class Wildlife {
         own(from);
       }
     }
-    // A rattlesnake in the dry country (they sleep out the winter).
+    // The savanna's: a pride of lions (lionesses, and one maned male), a
+    // clan of hyenas, a herd of elephants with their calves.
     {
       const p = at();
       const w = g.getBiomeWeights(p.x, p.z, {});
-      if (p.y > ctx.seaLevel + 1 && w.desert + w.savanna + w.volcanic * 0.5 > 0.5 && ctx.winter < 0.5 && rand() < 0.3) {
+      if (p.y > ctx.seaLevel + 1 && w.savanna > 0.6 && g.getMountainness(p.x, p.z) < 0.4) {
+        const r = rand();
+        const from = this.animals.length;
+        if (r < 0.06) {
+          const herd = this.#spawnHerd('lion', p, 3 + Math.floor(rand() * 4));
+          if (herd) {
+            const male = herd.members[0];
+            male.antlers = true; // (his mane)
+            male.scale *= 1.12;
+            home.herds.push(herd);
+          }
+        } else if (r < 0.11) {
+          const herd = this.#spawnHerd('hyena', p, 3 + Math.floor(rand() * 4));
+          if (herd) home.herds.push(herd);
+        } else if (r < 0.17) {
+          const herd = this.#spawnHerd('elephant', p, 3 + Math.floor(rand() * 5));
+          if (herd) {
+            this.#addYoung(herd, 1 + Math.floor(rand() * 2), 0.45);
+            home.herds.push(herd);
+          }
+        }
+        own(from);
+      }
+    }
+    // Hippos, in the savanna's rivers and waterholes (and the wetlands').
+    for (let k = 0; k < 6 && ctx.waterAt; k++) {
+      const x = (cx + 0.05 + 0.9 * rand()) * C, z = (cz + 0.05 + 0.9 * rand()) * C;
+      const w = g.getBiomeWeights(x, z, {}), wat = ctx.waterAt(x, z);
+      if (w.savanna + 0.5 * w.wetland < 0.5 || !wat || g.getOceanness(x, z) > 0.4) continue;
+      if (wat.level - ctx.ground(x, z) > 0.5 && rand() < 0.35) {
+        const from = this.animals.length;
+        const herd = { kind: 'hippo', goal: { x, z }, goalWait: rnd(20, 60), members: [], fear: null, fleeTime: 0 };
+        for (let n = 2 + Math.floor(rand() * 4), j = 0; j < n; j++) this.#spawnWalker('hippo', x + rnd(-6, 6), z + rnd(-6, 6), herd, { water: true });
+        if (herd.members.length) this.herds.push(herd), home.herds.push(herd);
+        own(from);
+      }
+      break;
+    }
+    // The desert's camels; scorpions there and in the badlands (not in the winter).
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if (p.y > ctx.seaLevel + 1 && w.desert > 0.6 && rand() < 0.07) {
+        const from = this.animals.length;
+        const herd = this.#spawnHerd('camel', p, 3 + Math.floor(rand() * 5));
+        if (herd) home.herds.push(herd);
+        own(from);
+      }
+      const q = at();
+      const wq = g.getBiomeWeights(q.x, q.z, {});
+      if (q.y > ctx.seaLevel + 1 && wq.desert + wq.badlands > 0.5 && ctx.winter < 0.5 && rand() < 0.4) {
+        const from = this.animals.length;
+        for (let n = 1 + Math.floor(rand() * 2), j = 0; j < n; j++) this.#spawnWalker('scorpion', q.x + rnd(-8, 8), q.z + rnd(-8, 8), null);
+        own(from);
+      }
+    }
+    // A python, by the jungle's water or among the roots of its trees.
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if (p.y > ctx.seaLevel + 1 && w.jungle + 0.5 * w.mangrove > 0.6 && rand() < 0.14) {
+        const from = this.animals.length;
+        this.#spawnSnake(p.x, p.z, 'python');
+        own(from);
+      }
+    }
+    // A rattlesnake in the dry country and the badlands (they sleep out the winter).
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if (p.y > ctx.seaLevel + 1 && w.desert + w.savanna + w.volcanic * 0.5 + w.badlands > 0.5 && ctx.winter < 0.5 && rand() < 0.3) {
         const from = this.animals.length;
         this.#spawnSnake(p.x, p.z);
         own(from);
@@ -1652,12 +1804,12 @@ export class Wildlife {
   }
 
   // A snake at (x, z), basking.
-  #spawnSnake(x, z) {
+  #spawnSnake(x, z, kind = 'snake') {
     const y = this.ctx.ground(x, z);
     if (!(y > this.ctx.seaLevel + 1)) return null;
     const heading = rnd(0, TAU);
     const a = {
-      kind: 'snake', x, z, y, heading, base: heading, pitch: 0, roll: 0, speed: 0, scale: rnd(0.9, 1.25), alive: true, health: SPECIES.snake.health,
+      kind, x, z, y, heading, base: heading, pitch: 0, roll: 0, speed: 0, scale: kind === 'python' ? rnd(3.0, 4.0) : rnd(0.9, 1.25), alive: true, health: SPECIES[kind].health,
       state: 'bask', timer: rnd(5, 20), phase: rnd(0, TAU), fear: 0, deadTime: 0, coil: 0, headDown: 0,
       trail: Array.from({ length: 50 }, (_, k) => ({ x: x - Math.sin(heading) * k * 0.03, z: z - Math.cos(heading) * k * 0.03, y })),
     };
@@ -1696,7 +1848,7 @@ export class Wildlife {
   }
 
   #spawnCircler(kind, s) {
-    const hawk = kind === 'hawk';
+    const hawk = kind === 'hawk' || kind === 'eagle';
     const a = {
       kind, circling: true, centre: { x: s.x, z: s.z }, radius: hawk ? rnd(60, 120) : rnd(18, 50), angle: rnd(0, TAU), dir: Math.random() < 0.5 ? 1 : -1,
       alt: hawk ? rnd(90, 140) : rnd(10, 30), speed: hawk ? rnd(9, 12) : rnd(7, 10), x: s.x, y: 0, z: s.z,
@@ -1823,6 +1975,11 @@ export class Wildlife {
         case 'panther': call = 'growl'; break;
         case 'panda': call = 'panda'; break;
         case 'crocodile': call = Math.random() < 0.5 ? 'crocBellow' : 'hiss'; break;
+        case 'lion': call = night > 0.4 || (ctx.dusk ?? 0) > 0.2 ? 'roar' : Math.random() < 0.3 ? 'chuff' : null; break;
+        case 'hyena': call = night > 0.4 ? 'hyena' : null; break;
+        case 'elephant': call = Math.random() < 0.3 ? 'trumpet' : 'rumble'; break;
+        case 'hippo': call = 'hippo'; break;
+        case 'camel': call = Math.random() < 0.4 ? 'camel' : null; break;
         case 'rabbit': case 'hare': call = Math.random() < 0.2 ? 'thump' : null; break;
         case 'songbird':
           a.voice ??= Math.floor(Math.random() * 7);
@@ -2091,7 +2248,16 @@ export class Wildlife {
       a.feet = null;
       return;
     }
-    if (a.charging > 0) {
+    if (a.charging > 0 && a.threaten > 0) {
+      // Standing its ground, facing you, threatening: the warning.
+      a.threaten -= dt;
+      want = Math.atan2(p.x - a.x, p.z - a.z);
+      speed = 0;
+      a.state = 'threat';
+      // (Backed well off by the end of it: it lets you go.)
+      if (a.threaten <= 0 && t.d > Math.max(ch.close, 3) * 1.6 + 2) (a.charging = 0), (a.chargeCool = rnd(8, 15));
+      if (!onFoot) a.charging = 0;
+    } else if (a.charging > 0) {
       // Charging you, head down: a hit, and it's done.
       a.charging -= dt;
       want = Math.atan2(p.x - a.x, p.z - a.z);
@@ -2099,6 +2265,7 @@ export class Wildlife {
       a.state = 'charge';
       if (t.d < ch.reach + sp.radius * a.scale && Math.abs(p.y - 1.2 - a.y) < 2.5 && onFoot) {
         p.damage(ch.hit * rnd(0.8, 1.2), a.kind, a);
+        if (ch.venom) p.poison?.(a.kind);
         a.charging = 0;
       }
       if (!onFoot || t.d > 40) a.charging = 0;
@@ -2128,7 +2295,18 @@ export class Wildlife {
         a.growl = rnd(4, 9);
         ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : a.kind === 'cougar' ? 'hiss' : 'growl', ctx.pan(a.x, a.z), Math.min(0.7, 12 / (t.d + 6)));
       }
-      if (t.d <= inReach + 0.35 && Math.abs(p.y - 1.2 - a.y) < 2.5 && a.attackCd <= 0) {
+      // (Never the first bite unwarned: in reach, it gathers itself a moment,
+      // snarling, before it goes for you; out of reach again, and the next
+      // will be warned of too.)
+      const close = t.d <= inReach + 0.35 && Math.abs(p.y - 1.2 - a.y) < 2.5;
+      if (!close && t.d > inReach + 2) a.ready = false;
+      if (close && !a.ready && !(a.windup > 0)) {
+        a.windup = 0.55;
+        a.crouch = 1;
+        ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : a.kind === 'hyena' ? 'hyena' : a.kind === 'crocodile' ? 'hiss' : 'growl', ctx.pan(a.x, a.z), 0.8);
+      }
+      if (a.windup > 0 && (a.windup -= dt) <= 0) (a.ready = true), (a.attackCd = Math.min(a.attackCd, 0));
+      if (close && a.ready && a.attackCd <= 0) {
         a.attackCd = pr.every * rnd(0.85, 1.2);
         a.lunge = 0.35;
         p.damage(pr.bite * rnd(0.8, 1.2), a.kind, a);
@@ -2303,7 +2481,8 @@ export class Wildlife {
     // Lying down (and getting up again before it moves off).
     a.lie += ((a.state === 'rest' && !fleeing ? 1 : 0) - a.lie) * Math.min(1, dt * (fleeing ? 4 : 0.9));
     speed *= 1 - smoothstep(0.1, 0.5, a.lie);
-    a.rear += (((a.kind === 'rabbit' || a.kind === 'hare') && a.state === 'alert' && !fleeing ? 1 : 0) - a.rear) * Math.min(1, dt * 5);
+    const rearing = ((a.kind === 'rabbit' || a.kind === 'hare') && a.state === 'alert' && !fleeing) || a.state === 'threat';
+    a.rear += ((rearing ? (a.kind === 'elephant' || a.kind === 'hippo' ? 0.45 : 1) : 0) - a.rear) * Math.min(1, dt * 5);
     // A tom turkey shows off his fan in the spring.
     a.display += ((a.kind === 'turkey' && a.tom && (ctx.spring ?? 0) > 0.3 && !fleeing && (a.state === 'graze' || a.state === 'look') ? 1 : 0) - (a.display ?? 0)) * Math.min(1, dt * 2) || 0;
     // A herd keeps its spacing: none stands right on top of another.
@@ -2620,29 +2799,33 @@ export class Wildlife {
     const t = this.#threat(a, ctx), p = ctx.player, onFoot = p?.mode === 'walk' && p.alive && !ctx.tame;
     a.strikeCd = Math.max(0, (a.strikeCd ?? 0) - dt);
     a.strike = Math.max(0, (a.strike ?? 0) - dt);
-    if (onFoot && t.d < 5 && a.state !== 'flee') {
-      if (a.state !== 'coil') (a.state = 'coil'), (a.timer = rnd(4, 8));
+    // A rattlesnake rattles; a python, bigger, hisses and draws its head
+    // back: either way, a warning before it strikes (a python's no venom,
+    // but a heavy, crushing bite).
+    const python = a.kind === 'python', aware = python ? 7 : 5, reach = python ? 2.8 : 1.8;
+    if (onFoot && t.d < aware && a.state !== 'flee') {
+      if (a.state !== 'coil') (a.state = 'coil'), (a.timer = rnd(4, 8)), (a.warnedAt = this.time);
       a.rattle = (a.rattle ?? 0) - dt;
-      if (a.rattle <= 0) (a.rattle = 0.7), ctx.sound?.call('rattle', ctx.pan(a.x, a.z), Math.min(1, 3 / (t.d + 1)));
+      if (a.rattle <= 0) (a.rattle = python ? 1.3 : 0.7), ctx.sound?.call(python ? 'hiss' : 'rattle', ctx.pan(a.x, a.z), Math.min(1, 3 / (t.d + 1)));
       a.heading += angleTo(a.heading, Math.atan2(p.x - a.x, p.z - a.z)) * Math.min(1, dt * 4);
-      if (t.d < 1.8 && a.strikeCd <= 0) {
+      if (t.d < reach && a.strikeCd <= 0 && this.time - (a.warnedAt ?? 0) > 0.7) {
         a.strike = 0.25;
-        a.strikeCd = 2.2;
+        a.strikeCd = python ? 2.6 : 2.2;
         ctx.sound?.call('hiss', ctx.pan(a.x, a.z), 0.8);
-        p.damage(7, 'snake', a);
-        p.poison?.();
-        if (Math.random() < 0.4) (a.state = 'flee'), (a.timer = rnd(6, 10));
+        p.damage(python ? 20 : 7, a.kind, a);
+        if (!python) p.poison?.();
+        if (Math.random() < (python ? 0.15 : 0.4)) (a.state = 'flee'), (a.timer = rnd(6, 10));
       }
     } else if (a.state === 'coil' && (a.timer -= dt) <= 0) (a.state = 'flee'), (a.timer = rnd(5, 9));
     a.coil = (a.coil ?? 0) + ((a.state === 'coil' ? 1 : 0) - (a.coil ?? 0)) * Math.min(1, dt * 4);
     let speed = 0;
     if (a.state === 'flee') {
-      speed = SPECIES.snake.run;
+      speed = sp.run;
       const away = Math.atan2(a.x - p.x, a.z - p.z);
       a.base = a.base === undefined ? away : a.base + angleTo(a.base, away) * Math.min(1, dt * 2);
       if ((a.timer -= dt) <= 0) (a.state = 'slither'), (a.timer = rnd(4, 10));
     } else if (a.state === 'slither') {
-      speed = SPECIES.snake.walk;
+      speed = sp.walk;
       if ((a.timer -= dt) <= 0) (a.state = Math.random() < 0.5 ? 'bask' : 'slither'), (a.timer = rnd(6, 20)), (a.base = (a.base ?? a.heading) + rnd(-1.2, 1.2));
     } else if (a.state === 'bask' && (a.timer -= dt) <= 0) (a.state = 'slither'), (a.timer = rnd(4, 10));
     if (a.state !== 'coil' && speed > 0) {
@@ -2662,7 +2845,7 @@ export class Wildlife {
     const last = a.trail[0];
     if (!last || Math.hypot(last.x - a.x, last.z - a.z) > 0.03) {
       a.trail.unshift({ x: a.x, z: a.z, y: a.y });
-      const model = this.rigs.snake.model;
+      const model = this.rigs[a.kind].model;
       if (a.trail.length > (model.segments * model.spacing * a.scale) / 0.03 + 4) a.trail.pop();
     }
   }
@@ -2845,7 +3028,9 @@ export class Wildlife {
       f.centre.z += (dz / l) * 9 * dt;
       f.groundY += (g.getBaseHeight(f.centre.x, f.centre.z) - f.groundY) * Math.min(1, dt);
       f.centre.y = Math.max(f.groundY, ctx.seaLevel) + f.alt;
-      if (Math.random() < dt * 0.5 && d < 300) ctx.sound?.call('caw', ctx.pan(f.centre.x, f.centre.z), Math.max(0.1, 1 - d / 300));
+      if (f.kind === 'crow' && Math.random() < dt * 0.5 && d < 300) ctx.sound?.call('caw', ctx.pan(f.centre.x, f.centre.z), Math.max(0.1, 1 - d / 300));
+      // (Bats: a jinking, fluttering stream, each darting about the others.)
+      if (f.erratic) for (const b of f.birds) if (Math.random() < dt * 3) (b.off.a += rnd(-2, 2)), (b.off.h = rnd(-3, 3)), (b.off.r = rnd(1, 7));
       if (l < 20) f.done = true;
       if (f.done) for (const b of f.birds) b.gone = true;
       return;
@@ -2965,7 +3150,7 @@ export class Wildlife {
   #circler(a, dt, ctx) {
     if (this.#falling(a, dt, ctx)) return;
     // Round and round on the wind, gliding, now and then a few wingbeats.
-    const hawk = a.kind === 'hawk';
+    const hawk = a.kind === 'hawk' || a.kind === 'eagle';
     a.angle += (a.speed / a.radius) * dt * a.dir;
     const gx = a.centre.x + Math.cos(a.angle) * a.radius, gz = a.centre.z + Math.sin(a.angle) * a.radius;
     const ground = hawk ? ctx.generator.getBaseHeight(gx, gz) : ctx.seaLevel;
@@ -3276,7 +3461,7 @@ export class Wildlife {
     orient(n - 1);
     if (a.state === 'coil' && a.alive) quat.multiply(shake.setFromEuler(euler.set(0, 0, Math.sin(this.time * 60) * 0.4)));
     out.compose(pos.set(tail.x, tail.y + coil * 0.08 * s, tail.z), quat, scl.setScalar(s));
-    M.rattle.setMatrixAt(M.rattle.count++, out);
+    if (M.rattle) M.rattle.setMatrixAt(M.rattle.count++, out);
     a.m = null;
     a.hm = null;
   }

@@ -47,8 +47,17 @@ loads.
 
 **Living things.** Deer, elk, moose, bison, bears, wolves, coyotes, foxes,
 cougars and other big cats, boar, sheep, mountain goats, rabbits, crocodiles,
-monkeys, pandas, birds, ducks, fish, frogs and insects. Prey runs from you,
-predators hunt at night, and crocodiles lurk in the water.
+monkeys, pandas, birds, ducks, fish, frogs and insects. On the savanna, lion
+prides (hunting at dusk), hyena clans, elephant herds and hippos in the
+water; camels and scorpions in the desert (scorpions and rattlesnakes in the
+badlands too); pythons by the jungle's water; bats streaming out of caves at
+dusk or when a torch comes near; eagles over the Smoky Mountains and the
+Black Hills. Prey runs from you, predators hunt at night, and crocodiles lurk
+in the water. **Every dangerous animal warns you first**: a growl or snarl
+and a moment's gathering before the first bite, a rattle or hiss before a
+snake strikes, a threat display (rearing, trumpeting, gaping) before a
+charge, a crouch and hiss before a cougar springs. In testing, the Z menu
+has a spawner for every animal.
 
 **Playing**
 - Three modes: **Survival**, **Creative** (everything available) and

@@ -41,8 +41,9 @@ const NAMES = {
   rabbit: 'rabbit', hare: 'hare', sheep: 'sheep', boar: 'boar', cougar: 'cougar', turkey: 'turkey', duck: 'duck', snake: 'rattlesnake',
   tiger: 'tiger', jaguar: 'jaguar', monkey: 'monkey', panther: 'black panther', panda: 'giant panda', crocodile: 'crocodile', mountainGoat: 'mountain goat',
   songbird: 'bird', starling: 'starling', crow: 'crow', gull: 'gull', hawk: 'hawk',
+  lion: 'lion', hyena: 'hyena', elephant: 'elephant', hippo: 'hippo', camel: 'camel', scorpion: 'scorpion', python: 'python', bat: 'bat', eagle: 'eagle',
 };
-const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a black bear', cougar: 'a cougar', moose: 'a moose', boar: 'a wild boar', elk: 'a bull elk', deer: 'a buck', bison: 'a bison', snake: 'a rattlesnake', tiger: 'a tiger', jaguar: 'a jaguar', panther: 'a black panther', crocodile: 'a crocodile', panda: 'a giant panda', mountainGoat: 'a mountain goat' };
+const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a black bear', cougar: 'a cougar', moose: 'a moose', boar: 'a wild boar', elk: 'a bull elk', deer: 'a buck', bison: 'a bison', snake: 'a rattlesnake', tiger: 'a tiger', jaguar: 'a jaguar', panther: 'a black panther', crocodile: 'a crocodile', panda: 'a giant panda', mountainGoat: 'a mountain goat', lion: 'a lion', hyena: 'a hyena', elephant: 'an elephant', hippo: 'a hippo', camel: 'a camel', scorpion: 'a scorpion', python: 'a python' };
 const AXES = { axe: 1, steelAxe: 2, forgedAxe: 3 };
 const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2 };
 const SPEARS = new Set(['spear', 'steelSpear', 'forgedSpear']);
@@ -95,6 +96,7 @@ export class Game {
     this.progress = new Set(); // what's opened tiers of the crafting tree (see unlocked)
     this.survival = new Survival();
     this.hud = new Hud(o.hudRoot);
+    Object.defineProperty(this.hud, 'spawners', { get: () => this.mode === 'testing' }); // (the animal spawners: for testing only)
     this.items = new GroundItems(o.scene, o.config);
     this.structures = new Structures(o.scene, (id) => this.items.model(id));
     this.structures.onDone = (s, out) => {
@@ -607,6 +609,15 @@ export class Game {
     const item = s && ITEMS[s.id];
     if (!s) return this.#bareHands(origin, direction);
     // A blade to the grindstone.
+    // (Testing: a spawner sets its animal down where you click.)
+    if (ITEMS[s.id]?.spawns) {
+      const hit = this.solidHit(origin, direction, 60);
+      const at = hit?.point ?? origin.clone().addScaledVector(direction, 8);
+      const a = this.wildlife.spawn(ITEMS[s.id].spawns, at.x, at.z);
+      if (a && ITEMS[s.id].male) (a.antlers = true), (a.scale *= 1.12);
+      this.cooldown = 0.3;
+      return this.hotbar?.flash(a ? `A ${ITEMS[s.id].name.replace(' spawner', '').toLowerCase()}` : 'It can\'t stand there');
+    }
     const stone = BLADES.has(s.id) ? this.structures.pick(origin, direction, REACH)?.structure : null;
     if (stone?.type === 'grindstone') return this.#grind(i, s);
     if (s.id === 'hoe') {
@@ -1663,10 +1674,11 @@ export class Game {
       x: p.x, y: p.y, z: p.z, mode: c.mode, crouch: c.crouch, moving: c.moving, sprint: c.sprinting, alive: this.survival.alive && !this.riding && !this.climbing,
       cover: this.#grassCover(p.x, p.z),
       lure: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'wheat',
-      damage: (amount, kind) => this.hurt(amount, ATTACKERS[kind] ?? `a ${NAMES[kind] ?? kind}`, { bite: kind !== 'snake' }),
-      poison: () => {
+      torch: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'torch',
+      damage: (amount, kind) => this.hurt(amount, ATTACKERS[kind] ?? `a ${NAMES[kind] ?? kind}`, { bite: kind !== 'snake' && kind !== 'scorpion' }),
+      poison: (kind = 'snake') => {
         this.survival.poison();
-        this.hotbar?.flash('Bitten by a rattlesnake: the venom burns');
+        this.hotbar?.flash(kind === 'scorpion' ? 'Stung by a scorpion: the venom burns' : 'Bitten by a rattlesnake: the venom burns');
       },
     };
   }

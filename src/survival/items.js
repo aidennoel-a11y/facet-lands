@@ -101,6 +101,18 @@ export const ITEMS = {
   grindstone: { name: 'Grindstone', place: 'grindstone', weight: 18, group: 'Building' },
   tanningRack: { name: 'Tanning rack', place: 'tanningRack', weight: 4, group: 'Building' },
 };
+// Testing: a spawner for each animal (click the ground to set one down,
+// tame or not as the panel says), to look at them. See Game and Hud.
+export const SPAWNABLE = {
+  deer: 'Deer', elk: 'Elk', moose: 'Moose', bison: 'Bison', blackBear: 'Black bear', grizzly: 'Grizzly bear', wolf: 'Wolf', coyote: 'Coyote', fox: 'Fox',
+  cougar: 'Cougar', boar: 'Wild boar', sheep: 'Sheep', rabbit: 'Rabbit', hare: 'Hare', turkey: 'Turkey', mountainGoat: 'Mountain goat', snake: 'Rattlesnake',
+  tiger: 'Tiger', jaguar: 'Jaguar', panther: 'Black panther', panda: 'Giant panda', crocodile: 'Crocodile', python: 'Python',
+  lion: 'Lioness', maleLion: 'Lion (male)', hyena: 'Hyena', elephant: 'Elephant', hippo: 'Hippo', camel: 'Camel', scorpion: 'Scorpion',
+};
+for (const [kind, name] of Object.entries(SPAWNABLE)) {
+  ITEMS[`spawn_${kind}`] = { name: `${name} spawner`, tool: true, spawns: kind === 'maleLion' ? 'lion' : kind, male: kind === 'maleLion', weight: 0, group: 'Spawners' };
+}
+
 // Tools that can be put to the grindstone (their edges ground back), and how many times.
 export const GRINDS = 3;
 export const BLADES = new Set(['axe', 'spear', 'steelAxe', 'steelSpear', 'pickaxe', 'steelPickaxe', 'forgedAxe', 'forgedPickaxe', 'forgedSpear', 'shears', 'hoe']);
@@ -267,3 +279,5 @@ export const ICONS = {
   steelArmour: `<path d="M9 5l7 3 7-3 4 6-2 16H7L5 11z" fill="#9aa4b0"/><path d="M9 12h14M9 17h14M9 22h14" stroke="#5a626e" stroke-width="1.4"/><path d="M16 8v19" stroke="#5a626e"/><path d="M9 5l7 3 7-3" fill="none" stroke="#e4e8ee" stroke-width="1.2"/>`,
   tanningRack: `<path d="M5 29V5M27 29V5M5 7h22M5 27h22" stroke="#8a5d38" stroke-width="2.2"/><path d="M9 10h14l-1 14H10z" fill="#c4945a"/><path d="M9 10l-4-3M23 10l4-3M10 24l-5 3M22 24l5 3" stroke="#e8e0cc"/>`,
 };
+// (A spawner's icon: a paw print.)
+for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle cx="16" cy="20" r="6" fill="#8a6a4a"/><circle cx="8" cy="12" r="3" fill="#8a6a4a"/><circle cx="14" cy="8" r="3" fill="#8a6a4a"/><circle cx="20" cy="8" r="3" fill="#8a6a4a"/><circle cx="25" cy="13" r="3" fill="#8a6a4a"/>`;

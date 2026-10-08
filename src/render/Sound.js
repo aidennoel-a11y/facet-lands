@@ -959,6 +959,32 @@ export class Sound {
       tone(t, 1.6, 'sawtooth', 110, 70, 260, 1.2, 0.35, 18);
       noise(t, 1.5, 380, 1.4, 0.3, 26);
       tone(t + 0.05, 1.4, 'sawtooth', 220, 140, 520, 2, 0.12, 21);
+    } else if (kind === 'trumpet') {
+      // An elephant: a brassy, blaring trumpet, rising and breaking.
+      tone(t, 1.1, 'sawtooth', 420, 620, 1400, 1.4, 0.28, 9);
+      tone(t + 0.02, 1.0, 'square', 840, 1100, 2200, 2.5, 0.06, 13);
+      noise(t, 1.0, 900, 1.2, 0.1, 20);
+    } else if (kind === 'hyena') {
+      // A hyena's whoop and cackle: a rising hoot, then a giggling run.
+      tone(t, 0.7, 'sine', 300, 900, 1200, 1, 0.16, 3);
+      for (let k = 0; k < 6; k++) tone(t + 0.8 + k * 0.11, 0.08, 'triangle', 700 - k * 30, 600 - k * 30, 1500, 1.5, 0.08);
+    } else if (kind === 'hippo') {
+      // A hippo: deep, wheezing honks, one after another.
+      for (let k = 0; k < 4; k++) {
+        tone(t + k * 0.3, 0.24, 'sawtooth', 120 - k * 8, 85, 340, 1.4, 0.24, 24);
+        noise(t + k * 0.3, 0.22, 300, 1.2, 0.12);
+      }
+    } else if (kind === 'camel') {
+      // A camel's gurgling grumble.
+      tone(t, 0.9, 'sawtooth', 150, 110, 360, 1.5, 0.16, 32);
+      noise(t, 0.9, 260, 1.3, 0.1, 28);
+    } else if (kind === 'bats') {
+      // Bats: a flurry of tiny, high squeaks over the flutter of their wings.
+      noise(t, 1.0, 1300, 0.8, 0.06, 25);
+      for (let k = 0; k < 7; k++) tone(t + Math.random() * 0.9, 0.03, 'sine', 5200, 4400, 6000, 2, 0.025);
+    } else if (kind === 'scorpion') {
+      // A scorpion: a dry, quick clicking of its pincers.
+      for (let k = 0; k < 4; k++) noise(t + k * 0.06, 0.02, 4200, 5, 0.12);
     } else if (kind === 'chuff') {
       // A big cat's friendly chuff: a short puffing snort or two.
       for (let k = 0; k < 2; k++) noise(t + k * 0.22, 0.14, 650, 1.2, 0.18);

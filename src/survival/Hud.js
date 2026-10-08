@@ -8,7 +8,7 @@ const BARS = [
   ['warmth', 'Warmth', '#f06a2a', `<path d="M16 2c1 6 8 8 8 16a8 8 0 0 1-16 0c0-4 2-6 3-8 1 3 3 4 3 4 0-5-1-8 2-12z"/>`],
   ['energy', 'Energy', '#e8d24a', `<path d="M18 2L6 18h8l-2 12 12-16h-8z"/>`],
 ];
-const GROUPS = ['Tools', 'Materials', 'Food', 'Farming', 'Worn', 'Building'];
+const GROUPS = ['Tools', 'Materials', 'Food', 'Farming', 'Worn', 'Building', 'Spawners'];
 
 /**
  * What's on screen for staying alive: the bars (health, hunger, thirst,
@@ -209,7 +209,7 @@ export class Hud {
     this.closeAll();
     panel.hidden = false;
     const groups = this.el('.creative-groups');
-    groups.innerHTML = GROUPS.map((g) => {
+    groups.innerHTML = GROUPS.filter((g) => g !== 'Spawners' || this.spawners).map((g) => {
       const ids = Object.keys(ITEMS).filter((id) => ITEMS[id].group === g);
       return `<h3>${g}</h3><div class="all-items">${ids.map((id) => `<button type="button" class="slot" data-take="${id}" title="${ITEMS[id].name}">${iconSvg(id)}<span class="slot-name">${ITEMS[id].name}</span></button>`).join('')}</div>`;
     }).join('');
