@@ -33,6 +33,15 @@ const before = await page.evaluate((id) => {
   return { saved: !!localStorage.getItem(`facet-lands:survival:${id}`), age: g.age };
 }, id);
 ok('saved while alive', before.saved, `age ${before.age}`);
+// The almanac (top right), and the quiet word at seven days.
+await page.evaluate(() => window.world.game.passDays(5.5));
+await page.waitForTimeout(1500);
+const alm = await page.textContent('.almanac');
+ok('almanac shows', /Day 8/.test(alm) && /Longest/.test(alm), alm.replace(/\s+/g, ' ').trim());
+ok('seven-day toast', /Seven days/.test(await page.textContent('.al-toast')));
+await page.screenshot({ path: `${out}-almanac.png` });
+const clock = await page.evaluate((id) => { window.world.game.save(); return JSON.parse(localStorage.getItem(`facet-lands:survival:${id}`)).clock; }, id);
+ok('clock saved', clock && Number.isFinite(clock.season), JSON.stringify(clock));
 // Dying: when the screen shows, the save must already be gone.
 await page.evaluate((id) => {
   const g = window.world.game;
@@ -51,7 +60,7 @@ await page.waitForTimeout(1200);
 ok('save gone before the screen', atDeath && atDeath.save === null);
 ok('world marked dead', atDeath?.world?.dead === true, `lastDays ${atDeath?.world?.lastDays}`);
 const text = await page.textContent('.death');
-ok('death screen text', /survived 1 day/.test(text) && /Back to the menu/.test(text), text.replace(/\s+/g, ' ').trim());
+ok('death screen text', /survived 7 days/.test(text) && /Back to the menu/.test(text), text.replace(/\s+/g, ' ').trim());
 await page.screenshot({ path: `${out}-death.png` });
 // Closing the tab now (the unload save) mustn't bring it back.
 await page.evaluate(() => window.dispatchEvent(new Event('beforeunload')));
@@ -62,10 +71,14 @@ ok('back at the title', await page.isVisible('[data-go="start"]'));
 await page.click('[data-go="start"]');
 await page.click('[data-go="load"]');
 const row = await page.textContent(`.sm-world[data-id="${id}"]`);
-ok('listed as died', /Died after 1 day/.test(row), row.replace(/\s+/g, ' ').trim());
+ok('listed as died', /Died after 7 days/.test(row), row.replace(/\s+/g, ' ').trim());
+ok('can\'t be played again', await page.isDisabled(`.sm-world[data-id="${id}"]`));
 await page.screenshot({ path: `${out}-list.png` });
-await page.click(`.sm-world[data-id="${id}"]`);
-await page.waitForFunction(() => document.querySelector('.load-screen')?.classList.contains('ls-done'), null, { timeout: 600000, polling: 500 });
-const fresh = await page.evaluate(() => { const g = window.world.game; return { alive: g.survival.alive, age: g.age, health: g.survival.health, items: g.inventory.slots.filter(Boolean).length }; });
-ok('a new life', fresh.alive && fresh.age < 0.2 && fresh.health === 100, JSON.stringify(fresh));
+// Nor a new survival world on that seed (creative is fine).
+await page.click('[data-go="back"]');
+await page.click('[data-go="new"]');
+await page.fill('#sm-seed', 'Polaris ');
+await page.click('[data-go="play"]');
+ok('seed refused', /will not take you back/.test(await page.textContent('.sm-note')));
+ok('still on the menu', await page.isVisible('#sm-seed'));
 await browser.close();

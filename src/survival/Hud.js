@@ -30,6 +30,8 @@ export class Hud {
         <div class="wind" title="The wind: your scent goes the way it blows"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l7 20-7-5-7 5z" fill="#dfe8ee"/></svg></div>
       </div>
       <div class="status"></div>
+      <div class="almanac" hidden aria-label="How long you've lasted"><b class="al-day"></b><span class="al-season"></span><span class="al-best"></span></div>
+      <p class="al-toast" aria-live="polite"></p>
       <p class="prompt" hidden></p>
       <div class="hitmark"></div>
       <div class="draw" hidden><i></i></div>
@@ -264,6 +266,28 @@ export class Hud {
     this.deathButton = button;
     this.el('.respawn').textContent = { again: 'Try again', new: 'Start a new life', leave: 'Back to the menu' }[button];
     this.el('.death').hidden = false;
+  }
+
+  /** Survival: the day of this life, the season, and the longest life yet (or hidden: null). */
+  almanac(info) {
+    const el = this.el('.almanac');
+    el.hidden = !info;
+    if (!info) return;
+    const key = `${info.day}|${info.season}|${info.longest}`;
+    if (key === this.almanacKey) return;
+    this.almanacKey = key;
+    this.el('.al-day').textContent = `Day ${info.day}`;
+    this.el('.al-season').textContent = info.season;
+    this.el('.al-best').textContent = `Longest: ${info.longest} ${info.longest === 1 ? 'day' : 'days'}`;
+  }
+
+  /** A quiet word under the almanac, fading after a while. */
+  toast(text) {
+    const el = this.el('.al-toast');
+    el.textContent = text;
+    el.classList.remove('shown');
+    void el.offsetWidth; // (to start the fade over)
+    el.classList.add('shown');
   }
 
   alive() {

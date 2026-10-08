@@ -1593,3 +1593,59 @@ kbd {
   color: #a89a8a;
   font-style: italic;
 }
+.sm-world.sm-ended {
+  cursor: default;
+  opacity: 0.6;
+  background: rgba(60, 56, 52, 0.5);
+}
+/* Survival: the day of this life, the season, the longest yet (top right, by the menu button). */
+.almanac {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: 68px;
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: #e8e4dc;
+  background: rgba(20, 24, 22, 0.45);
+  font-size: 12px;
+  line-height: 1.25;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.almanac .al-day {
+  font: 700 16px/1.1 var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.almanac .al-season {
+  color: rgba(232, 228, 220, 0.8);
+}
+.almanac .al-best {
+  color: rgba(232, 228, 220, 0.55);
+}
+.al-toast {
+  position: fixed;
+  top: calc(86px + env(safe-area-inset-top, 0px));
+  right: 68px;
+  max-width: 260px;
+  margin: 0;
+  text-align: right;
+  color: #e8e4dc;
+  font-size: 13px;
+  font-style: italic;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  pointer-events: none;
+}
+.al-toast.shown {
+  animation: al-toast 7s ease-in-out;
+}
+@keyframes al-toast {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}

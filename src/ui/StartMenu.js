@@ -8,6 +8,24 @@ import { DEFAULT_SERVER, VERSION, openWorlds } from '../net/Multiplayer.js';
 import { describeHardware, graphicsInfo, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
+// The seeds whose land has claimed a survival life: never played in survival again.
+const DEAD_KEY = 'facet-lands:deadSeeds';
+const norm = (seed) => String(seed).trim().toLowerCase();
+function deadSeeds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(DEAD_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+const seedIsDead = (seed) => deadSeeds().has(norm(seed));
+// (A fresh random seed, never one that's claimed a life.)
+function freshSeed() {
+  let s;
+  do s = Math.random().toString(36).slice(2, 8);
+  while (seedIsDead(s));
+  return s;
+}
 // (Whether you've been told that survival is for keeps; `set` to note it.)
 function warned(set = false) {
   try {
@@ -69,6 +87,11 @@ export function endLife(world, days) {
     localStorage.removeItem(`facet-lands:survival:${world.id}`);
   } catch {
     // (Nothing kept.)
+  }
+  try {
+    localStorage.setItem(DEAD_KEY, JSON.stringify([...deadSeeds().add(norm(world.seed))]));
+  } catch {
+    // (Not remembered.)
   }
   const list = savedWorlds().filter((w) => w.id !== world.id);
   const { camera, ...rest } = world;
@@ -291,7 +314,7 @@ export class StartMenu {
   }
 
   create(online = null) {
-    const seed = Math.random().toString(36).slice(2, 8);
+    const seed = freshSeed();
     const card = this.#show(`
       <h2 class="sm-head">${online ? 'New world, online' : 'New world'}</h2>
       <label class="sm-field">World name<input id="sm-name" type="text" maxlength="40" value="My world" /></label>
@@ -319,6 +342,11 @@ export class StartMenu {
       const name = card.querySelector('#sm-name').value.trim() || 'My world';
       const s = card.querySelector('#sm-seed').value.trim() || seed;
       const world = { id: `w${Date.now().toString(36)}`, name, seed: s, mode, created: Date.now() };
+      // (A land that has claimed a life is closed to survival for good.)
+      if (mode === 'survival' && seedIsDead(s)) {
+        card.querySelector('.sm-note').textContent = 'You died on this land. It will not take you back: choose another seed.';
+        return;
+      }
       if (online) {
         card.querySelector('.sm-note').textContent = 'Opening the world…';
         this.onHost({ ...online, world })
@@ -349,10 +377,10 @@ export class StartMenu {
       <ul class="sm-worlds">
         ${list.map((w) => `
           <li>
-            <button type="button" class="sm-world" data-id="${w.id}">
+            <button type="button" class="sm-world${w.dead ? ' sm-ended' : ''}" data-id="${w.id}"${w.dead ? ' disabled' : ''}>
               <strong>${w.name.replace(/</g, '&lt;')}</strong>
               <span>${MODES[w.mode]?.name ?? w.mode} · seed ${String(w.seed).replace(/</g, '&lt;')} · ${when(w.played)}</span>
-              ${w.dead ? `<span class="sm-dead">Died after ${w.lastDays ?? 0} ${w.lastDays === 1 ? 'day' : 'days'} · start a new life here</span>` : ''}
+              ${w.dead ? `<span class="sm-dead">Died after ${w.lastDays ?? 0} ${w.lastDays === 1 ? 'day' : 'days'}. This land will not take you back.</span>` : ''}
             </button>
             <button type="button" class="sm-delete" data-del="${w.id}" title="Delete this world">Delete</button>
           </li>`).join('') || '<li class="sm-none">No saved worlds yet.</li>'}
@@ -360,14 +388,8 @@ export class StartMenu {
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
     for (const b of card.querySelectorAll('.sm-world')) {
       b.addEventListener('click', () => {
-        let w = list.find((w) => w.id === b.dataset.id);
-        // (A life that ended: a new one, on the same land, from scratch.)
-        if (w.dead) {
-          const { dead, lastDays, camera, ...fresh } = w;
-          w = fresh;
-          rememberWorld(w);
-        }
-        this.#play(w);
+        const w = list.find((w) => w.id === b.dataset.id);
+        if (!w.dead) this.#play(w); // (a life that's over stays over)
       });
     }
     for (const b of card.querySelectorAll('.sm-delete')) {

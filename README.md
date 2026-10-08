@@ -55,6 +55,11 @@ predators hunt at night, and crocodiles lurk in the water.
   **Testing** (developer tools).
 - Survival tracks health, hunger, thirst and warmth. Cold, heat, falls,
   drowning and animals can kill you.
+- **Death in survival is permanent.** The world's save is wiped, and that
+  seed can never be played in survival again. The goal is to live as long
+  as you can: the top right shows the day of this life, the season and
+  your longest life. A quiet message marks a week, a month and a year
+  (a year is four seasons of `daysPerSeason` days).
 - You gather wood, stone, vines, hides and ore, then hunt with a spear, bow
   or crossbow, fish, farm, cook, and build: campfires, walls, gates, roofs,
   beds, chests, furnaces, rafts.

@@ -604,6 +604,15 @@ const sync = new WorldSync({
   dayNight, dayLength: () => WORLD.dayLengthMinutes,
 });
 chunks.addLayer(game.items.layer);
+// (The world's time of day, moon and season, kept with its save.)
+game.clock = {
+  get: () => ({ hour: +dayNight.hour.toFixed(3), day: dayNight.day, season: +seasons.time.toFixed(4) }),
+  set: (c) => {
+    if (Number.isFinite(c.hour) && !mp.connected) dayNight.hour = c.hour; // (online, the room keeps the time)
+    if (Number.isFinite(c.day)) dayNight.day = c.day;
+    if (Number.isFinite(c.season) && seasons.auto) seasons.time = c.season;
+  },
+};
 game.loadWorld(WORLD.seed);
 window.addEventListener('beforeunload', () => game.dirty && game.save());
 // Falls from too high hurt (not into the water).
@@ -1641,6 +1650,7 @@ function tick(now) {
     winter: seasonUniforms.uWinter.value, spring: seasonUniforms.uSpring.value, autumn: seasonUniforms.uAutumn.value,
     summer: Math.max(0, 1 - seasonUniforms.uWinter.value - seasonUniforms.uSpring.value - seasonUniforms.uAutumn.value),
     planPoint: (origin, direction, reach) => solidHit(origin, direction, reach)?.point ?? null,
+    season: seasons.name,
   });
   torches.update(worldNow, camera.position, gameLights);
   updateVisibility();

@@ -120,6 +120,7 @@ export class Game {
     this.onDeath = null; // (survival: told first, before the death screen; see #die)
     this.onLeave = null; // (the death screen's way back to the menu)
     this.onNewLife = null; // (online: a new life starts at the world's start)
+    this.clock = null; // (the world's time of day and season, to save and restore: set by main)
     this.structures.onChange = () => (this.dirty = true);
     this.#heldModel();
     this.#bind();
@@ -170,6 +171,7 @@ export class Game {
     // How far up the crafting tree you've come (in a world saved before
     // there was one: worked out from what's in it).
     this.progress = new Set(saved?.progress ?? []);
+    if (saved?.clock) this.clock?.set(saved.clock);
     if (!saved?.progress && saved) {
       const has = (id) => JSON.stringify(saved).includes(`"${id}"`);
       if (has('campfire') || has('furnace')) this.progress.add('campfire');
@@ -199,6 +201,7 @@ export class Game {
       structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], stumps: this.felling.stumpsJSON(),
       mushrooms: [...(this.mushrooms?.taken ?? [])],
       tame: this.wildlife.tameJSON(),
+      clock: this.clock?.get() ?? null,
       progress: [...this.progress],
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
@@ -1508,6 +1511,8 @@ export class Game {
     const heavy = Math.max(0, (load - LOAD) / LOAD);
     this.controls.burden = Math.max(0.45, 1 - heavy * 0.5);
     this.controls.noSprint = heavy > 0.5 || this.survival.energy < 20;
+    // The day of this life, the season, the longest yet (survival only).
+    this.hud.almanac(this.mode === 'survival' && this.survival.alive ? { day: Math.floor(this.age) + 1, season: ctx.season ?? '', longest: Math.max(longestRun(), Math.floor(this.age)) } : null);
     const e = {
       active: walking && this.survival.alive && !this.sleeping,
       moving: this.controls.moving, sprinting: this.controls.sprinting, swimming: this.controls.swimming, jumped, load: heavy,
@@ -1681,7 +1686,14 @@ export class Game {
 
   /** Time going by (game days), for how long this life has lasted. */
   passDays(days) {
-    if (this.survival.alive && this.mode === 'survival') this.age += days;
+    if (!this.survival.alive || this.mode !== 'survival') return;
+    const before = this.age;
+    this.age += days;
+    // (Quietly, at a week, a month and a year.)
+    const year = 4 * (this.config.daysPerSeason ?? 2);
+    for (const [at, text] of [[7, 'Seven days. You are still here.'], [30, 'Thirty days in the wild.'], [year, 'A year has turned. You have seen every season.']]) {
+      if (before < at && this.age >= at) this.hud.toast(text);
+    }
   }
 
   // --- What's in your hand, drawn in front of you -----------------------------------------
