@@ -68,7 +68,10 @@ predators hunt at night, and crocodiles lurk in the water.
 - **Progression** follows a crafting tree of four tiers. **Stone** is open
   from the start. **Camp** opens when you set down a campfire. **Iron**
   opens when you smelt an iron bar. **Steel** opens when you smelt a steel
-  bar. Press Tab to see the tree. The tiers are defined in `TIERS` in
+  bar (from the dark *mountain iron ore* and *coal* found only high in
+  the mountains, above about 150 m). Steel makes the best tools, a steel
+  sword and steel armour. *Gold ore* lies on the tops of mesas (smelted into
+  gold bars, for crafting to come). Press Tab to see the tree. The tiers are defined in `TIERS` in
   `src/survival/items.js`.
 - Worlds are saved in the browser. Online play goes through a small Node
   WebSocket server (`server/`), which shares the seed, the clock, the

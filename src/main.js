@@ -718,6 +718,21 @@ ui.time.addEventListener('input', () => {
 ui.cycle.addEventListener('change', () => {
   dayNight.playing = ui.cycle.checked;
 });
+// (Testing: a day on, the season with it, to see the seasons turn.)
+const seasonDay = document.getElementById('season-day');
+const showSeasonDay = () => {
+  if (!seasonDay) return;
+  const d = WORLD.daysPerSeason, into = (seasons.time % 1) * d;
+  seasonDay.textContent = `${seasons.name}, day ${Math.floor(into) + 1} of ${d}${into > d - WORLD.seasonTurnDays / 2 || into < WORLD.seasonTurnDays / 2 ? ' (turning)' : ''}`;
+};
+document.getElementById('skip-day')?.addEventListener('click', () => {
+  dayNight.day++;
+  seasons.update(1, 1);
+  game.passDays(1);
+  showSeasonDay();
+});
+setInterval(showSeasonDay, 1000);
+showSeasonDay();
 for (const button of ui.presets) {
   button.addEventListener('click', () => {
     dayNight.hour = Number(button.dataset.hour);

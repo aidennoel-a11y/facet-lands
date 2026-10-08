@@ -86,6 +86,34 @@ export const ironModel = () =>
     .add(new OctahedronGeometry(0.05, 0), 0xd0c8c0, [0.24, 0.22, -0.04])
     .build();
 
+// Coal, mountain iron ore (dark, with a silvery glint) and gold ore (pale
+// quartz, flecked with gold): see Game.#mine and GroundItems.
+export const coalModel = () =>
+  new Parts(21)
+    .add(new DodecahedronGeometry(0.13, 0), 0x22201e, [0, 0.08, 0], [0.4, 0.2, 0.3], [1.2, 0.8, 1])
+    .add(new OctahedronGeometry(0.07, 0), 0x3a3634, [0.09, 0.1, 0.03], [0.3, 0.6, 0.1])
+    .build();
+export const mountainOreModel = () =>
+  new Parts(23)
+    .add(new DodecahedronGeometry(0.2, 0), 0x3e434c, [0, 0.12, 0], [0.3, 0.2, 0.1], [1.2, 0.8, 1])
+    .add(new OctahedronGeometry(0.05, 0), 0xd8dee6, [0.06, 0.26, 0.06])
+    .add(new OctahedronGeometry(0.045, 0), 0xb8c0ca, [-0.12, 0.2, -0.05])
+    .build();
+export const goldOreModel = () =>
+  new Parts(25)
+    .add(new DodecahedronGeometry(0.14, 0), 0xe6e0d2, [0, 0.09, 0], [0.4, 0.3, 0.2], [1.2, 0.8, 1])
+    .add(new OctahedronGeometry(0.045, 0), 0xe8b830, [0.06, 0.17, 0.04])
+    .add(new OctahedronGeometry(0.04, 0), 0xd8a020, [-0.07, 0.14, -0.03])
+    .build();
+// A steel sword: the grip up +y, the blade above (held as an axe is).
+export const swordModel = () =>
+  new Parts(27)
+    .add(new CylinderGeometry(0.022, 0.024, 0.2, 5), 0x4a3020, [0, 0.1, 0])
+    .add(new BoxGeometry(0.2, 0.03, 0.04), 0x8a949e, [0, 0.215, 0])
+    .add(new BoxGeometry(0.05, 0.72, 0.012), 0xd0d8e0, [0, 0.59, 0], [0, 0, 0], [1, 1, 1], 0.03)
+    .add(new ConeGeometry(0.035, 0.1, 4), 0xe8eef4, [0, 1.0, 0], [0, Math.PI / 4, 0], [1, 1, 0.3])
+    .build();
+
 export const logModel = () => new Parts(11).log([-0.9, 0.2, 0], [0.9, 0.2, 0], 0.2).build();
 
 export const spearModel = (metal = 0x4a4e58) =>

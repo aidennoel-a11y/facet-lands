@@ -46,6 +46,11 @@ const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a bla
 const AXES = { axe: 1, steelAxe: 2, forgedAxe: 3 };
 const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2 };
 const SPEARS = new Set(['spear', 'steelSpear', 'forgedSpear']);
+const SWORDS = new Set(['sword']);
+const smooth = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
 const UP = new Vector3(0, 1, 0);
 // How far into a creature each goes (its point: along +z from its middle), and how deep it wounds.
 const SHOTS = { spear: { tip: 1.16, bury: 0.3 }, arrow: { tip: 0.42, bury: 0.16, sharp: 1 }, bolt: { tip: 0.27, bury: 0.14, sharp: 2 } };
@@ -176,7 +181,7 @@ export class Game {
       const has = (id) => JSON.stringify(saved).includes(`"${id}"`);
       if (has('campfire') || has('furnace')) this.progress.add('campfire');
       if (has('ironBar') || has('anvil') || has('steelAxe') || has('steelBar')) this.progress.add('ironBar');
-      if (has('steelBar') || has('forgedAxe') || has('forgedPickaxe') || has('forgedSpear') || has('crossbow')) this.progress.add('steelBar');
+      if (has('steelBar') || has('forgedAxe') || has('forgedPickaxe') || has('forgedSpear') || has('crossbow') || has('sword') || has('steelArmour')) this.progress.add('steelBar');
     }
     // You, as you were (or afresh).
     if (saved?.player) {
@@ -612,6 +617,7 @@ export class Game {
     if (AXES[s.id]) return this.#axe(i, origin, direction, AXES[s.id]);
     if (PICKS[s.id]) return this.#mine(i, origin, direction, PICKS[s.id]);
     if (SPEARS.has(s.id)) return this.#stab(i, origin, direction);
+    if (SWORDS.has(s.id)) return this.#stab(i, origin, direction, true);
     const built = this.structures.pick(origin, direction, REACH);
     const at = built?.structure;
     // A torch you've set down, cold, to light.
@@ -772,13 +778,21 @@ export class Game {
       this.cooldown = 0.3;
       return say(at.lit ? 'A stick in the furnace: it will char into charcoal' : 'A stick in the furnace: light it');
     }
-    if (at.type === 'furnace' && s.id === 'ironBar') {
-      if (!this.inventory.count('charcoal')) return say('To make steel, iron wants charcoal with it (char sticks in the furnace first)');
-      if (!this.structures.work(at, { id: 'ironBar', count: 1 }, Inventory.stack('steelBar', 1), TIMES.steel)) return say('The furnace is full');
+    if (at.type === 'furnace' && s.id === 'ironBar') return say('Steel is made from the dark ore high in the mountains, smelted with coal from up there');
+    // Steel: the mountains' dark ore, smelted with their coal.
+    if (at.type === 'furnace' && s.id === 'mountainOre') {
+      if (!this.inventory.count('coal')) return say('Mountain ore wants coal with it to make steel: look for black seams in the rock up high');
+      if (!this.structures.work(at, { id: 'mountainOre', count: 1 }, Inventory.stack('steelBar', 1), TIMES.steel)) return say('The furnace is full');
       take();
-      this.inventory.remove('charcoal', 1);
+      this.inventory.remove('coal', 1);
       this.cooldown = 0.3;
-      return say(at.lit ? 'Iron and charcoal in the furnace: steel in under a minute' : 'Iron and charcoal in the furnace: light it');
+      return say(at.lit ? 'Mountain ore and coal in the furnace: steel in under a minute' : 'Mountain ore and coal in the furnace: light it');
+    }
+    if (at.type === 'furnace' && s.id === 'goldOre') {
+      if (!this.structures.work(at, { id: 'goldOre', count: 1 }, Inventory.stack('goldBar', 1), TIMES.smelt)) return say('The furnace is full');
+      take();
+      this.cooldown = 0.3;
+      return say(at.lit ? 'Gold ore in the furnace: a bar in half a minute' : 'Gold ore in the furnace: light it');
     }
     if (at.type === 'plot') {
       if (item.sow) {
@@ -970,7 +984,8 @@ export class Game {
       const face = this.solidHit(origin, direction, REACH + 0.3);
       let where = null, iron = 0.06;
       if (boulder && (!face || boulder.distance <= face.point.distanceTo(origin) + 0.3)) where = boulder.point;
-      else if (face && (face.cave || face.normal.y < 0.6)) {
+      else if (face && (face.cave || face.normal.y < 0.6 || this.#mesaTop(face.point))) {
+        // (A mesa's top is bare caprock: you can break it, flat as it is.)
         where = face.point;
         iron = face.cave ? 0.25 : 0.08;
       }
@@ -982,12 +997,22 @@ export class Game {
       this.sound?.call('strike', 0, 0.7);
       this.sound?.call('thunk', 0, 0.5);
       this.felling.spray(where, origin, 0x8e8a84);
+      // Up high in the mountains, seams of coal and the dark ore steel is
+      // made from; on a mesa's top, gold.
+      const high = smooth(130, 190, where.y), gold = this.#mesaTop(where) ? 0.12 : 0;
+      const coal = 0.2 * high, ore = 0.14 * high;
       const r = Math.random();
-      const id = r < iron ? 'iron' : r < iron + 0.14 ? 'flint' : 'rock';
+      const id = r < gold ? 'goldOre' : r < gold + coal ? 'coal' : r < gold + coal + ore ? 'mountainOre' : r < gold + coal + ore + iron ? 'iron' : r < gold + coal + ore + iron + 0.14 ? 'flint' : 'rock';
       const n = id === 'rock' ? 1 + (Math.random() < 0.4 ? 1 : 0) : 1;
       this.#give(id, n, { x: where.x, y: where.y + 0.3, z: where.z });
       this.hotbar?.flash(`${ITEMS[id].name}${n > 1 ? ` ×${n}` : ''}`);
     });
+  }
+
+  // Whether (x, z) is up on a mesa (its caprock), not down on the flats.
+  #mesaTop(p) {
+    const f = this.generator().getFeatures(p.x, p.z);
+    return f.mesa > 0.35 && f.mesaHeight > 17 * f.mesa;
   }
 
   // The boulder a ray meets (within reach): { point, distance }, or null.
@@ -1013,10 +1038,11 @@ export class Game {
     return best;
   }
 
-  #stab(i, origin, direction) {
-    this.#animate('thrust', 0.4);
-    this.cooldown = 0.75;
-    this.#later(0.12, () => {
+  // (A sword: a swing, quicker than a spear's thrust.)
+  #stab(i, origin, direction, swing = false) {
+    this.#animate(swing ? 'chop' : 'thrust', swing ? 0.36 : 0.4);
+    this.cooldown = swing ? 0.55 : 0.75;
+    this.#later(swing ? 0.18 : 0.12, () => {
       // (Where you're pointing as the blow lands, not where you were.)
       const o = this.camera.position.clone(), d = this.camera.getWorldDirection(new Vector3());
       const hit = this.#aimNear(o, d, REACH + 0.5);
@@ -1595,7 +1621,7 @@ export class Game {
     // Armour takes the worst of a bite or a swipe (and wears for it).
     const armour = this.inventory.armour;
     if (bite && armour) {
-      amount *= 0.55;
+      amount *= ITEMS[armour.id]?.protect ?? 0.55;
       armour.dur -= 1;
       if (armour.dur <= 0) {
         this.inventory.armour = null;
@@ -1604,7 +1630,7 @@ export class Game {
       this.inventory.changed();
     }
     this.survival.hurt(amount, cause);
-    if (bite && Math.random() < (armour ? 0.15 : 0.4)) {
+    if (bite && Math.random() < (armour ? (armour.id === 'steelArmour' ? 0.05 : 0.15) : 0.4)) {
       this.survival.bleed(60 + Math.random() * 60);
       this.hotbar?.flash('You are bleeding: bandage it');
     }
@@ -1753,7 +1779,7 @@ export class Game {
 
   /** Where an item sits in a hand (`mesh` of it, in the hand's frame: forward is -z, up +y). */
   static holdPose(id, mesh) {
-    if (AXES[id] || PICKS[id]) {
+    if (AXES[id] || PICKS[id] || SWORDS.has(id)) {
       // (Blade forward, the handle in your fist near its end.)
       mesh.rotation.set(0, Math.PI / 2, 0);
       mesh.scale.setScalar(0.62);

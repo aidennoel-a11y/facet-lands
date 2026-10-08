@@ -2,14 +2,18 @@ import { Group, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, Quaternion, V
 import { hash2 } from '../noise/random.js';
 import { Inventory } from './Inventory.js';
 import { ITEMS } from './items.js';
-import { arrowModel, axeModel, boltModel, bowModel, crossbowModel, hoeModel, shearsModel, bundleModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, stickModel, waterskinModel } from './models.js';
+import { coalModel, goldOreModel, mountainOreModel, swordModel, arrowModel, axeModel, boltModel, bowModel, crossbowModel, hoeModel, shearsModel, bundleModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, stickModel, waterskinModel } from './models.js';
 
 const m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s = new Vector3(), up = new Vector3(0, 1, 0);
 const hidden = new Matrix4().makeScale(0, 0, 0);
 
 // What lies about on the ground by itself, per kind: its model.
 const NATURAL = { stick: stickModel, rock: rockModel, flint: flintModel };
-const BUNDLE_COLOURS = { berries: 0xb01830, apple: 0xc8261c, mushroom: 0xc49a60, vine: 0x4f8a34, flintSteel: 0x5a6070, fineFlintSteel: 0x9aa4b0, coat: 0xa8743e, armour: 0x7a5230, torch: 0x8a5d38, campfire: 0x7a5232, wall: 0x8a6a44, gate: 0x8a6a44, stake: 0x8a6a44, chest: 0x8a6038, furnace: 0x8a867e, bed: 0xece6d8, dryingRack: 0x8a5d38, snare: 0x6fae4c, raft: 0x7a5232, jerky: 0x6a2e18, stew: 0x8a4a2a, wool: 0xf0ece0, bandage: 0xece6d8, hide: 0xb06a58, fur: 0x7a6a58, pelt: 0xc4a47a, feather: 0xe8e0d0, rope: 0xb89a60, charcoal: 0x2a2624, wheat: 0xe0bc64, seedWheat: 0xd8b464, seedCorn: 0xe8c030, seedPotato: 0xb08a58, seedCarrot: 0x7a6a4a, corn: 0xf0c830, roastCorn: 0xd89a28, potato: 0xb89060, bakedPotato: 0x8a5a30, carrot: 0xe8762a, dough: 0xece0c4, bread: 0xb8763a, furCloak: 0x8a7458, roof: 0xc8a860, fence: 0x8a6a44, fenceGate: 0x8a6a44, anvil: 0x4a5058, grindstone: 0x9a968e, tanningRack: 0x8a5d38 };
+const smoothstep = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+const BUNDLE_COLOURS = { steelArmour: 0x9aa4b0, berries: 0xb01830, apple: 0xc8261c, mushroom: 0xc49a60, vine: 0x4f8a34, flintSteel: 0x5a6070, fineFlintSteel: 0x9aa4b0, coat: 0xa8743e, armour: 0x7a5230, torch: 0x8a5d38, campfire: 0x7a5232, wall: 0x8a6a44, gate: 0x8a6a44, stake: 0x8a6a44, chest: 0x8a6038, furnace: 0x8a867e, bed: 0xece6d8, dryingRack: 0x8a5d38, snare: 0x6fae4c, raft: 0x7a5232, jerky: 0x6a2e18, stew: 0x8a4a2a, wool: 0xf0ece0, bandage: 0xece6d8, hide: 0xb06a58, fur: 0x7a6a58, pelt: 0xc4a47a, feather: 0xe8e0d0, rope: 0xb89a60, charcoal: 0x2a2624, wheat: 0xe0bc64, seedWheat: 0xd8b464, seedCorn: 0xe8c030, seedPotato: 0xb08a58, seedCarrot: 0x7a6a4a, corn: 0xf0c830, roastCorn: 0xd89a28, potato: 0xb89060, bakedPotato: 0x8a5a30, carrot: 0xe8762a, dough: 0xece0c4, bread: 0xb8763a, furCloak: 0x8a7458, roof: 0xc8a860, fence: 0x8a6a44, fenceGate: 0x8a6a44, anvil: 0x4a5058, grindstone: 0x9a968e, tanningRack: 0x8a5d38 };
 
 /**
  * Things on the ground to pick up:
@@ -66,6 +70,7 @@ export class GroundItems {
         forgedSpear: () => spearModel(0xd8e0ea), forgedAxe: () => axeModel(0xdfe6ee, 0xffffff), forgedPickaxe: () => pickaxeModel(0xdfe6ee, 0xffffff),
         crossbow: crossbowModel, bolt: boltModel, hoe: hoeModel, shears: shearsModel, steelBar: () => ironBarModel(0xe4eaf0),
         bow: bowModel, arrow: arrowModel, fishingRod: rodModel, waterskin: waterskinModel, pot: potModel, ironBar: ironBarModel,
+        coal: coalModel, mountainOre: mountainOreModel, goldOre: goldOreModel, goldBar: () => ironBarModel(0xe0b440), sword: swordModel,
       }[id];
       this.models[key] = make ? make() : bundleModel(BUNDLE_COLOURS[id] ?? 0x9a8a6a);
     }
@@ -79,7 +84,7 @@ export class GroundItems {
     const seed = generator.seed ^ 0x9e3779;
     const G = 6, cells = Math.floor(size / G);
     const surface = { normalY: 1 };
-    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [] };
+    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], mountainOre: [], goldOre: [] };
     const items = [];
     // (The country, sampled every 32 m.)
     const land = new Map();
@@ -88,7 +93,9 @@ export class GroundItems {
       let v = land.get(k);
       if (!v) {
         const w = generator.getBiomeWeights(x, z, {});
-        v = { w, forest: generator.getForestDensity(x, z), mount: generator.getMountainness(x, z) };
+        // (On top of a mesa, the caprock: gold lies about up there.)
+        const f = generator.getFeatures(x, z);
+        v = { w, forest: generator.getForestDensity(x, z), mount: generator.getMountainness(x, z), mesaTop: f.mesa > 0.35 && f.mesaHeight > 17 * f.mesa };
         land.set(k, v);
       }
       return v;
@@ -98,7 +105,7 @@ export class GroundItems {
         const gi = cx * 100 + i, gj = cz * 100 + j;
         const h = hash2(gi, gj, seed);
         const lx = (i + 0.15 + 0.7 * hash2(gi, gj, seed + 1)) * G, lz = (j + 0.15 + 0.7 * hash2(gi, gj, seed + 2)) * G;
-        const { w, forest, mount } = at(x0 + lx, z0 + lz);
+        const { w, forest, mount, mesaTop } = at(x0 + lx, z0 + lz);
         const wooded = Math.max(forest * (w.temperate + w.smoky + w.pine + w.blackHills + w.wetland), w.jungle, 0.6 * w.pine, 0.6 * w.smoky);
         const pStick = 0.03 + 0.4 * wooded;
         const pRock = 0.05 + 0.12 * mount + 0.06 * (w.savanna + w.desert) + 0.04 * w.volcanic;
@@ -107,7 +114,9 @@ export class GroundItems {
         // corn on the savanna, potatoes up in the hills and the cold.
         const pSeed = 0.007 * (1 - Math.min(1, forest * 1.6)) * Math.min(1, w.temperate + w.savanna + w.smoky + 0.5 * w.pine);
         let id = null;
-        if (h < pFlint) id = 'flint';
+        const pGold = mesaTop ? 0.005 : 0;
+        if (h > 1 - pGold) id = 'goldOre';
+        else if (h < pFlint) id = 'flint';
         else if (h < pFlint + pStick) id = 'stick';
         else if (h < pFlint + pStick + pRock) id = 'rock';
         else if (h < pFlint + pStick + pRock + pSeed) {
@@ -119,6 +128,13 @@ export class GroundItems {
         if (this.taken.has(key)) continue;
         const y = groundHeightAt(lx, lz, surface);
         if (!(y > sea + 0.3) || surface.normalY < 0.72) continue;
+        // High in the mountains, some of the loose stone is coal, or the dark
+        // ore that steel is made from (see Game.#mine).
+        if (id === 'rock' && y > 150) {
+          const r = hash2(gi, gj, seed + 6) * smoothstep(150, 200, y);
+          if (r > 0.82) id = 'mountainOre';
+          else if (r > 0.6) id = 'coal';
+        }
         if (generator.rivers?.at(x0 + lx, z0 + lz, 0.5)) continue;
         const turn = hash2(gi, gj, seed + 3) * Math.PI * 2;
         const item = { key, id, x: x0 + lx, y, z: z0 + lz, turn, index: found[id].length };
