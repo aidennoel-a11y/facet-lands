@@ -12,6 +12,76 @@ day/night cycle and cast shadows on everything, including your own when you walk
 and ray-marched light shafts and ambient occlusion finish the picture. The world streams in as
 chunks around the camera, so it never ends.
 
+## About the game (a summary for people and AI assistants)
+
+**What it is.** Facet Lands is an open-world survival and exploration game
+that runs in the browser (three.js, plain JavaScript, no framework). The world
+is endless and made from a seed: the same seed always gives the same land. You
+can fly over it to explore, or walk it and try to survive. Up to a few friends
+can share a world online.
+
+**The vibe.** Quiet, lonely and real, in a low-poly style. Everything is
+flat-shaded triangles, but it behaves like the real outdoors: real biomes (the
+Smoky Mountains, the Black Hills, redwoods, badlands, mangrove coasts), real
+animals that act like animals, weather that comes and goes, seasons that
+turn, and nights that are truly dark and frightening. It should feel like
+being alone in the wild, not like an arcade game. Nothing is cartoonish: the
+sounds are natural, colours are muted and earthy, and the UI is small and
+calm. Smooth play matters: no flashing, no popping or stutter as the world
+loads.
+
+**The world**
+- 14 biomes: temperate highlands, pine forest, redwood forest, birch & aspen
+  parkland, Smoky Mountains, Black Hills, volcanic highlands (geysers, lava,
+  hot springs), wetlands, mangrove coast, jungle, savanna, desert (with
+  oases and dune seas), salt flats and badlands. Snow-capped peaks, mesas,
+  sea cliffs and sea caves.
+- Rivers that run downhill to the sea, lakes, waterfalls, caves to explore
+  with torches, and coral and kelp in the sea.
+- More than 30 kinds of tree, plus grass, flowers, reeds, mushrooms, fallen
+  logs and boulders. Trees are drawn out to the horizon.
+- Day and night with a moon that has phases. Moonless nights are pitch dark,
+  and your eyes take a while to adjust. Seasons (spring to winter, with
+  autumn colours and snow), and weather from clear skies through rain to
+  thunderstorms, with wind and clouds.
+
+**Living things.** Deer, elk, moose, bison, bears, wolves, coyotes, foxes,
+cougars and other big cats, boar, sheep, mountain goats, rabbits, crocodiles,
+monkeys, pandas, birds, ducks, fish, frogs and insects. Prey runs from you,
+predators hunt at night, and crocodiles lurk in the water.
+
+**Playing**
+- Three modes: **Survival**, **Creative** (everything available) and
+  **Testing** (developer tools).
+- Survival tracks health, hunger, thirst and warmth. Cold, heat, falls,
+  drowning and animals can kill you.
+- You gather wood, stone, vines, hides and ore, then hunt with a spear, bow
+  or crossbow, fish, farm, cook, and build: campfires, walls, gates, roofs,
+  beds, chests, furnaces, rafts.
+- **Progression** follows a crafting tree of four tiers. **Stone** is open
+  from the start. **Camp** opens when you set down a campfire. **Iron**
+  opens when you smelt an iron bar. **Steel** opens when you smelt a steel
+  bar. Press Tab to see the tree. The tiers are defined in `TIERS` in
+  `src/survival/items.js`.
+- Worlds are saved in the browser. Online play goes through a small Node
+  WebSocket server (`server/`), which shares the seed, the clock, the
+  players and their edits to the world.
+
+**How the code is laid out**
+- `src/world/`: the terrain generator, biomes, rivers and caves.
+  `ChunkManager` streams chunks with levels of detail, built in web workers
+  (`chunkWorker.js`). The things on each chunk are drawn by layers in
+  `src/world/layers/`.
+- `src/survival/`: the game itself (`Game.js`), items and recipes
+  (`items.js`), the HUD, inventory and building.
+- `src/wildlife/`: animals, fish and insects.
+- `src/render/`: day and night, weather, seasons, sound and effects.
+- `src/net/`: multiplayer.
+- `src/ui/`: the start menu, minimap and hotbar.
+- World tuning is in `src/config.js`; quality presets are in
+  `src/quality.js`.
+- `tools/`: headless-browser scripts used to test and screenshot the game.
+
 ## Run it
 
 ```bash
