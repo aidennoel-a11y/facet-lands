@@ -116,6 +116,8 @@ export class Survival {
    *            rain, snowing }
    */
   coldness(e) {
+    // (Underground the seasons don't reach: the ice caves are bitter, the rest mild.)
+    if (e.cave !== null && e.cave !== undefined) return e.cave === 3 ? 0.75 : 0;
     // Mountain tops: cold in spring and autumn above about 150 m, and in
     // summer only on the snowy peaks.
     const high = smoothstep(140, 200, e.altitude) * (e.spring + e.autumn + e.winter) + smoothstep(200, 250, e.altitude) * e.summer;
@@ -189,6 +191,7 @@ export class Survival {
     if (this.energy <= 0 && this.hurt(dt * 0.25, 'exhaustion')) return;
     if (this.sick > 0 && this.hurt(dt * 0.05, 'fever')) return;
     if (e.inFire && this.hurt(dt * 12, 'burns')) return;
+    if (e.inLava && this.hurt(dt * 45, 'lava')) return;
     // Mending, while you're looked after.
     if (this.hunger > 40 && this.thirst > 40 && this.warmth > 30 && this.sick <= 0 && this.bleeding <= 0 && this.venom <= 0) this.health = Math.min(100, this.health + dt * (this.hunger > 75 && this.thirst > 75 ? 0.5 : 0.2));
   }

@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, IcosahedronGeometry, Matrix4, OctahedronGeometry, Quaternion, Vector3 } from 'three';
+import { BoxGeometry, BufferAttribute, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, IcosahedronGeometry, Matrix4, OctahedronGeometry, Quaternion, TorusGeometry, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../noise/random.js';
 
@@ -106,12 +106,12 @@ export const goldOreModel = () =>
     .add(new OctahedronGeometry(0.04, 0), 0xd8a020, [-0.07, 0.14, -0.03])
     .build();
 // A steel sword: the grip up +y, the blade above (held as an axe is).
-export const swordModel = () =>
+export const swordModel = (blade = 0xd0d8e0, tip = 0xe8eef4, guard = 0x8a949e) =>
   new Parts(27)
     .add(new CylinderGeometry(0.022, 0.024, 0.2, 5), 0x4a3020, [0, 0.1, 0])
-    .add(new BoxGeometry(0.2, 0.03, 0.04), 0x8a949e, [0, 0.215, 0])
-    .add(new BoxGeometry(0.05, 0.72, 0.012), 0xd0d8e0, [0, 0.59, 0], [0, 0, 0], [1, 1, 1], 0.03)
-    .add(new ConeGeometry(0.035, 0.1, 4), 0xe8eef4, [0, 1.0, 0], [0, Math.PI / 4, 0], [1, 1, 0.3])
+    .add(new BoxGeometry(0.2, 0.03, 0.04), guard, [0, 0.215, 0])
+    .add(new BoxGeometry(0.05, 0.72, 0.012), blade, [0, 0.59, 0], [0, 0, 0], [1, 1, 1], 0.03)
+    .add(new ConeGeometry(0.035, 0.1, 4), tip, [0, 1.0, 0], [0, Math.PI / 4, 0], [1, 1, 0.3])
     .build();
 
 export const logModel = () => new Parts(11).log([-0.9, 0.2, 0], [0.9, 0.2, 0], 0.2).build();
@@ -257,23 +257,23 @@ export const bonesModel = () =>
 // --- More tools and things ------------------------------------------------------
 
 /** A bow, held upright: a bent stave and its string. */
-export function bowModel(string = true) {
+export function bowModel(string = true, wood = 0x8a5d38) {
   const b = new Parts(41);
   const n = 7;
   for (let k = 0; k < n; k++) {
     const a0 = -0.75 + (1.5 * k) / n, a1 = a0 + 1.5 / n;
     const p0 = [0, Math.sin(a0) * 0.55, -Math.cos(a0) * 0.18 + 0.18], p1 = [0, Math.sin(a1) * 0.55, -Math.cos(a1) * 0.18 + 0.18];
-    b.log(p0, p1, 0.018, 0x8a5d38, 0x8a5d38, 5);
+    b.log(p0, p1, 0.018, wood, wood, 5);
   }
   if (string) b.add(new CylinderGeometry(0.004, 0.004, 1.02, 3), 0xe8e0cc, [0, 0, 0.055]); // (in your hand, drawn back: see Game)
   return b.build();
 }
 
 /** An arrow, along +z (the point at the front). */
-export const arrowModel = () =>
+export const arrowModel = (head = 0x3e4250) =>
   new Parts(43)
     .add(new CylinderGeometry(0.008, 0.008, 0.75, 4), 0x9a6e44, [0, 0, 0], [Math.PI / 2, 0, 0])
-    .add(new ConeGeometry(0.02, 0.07, 4), 0x3e4250, [0, 0, 0.4], [Math.PI / 2, 0, 0])
+    .add(new ConeGeometry(0.02, 0.07, 4), head, [0, 0, 0.4], [Math.PI / 2, 0, 0])
     .add(new BoxGeometry(0.002, 0.04, 0.1), 0xe8e0d0, [0, 0.015, -0.32])
     .add(new BoxGeometry(0.04, 0.002, 0.1), 0xe8e0d0, [0, 0, -0.32])
     .build();
@@ -422,10 +422,10 @@ export const crossbowModel = () =>
     .build();
 
 /** A crossbow bolt: short and heavy, iron-headed. */
-export const boltModel = () =>
+export const boltModel = (head = 0x9aa4b0) =>
   new Parts(83)
     .add(new CylinderGeometry(0.011, 0.011, 0.42, 4), 0x7a5232, [0, 0, 0], [Math.PI / 2, 0, 0])
-    .add(new ConeGeometry(0.022, 0.07, 4), 0x9aa4b0, [0, 0, 0.24], [Math.PI / 2, 0, 0])
+    .add(new ConeGeometry(0.022, 0.07, 4), head, [0, 0, 0.24], [Math.PI / 2, 0, 0])
     .add(new BoxGeometry(0.002, 0.03, 0.07), 0xc8c0b0, [0, 0.012, -0.17])
     .add(new BoxGeometry(0.03, 0.002, 0.07), 0xc8c0b0, [0, 0, -0.17])
     .build();
@@ -589,6 +589,276 @@ export function cropModel(kind, ripe = false) {
         if (ripe) b.add(new ConeGeometry(0.03, 0.06, 5), 0xe8762a, [x, 0.03, z], [Math.PI, 0, 0]);
       }
     }
+  }
+  return b.build();
+}
+
+// --- Everything else you carry (base at y = 0, lying on the ground) ---------------
+// Each thing its own shape, so what's in your hand reads as what it is.
+
+const R = (seed) => new Parts(seed);
+
+/** A coil of something (a vine, a rope): loops lying flat. */
+const coil = (seed, colour, r = 0.12, t = 0.02, leaves = 0) => {
+  const b = R(seed);
+  for (let k = 0; k < 3; k++) b.add(new TorusGeometry(r - k * 0.012, t, 4, 10), colour, [k * 0.01, t + k * t * 1.4, 0], [Math.PI / 2, 0, k * 0.4]);
+  for (let k = 0; k < leaves; k++) {
+    const a = k * 2.1;
+    b.add(new BoxGeometry(0.06, 0.008, 0.035), 0x5f9a3c, [Math.cos(a) * r, t * 3, Math.sin(a) * r], [0, a, 0.3]);
+  }
+  return b.build();
+};
+
+/** A folded skin or pelt, with tufts if it's fur; stripes, a mane... */
+const pelt = (seed, colour, { tufts = 0, tuft = colour, stripes = 0, stripe = 0x1e1612, size = 1, scales = false } = {}) => {
+  const b = R(seed);
+  b.add(new BoxGeometry(0.5 * size, 0.05, 0.36 * size), colour, [0, 0.025, 0], [0, 0.2, 0]);
+  b.add(new BoxGeometry(0.42 * size, 0.05, 0.3 * size), colour, [0.02, 0.07, 0.01], [0, 0.35, 0.03]); // (folded over)
+  const rand = mulberry32(seed);
+  for (let k = 0; k < tufts; k++) b.add(new ConeGeometry(0.03 * size, 0.07 * size, 4), tuft, [(rand() - 0.5) * 0.36 * size, 0.11, (rand() - 0.5) * 0.24 * size], [(rand() - 0.5) * 0.8, 0, (rand() - 0.5) * 0.8]);
+  for (let k = 0; k < stripes; k++) b.add(new BoxGeometry(0.035 * size, 0.012, 0.26 * size), stripe, [(-0.15 + k * 0.1) * size, 0.1, 0], [0, 0.35 + (rand() - 0.5) * 0.3, 0]);
+  if (scales) for (let k = 0; k < 8; k++) b.add(new BoxGeometry(0.05, 0.03, 0.05), 0x3a4a2e, [(-0.15 + (k % 4) * 0.1) * size, 0.11, (k < 4 ? -0.05 : 0.06) * size], [0, 0.35, 0]);
+  return b.build();
+};
+
+/** A small cloth sack tied at the neck (seeds, guano...), a few of what's in it beside it. */
+const sack = (seed, cloth, bits) => {
+  const b = R(seed)
+    .add(new DodecahedronGeometry(0.1, 0), cloth, [0, 0.09, 0], [0, 0.3, 0], [1, 1.1, 0.9])
+    .add(new CylinderGeometry(0.035, 0.05, 0.06, 6), cloth, [0, 0.2, 0])
+    .add(new TorusGeometry(0.04, 0.008, 3, 8), 0x8a6a44, [0, 0.18, 0], [Math.PI / 2, 0, 0]);
+  for (const [x, z] of [[0.13, 0.04], [0.15, -0.03], [0.11, -0.07]]) b.add(new OctahedronGeometry(0.014, 0), bits, [x, 0.012, z]);
+  return b.build();
+};
+
+export const vineModel = () => coil(201, 0x4f8a34, 0.12, 0.014, 5);
+export const ropeModel = () => coil(203, 0xb89a60, 0.13, 0.022);
+export const hideModel = () => pelt(205, 0xb06a58);
+export const furModel = () => pelt(207, 0x7a6a58, { tufts: 10 });
+export const tannedFurModel = () => pelt(209, 0xc4a47a, { tufts: 8, tuft: 0xb8966a });
+export const woolModel = () => {
+  const b = R(211);
+  for (const [x, y, z, r] of [[0, 0.08, 0, 0.09], [0.08, 0.06, 0.04, 0.07], [-0.07, 0.06, 0.03, 0.065], [0.02, 0.12, -0.05, 0.06], [-0.03, 0.05, -0.07, 0.06]]) b.add(new IcosahedronGeometry(r, 0), 0xf0ece0, [x, y, z]);
+  return b.build();
+};
+export const featherModel = () =>
+  R(213)
+    .add(new BoxGeometry(0.06, 0.006, 0.26), 0xe8e0d0, [0, 0.006, 0.02], [0, 0, 0], [1, 1, 1], 0.04)
+    .add(new ConeGeometry(0.03, 0.06, 4), 0xe8e0d0, [0, 0.006, 0.18], [Math.PI / 2, 0, 0], [1, 1, 0.2])
+    .add(new CylinderGeometry(0.004, 0.004, 0.34, 3), 0xc8b8a0, [0, 0.01, 0], [Math.PI / 2, 0, 0])
+    .build();
+export const charcoalModel = () =>
+  R(215)
+    .add(new DodecahedronGeometry(0.08, 0), 0x2a2624, [0, 0.05, 0], [0.4, 0.2, 0], [1.4, 0.8, 0.9])
+    .add(new DodecahedronGeometry(0.06, 0), 0x1e1a18, [0.09, 0.04, 0.05], [0.1, 0.6, 0.3], [1.2, 0.8, 1])
+    .add(new BoxGeometry(0.03, 0.005, 0.06), 0x4a4440, [0, 0.1, 0])
+    .build();
+
+// The great beasts' trophies.
+export const grizzlyPeltModel = () => pelt(221, 0x4a3426, { tufts: 14, tuft: 0x3a281c, size: 1.2 });
+export const paleFurModel = () => pelt(223, 0xece8e2, { tufts: 12, tuft: 0xd8d4ce });
+export const greatHideModel = () => pelt(225, 0x4a3a30, { size: 1.35, tufts: 6, tuft: 0x2e241e });
+export const crocHideModel = () => pelt(227, 0x5a6a44, { scales: true });
+export const lionPeltModel = () => pelt(229, 0xc89a5a, { tufts: 10, tuft: 0x6a4026 });
+export const tigerPeltModel = () => pelt(231, 0xd8823a, { stripes: 4 });
+export const caveBearPeltModel = () => pelt(233, 0x3a3634, { tufts: 14, tuft: 0x2a2624, size: 1.25 });
+export const fangModel = () =>
+  R(235)
+    .add(new ConeGeometry(0.04, 0.26, 5), 0xf0e8d4, [0, 0.04, 0], [Math.PI / 2 - 0.25, 0, 0.3], [1, 1, 0.7])
+    .add(new CylinderGeometry(0.035, 0.04, 0.05, 5), 0xd8ccb0, [0, 0.04, -0.14], [Math.PI / 2, 0, 0])
+    .build();
+export const antlersModel = () => {
+  const b = R(237);
+  b.add(new CylinderGeometry(0.025, 0.035, 0.6, 5), 0xcbb690, [0, 0.03, 0], [Math.PI / 2, 0, 0.1]);
+  for (const [z, a] of [[-0.15, 0.6], [0.02, -0.7], [0.18, 0.5]]) b.add(new CylinderGeometry(0.012, 0.02, 0.24, 4), 0xd8c6a0, [a * 0.12, 0.04, z], [0, 0, Math.PI / 2 - a]);
+  b.add(new BoxGeometry(0.22, 0.03, 0.18), 0xcbb690, [0.06, 0.03, 0.28], [0, 0.4, 0]); // (the palm of it)
+  return b.build();
+};
+export const venomSacModel = () =>
+  R(239)
+    .add(new DodecahedronGeometry(0.07, 0), 0x8ab04a, [0, 0.06, 0], [0, 0, 0], [1, 0.8, 1.3])
+    .add(new DodecahedronGeometry(0.04, 0), 0xb8d870, [0.03, 0.09, 0.03])
+    .add(new CylinderGeometry(0.015, 0.02, 0.06, 4), 0x6a8a3a, [0, 0.06, -0.1], [Math.PI / 2, 0, 0])
+    .build();
+export const tusksModel = () =>
+  R(241)
+    .add(new ConeGeometry(0.035, 0.24, 5), 0xf0e6d0, [0.06, 0.03, 0], [Math.PI / 2, 0.3, 0.4])
+    .add(new ConeGeometry(0.035, 0.24, 5), 0xf0e6d0, [-0.06, 0.03, 0.02], [Math.PI / 2, -0.4, -0.3])
+    .build();
+
+// Seeds, crops and food.
+export const seedsModel = (bit) => sack(243, 0xc8b48a, bit);
+export const wheatModel = () => {
+  const b = R(245);
+  for (let k = 0; k < 6; k++) {
+    const a = (k - 2.5) * 0.06;
+    b.add(new CylinderGeometry(0.006, 0.006, 0.4, 3), 0xd8b45a, [a * 0.6, 0.02, 0], [Math.PI / 2, a, 0]);
+    b.add(new BoxGeometry(0.025, 0.025, 0.08), 0xe0bc64, [a * 1.4, 0.03, 0.22], [0, a, 0]);
+  }
+  return b.add(new TorusGeometry(0.03, 0.008, 3, 8), 0x8a6a44, [0, 0.02, -0.04]).build();
+};
+export const berriesModel = () => {
+  const b = R(247);
+  for (const [x, y, z] of [[0, 0.03, 0], [0.04, 0.03, 0.02], [-0.03, 0.03, 0.03], [0.01, 0.03, -0.04], [0.02, 0.065, 0.01], [-0.03, 0.03, -0.02]]) b.add(new IcosahedronGeometry(0.028, 0), 0xa01830, [x, y, z]);
+  return b.add(new BoxGeometry(0.07, 0.005, 0.04), 0x4f8a34, [0.04, 0.09, 0], [0, 0.5, 0.3]).build();
+};
+export const appleModel = () =>
+  R(249)
+    .add(new IcosahedronGeometry(0.06, 1), 0xc8261c, [0, 0.06, 0], [0, 0, 0], [1, 0.9, 1])
+    .add(new CylinderGeometry(0.004, 0.005, 0.04, 3), 0x5a3c24, [0, 0.125, 0], [0, 0, 0.2])
+    .add(new BoxGeometry(0.035, 0.004, 0.018), 0x4f8a34, [0.015, 0.13, 0], [0, 0.3, 0.4])
+    .build();
+export const mushroomModel = (cap = 0xc49a60, stem = 0xece4d0, spots = 0) => {
+  const b = R(251)
+    .add(new CylinderGeometry(0.018, 0.024, 0.08, 6), stem, [0, 0.04, 0])
+    .add(new ConeGeometry(0.06, 0.045, 7), cap, [0, 0.095, 0])
+    .add(new CylinderGeometry(0.06, 0.06, 0.012, 7), cap, [0, 0.072, 0]);
+  for (let k = 0; k < spots; k++) b.add(new BoxGeometry(0.012, 0.004, 0.012), 0xf4f0e8, [Math.cos(k * 2.3) * 0.03, 0.105, Math.sin(k * 2.3) * 0.03]);
+  return b.build();
+};
+export const jerkyModel = () =>
+  R(253)
+    .add(new BoxGeometry(0.05, 0.012, 0.2), 0x6a2e18, [0, 0.01, 0], [0, 0.2, 0.05])
+    .add(new BoxGeometry(0.045, 0.012, 0.18), 0x5a2614, [0.05, 0.022, 0.01], [0, -0.15, -0.05])
+    .build();
+export const cornModel = (roast = false) =>
+  R(255)
+    .add(new CylinderGeometry(0.03, 0.025, 0.2, 7), roast ? 0xd89a28 : 0xf0c830, [0, 0.03, 0], [Math.PI / 2, 0, 0])
+    .add(new BoxGeometry(0.04, 0.01, 0.16), roast ? 0x6a5a30 : 0x8ab04a, [0.03, 0.02, -0.04], [0, 0.2, 0.4])
+    .add(new BoxGeometry(0.04, 0.01, 0.16), roast ? 0x6a5a30 : 0x8ab04a, [-0.03, 0.02, -0.04], [0, -0.2, -0.4])
+    .build();
+export const potatoModel = (baked = false) =>
+  R(257)
+    .add(new DodecahedronGeometry(0.055, 0), baked ? 0x8a5a30 : 0xb89060, [0, 0.045, 0], [0.3, 0.6, 0.1], [1.3, 0.85, 1])
+    .add(baked ? new BoxGeometry(0.06, 0.01, 0.03) : new OctahedronGeometry(0.008, 0), baked ? 0xf0e0a0 : 0x7a5a38, [0.01, 0.09, 0])
+    .build();
+export const carrotModel = () =>
+  R(259)
+    .add(new ConeGeometry(0.026, 0.2, 6), 0xe8762a, [0, 0.026, 0.02], [-Math.PI / 2, 0, 0])
+    .add(new ConeGeometry(0.03, 0.08, 4), 0x5f9a3c, [0, 0.03, -0.11], [Math.PI / 2, 0, 0], [1, 1, 0.4])
+    .build();
+export const doughModel = () => R(261).add(new DodecahedronGeometry(0.08, 0), 0xece0c4, [0, 0.04, 0], [0.2, 0.3, 0], [1.2, 0.5, 1.1]).build();
+export const breadModel = () =>
+  R(263)
+    .add(new BoxGeometry(0.22, 0.09, 0.12), 0xb8763a, [0, 0.045, 0], [0, 0, 0], [1, 1, 1], 0.04)
+    .add(new BoxGeometry(0.2, 0.03, 0.1), 0xc88a48, [0, 0.1, 0], [0, 0, 0], [1, 1, 1], 0.03)
+    .add(new BoxGeometry(0.012, 0.01, 0.08), 0xe8c88a, [-0.05, 0.12, 0], [0, 0.4, 0])
+    .add(new BoxGeometry(0.012, 0.01, 0.08), 0xe8c88a, [0.03, 0.12, 0], [0, 0.4, 0])
+    .build();
+export const stewModel = () =>
+  R(265)
+    .add(new CylinderGeometry(0.1, 0.06, 0.07, 8), 0x7a5232, [0, 0.035, 0])
+    .add(new CylinderGeometry(0.088, 0.088, 0.01, 8), 0x8a4a2a, [0, 0.065, 0])
+    .add(new BoxGeometry(0.03, 0.02, 0.03), 0xe8762a, [0.03, 0.072, 0.01])
+    .add(new BoxGeometry(0.03, 0.02, 0.03), 0x7a3e1e, [-0.03, 0.072, -0.02])
+    .build();
+
+// Tools and gear.
+export const flintSteelModel = (fine = false) =>
+  R(267)
+    .add(new OctahedronGeometry(0.05, 0), 0x3a3e4c, [-0.05, 0.03, 0], [0.4, 0.3, 0.2], [1.3, 0.8, 1])
+    .add(new TorusGeometry(0.045, 0.01, 3, 8, Math.PI * 1.4), fine ? 0xd8e0ea : 0x6a707a, [0.06, 0.012, 0], [Math.PI / 2, 0, 0])
+    .add(new BoxGeometry(0.06, 0.02, 0.02), 0x5a3c24, [0.06, 0.012, 0.045])
+    .build();
+export const saddleModel = (great = false) =>
+  R(269)
+    .add(new BoxGeometry(0.5, 0.03, 0.4), great ? 0x4a3a30 : 0x6a3a2a, [0, 0.015, 0])
+    .add(new BoxGeometry(0.34, 0.1, 0.3), great ? 0x3a2a20 : 0x5a3a20, [0, 0.08, 0], [0, 0, 0], [0.9, 1, 0.85])
+    .add(new BoxGeometry(0.08, 0.1, 0.24), 0x4a2e18, [0.15, 0.14, 0])
+    .add(new BoxGeometry(0.08, 0.08, 0.26), 0x4a2e18, [-0.15, 0.13, 0])
+    .add(new BoxGeometry(0.05, 0.03, 0.08), 0x8a949e, [0, 0.015, 0.26])
+    .build();
+export const bandageModel = () =>
+  R(271)
+    .add(new CylinderGeometry(0.045, 0.045, 0.07, 8), 0xece6d8, [0, 0.045, 0], [Math.PI / 2, 0, 0])
+    .add(new BoxGeometry(0.06, 0.004, 0.12), 0xe0d8c8, [0, 0.003, 0.08])
+    .build();
+export const torchModel = () =>
+  R(273)
+    .add(new CylinderGeometry(0.022, 0.03, 0.55, 5), 0x7a5634, [0, 0.03, 0], [Math.PI / 2, 0, 0])
+    .add(new CylinderGeometry(0.04, 0.035, 0.1, 6), 0x5a4030, [0, 0.03, 0.26], [Math.PI / 2, 0, 0])
+    .add(new CylinderGeometry(0.03, 0.04, 0.03, 6), 0x2a2420, [0, 0.03, 0.32], [Math.PI / 2, 0, 0])
+    .build();
+
+// Worn things, folded: a coat, a cloak, armour.
+export const coatModel = (colour, collar = colour, metal = null) => {
+  const b = R(275)
+    .add(new BoxGeometry(0.42, 0.06, 0.34), colour, [0, 0.03, 0])
+    .add(new BoxGeometry(0.42, 0.05, 0.08), collar, [0, 0.08, -0.13])
+    .add(new BoxGeometry(0.1, 0.05, 0.26), colour, [0.2, 0.07, 0.02], [0, 0.2, 0])
+    .add(new BoxGeometry(0.1, 0.05, 0.26), colour, [-0.2, 0.07, 0.02], [0, -0.2, 0]);
+  if (metal) b.add(new BoxGeometry(0.3, 0.06, 0.22), metal, [0, 0.1, 0.03], [0, 0, 0], [1, 1, 1], 0.03).add(new BoxGeometry(0.32, 0.03, 0.03), 0x4a5058, [0, 0.14, -0.06]);
+  return b.build();
+};
+
+// Cave finds you can carry.
+export const crystalItemModel = () =>
+  R(277)
+    .add(new ConeGeometry(0.035, 0.18, 5), 0x9ae8ff, [0, 0.09, 0], [0.15, 0, 0.1], [1, 1, 1], 0.1)
+    .add(new ConeGeometry(0.025, 0.12, 5), 0xc0a0ff, [0.04, 0.06, 0.02], [0.2, 0, -0.5], [1, 1, 1], 0.1)
+    .add(new DodecahedronGeometry(0.04, 0), 0x6a6572, [0, 0.02, 0], [0, 0, 0], [1.4, 0.5, 1.2])
+    .build();
+export const caveLampModel = () =>
+  R(279)
+    .add(new CylinderGeometry(0.07, 0.08, 0.04, 6), 0x5a5058, [0, 0.02, 0])
+    .add(new ConeGeometry(0.035, 0.16, 5), 0x9ae8ff, [0, 0.12, 0], [0, 0, 0], [1, 1, 1], 0.1)
+    .add(new ConeGeometry(0.025, 0.1, 5), 0xb8f0ff, [0.03, 0.09, 0.02], [0.2, 0, -0.4])
+    .add(new TorusGeometry(0.06, 0.008, 3, 8), 0x8a949e, [0, 0.06, 0], [Math.PI / 2, 0, 0])
+    .build();
+export const guanoModel = () => sack(281, 0x7a6a50, 0x4a4030);
+
+/** Anything else: a cloth parcel tied up with cord (never a round lump). */
+export const parcelModel = (colour = 0x9a8a6a) =>
+  R(283)
+    .add(new BoxGeometry(0.2, 0.1, 0.15), colour, [0, 0.05, 0], [0, 0.2, 0])
+    .add(new BoxGeometry(0.205, 0.012, 0.02), 0x5a3c24, [0, 0.1, 0], [0, 0.2, 0])
+    .add(new BoxGeometry(0.02, 0.012, 0.155), 0x5a3c24, [0, 0.1, 0], [0, 0.2, 0])
+    .build();
+
+/** A spawner (testing): a little wooden cage. */
+export const spawnerModel = () => {
+  const b = R(285).add(new BoxGeometry(0.24, 0.02, 0.24), 0x7a5232, [0, 0.01, 0]).add(new BoxGeometry(0.24, 0.02, 0.24), 0x7a5232, [0, 0.21, 0]);
+  for (const [x, z] of [[0.11, 0.11], [-0.11, 0.11], [0.11, -0.11], [-0.11, -0.11], [0, 0.11], [0, -0.11], [0.11, 0], [-0.11, 0]]) b.add(new BoxGeometry(0.015, 0.2, 0.015), 0x8a6038, [x, 0.11, z]);
+  return b.build();
+};
+
+/** A thing that's built, small: a model scaled down to fit in a hand (and to lie on the ground as a bundle of its parts would). */
+export function miniature(geometry, size = 0.28) {
+  const g = geometry.clone();
+  g.computeBoundingSphere();
+  const k = size / g.boundingSphere.radius;
+  g.scale(k, k, k);
+  g.computeBoundingBox();
+  g.translate(0, -g.boundingBox.min.y, 0);
+  g.computeBoundingSphere();
+  g.computeBoundingBox();
+  return g;
+}
+
+/**
+ * A vein of ore in a lump of rock, to break out with a pickaxe (see
+ * Game.#mine): each its own look. Iron, rust-red blotches in grey stone;
+ * coal, glossy black seams; gold, white quartz flecked with yellow; the
+ * mountain ore that steel is made from, dark slate with silver-blue
+ * crystals.
+ */
+export function oreNodeModel(id) {
+  const look = {
+    iron: { rock: 0x7a746c, bits: [0xa0502c, 0xb8683a, 0x8a3e24], n: 8, shape: 'dodeca' },
+    coal: { rock: 0x6a6662, bits: [0x1a1816, 0x24201e, 0x0e0c0c], n: 9, shape: 'box' },
+    goldOre: { rock: 0xe8e2d4, bits: [0xf0c030, 0xe0a820, 0xffd860], n: 9, shape: 'octa' },
+    mountainOre: { rock: 0x3a3e48, bits: [0xc8d4e4, 0x9ab0c8, 0xe8f0f8], n: 8, shape: 'octa' },
+  }[id] ?? { rock: 0x8e8a82, bits: [0x9a968e], n: 0, shape: 'octa' };
+  const b = R(301 + id.length);
+  const rand = mulberry32(17 + id.length * 7);
+  b.add(new DodecahedronGeometry(0.34, 0), look.rock, [0, 0.2, 0], [0.3, 0.5, 0.2], [1.25, 0.8, 1.05]);
+  b.add(new DodecahedronGeometry(0.2, 0), look.rock, [0.26, 0.12, 0.14], [0.5, 0.1, 0.4], [1, 0.8, 1]);
+  for (let k = 0; k < look.n; k++) {
+    const a = rand() * Math.PI * 2, el = 0.25 + rand() * 1.0;
+    const x = Math.cos(a) * Math.cos(el) * 0.38, y = 0.2 + Math.sin(el) * 0.26, z = Math.sin(a) * Math.cos(el) * 0.33;
+    const size = 0.05 + rand() * 0.05, c = look.bits[k % look.bits.length];
+    const geo = look.shape === 'box' ? new BoxGeometry(size * 2, size * 1.2, size * 1.6) : look.shape === 'dodeca' ? new DodecahedronGeometry(size, 0) : new OctahedronGeometry(size, 0);
+    b.add(geo, c, [x, y, z], [rand() * 3, rand() * 3, rand() * 3], [1, look.shape === 'octa' ? 1.6 : 1, 1], 0.06);
   }
   return b.build();
 }

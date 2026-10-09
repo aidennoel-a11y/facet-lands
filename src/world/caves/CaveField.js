@@ -17,6 +17,19 @@ import { hash2, mulberry32 } from '../../noise/random.js';
  *  - A regional mask switches caves off in some areas, and a band keeps
  *    them between `bottom` and `top`, always with `cover` metres of rock
  *    under the ground surface, so they never break through by accident.
+ *  - Below and among those (`#deep`), the stranger country: vast
+ *    chambers far down, hundreds of metres across, with pillars of rock
+ *    holding up the roof and still lakes (or lava) in their low places;
+ *    long thin spaghetti tunnels winding for kilometres; and underground
+ *    rivers, level channels with water in their beds and a dry ledge
+ *    along each side, that run on through the rock and join cave to cave.
+ *    These only ever add air to what's there, never come within `cover`
+ *    (more, for the big ones) of the ground, and keep clear of the
+ *    entrances: nothing above ground changes.
+ *  - Each part of the underground has its kind (see biomeScores): plain
+ *    rock; lush, green with moss under the wet country; volcanic, black
+ *    and glowing, under the volcanic highlands and very deep anywhere;
+ *    ice, under the high cold mountains; dry sandstone under the deserts.
  *  - Entrances: built pieces rather than noise, so they're clean and easy
  *    to spot. A pit opens in the ground, a ramp runs down it under a rock
  *    ledge into a short arched tunnel, and a winding tunnel carries on from
@@ -33,10 +46,21 @@ export class CaveField {
     this.rooms = new SimplexNoise(seed + 3);
     this.region = new SimplexNoise(seed + 4);
     this.warp = new SimplexNoise(seed + 5);
+    this.spagA = new SimplexNoise(seed + 6);
+    this.spagB = new SimplexNoise(seed + 7);
+    this.spagRegion = new SimplexNoise(seed + 8);
+    this.riverLine = new SimplexNoise(seed + 9);
+    this.riverRegion = new SimplexNoise(seed + 10);
+    this.riverLevel = new SimplexNoise(seed + 11);
+    this.chamberWall = new SimplexNoise(seed + 12);
+    this.kind = new SimplexNoise(seed + 13);
+    this.chambers = new Map();
 
     this.bottom = -30; // deepest cave floor (m)
     this.top = 55; // highest cave roof, away from entrances (m)
     this.cover = 7; // rock kept between caves and the ground above
+    this.deep = -125; // the deepest floor of the deep caves (chambers, spaghetti, rivers)
+    this.chamberCell = 520; // one possible great chamber per square this size
 
     this.entranceRegion = 256; // one possible entrance per region this size
     this.mouthRadius = 3.6; // radius of the winding tunnel below each entrance
@@ -54,7 +78,25 @@ export class CaveField {
    * height of this column and `regionRock` its regionRock() value (pass them
    * in when evaluating many points in one column).
    */
-  caves(x, y, z, H, regionRock) {
+  caves(x, y, z, H, regionRock, column = null, entrances = null) {
+    const d = this.legacy(x, y, z, H, regionRock);
+    if (d < -2) return d;
+    const col = column ?? this.column(x, z, H);
+    if (this.deepRock(col) > 10) return d;
+    // (Clear of the entrances: their ways down stay as they were laid out.)
+    for (const e of entrances ?? this.entrancesNear(x, z, x, z)) {
+      const b = e.bounds;
+      if (x < b.minX - 8 || x > b.maxX + 8 || z < b.minZ - 8 || z > b.maxZ + 8) continue;
+      if (CaveField.ramp(e, x, y, z) < 8 || CaveField.hull(e, x, y, z) < 8) return d;
+    }
+    return Math.min(d, this.#deep(x, y, z, H, col));
+  }
+
+  /**
+   * The first caves (tunnels and rooms): the entrances are laid out by
+   * these alone, so the deep caves added since never move one.
+   */
+  legacy(x, y, z, H, regionRock) {
     const ceiling = Math.min(this.top, H - this.cover);
     const rock = Math.max(regionRock, y - ceiling, this.bottom - y);
     if (rock > 10) return rock; // far from any cave: skip the 3D noise
@@ -76,6 +118,164 @@ export class CaveField {
     const room = (0.42 - r) * 30;
 
     return Math.max(rock, Math.min(tunnel, room));
+  }
+
+  // --- The deep caves -----------------------------------------------------------
+
+  /** A great chamber in one cell of the land (or null), cached. */
+  chamber(ix, iz) {
+    const key = ix * 65536 + iz;
+    let c = this.chambers.get(key);
+    if (c !== undefined) return c;
+    const rand = mulberry32(hash2(ix, iz, this.seed + 77) * 4294967296);
+    c = null;
+    if (rand() < 0.42) {
+      const C = this.chamberCell;
+      const rx = 60 + rand() * 110, rz = 60 + rand() * 110, ry = 26 + rand() * 34;
+      const yaw = rand() * Math.PI;
+      c = {
+        x: (ix + 0.32 + rand() * 0.36) * C, z: (iz + 0.32 + rand() * 0.36) * C,
+        y: -72 + rand() * 22, rx, rz, ry, cos: Math.cos(yaw), sin: Math.sin(yaw),
+        pillars: 0.25 + rand() * 0.3, // (how many great pillars hold the roof up)
+      };
+      c.floor = c.y - c.ry * 0.5;
+      c.lake = c.floor + 0.6 + rand() * 1.4; // (still water in the low places of the floor, under this)
+    }
+    this.chambers.set(key, c);
+    return c;
+  }
+
+  /** The chamber whose footprint reaches (x, z), and how far in (0 middle .. 1 the wall), or null. */
+  chamberAt(x, z) {
+    const C = this.chamberCell, ix = Math.floor(x / C), iz = Math.floor(z / C);
+    let best = null, bestE = 1.25;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const c = this.chamber(ix + dx, iz + dz);
+      if (!c) continue;
+      const px = x - c.x, pz = z - c.z;
+      const u = (px * c.cos + pz * c.sin) / c.rx, v = (pz * c.cos - px * c.sin) / c.rz;
+      const e = Math.hypot(u, v);
+      if (e < bestE) (bestE = e), (best = c);
+    }
+    return best ? { c: best, e: bestE } : null;
+  }
+
+  /** The chamber's floor (with its rises and hollows) under (x, z). */
+  chamberFloor(c, x, z) {
+    return c.floor + this.chamberWall.noise2D(x / 46, z / 46) * 5 + this.chamberWall.noise2D(x / 13 + 50, z / 13) * 1.6;
+  }
+
+  /** The underground river through (x, z): { across (m from its middle), half (water's half-width), level }, or null. */
+  riverAt(x, z, H) {
+    const region = this.riverRegion.noise2D(x * 0.0011, z * 0.0011);
+    if (region < -0.05) return null;
+    const wx = x + this.warp.noise2D(x / 140 + 7, z / 140) * 40, wz = z + this.warp.noise2D(x / 140, z / 140 - 7) * 40;
+    const n = this.riverLine.noise2D(wx / 420, wz / 420);
+    const across = Math.abs(n) * 260;
+    const half = 3 + 1.6 * (this.riverLevel.noise2D(x / 90, z / 90) + 1) * 0.5;
+    if (across > half + 9) return null;
+    const level = -44 + 16 * this.riverLevel.noise2D(x / 1100, z / 1100);
+    if (level + 7 > H - 12) return null; // (never up near the ground)
+    return { across, half, level, fade: Math.min(1, (region + 0.05) * 12) };
+  }
+
+  /**
+   * What a column has of the deep caves, worked out once for the column:
+   * its chamber, its river, whether spaghetti runs here. `H` its ground.
+   */
+  column(x, z, H) {
+    const spag = this.spagRegion.noise2D(x * 0.0016, z * 0.0016) + 0.15;
+    return {
+      H,
+      chamber: this.chamberAt(x, z),
+      river: this.riverAt(x, z, H),
+      spag,
+      // (Where the spaghetti's noise is read from: shoved about, so it snakes.)
+      sx: spag > -0.05 ? (x + this.warp.noise2D(x / 80 + 20, z / 80) * 18) / 64 : 0,
+      sz: spag > -0.05 ? (z + this.warp.noise2D(x / 80, z / 80 + 20) * 18) / 64 : 0,
+    };
+  }
+
+  /** Could this column hold any deep cave? (Cheap: to skip work.) */
+  deepRock(col) {
+    return col.chamber || col.river || col.spag > -0.05 ? 0 : 50;
+  }
+
+  #deep(x, y, z, H, col) {
+    const ceiling = Math.min(H - this.cover - 2, this.top - 2);
+    if (y < this.deep - 6 || y > ceiling + 4) return 50;
+    let d = 50;
+    // A great chamber: a vast squashed dome on a rough floor, pillars of
+    // rock holding up its roof; its roof never nearer the ground than 22 m.
+    const ch = col.chamber;
+    if (ch) {
+      const c = ch.c;
+      const px = x - c.x, pz = z - c.z;
+      const u = (px * c.cos + pz * c.sin) / c.rx, v = (pz * c.cos - px * c.sin) / c.rz, w = (y - c.y) / c.ry;
+      let cd = (Math.sqrt(u * u + v * v + w * w) - 1) * Math.min(c.rx, c.rz, c.ry * 1.6);
+      if (cd < 14) {
+        cd += this.chamberWall.noise3D(x / 38, y / 26, z / 38) * 9;
+        cd = Math.max(cd, this.chamberFloor(c, x, z) - y, y - (H - 22));
+        if (cd < 2) {
+          // The pillars: one in some of the 40 m squares across it, swelling and narrowing as they rise.
+          const P = 40, gx = Math.floor(x / P), gz = Math.floor(z / P);
+          for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+            const h = hash2(gx + dx, gz + dz, this.seed + 91);
+            if (h > c.pillars) continue;
+            const qx = (gx + dx + 0.2 + hash2(gx + dx, gz + dz, this.seed + 92) * 0.6) * P, qz = (gz + dz + 0.2 + hash2(gx + dx, gz + dz, this.seed + 93) * 0.6) * P;
+            const r = (3 + h * 9) * (1 + 0.35 * Math.sin(y / 9 + h * 20)) * (1 + 0.5 * Math.max(0, (c.floor + 6 - y) / 6));
+            cd = Math.max(cd, r - Math.hypot(x - qx, z - qz));
+          }
+        }
+      }
+      d = Math.min(d, cd);
+    }
+    // An underground river: a level channel, the water in its bed, a dry ledge each side, an arched roof.
+    const rv = col.river;
+    if (rv) {
+      const wide = rv.half + 2.6;
+      const t = Math.max(0, 1 - rv.across / rv.half);
+      const bed = rv.level + 0.35 - 2.1 * t * t * (3 - 2 * t);
+      const roof = rv.level + 1.6 + 4.6 * Math.sqrt(Math.max(0, 1 - (rv.across / wide) ** 2)) + this.warp.noise2D(x / 9, z / 9) * 0.8;
+      let rd = Math.max(rv.across - wide, bed - y, y - roof);
+      rd += (1 - rv.fade) * 8;
+      d = Math.min(d, rd);
+    }
+    // Spaghetti: long thin tunnels winding on and on.
+    if (col.spag > -0.05 && y > this.deep) {
+      // (Some 8 m across: thin for a cave, wide enough for the 3.2 m grid
+      // it's built on; tending to run level rather than plunge.)
+      const fy = y / 80;
+      const a = this.spagA.noise3D(col.sx, fy, col.sz), b = this.spagB.noise3D(col.sx, fy, col.sz);
+      let sd = (Math.sqrt(a * a + b * b) - 0.12) * 40;
+      sd = Math.max(sd, -col.spag * 40, this.deep - y);
+      d = Math.min(d, sd);
+    }
+    return Math.max(d, y - ceiling);
+  }
+
+  /**
+   * What kind of cave country a place is (slow: the mesher samples it on a
+   * coarse grid): how lush, volcanic, icy and dry. See biomeAt.
+   */
+  biomeScores(x, z) {
+    const g = this.generator, w = g.getBiomeWeights(x, z, {}), H = g.getHeight(x, z);
+    const n = this.kind.noise2D(x / 300, z / 300), m = this.kind.noise2D(x / 300 + 31, z / 300 - 17);
+    const sm = (a, b, v) => Math.min(1, Math.max(0, (v - a) / (b - a)));
+    return {
+      lush: w.jungle + w.mangrove + 0.8 * w.wetland + 0.6 * w.redwood + 0.5 * w.smoky + 0.3 * (w.temperate + w.parkland) + 0.35 * n,
+      volcanic: 1.2 * w.volcanic + 0.25 * m,
+      ice: sm(120, 190, H) * (1 - w.jungle - w.desert) + 0.35 * (w.pine + w.blackHills) * sm(0.2, 0.6, n * 0.5 + 0.5) + 0.2 * m,
+      dry: w.desert + w.badlands + 0.5 * w.savanna + w.saltFlat,
+    };
+  }
+
+  /** 0 plain rock, 1 lush, 2 volcanic, 3 ice, 4 dry sandstone: from the scores, and how deep (everything very deep turns volcanic). */
+  static biomeAt(s, y) {
+    const volcanic = s.volcanic + Math.min(1, Math.max(0, (-88 - y) / 20)) * 0.9;
+    const best = Math.max(s.lush, volcanic, s.ice, s.dry);
+    if (best < 0.5) return 0;
+    return best === volcanic ? 2 : best === s.ice ? 3 : best === s.lush ? 1 : 4;
   }
 
   // --- Entrances ---------------------------------------------------------------
@@ -222,7 +422,7 @@ export class CaveField {
         for (const v of sides(u, 1)) {
           const px = wx(u, v), pz = wz(u, v);
           const H = g.getHeight(px, pz), rr = this.regionRock(px, pz);
-          for (const dy of [-2, 1, 3.5, 6]) if (this.caves(px, floorAt(u) + dy, pz, H, rr) < 1) clear = false;
+          for (const dy of [-2, 1, 3.5, 6]) if (this.legacy(px, floorAt(u) + dy, pz, H, rr) < 1) clear = false;
         }
       }
       if (!clear) continue;
@@ -247,7 +447,7 @@ export class CaveField {
           const sx = p.x + (q.x - p.x) * t, sy = p.y + (q.y - p.y) * t, sz = p.z + (q.z - p.z) * t;
           const H = g.getHeight(sx, sz);
           const rr = this.regionRock(sx, sz);
-          if (this.caves(sx, sy - r - 2, sz, H, rr) < 0) valid = false; // a void under the tunnel
+          if (this.legacy(sx, sy - r - 2, sz, H, rr) < 0) valid = false; // a void under the tunnel
           if (H - (sy + r) < 2) valid = false; // too close to the surface
         }
         if (!valid) break;
@@ -255,7 +455,7 @@ export class CaveField {
         travelled += length;
         const H = g.getHeight(q.x, q.z);
         const rr = this.regionRock(q.x, q.z);
-        if (travelled >= 8 && this.caves(q.x, q.y, q.z, H, rr) < -1.5 && this.caves(q.x, q.y - 4.5, q.z, H, rr) > 0) {
+        if (travelled >= 8 && this.legacy(q.x, q.y, q.z, H, rr) < -1.5 && this.legacy(q.x, q.y - 4.5, q.z, H, rr) > 0) {
           ok = true;
           break;
         }

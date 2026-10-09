@@ -1,10 +1,11 @@
-import { Group, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Vector3, Euler } from 'three';
+import { Color, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, Quaternion, Vector3, Euler } from 'three';
 import { hash2 } from '../noise/random.js';
 import { Inventory } from './Inventory.js';
 import { ITEMS } from './items.js';
-import { coalModel, goldOreModel, mountainOreModel, swordModel, arrowModel, axeModel, boltModel, bowModel, crossbowModel, hoeModel, shearsModel, bundleModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, stickModel, waterskinModel } from './models.js';
+import * as M from './models.js';
+import { coalModel, goldOreModel, mountainOreModel, swordModel, arrowModel, axeModel, boltModel, bowModel, crossbowModel, hoeModel, shearsModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, stickModel, waterskinModel } from './models.js';
 
-const m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s = new Vector3(), up = new Vector3(0, 1, 0);
+const m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s = new Vector3(), up = new Vector3(0, 1, 0), tint = new Color();
 const hidden = new Matrix4().makeScale(0, 0, 0);
 
 // What lies about on the ground by itself, per kind: its model.
@@ -13,7 +14,14 @@ const smoothstep = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 };
-const BUNDLE_COLOURS = { steelArmour: 0x9aa4b0, berries: 0xb01830, apple: 0xc8261c, mushroom: 0xc49a60, vine: 0x4f8a34, flintSteel: 0x5a6070, fineFlintSteel: 0x9aa4b0, coat: 0xa8743e, armour: 0x7a5230, torch: 0x8a5d38, campfire: 0x7a5232, wall: 0x8a6a44, gate: 0x8a6a44, stake: 0x8a6a44, chest: 0x8a6038, furnace: 0x8a867e, bed: 0xece6d8, dryingRack: 0x8a5d38, snare: 0x6fae4c, raft: 0x7a5232, jerky: 0x6a2e18, stew: 0x8a4a2a, wool: 0xf0ece0, bandage: 0xece6d8, hide: 0xb06a58, fur: 0x7a6a58, pelt: 0xc4a47a, feather: 0xe8e0d0, rope: 0xb89a60, charcoal: 0x2a2624, wheat: 0xe0bc64, seedWheat: 0xd8b464, seedCorn: 0xe8c030, seedPotato: 0xb08a58, seedCarrot: 0x7a6a4a, corn: 0xf0c830, roastCorn: 0xd89a28, potato: 0xb89060, bakedPotato: 0x8a5a30, carrot: 0xe8762a, dough: 0xece0c4, bread: 0xb8763a, furCloak: 0x8a7458, roof: 0xc8a860, fence: 0x8a6a44, fenceGate: 0x8a6a44, anvil: 0x4a5058, grindstone: 0x9a968e, tanningRack: 0x8a5d38 };
+// Ore, lying in the rock: a vein to break out with a pickaxe, never picked up by hand (see Game.#mine).
+export const ORE_NODES = new Set(['iron', 'coal', 'goldOre', 'mountainOre']);
+// (Things that are built: a small one of what it builds. See model.)
+const BUILT = {
+  campfire: M.campfireModel, furnace: M.furnaceModel, wall: M.wallModel, gate: M.gateFrameModel, stake: M.stakeModel, chest: M.chestModel, bed: M.bedModel,
+  dryingRack: M.dryingRackModel, snare: M.snareModel, raft: M.raftModel, roof: M.roofModel, hideRoof: M.roofModel, fence: M.fenceModel, fenceGate: M.fenceGatePostsModel,
+  anvil: M.anvilModel, grindstone: M.grindstoneModel, tanningRack: M.tanningRackModel,
+};
 
 /**
  * Things on the ground to pick up:
@@ -33,6 +41,7 @@ export class GroundItems {
     this.material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
     // (Deep in a cave there's no daylight: the ore's lit only a little, as if by a faint glimmer.)
     this.caveMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true, color: 0x6a6a6a, emissive: 0x1a1410 });
+    this.glowMaterial = new MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 });
     this.models = {};
     this.taken = new Set();
     this.chunks = new Map(); // "cx,cz" -> { items: [{ key, id, x, y, z, mesh, index }] }
@@ -59,6 +68,7 @@ export class GroundItems {
 
   model(id, variant = '') {
     const key = id + variant;
+    if (variant === 'node') return (this.models[key] ??= M.oreNodeModel(id));
     if (!this.models[key]) {
       const steel = [0xb8c0c8, 0xeef2f6];
       const make = {
@@ -70,9 +80,27 @@ export class GroundItems {
         forgedSpear: () => spearModel(0xd8e0ea), forgedAxe: () => axeModel(0xdfe6ee, 0xffffff), forgedPickaxe: () => pickaxeModel(0xdfe6ee, 0xffffff),
         crossbow: crossbowModel, bolt: boltModel, hoe: hoeModel, shears: shearsModel, steelBar: () => ironBarModel(0xe4eaf0),
         bow: bowModel, arrow: arrowModel, fishingRod: rodModel, waterskin: waterskinModel, pot: potModel, ironBar: ironBarModel,
-        coal: coalModel, mountainOre: mountainOreModel, goldOre: goldOreModel, goldBar: () => ironBarModel(0xe0b440), sword: swordModel,
+        coal: coalModel, mountainOre: mountainOreModel, goldOre: goldOreModel, goldBar: () => ironBarModel(0xe0b440), sword: () => swordModel(),
+        // (Everything else, each its own shape.)
+        vine: M.vineModel, rope: M.ropeModel, hide: M.hideModel, fur: M.furModel, pelt: M.tannedFurModel, wool: M.woolModel, feather: M.featherModel, charcoal: M.charcoalModel,
+        grizzlyPelt: M.grizzlyPeltModel, alphaFang: M.fangModel, paleFur: M.paleFurModel, greatAntlers: M.antlersModel, greatHide: M.greatHideModel, crocHide: M.crocHideModel,
+        lionPelt: M.lionPeltModel, tigerPelt: M.tigerPeltModel, venomSac: M.venomSacModel, boarTusk: M.tusksModel, caveBearPelt: M.caveBearPeltModel,
+        seedWheat: () => M.seedsModel(0xd8b464), seedCorn: () => M.seedsModel(0xe8c030), seedPotato: () => M.potatoModel(), seedCarrot: () => M.seedsModel(0x7a6a4a), wheat: M.wheatModel,
+        berries: M.berriesModel, apple: M.appleModel, mushroom: () => M.mushroomModel(), jerky: M.jerkyModel, corn: () => M.cornModel(false), roastCorn: () => M.cornModel(true),
+        potato: () => M.potatoModel(false), bakedPotato: () => M.potatoModel(true), carrot: M.carrotModel, dough: M.doughModel, bread: M.breadModel, stew: M.stewModel,
+        flintSteel: () => M.flintSteelModel(false), fineFlintSteel: () => M.flintSteelModel(true),
+        fangSword: () => swordModel(0xf0e8d4, 0xfaf4e4, 0x5a4a3a), antlerBow: () => bowModel(true, 0xcbb690), tuskPickaxe: () => pickaxeModel(0xe8dcc0, 0xf4ecd8),
+        poisonArrow: () => arrowModel(0x6a9a3a), poisonBolt: () => boltModel(0x6a9a3a),
+        saddle: () => M.saddleModel(false), greatSaddle: () => M.saddleModel(true), bandage: M.bandageModel, torch: M.torchModel,
+        coat: () => M.coatModel(0xa8743e, 0x8a5a2e), furCloak: () => M.coatModel(0x8a7458, 0xa89070), paleCloak: () => M.coatModel(0xe8e4dc, 0xf4f0ea), caveCloak: () => M.coatModel(0x3a3634, 0x4a4644),
+        armour: () => M.coatModel(0x7a5230, 0x5a3a20, 0x8a6038), steelArmour: () => M.coatModel(0x5a4a3a, 0x4a3a2a, 0xb8c0c8),
+        scarArmour: () => M.coatModel(0x4a3426, 0x3a281c, 0xb8c0c8), lionArmour: () => M.coatModel(0xc89a5a, 0x6a4026, 0xb8c0c8),
+        tigerArmour: () => M.coatModel(0xd8823a, 0x1e1612, 0xb8c0c8), crocArmour: () => M.coatModel(0x5a6a44, 0x3a4a2e, 0xb8c0c8),
+        crystal: M.crystalItemModel, glowcap: () => M.mushroomModel(0x7affc8, 0xd8f0e8), caveLamp: M.caveLampModel, guano: M.guanoModel,
+        caveMushroom: () => M.mushroomModel(0xd8ccb8, 0xece4d0), deathcap: () => M.mushroomModel(0xe8e4c8, 0xf4f0e0, 0), blindFish: () => fishModel(false),
       }[id];
-      this.models[key] = make ? make() : bundleModel(BUNDLE_COLOURS[id] ?? 0x9a8a6a);
+      const built = BUILT[id];
+      this.models[key] = make ? make() : built ? M.miniature(built()) : ITEMS[id]?.spawns ? M.spawnerModel() : M.parcelModel();
     }
     return this.models[key];
   }
@@ -137,7 +165,7 @@ export class GroundItems {
         }
         if (generator.rivers?.at(x0 + lx, z0 + lz, 0.5)) continue;
         const turn = hash2(gi, gj, seed + 3) * Math.PI * 2;
-        const item = { key, id, x: x0 + lx, y, z: z0 + lz, turn, index: found[id].length };
+        const item = { key, id, x: x0 + lx, y, z: z0 + lz, turn, index: found[id].length, node: ORE_NODES.has(id) };
         found[id].push(item);
         items.push(item);
       }
@@ -148,7 +176,7 @@ export class GroundItems {
     group.userData.key = `${cx},${cz}`;
     for (const [id, list] of Object.entries(found)) {
       if (!list.length) continue;
-      const mesh = new InstancedMesh(this.model(id), this.material, list.length);
+      const mesh = new InstancedMesh(this.model(id, ORE_NODES.has(id) ? 'node' : ''), this.material, list.length);
       mesh.name = id;
       list.forEach((it, k) => {
         mesh.setMatrixAt(k, m4.compose(p.set(it.x - x0, it.y, it.z - z0), q.setFromAxisAngle(up, it.turn), s.setScalar(1)));
@@ -168,31 +196,45 @@ export class GroundItems {
    * `features`: [kind, x, y, z, turn, size, ...] (kind 1: iron ore).
    */
   addCave(cx, cz, features, parent) {
-    const items = [];
+    // (What lies on the cave floors to be picked up, by kind: see decorateChunk.)
+    const PICK = { 1: 'iron', 2: 'crystal', 3: 'glowcap', 5: 'coal', 6: 'goldOre', 7: 'caveMushroom', 8: 'deathcap', 10: 'mountainOre', 11: 'guano' };
+    const byId = {};
     for (let k = 0; k < features.length; k += 6) {
-      if (features[k] !== 1) continue;
+      const id = PICK[features[k]];
+      if (!id) continue;
       const key = `cave:${cx},${cz},${k / 6}`;
       if (this.taken.has(key)) continue;
-      items.push({ key, id: 'iron', x: features[k + 1], y: features[k + 2], z: features[k + 3], turn: features[k + 4], size: features[k + 5], index: items.length });
+      (byId[id] ??= []).push({ key, id, x: features[k + 1], y: features[k + 2], z: features[k + 3], turn: features[k + 4], size: features[k + 5] });
     }
-    if (!items.length) return;
-    const mesh = new InstancedMesh(this.model('iron'), this.caveMaterial, items.length);
-    mesh.name = 'iron ore';
     const C = this.config.chunkSize, x0 = cx * C, z0 = cz * C; // (the cave chunk's group sits at its corner)
-    items.forEach((it, k) => {
-      mesh.setMatrixAt(k, m4.compose(p.set(it.x - x0, it.y - 0.05, it.z - z0), q.setFromAxisAngle(up, it.turn), s.setScalar(it.size)));
-      it.mesh = mesh;
-    });
-    mesh.computeBoundingSphere();
-    mesh.receiveShadow = true;
-    parent.add(mesh);
-    this.caves.set(`${cx},${cz}`, { items, mesh });
+    const all = [], meshes = [];
+    for (const [id, items] of Object.entries(byId)) {
+      // (Crystals and glowcaps give their own soft light; the rest lit only a little, as by a faint glimmer.)
+      const glow = id === 'crystal' || id === 'glowcap';
+      const mesh = new InstancedMesh(id === 'crystal' ? (this.models.caveCrystal ??= M.crystalModel()) : id === 'glowcap' ? (this.models.caveGlowcap ??= M.glowcapModel()) : this.model(id, ORE_NODES.has(id) ? 'node' : ''), glow ? this.glowMaterial : this.caveMaterial, items.length);
+      mesh.name = `cave ${id}`;
+      items.forEach((it, k) => {
+        it.index = k;
+        it.mesh = mesh;
+        it.size = glow ? it.size * (id === 'crystal' ? 0.8 : 1.2) : ORE_NODES.has(id) ? 0.85 + (it.size % 0.4) : it.size;
+        it.node = ORE_NODES.has(id);
+        mesh.setMatrixAt(k, m4.compose(p.set(it.x - x0, it.y - 0.05, it.z - z0), q.setFromAxisAngle(up, it.turn), s.setScalar(it.size)));
+        if (glow) mesh.setColorAt(k, tint.set(id === 'crystal' ? [0x7fe0ff, 0xc08aff, 0x9affd8][Math.floor(it.turn * 10) % 3] : [0x7affc8, 0x8ad8ff][Math.floor(it.turn * 10) % 2]));
+        all.push(it);
+      });
+      mesh.computeBoundingSphere();
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      meshes.push(mesh);
+    }
+    if (!all.length) return;
+    this.caves.set(`${cx},${cz}`, { items: all, meshes });
   }
 
   removeCave(cx, cz) {
     const c = this.caves.get(`${cx},${cz}`);
     if (!c) return;
-    c.mesh.dispose();
+    for (const mesh of c.meshes) mesh.dispose();
     this.caves.delete(`${cx},${cz}`);
   }
 
@@ -279,7 +321,7 @@ export class GroundItems {
           for (const it of src.items) {
             if (it.gone) continue;
             if (Math.abs(it.x - origin.x) > reach + 1 || Math.abs(it.z - origin.z) > reach + 1) continue;
-            consider(it.x, it.y + 0.08, it.z, it.id === 'iron' ? 0.35 * (it.size ?? 1) : 0.18, (t) => ({ kind: 'ground', item: it, id: it.id, distance: t }));
+            consider(it.x, it.y + (it.node ? 0.2 : 0.08), it.z, it.node ? 0.42 * (it.size ?? 1) : it.key.startsWith('cave:') ? 0.25 * (it.size ?? 1) : 0.18, (t) => ({ kind: 'ground', item: it, id: it.id, distance: t }));
           }
         }
       }

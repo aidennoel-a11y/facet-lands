@@ -6,7 +6,7 @@ import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
-import { caveNightVision, createCaveLayer } from './world/layers/CaveLayer.js';
+import { caveNightVision, createCaveLayer, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
@@ -270,6 +270,13 @@ function groundAt(x, feetY, z) {
  * then with `frozen` set.
  */
 function waterAt(x, z, ice = false) {
+  // Underground: the still lakes of the great chambers, the rivers in the
+  // rock, the pools on cave floors (or lava). Not the sea or the rivers
+  // far overhead.
+  if (sheltered) {
+    const w = generator.caves.waterAt(x, camera.position.y - 1.2, z);
+    return w ? { level: w.level, fx: 0, fz: 0, speed: w.river ? 0.5 : 0, cave: true, lava: w.lava } : null;
+  }
   const ground = chunks.groundHeightAt(x, z);
   let found = ground < WORLD.seaLevel ? { level: WORLD.seaLevel, fx: 0, fz: 0, speed: 0, lake: true } : null;
   const r = generator.rivers.waterAt(x, z, 0);
@@ -911,13 +918,13 @@ function solidHit(origin, direction, reach) {
 }
 
 /** Sets a torch where you point: returns whether it went. */
-function placeTorch(origin, direction) {
+function placeTorch(origin, direction, lamp = false) {
   const hit = solidHit(origin, direction, 6);
   if (!hit) {
     hotbar.flash('Point at the ground or a wall nearby');
     return false;
   }
-  if (!torches.place(hit.point, hit.normal)) {
+  if (!torches.place(hit.point, hit.normal, true, false, lamp)) {
     hotbar.flash("Torches can't hang from a ceiling");
     return false;
   }
@@ -947,6 +954,26 @@ function updateVisibility() {
   // rather than showing gaps where far-off tunnels aren't built yet.
   const toMouth = mouths.reduce((d, e) => Math.min(d, Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z)), Infinity);
   caveHaze.target = underground && !ui.night.checked ? Math.min(1, Math.max(0, (toMouth - 4) / 16)) : 0;
+  // (In a great chamber, the dark goes back and back: the haze much further off.)
+  const ch = underground ? generator.caves.field.chamberAt(p.x, p.z) : null;
+  caveHaze.vast += ((ch && ch.e < 1 && p.y < ch.c.y + ch.c.ry ? 1 : 0) - caveHaze.vast) * 0.05;
+}
+
+// Underground: water dripping somewhere in the dark; the rush of an
+// underground river near you.
+function caveSounds(dt) {
+  if (!sheltered) {
+    caveSounds.brook = 0;
+    return;
+  }
+  caveSounds.wait = (caveSounds.wait ?? 2) - dt;
+  if (caveSounds.wait <= 0) {
+    caveSounds.wait = 1.5 + Math.random() * 5;
+    sound.call('drip', (Math.random() - 0.5) * 1.6, 0.25 + Math.random() * 0.5);
+  }
+  const p = camera.position, H = generator.getHeight(p.x, p.z);
+  const rv = generator.caves.field.riverAt(p.x, p.z, H);
+  caveSounds.brook = rv && Math.abs(p.y - rv.level) < 8 ? Math.max(0, 1 - Math.max(0, rv.across - rv.half) / 14) * rv.fade : 0;
 }
 
 let sheltered = false; // underground: no rain or lightning, sounds muffled
@@ -1379,7 +1406,7 @@ function smooth(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 }
-const caveHaze = { target: 0, amount: 0, color: new THREE.Color(0x07080b) };
+const caveHaze = { target: 0, amount: 0, vast: 0, color: new THREE.Color(0x07080b) };
 const openFog = { near: scene.fog.near, far: scene.fog.far };
 // The graphics quality chosen on the start menu, put into effect as a
 // world starts (before its land is built): the view, the fog, the
@@ -1498,8 +1525,8 @@ function applyCaveHaze(dt) {
   caveHaze.amount += (caveHaze.target - caveHaze.amount) * Math.min(1, dt * 3);
   const a = caveHaze.amount;
   if (a < 0.001) return;
-  scene.fog.near = openFog.near + (12 - openFog.near) * a;
-  scene.fog.far = openFog.far + (170 - openFog.far) * a;
+  scene.fog.near = openFog.near + (12 + 40 * caveHaze.vast - openFog.near) * a;
+  scene.fog.far = openFog.far + (170 + 230 * caveHaze.vast - openFog.far) * a;
   scene.fog.color.lerp(caveHaze.color, a);
   dayNight.sky.visible = a < 0.98;
 }
@@ -1700,8 +1727,13 @@ function tick(now) {
     summer: Math.max(0, 1 - seasonUniforms.uWinter.value - seasonUniforms.uSpring.value - seasonUniforms.uAutumn.value),
     planPoint: (origin, direction, reach) => solidHit(origin, direction, reach)?.point ?? null,
     season: seasons.name,
+    // (Underground: what kind of cave, see CaveField.biomeAt; and lava under your feet.)
+    cave: sheltered ? generator.caves.biomeAt(camera.position.x, camera.position.y, camera.position.z) : null,
+    lava: sheltered && !!waterAt(camera.position.x, camera.position.z)?.lava && camera.position.y - controls.eyeHeight < (waterAt(camera.position.x, camera.position.z)?.level ?? -1e9) + 0.3,
   });
+  caveSounds(dt);
   torches.update(worldNow, camera.position, gameLights);
+  updateCaveLife(now / 1000);
   updateVisibility();
   const haze = heatHaze(dt);
   sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater);
@@ -1762,7 +1794,8 @@ function tick(now) {
   env.clock = worldNow;
   env.cell = [Math.round(camera.position.x / 150), Math.round(camera.position.z / 150)];
   env.panTo = (a) => panTowards(camera, camera.position.x + Math.cos(a) * 40, camera.position.z + Math.sin(a) * 40);
-  sound.ambience(env);
+  // (Underground the wind and the water above are shut out: only the river in the rock, if there's one near.)
+  sound.ambience(sheltered ? { ...env, wind: 0, gust: 0, fall: 0, river: 0, brook: caveSounds.brook ?? 0, brookPan: 0, canopy: 0, exposure: 0, storm: 0 } : env);
   // (The ground trembles as a volcano rumbles.)
   lavaHeat(dt);
   const tremble = volcanoes.shake > 0 && !controls.swimming ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0;

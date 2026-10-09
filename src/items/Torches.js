@@ -59,6 +59,13 @@ export class Torches {
     this.headMaterial = new MeshLambertMaterial({ color: 0x2e2620, flatShading: true });
     this.outerMaterial = new MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9 });
     this.innerMaterial = new MeshBasicMaterial({ color: 0xffd070 });
+    // A crystal lamp: crystals in an iron ring on a stone, glowing cold blue of themselves, for ever.
+    this.lampBase = new CylinderGeometry(0.16, 0.2, 0.12, 6).translate(0, 0.06, 0);
+    this.lampCrystal = new OctahedronGeometry(0.12, 0).scale(0.7, 2.2, 0.7).translate(0, 0.38, 0);
+    this.lampCrystal2 = new OctahedronGeometry(0.08, 0).scale(0.7, 2, 0.7).rotateZ(0.4).translate(0.08, 0.28, 0.03);
+    this.lampBaseMaterial = new MeshLambertMaterial({ color: 0x5a5058, flatShading: true });
+    this.lampMaterial = new MeshBasicMaterial({ color: 0xa8ecff, transparent: true, opacity: 0.92 });
+    this.lampGlowMaterial = new SpriteMaterial({ map: glowTexture(), color: 0x7ac8ff, blending: AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.6 });
     this.glowMaterial = new SpriteMaterial({
       map: glowTexture(),
       blending: AdditiveBlending,
@@ -86,8 +93,9 @@ export class Torches {
    * `lit`). On the ground it stands up; on a wall it leans out. Returns null
    * for ceilings.
    */
-  place(point, normal, save = true, lit = false) {
+  place(point, normal, save = true, lit = false, lamp = false) {
     if (normal.y < -0.3) return null;
+    if (lamp) return this.#placeLamp(point, normal, save);
     const lean = normal.y > 0.7 ? UP.clone() : normal.clone().multiplyScalar(0.55).add(UP).normalize();
 
     const group = new Group();
@@ -115,6 +123,25 @@ export class Torches {
     return torch;
   }
 
+  #placeLamp(point, normal, save) {
+    const group = new Group();
+    group.name = 'crystal lamp';
+    group.position.copy(point).addScaledVector(normal, -0.03);
+    if (normal.y < 0.7) group.quaternion.setFromUnitVectors(UP, normal.clone().multiplyScalar(0.6).add(UP).normalize());
+    const base = new Mesh(this.lampBase, this.lampBaseMaterial);
+    const a = new Mesh(this.lampCrystal, this.lampMaterial), b = new Mesh(this.lampCrystal2, this.lampMaterial);
+    const glow = new Sprite(this.lampGlowMaterial);
+    glow.position.y = 0.4;
+    glow.scale.setScalar(1.3);
+    group.add(base, a, b, glow);
+    this.scene.add(group);
+    group.updateMatrixWorld(true);
+    const t = { group, glow, lamp: true, lit: true, phase: Math.random() * 100, point: point.clone(), normal: normal.clone(), outer: glow, inner: glow };
+    this.torches.push(t);
+    if (save) this.#save();
+    return t;
+  }
+
   /** The torch nearest a ray (within `reach`, near enough to it), or null. */
   alongRay(origin, direction, reach, tolerance = 0.5) {
     let best = null, bestD = tolerance;
@@ -132,6 +159,7 @@ export class Torches {
 
   /** Lights a torch (or puts it out). */
   light(t, lit = true) {
+    if (t.lamp) return; // (a lamp's always alight)
     t.lit = lit;
     t.outer.visible = t.inner.visible = t.glow.visible = lit;
     this.#save();
@@ -180,7 +208,7 @@ export class Torches {
 
   /** The torches as records: [{ k, p: [x, y, z, nx, ny, nz], lit }] (online: see WorldSync). */
   records() {
-    return this.torches.map((t) => ({ k: Torches.key(t), p: [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)), lit: !!t.lit }));
+    return this.torches.map((t) => ({ k: Torches.key(t), p: [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)), lit: !!t.lit, lamp: !!t.lamp }));
   }
 
   /** A torch as someone else has it (online): put up, or lit or put out. */
@@ -190,7 +218,7 @@ export class Torches {
     const t = this.torches.find((t) => t.point.distanceTo(point) < 0.02);
     if (t) {
       if (!!t.lit !== !!rec.lit) this.light(t, !!rec.lit);
-    } else this.place(point, new Vector3(nx, ny, nz), true, !!rec.lit);
+    } else this.place(point, new Vector3(nx, ny, nz), true, !!rec.lit, !!rec.lamp);
   }
 
   /** Takes a torch down by its key (someone else did, online). */
@@ -210,7 +238,7 @@ export class Torches {
     } catch {
       saved = [];
     }
-    for (const [x, y, z, nx, ny, nz, lit = 1] of saved) this.place(new Vector3(x, y, z), new Vector3(nx, ny, nz), false, !!lit);
+    for (const [x, y, z, nx, ny, nz, lit = 1, lamp = 0] of saved) this.place(new Vector3(x, y, z), new Vector3(nx, ny, nz), false, !!lit, !!lamp);
   }
 
   /** Forgets this world's torches (a survival life that's over: see Game.#die). */
@@ -224,7 +252,7 @@ export class Torches {
 
   #save() {
     if (this.seed === null) return;
-    const data = this.torches.map((t) => [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)).concat(t.lit ? 1 : 0));
+    const data = this.torches.map((t) => [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)).concat(t.lit ? 1 : 0, t.lamp ? 1 : 0));
     try {
       localStorage.setItem(`facet-lands:torches:${this.seed}`, JSON.stringify(data));
     } catch {
@@ -240,6 +268,12 @@ export class Torches {
   update(time, cameraPosition, extra = []) {
     for (const t of this.torches) {
       if (!t.lit) continue;
+      if (t.lamp) {
+        // (No flicker: a slow, faint breathing of the light.)
+        t.flicker = 0.92 + 0.08 * Math.sin(time * 0.7 + t.phase);
+        t.distance = t.group.position.distanceToSquared(cameraPosition);
+        continue;
+      }
       const f = 0.85 + 0.15 * Math.sin(time * 13 + t.phase) * Math.sin(time * 7.3 + t.phase * 1.7);
       t.outer.scale.set(f, 0.9 + 0.2 * f, f);
       t.outer.rotation.y = time * 2 + t.phase;
@@ -263,11 +297,18 @@ export class Torches {
         light.position.set(0, -10000, 0);
         return;
       }
-      if (t.group) {
+      if (t.lamp) {
+        light.position.copy(t.group.localToWorld(this._flame.set(0, 0.5, 0)));
+        light.color.setHex(0x8ad4ff);
+        light.intensity = 22 * t.flicker;
+        light.distance = 22;
+      } else if (t.group) {
+        light.color.setHex(0xffa24a);
         light.position.copy(t.group.localToWorld(this._flame.set(0, FLAME_HEIGHT + 0.1, 0)));
         light.intensity = 30 * t.flicker;
         light.distance = 26;
       } else {
+        light.color.setHex(t.colour ?? 0xffa24a);
         light.position.set(t.x, t.y, t.z);
         const f = 0.85 + 0.15 * Math.sin(time * 11 + t.x) * Math.sin(time * 6.1 + t.z);
         light.intensity = t.strength * f;

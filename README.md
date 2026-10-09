@@ -38,6 +38,24 @@ loads.
   sea cliffs and sea caves.
 - Rivers that run downhill to the sea, lakes, waterfalls, caves to explore
   with torches, and coral and kelp in the sea.
+- Caves worth going down into: shelter from every kind of weather (mild and
+  dry, whatever the season), richer ore the deeper you go (gold only past
+  60 m down), still pools and lakes of clean water with blind white fish,
+  glowing crystals and glowcaps (made into crystal lamps that never go out),
+  bat roosts and their guano (dug into a crop plot it grows twice as fast),
+  and cave mushrooms to eat, with deadly pale deathcaps that look much like
+  them. Four kinds of cave: plain stone, lush (moss, hanging vines,
+  glowberries, glow-worms on the roof like stars), volcanic (black basalt,
+  glowing cracks, lava lakes, hot) and ice (pale blue, long icicles,
+  bitterly cold); dry sandstone under the deserts. Far down there are vast
+  chambers hundreds of metres across with great pillars holding up the roof
+  and lakes in their hollows, long winding spaghetti tunnels, and
+  underground rivers that run on through the rock joining cave to cave.
+- Mining: rock takes several pickaxe blows to break (a better pick, fewer).
+  Bare rock and boulders give stone (now and then flint); ore lies in veins
+  you can see, each its own look (iron rust-red in grey stone, coal in black
+  seams, gold flecked in white quartz, the mountain ore for steel dark slate
+  with silver crystals), and the harder ores take more blows.
 - More than 30 kinds of tree, plus grass, flowers, reeds, mushrooms, fallen
   logs and boulders. Trees are drawn out to the horizon.
 - Day and night with a moon that has phases. Moonless nights are pitch dark,
@@ -206,8 +224,8 @@ src/
     wind.js                 vertex-shader sway shared by trees and grass
   player/PlayerBody.js      invisible walking body that casts your shadow
   world/caves/
-    CaveField.js            the procedural cave field: tunnels, rooms, entrance ramps
-    caveMesher.js           marching cubes + stalagmites for one chunk
+    CaveField.js            the procedural cave field: tunnels, rooms, chambers, spaghetti, rivers, entrance ramps, cave kinds
+    caveMesher.js           marching cubes, stalagmites, vines, glow-worms, finds, water and lava for one chunk
     caveWorker.js           builds cave chunks on a background thread
     CaveSystem.js           cave cache, terrain cut-outs, collisions and floors
   world/layers/CaveLayer.js adds cave rock and stalagmites to nearby chunks
@@ -289,6 +307,21 @@ traces long, branching passages that link up into networks; the coordinates are
 warped by a slow 2D noise first, so the passages snake and twist. A third, slower
 noise field opens big squat rooms along them. A regional mask leaves some areas
 solid, and caves stay between -30 m and 55 m, always under at least 7 m of rock.
+
+Below and among those, the deep caves (down to -125 m): vast chambers (one
+maybe in each 520 m square: squashed domes up to ~340 m across and 120 m
+high, a rough floor with still lakes in its hollows, pillars of rock
+swelling and narrowing up to the roof); spaghetti tunnels (two more noise
+fields near zero, at a wider spacing: about 8 m across, running on and on);
+and underground rivers (along the contour lines of a 2D noise: a level
+channel, the water in its bed, a dry ledge each side, an arched roof). These
+only ever add air, never come nearer the ground than the old caves, and
+keep clear of the entrances, which are still laid out by the old caves
+alone: nothing above ground changes. Each place underground has its kind
+(`CaveField.biomeScores`, from the land above, a slow noise and depth):
+plain, lush, volcanic, ice or dry, which sets the rock's colours, what grows
+and hangs there, its glow (a `glow` vertex attribute added as emissive
+light), whether its lakes are water or lava, and how warm it is.
 
 Entrances appear on hillsides and on open ground alike. Each is a winding tunnel
 dug down from the surface: a chain of 8 m segments, each turning up to about 30

@@ -983,6 +983,11 @@ export class Sound {
       // A camel's gurgling grumble.
       tone(t, 0.9, 'sawtooth', 150, 110, 360, 1.5, 0.16, 32);
       noise(t, 0.9, 260, 1.3, 0.1, 28);
+    } else if (kind === 'drip') {
+      // A drop of water falling into a pool in the dark: a soft plink, and its echo.
+      const f0 = 1400 + Math.random() * 900;
+      tone(t, 0.12, 'sine', f0, f0 * 0.55, f0 * 0.8, 1.2, 0.09);
+      tone(t + 0.16 + Math.random() * 0.1, 0.1, 'sine', f0 * 0.9, f0 * 0.5, f0 * 0.7, 1.2, 0.025);
     } else if (kind === 'bats') {
       // Bats: a flurry of tiny, high squeaks over the flutter of their wings.
       noise(t, 1.0, 1300, 0.8, 0.06, 25);
@@ -1280,7 +1285,7 @@ export class Sound {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     this.rainGain.gain.setTargetAtTime(rain * 0.16, t, 0.5);
-    this.muffle.frequency.setTargetAtTime(sheltered ? 500 : 20000, t, 0.3);
+    this.muffle.frequency.setTargetAtTime(sheltered ? 1800 : 20000, t, 0.3); // (underground: the world above shut out; the drip of water down here still clear)
   }
 
   /**

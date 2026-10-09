@@ -30,6 +30,9 @@ export const ITEMS = {
   coal: { name: 'Coal', weight: 0.5, group: 'Materials' },
   goldOre: { name: 'Gold ore', weight: 2, group: 'Materials' },
   goldBar: { name: 'Gold bar', weight: 2.5, group: 'Materials' },
+  // (Found in the caves.)
+  crystal: { name: 'Cave crystal', weight: 0.3, group: 'Materials' },
+  guano: { name: 'Bat guano', weight: 1, group: 'Farming' }, // (dug into a plot: the crop grows twice as fast a while)
   // Trophies: what only the great beasts give (see Wildlife BOSSES), each
   // for its own recipe.
   grizzlyPelt: { name: "Old Scar's pelt", weight: 4, group: 'Trophies' },
@@ -52,6 +55,12 @@ export const ITEMS = {
   berries: { name: 'Berries', food: { hunger: 8, thirst: 3 }, spoils: 1500, weight: 0.1, group: 'Food' },
   apple: { name: 'Apple', food: { hunger: 12, thirst: 5 }, spoils: 2400, weight: 0.2, group: 'Food' },
   mushroom: { name: 'Mushroom', food: { hunger: 6 }, spoils: 1500, weight: 0.1, group: 'Food' },
+  // (In the dark of the caves: the pale cave mushroom, good to eat; the
+  // deathcap, very like it, that will kill you; the glowcap, a mouthful.)
+  caveMushroom: { name: 'Cave mushroom', food: { hunger: 10 }, spoils: 1800, weight: 0.1, group: 'Food' },
+  deathcap: { name: 'Pale deathcap', food: { hunger: 3, health: -35, sick: 1 }, spoils: 2400, weight: 0.1, group: 'Food' },
+  glowcap: { name: 'Glowcap', food: { hunger: 3 }, spoils: 2400, weight: 0.05, group: 'Food' },
+  blindFish: { name: 'Blind cave fish', food: { hunger: 6, health: -3, sick: 0.5 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', weight: 0.4, group: 'Food' },
   rawMeat: { name: 'Raw meat', food: { hunger: 10, health: -4, sick: 0.5 }, spoils: 900, cooks: 'cookedMeat', dries: 'jerky', weight: 1, group: 'Food' },
   cookedMeat: { name: 'Cooked meat', food: { hunger: 35, health: 4 }, spoils: 2400, weight: 0.8, group: 'Food' },
   rawFish: { name: 'Raw fish', food: { hunger: 8, health: -3, sick: 0.5 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', weight: 0.8, group: 'Food' },
@@ -97,6 +106,7 @@ export const ITEMS = {
   bandage: { name: 'Bandage', weight: 0.05, group: 'Tools' },
   saddle: { name: 'Saddle', weight: 6, group: 'Tools' }, // (on a tame horse: see Game)
   torch: { name: 'Torch', place: 'torch', weight: 0.4, group: 'Tools' },
+  caveLamp: { name: 'Crystal lamp', place: 'caveLamp', weight: 1.2, group: 'Tools' }, // (glows of itself: never goes out)
   // Worn.
   coat: { name: 'Leather coat', tool: true, wear: 'coat', warmth: 0.3, weight: 2, group: 'Worn' },
   furCloak: { name: 'Fur cloak', tool: true, wear: 'coat', warmth: 0.15, weight: 2.5, group: 'Worn' },
@@ -212,6 +222,7 @@ export const RECIPES = [
   { id: 'poisonBolt', needs: { bolt: 6, venomSac: 1 }, makes: 6, note: 'Bolts tipped with venom: a hit lames and weakens' },
   { id: 'greatSaddle', needs: { greatHide: 1, steelBar: 1, rope: 1 }, note: "Thunderhead's hide: a horse under it gallops further and faster" },
   { id: 'hideRoof', needs: { greatHide: 1, log: 4 }, note: "A shelter roofed with Thunderhead's hide" },
+  { id: 'caveLamp', needs: { crystal: 2, glowcap: 2, rock: 1 }, note: 'Crystals and glowcaps set in a stone: a cold blue light that never goes out' },
   { id: 'paleCloak', needs: { paleFur: 1, pelt: 2 }, note: 'Pale and soft: warm, and the wild notice you less' },
   { id: 'caveCloak', needs: { caveBearPelt: 1, rope: 1 }, note: 'The warmest thing to wear there is' },
 ];
@@ -326,6 +337,14 @@ export const ICONS = {
   steelArmour: `<path d="M9 5l7 3 7-3 4 6-2 16H7L5 11z" fill="#9aa4b0"/><path d="M9 12h14M9 17h14M9 22h14" stroke="#5a626e" stroke-width="1.4"/><path d="M16 8v19" stroke="#5a626e"/><path d="M9 5l7 3 7-3" fill="none" stroke="#e4e8ee" stroke-width="1.2"/>`,
   tanningRack: `<path d="M5 29V5M27 29V5M5 7h22M5 27h22" stroke="#8a5d38" stroke-width="2.2"/><path d="M9 10h14l-1 14H10z" fill="#c4945a"/><path d="M9 10l-4-3M23 10l4-3M10 24l-5 3M22 24l5 3" stroke="#e8e0cc"/>`,
 };
+// (The cave finds.)
+ICONS.crystal = `<path d="M10 27l3-14 3-9 3 9 1 14z" fill="#9ae8ff"/><path d="M16 4l3 9 1 14h-4z" fill="#c8f4ff"/><path d="M19 27l3-10 4-5 0 9-2 6z" fill="#c0a0ff"/><path d="M6 28h22v-2H6z" fill="#6a6572"/>`;
+ICONS.caveLamp = `<path d="M8 29h16l-2-5H10z" fill="#5a5058"/><path d="M12 24l2-12 2-6 2 6 2 12z" fill="#a8ecff"/><path d="M16 6l2 6 2 12h-4z" fill="#d8f8ff"/><circle cx="16" cy="16" r="11" fill="#7ac8ff" opacity="0.18"/>`;
+ICONS.glowcap = `<path d="M14 28h4l-1-12h-2z" fill="#d8f0e8"/><path d="M6 17c0-6 5-10 10-10s10 4 10 10z" fill="#7affc8"/><circle cx="16" cy="13" r="10" fill="#7affc8" opacity="0.2"/>`;
+ICONS.caveMushroom = `<path d="M14 28h4l-1-12h-2z" fill="#ece4d0"/><path d="M5 17c0-6 5-10 11-10s11 4 11 10z" fill="#d8ccb8"/><path d="M9 14c2-3 5-4 8-4" stroke="#f4ecdc" fill="none"/>`;
+ICONS.deathcap = `<path d="M14 28h4l-1-12h-2z" fill="#f4f0e0"/><path d="M5 17c0-6 5-10 11-10s11 4 11 10z" fill="#e8e4c8"/><path d="M13 21h6" stroke="#c8c4a8"/><path d="M13 23h6" stroke="#c8c4a8"/>`;
+ICONS.blindFish = `<path d="M4 16c5-6 13-7 19-2l5-4v12l-5-4c-6 5-14 4-19-2z" fill="#e8e4e0"/><path d="M8 16c4-3 9-3 13 0" stroke="#d0c8c4" fill="none"/>`;
+ICONS.guano = `<path d="M9 12l14 0 3 14H6z" fill="#7a6a50"/><path d="M11 8h10l2 4H9z" fill="#8a7a5e"/><path d="M12 8c1-2 7-2 8 0" stroke="#8a6a44" fill="none"/><circle cx="25" cy="27" r="1.4" fill="#4a4030"/><circle cx="27" cy="25" r="1" fill="#4a4030"/>`;
 // (A spawner's icon: a paw print.)
 for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle cx="16" cy="20" r="6" fill="#8a6a4a"/><circle cx="8" cy="12" r="3" fill="#8a6a4a"/><circle cx="14" cy="8" r="3" fill="#8a6a4a"/><circle cx="20" cy="8" r="3" fill="#8a6a4a"/><circle cx="25" cy="13" r="3" fill="#8a6a4a"/>`;
 // (The trophies and what's made of them: the icons of their kin, recoloured.)

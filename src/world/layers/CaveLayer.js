@@ -1,5 +1,6 @@
-import { Color, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, Quaternion, ShaderChunk, Vector3 } from 'three';
-import { bonesModel, crystalModel, glowcapModel } from '../../survival/models.js';
+import { BoxGeometry, Color, DoubleSide, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Vector3 } from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { bonesModel } from '../../survival/models.js';
 
 /**
  * Cave material: vertex-coloured rock whose *daylight* (sun, moon and sky
@@ -9,6 +10,82 @@ import { bonesModel, crystalModel, glowcapModel } from '../../survival/models.js
  */
 /** Night vision (testing): 1 lifts the cave darkening completely. */
 export const caveNightVision = { value: 0 };
+/** The time, for the water's shimmer and the fish (see updateCaveLife). */
+export const caveTime = { value: 0 };
+
+// The water and the lava underground: flat sheets, a slow shimmer moving
+// over them (the water dark and clear, a little light of its own so it
+// shows; the lava glowing).
+function liquidMaterial(lava) {
+  const material = lava
+    ? new MeshBasicMaterial({ vertexColors: true, side: DoubleSide })
+    : new MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.82, emissive: 0x020608, side: DoubleSide, depthWrite: false });
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uCaveTime = caveTime;
+    shader.uniforms.uNightVision = caveNightVision;
+    // (No daylight down here, as on the rock round it: only a torch's light shows the water.)
+    if (!lava) {
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uNightVision;')
+        .replace('#include <lights_fragment_begin>', `${ShaderChunk.lights_fragment_begin.replace('#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )', 'vec3 caveBeforeSky = reflectedLight.directDiffuse;\n#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )')}
+          float caveSky = max(0.03, uNightVision);
+          reflectedLight.directDiffuse = caveBeforeSky + (reflectedLight.directDiffuse - caveBeforeSky) * caveSky;
+          irradiance *= caveSky;`);
+    }
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLiquidAt;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLiquidAt = (modelMatrix * vec4(position, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLiquidAt;\nuniform float uCaveTime;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float ripple = sin(vLiquidAt.x * 0.9 + uCaveTime * ${lava ? '0.4' : '1.1'}) * sin(vLiquidAt.z * 0.7 - uCaveTime * ${lava ? '0.3' : '0.8'});
+        diffuseColor.rgb *= ${lava ? '0.85 + 0.3 * ripple' : '0.9 + 0.2 * ripple'};`);
+  };
+  material.customProgramCacheKey = () => (lava ? 'cave lava' : 'cave water');
+  return material;
+}
+
+// The life in the dark water: blind white fish, a few to each stretch of
+// it, nosing slowly round. (Moved each frame: see updateCaveLife.)
+const shoals = new Set();
+const fishGeometry = (() => {
+  const body = new OctahedronGeometry(0.06, 0).scale(0.7, 0.6, 2.2);
+  const tail = new BoxGeometry(0.005, 0.06, 0.06).translate(0, 0, -0.15);
+  const g = mergeGeometries([body.toNonIndexed(), tail.toNonIndexed()]);
+  g.computeVertexNormals();
+  return g;
+})();
+const fishMaterial = new MeshBasicMaterial({ color: 0xc8ccd0, transparent: true, opacity: 0.85 });
+const fm = new Matrix4(), fq = new Quaternion(), fp = new Vector3(), fs = new Vector3(1, 1, 1), fUp = new Vector3(0, 1, 0);
+
+/** Swims the cave fish (call every frame). */
+export function updateCaveLife(time) {
+  caveTime.value = time;
+  for (const shoal of shoals) {
+    shoal.fish.forEach((f, k) => {
+      const a = time * f.speed + f.phase;
+      fp.set(f.x + Math.cos(a) * f.r - shoal.x0, f.y, f.z + Math.sin(a) * f.r - shoal.z0);
+      fq.setFromAxisAngle(fUp, -a + (f.speed > 0 ? Math.PI : 0));
+      shoal.mesh.setMatrixAt(k, fm.compose(fp, fq, fs));
+    });
+    shoal.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// Bats hanging asleep from a roost on the roof, in a dark huddle.
+const roostGeometry = (() => {
+  const parts = [];
+  for (let k = 0; k < 9; k++) {
+    const a = k * 2.4, r = 0.15 + (k % 3) * 0.18;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r, y = -0.12 - (k % 2) * 0.05;
+    parts.push(new BoxGeometry(0.07, 0.16, 0.06).translate(x, y, z).toNonIndexed());
+    parts.push(new BoxGeometry(0.02, 0.05, 0.02).translate(x, -0.02, z).toNonIndexed()); // (the feet, hooked on)
+  }
+  const g = mergeGeometries(parts);
+  g.computeVertexNormals();
+  return g;
+})();
+const roostMaterial = new MeshLambertMaterial({ color: 0x2a2220, emissive: 0x0a0806 });
 
 function caveMaterial() {
   const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
@@ -19,10 +96,12 @@ function caveMaterial() {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uNightVision = caveNightVision;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float skyLight;\nvarying float vSkyLight;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSkyLight = skyLight;');
+      .replace('#include <common>', '#include <common>\nattribute float skyLight;\nattribute vec3 glow;\nvarying float vSkyLight;\nvarying vec3 vGlow;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSkyLight = skyLight;\nvGlow = glow;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vSkyLight;\nuniform float uNightVision;')
+      .replace('#include <common>', '#include <common>\nvarying float vSkyLight;\nvarying vec3 vGlow;\nuniform float uNightVision;')
+      // (Rock that gives its own light: glowing cracks, glow-worms, the faint blue of the ice.)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow;')
       .replace(
         '#include <lights_fragment_begin>',
         `${lights}
@@ -43,29 +122,43 @@ function caveMaterial() {
  */
 export function createCaveLayer(config) {
   const material = caveMaterial();
-  // The cave finds that are only to look at: crystals and glowcaps giving
-  // their own soft light, and old bones (dim, as everything is down there).
-  const glow = new MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 });
+  // What's only to look at: old bones (dim, as everything is down there),
+  // and the bats' roosts. (Ore, crystals, glowcaps and the rest, to be
+  // picked up: see GroundItems.addCave.)
   const bone = new MeshLambertMaterial({ vertexColors: true, flatShading: true, color: 0x4a4a4a });
-  const shapes = { 2: crystalModel(), 3: glowcapModel(), 4: bonesModel() };
-  const tints = { 2: [0x7fe0ff, 0xc08aff, 0x9affd8], 3: [0x7affc8, 0x8ad8ff] };
-  const m4 = new Matrix4(), q = new Quaternion(), p = new Vector3(), s = new Vector3(), up = new Vector3(0, 1, 0), c = new Color();
+  const bones = bonesModel();
+  const water = liquidMaterial(false), lava = liquidMaterial(true);
+  const m4 = new Matrix4(), q = new Quaternion(), p = new Vector3(), s = new Vector3(), up = new Vector3(0, 1, 0);
   const finds = (features, x0, z0) => {
     const out = [];
-    for (const kind of [2, 3, 4]) {
+    for (const [kind, geometry, mat] of [[4, bones, bone], [12, roostGeometry, roostMaterial]]) {
       const list = [];
       for (let k = 0; k < features.length; k += 6) if (features[k] === kind) list.push(k);
       if (!list.length) continue;
-      const mesh = new InstancedMesh(shapes[kind], kind === 4 ? bone : glow, list.length);
+      const mesh = new InstancedMesh(geometry, mat, list.length);
       list.forEach((k, n) => {
-        mesh.setMatrixAt(n, m4.compose(p.set(features[k + 1] - x0, features[k + 2] - 0.05, features[k + 3] - z0), q.setFromAxisAngle(up, features[k + 4]), s.setScalar(features[k + 5])));
-        if (tints[kind]) mesh.setColorAt(n, c.set(tints[kind][Math.floor(features[k + 4] * 10) % tints[kind].length]));
+        mesh.setMatrixAt(n, m4.compose(p.set(features[k + 1] - x0, features[k + 2] - (kind === 4 ? 0.05 : 0), features[k + 3] - z0), q.setFromAxisAngle(up, features[k + 4]), s.setScalar(features[k + 5])));
       });
       mesh.computeBoundingSphere();
-      mesh.name = 'cave finds';
+      mesh.name = kind === 4 ? 'cave bones' : 'cave bats';
       out.push(mesh);
     }
     return out;
+  };
+  // A few blind fish in a stretch of water (chunk-local water geometry).
+  const shoal = (geometry, x0, z0, seed) => {
+    const pos = geometry.attributes.position;
+    const fish = [];
+    const tris = pos.count / 3;
+    for (let k = 0; k < Math.min(8, Math.ceil(tris / 60)); k++) {
+      const t = Math.floor(((Math.sin(seed * 12.9 + k * 78.2) * 43758.5) % 1 + 1) % 1 * tris) * 3;
+      fish.push({ x: pos.getX(t) + x0, y: pos.getY(t) - 0.25, z: pos.getZ(t) + z0, r: 0.5 + (k % 3) * 0.4, speed: (k % 2 ? 1 : -1) * (0.25 + (k % 4) * 0.08), phase: k * 1.7 });
+    }
+    if (!fish.length) return null;
+    const mesh = new InstancedMesh(fishGeometry, fishMaterial, fish.length);
+    mesh.name = 'cave fish';
+    mesh.frustumCulled = false;
+    return { mesh, fish, x0, z0 };
   };
 
   const layer = {
@@ -106,6 +199,24 @@ export function createCaveLayer(config) {
           for (const mesh of finds(data.features, cx * size, cz * size)) group.add(mesh);
           layer.onFinds?.(cx, cz, data.features, group);
         }
+        // The water lying in the dark, its fish; the lava.
+        if (data.water) {
+          const w = new Mesh(data.water, water);
+          w.name = 'cave water';
+          w.renderOrder = 2;
+          group.add(w);
+          const sh = shoal(data.water, cx * size, cz * size, cx * 31 + cz);
+          if (sh) {
+            group.add(sh.mesh);
+            shoals.add(sh);
+            group.userData.shoal = sh;
+          }
+        }
+        if (data.lava) {
+          const l = new Mesh(data.lava, lava);
+          l.name = 'cave lava';
+          group.add(l);
+        }
         if (data.deco) {
           const stones = new Mesh(data.deco, material);
           stones.name = 'cave stalagmites';
@@ -121,6 +232,7 @@ export function createCaveLayer(config) {
     dispose(group) {
       // Geometry belongs to the cave system's cache; just let it know we're done.
       group.userData.disposed = true;
+      if (group.userData.shoal) shoals.delete(group.userData.shoal);
       const [cx, cz] = group.userData.chunk;
       for (const mesh of group.children) if (mesh.isInstancedMesh) mesh.dispose();
       layer.onGone?.(cx, cz);

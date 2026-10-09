@@ -330,7 +330,8 @@ export class Game {
     const found = [];
     const held = this.inventory.slots[this.hotbar?.index ?? 0];
     const item = this.items.pick(origin, direction, reach);
-    if (item) found.push({ kind: 'item', distance: item.distance, item, text: `Pick up ${ITEMS[item.id].name.toLowerCase()}` });
+    if (item?.item.node) found.push({ kind: 'vein', distance: item.distance, item, text: `${ITEMS[item.id].name} in the rock: break it out with a pickaxe` });
+    else if (item) found.push({ kind: 'item', distance: item.distance, item, text: `Pick up ${ITEMS[item.id].name.toLowerCase()}` });
     const carcass = this.wildlife.aim(origin, direction, reach, true);
     if (carcass && !carcass.animal.alive) found.push({ kind: 'carcass', distance: carcass.distance, animal: carcass.animal, text: `Butcher the ${NAMES[carcass.animal.kind] ?? 'animal'}` });
     // A tame sheep: to shear, or to feed.
@@ -380,7 +381,7 @@ export class Game {
       case 'plot': {
         if (!s.crop) return 'Dug and ready: sow seeds in it (click with them)';
         if (s.growth >= 1) return `Harvest the ${s.crop === 'potato' ? 'potatoes' : s.crop === 'carrot' ? 'carrots' : s.crop}`;
-        return `${s.crop[0].toUpperCase() + s.crop.slice(1)}: ${Math.round(s.growth * 100)}% grown${s.watered > 0 ? ' (watered)' : ' (water it to hurry it)'}`;
+        return `${s.crop[0].toUpperCase() + s.crop.slice(1)}: ${Math.round(s.growth * 100)}% grown${s.watered > 0 ? ' (watered)' : ' (water it to hurry it)'}${s.fed > 0 ? ' (fed with guano)' : ''}`;
       }
       case 'rope': return 'Climb the rope';
       case 'anvil': return 'Forge at the anvil';
@@ -432,6 +433,7 @@ export class Game {
     if (this.climbing) return this.#letGo(true);
     const t = this.#target(ray, down);
     if (!t) return this.hotbar?.flash('Nothing to pick up here');
+    if (t.kind === 'vein') return this.hotbar?.flash(t.text);
     if (t.kind === 'item') {
       const stack = this.items.take(t.item);
       const left = this.inventory.add(stack, this.hotbar?.index);
@@ -736,6 +738,14 @@ export class Game {
       this.inventory.changed();
       return this.hotbar?.flash(`Wearing: ${item.name}`);
     }
+    if (item.place === 'caveLamp') {
+      if (placeTorch?.(origin, direction, true)) {
+        this.inventory.take(i);
+        this.cooldown = 0.3;
+        this.hotbar?.flash('Crystal lamp set down: it glows of itself, and never goes out');
+      }
+      return;
+    }
     if (item.place === 'torch') {
       if (placeTorch?.(origin, direction)) {
         this.inventory.take(i);
@@ -849,6 +859,13 @@ export class Game {
         this.cooldown = 0.3;
         this.sound?.call('dig', 0, 0.3);
         return say(`Sown with ${item.sow}${(this.winter ?? 0) > 0.6 ? ': nothing will grow till the spring' : ''}`);
+      }
+      if (s.id === 'guano') {
+        take();
+        this.structures.feed(at);
+        this.cooldown = 0.3;
+        this.sound?.call('dig', 0, 0.3);
+        return say('Bat guano dug in: it will grow twice as fast a good while');
       }
       if (s.id === 'waterskin') {
         if (!s.water) return say('Empty: fill it at water');
@@ -1023,36 +1040,68 @@ export class Game {
   }
 
   // A pickaxe at rock: a boulder, a rock face, a cave wall. Stone, and now and then flint or iron ore.
+  /**
+   * A blow with a pickaxe. Rock takes a few blows to break (a better pick,
+   * fewer): bare rock or a boulder gives stone, now and then flint; a vein
+   * of ore (lying in the rock, each its own look: see oreNodeModel) gives
+   * its ore, the harder ones taking more blows.
+   */
   #mine(i, origin, direction, power) {
     this.#animate('chop', 0.62);
-    this.cooldown = 0.7 / power;
+    this.cooldown = 0.7 / Math.sqrt(power);
     this.#later(0.36, () => {
+      const vein = this.items.pick(origin, direction, REACH + 0.3);
       const boulder = this.#boulderAlong(origin, direction, REACH + 0.3);
       const face = this.solidHit(origin, direction, REACH + 0.3);
-      let where = null, iron = 0.06;
-      if (boulder && (!face || boulder.distance <= face.point.distanceTo(origin) + 0.3)) where = boulder.point;
-      else if (face && (face.cave || face.normal.y < 0.6 || this.#mesaTop(face.point))) {
-        // (A mesa's top is bare caprock: you can break it, flat as it is.)
-        where = face.point;
-        iron = face.cave ? 0.25 : 0.08;
-      }
+      const faceD = face ? face.point.distanceTo(origin) : Infinity;
+      let where = null, target = null;
+      if (vein?.item.node && vein.distance <= Math.min(faceD, boulder?.distance ?? Infinity) + 0.4) {
+        target = vein;
+        where = new Vector3(vein.item.x, vein.item.y + 0.2, vein.item.z);
+      } else if (boulder && boulder.distance <= faceD + 0.3) where = boulder.point;
+      else if (face && (face.cave || face.normal.y < 0.6 || this.#mesaTop(face.point))) where = face.point; // (a mesa's top is bare caprock: you can break it, flat as it is)
       if (!where) {
-        if (face) this.hotbar?.flash('Only soil here: find bare rock or a boulder');
+        if (face) this.hotbar?.flash('Only soil here: find bare rock, a boulder or a vein of ore');
         return this.sound?.call('whoosh', 0, 0.2);
       }
       this.inventory.wear(i, 1);
       this.sound?.call('strike', 0, 0.7);
       this.sound?.call('thunk', 0, 0.5);
-      this.felling.spray(where, origin, 0x8e8a84);
-      // Up high in the mountains, seams of coal and the dark ore steel is
-      // made from; on a mesa's top, gold.
-      const high = smooth(130, 190, where.y), gold = this.#mesaTop(where) ? 0.12 : 0;
-      const coal = 0.2 * high, ore = 0.14 * high;
-      const r = Math.random();
-      const id = r < gold ? 'goldOre' : r < gold + coal ? 'coal' : r < gold + coal + ore ? 'mountainOre' : r < gold + coal + ore + iron ? 'iron' : r < gold + coal + ore + iron + 0.14 ? 'flint' : 'rock';
-      const n = id === 'rock' ? 1 + (Math.random() < 0.4 ? 1 : 0) : 1;
-      this.#give(id, n, { x: where.x, y: where.y + 0.3, z: where.z });
-      this.hotbar?.flash(`${ITEMS[id].name}${n > 1 ? ` ×${n}` : ''}`);
+      const id = target ? target.id : 'rock';
+      this.felling.spray(where, origin, { iron: 0xa0502c, coal: 0x24201e, goldOre: 0xf0c030, mountainOre: 0x9ab0c8 }[id] ?? 0x8e8a84);
+      // How many blows it wants, and how many it's had (a crack in the rock
+      // here keeps for half a minute).
+      const needs = Math.max(1, Math.ceil(({ rock: 4, coal: 5, iron: 6, mountainOre: 8, goldOre: 8 }[id] ?? 4) / power));
+      this.cracks ??= new Map();
+      const key = target ? target.item.key : `${Math.round(where.x / 1.5)},${Math.round(where.y / 1.5)},${Math.round(where.z / 1.5)}`;
+      for (const [k, c] of this.cracks) if (this.time - c.at > 30) this.cracks.delete(k);
+      const crack = this.cracks.get(key) ?? { hits: 0 };
+      crack.hits++;
+      crack.at = this.time;
+      this.cracks.set(key, crack);
+      const label = target ? ITEMS[id].name : 'rock';
+      if (crack.hits < needs) {
+        this.breaking = { label: `Breaking the ${label.toLowerCase()}`, frac: crack.hits / needs, until: this.time + 2.5 };
+        return;
+      }
+      // Broken.
+      this.cracks.delete(key);
+      this.breaking = { label: `Breaking the ${label.toLowerCase()}`, frac: 1, until: this.time + 0.8 };
+      this.sound?.call('crack', 0, 0.6);
+      const at = { x: where.x, y: where.y + 0.3, z: where.z };
+      if (target) {
+        this.items.take(target);
+        const n = 1 + (Math.random() < 0.2 * power ? 1 : 0);
+        this.#give(id, n, at);
+        this.#give('rock', 1, at);
+        this.hotbar?.flash(`${ITEMS[id].name}${n > 1 ? ` ×${n}` : ''}, and a stone`);
+      } else {
+        const flint = Math.random() < 0.14;
+        const n = 1 + (Math.random() < 0.4 ? 1 : 0);
+        this.#give('rock', n, at);
+        if (flint) this.#give('flint', 1, at);
+        this.hotbar?.flash(`${ITEMS.rock.name}${n > 1 ? ` ×${n}` : ''}${flint ? ', and flint' : ''}`);
+      }
     });
   }
 
@@ -1370,9 +1419,11 @@ export class Game {
       // (And one fewer in the water there, if there's one to be had.)
       const f = (this.fish?.fish ?? []).find((f) => !f.gone && Math.hypot(f.x - this.line?.x, f.z - this.line?.z) < 12);
       if (f) f.gone = true;
-      this.#give('rawFish', 1);
+      // (Down in the dark water, the fish are pale and blind.)
+      const blind = !!this.waterAt(this.line?.x ?? this.camera.position.x, this.line?.z ?? this.camera.position.z)?.cave;
+      this.#give(blind ? 'blindFish' : 'rawFish', 1);
       this.sound?.call('splash', 0, 0.6);
-      return this.hotbar?.flash('A fish!');
+      return this.hotbar?.flash(blind ? 'A blind cave fish!' : 'A fish!');
     }
     if (this.cooldown > 0) return;
     // Where the float lands: the first water along a gentle arc out in front.
@@ -1645,6 +1696,9 @@ export class Game {
     // Under a roof, with walls round you: out of the rain, out of the wind,
     // and a fire in there warms the whole of it.
     const shelter = this.structures.shelterAt(cam.x, cam.y - this.controls.eyeHeight, cam.z);
+    // In a cave: out of the rain and the wind altogether (see Survival.coldness for its warmth).
+    const cave = ctx.cave ?? null;
+    if (cave !== null) (shelter.roof = 1), (shelter.walls = 1);
     const sheltered = shelter.roof * (0.35 + 0.65 * shelter.walls);
     this.sheltered = sheltered;
     const fire = Math.max(this.structures.warmthAt(cam.x, cam.y - this.controls.eyeHeight, cam.z), sheltered > 0.6 ? this.structures.warmthAt(cam.x, cam.y - this.controls.eyeHeight, cam.z, 4) : 0);
@@ -1668,6 +1722,7 @@ export class Game {
     const calming = this.wildlife.calming;
     if (this.mount) this.hud.meter('Your horse\'s wind', (this.mount.stamina ?? 100) / 100);
     else if (calming && !calming.a.tame && calming.calm > 0.02) this.hud.meter('The horse is settling', calming.calm);
+    else if (this.breaking && this.time < this.breaking.until) this.hud.meter(this.breaking.label, this.breaking.frac);
     else this.hud.meter(null, null);
     this.hud.almanac(this.mode === 'survival' && this.survival.alive ? { day: Math.floor(this.age) + 1, season: ctx.season ?? '', longest: Math.max(longestRun(), Math.floor(this.age)) } : null);
     const e = {
@@ -1676,8 +1731,16 @@ export class Game {
       heat: heat.heat, day: ctx.day, coat: this.inventory.worn ? ITEMS[this.inventory.worn.id]?.warmth ?? 0.3 : 0, fire, inFire: walking && this.structures.inFire(cam.x, cam.z),
       winter: ctx.winter, spring: ctx.spring, autumn: ctx.autumn, summer: ctx.summer,
       seasonality: heat.seasonality, altitude: cam.y - this.controls.eyeHeight, night: ctx.night, rain: ctx.rain * (1 - shelter.roof), snowing: ctx.snowing && shelter.roof < 0.5,
-      shelter: sheltered, exposed, storm: ctx.blizzard ?? 0, dust: (ctx.dust ?? 0) * (1 - sheltered),
+      shelter: sheltered, exposed, storm: cave !== null ? 0 : ctx.blizzard ?? 0, dust: (ctx.dust ?? 0) * (1 - sheltered),
+      cave, inLava: !!ctx.lava,
     };
+    if (cave !== null) {
+      // (Deep in the rock it's the same all year: cool in the plain caves,
+      // mild where the moss grows, bitter in the ice, hot as an oven by the lava.)
+      e.rain = 0;
+      e.snowing = false;
+      e.heat = cave === 2 ? 2.2 : 0;
+    }
     // (In creative there's no hunger, thirst or cold: you stay as you are.)
     if (this.mode !== 'creative') this.survival.update(dt, e);
     if (this.survival.retched) {
@@ -1703,7 +1766,7 @@ export class Game {
       const origin = cam, direction = this.camera.getWorldDirection(dir.clone());
       const t = this.#target({ origin, direction });
       const item = held && ITEMS[held.id];
-      const placing = item?.place ?? (held?.id === 'hoe' ? 'plot' : null);
+      const placing = item?.place === 'caveLamp' ? 'torch' : item?.place ?? (held?.id === 'hoe' ? 'plot' : null);
       if (placing === 'rope') {
         this.plan = this.#ropePlan();
         this.structures.preview(null);
@@ -1933,7 +1996,11 @@ export class Game {
     else if (id === 'fishingRod') mesh.rotation.set(-1.05, 0, 0), mesh.scale.setScalar(0.75), mesh.position.set(0, -0.05, 0);
     else if (id === 'torch') mesh.rotation.set(0, 0, Math.PI / 2 - 0.2), mesh.scale.setScalar(0.7);
     else if (id === 'log') mesh.rotation.set(0, Math.PI / 2 - 0.25, 0.15), mesh.scale.setScalar(0.85), mesh.position.set(0.05, 0.22, 0.25); // (on your shoulder)
-    else mesh.scale.setScalar(ITEMS[id]?.place ? 0.35 : 0.8);
+    else {
+      // (Anything else held small enough to sit in your hand.)
+      if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+      mesh.scale.setScalar(Math.min(0.8, 0.14 / mesh.geometry.boundingSphere.radius));
+    }
   }
 
   #drawHeld(dt, held, walking) {

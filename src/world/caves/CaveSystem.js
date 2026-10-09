@@ -37,6 +37,18 @@ function toGeometry(part) {
   g.setAttribute('normal', new BufferAttribute(part.normal, 3));
   g.setAttribute('color', new BufferAttribute(part.color, 3));
   g.setAttribute('skyLight', new BufferAttribute(part.skyLight, 1));
+  if (part.glow) g.setAttribute('glow', new BufferAttribute(part.glow, 3));
+  g.computeBoundingSphere();
+  return g;
+}
+
+/** A flat sheet of water or lava (see liquidChunk). */
+function toLiquid(part) {
+  if (!part) return null;
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(part.position, 3));
+  g.setAttribute('color', new BufferAttribute(part.colour, 3));
+  g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
 }
@@ -73,7 +85,7 @@ export class CaveSystem {
       this.cache.delete(key); // re-insert: most recently used last
       this.cache.set(key, entry);
     } else {
-      entry = { ready: false, grid: undefined, rock: null, deco: null, obstacles: [], features: new Float32Array(0), users: 0, listeners: [] };
+      entry = { ready: false, grid: undefined, rock: null, deco: null, water: null, lava: null, obstacles: [], features: new Float32Array(0), pools: new Float32Array(0), users: 0, listeners: [] };
       this.cache.set(key, entry);
       this.#request(key, entry, cx, cz);
     }
@@ -96,6 +108,9 @@ export class CaveSystem {
       entry.deco = toGeometry(data.deco);
       entry.obstacles = data.obstacles;
       entry.features = data.features ?? new Float32Array(0);
+      entry.pools = data.pools ?? new Float32Array(0);
+      entry.water = toLiquid(data.water);
+      entry.lava = toLiquid(data.lava);
       entry.ready = true;
       for (const fn of entry.listeners.splice(0)) fn(entry);
     };
@@ -122,6 +137,8 @@ export class CaveSystem {
       if (entry.users > 0) continue;
       entry.rock?.dispose();
       entry.deco?.dispose();
+      entry.water?.dispose();
+      entry.lava?.dispose();
       this.cache.delete(key);
     }
   }
@@ -161,6 +178,65 @@ export class CaveSystem {
     return y - depth;
   }
 
+  // --- The deep caves' columns, cached (physics asks the same few over and over) ---
+
+  #column(x, z) {
+    const key = `${Math.round(x * 2)},${Math.round(z * 2)}`;
+    this.columns ??= new Map();
+    let c = this.columns.get(key);
+    if (!c) {
+      if (this.columns.size > 4000) this.columns.clear();
+      c = this.field.column(x, z, this.generator.getHeight(x, z));
+      this.columns.set(key, c);
+    }
+    return c;
+  }
+
+  #deepRock(x, z) {
+    return this.field.deepRock(this.#column(x, z));
+  }
+
+  /**
+   * The kind of cave at a point: 0 plain rock, 1 lush, 2 volcanic, 3 ice,
+   * 4 dry sandstone (see CaveField.biomeAt). Sampled coarsely and cached.
+   */
+  biomeAt(x, y, z) {
+    const key = `${Math.round(x / 24)},${Math.round(z / 24)}`;
+    this.kinds ??= new Map();
+    let s = this.kinds.get(key);
+    if (!s) {
+      if (this.kinds.size > 500) this.kinds.clear();
+      s = this.field.biomeScores(Math.round(x / 24) * 24, Math.round(z / 24) * 24);
+      this.kinds.set(key, s);
+    }
+    return CaveField.biomeAt(s, y);
+  }
+
+  /**
+   * The water (or lava) underground at (x, z) near height y: a great
+   * chamber's lake, an underground river, a pool on a cave floor; or null.
+   * { level, lava, river, pool }.
+   */
+  waterAt(x, y, z) {
+    const col = this.#column(x, z);
+    const found = [];
+    if (col.chamber && col.chamber.e < 1) found.push({ level: col.chamber.c.lake, river: false });
+    if (col.river && col.river.across < col.river.half * 0.92 && col.river.fade > 0.5) found.push({ level: col.river.level - 0.2, river: true });
+    const entry = this.cache.get(`${Math.floor(x / this.chunkSize)},${Math.floor(z / this.chunkSize)}`);
+    const pools = entry?.pools ?? [];
+    for (let k = 0; k < pools.length; k += 4) if (Math.hypot(x - pools[k], z - pools[k + 2]) < pools[k + 3]) found.push({ level: pools[k + 1], pool: true });
+    let best = null;
+    for (const w of found) {
+      if (y < w.level - 4 || y > w.level + 3) continue;
+      // (Only where it really lies: open air over it, rock under it.)
+      if (this.caveDensity(x, w.level + 0.15, z) >= 0) continue;
+      if (w.river && this.caveDensity(x, w.level - 2.4, z) < 0) continue;
+      if (!best || Math.abs(w.level - y) < Math.abs(best.level - y)) best = w;
+    }
+    if (best) best.lava = this.biomeAt(x, best.level, z) === 2;
+    return best;
+  }
+
   // --- Physics -----------------------------------------------------------------
 
   /**
@@ -178,7 +254,7 @@ export class CaveSystem {
     } else if (g === null) {
       d = 50; // no caves there
     } else {
-      d = this.field.caves(x, y, z, this.generator.getHeight(x, z), this.field.regionRock(x, z));
+      d = this.field.caves(x, y, z, this.generator.getHeight(x, z), this.field.regionRock(x, z), this.#column(x, z), entrances);
       for (const e of entrances) d = Math.min(d, CaveField.ramp(e, x, y, z), CaveField.hull(e, x, y, z));
     }
     return d;
@@ -192,7 +268,7 @@ export class CaveSystem {
   groundAt(x, feetY, z, terrainHeight) {
     // Fast path: nowhere near a cave.
     const entrances = this.mouthsNear(x, z, x, z);
-    if (!entrances.length && this.field.regionRock(x, z) > 10 && Number.isFinite(terrainHeight)) {
+    if (!entrances.length && this.field.regionRock(x, z) > 10 && Number.isFinite(terrainHeight) && this.#deepRock(x, z) > 10) {
       return { height: terrainHeight, inCave: false, ceiling: Infinity };
     }
     const H = this.generator.getHeight(x, z);
