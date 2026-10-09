@@ -90,7 +90,7 @@ const SPECIES = {
   // water, and not to be gone near).
   lion: { ground: true, grade: 0.85, model: Models.lion, max: 14, walk: 1.1, run: 15, flee: 20, calm: 80, radius: 0.4, height: 1.0, health: 170, stride: 1.5, turn: 3, size: 1.12, gaits: DOG, trotBand: 0.15, swims: true, call: 'roar' },
   hyena: { ground: true, grade: 0.85, model: Models.hyena, max: 14, walk: 1.3, run: 12, flee: 26, calm: 80, radius: 0.32, height: 0.85, health: 70, stride: 1.2, turn: 3.5, size: 1.05, forager: true, gaits: DOG, trotBand: 0.5, scavenger: true, call: 'hyena' },
-  elephant: { ground: true, grade: 0.5, model: Models.elephant, max: 14, walk: 1.1, run: 7, flee: 16, calm: 45, radius: 1.5, height: 3.3, health: 600, stride: 2.6, turn: 1.0, size: 1.0, gaits: HOOF, trotBand: 0.6, swims: true, call: 'trumpet' },
+  elephant: { ground: true, grade: 0.5, model: Models.elephant, max: 14, walk: 1.1, run: 7, flee: 16, calm: 45, radius: 1.5, height: 3.3, health: 600, stride: 2.6, turn: 1.0, size: 1.3, gaits: HOOF, trotBand: 0.6, swims: true, call: 'trumpet' },
   hippo: { ground: true, grade: 0.5, model: Models.hippo, max: 10, fearless: true, walk: 0.7, run: 8, flee: 0, calm: 20, radius: 1.0, height: 1.6, health: 420, stride: 1.2, turn: 1.4, size: 1.0, gaits: HOOF, trotBand: 0.7, swims: true, call: 'hippo' },
   // The desert's camels (a string of them, unbothered), and scorpions
   // there and in the badlands (small, and their sting poisons).
@@ -107,7 +107,7 @@ const SPECIES = {
   // they run from anything hunting and from you coming at them fast. Come
   // slowly with food in your hand and they settle (see #horse): a tame one
   // can be led, fed, saddled and ridden (see Game).
-  horse: { ground: true, grade: 0.75, model: Models.horse, max: 30, walk: 1.5, run: 15, flee: 32, calm: 100, radius: 0.55, height: 1.8, health: 160, stride: 2.2, turn: 2.4, size: 1.0, gaits: HOOF, trotBand: 0.35, swims: true, call: 'neigh' },
+  horse: { ground: true, grade: 0.75, model: Models.horse, max: 30, walk: 1.5, run: 15, flee: 32, calm: 100, radius: 0.6, height: 1.8, health: 160, stride: 2.2, turn: 2.4, size: 1.08, gaits: HOOF, trotBand: 0.35, swims: true, call: 'neigh' },
 };
 // Hunting: how big a quarry each is (see wound), and the ones that will
 // come for you (`predator`: how far off they see you, how near you can come
@@ -212,6 +212,31 @@ const shake = new Quaternion();
  * wounds on it where it was hit; the dead lie where they fell a few
  * minutes, unless the scavengers get to them first).
  */
+/**
+ * How far a beast can drop its head before the skull sinks into its own
+ * chest: the turn down (about the head's pivot) at which more of the
+ * skull lies deep inside the body than at rest (its own `headMax`, if it
+ * says).
+ */
+function headReach(model) {
+  const sk = model.skull, hp = model.headPivot;
+  if (!sk || !model.torso) return Infinity;
+  const inside = (rx) => {
+    let n = 0, all = 0;
+    const c = Math.cos(rx), sn = Math.sin(rx);
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) for (let k = -2; k <= 2; k++) {
+      const x = sk[0] + (i / 2) * sk[3], y = sk[1] + (j / 2) * sk[4], z = sk[2] + (k / 2) * sk[5];
+      const wy = hp[1] + y * c - z * sn, wz = hp[2] + y * sn + z * c, wx = hp[0] + x;
+      all++;
+      if (model.torso.some(([tx, ty, tz, hx, hy, hz]) => Math.abs(wx - tx) < hx * 0.85 && Math.abs(wy - ty) < hy * 0.85 && Math.abs(wz - tz) < hz * 0.85)) n++;
+    }
+    return n / all;
+  };
+  const rest = inside(0);
+  for (let rx = 0.05; rx <= 1.6; rx += 0.05) if (inside(rx) > rest + 0.15) return Math.max(0.15, rx - 0.05);
+  return Infinity;
+}
+
 export class Wildlife {
   constructor(scene, materialHook = (m) => m) {
     this.scene = scene;
@@ -239,6 +264,11 @@ export class Wildlife {
         make('head', model.head, sp.max, true);
         make('antlers', model.antlers, sp.max, true);
         make('saddle', model.saddle, sp.max, true);
+        if (BOSS_KINDS.has(kind)) {
+          const fur = Models.bossFur(model, kind);
+          make('furBody', fur.body, 4, true);
+          make('furHead', fur.head, 4, true);
+        }
         make('fan', model.fan, sp.max, true);
         make('wingL', model.wingL, sp.max, false);
         make('wingR', model.wingR, sp.max, false);
@@ -247,6 +277,7 @@ export class Wildlife {
         make('hindLower', model.hind.lower, sp.max * n, true);
         if (sp.tinted || BOSS_KINDS.has(kind)) for (const m of Object.values(meshes)) m.setColorAt(0, white);
         model.body.computeBoundingBox();
+        model.headMax ??= headReach(model);
       } else if (sp.serpent) {
         make('segment', model.segment, sp.max * model.segments, true);
         make('head', model.head, sp.max, true);
@@ -515,7 +546,7 @@ export class Wildlife {
     }
     const sp = SPECIES[a.kind];
     // Where it went in: a mark, and it flinches.
-    if (hit?.local) {
+    if (hit?.local && !a.boss) {
       a.marks = a.marks ?? [];
       if (a.marks.length >= 6) a.marks.shift();
       a.marks.push({ head: hit.frame === 'head', x: hit.local.x, y: hit.local.y, z: hit.local.z });
@@ -1938,8 +1969,6 @@ export class Wildlife {
     a.lair = { x: lair.x, z: lair.z };
     a.antlers = !!def.antlers;
     a.aggressive = true;
-    // (Old scars: marks it carries.)
-    a.marks = Array.from({ length: 4 }, (_, k) => ({ head: false, x: (k % 2 ? 0.2 : -0.2) * (k + 1) * 0.3, y: 0.9 + k * 0.05, z: 0.3 - k * 0.25 }));
     if (def.pack) {
       const herd = this.#spawnHerd('wolf', { x, z, y: a.y }, def.pack);
       if (herd) {
@@ -3678,6 +3707,7 @@ export class Wildlife {
     // (A crocodile's head lies along the ground: it never dips its snout into it.)
     let headRx = a.alive ? a.headDown * bend + nod : 0.35;
     if (a.kind === 'crocodile') headRx = Math.min(headRx, 0.06);
+    headRx = Math.min(headRx, model.headMax ?? Infinity); // (never down into its own chest)
     const hp = model.headPivot;
     const thrust = sp.biped && a.alive && !sp.water && a.speed > 0.05 ? Math.max(0, Math.sin(TAU * (a.cycle ?? 0) * 2)) * 0.05 : 0;
     // (Dead, the head lolls over to the ground: a turn about the body's own up, which lying on its side is towards the ground.)
@@ -3686,6 +3716,9 @@ export class Wildlife {
     a.hm = (a.hm ?? new Matrix4()).copy(head);
     if (M.antlers && a.antlers) put(M.antlers, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : 0, 0);
     if (M.saddle && a.saddled) put(M.saddle, [0, 0, 0], 0, 0, 0);
+    // (A great beast's shag.)
+    if (a.boss && M.furBody && M.furBody.count < 4) put(M.furBody, [0, 0, 0], 0, 0, 0);
+    if (a.boss && M.furHead && M.furHead.count < 4) put(M.furHead, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : deadYaw, 0);
     // A tom turkey's fan, raised.
     if (M.fan && (a.display ?? 0) > 0.05) {
       part.makeTranslation(0, 0.66, -0.3).multiply(lift.makeRotationX((1 - a.display) * 1.4)).multiply(out.makeTranslation(0, -0.66, 0.3));

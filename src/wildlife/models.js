@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, Color } from 'three';
+import { BoxGeometry, BufferAttribute, Color, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const tint = new Color();
@@ -1224,25 +1224,31 @@ export function elephant() {
   return {
     body: body.build(),
     headPivot: [0, 2.8, 1.25],
+    headMax: 0.35, // (it browses with its trunk: the great head hardly drops)
     head: new Blocks()
-      .box(1.0, 1.1, 0.8, hide, [0, 0.0, 0.2], [0, 0, 0], [0.85, 0.85]) // great domed head
-      .box(0.12, 1.2, 1.0, dark, [0.62, -0.15, 0.0], [0, 0.35, 0.08]) // ears, wide and flat
-      .box(0.12, 1.2, 1.0, dark, [-0.62, -0.15, 0.0], [0, -0.35, -0.08])
-      .box(0.34, 0.6, 0.32, hide, [0, -0.62, 0.6]) // the trunk, hanging...
-      .box(0.26, 0.6, 0.26, hide, [0, -1.18, 0.66])
-      .box(0.2, 0.6, 0.2, hide, [0, -1.72, 0.7])
-      .box(0.16, 0.12, 0.2, dark, [0, -2.04, 0.74]) // ...its tip
-      .box(0.1, 0.1, 0.7, tusk, [0.24, -0.62, 0.72], [0.6, 0, 0]) // tusks, curving out
-      .box(0.1, 0.1, 0.7, tusk, [-0.24, -0.62, 0.72], [0.6, 0, 0])
-      .eyes(0.07, 0.05, 0.03, 0x3a2a1a, [0.42, 0.1, 0.48], 'round')
+      .box(1.0, 1.1, 0.8, hide, [0, 0.0, 0.4], [0, 0, 0], [0.85, 0.85]) // great domed head
+      .box(0.7, 0.3, 0.4, hide, [0, 0.5, 0.32], [0, 0, 0], [0.8, 0.8]) // the dome above the brow
+      .box(0.12, 1.2, 1.0, dark, [0.62, -0.15, 0.1], [0, 0.35, 0.08]) // ears, wide and flat
+      .box(0.12, 1.2, 1.0, dark, [-0.62, -0.15, 0.1], [0, -0.35, -0.08])
+      .box(0.38, 0.6, 0.36, hide, [0, -0.62, 0.78]) // the trunk, hanging...
+      .box(0.28, 0.6, 0.28, hide, [0, -1.18, 0.84])
+      .box(0.21, 0.6, 0.21, hide, [0, -1.72, 0.88])
+      .box(0.17, 0.12, 0.21, dark, [0, -2.04, 0.92]) // ...its tip
+      .box(0.1, 0.1, 0.7, tusk, [0.26, -0.62, 0.92], [0.6, 0, 0]) // tusks, curving out
+      .box(0.1, 0.1, 0.7, tusk, [-0.26, -0.62, 0.92], [0.6, 0, 0])
+      .box(0.2, 0.05, 0.08, dark, [0.38, 0.22, 0.74]) // heavy brows
+      .box(0.2, 0.05, 0.08, dark, [-0.38, 0.22, 0.74])
+      .box(0.16, 0.13, 0.04, dark, [0.38, 0.12, 0.75]) // the wrinkled lids round the eyes
+      .box(0.16, 0.13, 0.04, dark, [-0.38, 0.12, 0.75])
+      .eyes(0.1, 0.08, 0.04, 0x3a2414, [0.38, 0.12, 0.76], 'round')
       .build(),
     antlers: null,
     fore: limb(0.75, 0.7, { top: [0.48, 0.5], knee: [0.42, 0.42], ankle: [0.4, 0.4], color: hide, foot: [0.46, 0.1, 0.46, dark, 0.02] }),
     hind: limb(0.75, 0.7, { top: [0.5, 0.56], knee: [0.42, 0.42], ankle: [0.4, 0.4], color: hide, foot: [0.46, 0.1, 0.46, dark, 0.02] }),
     legs: [[0.46, 1.45, 0.75], [-0.46, 1.45, 0.75], [0.44, 1.45, -1.0], [-0.44, 1.45, -1.0]],
     torso: [[0, 2.25, -0.2, 0.72, 0.85, 1.45]],
-    neck: [0, -0.2, 0.0, 0.5, 0.5, 0.3],
-    skull: [0, 0.0, 0.2, 0.48, 0.52, 0.4],
+    neck: [0, -0.2, 0.1, 0.5, 0.5, 0.3],
+    skull: [0, 0.0, 0.4, 0.48, 0.52, 0.4],
   };
 }
 
@@ -1394,48 +1400,122 @@ export function horse() {
   const coat = 0x7a4a2a, dark = 0x1e1612, pale = 0x8a5a36, hoof = 0x2a2420;
   return {
     body: new Blocks()
-      .box(0.5, 0.62, 0.62, coat, [0, 1.36, 0.5], [0, 0, 0], [0.85, 0.9]) // deep chest
-      .box(0.46, 0.56, 0.8, coat, [0, 1.36, -0.08], [0, 0, 0], [0.92, 1]) // the long back
-      .box(0.5, 0.6, 0.5, coat, [0, 1.38, -0.62], [0, 0, 0], [0.85, 0.9]) // round quarters
-      .box(0.36, 0.08, 1.2, pale, [0, 1.06, 0.0]) // belly
-      .box(0.14, 0.14, 0.3, dark, [0, 1.48, -0.94], [-0.7, 0, 0]) // the tail: from the dock...
-      .box(0.16, 0.5, 0.14, dark, [0, 1.1, -1.04], [-0.15, 0, 0], [0.7, 0.8]) // ...flowing down
-      .box(0.12, 0.3, 0.1, dark, [0, 0.74, -1.08], [-0.05, 0, 0])
+      .box(0.56, 0.66, 0.64, coat, [0, 1.36, 0.5], [0, 0, 0], [0.85, 0.9]) // deep chest
+      .box(0.44, 0.34, 0.3, coat, [0, 1.62, 0.66], [0.5, 0, 0], [0.7, 0.8]) // the withers, up into the neck
+      .box(0.36, 0.3, 0.2, coat, [0, 1.12, 0.82], [0, 0, 0], [1, 0.8]) // the breast
+      .box(0.52, 0.58, 0.82, coat, [0, 1.38, -0.08], [0, 0, 0], [0.92, 1]) // the long back
+      .box(0.56, 0.62, 0.52, coat, [0, 1.4, -0.62], [0, 0, 0], [0.85, 0.9]) // round quarters
+      .box(0.4, 0.08, 1.2, pale, [0, 1.06, 0.0]) // belly
+      .box(0.14, 0.14, 0.3, dark, [0, 1.5, -0.96], [-0.7, 0, 0]) // the tail: from the dock...
+      .box(0.17, 0.5, 0.15, dark, [0, 1.12, -1.06], [-0.15, 0, 0], [0.7, 0.8]) // ...flowing down
+      .box(0.13, 0.3, 0.11, dark, [0, 0.76, -1.1], [-0.05, 0, 0])
       .build(),
     headPivot: [0, 1.64, 0.74],
     head: new Blocks()
-      .box(0.22, 0.6, 0.3, coat, [0, 0.18, 0.12], [-0.55, 0, 0], [0.8, 0.85]) // the arched neck
-      .box(0.06, 0.62, 0.16, dark, [0, 0.26, 0.0], [-0.55, 0, 0]) // the mane along it
-      .box(0.22, 0.26, 0.5, coat, [0, 0.48, 0.42], [0.55, 0, 0], [0.85, 0.85]) // the long head
-      .box(0.17, 0.17, 0.2, pale, [0, 0.3, 0.62], [0.55, 0, 0]) // muzzle
-      .box(0.05, 0.03, 0.02, 0x1a1210, [0.05, 0.26, 0.72]) // nostrils
-      .box(0.05, 0.03, 0.02, 0x1a1210, [-0.05, 0.26, 0.72])
-      .eyes(0.04, 0.035, 0.02, 0x2a1a10, [0.11, 0.56, 0.38], 'round')
-      .box(0.05, 0.14, 0.04, coat, [0.07, 0.74, 0.26], [0, 0, 0.15], [0.5, 0.5]) // upright ears
-      .box(0.05, 0.14, 0.04, coat, [-0.07, 0.74, 0.26], [0, 0, -0.15], [0.5, 0.5])
-      .box(0.1, 0.12, 0.08, dark, [0, 0.68, 0.32]) // forelock
+      // The neck: thick at the shoulders, rising forward and narrowing up to the poll.
+      .box(0.3, 0.36, 0.44, coat, [0, 0.0, 0.02], [0.53, 0, 0], [0.9, 0.85]) // its root, in the shoulders
+      .box(0.26, 0.78, 0.36, coat, [0, 0.3, 0.2], [0.53, 0, 0], [0.75, 0.62]) // the neck
+      .box(0.16, 0.5, 0.14, coat, [0, 0.12, 0.38], [0.75, 0, 0], [0.8, 0.8]) // the throat
+      .box(0.07, 0.82, 0.13, dark, [0, 0.38, 0.07], [0.53, 0, 0], [0.8, 0.6]) // the mane, along its crest
+      .box(0.12, 0.12, 0.1, dark, [0, 0.72, 0.38]) // forelock
+      // The head, long, angled down from the poll to the muzzle.
+      .box(0.24, 0.24, 0.24, coat, [0, 0.55, 0.47]) // the jowl
+      .box(0.21, 0.22, 0.54, coat, [0, 0.47, 0.62], [0.7, 0, 0], [0.9, 0.85]) // the long face
+      .box(0.17, 0.18, 0.18, pale, [0, 0.29, 0.82], [0.7, 0, 0]) // muzzle
+      .box(0.05, 0.03, 0.02, 0x1a1210, [0.05, 0.27, 0.9]) // nostrils
+      .box(0.05, 0.03, 0.02, 0x1a1210, [-0.05, 0.27, 0.9])
+      .box(0.25, 0.04, 0.06, coat, [0, 0.62, 0.55]) // brow
+      .eyes(0.04, 0.035, 0.03, 0x2a1a10, [0.115, 0.58, 0.55], 'round')
+      .box(0.05, 0.15, 0.04, coat, [0.07, 0.76, 0.44], [0.1, 0, 0.15], [0.5, 0.5]) // upright ears
+      .box(0.05, 0.15, 0.04, coat, [-0.07, 0.76, 0.44], [0.1, 0, -0.15], [0.5, 0.5])
       .build(),
     antlers: null,
     saddle: horseSaddle(), // (drawn on a saddled horse: see Wildlife)
-    fore: limb(0.5, 0.52, { top: [0.18, 0.24], knee: [0.11, 0.12], ankle: [0.08, 0.08], color: coat, low: dark, foot: [0.12, 0.08, 0.14, hoof, 0.02] }),
-    hind: limb(0.5, 0.52, { top: [0.2, 0.32], knee: [0.11, 0.13], ankle: [0.08, 0.08], color: coat, low: dark, foot: [0.12, 0.08, 0.14, hoof, 0.02] }),
-    legs: [[0.15, 1.02, 0.56], [-0.15, 1.02, 0.56], [0.15, 1.02, -0.64], [-0.15, 1.02, -0.64]],
-    torso: [[0, 1.36, -0.08, 0.25, 0.32, 0.86]],
-    neck: [0, 0.2, 0.1, 0.12, 0.3, 0.16],
-    skull: [0, 0.46, 0.44, 0.12, 0.14, 0.28],
+    fore: limb(0.5, 0.52, { top: [0.2, 0.26], knee: [0.12, 0.13], ankle: [0.09, 0.09], color: coat, low: dark, foot: [0.13, 0.08, 0.15, hoof, 0.02] }),
+    hind: limb(0.5, 0.52, { top: [0.22, 0.35], knee: [0.12, 0.14], ankle: [0.09, 0.09], color: coat, low: dark, foot: [0.13, 0.08, 0.15, hoof, 0.02] }),
+    legs: [[0.16, 1.02, 0.56], [-0.16, 1.02, 0.56], [0.16, 1.02, -0.64], [-0.16, 1.02, -0.64]],
+    torso: [[0, 1.37, -0.08, 0.28, 0.33, 0.88]],
+    neck: [0, 0.3, 0.2, 0.13, 0.36, 0.18],
+    skull: [0, 0.46, 0.64, 0.11, 0.14, 0.28],
   };
 }
 
 /** A saddle and blanket, in a horse's body frame (see horse). */
 export function horseSaddle() {
   return new Blocks()
-    .box(0.52, 0.04, 0.62, 0x6a3a2a, [0, 1.66, -0.02]) // the blanket
-    .box(0.36, 0.12, 0.48, 0x5a3a20, [0, 1.73, -0.02], [0, 0, 0], [0.9, 0.85]) // the saddle
-    .box(0.3, 0.12, 0.08, 0x4a2e18, [0, 1.8, 0.2]) // its pommel
-    .box(0.32, 0.1, 0.08, 0x4a2e18, [0, 1.8, -0.24]) // its cantle
+    .box(0.57, 0.04, 0.62, 0x6a3a2a, [0, 1.68, -0.02]) // the blanket
+    .box(0.36, 0.12, 0.48, 0x5a3a20, [0, 1.75, -0.02], [0, 0, 0], [0.9, 0.85]) // the saddle
+    .box(0.3, 0.12, 0.08, 0x4a2e18, [0, 1.82, 0.2]) // its pommel
+    .box(0.32, 0.1, 0.08, 0x4a2e18, [0, 1.82, -0.24]) // its cantle
     .box(0.03, 0.4, 0.05, 0x3a2414, [0.27, 1.48, 0.0]) // stirrup leathers
     .box(0.03, 0.4, 0.05, 0x3a2414, [-0.27, 1.48, 0.0])
     .box(0.08, 0.04, 0.1, 0x8a949e, [0.28, 1.27, 0.0]) // stirrups
     .box(0.08, 0.04, 0.1, 0x8a949e, [-0.28, 1.27, 0.0])
     .build();
+}
+
+/**
+ * A great beast's shag (see Wildlife's BOSSES): thick, pointed tufts of
+ * fur built over its kind's model: raised hackles down the spine, a heavy
+ * ruff over the shoulders and round the neck, ragged fur hanging off the
+ * flanks and belly, and cheek fur on the head; each tuft coloured from the
+ * coat under it, a little darker or paler. A crocodile gets rows of knobbed
+ * scutes instead. { body, head }, in the body's and the head's frames.
+ */
+export function bossFur(model, kind) {
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const jit = (a) => (rand() - 0.5) * 2 * a;
+  const up = new Vector3(), X = new Vector3(1, 0, 0), Y = new Vector3(0, 1, 0), Z = new Vector3(0, 0, 1);
+  const near = (geo, x, y, z, out) => {
+    const p = geo.attributes.position, c = geo.attributes.color;
+    let best = Infinity, k0 = 0;
+    for (let k = 0; k < p.count; k += 3) {
+      const d = (p.getX(k) - x) ** 2 + (p.getY(k) - y) ** 2 + (p.getZ(k) - z) ** 2;
+      if (d < best) (best = d), (k0 = k);
+    }
+    return out.setRGB(c.getX(k0), c.getY(k0), c.getZ(k0));
+  };
+  // A tuft: its base at [x, y, z] on the hide, pointing along the turn [rx, ry, rz] from straight up.
+  const tuft = (b, geo, size, [x, y, z], [rx, ry, rz], len = 1, shade = 0.85) => {
+    const w = size * (0.6 + rand() * 0.3), h = size * (0.6 + rand() * 0.35) * len, d = size * 0.22;
+    up.copy(Y).applyAxisAngle(X, rx).applyAxisAngle(Y, ry).applyAxisAngle(Z, rz);
+    const c = near(geo, x, y, z, new Color()).multiplyScalar(shade + jit(0.1));
+    b.box(w, h, d, c, [x + up.x * h * 0.3, y + up.y * h * 0.3, z + up.z * h * 0.3], [rx, ry, rz], [0.35, 0.25]);
+  };
+  const body = new Blocks(), head = new Blocks();
+  const croc = kind === 'crocodile';
+  for (const [x, y, z, hx, hy, hz] of model.torso ?? []) {
+    const u = croc ? hy * 0.9 : Math.min(hx, hy) * 0.55;
+    const front = (t) => Math.max(0, (t - 0.25) / 0.75); // (0 at the back, 1 at the shoulders)
+    for (let t = -0.95; t <= 0.95; t += croc ? 0.12 : 0.16) {
+      const zz = z + (t + (croc ? 0 : jit(0.05))) * hz, f = front((t + 1) / 2);
+      if (croc) {
+        // Two rows of scutes, knobbed and dark, down the back.
+        for (const sx of [-0.35, 0.35]) body.box(u * 0.35, u * 0.35, u * 0.4, near(model.body, x + sx * hx, y + hy, zz, new Color()).multiplyScalar(0.7), [x + sx * hx, y + hy * 0.95 + u * 0.12, zz], [0, 0, 0], [0.4, 0.5]);
+        continue;
+      }
+      // Hackles: three rows down the spine, longer over the shoulders.
+      for (const sx of [-0.45, 0, 0.45]) tuft(body, model.body, u * (1 + 0.6 * f), [x + sx * hx + jit(hx * 0.08), y + hy * (0.92 - Math.abs(sx) * 0.15), zz + jit(0.03)], [-1.15 + jit(0.25), 0, -sx * 1.3 + jit(0.25)], 1 + 0.5 * f);
+      // The flanks: fur hanging off them, ragged, heavier in front.
+      for (const side of [1, -1]) {
+        for (const v of [0.5, -0.1, -0.65]) tuft(body, model.body, u * (0.9 + 0.4 * f), [x + side * hx * 0.95, y + (v + jit(0.12)) * hy, zz + jit(0.06)], [Math.PI - 0.3 + jit(0.2), 0, side * (-0.25 + jit(0.15))], 0.9 + 0.3 * f, 0.82);
+      }
+      // The belly fringe, hanging down.
+      tuft(body, model.body, u * 0.9, [x + jit(hx * 0.5), y - hy * 0.95, zz], [Math.PI - 0.3 + jit(0.2), 0, jit(0.4)], 1.1, 0.75);
+    }
+  }
+  if (!croc && model.neck) {
+    // A ruff round the neck, over the top and both sides, swept back.
+    const [x, y, z, hx, hy, hz] = model.neck, u = Math.min(hx, hy) * 0.75;
+    for (let t = -0.8; t <= 0.8; t += 0.4) {
+      for (let a = -1.6; a <= 1.6; a += 0.4) tuft(head, model.head, u * 1.2, [x + Math.sin(a) * hx * 1.05, y + Math.cos(a) * hy * 0.9 + t * hy * 0.3, z + t * hz], [-1.1 + jit(0.2), 0, -a * 0.9 + jit(0.15)], 1.3);
+    }
+  }
+  if (!croc && model.skull) {
+    // Cheek fur, swept back off the sides of the face; a brow.
+    const [x, y, z, hx, hy, hz] = model.skull, u = Math.min(hx, hy) * 0.5;
+    for (const side of [1, -1]) for (const v of [-0.4, 0.2]) for (const t of [-0.6, -0.2]) tuft(head, model.head, u, [x + side * hx * 0.95, y + v * hy, z + t * hz], [-1.4 + jit(0.2), 0, -side * 1.1 + jit(0.2)], 1.1);
+  }
+  return { body: body.parts.length ? body.build() : null, head: head.parts.length ? head.build() : null };
 }
