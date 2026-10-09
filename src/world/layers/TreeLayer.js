@@ -313,7 +313,9 @@ export function createTreeLayer({ rocks = null } = {}) {
             const r = list[k + 4] * (list[k + 5] ? Math.max(0.25, (top - low) / (top - bottom)) : 1);
             const d = Math.hypot(ox, oz);
             if (d > r + radius) continue;
-            slow = Math.min(slow, 0.45 + 0.55 * Math.max(0, (d - r * 0.5) / (r * 0.5 + radius)));
+            // (Hard going: down to a fifth of your pace in the thick of a
+            // bush or the low boughs, and more for each one you're in.)
+            slow *= 0.2 + 0.8 * Math.min(1, Math.max(0, (d - r * 0.4) / (r * 0.6 + radius)));
             const hard = r * 0.55 + radius;
             if (d < hard && d > 0) {
               position.x += (ox / d) * (hard - d);
@@ -322,7 +324,7 @@ export function createTreeLayer({ rocks = null } = {}) {
           }
         }
       }
-      return slow;
+      return Math.max(0.12, slow);
     },
 
     /** The thick of the leaves near (x, z) at the height of an animal `tall` metres high: circles [x, z, radius, ...]. */

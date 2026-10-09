@@ -922,9 +922,10 @@ kbd {
   padding: 30px 28px 24px;
   display: grid;
   gap: 12px;
-  background: linear-gradient(160deg, rgba(46, 58, 44, 0.95), rgba(30, 38, 30, 0.96));
+  background: linear-gradient(160deg, rgba(62, 76, 58, 0.97), rgba(40, 50, 39, 0.98));
   clip-path: polygon(0 18px, 22px 0, calc(100% - 40px) 4px, 100% 26px, calc(100% - 6px) calc(100% - 22px), calc(100% - 30px) 100%, 26px calc(100% - 6px), 4px calc(100% - 34px));
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  /* (A pale edge to the card, so it stands out from the land behind.) */
+  box-shadow: inset 0 0 0 2px rgba(240, 226, 190, 0.28), 0 10px 40px rgba(0, 0, 0, 0.4);
 }
 .sm-logo {
   margin: 0;
@@ -1049,6 +1050,26 @@ kbd {
 .sm-mode.sm-picked {
   background: rgba(194, 101, 42, 0.35);
   box-shadow: inset 4px 0 0 #e0823a;
+}
+/* (Each choice a box you can see, its name in light letters, whatever the
+   page around it does to buttons.) */
+.start-menu button[type='button'].sm-mode {
+  color: #e9e1cb;
+  background: rgba(255, 248, 230, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(240, 226, 190, 0.32);
+}
+.start-menu button[type='button'].sm-mode:hover {
+  background: rgba(255, 248, 230, 0.14);
+}
+.start-menu button[type='button'].sm-mode strong {
+  color: #f4ecd6;
+}
+.start-menu button[type='button'].sm-mode span {
+  color: #d2c8ae;
+}
+.start-menu button[type='button'].sm-mode.sm-picked {
+  background: rgba(194, 101, 42, 0.45);
+  box-shadow: inset 4px 0 0 #e0823a, inset 0 0 0 1px rgba(232, 150, 90, 0.75);
 }
 .sm-worlds {
   list-style: none;
@@ -1395,9 +1416,9 @@ kbd {
   padding: 26px 26px 20px;
   display: grid;
   gap: 10px;
-  background: linear-gradient(160deg, rgba(46, 58, 44, 0.95), rgba(30, 38, 30, 0.96));
+  background: linear-gradient(160deg, rgba(70, 86, 64, 0.98), rgba(46, 58, 44, 0.98));
   clip-path: polygon(0 18px, 22px 0, calc(100% - 40px) 4px, 100% 26px, calc(100% - 6px) calc(100% - 22px), calc(100% - 30px) 100%, 26px calc(100% - 6px), 4px calc(100% - 34px));
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 0 0 2px rgba(240, 226, 190, 0.32), 0 10px 40px rgba(0, 0, 0, 0.4);
 }
 .ls-head {
   margin: 0;
@@ -1417,7 +1438,7 @@ kbd {
 }
 .ls-bar {
   height: 12px;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.5);
   clip-path: polygon(0 2px, 6px 0, 100% 1px, calc(100% - 3px) 100%, 3px calc(100% - 1px));
 }
 .ls-bar span {

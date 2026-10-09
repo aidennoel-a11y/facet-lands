@@ -324,7 +324,10 @@ export function seasonalTrees(material, leaves = false, randFrom = null, warmFro
           vFlowerAt = position;
           vSeasonUp = normal.y;
           ${leaves || randFrom ? '' : `#ifdef USE_INSTANCING
-            vTreeNorth = -normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal).z * (1.0 - aCrown);
+            // Direction out from the trunk's middle, not the flat face normal, so the
+            // moss side shades round the trunk smoothly instead of face by face.
+            vec3 treeOut = mat3(modelMatrix) * mat3(instanceMatrix) * vec3(position.x, 0.0, position.z);
+            vTreeNorth = -treeOut.z / max(length(treeOut), 1e-4) * (1.0 - aCrown);
           #else
             vTreeNorth = 0.0;
           #endif`}
@@ -390,7 +393,10 @@ export function seasonalTrees(material, leaves = false, randFrom = null, warmFro
             c = mix(c, vFall * (0.8 + 0.4 * dot(c, vec3(0.33))), turned * leafy * 0.9 * seasonal);
             ${leaves || randFrom ? '' : `// Moss up the north side of the trunks, in damp country: on about
             // one tree in six.
-            c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * step(0.83, fract(vTreeRand * 13.7)) * smoothstep(0.1, 0.8, vTreeNorth) * (0.5 + 0.5 * seasonHash(floor(vFlowerAt.xy * 4.0) + vTreeRand)) * 0.8);`}
+            // A ragged, soft edge: noise nudges where it starts, and it thins with height.
+            float mossEdge = vTreeNorth + 0.45 * (seasonNoise(vec2(atan(vFlowerAt.z, vFlowerAt.x) * 2.0, vFlowerAt.y * 2.5) + vTreeRand * 17.0) - 0.5);
+            float moss = smoothstep(-0.35, 0.75, mossEdge) * (0.55 + 0.45 * seasonNoise(vFlowerAt.xy * 6.0 + vFlowerAt.zy * 5.0 + vTreeRand * 9.0)) * (1.0 - smoothstep(1.2, 3.5, vFlowerAt.y));
+            c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * step(0.83, fract(vTreeRand * 13.7)) * moss * 0.75);`}
             // Winter: bare grey-brown twigs, and snow on the upward faces.
             c = mix(c, vec3(0.13, 0.1, 0.08), uWinter * leafy * 0.85 * seasonal);
             float treeSnow = max(max(uWinter, uSnowfall), uHighSnow * smoothstep(80.0, 96.0, vTreeY));

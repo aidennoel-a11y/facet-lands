@@ -63,6 +63,11 @@ const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.antialias, powerPreference: 'high-performance' }); // (the strong graphics chip, on a laptop with two)
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
+// (The soft edge of a shadow is sampled in the same pattern everywhere, not
+// turned by a noise from pixel to pixel: that noise wants a frame-blending
+// pass to smooth it, which this game doesn't have, and without one the
+// edges look grainy and shimmer as you move.)
+THREE.ShaderChunk.shadowmap_pars_fragment = THREE.ShaderChunk.shadowmap_pars_fragment.replaceAll('float phi = interleavedGradientNoise( gl_FragCoord.xy ) * PI2;', 'float phi = 0.7;');
 // Shadows fade out over the outer edge of the sun's shadow map, rather
 // than stopping on a line across the land.
 THREE.ShaderChunk.shadowmap_pars_fragment = THREE.ShaderChunk.shadowmap_pars_fragment.replaceAll(
@@ -945,7 +950,7 @@ function updateVisibility() {
 }
 
 let sheltered = false; // underground: no rain or lightning, sounds muffled
-let shadowTurn = 0, shadowsDirty = true, cloudOwed = 0; // (see the frame: the shadows drawn every other frame)
+let shadowTurn = 0, cloudOwed = 0; // (see the frame: the clouds moved every other frame)
 
 // Where the sun's (or moon's) shadow map reaches: only chunks there need
 // sample it (see ChunkManager.setShadowVolume). A little bigger than the
@@ -1390,7 +1395,6 @@ function useQuality() {
     shadow.mapSize.set(WORLD.shadowMapSize, WORLD.shadowMapSize);
     shadow.map?.dispose();
     shadow.map = null;
-    shadowsDirty = true;
   }
   Object.assign(shadow.camera, { left: -e, right: e, top: e, bottom: -e });
   shadow.camera.updateProjectionMatrix();
@@ -1429,7 +1433,6 @@ function checkPerformance(dt) {
     shadow.mapSize.set(shadow.mapSize.x / 2, shadow.mapSize.y / 2);
     shadow.map?.dispose();
     shadow.map = null;
-    shadowsDirty = true;
     return perfNote('Softened the shadows a little to keep it smooth');
   }
 }
@@ -1766,14 +1769,8 @@ function tick(now) {
   camera.position.y += tremble;
   camera.updateMatrixWorld();
   chunks.cull(camera.position); // (the land behind the hills not drawn)
-  // The shadows are drawn afresh every other frame: the sun hardly moves in
-  // a frame, nor what casts them, and that's half the cost of the shadows.
-  // (The shadows and the light that casts them stay together: the frame
-  // between uses the last one's map with the last one's sun.)
+  // (Every other frame, for what can wait a frame: see the clouds.)
   shadowTurn = (shadowTurn + 1) % 2;
-  renderer.shadowMap.autoUpdate = false;
-  renderer.shadowMap.needsUpdate = shadowTurn === 0 || shadowsDirty;
-  shadowsDirty = false;
   // (Animals only, for testing: everything else hidden, each animal labelled.)
   const animalsOnly = animalsOnlyBox?.checked;
   const hidden = [];
