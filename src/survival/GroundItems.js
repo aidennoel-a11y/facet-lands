@@ -224,6 +224,7 @@ export class GroundItems {
       });
       mesh.computeBoundingSphere();
       mesh.receiveShadow = true;
+      mesh.userData.caveDetail = true; // (drawn only once you're inside: see CaveLayer)
       parent.add(mesh);
       meshes.push(mesh);
     }

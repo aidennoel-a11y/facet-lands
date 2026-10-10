@@ -35,6 +35,7 @@ export class PlayerControls {
     this.world = world;
 
     this.mode = 'fly';
+    this.noclip = false; // (testing: flying through the ground and rock, nothing solid)
     this.autoMove = false;
     this.lookSensitivity = 0.0035;
 
@@ -224,10 +225,24 @@ export class PlayerControls {
 
     if (m.lengthSq() > 0) {
       m.normalize().multiplyScalar(this.currentSpeed * dt);
+      const p0 = this.camera.position;
+      // (Underground, flying, the rock walls still stop you: unless no clip.)
+      if (!this.noclip && (m.x || m.z)) {
+        const feet = p0.y - this.eyeHeight, here = this.#ground(p0.x, feet, p0.z);
+        if (here.inCave) {
+          const len = Math.hypot(m.x, m.z), reach = this.radius + 0.35;
+          const ahead = this.#ground(p0.x + m.x + (m.x / len) * reach, feet, p0.z + m.z + (m.z / len) * reach);
+          if (ahead.stand > feet + 1.2 || (ahead.inCave && ahead.ceiling < p0.y + 0.1)) (m.x = 0), (m.z = 0);
+        }
+      }
       this.camera.position.add(m);
     }
 
     const pos = this.camera.position;
+    if (this.noclip) {
+      this.underwater = false;
+      return;
+    }
     const ground = this.#ground(pos.x, pos.y - this.eyeHeight, pos.z);
     // (Down into the water, if you like, to near its bottom.)
     const floor = ground.inCave ? ground.stand + 0.4 : ground.swim ? ground.height + 1 : ground.stand + this.flyClearance;
@@ -386,6 +401,16 @@ export class PlayerControls {
     const rise = there.stand - here.stand;
     if (!there.swim && there.stand > feet + 1.2) return false; // a wall
     if (there.inCave && there.ceiling - there.stand < this.eyeHeight + 0.25) return false; // too low
+    // In a cave, look a little further ahead too (your body's width, and a
+    // little for the rough rock), so you stop at the wall rather than
+    // with your face in it.
+    if (here.inCave || there.inCave) {
+      const len = Math.hypot(dx, dz) || 1, reach = this.radius + 0.35;
+      const ax = pos.x + dx + (dx / len) * reach, az = pos.z + dz + (dz / len) * reach;
+      const ahead = this.#ground(ax, feet, az);
+      if (!ahead.swim && ahead.stand > feet + 1.2) return false;
+      if (ahead.inCave && ahead.ceiling < feet + this.eyeHeight + 0.1) return false; // (rock at head height)
+    }
     if (this.grounded && !here.swim && rise > 0 && rise / Math.hypot(dx, dz) > this.maxClimb) return false;
     pos.x += dx;
     pos.z += dz;

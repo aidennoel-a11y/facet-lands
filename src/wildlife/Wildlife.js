@@ -3572,6 +3572,12 @@ export class Wildlife {
     for (const a of this.animals) {
       const rig = this.rigs[a.kind], sp = SPECIES[a.kind], M = rig.meshes;
       if (counts[a.kind] >= sp.max) continue;
+      // (Underground: nothing up on the surface through the rock overhead is drawn.)
+      if ((a.y ?? 0) > (this.hideAbove ?? Infinity)) {
+        a.m = null;
+        a.hm = null;
+        continue;
+      }
       if (cam && !a.ridden) {
         const h = (sp.height ?? 1) * a.scale, near = Math.abs(a.x - cam.position.x) < 25 && Math.abs(a.z - cam.position.z) < 25;
         sphere.center.set(a.x, (a.y ?? 0) + h * 0.5, a.z);

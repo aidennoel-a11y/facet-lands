@@ -103,6 +103,7 @@ export class Game {
     Object.defineProperty(this.hud, 'spawners', { get: () => this.mode === 'testing' }); // (the animal spawners: for testing only)
     this.items = new GroundItems(o.scene, o.config);
     this.structures = new Structures(o.scene, (id) => this.items.model(id));
+    this.structures.underground = (x, y, z) => y < this.generator().getHeight(x, z) - 3; // (a fire in a cave: see Structures.update)
     this.structures.onDone = (s, out) => {
       const d = Math.hypot(s.x - this.camera.position.x, s.z - this.camera.position.z);
       if (d < 30) this.hotbar?.flash(`${ITEMS[out.id].name} ready at the ${ITEMS[s.type].name.toLowerCase()}`);

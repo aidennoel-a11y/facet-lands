@@ -187,6 +187,7 @@ export class CaveField {
     const spag = this.spagRegion.noise2D(x * 0.0016, z * 0.0016) + 0.15;
     return {
       H,
+      lush: this.lushAt(x, z),
       chamber: this.chamberAt(x, z),
       river: this.riverAt(x, z, H),
       spag,
@@ -196,9 +197,22 @@ export class CaveField {
     };
   }
 
+  /** How lush the cave country is round (x, z), 0..1+ (coarse, cached: see biomeScores). */
+  lushAt(x, z) {
+    const S = 48, i = Math.round(x / S), k = Math.round(z / S), key = i * 100003 + k;
+    this.lushCache ??= new Map();
+    let v = this.lushCache.get(key);
+    if (v === undefined) {
+      if (this.lushCache.size > 20000) this.lushCache.clear();
+      v = this.biomeScores(i * S, k * S).lush;
+      this.lushCache.set(key, v);
+    }
+    return v;
+  }
+
   /** Could this column hold any deep cave? (Cheap: to skip work.) */
   deepRock(col) {
-    return col.chamber || col.river || col.spag > -0.05 ? 0 : 50;
+    return col.chamber || col.river || col.spag > -0.05 || col.lush > 0.45 ? 0 : 50;
   }
 
   #deep(x, y, z, H, col) {
@@ -241,6 +255,14 @@ export class CaveField {
       rd += (1 - rv.fade) * 8;
       d = Math.min(d, rd);
     }
+    // Under the wet country, the lush caverns: great green halls, wide and
+    // high, opening one into another (only there, so they're the lush caves).
+    if (col.lush > 0.45 && y > -70) {
+      const r = this.chamberWall.noise3D(x / 75 + 300, y / 32, z / 75 - 300);
+      let ld = (0.18 - r) * 42;
+      ld = Math.max(ld, (0.45 - col.lush) * 60, -70 - y);
+      d = Math.min(d, ld);
+    }
     // Spaghetti: long thin tunnels winding on and on.
     if (col.spag > -0.05 && y > this.deep) {
       // (Some 8 m across: thin for a cave, wide enough for the 3.2 m grid
@@ -260,10 +282,10 @@ export class CaveField {
    */
   biomeScores(x, z) {
     const g = this.generator, w = g.getBiomeWeights(x, z, {}), H = g.getHeight(x, z);
-    const n = this.kind.noise2D(x / 300, z / 300), m = this.kind.noise2D(x / 300 + 31, z / 300 - 17);
+    const n = this.kind.noise2D(x / 900, z / 900), m = this.kind.noise2D(x / 300 + 31, z / 300 - 17);
     const sm = (a, b, v) => Math.min(1, Math.max(0, (v - a) / (b - a)));
     return {
-      lush: w.jungle + w.mangrove + 0.8 * w.wetland + 0.6 * w.redwood + 0.5 * w.smoky + 0.3 * (w.temperate + w.parkland) + 0.35 * n,
+      lush: w.jungle + w.mangrove + 0.8 * w.wetland + 0.7 * w.redwood + 0.6 * w.smoky + 0.35 * (w.temperate + w.parkland) + 0.4 * n,
       volcanic: 1.2 * w.volcanic + 0.25 * m,
       ice: sm(120, 190, H) * (1 - w.jungle - w.desert) + 0.35 * (w.pine + w.blackHills) * sm(0.2, 0.6, n * 0.5 + 0.5) + 0.2 * m,
       dry: w.desert + w.badlands + 0.5 * w.savanna + w.saltFlat,

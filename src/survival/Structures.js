@@ -10,9 +10,9 @@ import {
 const rnd = (a, b) => a + Math.random() * (b - a);
 const FLAMES = [new Color(1, 0.55, 0.12), new Color(1, 0.75, 0.25), new Color(1, 0.38, 0.08)];
 const SMOKE = new Color(0.55, 0.53, 0.5);
-const FUEL_START = 300; // seconds a new fire burns
-const FUEL_LOG = 180; // and each log added
-const FUEL_MAX = 900;
+const FUEL_START = 450; // seconds a new fire burns
+const FUEL_LOG = 270; // and each log added
+const FUEL_MAX = 1350;
 // How long a crop takes to ripen (seconds, in a good season).
 export const GROW = { wheat: 420, corn: 600, potato: 480, carrot: 360 };
 const UP = new Vector3(0, 1, 0), tq = new Quaternion(), yq = new Quaternion(), nv = new Vector3();
@@ -511,7 +511,9 @@ export class Structures {
         }
       }
       if (!kind.fire || !s.lit) continue;
-      s.fuel -= dt;
+      // (In a cave, out of the wind, a fire burns slow: twice as long.)
+      s.underground ??= !!this.underground?.(s.x, s.y, s.z);
+      s.fuel -= dt * (s.underground ? 0.5 : 1);
       s.litTime = (s.litTime ?? 0) + dt;
       if (s.fuel <= 0) {
         s.lit = false;

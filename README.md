@@ -51,6 +51,11 @@ loads.
   chambers hundreds of metres across with great pillars holding up the roof
   and lakes in their hollows, long winding spaghetti tunnels, and
   underground rivers that run on through the rock joining cave to cave.
+  Under the wet country the lush caverns open into great green halls (ferns
+  and moss on the floor, vines hanging thick). Bats flit about under their
+  roosts, more when you come near. Fires burn twice as long underground.
+  Cave rock is finely faceted, with boulders on the floors; all the detail
+  (and the water, plants, finds and bats) is drawn only once you're inside.
 - Mining: rock takes several pickaxe blows to break (a better pick, fewer).
   Bare rock and boulders give stone (now and then flint); ore lies in veins
   you can see, each its own look (iron rust-red in grey stone, coal in black
@@ -178,6 +183,7 @@ Tick **Fly** (or press `V`) to switch between flying and walking.
 | `H` | Shadows on / off (for slower computers) | same |
 | `R` | Ray effects (light shafts, ambient occlusion) on / off | same |
 | `N` | Night vision (for testing: lights everything, caves included) | same |
+| `J` | No clip (testing and creative: fly straight through the ground and rock, into the caves) | same |
 | Click / tap | Use the selected hotbar item (place a torch) | same |
 | Right-click | Pick up the torch you point at | same |
 | `1`–`9` | Choose a hotbar slot | same (the wheel also scrolls it while walking) |

@@ -1,4 +1,4 @@
-import { BoxGeometry, Color, DoubleSide, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Vector3 } from 'three';
+import { BoxGeometry, Color, DoubleSide, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bonesModel } from '../../survival/models.js';
 
@@ -58,9 +58,53 @@ const fishGeometry = (() => {
 const fishMaterial = new MeshBasicMaterial({ color: 0xc8ccd0, transparent: true, opacity: 0.85 });
 const fm = new Matrix4(), fq = new Quaternion(), fp = new Vector3(), fs = new Vector3(1, 1, 1), fUp = new Vector3(0, 1, 0);
 
-/** Swims the cave fish (call every frame). */
-export function updateCaveLife(time) {
+// Bats flitting about under their roosts in the dark: a few awake at any
+// time, darting round in loops, wings beating (more when you come near).
+export const roostFlocks = new Set();
+const batGeometry = (() => {
+  const body = new BoxGeometry(0.05, 0.04, 0.09).toNonIndexed();
+  const wings = new BoxGeometry(0.36, 0.006, 0.1).translate(0, 0.01, 0).toNonIndexed();
+  const g = mergeGeometries([body, wings]);
+  g.computeVertexNormals();
+  return g;
+})();
+const batMaterial = new MeshLambertMaterial({ color: 0x2a2220, emissive: 0x0c0a09 });
+const bp = new Vector3(), bs = new Vector3(), bq = new Quaternion(), be = new Euler();
+
+// What's only drawn once you're inside the caves (everything but the bare
+// rock): the stalagmites, plants, boulders, finds, water, fish and bats.
+const details = new Set();
+let inside = false;
+const detail = (mesh) => {
+  details.add(mesh);
+  mesh.visible = inside;
+  return mesh;
+};
+
+/** Swims the cave fish and flies the bats (call every frame); `eye`: where you are, if underground. */
+export function updateCaveLife(time, eye = null) {
   caveTime.value = time;
+  if (!!eye !== inside) {
+    inside = !!eye;
+    for (const m of details) m.visible = inside;
+  }
+  if (!inside) return;
+  for (const flock of roostFlocks) {
+    // (Come near with a light and they all take wing, fast and wild.)
+    const near = eye ? Math.hypot(eye.x - flock.x, eye.y - flock.y, eye.z - flock.z) : 99;
+    const stir = near < 10 ? 1 : near < 25 ? 0.5 : 0.2;
+    flock.bats.forEach((b, k) => {
+      const awake = k < Math.ceil(flock.bats.length * stir);
+      const t = time * b.speed * (0.6 + stir) + b.phase;
+      const r = awake ? b.r : 0;
+      bp.set(flock.x + Math.cos(t) * r + Math.sin(t * 2.3 + b.phase) * r * 0.3 - flock.x0, flock.y - (awake ? b.drop + Math.sin(t * 1.7) * 0.8 : 0.15), flock.z + Math.sin(t) * r * b.squash - flock.z0);
+      be.set(0, -t + (b.speed > 0 ? 0 : Math.PI), awake ? Math.sin(t * 3) * 0.3 : 0, 'YXZ');
+      bq.setFromEuler(be);
+      const flap = awake ? 0.35 + 0.65 * Math.abs(Math.sin(time * 22 + b.phase * 5)) : 0.15;
+      flock.mesh.setMatrixAt(k, fm.compose(bp, bq, bs.set(flap, 1, 1)));
+    });
+    flock.mesh.instanceMatrix.needsUpdate = true;
+  }
   for (const shoal of shoals) {
     shoal.fish.forEach((f, k) => {
       const a = time * f.speed + f.phase;
@@ -196,18 +240,32 @@ export function createCaveLayer(config) {
           group.add(rock);
         }
         if (data.features?.length) {
-          for (const mesh of finds(data.features, cx * size, cz * size)) group.add(mesh);
+          for (const mesh of finds(data.features, cx * size, cz * size)) group.add(detail(mesh));
+          // (A few bats out and about under each roost.)
+          for (let k = 0; k < data.features.length; k += 6) {
+            if (data.features[k] !== 12) continue;
+            const n = 4 + (k % 5), fx = data.features[k + 1], fy = data.features[k + 2], fz = data.features[k + 3];
+            const bats = Array.from({ length: n }, (_, j) => ({ r: 1.5 + ((j * 7 + k) % 5) * 0.8, drop: 1.2 + (j % 3) * 0.7, squash: 0.5 + (j % 4) * 0.15, speed: (j % 2 ? 1 : -1) * (1.6 + (j % 3) * 0.5), phase: j * 2.1 + k }));
+            const mesh = new InstancedMesh(batGeometry, batMaterial, n);
+            mesh.name = 'cave bats flying';
+            mesh.frustumCulled = false;
+            group.add(detail(mesh));
+            const flock = { mesh, bats, x: fx, y: fy, z: fz, x0: cx * size, z0: cz * size };
+            roostFlocks.add(flock);
+            (group.userData.flocks ??= []).push(flock);
+          }
           layer.onFinds?.(cx, cz, data.features, group);
+          for (const m of group.children) if (m.userData.caveDetail) detail(m); // (the ore and the rest, to pick up)
         }
         // The water lying in the dark, its fish; the lava.
         if (data.water) {
           const w = new Mesh(data.water, water);
           w.name = 'cave water';
           w.renderOrder = 2;
-          group.add(w);
+          group.add(detail(w));
           const sh = shoal(data.water, cx * size, cz * size, cx * 31 + cz);
           if (sh) {
-            group.add(sh.mesh);
+            group.add(detail(sh.mesh));
             shoals.add(sh);
             group.userData.shoal = sh;
           }
@@ -215,7 +273,7 @@ export function createCaveLayer(config) {
         if (data.lava) {
           const l = new Mesh(data.lava, lava);
           l.name = 'cave lava';
-          group.add(l);
+          group.add(detail(l));
         }
         if (data.deco) {
           const stones = new Mesh(data.deco, material);
@@ -223,7 +281,7 @@ export function createCaveLayer(config) {
           stones.castShadow = false;
           stones.receiveShadow = true;
           stones.userData.solid = true;
-          group.add(stones);
+          group.add(detail(stones));
         }
       });
       return group;
@@ -233,6 +291,8 @@ export function createCaveLayer(config) {
       // Geometry belongs to the cave system's cache; just let it know we're done.
       group.userData.disposed = true;
       if (group.userData.shoal) shoals.delete(group.userData.shoal);
+      for (const f of group.userData.flocks ?? []) roostFlocks.delete(f);
+      group.traverse((m) => details.delete(m));
       const [cx, cz] = group.userData.chunk;
       for (const mesh of group.children) if (mesh.isInstancedMesh) mesh.dispose();
       layer.onGone?.(cx, cz);

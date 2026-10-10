@@ -6,7 +6,7 @@ import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
-import { caveNightVision, createCaveLayer, updateCaveLife } from './world/layers/CaveLayer.js';
+import { caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
@@ -671,6 +671,7 @@ const ui = {
   shadows: document.getElementById('shadows'),
   rays: document.getElementById('rays'),
   night: document.getElementById('night'),
+  noclip: document.getElementById('noclip'),
   weather: document.getElementById('weather'),
   season: document.getElementById('season'),
   seasonAuto: document.querySelector('#season option[value=auto]'),
@@ -785,8 +786,16 @@ ui.shadows.addEventListener('change', () => {
 ui.automove.addEventListener('change', () => {
   controls.autoMove = ui.automove.checked;
 });
+// No clip (testing and creative): fly through the ground and the rock, straight down into the caves.
+ui.noclip?.addEventListener('change', () => {
+  if (game.mode === 'survival') ui.noclip.checked = false;
+  controls.noclip = ui.noclip.checked;
+  if (controls.noclip && !ui.fly.checked) ui.fly.click();
+  hotbar.flash(controls.noclip ? 'No clip: fly through the ground and rock' : 'Solid again');
+});
 ui.fly.addEventListener('change', () => {
   const mode = ui.fly.checked ? 'fly' : 'walk';
+  if (mode === 'walk' && ui.noclip?.checked) (ui.noclip.checked = false), (controls.noclip = false); // (walking, the ground's solid)
   controls.setMode(mode);
   // (Where you first set foot in a world is where you come back to after dying.)
   if (mode === 'walk' && !game.spawn) {
@@ -814,6 +823,7 @@ window.addEventListener('keydown', (e) => {
     bigMap.toggle();
   }
   if (e.code === 'KeyV' && game.mode !== 'survival') ui.fly.click(); // (no flying in survival)
+  if (e.code === 'KeyJ' && game.mode !== 'survival') ui.noclip?.click();
   if (e.code === 'KeyF') ui.automove.click();
   if (e.code === 'KeyG') ui.wireframe.click();
   if (e.code === 'KeyT') ui.cycle.click();
@@ -948,6 +958,9 @@ function updateVisibility() {
   clouds.group.visible = surface;
   farTrees.group.visible = surface;
   if (!surface) rain.mesh.visible = false;
+  // (Deep underground, the animals up on the surface aren't drawn. The
+  // fish, insects and falling leaves hide themselves when sheltered.)
+  wildlife.hideAbove = surface ? Infinity : p.y + 18;
   sheltered = underground;
 
   // Underground, a short dark haze replaces the sky: caves fade into darkness
@@ -972,6 +985,17 @@ function caveSounds(dt) {
     sound.call('drip', (Math.random() - 0.5) * 1.6, 0.25 + Math.random() * 0.5);
   }
   const p = camera.position, H = generator.getHeight(p.x, p.z);
+  // (Bats squeaking at their roost, near you.)
+  caveSounds.bats = (caveSounds.bats ?? 3) - dt;
+  if (caveSounds.bats <= 0) {
+    caveSounds.bats = 3 + Math.random() * 6;
+    let near = null, nd = 30;
+    for (const f of roostFlocks) {
+      const d = Math.hypot(f.x - p.x, f.y - p.y, f.z - p.z);
+      if (d < nd) (nd = d), (near = f);
+    }
+    if (near) sound.call('bats', panTowards(camera, near.x, near.z), Math.min(0.8, 6 / (nd + 4)));
+  }
   const rv = generator.caves.field.riverAt(p.x, p.z, H);
   caveSounds.brook = rv && Math.abs(p.y - rv.level) < 8 ? Math.max(0, 1 - Math.max(0, rv.across - rv.half) / 14) * rv.fade : 0;
 }
@@ -1733,7 +1757,7 @@ function tick(now) {
   });
   caveSounds(dt);
   torches.update(worldNow, camera.position, gameLights);
-  updateCaveLife(now / 1000);
+  updateCaveLife(now / 1000, sheltered ? camera.position : null);
   updateVisibility();
   const haze = heatHaze(dt);
   sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater);
