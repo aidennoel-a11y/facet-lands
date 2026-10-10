@@ -942,7 +942,16 @@ export class Game {
     const cam = this.camera.position, yaw = this.controls.euler.y, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const feet = cam.y - this.controls.eyeHeight;
     // (From a height: the ground there, the cave floor if you're in a cave.)
-    const at = (d, from) => this.groundAt(cam.x + fx * d, cam.z + fz * d, from);
+    // (Where the ground is as drawn, the faceted rock and earth, so the rope
+    // lies on it: a ray straight down from just above; or, if that finds
+    // nothing near where the ground should be, the ground as walked on.)
+    const rayFrom = new Vector3(), DOWN = new Vector3(0, -1, 0);
+    const at = (d, from) => {
+      const x = cam.x + fx * d, z = cam.z + fz * d, g = this.groundAt(x, z, from);
+      if (!this.solidHit || !Number.isFinite(g)) return g;
+      const hit = this.solidHit(rayFrom.set(x, Math.max(g, from ?? g) + 0.9, z), DOWN, 40);
+      return hit && Math.abs(hit.point.y - g) < 1.2 ? hit.point.y : g;
+    };
     const no = { type: 'rope', ok: false, why: 'Stand at the edge of a drop or a steep slope, looking down it' };
     const y0 = at(0, feet + 0.3);
     if (!Number.isFinite(y0)) return no;
@@ -986,10 +995,10 @@ export class Game {
         add(d, g);
         continue;
       }
-      const last = path[path.length - 1];
-      const s1 = (g - y - last[1]) / Math.max(1e-3, d - last[0]);
-      const s2 = nx ? (nx[1] - g) / STEP : s1;
-      if (!nx || Math.abs(s2 - s1) > 0.35 || nx[1] < g - 1.5 || d - last[0] >= 3) add(d, g);
+      // (Every bend in the ground, however small: only where it runs
+      // straight on are points left out.)
+      const s1 = (g - pg) / STEP, s2 = nx ? (nx[1] - g) / STEP : s1;
+      if (!nx || Math.abs(s2 - s1) > 0.04 || nx[1] < g - 1.5) add(d, g);
     }
     return { type: 'rope', ok: true, x: cam.x + fx * a, y, z: cam.z + fz * a, rot: Math.atan2(fx, fz), len: drop, path };
   }
@@ -1823,7 +1832,14 @@ export class Game {
       const item = held && ITEMS[held.id];
       const placing = item?.place === 'caveLamp' ? 'torch' : item?.place ?? (held?.id === 'hoe' ? 'plot' : null);
       if (placing === 'rope') {
-        this.plan = this.#ropePlan();
+        // (Worked out again only now and then, or as you move or turn: it
+        // feels along the ground a good way down.)
+        const key = `${Math.round(cam.x * 5)},${Math.round(cam.y * 5)},${Math.round(cam.z * 5)},${Math.round(this.controls.euler.y * 20)}`;
+        if (this.plan?.type !== 'rope' || key !== this.ropeKey || this.time > (this.ropeAt ?? 0) + 1) {
+          this.plan = this.#ropePlan();
+          this.ropeKey = key;
+          this.ropeAt = this.time;
+        }
         this.structures.preview(null);
         prompt = this.plan.ok ? `<kbd>Click</kbd> Let the rope down (${Math.round(this.plan.len)} m)` : null;
       } else if (placing && placing !== 'torch') {

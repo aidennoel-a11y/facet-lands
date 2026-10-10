@@ -238,13 +238,16 @@ function gridHeight(grid, x, z) {
  * draws the ground, including the hole at each mouth. Returns chunk-local
  * geometry, flat-shaded, with per-face colours.
  */
-export function meshChunk(grid, field) {
+export function meshChunk(grid, field, out = {}) {
   const { x0, z0, cell, n, ny, yMin, values, H, entrances } = grid;
   const seed = field.seed;
   const positions = [];
   const colors = [];
   const sky = [];
   const glows = [];
+  // (And the same rock plainer, each triangle left whole: for the chunks
+  // further off, where the fine facets can't be made out: see CaveLayer.)
+  const far = { positions: [], colors: [], glows: [], sky: [] };
   const color = new Color();
   // The lava's glow on the rock round a lava lake: strongest just over the
   // lava, fading up the walls and away from its shore, smooth from corner
@@ -420,15 +423,16 @@ export function meshChunk(grid, field) {
           // rough and craggy close to. (The push depends only on where the
           // middle is, so the triangle beside it, sharing that side, moves
           // it the same way: no gaps.)
-          const emit = (a, b, c, shade) => {
+          const emit = (a, b, c, shade, to = null) => {
+            const P = to ? to.positions : positions, C = to ? to.colors : colors, G = to ? to.glows : glows, S = to ? to.sky : sky;
             for (const v of [a, b, c]) {
-              positions.push(v[0], v[1], v[2]);
-              colors.push(color.r * shade, color.g * shade, color.b * shade);
+              P.push(v[0], v[1], v[2]);
+              C.push(color.r * shade, color.g * shade, color.b * shade);
               if (v[1] > -118 && v[1] < -76) {
                 const l = lavaGlow(x0 + v[0], v[1], z0 + v[2]);
-                glows.push(gr + 0.5 * l, gg + 0.16 * l, gb + 0.03 * l);
-              } else glows.push(gr, gg, gb);
-              sky.push(entrances.length ? CaveField.skyLight(entrances, x0 + v[0], v[1], z0 + v[2]) : 0.03);
+                G.push(gr + 0.5 * l, gg + 0.16 * l, gb + 0.03 * l);
+              } else G.push(gr, gg, gb);
+              S.push(entrances.length ? CaveField.skyLight(entrances, x0 + v[0], v[1], z0 + v[2]) : 0.03);
             }
           };
           const A = [corner[0], corner[1], corner[2]], B = [corner[3], corner[4], corner[5]], Cc = [corner[6], corner[7], corner[8]];
@@ -448,6 +452,7 @@ export function meshChunk(grid, field) {
           emit(AB, B, BC, sh(2));
           emit(CA, BC, Cc, sh(3));
           emit(AB, BC, CA, sh(4));
+          emit(A, B, Cc, sh(0), far);
         }
       }
     }
@@ -460,6 +465,13 @@ export function meshChunk(grid, field) {
   geometry.setAttribute('glow', new BufferAttribute(new Float32Array(glows), 3));
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
+  const plain = new BufferGeometry();
+  plain.setAttribute('position', new BufferAttribute(new Float32Array(far.positions), 3));
+  plain.setAttribute('color', new BufferAttribute(new Float32Array(far.colors), 3));
+  plain.setAttribute('skyLight', new BufferAttribute(new Float32Array(far.sky), 1));
+  plain.setAttribute('glow', new BufferAttribute(new Float32Array(far.glows), 3));
+  plain.computeVertexNormals();
+  out.far = plain;
   return geometry;
 }
 
@@ -968,8 +980,9 @@ export function decorateChunk(grid, field) {
  */
 export function buildChunkData(field, cx, cz, chunkSize) {
   const grid = sampleChunk(field, cx, cz, chunkSize);
-  if (!grid) return { grid: null, rock: null, deco: null, plants: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), lights: new Float32Array(0), geysers: new Float32Array(0), water: null, lava: null };
-  const rock = meshChunk(grid, field);
+  if (!grid) return { grid: null, rock: null, rockFar: null, deco: null, plants: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), lights: new Float32Array(0), geysers: new Float32Array(0), water: null, lava: null };
+  const plain = {};
+  const rock = meshChunk(grid, field, plain);
   const deco = decorateChunk(grid, field);
   const liquid = liquidChunk(grid, field, deco.pools);
   const pack = (g) =>
@@ -984,6 +997,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
   return {
     grid: { cx, cz, x0, z0, cell, n, ny, yMin, values },
     rock: pack(rock),
+    rockFar: rock ? pack(plain.far) : null,
     deco: pack(deco.geometry),
     plants: pack(deco.plants),
     obstacles: new Float32Array(deco.obstacles),
@@ -1001,7 +1015,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
 export function chunkDataBuffers(data) {
   const out = [];
   if (data.grid) out.push(data.grid.values.buffer);
-  for (const part of [data.rock, data.deco, data.plants, data.water, data.lava]) if (part) for (const a of Object.values(part)) out.push(a.buffer);
+  for (const part of [data.rock, data.rockFar, data.deco, data.plants, data.water, data.lava]) if (part) for (const a of Object.values(part)) out.push(a.buffer);
   out.push(data.obstacles.buffer);
   if (data.features) out.push(data.features.buffer);
   if (data.pools) out.push(data.pools.buffer);

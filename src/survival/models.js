@@ -551,7 +551,7 @@ export const ropeLengthModel = () => new Parts(107).add(new CylinderGeometry(0.0
  */
 export function ropePathModel(path) {
   const b = new Parts(108);
-  const pts = path.map(([d, y]) => new Vector3(0, y + 0.07, d + 0.05));
+  const pts = path.map(([d, y]) => new Vector3(0, y + 0.1, d + 0.06));
   pts.unshift(new Vector3(0, 0.28, 0.0));
   for (let k = 1; k < pts.length; k++) {
     const from = pts[k - 1], to = pts[k];

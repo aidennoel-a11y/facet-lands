@@ -969,6 +969,12 @@ function updateVisibility() {
   // Near a mouth you can see down the tunnel beyond it, so show all caves.
   chunks.setVisibility(surface, underground || nearMouth ? 'all' : 'mouths', p);
   clouds.group.visible = surface;
+  // (Deep underground, no sun reaches: its shadows aren't redrawn, which
+  // would mean drawing all the cave round you over again each frame.)
+  if (renderer.shadowMap.autoUpdate !== surface) {
+    renderer.shadowMap.autoUpdate = surface;
+    renderer.shadowMap.needsUpdate = true;
+  }
   farTrees.group.visible = surface;
   if (!surface) rain.mesh.visible = false;
   // (Deep underground, the animals up on the surface aren't drawn. The

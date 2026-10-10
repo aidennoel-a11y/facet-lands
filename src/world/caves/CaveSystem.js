@@ -112,6 +112,7 @@ export class CaveSystem {
       if (this.cache.get(key) !== entry) return; // evicted meanwhile
       entry.grid = data.grid;
       entry.rock = toGeometry(data.rock);
+      entry.rockFar = toGeometry(data.rockFar);
       entry.deco = toGeometry(data.deco);
       entry.plants = toGeometry(data.plants);
       entry.obstacles = data.obstacles;
@@ -147,6 +148,7 @@ export class CaveSystem {
       if (this.cache.size <= MAX_CACHED) break;
       if (entry.users > 0) continue;
       entry.rock?.dispose();
+      entry.rockFar?.dispose();
       entry.deco?.dispose();
       entry.plants?.dispose();
       entry.water?.dispose();

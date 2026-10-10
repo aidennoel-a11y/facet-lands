@@ -75,11 +75,32 @@ const bp = new Vector3(), bs = new Vector3(), bq = new Quaternion(), be = new Eu
 
 // What's only drawn once you're inside the caves (everything but the bare
 // rock): the stalagmites, plants, boulders, finds, water, fish and bats.
+// (And only near you: the small things, the plants, vines, finds, bats and
+// fish, in the chunks round yours; the big shapes, stalagmites and
+// pillars, the water and lava, a chunk further. Beyond that it's too far
+// and too dark to see them, and they cost the most to draw.)
 const details = new Set();
+const rocks = new Set(); // (each chunk's rock: finely faceted near you, plainer further off)
 let inside = false;
+const FAR_DETAILS = new Set(['cave stalagmites', 'cave water', 'cave lava', 'cave steam', 'cave crystal']);
+let eyeChunk = null, ringWait = 0;
+const chunkOf = (mesh) => {
+  let p = mesh;
+  while (p && !p.userData.chunk) p = p.parent;
+  return p?.userData.chunk ?? null;
+};
+const shown = (mesh) => {
+  if (!inside) return false;
+  if (!eyeChunk) return true;
+  const c = mesh.userData.ringChunk ??= chunkOf(mesh);
+  if (!c) return true;
+  const ring = Math.max(Math.abs(c[0] - eyeChunk[0]), Math.abs(c[1] - eyeChunk[1]));
+  return ring <= (FAR_DETAILS.has(mesh.name) ? 2 : 1);
+};
 const detail = (mesh) => {
   details.add(mesh);
-  mesh.visible = inside;
+  mesh.visible = false; // (until it's placed in its chunk: see updateCaveLife)
+  ringWait = 0;
   return mesh;
 };
 
@@ -155,7 +176,18 @@ export function updateCaveLife(time, eye = null) {
   caveTime.value = time;
   if (!!eye !== inside) {
     inside = !!eye;
-    for (const m of details) m.visible = inside;
+    ringWait = 0;
+  }
+  if (time > ringWait) {
+    ringWait = time + 0.5;
+    const size = 128;
+    eyeChunk = eye ? [Math.floor(eye.x / size), Math.floor(eye.z / size)] : null;
+    for (const m of details) m.visible = shown(m);
+    for (const m of rocks) {
+      const c = (m.userData.ringChunk ??= chunkOf(m));
+      const near = !eyeChunk || !c || Math.max(Math.abs(c[0] - eyeChunk[0]), Math.abs(c[1] - eyeChunk[1])) <= 1;
+      m.geometry = near ? m.userData.near : m.userData.far;
+    }
   }
   if (!inside) {
     caveGlowLights.length = 0;
@@ -195,6 +227,7 @@ export function updateCaveLife(time, eye = null) {
     st.mesh.instanceMatrix.needsUpdate = true;
   }
   for (const flock of roostFlocks) {
+    if (!flock.mesh.visible) continue;
     // (Come near with a light and they all take wing, fast and wild.)
     const near = eye ? Math.hypot(eye.x - flock.x, eye.y - flock.y, eye.z - flock.z) : 99;
     const stir = near < 10 ? 1 : near < 25 ? 0.5 : 0.2;
@@ -211,6 +244,7 @@ export function updateCaveLife(time, eye = null) {
     flock.mesh.instanceMatrix.needsUpdate = true;
   }
   for (const shoal of shoals) {
+    if (!shoal.mesh.visible) continue;
     shoal.fish.forEach((f, k) => {
       const a = time * f.speed + f.phase;
       fp.set(f.x + Math.cos(a) * f.r - shoal.x0, f.y, f.z + Math.sin(a) * f.r - shoal.z0);
@@ -370,7 +404,7 @@ export function createCaveLayer(config) {
       if (group.userData.vineSet) vineSets.delete(group.userData.vineSet);
       if (group.userData.steam) steams.delete(group.userData.steam);
       if (group.userData.glowSet) glowSets.delete(group.userData.glowSet);
-      group.traverse((m) => details.delete(m));
+      group.traverse((m) => (details.delete(m), rocks.delete(m)));
       const [cx, cz] = group.userData.chunk;
       for (const mesh of group.children) if (mesh.isInstancedMesh) mesh.dispose();
       layer.onGone?.(cx, cz);
@@ -391,6 +425,11 @@ export function createCaveLayer(config) {
           rock.castShadow = false; // (underground: the land over it already shades it from the sun)
           rock.receiveShadow = true;
           rock.userData.solid = true; // torches can be placed on it
+          // (Further off than the chunks round you, the plainer rock: see updateCaveLife.)
+          rock.userData.near = data.rock;
+          rock.userData.far = data.rockFar ?? data.rock;
+          rocks.add(rock);
+          ringWait = 0;
           group.add(rock);
         }
         if (data.features?.length) {
