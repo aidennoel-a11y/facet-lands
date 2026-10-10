@@ -945,12 +945,11 @@ export class Game {
     // (Where the ground is as drawn, the faceted rock and earth, so the rope
     // lies on it: a ray straight down from just above; or, if that finds
     // nothing near where the ground should be, the ground as walked on.)
-    const rayFrom = new Vector3(), DOWN = new Vector3(0, -1, 0);
     const at = (d, from) => {
       const x = cam.x + fx * d, z = cam.z + fz * d, g = this.groundAt(x, z, from);
-      if (!this.solidHit || !Number.isFinite(g)) return g;
-      const hit = this.solidHit(rayFrom.set(x, Math.max(g, from ?? g) + 0.9, z), DOWN, 40);
-      return hit && Math.abs(hit.point.y - g) < 1.2 ? hit.point.y : g;
+      if (!Number.isFinite(g)) return g;
+      const rock = this.generator?.()?.caves?.meshFloor?.(x, z, Math.max(g, from ?? g) + 0.9);
+      return rock !== null && rock !== undefined && Math.abs(rock - g) < 1.2 ? rock : g;
     };
     const no = { type: 'rope', ok: false, why: 'Stand at the edge of a drop or a steep slope, looking down it' };
     const y0 = at(0, feet + 0.3);
@@ -974,6 +973,7 @@ export class Game {
       if (prev - g > climb * STEP) (steep = true), (flat = 0);
       else if ((flat += STEP) >= 2 && steep) break;
       if (y - g > 45) return { ...no, why: 'Too far down for one rope' };
+      if (!steep && d >= 4) break; // (no drop just ahead: not an edge)
     }
     while (prof.length > 2 && prof[prof.length - 2][1] - prof[prof.length - 1][1] < 0.05) prof.pop();
     const drop = y - prof[prof.length - 1][1];
@@ -1835,7 +1835,7 @@ export class Game {
         // (Worked out again only now and then, or as you move or turn: it
         // feels along the ground a good way down.)
         const key = `${Math.round(cam.x * 5)},${Math.round(cam.y * 5)},${Math.round(cam.z * 5)},${Math.round(this.controls.euler.y * 20)}`;
-        if (this.plan?.type !== 'rope' || key !== this.ropeKey || this.time > (this.ropeAt ?? 0) + 1) {
+        if (this.plan?.type !== 'rope' || (key !== this.ropeKey && this.time > (this.ropeAt ?? 0) + 0.25) || this.time > (this.ropeAt ?? 0) + 1) {
           this.plan = this.#ropePlan();
           this.ropeKey = key;
           this.ropeAt = this.time;

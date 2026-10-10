@@ -286,6 +286,43 @@ export class CaveSystem {
    * mesh height there (NaN over an entrance's pit, where the ramp is the
    * ground). Returns { height, inCave, ceiling }.
    */
+  /**
+   * The cave rock as drawn under (x, z), the highest of it below `fromY`
+   * (world), or null if there's none built there: for a rope to lie on the
+   * faceted rock itself. (Each chunk's rock indexed by 2 m squares, once,
+   * so only the few triangles over the spot are looked at.)
+   */
+  meshFloor(x, z, fromY) {
+    const entry = this.cache.get(`${Math.floor(x / this.chunkSize)},${Math.floor(z / this.chunkSize)}`);
+    const g = entry?.ready ? entry.rock : null;
+    if (!g || !entry.grid) return null;
+    const S = 2, N = Math.ceil(this.chunkSize / S) + 1, pos = g.attributes.position.array;
+    if (!entry.floorIndex) {
+      const cells = Array.from({ length: N * N }, () => []);
+      for (let t = 0; t < pos.length; t += 9) {
+        const ax = pos[t], az = pos[t + 2], bx = pos[t + 3], bz = pos[t + 5], cx = pos[t + 6], cz = pos[t + 8];
+        const i0 = Math.max(0, Math.floor(Math.min(ax, bx, cx) / S)), i1 = Math.min(N - 1, Math.floor(Math.max(ax, bx, cx) / S));
+        const k0 = Math.max(0, Math.floor(Math.min(az, bz, cz) / S)), k1 = Math.min(N - 1, Math.floor(Math.max(az, bz, cz) / S));
+        for (let k = k0; k <= k1; k++) for (let i = i0; i <= i1; i++) cells[k * N + i].push(t);
+      }
+      entry.floorIndex = cells.map((c) => Int32Array.from(c));
+    }
+    const lx = x - entry.grid.x0, lz = z - entry.grid.z0;
+    const i = Math.floor(lx / S), k = Math.floor(lz / S);
+    if (i < 0 || k < 0 || i >= N || k >= N) return null;
+    let best = null;
+    for (const t of entry.floorIndex[k * N + i]) {
+      const ax = pos[t], ay = pos[t + 1], az = pos[t + 2], bx = pos[t + 3], by = pos[t + 4], bz = pos[t + 5], cx = pos[t + 6], cy = pos[t + 7], cz = pos[t + 8];
+      const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+      if (Math.abs(d) < 1e-9) continue;
+      const u = ((bz - cz) * (lx - cx) + (cx - bx) * (lz - cz)) / d, v = ((cz - az) * (lx - cx) + (ax - cx) * (lz - cz)) / d, w = 1 - u - v;
+      if (u < -1e-6 || v < -1e-6 || w < -1e-6) continue;
+      const y = u * ay + v * by + w * cy;
+      if (y < fromY && (best === null || y > best)) best = y;
+    }
+    return best;
+  }
+
   groundAt(x, feetY, z, terrainHeight) {
     // Fast path: nowhere near a cave.
     const entrances = this.mouthsNear(x, z, x, z);

@@ -271,7 +271,9 @@ const roostGeometry = (() => {
 const roostMaterial = new MeshLambertMaterial({ color: 0x2a2220, emissive: 0x0a0806 });
 
 function caveMaterial() {
-  const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  // (Both sides drawn: where the rock's craggy facets fold over on a thin
+  // edge, you see the fold, not a hole through to nothing.)
+  const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true, side: DoubleSide });
   const lights = ShaderChunk.lights_fragment_begin.replace(
     '#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )',
     'vec3 caveBeforeSky = reflectedLight.directDiffuse;\n#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )',

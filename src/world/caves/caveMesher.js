@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, LatheGeometry, Vector2 } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, LatheGeometry, TetrahedronGeometry, Vector2 } from 'three';
 import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
@@ -297,6 +297,8 @@ export function meshChunk(grid, field, out = {}) {
   }
 
   const tri = [0, 0, 0], rim = [false, false, false], corner = new Float64Array(9);
+  // (Which corners lie on the chunk's sides, x and z: see mid.)
+  const onX = [false, false, false], onZ = [false, false, false], span = (n - 1) * cell;
   for (let k = 0; k < n - 1; k++) {
     for (let i = 0; i < n - 1; i++) {
       const colBase = (k * n + i) * ny;
@@ -357,17 +359,26 @@ export function meshChunk(grid, field, out = {}) {
           const len = Math.hypot(nx, nyv, nz);
           if (len < 1e-9) continue; // degenerate
           nx /= len; nyv /= len; nz /= len;
-          // The normal must point into the air, i.e. down the field's
-          // gradient. Get the gradient from this cell's own corner values.
+          // The normal must point into the air: the field (as this cell's
+          // corners have it, blended across the cell) is lower a little way
+          // out along it than the same way in. If not, the triangle's turned
+          // the wrong way round, and would be drawn from behind (that is,
+          // not at all: a hole).
           const u = cxL / cell - i, w = czL / cell - k, t2 = (cy - yMin) / cell - j;
           const c = cornerVal;
-          const gx =
-            (1 - t2) * (1 - w) * (c[1] - c[0]) + t2 * (1 - w) * (c[2] - c[3]) + (1 - t2) * w * (c[5] - c[4]) + t2 * w * (c[6] - c[7]);
-          const gy =
-            (1 - u) * (1 - w) * (c[3] - c[0]) + u * (1 - w) * (c[2] - c[1]) + (1 - u) * w * (c[7] - c[4]) + u * w * (c[6] - c[5]);
-          const gz =
-            (1 - u) * (1 - t2) * (c[4] - c[0]) + u * (1 - t2) * (c[5] - c[1]) + (1 - u) * t2 * (c[7] - c[3]) + u * t2 * (c[6] - c[2]);
-          if (nx * gx + nyv * gy + nz * gz > 0) {
+          const fieldAt = (fu, fv, fw) => {
+            fu = Math.min(1, Math.max(0, fu)); fv = Math.min(1, Math.max(0, fv)); fw = Math.min(1, Math.max(0, fw));
+            let sum = 0;
+            for (let q = 0; q < 8; q++) {
+              const [ox, oy, oz] = CORNERS[q];
+              sum += c[q] * (ox ? fu : 1 - fu) * (oy ? fv : 1 - fv) * (oz ? fw : 1 - fw);
+            }
+            return sum;
+          };
+          const hS = 0.2;
+          const out = fieldAt(u + nx * hS, t2 + nyv * hS, w + nz * hS), inn = fieldAt(u - nx * hS, t2 - nyv * hS, w - nz * hS);
+          const gx = out > inn ? 1 : 0;
+          if (gx > 0) {
             const tmp = tri[1];
             tri[1] = tri[2];
             tri[2] = tmp;
@@ -409,6 +420,8 @@ export function meshChunk(grid, field, out = {}) {
             // Where the rock meets the ground surface (the rim of a mouth),
             // leave the vertex on the surface so it meets the terrain.
             rim[q] = Math.abs(gridHeight(grid, wxv, wzv) - wyv) < 0.35;
+            onX[q] = px < 1e-4 || px > span - 1e-4;
+            onZ[q] = pz < 1e-4 || pz > span - 1e-4;
             if (!rim[q]) {
               // Rock: a small nudge for a rougher facet pattern.
               px += jitter(wxv, wyv, wzv, 1);
@@ -425,6 +438,11 @@ export function meshChunk(grid, field, out = {}) {
           // it the same way: no gaps.)
           const emit = (a, b, c, shade, to = null) => {
             const P = to ? to.positions : positions, C = to ? to.colors : colors, G = to ? to.glows : glows, S = to ? to.sky : sky;
+            // (The nudges can turn a small thin triangle inside out, facing
+            // into the rock, where it's drawn from behind: not at all. Turned
+            // back round, it faces the air again.)
+            const u1 = b[0] - a[0], u2 = b[1] - a[1], u3 = b[2] - a[2], v1 = c[0] - a[0], v2 = c[1] - a[1], v3 = c[2] - a[2];
+            if ((u2 * v3 - u3 * v2) * nx + (u3 * v1 - u1 * v3) * nyv + (u1 * v2 - u2 * v1) * nz < 0) [b, c] = [c, b];
             for (const v of [a, b, c]) {
               P.push(v[0], v[1], v[2]);
               C.push(color.r * shade, color.g * shade, color.b * shade);
@@ -446,7 +464,11 @@ export function meshChunk(grid, field, out = {}) {
             m[2] += (hash2(Math.round(m[1] * 4), Math.round(wx * 3 + wz * 4), seed + 13) - 0.5) * 2 * k;
             return m;
           };
-          const AB = mid(A, B, rim[0] || rim[1]), BC = mid(B, Cc, rim[1] || rim[2]), CA = mid(Cc, A, rim[2] || rim[0]);
+          // (A side lying along the chunk's own side is left straight: the
+          // chunk beside it may be drawn plainer, its triangles whole, and
+          // they must still meet without a gap.)
+          const side = (a, b) => rim[a] || rim[b] || (onX[a] && onX[b]) || (onZ[a] && onZ[b]);
+          const AB = mid(A, B, side(0, 1)), BC = mid(B, Cc, side(1, 2)), CA = mid(Cc, A, side(2, 0));
           const sh = (n) => 0.92 + hash2(Math.round(wx * 3 + n), Math.round(cy * 3 - n), seed + 14) * 0.16;
           emit(A, AB, CA, sh(1));
           emit(AB, B, BC, sh(2));
@@ -873,17 +895,23 @@ export function decorateChunk(grid, field) {
             }
             into = parts;
           }
-          // Glow-worms: tiny lights speckling the high roofs (most of all in the great chambers, and the lush caves).
-          // (Thick in the lush caves, on every roof; and the nearest of
-          // them light the cave round them: see CaveLayer.)
-          if (gap > (kind === 1 ? 4 : 7) && kind !== 2 && kind !== 3 && r3 < (kind === 1 ? 1 : gap > 25 ? 0.7 : 0.25)) {
-            if (kind === 1 || gap > 25) lights.push(x, roof - 0.8, z, 0);
-            for (let k = 0; k < (kind === 1 ? 16 : gap > 25 ? 10 : 6); k++) {
+          // Glow-worms: tiny lights speckling the roofs: thick in the lush
+          // caves, and elsewhere only a cluster here and there. (The nearest
+          // of them light the cave round them: see CaveLayer.) Each just a
+          // speck: a little four-sided point of light.
+          const worms = kind === 1 ? gap > 4 : kind === 0 && gap > 7 && r3 < 0.05;
+          if (worms) {
+            lights.push(x, roof - 0.8, z, 0);
+            const big = gap > 25 ? 0.13 : 0.08;
+            for (let k = 0; k < 8; k++) {
               const ox = (hash2(k, Math.round(x * 13), seed + 8) - 0.5) * step, oz = (hash2(k + 9, Math.round(z * 13), seed + 8) - 0.5) * step;
               let ry = roof;
               while (ry > roof - 3 && f(x + ox, ry, z + oz) >= 0) ry -= 0.25;
               if (ry <= roof - 3) continue;
-              box(x + ox, ry + 0.05, z + oz, gap > 25 ? 0.16 : 0.09, gap > 25 ? 0.16 : 0.09, gap > 25 ? 0.16 : 0.09, 0x9affe8, [0.5, 1.1, 1.0], k);
+              const g = new TetrahedronGeometry(big);
+              g.deleteAttribute('uv');
+              g.translate(x + ox - x0, ry + 0.05, z + oz - z0);
+              piece(g, x, ry, z, (c) => c.set(0x9affe8), [0.5, 1.1, 1.0]);
             }
           }
           y = floor - cell; // continue below this floor
