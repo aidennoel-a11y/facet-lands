@@ -169,7 +169,8 @@ function passable(values, n, ny, x0, z0, cell, yMin, entrances) {
       if ((low || thin) && !nearEntrance(i, j, k)) values[c] = 0.6;
     }
   }
-  // Pockets: air shut in on every side, a few grid points of it, nowhere near the chunk's edge.
+  // Pockets: air shut in on every side within the chunk, however big, with
+  // no way in from anywhere (nor an entrance): unreachable, so not built.
   const seen = new Uint8Array(values.length);
   const stack = [];
   for (let c0 = 0; c0 < values.length; c0++) {
@@ -182,8 +183,7 @@ function passable(values, n, ny, x0, z0, cell, yMin, entrances) {
       const c = stack.pop();
       comp.push(c);
       const j = c % ny, col = (c - j) / ny, i = col % n, k = (col - i) / n;
-      if (i === 0 || k === 0 || i === n - 1 || k === n - 1 || j === 0 || j === ny - 1) edge = true;
-      if (comp.length > 40) edge = true; // (big enough: leave it)
+      if (i === 0 || k === 0 || i === n - 1 || k === n - 1) edge = true; // (it may go on into the next chunk)
       for (const d of [1, -1, ny, -ny, n * ny, -n * ny]) {
         const q = c + d;
         if (q < 0 || q >= values.length || seen[q] || values[q] >= 0) continue;
@@ -193,7 +193,7 @@ function passable(values, n, ny, x0, z0, cell, yMin, entrances) {
         stack.push(q);
       }
     }
-    if (edge || comp.length > 10) continue;
+    if (edge) continue;
     if (comp.some((c) => { const j = c % ny, col = (c - j) / ny, i = col % n, k = (col - i) / n; return nearEntrance(i, j, k); })) continue;
     for (const c of comp) values[c] = 0.6;
   }
@@ -246,6 +246,27 @@ export function meshChunk(grid, field) {
   const sky = [];
   const glows = [];
   const color = new Color();
+  // The lava's glow on the rock round a lava lake: strongest just over the
+  // lava, fading up the walls and away from its shore, smooth from corner
+  // to corner (each vertex its own, by where it is).
+  const lavaLit = new Map();
+  const lavaGlow = (x, y, z) => {
+    const key = `${Math.round(x * 4)},${Math.round(y * 4)},${Math.round(z * 4)}`;
+    let v = lavaLit.get(key);
+    if (v !== undefined) return v;
+    v = 0;
+    const here = field.volcanicFloor(x, z), h = y - here.lava;
+    if (h > -2 && h < 18) {
+      let lit = 0;
+      for (const [dx, dz, w] of [[0, 0, 0.4], [6, 0, 0.15], [-6, 0, 0.15], [0, 6, 0.15], [0, -6, 0.15]]) {
+        const f = dx || dz ? field.volcanicFloor(x + dx, z + dz) : here;
+        if (f.floor < f.lava - 0.2 && field.volcAt(x + dx, z + dz) > 0.45) lit += w;
+      }
+      v = lit * Math.exp(-Math.max(0, h) / 6);
+    }
+    lavaLit.set(key, v);
+    return v;
+  };
 
   // Corner offsets into `values` / `H`, and each edge's corner pair as offsets.
   const cornerIndex = CORNERS.map(([ox, oy, oz]) => (oz * n + ox) * ny + oy);
@@ -369,14 +390,12 @@ export function meshChunk(grid, field) {
           const cover = (nyv > 0.55 ? 0.95 : nyv < -0.45 ? 0.45 : 0.7) * here.green;
           const mossy = here.green > 0 && mossField(wx, cy, wz) * 0.75 + g2 * 0.25 < cover;
           if (mossy) color.set(MOSS[Math.floor(g2 * MOSS.length * 7) % MOSS.length]).multiplyScalar(0.85 + faceSeed * 0.3);
-          // Some of it gives its own light: cracks of glowing rock on a
-          // volcanic floor, a faint blue in the ice. (The lush caves are as
+          // Some of it gives its own light: a faint blue in the ice. (The lush caves are as
           // dark as any: what lights them is what glows in them, the
           // glow-worms and glowcaps and glowberries.)
           let gr = 0, gg = 0, gb = 0;
-          if (kind === 2 && nyv > 0.3 && g2 < 0.12) (gr = 0.9), (gg = 0.32), (gb = 0.06);
-          else if (kind === 2 && g2 < 0.03) (gr = 0.6), (gg = 0.18), (gb = 0.04);
-          else if (kind === 3) (gr = 0.02), (gg = 0.05), (gb = 0.08);
+          // (Volcanic rock glows only where the lava is: see the lava, and its light.)
+          if (kind === 3) (gr = 0.02), (gg = 0.05), (gb = 0.08);
 
           for (let q = 0; q < 3; q++) {
             const ev = tri[q];
@@ -405,7 +424,10 @@ export function meshChunk(grid, field) {
             for (const v of [a, b, c]) {
               positions.push(v[0], v[1], v[2]);
               colors.push(color.r * shade, color.g * shade, color.b * shade);
-              glows.push(gr, gg, gb);
+              if (v[1] > -118 && v[1] < -76) {
+                const l = lavaGlow(x0 + v[0], v[1], z0 + v[2]);
+                glows.push(gr + 0.5 * l, gg + 0.16 * l, gb + 0.03 * l);
+              } else glows.push(gr, gg, gb);
               sky.push(entrances.length ? CaveField.skyLight(entrances, x0 + v[0], v[1], z0 + v[2]) : 0.03);
             }
           };
@@ -452,9 +474,13 @@ export function liquidChunk(grid, field, pools) {
   const parts = { water: [], lava: [] };
   const step = 2;
   const f = (x, y, z) => Math.min(gridHeight(grid, x, z) - y, sampleGrid(grid, x, y, z));
-  const quad = (list, x, y, z, h) => {
+  // (Each corner at its own water's level there, worked out from where the
+  // corner is: so squares side by side meet exactly, even where the level
+  // slopes, as a river's does and the lava's.)
+  const quad = (list, x, z, h, levelAt) => {
     const a = x - x0, b = z - z0;
-    list.push(a - h, y, b - h, a - h, y, b + h, a + h, y, b + h, a - h, y, b - h, a + h, y, b + h, a + h, y, b - h);
+    const y00 = levelAt(x - h, z - h), y01 = levelAt(x - h, z + h), y11 = levelAt(x + h, z + h), y10 = levelAt(x + h, z - h);
+    list.push(a - h, y00, b - h, a - h, y01, b + h, a + h, y11, b + h, a - h, y00, b - h, a + h, y11, b + h, a + h, y10, b - h);
   };
   for (let gz = step / 2; gz < field.chunkSize; gz += step) {
     for (let gx = step / 2; gx < field.chunkSize; gx += step) {
@@ -464,13 +490,21 @@ export function liquidChunk(grid, field, pools) {
       // where it has one: where it runs out into a chamber's open air, no
       // water hangs there). Wherever the floor rises over the water, the
       // rock hides the sheet: so its edge is where the water meets the floor.
-      let level = null;
+      let level = null, levelAt = null;
       const ch = col.chamber;
-      if (ch && ch.e < 1 && !(f(x, ch.c.lake - 4, z) < 0 && f(x, ch.c.lake - 8, z) < 0)) level = ch.c.lake;
+      if (ch && ch.e < 1 && !(f(x, ch.c.lake - 4, z) < 0 && f(x, ch.c.lake - 8, z) < 0)) (level = ch.c.lake), (levelAt = () => ch.c.lake);
       const rv = field.riverAt(x, z, gridHeight(grid, x, z));
-      if (rv && rv.across < rv.half * 0.92 && rv.fade > 0.5 && f(x, rv.level - 2.6, z) >= 0) level = Math.max(level ?? -Infinity, rv.level - 0.2);
+      if (rv && rv.across < rv.half * 0.92 && rv.fade > 0.5 && f(x, rv.level - 2.6, z) >= 0 && rv.level - 0.2 > (level ?? -Infinity)) {
+        level = rv.level - 0.2;
+        levelAt = (px, pz) => (field.riverAt(px, pz, 1e4)?.level ?? rv.level) - 0.2;
+      }
+      // (The lava lakes in the volcanic caverns' low ground.)
+      if (col.volc > 0.45) {
+        const vf = field.volcanicFloor(x, z);
+        if (vf.floor < vf.lava && f(x, vf.lava - 6, z) >= 0 && vf.lava > (level ?? -Infinity)) (level = vf.lava), (levelAt = (px, pz) => field.volcanicFloor(px, pz).lava);
+      }
       if (level === null) continue;
-      quad(biomeIn(grid, x, level, z) === 2 ? parts.lava : parts.water, x, level, z, step / 2); // (edge to edge, never overlapping: no seams)
+      quad(biomeIn(grid, x, level, z) === 2 ? parts.lava : parts.water, x, z, step / 2, levelAt); // (edge to edge, never overlapping: no seams)
     }
   }
   for (let k = 0; k < pools.length; k += 4) {
@@ -515,6 +549,7 @@ export function decorateChunk(grid, field) {
   const roofs = []; // [x, y, z, random, ...]: high roofs, for bats
   const pools = [];
   const vines = [];
+  const geysers = []; // [x, lip y, z, strength, ...]: the steaming ones
   const lights = []; // [x, y, z, kind, ...]: glowing things that light the cave round them (0 glow-worms, 1 glowcaps)
   const step = cell * 2;
   const f = (x, y, z) => Math.min(gridHeight(grid, x, z) - y, sampleGrid(grid, x, y, z));
@@ -562,7 +597,7 @@ export function decorateChunk(grid, field) {
     piece(g, x, y, z, (c, cyv, v) => {
       const t = Math.min(1, Math.max(0, down ? (y - cyv) / height : (cyv - y) / height));
       c.copy(low).lerp(tip, t).multiplyScalar(0.9 + hash2(v, Math.round(x * 10), seed) * 0.2);
-    }, kind === 2 && !down ? [0.35, 0.1, 0.02] : kind === 3 ? [0.03, 0.06, 0.09] : null);
+    }, kind === 3 ? [0.03, 0.06, 0.09] : null);
   };
   // A softer formation, turned on a lathe: rounded, a little lumpy, with a
   // blunt tip (not a spear); or a column, where a stalagmite and the
@@ -599,7 +634,7 @@ export function decorateChunk(grid, field) {
       let t = Math.min(1, Math.max(0, down ? (y - cyv) / height : (cyv - y) / height));
       if (column) t = 1 - Math.abs(2 * t - 1);
       c.copy(low).lerp(tip, t).multiplyScalar(0.88 + hash2(v, Math.round(x * 10), seed) * 0.24);
-    }, kind === 2 && !down && !column ? [0.35, 0.1, 0.02] : kind === 3 ? [0.03, 0.06, 0.09] : null);
+    }, kind === 3 ? [0.03, 0.06, 0.09] : null);
   };
   const box = (x, y, z, w, h, d, colour, glow = null, ry = 0) => {
     const g = new BoxGeometry(w, h, d).toNonIndexed();
@@ -652,6 +687,26 @@ export function decorateChunk(grid, field) {
       leaf.translate(x - x0, y + h * Math.min(1, t), z - z0);
       piece(leaf, x, y, z, (c) => c.set(k % 2 ? 0x5a9a3c : 0x6aaa48));
     }
+  };
+
+  // A geyser's cone: a broad mound of crusted mineral (pale yellow-white at
+  // its lip), and a dark throat sunk in its top. Returns the lip's height.
+  const geyser = (x, y, z, R, H, s) => {
+    const pts = [
+      new Vector2(R, -0.3), new Vector2(R * 0.85, H * 0.25), new Vector2(R * 0.62, H * 0.6), new Vector2(R * 0.42, H * 0.92),
+      new Vector2(R * 0.34, H), new Vector2(R * 0.24, H * 0.9), new Vector2(R * 0.16, H * 0.55), new Vector2(0.02, H * 0.35),
+    ];
+    const g = new LatheGeometry(pts, 11).toNonIndexed();
+    g.deleteAttribute('uv');
+    g.rotateY(s * 6.28);
+    g.translate(x - x0, y, z - z0);
+    piece(g, x, y, z, (c, cyv, v) => {
+      const t = Math.min(1, Math.max(0, (cyv - y) / H));
+      const inner = t > 0.6 && hash2(v, 3, seed) < 0.5 ? 1 : 0;
+      c.set(inner ? 0x2a2224 : t > 0.8 ? 0xd8cf9a : t > 0.5 ? 0xa8987a : 0x3a3236).multiplyScalar(0.88 + hash2(v, Math.round(x * 9), seed + 2) * 0.24);
+    });
+    obstacles.push(x, z, R * 0.7, y - 0.3, y + H);
+    return y + H;
   };
 
   for (let gz = step / 2; gz < field.chunkSize; gz += step) {
@@ -739,6 +794,12 @@ export function decorateChunk(grid, field) {
               const vk = kind === 0 ? 0 : pick < 0.3 ? 0 : pick < 0.62 ? 1 : pick < 0.82 ? 2 : 3;
               vines.push(x + ox, top + 0.1, z + oz, Math.min(len, top - floor - 1.2), vk, vk === 2 ? 0.8 + pick : 0.8 + hv * 0.6, pick * 6.28);
             }
+          }
+          // Volcanic: geysers here and there on the floor, some steaming.
+          if (kind === 2 && !inEntrance && flat && gap > 5 && r3 > 0.78) {
+            const R = 1.4 + (r3 - 0.78) * 9, H = 0.8 + r2 * 1.8;
+            const lip = geyser(x + 0.3, floor, z + 0.3, R, H, r1);
+            if (r1 < 0.65) geysers.push(x + 0.3, lip, z + 0.3, 0.6 + r2);
           }
           // Boulders on the floor, here and there (squat and dark in volcanic
           // country, pale in the ice).
@@ -838,7 +899,7 @@ export function decorateChunk(grid, field) {
     // it, up to a little below its rim all round (the sheet reaches past
     // the shore, under the rock, so its edge is wherever water meets
     // floor), never hanging over a drop.
-    if (r > 0.84 && kind !== 3 && kind !== 1) {
+    if (r > (kind === 2 ? 0.76 : 0.84) && kind !== 3 && kind !== 1) {
       const level = y + 0.75, R = 3 + (r - 0.84) * 28;
       let rim = 0, sound = true;
       for (let k = 0; k < 12; k++) {
@@ -896,7 +957,7 @@ export function decorateChunk(grid, field) {
     g.computeBoundingSphere();
     return g;
   };
-  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights };
+  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights, geysers };
 }
 
 /**
@@ -907,7 +968,7 @@ export function decorateChunk(grid, field) {
  */
 export function buildChunkData(field, cx, cz, chunkSize) {
   const grid = sampleChunk(field, cx, cz, chunkSize);
-  if (!grid) return { grid: null, rock: null, deco: null, plants: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), lights: new Float32Array(0), water: null, lava: null };
+  if (!grid) return { grid: null, rock: null, deco: null, plants: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), lights: new Float32Array(0), geysers: new Float32Array(0), water: null, lava: null };
   const rock = meshChunk(grid, field);
   const deco = decorateChunk(grid, field);
   const liquid = liquidChunk(grid, field, deco.pools);
@@ -930,6 +991,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
     pools: new Float32Array(deco.pools),
     vines: new Float32Array(deco.vines),
     lights: new Float32Array(deco.lights),
+    geysers: new Float32Array(deco.geysers),
     water: liquid.water ?? null,
     lava: liquid.lava ?? null,
   };
@@ -945,5 +1007,6 @@ export function chunkDataBuffers(data) {
   if (data.pools) out.push(data.pools.buffer);
   if (data.vines) out.push(data.vines.buffer);
   if (data.lights) out.push(data.lights.buffer);
+  if (data.geysers) out.push(data.geysers.buffer);
   return [...new Set(out)];
 }

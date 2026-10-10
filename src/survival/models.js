@@ -544,6 +544,27 @@ export function ropeStakeModel() {
 }
 /** A metre of rope, hanging (drawn stretched to its length). */
 export const ropeLengthModel = () => new Parts(107).add(new CylinderGeometry(0.025, 0.025, 1, 5), 0xb89a60, [0, -0.5, 0], [0, 0, 0], [1, 1, 1], 0.05).build();
+/**
+ * A rope laid along its path from the stake ([distance out, height] at each
+ * bend, in the stake's frame: out is +z): lying a hand's breadth off the
+ * ground down a slope, hanging straight over a drop.
+ */
+export function ropePathModel(path) {
+  const b = new Parts(108);
+  const pts = path.map(([d, y]) => new Vector3(0, y + 0.07, d + 0.05));
+  pts.unshift(new Vector3(0, 0.28, 0.0));
+  for (let k = 1; k < pts.length; k++) {
+    const from = pts[k - 1], to = pts[k];
+    const dir = to.clone().sub(from), len = dir.length();
+    if (len < 1e-3) continue;
+    const g = new CylinderGeometry(0.025, 0.025, len + 0.03, 5, 1);
+    g.applyQuaternion(new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), dir.normalize()));
+    const mid = from.clone().add(to).multiplyScalar(0.5);
+    g.translate(mid.x, mid.y, mid.z);
+    b.add(g, 0xb89a60, [0, 0, 0], [0, 0, 0], [1, 1, 1], 0.05);
+  }
+  return b.build();
+}
 
 /** A dug plot, 2 m square: dark turned earth in furrows. */
 export const PLOT_SIZE = 2;

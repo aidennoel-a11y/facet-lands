@@ -1,4 +1,5 @@
 import { BufferAttribute, BufferGeometry } from 'three';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CaveField } from './CaveField.js';
 import { buildChunkData, sampleGrid } from './caveMesher.js';
 
@@ -49,9 +50,11 @@ function toGeometry(part) {
 /** A flat sheet of water or lava (see liquidChunk). */
 function toLiquid(part) {
   if (!part) return null;
-  const g = new BufferGeometry();
+  let g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(part.position, 3));
   g.setAttribute('color', new BufferAttribute(part.colour, 3));
+  // (One sheet, its squares sharing their corners: no seam anywhere between them.)
+  g = mergeVertices(g, 1e-3);
   g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
@@ -116,6 +119,7 @@ export class CaveSystem {
       entry.pools = data.pools ?? new Float32Array(0);
       entry.vines = data.vines ?? new Float32Array(0);
       entry.lights = data.lights ?? new Float32Array(0);
+      entry.geysers = data.geysers ?? new Float32Array(0);
       entry.water = toLiquid(data.water);
       entry.lava = toLiquid(data.lava);
       entry.ready = true;
@@ -233,6 +237,10 @@ export class CaveSystem {
     const found = [];
     if (col.chamber && col.chamber.e < 1) found.push({ level: col.chamber.c.lake, river: false });
     if (col.river && col.river.across < col.river.half * 0.92 && col.river.fade > 0.5) found.push({ level: col.river.level - 0.2, river: true });
+    if (col.volc > 0.45) {
+      const vf = this.field.volcanicFloor(x, z);
+      if (vf.floor < vf.lava) found.push({ level: vf.lava, river: false });
+    }
     const entry = this.cache.get(`${Math.floor(x / this.chunkSize)},${Math.floor(z / this.chunkSize)}`);
     const pools = entry?.pools ?? [];
     for (let k = 0; k < pools.length; k += 4) if (Math.hypot(x - pools[k], z - pools[k + 2]) < pools[k + 3]) found.push({ level: pools[k + 1], pool: true });

@@ -188,6 +188,7 @@ export class CaveField {
     return {
       H,
       lush: this.lushAt(x, z),
+      volc: this.volcAt(x, z),
       chamber: this.chamberAt(x, z),
       river: this.riverAt(x, z, H),
       spag,
@@ -210,9 +211,31 @@ export class CaveField {
     return v;
   }
 
+  /** How volcanic the cave country is round (x, z) (coarse, cached: see biomeScores). */
+  volcAt(x, z) {
+    const S = 48, i = Math.round(x / S), k = Math.round(z / S), key = i * 100003 + k;
+    this.volcCache ??= new Map();
+    let v = this.volcCache.get(key);
+    if (v === undefined) {
+      if (this.volcCache.size > 20000) this.volcCache.clear();
+      v = this.biomeScores(i * S, k * S).volcanic;
+      this.volcCache.set(key, v);
+    }
+    return v;
+  }
+
+  /** A volcanic cavern's floor under (x, z) (its rough lie), and the level its lava lies at. */
+  volcanicFloor(x, z) {
+    const base = -104 + 7 * this.riverLevel.noise2D(x / 400 + 70, z / 400 - 70);
+    return {
+      floor: base + 4.5 * this.chamberWall.noise2D(x / 40 + 90, z / 40 - 90) + 1.5 * this.chamberWall.noise2D(x / 11 - 40, z / 11),
+      lava: base + 0.8,
+    };
+  }
+
   /** Could this column hold any deep cave? (Cheap: to skip work.) */
   deepRock(col) {
-    return col.chamber || col.river || col.spag > -0.05 || col.lush > 0.45 ? 0 : 50;
+    return col.chamber || col.river || col.spag > -0.05 || col.lush > 0.45 || col.volc > 0.45 ? 0 : 50;
   }
 
   #deep(x, y, z, H, col) {
@@ -262,6 +285,16 @@ export class CaveField {
       let ld = (0.18 - r) * 42;
       ld = Math.max(ld, (0.45 - col.lush) * 60, -70 - y);
       d = Math.min(d, ld);
+    }
+    // Under the volcanic highlands, deep down, the volcanic caverns: great
+    // halls with a rough floor of old lava, still molten in its low places
+    // (see volcanicFloor: the lava lakes).
+    if (col.volc > 0.45 && y > this.deep && y < -55) {
+      const r = this.chamberWall.noise3D(x / 95 - 200, y / 40, z / 95 + 200);
+      let vd = (0.24 - r) * 46;
+      const vf = col.vfloor ??= this.volcanicFloor(x, z);
+      vd = Math.max(vd, vf.floor - y, (0.45 - col.volc) * 70, y - (-58 - 12 * Math.max(0, r)));
+      d = Math.min(d, vd);
     }
     // Spaghetti: long thin tunnels winding on and on.
     if (col.spag > -0.05 && y > this.deep) {

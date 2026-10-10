@@ -216,6 +216,35 @@ export function createTreeLayer({ rocks = null } = {}) {
       return best;
     },
 
+    /**
+     * The trees and bushes standing within `r` of (x, z) (world): as `pick`
+     * finds them, with their crowns ({ bottom, top, radius, cone }, world
+     * heights) to set alight.
+     */
+    within(x, z, r) {
+      const size = layer.chunkSize, out = [];
+      if (!size) return out;
+      const c0x = Math.floor((x - r) / size), c1x = Math.floor((x + r) / size), c0z = Math.floor((z - r) / size), c1z = Math.floor((z + r) / size);
+      for (let cz = c0z; cz <= c1z; cz++) {
+        for (let cx = c0x; cx <= c1x; cx++) {
+          const group = groups.get(`${cx},${cz}`);
+          if (!group) continue;
+          for (const [type, list] of Object.entries(group.userData.placed)) {
+            if (type === 'cactus' || type === 'smallCactus') continue;
+            const bush = NO_COLLIDE.has(type), prof = profileOf(type);
+            for (const t of list) {
+              if (t.removed) continue;
+              const tx = cx * size + t.x, tz = cz * size + t.z;
+              if ((tx - x) ** 2 + (tz - z) ** 2 > r * r) continue;
+              const crown = { bottom: t.y + (prof?.bottom ?? 0.3) * t.sy, top: t.y + (prof?.top ?? 1.2) * t.sy, radius: (prof?.radius ?? 0.8) * t.s, cone: !!prof?.cone };
+              out.push({ key: treeKey(cx, cz, type, t), type, t, x: tx, y: t.y, z: tz, bush, radius: bush ? crown.radius * 0.8 : (TRUNK_RADIUS[type] ?? 0.3) * t.s, crown, group });
+            }
+          }
+        }
+      }
+      return out;
+    },
+
     /** How tall a species' crown reaches, for a tree of size 1. */
     profileTop(type) {
       return profileOf(type)?.top ?? 6;

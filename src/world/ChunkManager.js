@@ -187,7 +187,7 @@ export class ChunkManager {
     if (reach > chunkSize * 2.5) ahead *= (chunkSize * 2.5) / reach; // (flying fast: no further than a few chunks on)
     const pcx = Math.floor((position.x + this.velocity.x * ahead) / chunkSize);
     const pcz = Math.floor((position.z + this.velocity.z * ahead) / chunkSize);
-    const key = `${ccx},${ccz}|${pcx},${pcz}`;
+    const key = `${ccx},${ccz}|${pcx},${pcz}|${this.underground ? 1 : 0}`;
     if (key !== this.centerKey) {
       this.centerKey = key;
       this.centre = [ccx, ccz];
@@ -217,10 +217,19 @@ export class ChunkManager {
   }
 
   #refreshWanted(ccx, ccz, pcx = ccx, pcz = ccz) {
-    const { viewDistance } = this.config;
+    let { viewDistance } = this.config;
     const wanted = this.wanted;
     wanted.clear();
     this.queue.length = 0;
+    // Underground the surface can't be seen: nothing more of it is loaded
+    // or sharpened, but the chunks round you (whose caves you're in: out
+    // to the caves' ring) still are, and what's loaded already stays as it
+    // is, for when you come up. (The world goes on: only the drawing waits.)
+    if (this.underground) {
+      viewDistance = this.config.lods[this.config.caveMaxLod].maxDistance;
+      (pcx = ccx), (pcz = ccz);
+      for (const [key, chunk] of this.chunks) wanted.set(key, chunk.lod);
+    }
 
     // (Round where you are, and round where you're going: each chunk at the
     // detail the nearer of the two wants.)
@@ -230,7 +239,7 @@ export class ChunkManager {
       for (let cx = x0; cx <= x1; cx++) {
         const dx = cx - ccx, dz = cz - ccz, px = cx - pcx, pz = cz - pcz;
         const distance = Math.sqrt(dx * dx + dz * dz);
-        if (distance > viewDistance + 0.5 && Math.sqrt(px * px + pz * pz) > viewDistance + 0.5) continue;
+        if (this.underground ? Math.max(Math.abs(dx), Math.abs(dz)) > viewDistance : distance > viewDistance + 0.5 && Math.sqrt(px * px + pz * pz) > viewDistance + 0.5) continue;
         const key = `${cx},${cz}`;
         const lod = Math.min(this.lodFor(Math.max(Math.abs(dx), Math.abs(dz))), this.lodFor(Math.max(Math.abs(px), Math.abs(pz))));
         wanted.set(key, lod);

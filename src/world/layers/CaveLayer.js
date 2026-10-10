@@ -10,6 +10,8 @@ import { bonesModel } from '../../survival/models.js';
  */
 /** Night vision (testing): 1 lifts the cave darkening completely. */
 export const caveNightVision = { value: 0 };
+/** Where you are, and whether underground: which caves are wanted (see the layer's update; set by main). */
+export const caveFocus = { under: false, x: 0, z: 0 };
 /** The time, for the water's shimmer and the fish (see updateCaveLife). */
 export const caveTime = { value: 0 };
 
@@ -141,6 +143,13 @@ function placeVine(set, v) {
   set.meshes[v.kind].instanceMatrix.needsUpdate = true;
 }
 
+// Steam rising from the geysers: soft pale puffs, swelling as they climb
+// and drifting, each vent breathing harder now and then.
+const steams = new Set();
+const steamGeometry = new OctahedronGeometry(0.35, 1);
+const steamMaterial = new MeshBasicMaterial({ color: 0xd8d4d0, transparent: true, opacity: 0.22, depthWrite: false });
+const PUFFS = 14;
+
 /** Swims the cave fish and flies the bats (call every frame); `eye`: where you are, if underground. */
 export function updateCaveLife(time, eye = null) {
   caveTime.value = time;
@@ -159,41 +168,31 @@ export function updateCaveLife(time, eye = null) {
       if (Math.abs(eye.x - set.cx) > 150 || Math.abs(eye.z - set.cz) > 150) continue;
       for (const g of set.list) {
         const d = (g.x - eye.x) ** 2 + (g.y - eye.y) ** 2 + (g.z - eye.z) ** 2;
-        if (d < 50 * 50) near.push([d, g]);
+        if (d < (g.lava ? 70 * 70 : 50 * 50)) near.push([d, g]);
       }
     }
     near.sort((a, b) => a[0] - b[0]);
     caveGlowLights.length = 0;
-    for (const [, g] of near.slice(0, 6)) caveGlowLights.push(g);
+    // (The lava's light first, the nearest few spots of it, as far as it
+    // reaches; then the nearest of the rest.)
+    let lava = 0;
+    for (const [d, g] of near) if (g.lava && lava < 3 && d < 70 * 70) caveGlowLights.push(g), lava++;
+    for (const [, g] of near) if (!g.lava && caveGlowLights.length < 7) caveGlowLights.push(g);
   }
-  // Vines: pushed aside where you walk through them, swinging back after.
-  for (const set of vineSets) {
-    if (Math.abs(eye.x - set.cx) > 110 || Math.abs(eye.z - set.cz) > 110) continue;
-    for (const v of set.vines) {
-      const dx = v.x - eye.x, dz = v.z - eye.z;
-      const close = Math.abs(dx) < 2.5 && Math.abs(dz) < 2.5 && eye.y > v.top - v.len - 0.2 && eye.y - 1.7 < v.top;
-      if (!close && !v.moving) continue;
-      const dt = Math.min(0.05, time - (v.t ?? time));
-      v.t = time;
-      let tx = 0, tz = 0;
-      if (close) {
-        const d = Math.hypot(dx, dz), reach = 0.7 + v.width * 0.25;
-        if (d < reach) {
-          const push = ((reach - d) / reach) * 1.1, u = d > 1e-3 ? 1 / d : 0;
-          // (Its foot swung away from you, as far as you're into it, along the bit you're touching.)
-          const along = Math.min(1, Math.max(0.2, (v.top - (eye.y - 0.8)) / v.len));
-          (tx = dx * u * push / along), (tz = dz * u * push / along);
-        }
+  for (const st of steams) {
+    if (Math.abs(eye.x - st.cx) > 160 || Math.abs(eye.z - st.cz) > 160) continue;
+    let k = 0;
+    for (const v of st.vents) {
+      const surge = 0.6 + 0.4 * Math.max(0, Math.sin(time * 0.4 + v.phase));
+      for (let p = 0; p < PUFFS; p++) {
+        const t = (time * 0.22 * (0.8 + v.s * 0.4) + p / PUFFS + v.phase) % 1;
+        const rise = t * 7 * v.s * surge;
+        bp.set(v.x - st.x0 + Math.sin(time * 0.7 + p * 2.1) * t * 0.9, v.y + rise, v.z - st.z0 + Math.cos(time * 0.5 + p * 1.3) * t * 0.9);
+        const sz = (0.4 + t * 2.4) * (1 - t * t) * v.s;
+        st.mesh.setMatrixAt(k++, fm.compose(bp, bq.identity(), bs.setScalar(Math.max(0.01, sz))));
       }
-      // A spring, damped: out to where you push it, and back.
-      v.vx = (v.vx ?? 0) + ((tx - v.sx) * 30 - v.vx * 4) * dt;
-      v.vz = (v.vz ?? 0) + ((tz - v.sz) * 30 - v.vz * 4) * dt;
-      v.sx += v.vx * dt;
-      v.sz += v.vz * dt;
-      v.moving = Math.abs(v.sx) + Math.abs(v.sz) + Math.abs(v.vx) + Math.abs(v.vz) > 0.003 || close;
-      if (!v.moving) (v.sx = 0), (v.sz = 0), (v.vx = 0), (v.vz = 0), (v.t = undefined);
-      placeVine(set, v);
     }
+    st.mesh.instanceMatrix.needsUpdate = true;
   }
   for (const flock of roostFlocks) {
     // (Come near with a light and they all take wing, fast and wild.)
@@ -311,6 +310,7 @@ export function createCaveLayer(config) {
     return { mesh, fish, x0, z0 };
   };
 
+  const waiting = new Set(); // (chunk groups whose caves aren't asked for yet)
   const layer = {
     name: 'caves',
     material,
@@ -322,7 +322,6 @@ export function createCaveLayer(config) {
     build({ cx, cz, lod, generator }) {
       if (lod > config.caveMaxLod || !generator.caves) return null;
       const caves = generator.caves;
-      const entry = caves.chunk(cx, cz, true);
       const group = new Group();
       group.name = 'caves';
       group.userData.chunk = [cx, cz];
@@ -334,7 +333,56 @@ export function createCaveLayer(config) {
         .filter((e) => e.mouth.x > cx * size - 16 && e.mouth.x < (cx + 1) * size + 16 && e.mouth.z > cz * size - 16 && e.mouth.z < (cz + 1) * size + 16)
         .map((e) => e.mouth);
       group.userData.hasMouth = group.userData.mouths.length > 0;
-      // Caves are built on a background worker; add them when they arrive.
+      // (Nothing's built yet: only once it's wanted, see layer.update.)
+      waiting.add(group);
+      return group;
+    },
+
+    // The caves under a chunk are only built when they could be seen: when
+    // you're underground (all of them round you), or on the surface, those
+    // by a cave mouth you're near (to see down into it). Elsewhere on the
+    // surface, no cave work at all.
+    update() {
+      if (!waiting.size) return;
+      for (const group of waiting) {
+        const [cx, cz] = group.userData.chunk;
+        const size = config.chunkSize, f = caveFocus;
+        let wanted = f.under;
+        if (!wanted) {
+          // (A mouth within reach of you, in this chunk or the next.)
+          const near = group.userData.near ??= group.userData.caves
+            .mouthsNear((cx - 1) * size, (cz - 1) * size, (cx + 2) * size, (cz + 2) * size)
+            .map((e) => e.mouth);
+          wanted = near.some((m) => Math.hypot(m.x - f.x, m.z - f.z) < 150);
+        }
+        if (!wanted) continue;
+        waiting.delete(group);
+        populate(group);
+      }
+    },
+
+    dispose(group) {
+      if (waiting.delete(group)) return; // (never built)
+      // Geometry belongs to the cave system's cache; just let it know we're done.
+      group.userData.disposed = true;
+      if (group.userData.shoal) shoals.delete(group.userData.shoal);
+      for (const f of group.userData.flocks ?? []) roostFlocks.delete(f);
+      if (group.userData.vineSet) vineSets.delete(group.userData.vineSet);
+      if (group.userData.steam) steams.delete(group.userData.steam);
+      if (group.userData.glowSet) glowSets.delete(group.userData.glowSet);
+      group.traverse((m) => details.delete(m));
+      const [cx, cz] = group.userData.chunk;
+      for (const mesh of group.children) if (mesh.isInstancedMesh) mesh.dispose();
+      layer.onGone?.(cx, cz);
+      group.userData.caves.release(cx, cz);
+    },
+  };
+
+  // Asks for a chunk's caves (built on a background worker) and adds them when they arrive.
+  function populate(group) {
+      const [cx, cz] = group.userData.chunk;
+      const caves = group.userData.caves, size = config.chunkSize;
+      const entry = caves.chunk(cx, cz, true);
       caves.whenReady(entry, (data) => {
         if (group.userData.disposed) return;
         if (data.rock) {
@@ -396,6 +444,18 @@ export function createCaveLayer(config) {
           plants.receiveShadow = true;
           group.add(detail(plants));
         }
+        if (data.geysers?.length) {
+          const vents = [];
+          for (let k = 0; k < data.geysers.length; k += 4) vents.push({ x: data.geysers[k], y: data.geysers[k + 1], z: data.geysers[k + 2], s: data.geysers[k + 3], phase: (k * 0.37) % 1 * 6 });
+          const mesh = new InstancedMesh(steamGeometry, steamMaterial, vents.length * PUFFS);
+          mesh.name = 'cave steam';
+          mesh.frustumCulled = false;
+          mesh.renderOrder = 3;
+          group.add(detail(mesh));
+          const st = { vents, mesh, x0: cx * size, z0: cz * size, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size };
+          steams.add(st);
+          group.userData.steam = st;
+        }
         if (data.vines?.length) {
           const counts = [0, 0, 0, 0], list = [];
           for (let k = 0; k < data.vines.length; k += 7) {
@@ -431,7 +491,17 @@ export function createCaveLayer(config) {
           for (let k = 0; k < v.length; k += 7) if (v[k + 4] === 3) list.push({ x: v[k], y: v[k + 1] - v[k + 3] * 0.6, z: v[k + 2], strength: 3, reach: 6, colour: 0xf0c060, steady: true });
           // (Lava: a light every so often over it, deep orange.)
           const lp = data.lava?.attributes.position;
-          if (lp) for (let k = 0; k < lp.count; k += 120) list.push({ x: lp.getX(k) + cx * size, y: lp.getY(k) + 1.5, z: lp.getZ(k) + cz * size, strength: 18, reach: 22, colour: 0xff6a20 });
+          // (A lava lake: a light over every 12 m or so of it, strong and far-reaching.)
+          if (lp) {
+            const cells = new Map();
+            for (let k = 0; k < lp.count; k++) {
+              const x = lp.getX(k) + cx * size, z = lp.getZ(k) + cz * size, key = `${Math.floor(x / 12)},${Math.floor(z / 12)}`;
+              const c = cells.get(key);
+              if (c) (c.x += x), (c.y += lp.getY(k)), (c.z += z), c.n++;
+              else cells.set(key, { x, y: lp.getY(k), z, n: 1 });
+            }
+            for (const c of cells.values()) list.push({ x: c.x / c.n, y: c.y / c.n + 2.5, z: c.z / c.n, strength: 24, reach: 32, colour: 0xff6420, lava: true });
+          }
           if (list.length) {
             const gs = { list, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size };
             glowSets.add(gs);
@@ -439,22 +509,6 @@ export function createCaveLayer(config) {
           }
         }
       });
-      return group;
-    },
-
-    dispose(group) {
-      // Geometry belongs to the cave system's cache; just let it know we're done.
-      group.userData.disposed = true;
-      if (group.userData.shoal) shoals.delete(group.userData.shoal);
-      for (const f of group.userData.flocks ?? []) roostFlocks.delete(f);
-      if (group.userData.vineSet) vineSets.delete(group.userData.vineSet);
-      if (group.userData.glowSet) glowSets.delete(group.userData.glowSet);
-      group.traverse((m) => details.delete(m));
-      const [cx, cz] = group.userData.chunk;
-      for (const mesh of group.children) if (mesh.isInstancedMesh) mesh.dispose();
-      layer.onGone?.(cx, cz);
-      group.userData.caves.release(cx, cz);
-    },
-  };
+  }
   return layer;
 }

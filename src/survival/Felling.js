@@ -15,6 +15,25 @@ const WOOD = new Color(0xd9b27a);
  * above it (`above`) or below, with the cut face capped in pale wood.
  * Every attribute is carried over (and blended along the cut).
  */
+// A tree with its crown gone (burnt off): only its trunk and boughs (the
+// faces marked wood, see trees.withCrown).
+const WOOD_ONLY = new Map();
+function woodOnly(source) {
+  if (WOOD_ONLY.has(source)) return WOOD_ONLY.get(source);
+  const g = source.index ? source.toNonIndexed() : source;
+  const crown = g.attributes.aCrown, names = Object.keys(g.attributes), keep = [];
+  for (let k = 0; k < g.attributes.position.count; k += 3) if (!crown || (crown.getX(k) < 0.5 && crown.getX(k + 1) < 0.5 && crown.getX(k + 2) < 0.5)) keep.push(k);
+  const out = new BufferGeometry();
+  for (const n of names) {
+    const a = g.attributes[n], arr = new Float32Array(keep.length * 3 * a.itemSize);
+    keep.forEach((k, i) => arr.set(a.array.subarray(k * a.itemSize, (k + 3) * a.itemSize), i * 3 * a.itemSize));
+    out.setAttribute(n, new BufferAttribute(arr, a.itemSize));
+  }
+  out.computeBoundingSphere();
+  WOOD_ONLY.set(source, out);
+  return out;
+}
+
 function clipGeometry(source, cut, above) {
   const g = source.index ? source.toNonIndexed() : source;
   const names = Object.keys(g.attributes);
@@ -281,33 +300,47 @@ export class Felling {
     if (moved) leaves.geometry.computeVertexNormals();
   }
 
-  // A stump where a tree was felled (saved: see stumpsJSON).
-  #stump(key, type, matrix, cut) {
-    const geometry = clipGeometry(treeGeometry(type, true), cut, false);
-    const mesh = new InstancedMesh(geometry, this.trees.material, 1);
+  /**
+   * A tree burnt in a wildfire: its leaves gone, it stands on as a
+   * blackened snag (a conifer, its needles burnt off with the top of it); a
+   * bush burns away to nothing.
+   */
+  scorch(hit) {
+    if (hit.t.removed) return;
+    const world = this.trees.matrixOf(hit).clone();
+    this.trees.remove(hit);
+    if (hit.bush) return;
+    this.#stump(hit.key, hit.type, world, 1e3, true);
+  }
+
+  // A stump where a tree was felled, or a snag where one burnt (saved: see stumpsJSON).
+  #stump(key, type, matrix, cut, burnt = false) {
+    const geometry = burnt ? woodOnly(treeGeometry(type, true)) : clipGeometry(treeGeometry(type, true), cut, false);
+    const material = burnt ? (this.charred ??= new MeshLambertMaterial({ vertexColors: true, flatShading: true, color: 0x3a3430 })) : this.trees.material;
+    const mesh = new InstancedMesh(geometry, material, 1);
     mesh.setMatrixAt(0, matrix);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     this.stumpGroup.add(mesh);
-    this.stumps.push({ key, type, m: matrix.elements.map((v) => +v.toFixed(4)), cut: +cut.toFixed(3), mesh });
+    this.stumps.push({ key, type, m: matrix.elements.map((v) => +v.toFixed(4)), cut: +cut.toFixed(3), burnt, mesh });
   }
 
   /** The stumps, for saving; and back from a save. */
   stumpsJSON() {
-    return this.stumps.map(({ key, type, m, cut }) => ({ key, type, m, cut }));
+    return this.stumps.map(({ key, type, m, cut, burnt }) => ({ key, type, m, cut, burnt }));
   }
 
   /** One stump more (someone else's felling, online), unless it's there already. */
   addStump(st) {
-    if (st?.m?.length === 16 && !this.stumps.some((o) => o.key === st.key)) this.#stump(st.key, st.type, new Matrix4().fromArray(st.m), st.cut);
+    if (st?.m?.length === 16 && !this.stumps.some((o) => o.key === st.key)) this.#stump(st.key, st.type, new Matrix4().fromArray(st.m), st.cut, !!st.burnt);
   }
 
   loadStumps(list) {
     for (const st of this.stumps) st.mesh.dispose();
     this.stumpGroup.clear();
     this.stumps = [];
-    for (const st of list ?? []) if (st.m?.length === 16) this.#stump(st.key, st.type, new Matrix4().fromArray(st.m), st.cut);
+    for (const st of list ?? []) if (st.m?.length === 16) this.#stump(st.key, st.type, new Matrix4().fromArray(st.m), st.cut, !!st.burnt);
   }
 
   // How far below the tree's axis its lowest side reaches, `along` metres

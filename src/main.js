@@ -6,7 +6,7 @@ import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
-import { caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
+import { caveFocus, caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
@@ -199,6 +199,9 @@ lightning.onStrike = (x, y, z, distance) => {
   if (chance < 0.18 + 0.2 * summer + 0.15 * w.savanna) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
 };
 const fires = new Wildfires(scene);
+// (What burns: the trees and bushes, each losing its leaves if it burns long: see Felling.scorch.)
+fires.fuel = (x, z, r) => trees.within(x, z, r);
+fires.onScorch = (t) => game.felling.scorch(t);
 const volcanoes = new Volcanoes(scene);
 const sandstorm = new Sandstorm(scene, Rain);
 const devils = new DustDevils(scene);
@@ -587,6 +590,8 @@ const game = new Game({
   wind: () => clouds.wind,
   // (A campfire left burning in the dry sets the grass alight.)
   ignite: (x, y, z) => fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
+  // (Standing in a burning wood or on burning ground: see Wildfires.heatAt.)
+  fireHeat: (x, y, z) => fires.heatAt(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
   // (Sleeping the night through: on to the next morning.)
   sleepUntilMorning: () => {
     const h = dayNight.hour;
@@ -628,8 +633,16 @@ game.clock = {
 game.loadWorld(WORLD.seed);
 window.addEventListener('beforeunload', () => game.dirty && game.save());
 // Falls from too high hurt (not into the water).
+// (How far you can drop before it hurts, by what you land on: rock the
+// least; grass and leaf litter a little more; sand, snow and mud more; a bush
+// most of all. As a share of the fall height: speed goes as its square root.)
+const LANDING = { rock: 1.1, dirt: 1.2, grass: 1.25, leaves: 1.3, sand: 1.4, snow: 1.6, mud: 1.6, bush: 1.75 };
 controls.onLand = (speed) => {
-  const harm = Math.max(0, speed - 13) * 6.5;
+  const p = camera.position;
+  let surface = caveFocus.under ? 'rock' : stepSurface(p.x, p.z);
+  if (surface === 'water') return;
+  if (!caveFocus.under && (controls.speedFactor < 0.9 || (game.player.cover ?? 0) > 0.6)) surface = 'bush';
+  const harm = Math.max(0, speed - 13 * Math.sqrt(LANDING[surface] ?? 1.1)) * 6.5;
   if (harm > 0) game.hurt(harm, 'a fall');
 };
 
@@ -962,6 +975,11 @@ function updateVisibility() {
   // fish, insects and falling leaves hide themselves when sheltered.)
   wildlife.hideAbove = surface ? Infinity : p.y + 18;
   sheltered = underground;
+  // (Which caves to build: all round you underground; on the surface only those by a mouth near you.)
+  caveFocus.under = underground;
+  chunks.underground = underground && !nearMouth; // (the surface not loaded further while you're down there: see ChunkManager)
+  caveFocus.x = p.x;
+  caveFocus.z = p.z;
 
   // Underground, a short dark haze replaces the sky: caves fade into darkness
   // rather than showing gaps where far-off tunnels aren't built yet.
@@ -1768,7 +1786,7 @@ function tick(now) {
     waterAt: (x, z) => waterAt(x, z),
     splash: (x, y, z, size = 1) => traces.splash(x, y, z, 6, 1.2 * size, 0.6 * size),
     bleed,
-    fires: game.fearLights(), caches: () => game.caches(), raid: (c) => game.raid(c),
+    fires: game.fearLights(), wildfires: fires.zones(), caches: () => game.caches(), raid: (c) => game.raid(c),
     autumn: seasonUniforms.uAutumn.value,
     step: (a, x, z, running) => {
       const [shape, size] = ANIMAL_PRINTS[a.kind] ?? [PRINT.hoof, 0.12];

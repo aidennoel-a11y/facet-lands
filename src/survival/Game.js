@@ -775,11 +775,11 @@ export class Game {
     if (item.place === 'rope') {
       const plan = this.plan;
       if (!plan?.ok) return this.hotbar?.flash(plan?.why ?? 'Stand at the edge of a cliff, looking out over it');
-      this.structures.build(plan, { len: plan.len });
+      this.structures.build(plan, { len: plan.len, path: plan.path });
       this.inventory.take(i);
       this.cooldown = 0.4;
       this.sound?.call('place', 0, 0.4);
-      return this.hotbar?.flash(`The rope hangs ${Math.round(plan.len)} m down the cliff: E on it to climb`);
+      return this.hotbar?.flash(`The rope runs ${Math.round(plan.len)} m down: E on it to climb`);
     }
     if (item.place) {
       const plan = this.plan;
@@ -933,51 +933,85 @@ export class Game {
     });
   }
 
-  // Where a rope would go: from where you stand at a cliff's edge, looking
-  // out over it, down to the ground below. { type, ok, why, x, y, z, rot, len }
+  // Where a rope would go: from where you stand at the edge of a drop or a
+  // slope too steep to walk (on a mountain, or in a cave), looking out over
+  // it, down along the ground to where it levels off. The rope lies on the
+  // ground as it goes: path, [distance out, height below the stake] at each
+  // bend. { type, ok, why, x, y, z, rot, len, path }
   #ropePlan() {
     const cam = this.camera.position, yaw = this.controls.euler.y, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-    const at = (d) => this.groundAt(cam.x + fx * d, cam.z + fz * d);
-    // (The lip: out to where the ground starts to go down from under your
-    // feet; and beyond it, within a few steps, a fall steeper than 45
-    // degrees.)
-    const y0 = at(0);
-    if (!Number.isFinite(y0)) return { type: 'rope', ok: false, why: 'Stand at the edge of a cliff, looking out over it' };
+    const feet = cam.y - this.controls.eyeHeight;
+    // (From a height: the ground there, the cave floor if you're in a cave.)
+    const at = (d, from) => this.groundAt(cam.x + fx * d, cam.z + fz * d, from);
+    const no = { type: 'rope', ok: false, why: 'Stand at the edge of a drop or a steep slope, looking down it' };
+    const y0 = at(0, feet + 0.3);
+    if (!Number.isFinite(y0)) return no;
+    // (The lip: out to where the ground starts to go down from under your feet.)
     let a = 0;
-    while (a < 3 && at(a + 0.2) > y0 - 0.3) a += 0.2;
-    let steep = false;
-    for (let d = a; d < a + 3 && !steep; d += 0.2) steep = at(d) - at(d + 1) >= 0.9;
-    if (steep) {
-      const y = at(a);
-      let bottom = y;
-      for (let e = 0.5; e <= 12; e += 0.5) {
-        const yb = at(a + e);
-        if (Number.isFinite(yb)) bottom = Math.min(bottom, yb);
-      }
-      const drop = y - bottom;
-      if (drop < 2.5) return { type: 'rope', ok: false, why: 'Not drop enough for a rope: climb down' };
-      if (drop > 40) return { type: 'rope', ok: false, why: 'Too far down for one rope' };
-      return { type: 'rope', ok: true, x: cam.x + fx * a, y, z: cam.z + fz * a, rot: Math.atan2(fx, fz), len: drop };
+    while (a < 3 && at(a + 0.2, y0 + 0.3) > y0 - 0.3) a += 0.2;
+    const y = at(a, y0 + 0.3);
+    if (!Number.isFinite(y) || y < y0 - 1) return no;
+    // (Down the fall line, the ground a quarter metre at a time; it ends
+    // where the ground levels off for a couple of metres, or rises (a wall
+    // across a cave).)
+    const STEP = 0.25, climb = this.controls.maxClimb ?? 1.1;
+    const prof = [[0, y]];
+    let steep = false, flat = 0;
+    for (let d = STEP; d <= 45; d += STEP) {
+      const prev = prof[prof.length - 1][1];
+      const g = at(a + d, prev + 0.3);
+      if (!Number.isFinite(g) || g > prev + 0.4) break;
+      prof.push([d, g]);
+      if (prev - g > climb * STEP) (steep = true), (flat = 0);
+      else if ((flat += STEP) >= 2 && steep) break;
+      if (y - g > 45) return { ...no, why: 'Too far down for one rope' };
     }
-    return { type: 'rope', ok: false, why: 'Stand at the edge of a cliff, looking out over it' };
+    while (prof.length > 2 && prof[prof.length - 2][1] - prof[prof.length - 1][1] < 0.05) prof.pop();
+    const drop = y - prof[prof.length - 1][1];
+    if (!steep) return no;
+    if (drop < 2.5) return { ...no, why: 'Not drop enough for a rope: climb down' };
+    // (The bends: a point wherever the slope changes, so a cliff hangs
+    // straight down and a slope lies along the rock.)
+    const path = [[0, 0]];
+    const add = (d, g) => {
+      const last = path[path.length - 1];
+      if (d - last[0] > 1e-3 || Math.abs(g - y - last[1]) > 1e-3) path.push([d, +(g - y).toFixed(2)]);
+    };
+    for (let k = 1; k < prof.length; k++) {
+      const [d, g] = prof[k], [pd, pg] = prof[k - 1], nx = prof[k + 1];
+      if (pg - g > 1.5) {
+        // (Over a sheer drop the rope hangs: off the edge, straight down.)
+        add(pd, pg);
+        add(d, pg);
+        add(d, g);
+        continue;
+      }
+      const last = path[path.length - 1];
+      const s1 = (g - y - last[1]) / Math.max(1e-3, d - last[0]);
+      const s2 = nx ? (nx[1] - g) / STEP : s1;
+      if (!nx || Math.abs(s2 - s1) > 0.35 || nx[1] < g - 1.5 || d - last[0] >= 3) add(d, g);
+    }
+    return { type: 'rope', ok: true, x: cam.x + fx * a, y, z: cam.z + fz * a, rot: Math.atan2(fx, fz), len: drop, path };
   }
 
   // Up or down a rope, hand over hand, your feet against the rock: W up, S
   // down, E to let go (and off at the top onto the ledge, at the bottom
-  // onto the ground).
+  // onto the ground). Along its path: down the face, over the slopes.
   #climb(s) {
     const bx = Math.sin(s.rot), bz = Math.cos(s.rot), p = this.camera.position, eye = this.controls.eyeHeight;
-    // (The face, down the fall line: how far out it is at each height.)
-    const face = [];
-    for (let d = 0; d <= 14; d += 0.25) face.push([d, this.groundAt(s.x + bx * d, s.z + bz * d)]);
-    let foot = face[0];
-    for (const f of face) if (Number.isFinite(f[1]) && !(f[1] > foot[1] - 0.001)) foot = f;
+    const path = s.path ?? [[0, 0], [0.1, -s.len]];
+    const bottom = s.y + path[path.length - 1][1];
+    // (How far out the rope is at a height: between the bends.)
     const outAt = (h) => {
-      for (const [d, y] of face) if (Number.isFinite(y) && y < h) return Math.min(d + 0.45, foot[0] + 0.45);
-      return foot[0] + 0.45;
+      const dy = h - s.y;
+      for (let k = 1; k < path.length; k++) {
+        const [d0, y0] = path[k - 1], [d1, y1] = path[k];
+        if (dy >= y1) return d0 + (d1 - d0) * (y1 < y0 ? Math.min(1, Math.max(0, (dy - y0) / (y1 - y0))) : 1);
+      }
+      return path[path.length - 1][0];
     };
     this.climbing = s;
-    this.climbH = Math.max(s.y - s.len + 0.2, Math.min(s.y - 0.6, p.y - eye));
+    this.climbH = Math.max(bottom + 0.2, Math.min(s.y - 0.6, p.y - eye));
     this.controls.velocityY = 0;
     this.controls.vehicle = (dt, input) => {
       const speed = 1.5 * (this.controls.burden ?? 1) * (this.survival.energy < 20 ? 0.6 : 1);
@@ -985,13 +1019,15 @@ export class Game {
       if (this.climbH >= s.y - 0.1) {
         // Over the top, onto the ledge.
         this.#letGo();
-        p.set(s.x - bx * 0.9, this.groundAt(s.x - bx * 0.9, s.z - bz * 0.9) + eye + 0.05, s.z - bz * 0.9);
+        p.set(s.x - bx * 0.9, this.groundAt(s.x - bx * 0.9, s.z - bz * 0.9, s.y + 0.5) + eye + 0.05, s.z - bz * 0.9);
         return;
       }
-      const out = outAt(this.climbH), x = s.x + bx * out, z = s.z + bz * out;
-      const below = this.groundAt(x, z);
-      if (input.forward < 0 && Number.isFinite(below) && this.climbH <= below + 0.1) return this.#letGo();
-      p.set(x, this.climbH + eye, z);
+      if (input.forward < 0 && this.climbH <= bottom + 0.1) return this.#letGo();
+      // (Your feet against the rock: a little out from the rope, and never in the ground.)
+      const out = outAt(this.climbH) + 0.4, x = s.x + bx * out, z = s.z + bz * out;
+      const g = this.groundAt(x, z, this.climbH + 0.3);
+      const h = Number.isFinite(g) && g > this.climbH && g < this.climbH + 0.6 ? g : this.climbH;
+      p.set(x, h + eye, z);
       this.controls.velocityY = 0;
       this.controls.grounded = true;
       this.controls.moving = input.forward !== 0;
@@ -1747,7 +1783,7 @@ export class Game {
     const e = {
       active: walking && this.survival.alive && !this.sleeping,
       moving: this.controls.moving, sprinting: this.controls.sprinting, swimming: this.controls.swimming, jumped, load: heavy,
-      heat: heat.heat, day: ctx.day, coat: this.inventory.worn ? ITEMS[this.inventory.worn.id]?.warmth ?? 0.3 : 0, fire, inFire: walking && this.structures.inFire(cam.x, cam.z),
+      heat: heat.heat, day: ctx.day, coat: this.inventory.worn ? ITEMS[this.inventory.worn.id]?.warmth ?? 0.3 : 0, fire, inFire: walking && (this.structures.inFire(cam.x, cam.z) || (this.fireHeat?.(cam.x, cam.y - this.controls.eyeHeight, cam.z) ?? 0) > 0.3),
       winter: ctx.winter, spring: ctx.spring, autumn: ctx.autumn, summer: ctx.summer,
       seasonality: heat.seasonality, altitude: cam.y - this.controls.eyeHeight, night: ctx.night, rain: ctx.rain * (1 - shelter.roof), snowing: ctx.snowing && shelter.roof < 0.5,
       shelter: sheltered, exposed, storm: cave !== null ? 0 : ctx.blizzard ?? 0, dust: (ctx.dust ?? 0) * (1 - sheltered),

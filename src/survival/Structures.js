@@ -4,7 +4,7 @@ import { Inventory } from './Inventory.js';
 import {
   anvilModel, bedModel, campfireModel, caughtModel, chestModel, cropModel, dryingRackModel, FENCE_LENGTH, fenceGateDoorModel, fenceGatePostsModel, fenceModel,
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
-  ropeLengthModel, ropeStakeModel, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
+  ropeLengthModel, ropePathModel, ropeStakeModel, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
 } from './models.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -268,9 +268,13 @@ export class Structures {
     if (s.type === 'rope') {
       // (Hanging from its stake, over the edge and down the cliff.)
       s.len = s.len ?? 5;
-      const rope = new Mesh(this.models.ropeLength ?? (this.models.ropeLength = ropeLengthModel()), this.material);
-      rope.position.set(0, 0.28, 0.35);
-      rope.scale.set(1, s.len + 0.3, 1);
+      let rope;
+      if (s.path?.length > 1) rope = new Mesh(ropePathModel(s.path), this.material);
+      else {
+        rope = new Mesh(this.models.ropeLength ?? (this.models.ropeLength = ropeLengthModel()), this.material);
+        rope.position.set(0, 0.28, 0.35);
+        rope.scale.set(1, s.len + 0.3, 1);
+      }
       rope.castShadow = true;
       mesh.add(rope);
     }
@@ -637,7 +641,15 @@ export class Structures {
       if (kd.line === 'fence') for (let k = -3; k <= 3; k++) for (const h of [0.4, 0.9]) points.push([s.x + ax * k * 0.48, s.y + h, s.z + az * k * 0.48, 0.4]);
       else if (kd.line) for (let k = -4; k <= 4; k++) for (const h of [0.6, 1.6, 2.6]) points.push([s.x + ax * k * 0.48, s.y + h, s.z + az * k * 0.48, 0.45]);
       else if (kd.posts) for (const [u, v] of kd.posts) for (const h of [0.8, 1.8]) points.push([s.x + u * Math.cos(s.rot) + v * Math.sin(s.rot), s.y + h, s.z - u * Math.sin(s.rot) + v * Math.cos(s.rot), 0.35]);
-      else if (s.type === 'rope') for (let h = 0; h <= s.len + 0.5; h += 0.8) points.push([s.x + bx * 0.35, s.y + 0.3 - h, s.z + bz * 0.35, 0.5]);
+      else if (s.type === 'rope' && s.path?.length > 1) {
+        for (let k = 1; k < s.path.length; k++) {
+          const [d0, y0] = s.path[k - 1], [d1, y1] = s.path[k], n = Math.max(1, Math.ceil(Math.hypot(d1 - d0, y1 - y0) / 0.8));
+          for (let t = 0; t <= n; t++) {
+            const d = d0 + ((d1 - d0) * t) / n + 0.05, y = y0 + ((y1 - y0) * t) / n + 0.1;
+            points.push([s.x + bx * d, s.y + y, s.z + bz * d, 0.5]);
+          }
+        }
+      } else if (s.type === 'rope') for (let h = 0; h <= s.len + 0.5; h += 0.8) points.push([s.x + bx * 0.35, s.y + 0.3 - h, s.z + bz * 0.35, 0.5]);
       else if (s.type === 'plot') points.push([s.x, s.y + 0.25, s.z, 1.1]);
       else if (s.type === 'anvil' || s.type === 'grindstone') points.push([s.x, s.y + 0.8, s.z, 0.6]);
       else if (s.type === 'tanningRack') for (const h of [0.6, 1.3]) points.push([s.x, s.y + h, s.z, 0.75]);
@@ -673,7 +685,7 @@ export class Structures {
     return this.list.map((s) => ({
       type: s.type, x: r(s.x), y: r(s.y), z: r(s.z), rot: +s.rot.toFixed(3), lit: s.lit, fuel: Math.round(s.fuel), burnt: !!s.burnt,
       contents: s.contents?.slots, open: !!s.open, caught: !!s.caught, jobs: s.jobs.map(({ stack, out, left, total, done }) => ({ stack, out, left, total, done })),
-      tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0,
+      tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, path: s.path, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0,
     }));
   }
 
@@ -695,7 +707,7 @@ export class Structures {
     this.onChange = null;
     try {
       if (!s) {
-        this.build({ type: rec.type, x: rec.x, y: rec.y, z: rec.z, rot: rec.rot, tilt: rec.tilt }, { lit: rec.lit, fuel: rec.fuel, burnt: rec.burnt, contents: rec.contents, open: rec.open, caught: rec.caught, jobs: rec.jobs ?? [], len: rec.len, crop: rec.crop ?? null, growth: rec.growth ?? 0, watered: rec.watered ?? 0, fed: rec.fed ?? 0 });
+        this.build({ type: rec.type, x: rec.x, y: rec.y, z: rec.z, rot: rec.rot, tilt: rec.tilt }, { lit: rec.lit, fuel: rec.fuel, burnt: rec.burnt, contents: rec.contents, open: rec.open, caught: rec.caught, jobs: rec.jobs ?? [], len: rec.len, path: rec.path, crop: rec.crop ?? null, growth: rec.growth ?? 0, watered: rec.watered ?? 0, fed: rec.fed ?? 0 });
         return;
       }
       s.fuel = rec.fuel;
@@ -740,7 +752,7 @@ export class Structures {
     this.onChange = null;
     for (const s of list ?? []) {
       if (!KINDS[s.type]) continue;
-      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0 });
+      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0 });
     }
     this.onChange = quiet;
   }

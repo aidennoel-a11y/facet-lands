@@ -896,6 +896,12 @@ export class Wildlife {
     return null;
   }
 
+  // The wildfire (burning across the land) that (x, z) is near, if any: { x, z, r }.
+  #wildfireAt(x, z, ctx, pad = 0) {
+    for (const f of ctx.wildfires ?? []) if (Math.hypot(x - f.x, z - f.z) < f.r + pad) return f;
+    return null;
+  }
+
   // --- Coming and going -----------------------------------------------------
 
   /**
@@ -2025,6 +2031,7 @@ export class Wildlife {
     for (let k = 0; k < 4; k++) {
       const f = k === 3 ? 0 : 0.35;
       const x = c[0] + rnd(-f, f) * c[4], z = c[1] + rnd(-f, f) * c[4];
+      if (this.#wildfireAt(x, z, ctx, 15)) continue; // (not into a burning wood)
       const y = ctx.trees.topAt ? ctx.trees.topAt(x, z, c[3] + 3) : c[3];
       if (y !== null && y > c[2]) return { x, y: y + 0.02, z };
     }
@@ -2613,6 +2620,16 @@ export class Wildlife {
       }
       a.state = speed > sp.walk * 1.5 ? 'run' : speed > 0.1 ? 'walk' : 'look';
       a.timer = 1;
+    } else if (!a.tame && !a.boss && this.#wildfireAt(a.x, a.z, ctx, 25)) {
+      // A wildfire: every animal runs from it, upwind of the flames or
+      // anywhere away, and won't come back in while it burns.
+      const f = this.#wildfireAt(a.x, a.z, ctx, 25);
+      want = Math.atan2(a.x - f.x, a.z - f.z);
+      speed = sp.run * (Math.hypot(a.x - f.x, a.z - f.z) < f.r + 8 ? 0.95 : 0.7);
+      a.state = 'flee';
+      a.timer = 2;
+      a.hunting = a.stalking = false;
+      if (herd) herd.goal = { x: f.x + (a.x - f.x) * 3, z: f.z + (a.z - f.z) * 3 };
     } else if (a.led && onFoot) {
       // Led on a rope: following you, keeping a few steps behind.
       want = Math.atan2(p.x - a.x, p.z - a.z);
@@ -3263,7 +3280,7 @@ export class Wildlife {
   #monkey(a, dt, ctx) {
     if (this.#falling(a, dt, ctx)) return;
     const t = this.#threat(a, ctx);
-    const scared = !ctx.tame && t.d < SPECIES.monkey.flee && a.state !== 'leap';
+    const scared = (!ctx.tame && t.d < SPECIES.monkey.flee && a.state !== 'leap') || (a.state !== 'leap' && !!this.#wildfireAt(a.x, a.z, ctx, 20));
     a.timer -= dt;
     a.call = (a.call ?? rnd(5, 30)) - dt;
     if (a.call <= 0 && t.d < 160) {
@@ -3352,7 +3369,7 @@ export class Wildlife {
   #songbird(a, dt, ctx) {
     if (this.#falling(a, dt, ctx)) return;
     const t = this.#threat(a, ctx);
-    const scared = !ctx.tame && t.d3 < SPECIES.songbird.flee;
+    const scared = (!ctx.tame && t.d3 < SPECIES.songbird.flee) || !!this.#wildfireAt(a.x, a.z, ctx, 20);
     a.timer -= dt;
     if (a.state === 'perch' || a.state === 'ground') {
       // Look about; on the ground, hop and peck.
@@ -3447,11 +3464,18 @@ export class Wildlife {
       f.groundY += (g.getBaseHeight(f.centre.x, f.centre.z) - f.groundY) * Math.min(1, dt * 0.5);
       f.centre.y = Math.max(f.groundY, ctx.seaLevel) + f.alt + Math.sin(this.time * 0.3) * 5;
       if (!ctx.tame && d < 20 && Math.abs(cam.y - f.centre.y) < 20) this.#scatter(f, ctx);
+      // (Smoke and flames below: they wheel off elsewhere.)
+      const fire = this.#wildfireAt(f.anchor.x, f.anchor.z, ctx, f.radius + 60);
+      if (fire) {
+        const dx = f.anchor.x - fire.x, dz = f.anchor.z - fire.z, l = Math.hypot(dx, dz) || 1;
+        f.anchor.x += (dx / l) * 12 * dt;
+        f.anchor.z += (dz / l) * 12 * dt;
+      }
       // Now and then, down to feed in an open field.
       if (f.timer <= 0) {
         f.timer = rnd(25, 50);
         const x = f.centre.x + rnd(-40, 40), z = f.centre.z + rnd(-40, 40), y = ctx.ground(x, z);
-        if (y > ctx.seaLevel + 1 && g.getForestDensity(x, z) < 0.45 && Math.hypot(x - cam.x, z - cam.z) > 50) {
+        if (y > ctx.seaLevel + 1 && g.getForestDensity(x, z) < 0.45 && Math.hypot(x - cam.x, z - cam.z) > 50 && !this.#wildfireAt(x, z, ctx, 40)) {
           f.mode = 'land';
           f.spot = { x, y, z };
           f.timer = rnd(12, 25);
@@ -3464,7 +3488,7 @@ export class Wildlife {
       }
     } else if (f.mode === 'land') {
       f.centre.x = f.spot.x; f.centre.z = f.spot.z; f.centre.y = f.spot.y;
-      if (!ctx.tame && d < SPECIES[f.kind].flee) this.#scatter(f, ctx);
+      if ((!ctx.tame && d < SPECIES[f.kind].flee) || this.#wildfireAt(f.spot.x, f.spot.z, ctx, 40)) this.#scatter(f, ctx);
       else if (f.timer <= 0) (f.mode = 'fly'), (f.timer = rnd(25, 50)), (f.anchor = { x: f.spot.x - Math.cos(f.angle) * f.radius, z: f.spot.z - Math.sin(f.angle * 2) * f.radius * 0.5 });
     } else if (f.mode === 'scatter') {
       if (f.timer <= 0) (f.mode = 'fly'), (f.timer = rnd(30, 60));

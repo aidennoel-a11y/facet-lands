@@ -42,26 +42,88 @@ export class Wildfires {
     this.burns = []; // { x, z, r, amount, age }
   }
 
-  /** A fire at (x, y, z) (where lightning struck, and it caught). */
+  /**
+   * A fire at (x, y, z) (where lightning struck, and it caught, or you lit
+   * it). The flames are on what's burning: low over the grass, up the trunks
+   * and through the crowns of the trees and bushes in its way (from
+   * `this.fuel(x, z, r)`, see TreeLayer.within), each catching as the fire
+   * reaches it.
+   */
   ignite(x, y, z, ground) {
     reseed(x, z, 7);
     if (this.fires.length >= 3) return;
     const R = rnd(10, 16);
-    const flames = new Puffs(this.scene, 64, () => {
+    const trees = (this.fuel?.(x, z, R) ?? [])
+      .map((t) => ({ t, d: Math.hypot(t.x - x, t.z - z) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 16);
+    // (Which flame is where: the grass first, then each tree's own.)
+    const spots = [];
+    for (let k = 0; k < 44; k++) {
       const a = random() * Math.PI * 2, d = Math.sqrt(random()) * R;
       const ox = Math.cos(a) * d, oz = Math.sin(a) * d;
-      return { offset: [ox, ground(x + ox, z + oz) - y + 0.2, oz], velocity: [0, rnd(2, 3.5), 0], period: rnd(0.8, 1.4), phase: random(), from: rnd(1.1, 2), to: 0.2, colour: FLAMES[Math.floor(random() * 3)], glow: 1 };
-    }, { opacity: 0.9 });
-    const smoke = new Puffs(this.scene, 30, () => {
+      spots.push({ offset: [ox, ground(x + ox, z + oz) - y + 0.15, oz], velocity: [0, rnd(1.4, 2.4), 0], period: rnd(0.6, 1.1), phase: random(), from: rnd(0.6, 1.1), to: 0.15, colour: FLAMES[Math.floor(random() * 3)], glow: 1 });
+    }
+    for (const { t } of trees) {
+      const c = t.crown, trunkTop = t.bush ? c.top : c.bottom;
+      // (Licking up the trunk.)
+      if (!t.bush) {
+        for (let k = 0; k < 3; k++) {
+          const h = t.y + (trunkTop - t.y) * (k + random()) / 3, a = random() * Math.PI * 2;
+          spots.push({ offset: [t.x - x + Math.cos(a) * t.radius, h - y, t.z - z + Math.sin(a) * t.radius], velocity: [0, rnd(1.5, 2.5), 0], period: rnd(0.6, 1), phase: random(), from: rnd(0.5, 0.9), to: 0.15, colour: FLAMES[Math.floor(random() * 3)], glow: 1 });
+        }
+      }
+      // (Through the crown, more of them in the bigger ones.)
+      const n = t.bush ? 3 : Math.min(9, 4 + Math.round(c.radius));
+      for (let k = 0; k < n; k++) {
+        const v = random(), h = c.bottom + (c.top - c.bottom) * v * (c.cone ? 0.85 : 0.9);
+        const spread = c.radius * (c.cone ? 1 - v * 0.85 : Math.sin(Math.PI * (0.15 + 0.85 * v))) * Math.sqrt(random());
+        const a = random() * Math.PI * 2;
+        spots.push({ offset: [t.x - x + Math.cos(a) * spread, h - y, t.z - z + Math.sin(a) * spread], velocity: [0, rnd(2.2, 3.6), 0], period: rnd(0.8, 1.3), phase: random(), from: rnd(1.2, 2.2) * (t.bush ? 0.7 : 1), to: 0.2, colour: FLAMES[Math.floor(random() * 3)], glow: 1 });
+      }
+    }
+    const flames = new Puffs(this.scene, spots.length, (k) => spots[k], { opacity: 0.9 });
+    // The smoke: off the ground, and thick off each burning crown.
+    const smokeAt = [];
+    for (let k = 0; k < 20; k++) {
       const a = random() * Math.PI * 2, d = Math.sqrt(random()) * R * 0.7;
       const ox = Math.cos(a) * d, oz = Math.sin(a) * d;
-      return { offset: [ox, ground(x + ox, z + oz) - y + 1.5, oz], velocity: [0, rnd(3, 5), 0], period: rnd(8, 13), phase: random(), from: rnd(1.5, 3), to: rnd(9, 15), colour: SMOKE.clone().multiplyScalar(rnd(0.8, 1.4)), glow: 0 };
-    }, { opacity: 0.5 });
+      smokeAt.push([ox, ground(x + ox, z + oz) - y + 1.5, oz]);
+    }
+    for (const { t } of trees) for (let k = 0; k < (t.bush ? 1 : 2); k++) smokeAt.push([t.x - x + rnd(-1, 1), t.crown.top - y, t.z - z + rnd(-1, 1)]);
+    const smoke = new Puffs(this.scene, smokeAt.length, (k) => ({ offset: smokeAt[k], velocity: [0, rnd(3, 5), 0], period: rnd(8, 13), phase: random(), from: rnd(1.5, 3), to: rnd(9, 15), colour: SMOKE.clone().multiplyScalar(rnd(0.8, 1.4)), glow: 0 }), { opacity: 0.5 });
     for (const p of [flames, smoke]) p.uniforms.uCentre.value.set(x, y, z);
     const burn = { x, z, r: 0, amount: 0, age: 0, R };
     this.burns.push(burn);
     if (this.burns.length > 8) this.burns.shift();
-    this.fires.push({ x, y, z, R, age: 0, life: rnd(80, 150), flames, smoke, burn, crackle: 0 });
+    this.fires.push({ x, y, z, R, age: 0, life: rnd(80, 150), flames, smoke, burn, crackle: 0, reveal: 0, dying: 1, trees: trees.map(({ t, d }) => ({ t, d, burnt: 0, scorched: false })) });
+  }
+
+  /** Where fires are burning just now, for the animals to keep away: [{ x, z, r }]. */
+  zones() {
+    return this.fires.filter((f) => f.dying > 0.15).map((f) => ({ x: f.x, z: f.z, r: f.reveal }));
+  }
+
+  /**
+   * How hot it is at (x, y, z) (your feet) from the fires: 0 (nowhere
+   * near) .. 1 (in the flames): on burning ground, or against a burning
+   * trunk or in a burning bush.
+   */
+  heatAt(x, y, z, ground) {
+    let heat = 0;
+    for (const f of this.fires) {
+      if (f.dying < 0.2 || f.age < 3) continue;
+      const d = Math.hypot(x - f.x, z - f.z);
+      if (d > f.reveal + 3) continue;
+      // (The grass fire: on the ground, within the burning, not up a tree.)
+      if (d < f.reveal && y - ground(x, z) < 1.2) heat = Math.max(heat, f.dying * Math.min(1, (f.reveal - d) / 1.5));
+      for (const b of f.trees) {
+        if (b.scorched || b.d > f.reveal) continue;
+        const t = b.t, h = Math.hypot(x - t.x, z - t.z);
+        if (h < t.radius + 0.8 && y < t.crown.top && y > t.y - 1) heat = Math.max(heat, f.dying);
+      }
+    }
+    return heat;
   }
 
   /** @param ctx { time, wind: { x, z } (m/s), rain (0..1), light (Color), night (0..1), camera, sound, pan(x, z) } */
@@ -83,6 +145,15 @@ export class Wildfires {
       f.smoke.uniforms.uWind.value.set(ctx.wind.x * 0.8, 0, ctx.wind.z * 0.8);
       f.flames.uniforms.uWind.value.set(ctx.wind.x * 0.15, 0, ctx.wind.z * 0.15);
       f.burn.r = reveal * 1.15;
+      f.reveal = reveal;
+      f.dying = dying;
+      // The trees it's reached: burning a while, they lose their leaves
+      // (the bushes burn away), standing on as blackened snags.
+      for (const b of f.trees) {
+        if (b.scorched || b.d > reveal) continue;
+        b.burnt += dt;
+        if (b.burnt > (b.t.bush ? 14 : 32)) (b.scorched = true), this.onScorch?.(b.t);
+      }
       f.burn.amount = Math.max(f.burn.amount, Math.min(1, f.age / 15));
       // Crackling, near it.
       const d = Math.hypot(f.x - ctx.camera.position.x, f.z - ctx.camera.position.z);
