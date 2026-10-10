@@ -109,6 +109,7 @@ export class CaveSystem {
       entry.obstacles = data.obstacles;
       entry.features = data.features ?? new Float32Array(0);
       entry.pools = data.pools ?? new Float32Array(0);
+      entry.vines = data.vines ?? new Float32Array(0);
       entry.water = toLiquid(data.water);
       entry.lava = toLiquid(data.lava);
       entry.ready = true;

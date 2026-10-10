@@ -1,4 +1,4 @@
-import { BoxGeometry, Color, DoubleSide, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Vector3 } from 'three';
+import { BoxGeometry, BufferAttribute, Color, DoubleSide, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bonesModel } from '../../survival/models.js';
 
@@ -19,7 +19,7 @@ export const caveTime = { value: 0 };
 function liquidMaterial(lava) {
   const material = lava
     ? new MeshBasicMaterial({ vertexColors: true, side: DoubleSide })
-    : new MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.82, emissive: 0x020608, side: DoubleSide, depthWrite: false });
+    : new MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.72, side: DoubleSide, depthWrite: false });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uCaveTime = caveTime;
     shader.uniforms.uNightVision = caveNightVision;
@@ -81,6 +81,60 @@ const detail = (mesh) => {
   return mesh;
 };
 
+// The vines hanging in the lush caves: four kinds, each a unit length
+// (hanging from y = 0 down to y = -1), scaled to its length. Drawn with the
+// cave rock's own material, so lit (and glowing) the same way.
+function vineGeometry(kind) {
+  const parts = [];
+  const add = (g, colour, glow = [0.03, 0.09, 0.04]) => {
+    g = g.toNonIndexed();
+    g.deleteAttribute('uv');
+    const n = g.attributes.position.count, c = new Color(colour);
+    g.setAttribute('color', new BufferAttribute(new Float32Array(n * 3).map((_, i) => [c.r, c.g, c.b][i % 3]), 3));
+    g.setAttribute('glow', new BufferAttribute(new Float32Array(n * 3).map((_, i) => glow[i % 3]), 3));
+    g.setAttribute('skyLight', new BufferAttribute(new Float32Array(n).fill(0.03), 1));
+    parts.push(g);
+  };
+  if (kind === 0) {
+    // A thin strand, a few small leaves down it.
+    add(new BoxGeometry(0.04, 1, 0.04).translate(0, -0.5, 0), 0x3e6a2a);
+    for (let k = 1; k < 5; k++) add(new BoxGeometry(0.1, 0.012, 0.05).rotateY(k * 1.9).translate(0.03, -k * 0.2, 0), 0x5a8a38);
+  } else if (kind === 1) {
+    // A leafy vine: a stem with leaves in pairs all the way down.
+    add(new BoxGeometry(0.06, 1, 0.06).translate(0, -0.5, 0), 0x3a5e26);
+    for (let k = 0; k < 9; k++) {
+      const y = -0.06 - k * 0.11;
+      add(new BoxGeometry(0.2, 0.014, 0.1).rotateZ(-0.4).rotateY(k * 0.9).translate(0.08, y, 0), k % 2 ? 0x4f8a34 : 0x5f9a3e);
+    }
+  } else if (kind === 2) {
+    // A curtain: a row of strands of different lengths hanging side by side.
+    for (let k = 0; k < 7; k++) {
+      const l = 0.55 + ((k * 37) % 9) / 20;
+      add(new BoxGeometry(0.07, l, 0.03).translate((k - 3) * 0.09, -l / 2, (k % 2) * 0.03), k % 3 ? 0x46722e : 0x548a36);
+    }
+  } else {
+    // Hung with glowberries.
+    add(new BoxGeometry(0.05, 1, 0.05).translate(0, -0.5, 0), 0x3e6a2a);
+    for (let k = 1; k < 6; k++) add(new BoxGeometry(0.09, 0.05, 0.09).translate(0.05 * (k % 2 ? 1 : -1), -k * 0.17, 0), 0xf0c860, [0.6, 0.42, 0.1]);
+  }
+  const g = mergeGeometries(parts);
+  g.computeVertexNormals();
+  return g;
+}
+const vineShapes = [0, 1, 2, 3].map(vineGeometry);
+const vineSets = new Set(); // (each chunk's vines: see updateCaveLife)
+const DOWN = new Vector3(0, -1, 0), vq = new Quaternion(), vt = new Vector3(), vs = new Vector3(), vp = new Vector3();
+
+/** Sets one vine's matrix: hanging from its top, swung by (sx, sz) (its foot pushed that way, in metres per metre). */
+function placeVine(set, v) {
+  vt.set(v.sx, -1, v.sz).normalize();
+  vq.setFromUnitVectors(DOWN, vt);
+  const spin = fq.setFromAxisAngle(fUp, v.turn);
+  vq.multiply(spin);
+  set.meshes[v.kind].setMatrixAt(v.index, fm.compose(vp.set(v.x - set.x0, v.top, v.z - set.z0), vq, vs.set(v.width, v.len, v.width)));
+  set.meshes[v.kind].instanceMatrix.needsUpdate = true;
+}
+
 /** Swims the cave fish and flies the bats (call every frame); `eye`: where you are, if underground. */
 export function updateCaveLife(time, eye = null) {
   caveTime.value = time;
@@ -89,6 +143,35 @@ export function updateCaveLife(time, eye = null) {
     for (const m of details) m.visible = inside;
   }
   if (!inside) return;
+  // Vines: pushed aside where you walk through them, swinging back after.
+  for (const set of vineSets) {
+    if (Math.abs(eye.x - set.cx) > 110 || Math.abs(eye.z - set.cz) > 110) continue;
+    for (const v of set.vines) {
+      const dx = v.x - eye.x, dz = v.z - eye.z;
+      const close = Math.abs(dx) < 2.5 && Math.abs(dz) < 2.5 && eye.y > v.top - v.len - 0.2 && eye.y - 1.7 < v.top;
+      if (!close && !v.moving) continue;
+      const dt = Math.min(0.05, time - (v.t ?? time));
+      v.t = time;
+      let tx = 0, tz = 0;
+      if (close) {
+        const d = Math.hypot(dx, dz), reach = 0.7 + v.width * 0.25;
+        if (d < reach) {
+          const push = ((reach - d) / reach) * 1.1, u = d > 1e-3 ? 1 / d : 0;
+          // (Its foot swung away from you, as far as you're into it, along the bit you're touching.)
+          const along = Math.min(1, Math.max(0.2, (v.top - (eye.y - 0.8)) / v.len));
+          (tx = dx * u * push / along), (tz = dz * u * push / along);
+        }
+      }
+      // A spring, damped: out to where you push it, and back.
+      v.vx = (v.vx ?? 0) + ((tx - v.sx) * 30 - v.vx * 4) * dt;
+      v.vz = (v.vz ?? 0) + ((tz - v.sz) * 30 - v.vz * 4) * dt;
+      v.sx += v.vx * dt;
+      v.sz += v.vz * dt;
+      v.moving = Math.abs(v.sx) + Math.abs(v.sz) + Math.abs(v.vx) + Math.abs(v.vz) > 0.003 || close;
+      if (!v.moving) (v.sx = 0), (v.sz = 0), (v.vx = 0), (v.vz = 0), (v.t = undefined);
+      placeVine(set, v);
+    }
+  }
   for (const flock of roostFlocks) {
     // (Come near with a light and they all take wing, fast and wild.)
     const near = eye ? Math.hypot(eye.x - flock.x, eye.y - flock.y, eye.z - flock.z) : 99;
@@ -283,6 +366,25 @@ export function createCaveLayer(config) {
           stones.userData.solid = true;
           group.add(detail(stones));
         }
+        if (data.vines?.length) {
+          const counts = [0, 0, 0, 0], list = [];
+          for (let k = 0; k < data.vines.length; k += 7) {
+            const kind = data.vines[k + 4];
+            list.push({ x: data.vines[k], top: data.vines[k + 1], z: data.vines[k + 2], len: data.vines[k + 3], kind, width: data.vines[k + 5], turn: data.vines[k + 6], index: counts[kind]++, sx: 0, sz: 0 });
+          }
+          const set = { vines: list, meshes: [], x0: cx * size, z0: cz * size, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size };
+          set.meshes = counts.map((n, kind) => {
+            if (!n) return null;
+            const mesh = new InstancedMesh(vineShapes[kind], material, n);
+            mesh.name = 'cave vines';
+            group.add(detail(mesh));
+            return mesh;
+          });
+          for (const v of list) placeVine(set, v);
+          for (const m of set.meshes) m?.computeBoundingSphere();
+          vineSets.add(set);
+          group.userData.vineSet = set;
+        }
       });
       return group;
     },
@@ -292,6 +394,7 @@ export function createCaveLayer(config) {
       group.userData.disposed = true;
       if (group.userData.shoal) shoals.delete(group.userData.shoal);
       for (const f of group.userData.flocks ?? []) roostFlocks.delete(f);
+      if (group.userData.vineSet) vineSets.delete(group.userData.vineSet);
       group.traverse((m) => details.delete(m));
       const [cx, cz] = group.userData.chunk;
       for (const mesh of group.children) if (mesh.isInstancedMesh) mesh.dispose();

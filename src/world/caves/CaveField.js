@@ -265,11 +265,11 @@ export class CaveField {
     }
     // Spaghetti: long thin tunnels winding on and on.
     if (col.spag > -0.05 && y > this.deep) {
-      // (Some 8 m across: thin for a cave, wide enough for the 3.2 m grid
-      // it's built on; tending to run level rather than plunge.)
-      const fy = y / 80;
+      // (Some 12 m across: narrow for a cave, but always room to walk;
+      // tending to run level rather than plunge.)
+      const fy = y / 90;
       const a = this.spagA.noise3D(col.sx, fy, col.sz), b = this.spagB.noise3D(col.sx, fy, col.sz);
-      let sd = (Math.sqrt(a * a + b * b) - 0.12) * 40;
+      let sd = (Math.sqrt(a * a + b * b) - 0.16) * 40;
       sd = Math.max(sd, -col.spag * 40, this.deep - y);
       d = Math.min(d, sd);
     }
