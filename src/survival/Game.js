@@ -700,7 +700,22 @@ export class Game {
       this.cooldown = 0.5;
       this.sound?.call('strike', 0, 0.5);
       this.inventory.wear(i, 1);
-      if (!this.structures.isFire(at)) return this.hotbar?.flash('Strike it at a campfire, a furnace or a torch to light it');
+      // Struck at something that'll burn (a tree, a bush, a fallen log,
+      // something built of wood): it may catch, and the fire spreads.
+      if (!this.structures.isFire(at)) {
+        const tree = this.trees.pick(origin, direction, REACH);
+        const fallen = this.felling.pickFallen(origin, direction, REACH);
+        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'dryingRack', 'tanningRack', 'roof', 'raft']);
+        const wooden = at && WOODEN.has(at.type) ? built : null;
+        const near = [tree && { d: tree.distance }, fallen && { d: fallen.distance }, wooden && { d: wooden.distance ?? REACH }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
+        if (!near) return this.hotbar?.flash('Strike it at something that will burn: a campfire, a torch, wood, a tree');
+        const wet = (this.lastCtx?.rain ?? 0) > 0.3 || (this.winter ?? 0) > 0.6;
+        if (Math.random() < (wet ? 0.85 : 0.45)) return this.hotbar?.flash(wet ? 'Sparks, but it’s too wet to catch' : 'Sparks, but it didn’t catch: again');
+        const p = origin.clone().addScaledVector(direction, near.d);
+        this.ignite?.(p.x, p.y, p.z);
+        this.sound?.call('crackle', 0, 0.8);
+        return this.hotbar?.flash('It catches: get back from it');
+      }
       if (at.lit) return this.hotbar?.flash('It is already burning');
       if (Math.random() < 0.35) return this.hotbar?.flash('Sparks, but it didn’t catch: again');
       if (!this.structures.light(at)) return this.hotbar?.flash('Nothing left to burn: add a log');
@@ -1658,6 +1673,7 @@ export class Game {
    * Returns the extra lights (fires, a torch in your hand) for the torches' pool.
    */
   update(dt, ctx) {
+    this.lastCtx = ctx; // (the weather, for striking a fire: see use)
     this.time += dt;
     this.night = ctx.night;
     this.winter = ctx.winter;

@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, DodecahedronGeometry, LatheGeometry, Vector2 } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, LatheGeometry, Vector2 } from 'three';
 import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
@@ -33,20 +33,48 @@ const WATER_COLOUR = [0.08, 0.17, 0.21], LAVA_COLOUR = [1, 0.42, 0.1];
 
 /** The cave kind at a world point, from the chunk's coarse grid of scores (see sampleChunk). */
 export function biomeIn(grid, x, y, z) {
+  return caveAt(grid, x, y, z).kind;
+}
+
+const smooth = (a, b, v) => {
+  const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * The cave at a world point: its kind (see CaveField.biomeAt), and how
+ * green it is, 0..1, which (unlike the kind) fades gradually across the
+ * edge of the lush country: so the moss thins out, and its glow with it,
+ * over tens of metres, never stopping dead at a line.
+ */
+export function caveAt(grid, x, y, z) {
   const { kinds, kStep, x0, z0, cols, n, cell } = grid;
-  if (!kinds) return 0;
+  if (!kinds) return { kind: 0, green: 0 };
   // (A great chamber is all one kind, through and through: the kind of the country over its middle.)
   if (cols) {
     const col = cols[Math.min(n - 1, Math.max(0, Math.round((z - z0) / cell))) * n + Math.min(n - 1, Math.max(0, Math.round((x - x0) / cell)))];
     const ch = col?.chamber;
-    if (ch && ch.e < 1.1 && ch.c.scores && y < ch.c.y + ch.c.ry && y > ch.c.floor - 12) return CaveField.biomeAt(ch.c.scores, ch.c.y);
+    if (ch && ch.e < 1.1 && ch.c.scores && y < ch.c.y + ch.c.ry && y > ch.c.floor - 12) {
+      const kind = CaveField.biomeAt(ch.c.scores, ch.c.y);
+      return { kind, green: kind === 1 ? 1 : 0 };
+    }
   }
   const fx = Math.min(3.999, Math.max(0, (x - x0) / kStep)), fz = Math.min(3.999, Math.max(0, (z - z0) / kStep));
   const i = Math.floor(fx), k = Math.floor(fz), tx = fx - i, tz = fz - k;
   const a = kinds[k * 5 + i], b = kinds[k * 5 + i + 1], c = kinds[(k + 1) * 5 + i], d = kinds[(k + 1) * 5 + i + 1];
   const mix = (key) => (a[key] * (1 - tx) + b[key] * tx) * (1 - tz) + (c[key] * (1 - tx) + d[key] * tx) * tz;
-  return CaveField.biomeAt({ lush: mix('lush'), volcanic: mix('volcanic'), ice: mix('ice'), dry: mix('dry') }, y);
+  const scores = { lush: mix('lush'), volcanic: mix('volcanic'), ice: mix('ice'), dry: mix('dry') };
+  const kind = CaveField.biomeAt(scores, y);
+  // (Green where the lush outweighs the rest, fading out below the line the kind changes at.)
+  const other = Math.max(scores.volcanic + Math.max(0, (-88 - y) / 20) * 0.9, scores.ice, scores.dry);
+  const green = kind === 1 ? 1 : kind === 0 ? smooth(0.25, 0.5, scores.lush) * (1 - smooth(0.35, 0.5, other)) : 0;
+  return { kind, green };
 }
+
+// Moss in patches, not face by face: a slow wavy field over the rock, so it
+// lies in sheets and drifts, with bare stone between.
+const mossField = (x, y, z) => 0.5 + 0.25 * Math.sin(x * 0.23 + y * 0.11 + Math.sin(z * 0.17) * 2) + 0.25 * Math.sin(z * 0.21 - y * 0.13 + Math.sin(x * 0.19) * 2);
+const MOSS = [0x4a6a2e, 0x55783a, 0x3e5e28, 0x608a40, 0x4f7034];
 
 /**
  * Samples the cave field for one chunk. The grid stores caves + entrance
@@ -324,7 +352,9 @@ export function meshChunk(grid, field) {
 
           // Colour rock by which way the face points, in this cave's kind of rock.
           const faceSeed = hash2(Math.round(wx * 2), Math.round(cy * 2 + wz * 3), seed);
-          const kind = biomeIn(grid, wx, cy, wz), pal = PALETTES[kind];
+          const here = caveAt(grid, wx, cy, wz), kind = here.kind;
+          // (The lush caves are plain stone under all their greenery.)
+          const pal = PALETTES[kind === 1 ? 0 : kind];
           if (nyv > 0.55) {
             color.set(pal.floor[Math.floor(faceSeed * pal.floor.length)]);
           } else if (nyv < -0.45) {
@@ -333,17 +363,20 @@ export function meshChunk(grid, field) {
             color.set(pal.wall[Math.floor(faceSeed * pal.wall.length)]);
           }
           color.multiplyScalar(0.9 + faceSeed * 0.2);
-          // Some of it gives its own light: cracks of glowing rock on a
-          // volcanic floor, a faint blue in the ice, glowing moss here and
-          // there in the lush caves.
+          // Moss over it, where it's green: nearly all the floor, much of the
+          // walls, some of the roof; in sheets, each face a shade of its own.
           const g2 = hash2(Math.round(wx * 3 + 11), Math.round(cy * 3 - wz * 2), seed + 3);
+          const cover = (nyv > 0.55 ? 0.95 : nyv < -0.45 ? 0.45 : 0.7) * here.green;
+          const mossy = here.green > 0 && mossField(wx, cy, wz) * 0.75 + g2 * 0.25 < cover;
+          if (mossy) color.set(MOSS[Math.floor(g2 * MOSS.length * 7) % MOSS.length]).multiplyScalar(0.85 + faceSeed * 0.3);
+          // Some of it gives its own light: cracks of glowing rock on a
+          // volcanic floor, a faint blue in the ice. (The lush caves are as
+          // dark as any: what lights them is what glows in them, the
+          // glow-worms and glowcaps and glowberries.)
           let gr = 0, gg = 0, gb = 0;
           if (kind === 2 && nyv > 0.3 && g2 < 0.12) (gr = 0.9), (gg = 0.32), (gb = 0.06);
           else if (kind === 2 && g2 < 0.03) (gr = 0.6), (gg = 0.18), (gb = 0.04);
           else if (kind === 3) (gr = 0.02), (gg = 0.05), (gb = 0.08);
-          else if (kind === 1 && nyv > 0.3 && g2 < 0.08) (gr = 0.08), (gg = 0.4), (gb = 0.24);
-          // (The lush caves are never quite dark: the moss over everything gives a soft green light.)
-          else if (kind === 1) (gr = 0.05), (gg = nyv > 0.3 ? 0.13 : 0.09), (gb = 0.06);
 
           for (let q = 0; q < 3; q++) {
             const ev = tri[q];
@@ -482,6 +515,7 @@ export function decorateChunk(grid, field) {
   const roofs = []; // [x, y, z, random, ...]: high roofs, for bats
   const pools = [];
   const vines = [];
+  const lights = []; // [x, y, z, kind, ...]: glowing things that light the cave round them (0 glow-worms, 1 glowcaps)
   const step = cell * 2;
   const f = (x, y, z) => Math.min(gridHeight(grid, x, z) - y, sampleGrid(grid, x, y, z));
   const tmp = new Color(), low = new Color(), tip = new Color();
@@ -502,27 +536,44 @@ export function decorateChunk(grid, field) {
     g.setAttribute('glow', new BufferAttribute(glows, 3));
     into.push(g);
   };
-  const cone = (x, y, z, radius, height, down, s, kind) => {
+  // What a formation's made of, by where it stands: mostly the cave's own
+  // rock (the walls' colour), or pale calcite, or warm flowstone, or
+  // stained red with iron. (Ice is ice, and basalt basalt.)
+  const shades = (kind, x, z) => {
     const pal = PALETTES[kind];
+    if (kind === 2 || kind === 3) return [pal.low, pal.tip];
+    const h = hash2(Math.round(x * 2 + 5), Math.round(z * 2 - 5), seed + 21);
+    const wall = PALETTES[kind === 1 ? 0 : kind].wall;
+    if (h < 0.4) return [wall[Math.floor(h * 12) % wall.length], wall[(Math.floor(h * 12) + 2) % wall.length]];
+    if (h < 0.6) return [pal.low, pal.tip];
+    if (h < 0.75) return [0xb8b2a6, 0xece8de]; // (calcite)
+    if (h < 0.9) return [0xa08462, 0xd2bc94]; // (flowstone)
+    return [0x845c48, 0xb0846a]; // (iron-stained)
+  };
+  const cone = (x, y, z, radius, height, down, s, kind) => {
+    const pal = PALETTES[kind], [lo, hi] = shades(kind, x, z);
     const g = new ConeGeometry(radius, height, kind === 2 ? 6 : kind === 3 ? 5 : 6, 1).toNonIndexed();
     g.deleteAttribute('uv');
     if (down) g.rotateX(Math.PI);
     g.rotateY(s * 6.28);
     g.translate(x - x0, y + (down ? -height / 2 : height / 2), z - z0);
-    low.set(pal.low);
-    tip.set(pal.tip);
+    low.set(lo);
+    tip.set(hi);
     piece(g, x, y, z, (c, cyv, v) => {
       const t = Math.min(1, Math.max(0, down ? (y - cyv) / height : (cyv - y) / height));
       c.copy(low).lerp(tip, t).multiplyScalar(0.9 + hash2(v, Math.round(x * 10), seed) * 0.2);
-    }, kind === 2 && !down ? [0.35, 0.1, 0.02] : kind === 3 ? [0.03, 0.06, 0.09] : kind === 1 ? [0.04, 0.09, 0.05] : null);
+    }, kind === 2 && !down ? [0.35, 0.1, 0.02] : kind === 3 ? [0.03, 0.06, 0.09] : null);
   };
   // A softer formation, turned on a lathe: rounded, a little lumpy, with a
   // blunt tip (not a spear); or a column, where a stalagmite and the
   // stalactite over it have grown down and up to meet halfway, pinched at
   // the waist where they joined. Many more triangles than a cone.
   const lathe = (x, y, z, radius, height, down, s, kind, column = false) => {
-    const pal = PALETTES[kind], pts = [];
-    const N = column ? 12 : 9;
+    const [lo, hi] = shades(kind, x, z), pts = [];
+    const N = column ? 12 : 8;
+    // (A soft one rises to a blunt, rounded top: a dome, not a point.)
+    const top = radius * (0.32 + 0.2 * ((s * 7) % 1));
+    const body = column ? height : height - top;
     for (let k = 0; k <= N; k++) {
       const t = k / N;
       const lump = 1 + 0.12 * Math.sin(t * 17 + s * 30) + 0.08 * Math.sin(t * 41 + s * 11);
@@ -530,22 +581,25 @@ export function decorateChunk(grid, field) {
       if (column) {
         const u = Math.abs(2 * t - 1); // (0 at the waist, 1 at the floor and roof)
         r = radius * (0.32 + 0.68 * u ** 1.6) * lump;
-      } else r = radius * Math.pow(1 - t, 0.75) * lump + (t > 0.85 ? radius * 0.12 * (1 - t) / 0.15 : 0);
-      pts.push(new Vector2(Math.max(0.02, r), t * height));
+      } else r = (top + (radius - top) * Math.pow(1 - t, 1.3)) * lump;
+      pts.push(new Vector2(Math.max(0.02, r), t * body));
     }
-    if (!column) pts.push(new Vector2(0.001, height + radius * 0.12)); // (the rounded tip)
+    if (!column) for (let k = 1; k <= 4; k++) {
+      const a = (k / 4) * (Math.PI / 2);
+      pts.push(new Vector2(Math.max(0.001, top * Math.cos(a)), body + top * Math.sin(a)));
+    }
     const g = new LatheGeometry(pts, column ? 10 : 8).toNonIndexed();
     g.deleteAttribute('uv');
     if (down) g.rotateX(Math.PI);
     g.rotateY(s * 6.28);
     g.translate(x - x0, y, z - z0);
-    low.set(pal.low);
-    tip.set(pal.tip);
+    low.set(lo);
+    tip.set(hi);
     piece(g, x, y, z, (c, cyv, v) => {
       let t = Math.min(1, Math.max(0, down ? (y - cyv) / height : (cyv - y) / height));
       if (column) t = 1 - Math.abs(2 * t - 1);
       c.copy(low).lerp(tip, t).multiplyScalar(0.88 + hash2(v, Math.round(x * 10), seed) * 0.24);
-    }, kind === 2 && !down && !column ? [0.35, 0.1, 0.02] : kind === 3 ? [0.03, 0.06, 0.09] : kind === 1 ? [0.04, 0.09, 0.05] : null);
+    }, kind === 2 && !down && !column ? [0.35, 0.1, 0.02] : kind === 3 ? [0.03, 0.06, 0.09] : null);
   };
   const box = (x, y, z, w, h, d, colour, glow = null, ry = 0) => {
     const g = new BoxGeometry(w, h, d).toNonIndexed();
@@ -575,7 +629,28 @@ export function decorateChunk(grid, field) {
       g.rotateX(-0.55 - (k % 2) * 0.25);
       g.rotateY(a);
       g.translate(x - x0, y + 0.05, z - z0);
-      piece(g, x, y, z, (c) => c.set(k % 2 ? 0x4a7a30 : 0x5a8a38), [0.04, 0.12, 0.05]);
+      piece(g, x, y, z, (c) => c.set(k % 2 ? 0x4a7a30 : 0x5a8a38));
+    }
+  };
+
+  // A young plant sprouting in the dark: a pale stem, curling, broad leaves
+  // opening along it and at its top (some knee-high, some up to your chest).
+  const sprout = (x, y, z, s) => {
+    const h = 0.4 + ((s * 37) % 1) * 1.0;
+    const stem = new CylinderGeometry(0.018, 0.03, h, 5).toNonIndexed();
+    stem.deleteAttribute('uv');
+    stem.rotateZ(((s * 13) % 1 - 0.5) * 0.3);
+    stem.translate(x - x0, y + h / 2, z - z0);
+    piece(stem, x, y, z, (c) => c.set(0x8aa860));
+    for (let k = 0; k < 5; k++) {
+      const t = 0.35 + k * 0.15, a = s * 30 + k * 2.4, size = 0.12 + (k === 4 ? 0.12 : k * 0.03);
+      const leaf = new BoxGeometry(size * 2, 0.012, size).toNonIndexed();
+      leaf.deleteAttribute('uv');
+      leaf.translate(size, 0, 0);
+      leaf.rotateZ(k === 4 ? 0.5 : 0.25);
+      leaf.rotateY(a);
+      leaf.translate(x - x0, y + h * Math.min(1, t), z - z0);
+      piece(leaf, x, y, z, (c) => c.set(k % 2 ? 0x5a9a3c : 0x6aaa48));
     }
   };
 
@@ -621,7 +696,7 @@ export function decorateChunk(grid, field) {
               lathe(x, floor - 0.4, z, radius, gap + 0.8, false, r1, kind, true);
               obstacles.push(x, z, radius * 0.75, floor - 0.3, roof);
             } else {
-              const soft = r2 > 0.45; // (some rounded and soft-tipped, some sharp)
+              const soft = r2 > 0.22 || kind === 1; // (most rounded and soft-topped; a few sharp)
               if (gap > 3.5 && flat && r1 < (kind === 2 ? 0.7 : 0.55)) {
                 // (Volcanic: squat basalt; ice: thin and tall. Where the roof's
                 // high, some grow huge: towers of stone half way to it.)
@@ -640,7 +715,7 @@ export function decorateChunk(grid, field) {
               if (gap > 4 && r2 < (kind === 3 ? 0.85 : 0.5)) {
                 // (Icicles: many, long and thin.)
                 const height = Math.min(gap * 0.4, kind === 3 ? 2 + r2 * 10 : 1.5 + r2 * 8);
-                if (kind !== 3 && r1 > 0.6) lathe(x + 0.4, roof + 0.3, z - 0.3, height * 0.2, height + 0.3, true, r2, kind);
+                if (kind !== 3 && r1 > 0.3) lathe(x + 0.4, roof + 0.3, z - 0.3, height * 0.2, height + 0.3, true, r2, kind);
                 else cone(x + 0.4, roof + 0.3, z - 0.3, height * (kind === 3 ? 0.09 : 0.17), height + 0.3, true, r2, kind);
                 if (kind === 3 && r2 < 0.4) cone(x - 0.5, roof + 0.2, z + 0.4, height * 0.06, height * 0.7, true, r1, kind);
               }
@@ -672,32 +747,65 @@ export function decorateChunk(grid, field) {
             const t = (r2 - 0.86) / 0.14;
             const big = t > 0.8 ? ((t - 0.8) / 0.2) * 4.6 : 0;
             const r = Math.min(0.45 + 1.1 * t + big, gap * 0.45);
-            boulder(x + 0.6, floor, z - 0.4, r, PALETTES[kind].wall[Math.floor(r1 * 5) % PALETTES[kind].wall.length], r1, kind === 1 ? [0.04, 0.09, 0.05] : kind === 3 ? [0.03, 0.06, 0.09] : null);
+            boulder(x + 0.6, floor, z - 0.4, r, PALETTES[kind].wall[Math.floor(r1 * 5) % PALETTES[kind].wall.length], r1, kind === 3 ? [0.03, 0.06, 0.09] : null);
           }
           // Lush: ferns, moss in soft clumps and small glowing growths over the floor.
           if (kind === 1 && !inEntrance && gap > 1.6) {
             into = plants;
-            for (let k = 0; k < 10; k++) {
+            for (let k = 0; k < 7; k++) {
               const ox = (hash2(k, Math.round(x * 11), seed + 15) - 0.5) * step, oz = (hash2(k + 3, Math.round(z * 11), seed + 15) - 0.5) * step;
               let fy = floor + 0.5;
               while (fy > floor - 1.5 && f(x + ox, fy, z + oz) < 0) fy -= 0.15;
               if (fy <= floor - 1.5 || f(x + ox, fy + 0.6, z + oz) >= 0) continue;
               const pick = hash2(k + 7, Math.round((x + z) * 5), seed + 16);
               // (Mostly moss: soft cushions of it all over the floor; ferns among it.)
-              if (pick < 0.25) fern(x + ox, fy, z + oz, 0.8 + pick * 2, pick * 9);
+              if (pick < 0.2) fern(x + ox, fy, z + oz, 0.8 + pick * 4, pick * 9);
+              else if (pick < 0.32) sprout(x + ox, fy, z + oz, pick);
               else if (pick < 0.93) {
-                const g = new DodecahedronGeometry(0.3 + (pick - 0.25) * 1.3, 0);
+                // A cushion of moss: lumpy, and speckled (each little facet
+                // its own green, a few paler or yellowed), tufts poking up.
+                const r = 0.3 + (pick - 0.32) * 1.4;
+                const g = new IcosahedronGeometry(r, 1);
                 g.deleteAttribute('uv');
-                g.scale(1.4, 0.35, 1.2);
-                g.translate(x + ox - x0, fy + 0.03, z + oz - z0);
-                piece(g, x, fy, z, (c) => c.set(pick < 0.5 ? 0x4f7a32 : pick < 0.75 ? 0x5f8a3e : 0x6a9a44), [0.05, 0.14, 0.06]);
-              } else box(x + ox, fy + 0.06, z + oz, 0.1, 0.12, 0.1, 0xb8f0c8, [0.15, 0.5, 0.35], pick * 6);
+                const pos = g.attributes.position;
+                for (let v = 0; v < pos.count; v++) {
+                  const k = 1 + 0.18 * Math.sin(pos.getX(v) * 23 + pos.getZ(v) * 17) * Math.sin(pos.getY(v) * 19);
+                  pos.setXYZ(v, pos.getX(v) * k, pos.getY(v) * k, pos.getZ(v) * k);
+                }
+                g.scale(1.4, 0.32, 1.2);
+                g.translate(x + ox - x0, fy + 0.02, z + oz - z0);
+                piece(g, x, fy, z, (c, cyv, v) => {
+                  const h = hash2(v, Math.round((x + ox) * 50 + (z + oz) * 30), seed + 31);
+                  c.set(h < 0.08 ? 0x8aa24e : h < 0.16 ? 0x2e4a1e : MOSS[Math.floor(h * 31) % MOSS.length]);
+                });
+                for (let t = 0; t < 4; t++) {
+                  const a = t * 1.7 + pick * 20, d = r * 0.6 * ((t * 37) % 10) / 10;
+                  const tuft = new ConeGeometry(0.025, 0.12 + (t % 2) * 0.08, 4).toNonIndexed();
+                  tuft.deleteAttribute('uv');
+                  tuft.translate(x + ox + Math.cos(a) * d - x0, fy + r * 0.3 + 0.06, z + oz + Math.sin(a) * d - z0);
+                  piece(tuft, x, fy, z, (c) => c.set(t % 2 ? 0x6a9a44 : 0x7aaa50));
+                }
+              } else {
+                // A clump of little glowing mushrooms, giving a soft light.
+                for (let m = 0; m < 5; m++) {
+                  const mx = x + ox + Math.cos(m * 2.4 + pick * 9) * 0.18 * (m % 3), mz = z + oz + Math.sin(m * 2.4 + pick * 9) * 0.18 * (m % 3), h = 0.08 + (m % 3) * 0.06;
+                  box(mx, fy + h / 2, mz, 0.025, h, 0.025, 0xd8f0e0, [0.1, 0.3, 0.22]);
+                  const cap = new ConeGeometry(0.06 + (m % 2) * 0.03, 0.05, 7).toNonIndexed();
+                  cap.deleteAttribute('uv');
+                  cap.translate(mx - x0, fy + h + 0.02, mz - z0);
+                  piece(cap, mx, fy, mz, (c) => c.set(0x9affd0), [0.35, 0.95, 0.7]);
+                }
+                lights.push(x + ox, fy + 0.4, z + oz, 1);
+              }
             }
             into = parts;
           }
           // Glow-worms: tiny lights speckling the high roofs (most of all in the great chambers, and the lush caves).
-          if (gap > 7 && kind !== 2 && kind !== 3 && r3 < (kind === 1 ? 0.8 : gap > 25 ? 0.7 : 0.25)) {
-            for (let k = 0; k < (gap > 25 ? 10 : 6); k++) {
+          // (Thick in the lush caves, on every roof; and the nearest of
+          // them light the cave round them: see CaveLayer.)
+          if (gap > (kind === 1 ? 4 : 7) && kind !== 2 && kind !== 3 && r3 < (kind === 1 ? 1 : gap > 25 ? 0.7 : 0.25)) {
+            if (kind === 1 || gap > 25) lights.push(x, roof - 0.8, z, 0);
+            for (let k = 0; k < (kind === 1 ? 16 : gap > 25 ? 10 : 6); k++) {
               const ox = (hash2(k, Math.round(x * 13), seed + 8) - 0.5) * step, oz = (hash2(k + 9, Math.round(z * 13), seed + 8) - 0.5) * step;
               let ry = roof;
               while (ry > roof - 3 && f(x + ox, ry, z + oz) >= 0) ry -= 0.25;
@@ -749,7 +857,7 @@ export function decorateChunk(grid, field) {
       [10, deep > 0.4 ? 0.03 * deep : 0],
       [6, y < -60 ? 0.012 + 0.02 * deep : 0],
       [2, kind === 3 ? 0.07 : 0.025 + 0.03 * deep],
-      [3, kind === 1 ? 0.09 : kind === 2 || kind === 3 ? 0 : 0.04],
+      [3, kind === 1 ? 0.16 : kind === 2 || kind === 3 ? 0 : 0.04],
       [7, kind === 1 ? 0.07 : kind === 0 || kind === 4 ? 0.035 : 0],
       [8, kind === 2 || kind === 3 ? 0 : 0.018],
       [4, 0.015],
@@ -788,7 +896,7 @@ export function decorateChunk(grid, field) {
     g.computeBoundingSphere();
     return g;
   };
-  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines };
+  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights };
 }
 
 /**
@@ -799,7 +907,7 @@ export function decorateChunk(grid, field) {
  */
 export function buildChunkData(field, cx, cz, chunkSize) {
   const grid = sampleChunk(field, cx, cz, chunkSize);
-  if (!grid) return { grid: null, rock: null, deco: null, plants: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), water: null, lava: null };
+  if (!grid) return { grid: null, rock: null, deco: null, plants: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), lights: new Float32Array(0), water: null, lava: null };
   const rock = meshChunk(grid, field);
   const deco = decorateChunk(grid, field);
   const liquid = liquidChunk(grid, field, deco.pools);
@@ -821,6 +929,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
     features: new Float32Array(deco.features),
     pools: new Float32Array(deco.pools),
     vines: new Float32Array(deco.vines),
+    lights: new Float32Array(deco.lights),
     water: liquid.water ?? null,
     lava: liquid.lava ?? null,
   };
@@ -835,5 +944,6 @@ export function chunkDataBuffers(data) {
   if (data.features) out.push(data.features.buffer);
   if (data.pools) out.push(data.pools.buffer);
   if (data.vines) out.push(data.vines.buffer);
+  if (data.lights) out.push(data.lights.buffer);
   return [...new Set(out)];
 }

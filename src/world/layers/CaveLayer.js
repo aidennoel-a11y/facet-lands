@@ -86,7 +86,7 @@ const detail = (mesh) => {
 // cave rock's own material, so lit (and glowing) the same way.
 function vineGeometry(kind) {
   const parts = [];
-  const add = (g, colour, glow = [0.03, 0.09, 0.04]) => {
+  const add = (g, colour, glow = [0, 0, 0]) => {
     g = g.toNonIndexed();
     g.deleteAttribute('uv');
     const n = g.attributes.position.count, c = new Color(colour);
@@ -164,7 +164,7 @@ export function updateCaveLife(time, eye = null) {
     }
     near.sort((a, b) => a[0] - b[0]);
     caveGlowLights.length = 0;
-    for (const [, g] of near.slice(0, 4)) caveGlowLights.push(g);
+    for (const [, g] of near.slice(0, 6)) caveGlowLights.push(g);
   }
   // Vines: pushed aside where you walk through them, swinging back after.
   for (const set of vineSets) {
@@ -421,6 +421,11 @@ export function createCaveLayer(config) {
           for (let k = 0; k < f.length; k += 6) {
             if (f[k] === 2) list.push({ x: f[k + 1], y: f[k + 2] + 0.6, z: f[k + 3], strength: 7, reach: 9, colour: 0x7fd8ff, steady: true });
             else if (f[k] === 3) list.push({ x: f[k + 1], y: f[k + 2] + 0.4, z: f[k + 3], strength: 5, reach: 7, colour: 0x7affc8, steady: true });
+          }
+          const li = data.lights ?? [];
+          for (let k = 0; k < li.length; k += 4) {
+            if (li[k + 3] === 0) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 10, reach: 18, colour: 0x7ae8e0, steady: true });
+            else list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 7, reach: 10, colour: 0x8affc8, steady: true });
           }
           const v = data.vines ?? [];
           for (let k = 0; k < v.length; k += 7) if (v[k + 4] === 3) list.push({ x: v[k], y: v[k + 1] - v[k + 3] * 0.6, z: v[k + 2], strength: 3, reach: 6, colour: 0xf0c060, steady: true });

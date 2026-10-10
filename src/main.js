@@ -575,7 +575,7 @@ function testView() {
 }
 testView();
 const body = new PlayerBody(scene);
-const torches = new Torches(scene, { maxLights: 8 });
+const torches = new Torches(scene, { maxLights: 10 });
 torches.loadWorld(WORLD.seed);
 
 // --- Staying alive -----------------------------------------------------------------
