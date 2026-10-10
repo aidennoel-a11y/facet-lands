@@ -54,6 +54,11 @@ loads.
   Under the wet country the lush caverns open into great green halls (ferns
   and moss on the floor, vines hanging thick). Bats flit about under their
   roosts, more when you come near. Fires burn twice as long underground.
+  Stalagmites and stalactites grow together into columns pinched at the
+  waist; many are soft and rounded rather than spear-tipped. Glowing things
+  (crystals, glowcaps, glowberries, lava) light the rock round them. Hippos
+  live in the savanna's watering holes. A coal torch (stick, coal and vine)
+  burns white and lights twice as far: the one for the caves.
   Cave rock is finely faceted, with boulders on the floors; all the detail
   (and the water, plants, finds and bats) is drawn only once you're inside.
 - Mining: rock takes several pickaxe blows to break (a better pick, fewer).

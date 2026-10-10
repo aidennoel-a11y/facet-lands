@@ -91,7 +91,7 @@ export class GroundItems {
         flintSteel: () => M.flintSteelModel(false), fineFlintSteel: () => M.flintSteelModel(true),
         fangSword: () => swordModel(0xf0e8d4, 0xfaf4e4, 0x5a4a3a), antlerBow: () => bowModel(true, 0xcbb690), tuskPickaxe: () => pickaxeModel(0xe8dcc0, 0xf4ecd8),
         poisonArrow: () => arrowModel(0x6a9a3a), poisonBolt: () => boltModel(0x6a9a3a),
-        saddle: () => M.saddleModel(false), greatSaddle: () => M.saddleModel(true), bandage: M.bandageModel, torch: M.torchModel,
+        saddle: () => M.saddleModel(false), greatSaddle: () => M.saddleModel(true), bandage: M.bandageModel, torch: M.torchModel, coalTorch: M.torchModel,
         coat: () => M.coatModel(0xa8743e, 0x8a5a2e), furCloak: () => M.coatModel(0x8a7458, 0xa89070), paleCloak: () => M.coatModel(0xe8e4dc, 0xf4f0ea), caveCloak: () => M.coatModel(0x3a3634, 0x4a4644),
         armour: () => M.coatModel(0x7a5230, 0x5a3a20, 0x8a6038), steelArmour: () => M.coatModel(0x5a4a3a, 0x4a3a2a, 0xb8c0c8),
         scarArmour: () => M.coatModel(0x4a3426, 0x3a281c, 0xb8c0c8), lionArmour: () => M.coatModel(0xc89a5a, 0x6a4026, 0xb8c0c8),

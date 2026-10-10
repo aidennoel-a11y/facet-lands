@@ -95,7 +95,8 @@ export class Torches {
    */
   place(point, normal, save = true, lit = false, lamp = false) {
     if (normal.y < -0.3) return null;
-    if (lamp) return this.#placeLamp(point, normal, save);
+    if (lamp === true || lamp === 'lamp') return this.#placeLamp(point, normal, save);
+    const coal = lamp === 'coal'; // (a coal torch: a white-hot flame, lighting twice as far)
     const lean = normal.y > 0.7 ? UP.clone() : normal.clone().multiplyScalar(0.55).add(UP).normalize();
 
     const group = new Group();
@@ -116,7 +117,13 @@ export class Torches {
     this.scene.add(group);
     group.updateMatrixWorld(true);
 
-    const torch = { group, outer, inner, glow, phase: Math.random() * 100, point: point.clone(), normal: normal.clone(), lit };
+    if (coal) {
+      head.material = this.coalHeadMaterial ??= new MeshLambertMaterial({ color: 0x141210, flatShading: true });
+      outer.material = this.coalOuterMaterial ??= new MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.9 });
+      inner.material = this.coalInnerMaterial ??= new MeshBasicMaterial({ color: 0xffffff });
+      glow.scale.setScalar(2.2);
+    }
+    const torch = { group, outer, inner, glow, coal, phase: Math.random() * 100, point: point.clone(), normal: normal.clone(), lit };
     outer.visible = inner.visible = glow.visible = lit;
     this.torches.push(torch);
     if (save) this.#save();
@@ -208,7 +215,7 @@ export class Torches {
 
   /** The torches as records: [{ k, p: [x, y, z, nx, ny, nz], lit }] (online: see WorldSync). */
   records() {
-    return this.torches.map((t) => ({ k: Torches.key(t), p: [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)), lit: !!t.lit, lamp: !!t.lamp }));
+    return this.torches.map((t) => ({ k: Torches.key(t), p: [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)), lit: !!t.lit, lamp: t.lamp ? true : t.coal ? 'coal' : false }));
   }
 
   /** A torch as someone else has it (online): put up, or lit or put out. */
@@ -218,7 +225,7 @@ export class Torches {
     const t = this.torches.find((t) => t.point.distanceTo(point) < 0.02);
     if (t) {
       if (!!t.lit !== !!rec.lit) this.light(t, !!rec.lit);
-    } else this.place(point, new Vector3(nx, ny, nz), true, !!rec.lit, !!rec.lamp);
+    } else this.place(point, new Vector3(nx, ny, nz), true, !!rec.lit, rec.lamp === 'coal' ? 'coal' : !!rec.lamp);
   }
 
   /** Takes a torch down by its key (someone else did, online). */
@@ -238,7 +245,7 @@ export class Torches {
     } catch {
       saved = [];
     }
-    for (const [x, y, z, nx, ny, nz, lit = 1, lamp = 0] of saved) this.place(new Vector3(x, y, z), new Vector3(nx, ny, nz), false, !!lit, !!lamp);
+    for (const [x, y, z, nx, ny, nz, lit = 1, lamp = 0] of saved) this.place(new Vector3(x, y, z), new Vector3(nx, ny, nz), false, !!lit, lamp === 2 ? 'coal' : !!lamp);
   }
 
   /** Forgets this world's torches (a survival life that's over: see Game.#die). */
@@ -252,7 +259,7 @@ export class Torches {
 
   #save() {
     if (this.seed === null) return;
-    const data = this.torches.map((t) => [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)).concat(t.lit ? 1 : 0, t.lamp ? 1 : 0));
+    const data = this.torches.map((t) => [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)).concat(t.lit ? 1 : 0, t.lamp ? 1 : t.coal ? 2 : 0));
     try {
       localStorage.setItem(`facet-lands:torches:${this.seed}`, JSON.stringify(data));
     } catch {
@@ -303,14 +310,14 @@ export class Torches {
         light.intensity = 22 * t.flicker;
         light.distance = 22;
       } else if (t.group) {
-        light.color.setHex(0xffa24a);
+        light.color.setHex(t.coal ? 0xffe2b8 : 0xffa24a);
         light.position.copy(t.group.localToWorld(this._flame.set(0, FLAME_HEIGHT + 0.1, 0)));
-        light.intensity = 30 * t.flicker;
-        light.distance = 26;
+        light.intensity = (t.coal ? 60 : 30) * t.flicker;
+        light.distance = t.coal ? 48 : 26;
       } else {
         light.color.setHex(t.colour ?? 0xffa24a);
         light.position.set(t.x, t.y, t.z);
-        const f = 0.85 + 0.15 * Math.sin(time * 11 + t.x) * Math.sin(time * 6.1 + t.z);
+        const f = t.steady ? 1 : 0.85 + 0.15 * Math.sin(time * 11 + t.x) * Math.sin(time * 6.1 + t.z);
         light.intensity = t.strength * f;
         light.distance = t.reach ?? 26;
       }

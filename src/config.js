@@ -47,7 +47,7 @@ export const WORLD = {
   tameWildlife: false,
 
   // Caves (their mouths are cut into full-detail terrain only)
-  caveMaxLod: 0, // (caves built only round you: underground the haze hides anything further)
+  caveMaxLod: 1, // (caves built out to the second ring round you: the great chambers are big)
 
   // Rocks: boulders up to this LOD, small stones one level closer
   rockMaxLod: 2,

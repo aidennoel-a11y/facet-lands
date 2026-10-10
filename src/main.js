@@ -6,7 +6,7 @@ import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
-import { caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
+import { caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
@@ -575,7 +575,7 @@ function testView() {
 }
 testView();
 const body = new PlayerBody(scene);
-const torches = new Torches(scene);
+const torches = new Torches(scene, { maxLights: 8 });
 torches.loadWorld(WORLD.seed);
 
 // --- Staying alive -----------------------------------------------------------------
@@ -1756,7 +1756,7 @@ function tick(now) {
     lava: sheltered && !!waterAt(camera.position.x, camera.position.z)?.lava && camera.position.y - controls.eyeHeight < (waterAt(camera.position.x, camera.position.z)?.level ?? -1e9) + 0.3,
   });
   caveSounds(dt);
-  torches.update(worldNow, camera.position, gameLights);
+  torches.update(worldNow, camera.position, caveGlowLights.length ? [...gameLights, ...caveGlowLights] : gameLights);
   updateCaveLife(now / 1000, sheltered ? camera.position : null);
   updateVisibility();
   const haze = heatHaze(dt);

@@ -123,6 +123,12 @@ function vineGeometry(kind) {
 }
 const vineShapes = [0, 1, 2, 3].map(vineGeometry);
 const vineSets = new Set(); // (each chunk's vines: see updateCaveLife)
+// What glows in the caves gives a little light round it too: crystals,
+// glowcaps, glowberries, lava. The nearest few (see caveGlowLights) are
+// lent real lights, with the torches (see Torches.update).
+const glowSets = new Set();
+export const caveGlowLights = [];
+let glowWait = 0;
 const DOWN = new Vector3(0, -1, 0), vq = new Quaternion(), vt = new Vector3(), vs = new Vector3(), vp = new Vector3();
 
 /** Sets one vine's matrix: hanging from its top, swung by (sx, sz) (its foot pushed that way, in metres per metre). */
@@ -142,7 +148,24 @@ export function updateCaveLife(time, eye = null) {
     inside = !!eye;
     for (const m of details) m.visible = inside;
   }
-  if (!inside) return;
+  if (!inside) {
+    caveGlowLights.length = 0;
+    return;
+  }
+  if (time > glowWait) {
+    glowWait = time + 0.3;
+    const near = [];
+    for (const set of glowSets) {
+      if (Math.abs(eye.x - set.cx) > 150 || Math.abs(eye.z - set.cz) > 150) continue;
+      for (const g of set.list) {
+        const d = (g.x - eye.x) ** 2 + (g.y - eye.y) ** 2 + (g.z - eye.z) ** 2;
+        if (d < 50 * 50) near.push([d, g]);
+      }
+    }
+    near.sort((a, b) => a[0] - b[0]);
+    caveGlowLights.length = 0;
+    for (const [, g] of near.slice(0, 4)) caveGlowLights.push(g);
+  }
   // Vines: pushed aside where you walk through them, swinging back after.
   for (const set of vineSets) {
     if (Math.abs(eye.x - set.cx) > 110 || Math.abs(eye.z - set.cz) > 110) continue;
@@ -366,6 +389,13 @@ export function createCaveLayer(config) {
           stones.userData.solid = true;
           group.add(detail(stones));
         }
+        if (data.plants) {
+          // (Ferns and moss: you walk through them, and nothing stops on them.)
+          const plants = new Mesh(data.plants, material);
+          plants.name = 'cave plants';
+          plants.receiveShadow = true;
+          group.add(detail(plants));
+        }
         if (data.vines?.length) {
           const counts = [0, 0, 0, 0], list = [];
           for (let k = 0; k < data.vines.length; k += 7) {
@@ -385,6 +415,24 @@ export function createCaveLayer(config) {
           vineSets.add(set);
           group.userData.vineSet = set;
         }
+        {
+          const list = [];
+          const f = data.features ?? [];
+          for (let k = 0; k < f.length; k += 6) {
+            if (f[k] === 2) list.push({ x: f[k + 1], y: f[k + 2] + 0.6, z: f[k + 3], strength: 7, reach: 9, colour: 0x7fd8ff, steady: true });
+            else if (f[k] === 3) list.push({ x: f[k + 1], y: f[k + 2] + 0.4, z: f[k + 3], strength: 5, reach: 7, colour: 0x7affc8, steady: true });
+          }
+          const v = data.vines ?? [];
+          for (let k = 0; k < v.length; k += 7) if (v[k + 4] === 3) list.push({ x: v[k], y: v[k + 1] - v[k + 3] * 0.6, z: v[k + 2], strength: 3, reach: 6, colour: 0xf0c060, steady: true });
+          // (Lava: a light every so often over it, deep orange.)
+          const lp = data.lava?.attributes.position;
+          if (lp) for (let k = 0; k < lp.count; k += 120) list.push({ x: lp.getX(k) + cx * size, y: lp.getY(k) + 1.5, z: lp.getZ(k) + cz * size, strength: 18, reach: 22, colour: 0xff6a20 });
+          if (list.length) {
+            const gs = { list, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size };
+            glowSets.add(gs);
+            group.userData.glowSet = gs;
+          }
+        }
       });
       return group;
     },
@@ -395,6 +443,7 @@ export function createCaveLayer(config) {
       if (group.userData.shoal) shoals.delete(group.userData.shoal);
       for (const f of group.userData.flocks ?? []) roostFlocks.delete(f);
       if (group.userData.vineSet) vineSets.delete(group.userData.vineSet);
+      if (group.userData.glowSet) glowSets.delete(group.userData.glowSet);
       group.traverse((m) => details.delete(m));
       const [cx, cz] = group.userData.chunk;
       for (const mesh of group.children) if (mesh.isInstancedMesh) mesh.dispose();

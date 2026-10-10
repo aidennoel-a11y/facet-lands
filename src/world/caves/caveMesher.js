@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, DodecahedronGeometry } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, DodecahedronGeometry, LatheGeometry, Vector2 } from 'three';
 import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
@@ -33,8 +33,14 @@ const WATER_COLOUR = [0.08, 0.17, 0.21], LAVA_COLOUR = [1, 0.42, 0.1];
 
 /** The cave kind at a world point, from the chunk's coarse grid of scores (see sampleChunk). */
 export function biomeIn(grid, x, y, z) {
-  const { kinds, kStep, x0, z0 } = grid;
+  const { kinds, kStep, x0, z0, cols, n, cell } = grid;
   if (!kinds) return 0;
+  // (A great chamber is all one kind, through and through: the kind of the country over its middle.)
+  if (cols) {
+    const col = cols[Math.min(n - 1, Math.max(0, Math.round((z - z0) / cell))) * n + Math.min(n - 1, Math.max(0, Math.round((x - x0) / cell)))];
+    const ch = col?.chamber;
+    if (ch && ch.e < 1.1 && ch.c.scores && y < ch.c.y + ch.c.ry && y > ch.c.floor - 12) return CaveField.biomeAt(ch.c.scores, ch.c.y);
+  }
   const fx = Math.min(3.999, Math.max(0, (x - x0) / kStep)), fz = Math.min(3.999, Math.max(0, (z - z0) / kStep));
   const i = Math.floor(fx), k = Math.floor(fz), tx = fx - i, tz = fz - k;
   const a = kinds[k * 5 + i], b = kinds[k * 5 + i + 1], c = kinds[(k + 1) * 5 + i], d = kinds[(k + 1) * 5 + i + 1];
@@ -105,6 +111,7 @@ export function sampleChunk(field, cx, cz, chunkSize) {
   if (!hasAir) return null;
   passable(values, n, ny, x0, z0, cell, yMin, entrances);
   // The kind of cave country, on a coarse grid (5 x 5 over the chunk).
+  for (const col of cols) if (col.chamber) col.chamber.c.scores ??= field.biomeScores(col.chamber.c.x, col.chamber.c.z);
   const kStep = chunkSize / 4, kinds = [];
   for (let k = 0; k <= 4; k++) for (let i = 0; i <= 4; i++) kinds.push(field.biomeScores(x0 + i * kStep, z0 + k * kStep));
   return { cx, cz, x0, z0, cell, n, ny, yMin, values, H, entrances, cols, kinds, kStep };
@@ -430,7 +437,7 @@ export function liquidChunk(grid, field, pools) {
       const rv = field.riverAt(x, z, gridHeight(grid, x, z));
       if (rv && rv.across < rv.half * 0.92 && rv.fade > 0.5 && f(x, rv.level - 2.6, z) >= 0) level = Math.max(level ?? -Infinity, rv.level - 0.2);
       if (level === null) continue;
-      quad(biomeIn(grid, x, level, z) === 2 ? parts.lava : parts.water, x, level, z, step / 2 + 0.05);
+      quad(biomeIn(grid, x, level, z) === 2 ? parts.lava : parts.water, x, level, z, step / 2); // (edge to edge, never overlapping: no seams)
     }
   }
   for (let k = 0; k < pools.length; k += 4) {
@@ -468,6 +475,8 @@ export function decorateChunk(grid, field) {
   const { x0, z0, cell, ny, yMin, entrances } = grid;
   const seed = field.seed ^ 0x51f15e;
   const parts = [];
+  const plants = []; // (the soft growths on the floor: never solid, see CaveLayer)
+  let into = parts;
   const obstacles = [];
   const floors = []; // [x, y, z, random, roof, ...]: open cave floor, for the finds (see below)
   const roofs = []; // [x, y, z, random, ...]: high roofs, for bats
@@ -491,7 +500,7 @@ export function decorateChunk(grid, field) {
     g.setAttribute('color', new BufferAttribute(colors, 3));
     g.setAttribute('skyLight', new BufferAttribute(skyArr, 1));
     g.setAttribute('glow', new BufferAttribute(glows, 3));
-    parts.push(g);
+    into.push(g);
   };
   const cone = (x, y, z, radius, height, down, s, kind) => {
     const pal = PALETTES[kind];
@@ -506,6 +515,37 @@ export function decorateChunk(grid, field) {
       const t = Math.min(1, Math.max(0, down ? (y - cyv) / height : (cyv - y) / height));
       c.copy(low).lerp(tip, t).multiplyScalar(0.9 + hash2(v, Math.round(x * 10), seed) * 0.2);
     }, kind === 2 && !down ? [0.35, 0.1, 0.02] : kind === 3 ? [0.03, 0.06, 0.09] : kind === 1 ? [0.04, 0.09, 0.05] : null);
+  };
+  // A softer formation, turned on a lathe: rounded, a little lumpy, with a
+  // blunt tip (not a spear); or a column, where a stalagmite and the
+  // stalactite over it have grown down and up to meet halfway, pinched at
+  // the waist where they joined. Many more triangles than a cone.
+  const lathe = (x, y, z, radius, height, down, s, kind, column = false) => {
+    const pal = PALETTES[kind], pts = [];
+    const N = column ? 12 : 9;
+    for (let k = 0; k <= N; k++) {
+      const t = k / N;
+      const lump = 1 + 0.12 * Math.sin(t * 17 + s * 30) + 0.08 * Math.sin(t * 41 + s * 11);
+      let r;
+      if (column) {
+        const u = Math.abs(2 * t - 1); // (0 at the waist, 1 at the floor and roof)
+        r = radius * (0.32 + 0.68 * u ** 1.6) * lump;
+      } else r = radius * Math.pow(1 - t, 0.75) * lump + (t > 0.85 ? radius * 0.12 * (1 - t) / 0.15 : 0);
+      pts.push(new Vector2(Math.max(0.02, r), t * height));
+    }
+    if (!column) pts.push(new Vector2(0.001, height + radius * 0.12)); // (the rounded tip)
+    const g = new LatheGeometry(pts, column ? 10 : 8).toNonIndexed();
+    g.deleteAttribute('uv');
+    if (down) g.rotateX(Math.PI);
+    g.rotateY(s * 6.28);
+    g.translate(x - x0, y, z - z0);
+    low.set(pal.low);
+    tip.set(pal.tip);
+    piece(g, x, y, z, (c, cyv, v) => {
+      let t = Math.min(1, Math.max(0, down ? (y - cyv) / height : (cyv - y) / height));
+      if (column) t = 1 - Math.abs(2 * t - 1);
+      c.copy(low).lerp(tip, t).multiplyScalar(0.88 + hash2(v, Math.round(x * 10), seed) * 0.24);
+    }, kind === 2 && !down && !column ? [0.35, 0.1, 0.02] : kind === 3 ? [0.03, 0.06, 0.09] : kind === 1 ? [0.04, 0.09, 0.05] : null);
   };
   const box = (x, y, z, w, h, d, colour, glow = null, ry = 0) => {
     const g = new BoxGeometry(w, h, d).toNonIndexed();
@@ -574,26 +614,34 @@ export function decorateChunk(grid, field) {
           if (!inEntrance && gap > 2.2 && f(x, floor + 0.4, z) < -0.2) floors.push(x, floor, z, hash2(Math.round(x * 7), Math.round(floor * 7), seed + 5), roof);
           if (gap > 9 && h < 0.4) roofs.push(x, roof, z, r3);
           if (h < 0.55) {
-            if (gap > 3 && gap < 11 && r1 < 0.12 && flat) {
-              // Pillar: a stalagmite and stalactite that meet.
-              const radius = 0.6 + r2 * 0.9 + gap * 0.04;
-              cone(x, floor - 0.3, z, radius * 1.3, gap * 0.62, false, r1, kind);
-              cone(x, roof + 0.3, z, radius * 1.2, gap * 0.55, true, r2, kind);
-              obstacles.push(x, z, radius * 1.1, floor - 0.3, roof);
+            if (gap > 3 && gap < 40 && r1 < 0.16 && flat) {
+              // A column: stalagmite and stalactite grown together, in any
+              // cave where the roof's in reach (great ones under high roofs).
+              const radius = 0.5 + r2 * 0.8 + gap * 0.07;
+              lathe(x, floor - 0.4, z, radius, gap + 0.8, false, r1, kind, true);
+              obstacles.push(x, z, radius * 0.75, floor - 0.3, roof);
             } else {
+              const soft = r2 > 0.45; // (some rounded and soft-tipped, some sharp)
               if (gap > 3.5 && flat && r1 < (kind === 2 ? 0.7 : 0.55)) {
                 // (Volcanic: squat basalt; ice: thin and tall. Where the roof's
                 // high, some grow huge: towers of stone half way to it.)
-                const giant = gap > 14 && r1 < 0.12 ? 2.6 : 1;
+                const giant = gap > 14 && r1 < 0.24 ? 2.6 : 1;
                 const height = Math.min(gap * (giant > 1 ? 0.6 : 0.45), (kind === 3 ? 2.5 + r1 * 10 : 2 + r1 * 9) * giant) * (kind === 2 ? 0.6 : 1);
-                const radius = height * (kind === 2 ? 0.32 : kind === 3 ? 0.12 : 0.18 + r2 * 0.08);
-                cone(x, floor - 0.3, z, radius, height + 0.3, false, r1, kind);
+                const radius = height * (kind === 2 ? 0.32 : kind === 3 ? 0.12 : 0.18 + r2 * 0.08) * (soft ? 1.2 : 1);
+                if (soft && kind !== 3) lathe(x, floor - 0.3, z, radius, height + 0.3, false, r1, kind);
+                else cone(x, floor - 0.3, z, radius, height + 0.3, false, r1, kind);
                 obstacles.push(x, z, radius * 0.8, floor - 0.3, floor + height);
+                // (And the stalactite over it, reaching down: sometimes near enough to touch.)
+                if (r3 < 0.35 && gap > height + 2) {
+                  const down = Math.min(gap - height - (r3 < 0.12 ? 0.1 : 1.2), (gap - height) * 0.9);
+                  if (down > 1) lathe(x, roof + 0.3, z, Math.min(radius, down * 0.25), down + 0.3, true, r2, kind);
+                }
               }
               if (gap > 4 && r2 < (kind === 3 ? 0.85 : 0.5)) {
                 // (Icicles: many, long and thin.)
                 const height = Math.min(gap * 0.4, kind === 3 ? 2 + r2 * 10 : 1.5 + r2 * 8);
-                cone(x + 0.4, roof + 0.3, z - 0.3, height * (kind === 3 ? 0.09 : 0.17), height + 0.3, true, r2, kind);
+                if (kind !== 3 && r1 > 0.6) lathe(x + 0.4, roof + 0.3, z - 0.3, height * 0.2, height + 0.3, true, r2, kind);
+                else cone(x + 0.4, roof + 0.3, z - 0.3, height * (kind === 3 ? 0.09 : 0.17), height + 0.3, true, r2, kind);
                 if (kind === 3 && r2 < 0.4) cone(x - 0.5, roof + 0.2, z + 0.4, height * 0.06, height * 0.7, true, r1, kind);
               }
             }
@@ -628,21 +676,24 @@ export function decorateChunk(grid, field) {
           }
           // Lush: ferns, moss in soft clumps and small glowing growths over the floor.
           if (kind === 1 && !inEntrance && gap > 1.6) {
-            for (let k = 0; k < 4; k++) {
+            into = plants;
+            for (let k = 0; k < 10; k++) {
               const ox = (hash2(k, Math.round(x * 11), seed + 15) - 0.5) * step, oz = (hash2(k + 3, Math.round(z * 11), seed + 15) - 0.5) * step;
               let fy = floor + 0.5;
               while (fy > floor - 1.5 && f(x + ox, fy, z + oz) < 0) fy -= 0.15;
               if (fy <= floor - 1.5 || f(x + ox, fy + 0.6, z + oz) >= 0) continue;
               const pick = hash2(k + 7, Math.round((x + z) * 5), seed + 16);
-              if (pick < 0.5) fern(x + ox, fy, z + oz, 0.7 + pick, pick * 9);
-              else if (pick < 0.85) {
-                const g = new DodecahedronGeometry(0.25 + (pick - 0.5) * 0.8, 0);
+              // (Mostly moss: soft cushions of it all over the floor; ferns among it.)
+              if (pick < 0.25) fern(x + ox, fy, z + oz, 0.8 + pick * 2, pick * 9);
+              else if (pick < 0.93) {
+                const g = new DodecahedronGeometry(0.3 + (pick - 0.25) * 1.3, 0);
                 g.deleteAttribute('uv');
                 g.scale(1.4, 0.35, 1.2);
                 g.translate(x + ox - x0, fy + 0.03, z + oz - z0);
-                piece(g, x, fy, z, (c) => c.set(pick < 0.68 ? 0x4f7a32 : 0x5f8a3e), [0.05, 0.14, 0.06]);
+                piece(g, x, fy, z, (c) => c.set(pick < 0.5 ? 0x4f7a32 : pick < 0.75 ? 0x5f8a3e : 0x6a9a44), [0.05, 0.14, 0.06]);
               } else box(x + ox, fy + 0.06, z + oz, 0.1, 0.12, 0.1, 0xb8f0c8, [0.15, 0.5, 0.35], pick * 6);
             }
+            into = parts;
           }
           // Glow-worms: tiny lights speckling the high roofs (most of all in the great chambers, and the lush caves).
           if (gap > 7 && kind !== 2 && kind !== 3 && r3 < (kind === 1 ? 0.8 : gap > 25 ? 0.7 : 0.25)) {
@@ -679,7 +730,7 @@ export function decorateChunk(grid, field) {
     // it, up to a little below its rim all round (the sheet reaches past
     // the shore, under the rock, so its edge is wherever water meets
     // floor), never hanging over a drop.
-    if (r > 0.84 && kind !== 3) {
+    if (r > 0.84 && kind !== 3 && kind !== 1) {
       const level = y + 0.75, R = 3 + (r - 0.84) * 28;
       let rim = 0, sound = true;
       for (let k = 0; k < 12; k++) {
@@ -730,11 +781,14 @@ export function decorateChunk(grid, field) {
     const kind = biomeIn(grid, x, y, z);
     if (r < 0.03 && (kind === 0 || kind === 1 || kind === 4)) features.push(12, x, y, z, r * 97 % 6.28, 1);
   }
-  if (!parts.length) return { geometry: null, obstacles, features, pools, vines };
-  const geometry = mergeGeometries(parts);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  return { geometry, obstacles, features, pools, vines };
+  const merge = (list) => {
+    if (!list.length) return null;
+    const g = mergeGeometries(list);
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    return g;
+  };
+  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines };
 }
 
 /**
@@ -745,7 +799,7 @@ export function decorateChunk(grid, field) {
  */
 export function buildChunkData(field, cx, cz, chunkSize) {
   const grid = sampleChunk(field, cx, cz, chunkSize);
-  if (!grid) return { grid: null, rock: null, deco: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), water: null, lava: null };
+  if (!grid) return { grid: null, rock: null, deco: null, plants: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), water: null, lava: null };
   const rock = meshChunk(grid, field);
   const deco = decorateChunk(grid, field);
   const liquid = liquidChunk(grid, field, deco.pools);
@@ -762,6 +816,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
     grid: { cx, cz, x0, z0, cell, n, ny, yMin, values },
     rock: pack(rock),
     deco: pack(deco.geometry),
+    plants: pack(deco.plants),
     obstacles: new Float32Array(deco.obstacles),
     features: new Float32Array(deco.features),
     pools: new Float32Array(deco.pools),
@@ -775,7 +830,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
 export function chunkDataBuffers(data) {
   const out = [];
   if (data.grid) out.push(data.grid.values.buffer);
-  for (const part of [data.rock, data.deco, data.water, data.lava]) if (part) for (const a of Object.values(part)) out.push(a.buffer);
+  for (const part of [data.rock, data.deco, data.plants, data.water, data.lava]) if (part) for (const a of Object.values(part)) out.push(a.buffer);
   out.push(data.obstacles.buffer);
   if (data.features) out.push(data.features.buffer);
   if (data.pools) out.push(data.pools.buffer);

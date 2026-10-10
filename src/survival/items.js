@@ -106,6 +106,7 @@ export const ITEMS = {
   bandage: { name: 'Bandage', weight: 0.05, group: 'Tools' },
   saddle: { name: 'Saddle', weight: 6, group: 'Tools' }, // (on a tame horse: see Game)
   torch: { name: 'Torch', place: 'torch', weight: 0.4, group: 'Tools' },
+  coalTorch: { name: 'Coal torch', place: 'torch', weight: 0.5, group: 'Tools' }, // (burns hot and white: lights twice as far, the one for the caves)
   caveLamp: { name: 'Crystal lamp', place: 'caveLamp', weight: 1.2, group: 'Tools' }, // (glows of itself: never goes out)
   // Worn.
   coat: { name: 'Leather coat', tool: true, wear: 'coat', warmth: 0.3, weight: 2, group: 'Worn' },
@@ -170,6 +171,7 @@ export const RECIPES = [
   { id: 'spear', needs: { log: 1, rock: 1, vine: 1 }, note: 'Click to stab, right-click to throw' },
   { id: 'flintSteel', needs: { flint: 1, iron: 1 }, note: 'Lights campfires and furnaces' },
   { id: 'torch', needs: { stick: 1, vine: 1 }, note: 'Light to carry or set down' },
+  { id: 'coalTorch', needs: { stick: 1, coal: 1, vine: 1 }, makes: 2, note: 'Coal-headed: burns bright and white, lighting twice as far. For the caves' },
   { id: 'bow', needs: { stick: 2, vine: 2 }, note: 'Hold the mouse to draw, let go to shoot' },
   { id: 'arrow', needs: { stick: 1, flint: 1 }, makes: 4, note: 'Four arrows (fletched with a feather they fly truer)' },
   { id: 'fishingRod', needs: { stick: 2, vine: 2 }, note: 'Cast into water, click again when it bites' },
@@ -233,7 +235,7 @@ export const RECIPES = [
  * in RECIPES is in one of them.
  */
 export const TIERS = [
-  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'torch', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare'] },
+  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'torch', 'coalTorch', 'caveLamp', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare'] },
   { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'fineFlintSteel', 'pot', 'shears', 'saddle', 'anvil'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt'] },
@@ -337,6 +339,7 @@ export const ICONS = {
   steelArmour: `<path d="M9 5l7 3 7-3 4 6-2 16H7L5 11z" fill="#9aa4b0"/><path d="M9 12h14M9 17h14M9 22h14" stroke="#5a626e" stroke-width="1.4"/><path d="M16 8v19" stroke="#5a626e"/><path d="M9 5l7 3 7-3" fill="none" stroke="#e4e8ee" stroke-width="1.2"/>`,
   tanningRack: `<path d="M5 29V5M27 29V5M5 7h22M5 27h22" stroke="#8a5d38" stroke-width="2.2"/><path d="M9 10h14l-1 14H10z" fill="#c4945a"/><path d="M9 10l-4-3M23 10l4-3M10 24l-5 3M22 24l5 3" stroke="#e8e0cc"/>`,
 };
+ICONS.coalTorch = `<path d="M14 30l3-17h2l-1 17z" fill="#7a5634"/><path d="M14 13h6l-1 4h-4z" fill="#1e1a18"/><path d="M17 3c4 3 4 6 1 10h-2c-3-4-1-7 1-10z" fill="#fff4d0"/><path d="M17 6c2 2 2 4 0 6h-1c-1-2 0-4 1-6z" fill="#ffffff"/>`;
 // (The cave finds.)
 ICONS.crystal = `<path d="M10 27l3-14 3-9 3 9 1 14z" fill="#9ae8ff"/><path d="M16 4l3 9 1 14h-4z" fill="#c8f4ff"/><path d="M19 27l3-10 4-5 0 9-2 6z" fill="#c0a0ff"/><path d="M6 28h22v-2H6z" fill="#6a6572"/>`;
 ICONS.caveLamp = `<path d="M8 29h16l-2-5H10z" fill="#5a5058"/><path d="M12 24l2-12 2-6 2 6 2 12z" fill="#a8ecff"/><path d="M16 6l2 6 2 12h-4z" fill="#d8f8ff"/><circle cx="16" cy="16" r="11" fill="#7ac8ff" opacity="0.18"/>`;

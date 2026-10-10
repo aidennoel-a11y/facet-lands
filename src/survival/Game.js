@@ -50,6 +50,8 @@ const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2, tuskPickaxe: 
 const SPEARS = new Set(['spear', 'steelSpear', 'forgedSpear']);
 const SWORDS = new Set(['sword', 'fangSword']);
 const BOWS = new Set(['bow', 'antlerBow']);
+// (Torches: the plain one, and the coal torch: brighter, further, the one for the caves.)
+const TORCHES = new Set(['torch', 'coalTorch']);
 // What a horse will come to you for, and eat.
 const HORSE_FOOD = { apple: 25, carrot: 25, wheat: 20, corn: 20, berries: 10 };
 const smooth = (a, b, x) => {
@@ -673,10 +675,10 @@ export class Game {
     // A torch you've set down, cold, to light.
     const torch = this.torches?.alongRay(origin, direction, REACH);
     const toLight = torch && !torch.lit && (!built || torch.group.position.distanceTo(origin) < built.distance + 0.3) ? torch : null;
-    if (toLight && (LIGHTERS.has(s.id) || s.id === 'torch')) {
+    if (toLight && (LIGHTERS.has(s.id) || TORCHES.has(s.id))) {
       this.#animate('use', 0.3);
       this.cooldown = 0.5;
-      if (s.id !== 'torch') {
+      if (!TORCHES.has(s.id)) {
         this.sound?.call('strike', 0, 0.5);
         this.inventory.wear(i, 1);
         if (Math.random() < 0.3) return this.hotbar?.flash('Sparks, but it didn’t catch: again');
@@ -686,7 +688,7 @@ export class Game {
       return this.hotbar?.flash('The torch is burning');
     }
     // A campfire lit from the torch in your hand.
-    if (s.id === 'torch' && this.structures.isFire(at) && !at.lit) {
+    if (TORCHES.has(s.id) && this.structures.isFire(at) && !at.lit) {
       this.#animate('use', 0.3);
       this.cooldown = 0.5;
       if (!this.structures.light(at)) return this.hotbar?.flash('Nothing to burn: add a log');
@@ -748,7 +750,7 @@ export class Game {
       return;
     }
     if (item.place === 'torch') {
-      if (placeTorch?.(origin, direction)) {
+      if (placeTorch?.(origin, direction, s.id === 'coalTorch' ? 'coal' : false)) {
         this.inventory.take(i);
         this.cooldown = 0.3;
         this.hotbar?.flash('Torch set down: light it with flint and steel (or a burning torch)');
@@ -1799,7 +1801,7 @@ export class Game {
 
     // Held in your hand.
     this.#drawHeld(dt, held, walking);
-    if (held?.id === 'torch' && walking) lights.push({ x: cam.x, y: cam.y - 0.2, z: cam.z, strength: 22, reach: 22 });
+    if (TORCHES.has(held?.id) && walking) lights.push(held.id === 'coalTorch' ? { x: cam.x, y: cam.y - 0.2, z: cam.z, strength: 44, reach: 42 } : { x: cam.x, y: cam.y - 0.2, z: cam.z, strength: 22, reach: 22 });
 
     // Saving now and then.
     this.saveWait -= dt;
@@ -1859,7 +1861,7 @@ export class Game {
       x: p.x, y: p.y, z: p.z, mode: c.mode, crouch: c.crouch, moving: c.moving, sprint: c.sprinting, alive: this.survival.alive && !this.riding && !this.climbing,
       cover: Math.min(1, this.#grassCover(p.x, p.z) + (ITEMS[this.inventory.worn?.id]?.hush ? 0.35 : 0)),
       lure: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'wheat',
-      torch: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'torch',
+      torch: TORCHES.has(this.inventory.slots[this.hotbar?.index ?? 0]?.id),
       food: !!HORSE_FOOD[this.inventory.slots[this.hotbar?.index ?? 0]?.id],
       damage: (amount, kind, a) => {
         if (a?.boss) this.#bossFight(a);
@@ -1995,7 +1997,7 @@ export class Game {
     else if (BOWS.has(id)) mesh.rotation.set(0, 0, 0.25), mesh.scale.setScalar(0.75), mesh.position.set(-0.12, 0.1, -0.05);
     else if (id === 'crossbow') mesh.rotation.set(0, Math.PI, 0), mesh.scale.setScalar(0.9), mesh.position.set(-0.14, 0.08, -0.12);
     else if (id === 'fishingRod') mesh.rotation.set(-1.05, 0, 0), mesh.scale.setScalar(0.75), mesh.position.set(0, -0.05, 0);
-    else if (id === 'torch') mesh.rotation.set(0, 0, Math.PI / 2 - 0.2), mesh.scale.setScalar(0.7);
+    else if (TORCHES.has(id)) mesh.rotation.set(0, 0, Math.PI / 2 - 0.2), mesh.scale.setScalar(0.7);
     else if (id === 'log') mesh.rotation.set(0, Math.PI / 2 - 0.25, 0.15), mesh.scale.setScalar(0.85), mesh.position.set(0.05, 0.22, 0.25); // (on your shoulder)
     else {
       // (Anything else held small enough to sit in your hand.)
@@ -2013,7 +2015,7 @@ export class Game {
       this.bowString = null;
       if (id) {
         // (The bow without its string: that's drawn back, below.)
-        const geometry = id === 'torch' ? this.items.model('stick') : BOWS.has(id) ? (this.bareBow ??= bowModel(false)) : this.items.model(id);
+        const geometry = TORCHES.has(id) ? this.items.model('stick') : BOWS.has(id) ? (this.bareBow ??= bowModel(false)) : this.items.model(id);
         const mesh = new Mesh(geometry, this.handMaterial);
         mesh.renderOrder = 999;
         mesh.onBeforeRender = this.nearest.before;
@@ -2025,7 +2027,7 @@ export class Game {
           this.rodTip = new Group();
           this.rodTip.position.set(0, 1.8, 0);
           mesh.add(this.rodTip);
-        } else if (id === 'torch') {
+        } else if (TORCHES.has(id)) {
           this.handFlame.position.set(0.02, 0.33, 0);
           this.grip.add(this.handFlame);
         } else if (BOWS.has(id)) {
@@ -2114,7 +2116,7 @@ export class Game {
     if (this.winding && id === 'crossbow') (rx += 0.7 * Math.min(1, this.winding.t * 4)), (py -= 0.08), (pz += 0.04 * Math.sin(this.winding.t * 14));
     this.grip.rotation.set(rx, ry, rz);
     this.grip.position.set(px, py, pz);
-    if (this.heldId === 'torch') {
+    if (TORCHES.has(this.heldId)) {
       const f = 0.85 + 0.15 * Math.sin(this.time * 17) * Math.sin(this.time * 7);
       this.handFlame.scale.set(f, 1.7 * f, f);
     }
@@ -2135,7 +2137,7 @@ export class Game {
     for (const s of this.structures.list) if (s.lit) out.push({ x: s.x, z: s.z, r: s.type === 'furnace' ? 7 : 10 });
     for (const t of this.torches?.torches ?? []) if (t.lit) out.push({ x: t.point.x, z: t.point.z, r: 7 });
     const held = this.inventory.slots[this.hotbar?.index ?? 0];
-    if (held?.id === 'torch' && this.walking && this.survival.alive) out.push({ x: this.camera.position.x, z: this.camera.position.z, r: 8 });
+    if (TORCHES.has(held?.id) && this.walking && this.survival.alive) out.push({ x: this.camera.position.x, z: this.camera.position.z, r: 8 });
     return out;
   }
 

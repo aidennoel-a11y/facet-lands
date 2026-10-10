@@ -490,10 +490,10 @@ export class TerrainGenerator {
    */
   #mangrove(x, z, a, range) {
     // (Warm, but on the green coasts: never next to a savanna or a desert.)
-    let m = (1 - smoothstep(T.savannaStart - 0.1, T.savannaStart - 0.03, a)) * (1 - smoothstep(0.05, 0.2, range));
+    let m = (1 - smoothstep(T.savannaStart - 0.1, T.savannaStart - 0.03, a)) * (1 - smoothstep(0.02, 0.32, range)); // (fading out slowly up into hills: no wall where they meet)
     if (m > 0) m *= smoothstep(T.mangrove, T.mangrove + 0.2, this.coastNoise.fbm(x * 0.00028 + 310, z * 0.00028 - 170, 2));
     if (m <= 0 || this.#volcanoBelt(x, z) > 0.3) return 0;
-    return m * Math.min(1, 6 * this.#seaCoast(x, z));
+    return m * smoothstep(0, 0.45, this.#seaCoast(x, z)); // (eased in over a good distance from the coast: no wall where the hills behind meet it)
   }
 
   /** The broad continent noise alone (low near the coasts), remembered for the last point. */
@@ -1253,7 +1253,9 @@ export class TerrainGenerator {
     // pools, mudflats and meandering channels.
     if (w.wetland > 0) {
       const target = seaLevel + this.#marsh(x, z);
-      if (height > target) height += (target - height) * w.wetland;
+      // (High ground at its edge, hills, isn't pulled flat but slopes on
+      // down into it: never a wall where the two meet.)
+      if (height > target) height += (target - height) * w.wetland * (1 - smoothstep(4, 40, height - target) * (1 - w.wetland * w.wetland));
     }
     // Salt flats: dead flat, a metre or so below the desert round them.
     if (w.saltFlat > 0) {
@@ -1265,7 +1267,7 @@ export class TerrainGenerator {
     // shallows a metre or so deep, where the mangroves stand.
     if (w.mangrove > 0) {
       const target = seaLevel - 0.7 + 0.7 * this.#marsh(x, z);
-      if (height > target) height += (target - height) * w.mangrove;
+      if (height > target) height += (target - height) * w.mangrove * (1 - smoothstep(4, 40, height - target) * (1 - w.mangrove * w.mangrove));
       else if (height < target - 1.4) height += (target - 1.4 - height) * w.mangrove * (1 - smoothstep(seaLevel - 14, seaLevel - 22, height));
     }
     const soft = w.wetland + w.mangrove;

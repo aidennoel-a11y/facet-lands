@@ -262,7 +262,7 @@ export class PlayerControls {
   #ground(x, feetY, z) {
     const g = this.world.groundAt(x, feetY, z);
     const water = this.#water(x, z);
-    const deepWater = !g.inCave && water !== null && g.height < water.level - this.swimDepth;
+    const deepWater = (!g.inCave || !!water?.cave) && water !== null && g.height < water.level - this.swimDepth;
     return {
       height: g.height,
       stand: deepWater ? water.level - this.swimDepth : g.height,
@@ -293,7 +293,7 @@ export class PlayerControls {
     // In deep water, swimming.
     const water = this.#water(pos.x, pos.z);
     const under = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z);
-    const deep = water !== null && !under.inCave && water.level - under.height > this.swimDepth;
+    const deep = water !== null && (!under.inCave || !!water.cave) && water.level - under.height > this.swimDepth; // (and the lakes and rivers underground)
     this.underwater = water !== null && pos.y < water.level - 0.05;
     if (deep && pos.y - this.eyeHeight < water.level - 0.25) {
       this.swimming = true;

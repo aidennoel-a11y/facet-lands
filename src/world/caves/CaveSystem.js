@@ -2,32 +2,36 @@ import { BufferAttribute, BufferGeometry } from 'three';
 import { CaveField } from './CaveField.js';
 import { buildChunkData, sampleGrid } from './caveMesher.js';
 
-const MAX_CACHED = 48; // chunks of cave data kept around (least recently used go first)
+const MAX_CACHED = 72; // chunks of cave data kept around (least recently used go first)
 
-// One background worker shared by every world (seed); results are routed
+// Two background workers shared by every world (seed); results are routed
 // back by request id. Where workers aren't available (e.g. tests in Node),
 // chunks are built synchronously instead.
-let worker = null;
+let workers = null;
 let nextId = 1;
+let turn = 0;
 const requests = new Map(); // id -> (data) => void
+// (Two of them, taking turns: a cave of many chunks fills in sooner.)
 function getWorker() {
-  if (worker === null) {
+  if (workers === null) {
+    workers = [];
     try {
-      worker = typeof Worker !== 'undefined' && typeof window !== 'undefined'
-        ? new Worker(new URL('./caveWorker.js', import.meta.url), { type: 'module' })
-        : false;
+      if (typeof Worker !== 'undefined' && typeof window !== 'undefined') {
+        for (let k = 0; k < 2; k++) {
+          const w = new Worker(new URL('./caveWorker.js', import.meta.url), { type: 'module' });
+          w.onmessage = (event) => {
+            const done = requests.get(event.data.id);
+            requests.delete(event.data.id);
+            done?.(event.data.data);
+          };
+          workers.push(w);
+        }
+      }
     } catch {
-      worker = false;
-    }
-    if (worker) {
-      worker.onmessage = (event) => {
-        const done = requests.get(event.data.id);
-        requests.delete(event.data.id);
-        done?.(event.data.data);
-      };
+      workers = [];
     }
   }
-  return worker;
+  return workers.length ? workers[turn++ % workers.length] : false;
 }
 
 function toGeometry(part) {
@@ -106,6 +110,7 @@ export class CaveSystem {
       entry.grid = data.grid;
       entry.rock = toGeometry(data.rock);
       entry.deco = toGeometry(data.deco);
+      entry.plants = toGeometry(data.plants);
       entry.obstacles = data.obstacles;
       entry.features = data.features ?? new Float32Array(0);
       entry.pools = data.pools ?? new Float32Array(0);
@@ -138,6 +143,7 @@ export class CaveSystem {
       if (entry.users > 0) continue;
       entry.rock?.dispose();
       entry.deco?.dispose();
+      entry.plants?.dispose();
       entry.water?.dispose();
       entry.lava?.dispose();
       this.cache.delete(key);
@@ -202,6 +208,9 @@ export class CaveSystem {
    * 4 dry sandstone (see CaveField.biomeAt). Sampled coarsely and cached.
    */
   biomeAt(x, y, z) {
+    // (A great chamber is all one kind, through and through.)
+    const ch = this.field.chamberAt(x, z);
+    if (ch && ch.e < 1.1 && y < ch.c.y + ch.c.ry && y > ch.c.floor - 12) return CaveField.biomeAt(ch.c.scores ??= this.field.biomeScores(ch.c.x, ch.c.z), ch.c.y);
     const key = `${Math.round(x / 24)},${Math.round(z / 24)}`;
     this.kinds ??= new Map();
     let s = this.kinds.get(key);

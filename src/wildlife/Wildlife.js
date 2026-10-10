@@ -1847,7 +1847,23 @@ export class Wildlife {
         own(from);
       }
     }
-    // Hippos, in the savanna's rivers and waterholes (and the wetlands').
+    // Hippos at the savanna's watering holes: the ponds its streams rise
+    // from. A pod lives in each one (most of them), and keeps to it.
+    if (ctx.waterAt && g.rivers?.inBox) {
+      for (const r of g.rivers.inBox(cx * C, cz * C, (cx + 1) * C, (cz + 1) * C)) {
+        const pond = r.pond;
+        if (!pond || pond.x < cx * C || pond.x >= (cx + 1) * C || pond.z < cz * C || pond.z >= (cz + 1) * C) continue;
+        const w = g.getBiomeWeights(pond.x, pond.z, {});
+        if (w.savanna + 0.5 * w.wetland < 0.4 || rand() > 0.7) continue;
+        const from = this.animals.length;
+        const herd = { kind: 'hippo', goal: { x: pond.x, z: pond.z }, goalWait: rnd(20, 60), members: [], fear: null, fleeTime: 0, den: { x: pond.x, z: pond.z } };
+        const spread = Math.max(2, (pond.r ?? 6) * 0.5);
+        for (let n = 2 + Math.floor(rand() * 4), j = 0; j < n; j++) this.#spawnWalker('hippo', pond.x + rnd(-spread, spread), pond.z + rnd(-spread, spread), herd, { water: true });
+        if (herd.members.length) this.herds.push(herd), home.herds.push(herd);
+        own(from);
+      }
+    }
+    // Hippos, in the savanna's rivers (and the wetlands').
     for (let k = 0; k < 6 && ctx.waterAt; k++) {
       const x = (cx + 0.05 + 0.9 * rand()) * C, z = (cz + 0.05 + 0.9 * rand()) * C;
       const w = g.getBiomeWeights(x, z, {}), wat = ctx.waterAt(x, z);
@@ -2374,7 +2390,7 @@ export class Wildlife {
       // (In the autumn the grazing herds drift south, in the spring back north.)
       const migrate = herd.kind === 'deer' || herd.kind === 'bison' || herd.kind === 'sheep' ? ((ctx.autumn ?? 0) - (ctx.spring ?? 0)) * 30 : 0;
       if (lead) herd.goal = { x: lead.x + Math.sin(a) * d, z: lead.z + Math.cos(a) * d + migrate };
-      if (herd.den && lead) herd.goal = { x: herd.den.x + rnd(-12, 12), z: herd.den.z + rnd(-12, 12) }; // (a pack keeps near its den)
+      if (herd.den && lead) { const k = herd.kind === 'hippo' ? 4 : 12; herd.goal = { x: herd.den.x + rnd(-k, k), z: herd.den.z + rnd(-k, k) }; } // (a pack keeps near its den; hippos to their pond)
     }
     // Where it is (its middle): the members keep together.
     let x = 0, z = 0;
@@ -2874,20 +2890,48 @@ export class Wildlife {
     }
     // Steering round the tree trunks and boulders ahead, before it reaches them.
     const body = sp.height * a.scale * 0.6, me = sp.radius * a.scale;
+    // (Among many boulders, a way through: the way it wants, if that's clear
+    // a little way ahead; else the nearest clear way to one side or the
+    // other, keeping to the side it chose a moment, so it doesn't dither.)
     if (speed > 0) {
-      const look = body + 1 + a.speed * 0.8;
-      const fx = Math.sin(want), fz = Math.cos(want);
-      const obs = this.#obstacles(a.x, a.z, look + 2, ctx, sp.height * a.scale * 0.8);
-      let steer = 0;
-      for (let k = 0; k < obs.length; k += 3) {
-        const ox = obs[k] - a.x, oz = obs[k + 1] - a.z, r = obs[k + 2] + me + 0.3;
-        const along = ox * fx + oz * fz;
-        if (along < -0.5 || along > look + r) continue;
-        const side = ox * fz - oz * fx; // (+: the obstacle's to the right)
-        if (Math.abs(side) > r) continue;
-        steer += (side >= 0 ? -1 : 1) * (1 - Math.max(0, along) / (look + r)) * (1.2 - Math.abs(side) / r);
+      const look = body + 1.5 + a.speed * 0.8;
+      const obs = this.#obstacles(a.x, a.z, look + 3, ctx, sp.height * a.scale * 0.8);
+      if (obs.length) {
+        const clearance = (h) => {
+          const fx = Math.sin(h), fz = Math.cos(h);
+          let nearest = Infinity;
+          for (let k = 0; k < obs.length; k += 3) {
+            const ox = obs[k] - a.x, oz = obs[k + 1] - a.z, r = obs[k + 2] + me + 0.35;
+            const along = ox * fx + oz * fz;
+            if (along < -0.3 || along > look + r) continue;
+            if (Math.abs(ox * fz - oz * fx) < r) nearest = Math.min(nearest, Math.max(0, along - r));
+          }
+          return nearest;
+        };
+        if (clearance(want) < look) {
+          a.avoid = a.avoid && a.avoid.until > this.time ? a.avoid : { side: Math.random() < 0.5 ? 1 : -1, until: this.time + 1.5 };
+          let best = null;
+          for (let d = 0.3; d <= 2.7 && best === null; d += 0.3) {
+            for (const side of [a.avoid.side, -a.avoid.side]) {
+              if (clearance(want + side * d) >= look) {
+                best = want + side * d;
+                a.avoid.side = side;
+                a.avoid.until = this.time + 1.5;
+                break;
+              }
+            }
+          }
+          // (Hemmed in all round: the way with the most room.)
+          if (best === null) {
+            let room = -1;
+            for (let d = -2.7; d <= 2.7; d += 0.45) {
+              const c = clearance(want + d);
+              if (c > room) (room = c), (best = want + d);
+            }
+          }
+          want = best;
+        }
       }
-      want += Math.max(-1.3, Math.min(1.3, steer));
     }
     // Turn (slowly from a standstill, as it sets off; not spinning on the
     // spot), speed up or slow down.
