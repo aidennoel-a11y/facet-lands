@@ -23,6 +23,9 @@ const BUILT = {
   anvil: M.anvilModel, grindstone: M.grindstoneModel, tanningRack: M.tanningRackModel,
   woodFloor: M.woodFloorModel, stoneFloor: M.stoneFloorModel, stoneWall: M.stoneWallModel, stoneFence: M.stoneFenceModel, chimney: M.chimneyModel, slateRoof: M.slateRoofPieceModel, woodWindow: M.woodWindowModel, stoneWindow: M.stoneWindowModel,
   cellar: M.cellarModel, fishTrap: M.fishTrapModel, smokingRack: M.smokingRackModel,
+  logWall: M.logWallModel, plankWall: M.plankWallModel, cutStoneWall: M.cutStoneWallModel, logFloor: M.logFloorModel, cutStoneFloor: M.cutStoneFloorModel,
+  logStairs: M.logStairsModel, plankStairs: M.plankStairsModel, stoneStairs: M.stoneStairsModel, cutStairs: M.cutStairsModel,
+  logRoof: M.logRoofModel, shingleRoof: M.shingleRoofModel, tileRoof: M.tileRoofModel, bedroll: M.bedrollModel, fancyBed: M.fancyBedModel,
 };
 
 /**

@@ -1,5 +1,5 @@
 import { iconSvg, slotHtml } from '../ui/Hotbar.js';
-import { ITEMS, RECIPES, TIERS } from './items.js';
+import { ITEMS, RECIPES, TIERS, usesText } from './items.js';
 
 const BARS = [
   ['health', 'Health', '#e0413a', `<path d="M16 28S4 20 4 11a6 6 0 0 1 12-2 6 6 0 0 1 12 2c0 9-12 17-12 17z"/>`],
@@ -193,15 +193,16 @@ export class Hud {
       const cards = tier.ids.map((id) => {
         const r = recipe(id);
         const has = Object.entries(r.needs).every(([n, c]) => inventory.count(n) >= c);
-        const station = !r.at || this.stations?.[r.at];
+        const station = (!r.at || this.stations?.[r.at]) && (!r.uses || r.uses.some((t) => inventory.count(t) > 0));
         const can = open && has && station;
         const needs = Object.entries(r.needs)
           .map(([n, c]) => `<span class="need${inventory.count(n) >= c ? '' : ' short'}" title="${ITEMS[n].name}">${iconSvg(n)}${c}</span>`)
           .join('');
         const note = `${r.note}${r.at ? ` (at an ${r.at})` : ''}`;
+        const tool = r.uses ? `<em class="${r.uses.some((t) => inventory.count(t) > 0) ? '' : 'short'}">with ${usesText(r)}</em>` : '';
         return `<button type="button" class="card${can ? ' can' : ''}${open ? '' : ' locked'}" data-craft="${id}" data-note="${ITEMS[id].name}: ${note.replaceAll('"', '&quot;')}" ${can ? '' : 'aria-disabled="true"'}>
           <span class="made">${iconSvg(id)}${r.makes ? `<b>×${r.makes}</b>` : ''}</span>
-          <span class="what"><b>${ITEMS[id].name}</b>${r.at ? `<em class="${station ? '' : 'short'}">at an ${r.at}</em>` : ''}<span class="needs">${needs}</span></span>
+          <span class="what"><b>${ITEMS[id].name}</b>${r.at ? `<em class="${station ? '' : 'short'}">at an ${r.at}</em>` : ''}${tool}<span class="needs">${needs}</span></span>
         </button>`;
       }).join('');
       return `<section class="tier${open ? ' open' : ''}${next ? ' next' : ''}">

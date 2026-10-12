@@ -1463,9 +1463,10 @@ function marshMist(dt) {
 // Grass never grows up through what you've built: the spots under the
 // things nearest you are cleared (see GrassLayer).
 const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, grindstone: 0.7, dryingRack: 0.8, tanningRack: 0.9, plot: 1.3, snare: 0.4, stake: 0.3,
-  woodFloor: 2.9, stoneFloor: 2.9, chimney: 0.95, cellar: 1.9, smokingRack: 1.1, roof: 0.3, slateRoof: 0.3 };
+  woodFloor: 2.9, stoneFloor: 2.9, chimney: 0.95, cellar: 1.9, smokingRack: 1.1, roof: 0.3, slateRoof: 0.3,
+  logFloor: 2.9, cutStoneFloor: 2.9, logStairs: 2.2, plankStairs: 2.2, stoneStairs: 2.2, cutStairs: 2.2, logRoof: 0.3, shingleRoof: 0.3, tileRoof: 0.3, bedroll: 1.1, fancyBed: 1.3 };
 // (Walls and fences: a strip of clearings along their length; see clearGrass.)
-const CLEARED_LINE = { wall: 0.55, gate: 0.55, stoneWall: 0.6, fence: 0.4, fenceGate: 0.4, stoneFence: 0.5, woodWindow: 0.55, stoneWindow: 0.6 };
+const CLEARED_LINE = { wall: 0.55, gate: 0.55, stoneWall: 0.6, fence: 0.4, fenceGate: 0.4, stoneFence: 0.5, woodWindow: 0.55, stoneWindow: 0.6, logWall: 0.55, plankWall: 0.5, cutStoneWall: 0.6 };
 // The grass round you and the bigger animals near you bends away from them.
 const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'starling', 'crow', 'gull', 'hawk', 'wolfPup', 'bat', 'eagle', 'scorpion']);
 function pushGrass() {

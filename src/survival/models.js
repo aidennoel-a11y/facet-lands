@@ -1019,7 +1019,7 @@ export function slateRoofModel() {
  */
 export const FLOOR_SIZE = 4;
 export const FLOOR_TOP = 0.2;
-export function woodFloorModel() {
+export function woodFloorModel(upper = false) {
   const b = new Parts(139), rand = mulberry32(139), h = FLOOR_SIZE / 2;
   const n = 10, w = FLOOR_SIZE / n;
   for (let k = 0; k < n; k++) {
@@ -1027,6 +1027,7 @@ export function woodFloorModel() {
     b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.06, w - 0.03), shade, [0, FLOOR_TOP - 0.03, -h + w * (k + 0.5)], [0, 0, 0], [1, 1, 1], 0.05);
   }
   for (const x of [-h + 0.12, 0, h - 0.12]) b.add(new BoxGeometry(0.16, 0.16, FLOOR_SIZE), 0x5e4630, [x, FLOOR_TOP - 0.14, 0]);
+  if (upper) return b.build(); // (up on the walls: just the boards and joists)
   for (const x of [-h + 0.12, 0, h - 0.12]) for (const z of [-h + 0.12, 0, h - 0.12]) b.add(new CylinderGeometry(0.13, 0.14, 1.8, 6), 0x5a4230, [x, FLOOR_TOP - 1.1, z]);
   // (Boarded in round the sides, down to the ground.)
   for (const [x, z, sx, sz] of [[0, h - 0.03, FLOOR_SIZE, 0.05], [0, -h + 0.03, FLOOR_SIZE, 0.05], [h - 0.03, 0, 0.05, FLOOR_SIZE], [-h + 0.03, 0, 0.05, FLOOR_SIZE]]) {
@@ -1034,7 +1035,7 @@ export function woodFloorModel() {
   }
   return b.build();
 }
-export function stoneFloorModel() {
+export function stoneFloorModel(upper = false) {
   const b = new Parts(141), rand = mulberry32(141), h = FLOOR_SIZE / 2;
   // Flagstones, in rows of uneven lengths.
   for (let z = -h, row = 0; z < h - 0.01; row++) {
@@ -1048,7 +1049,8 @@ export function stoneFloorModel() {
     z += d;
   }
   // The bed of mortar under them, and the footing round the edge, down into the ground.
-  b.add(new BoxGeometry(FLOOR_SIZE, 0.1, FLOOR_SIZE), 0x5a5852, [0, FLOOR_TOP - 0.1, 0]);
+  b.add(new BoxGeometry(FLOOR_SIZE, upper ? 0.3 : 0.1, FLOOR_SIZE), 0x5a5852, [0, FLOOR_TOP - (upper ? 0.2 : 0.1), 0]);
+  if (upper) return b.build(); // (up on the walls: a slab, no footing)
   for (const [x, z, sx, sz] of [[0, h - 0.15, FLOOR_SIZE, 0.3], [0, -h + 0.15, FLOOR_SIZE, 0.3], [h - 0.15, 0, 0.3, FLOOR_SIZE], [-h + 0.15, 0, 0.3, FLOOR_SIZE]]) {
     b.add(new BoxGeometry(sx, 1.8, sz), 0x6e6c68, [x, FLOOR_TOP - 1.05, z], [0, 0, 0], [1, 1, 1], 0.05);
   }
@@ -1185,24 +1187,175 @@ function gableWedge(run, rise, thick) {
  * set on top of the walls, the pieces side by side make a roof.
  */
 export const ROOF_RISE = 1.6;
-function roofPiece(seed, { slate }) {
+function roofPiece(seed, { slate, style = slate ? 'slate' : 'thatch' }) {
   const b = new Parts(seed), rand = mulberry32(seed), h = ROOF_SIZE / 2, over = 0.3;
   const len = Math.hypot(ROOF_SIZE + over * 2, ROOF_RISE), ang = Math.atan2(ROOF_RISE, ROOF_SIZE);
   // The rafters, low edge to high, and the beams along them.
   for (const x of [-h + 0.15, -h / 3, h / 3, h - 0.15]) b.log([x, -0.05 - over * Math.tan(ang), -h - over], [x, ROOF_RISE - 0.05 + over * Math.tan(ang), h + over], 0.08, 0x5e4630, 0xc8a070, 6);
   for (const [z, y] of [[-h, 0], [h, ROOF_RISE]]) b.log([-h - over, y, z], [h + over, y, z], 0.1, 0x5a4230, 0xc8a070, 6);
   // The covering, in courses up the slope.
-  const n = slate ? 8 : 5;
-  for (let k = 0; k < n; k++) {
+  const n = { slate: 8, thatch: 5, shingle: 10, tile: 9, log: 1 }[style];
+  if (style === 'log') {
+    // (Split logs laid side by side down the slope, bark up.)
+    for (let x = -h - over + 0.16; x < h + over; x += 0.3) {
+      const r = 0.14 + rand() * 0.02, lift = 0.16;
+      b.log([x, lift - over * Math.tan(ang), -h - over], [x, ROOF_RISE + lift + over * Math.tan(ang), h + over], r, [0x6e4c32, 0x664630, 0x74503a][Math.floor(rand() * 3)], 0xc8a070, 6);
+    }
+  }
+  for (let k = 0; k < n && style !== 'log'; k++) {
     const t = (k + 0.5) / n, z = -h - over + t * (ROOF_SIZE + over * 2), y = 0.12 + (z + h) * Math.tan(ang);
-    if (slate) {
+    if (style === 'slate') {
       const SL = [0x4e5560, 0x5a6270, 0x464c56, 0x626a74];
       for (let x = -h - over + (k % 2) * 0.2; x < h + over; x += 0.42) b.add(new BoxGeometry(0.44, 0.05, len / n + 0.08), SL[Math.floor(rand() * SL.length)], [x + 0.2, y, z], [-ang + (rand() - 0.5) * 0.03, 0, 0], [1, 1, 1], 0.05);
+    } else if (style === 'shingle') {
+      // (Neat cedar shingles in even courses, each overlapping the one below.)
+      const SH = [0x9a7448, 0x8a663e, 0xa47e50, 0x84603a];
+      for (let x = -h - over + (k % 2) * 0.15; x < h + over; x += 0.3) b.add(new BoxGeometry(0.29, 0.04, len / n + 0.1), SH[Math.floor(rand() * SH.length)], [x + 0.15, y, z], [-ang - 0.03, 0, 0], [1, 1, 1], 0.03);
+    } else if (style === 'tile') {
+      // (Cut stone tiles, square and true, in a pale even grey.)
+      const TI = [0xa8a49a, 0xb2aea4, 0x9e9a90];
+      for (let x = -h - over + (k % 2) * 0.25; x < h + over; x += 0.5) b.add(new BoxGeometry(0.49, 0.07, len / n + 0.06), TI[Math.floor(rand() * TI.length)], [x + 0.25, y, z], [-ang, 0, 0], [1, 1, 1], 0.02);
     } else b.add(new BoxGeometry(ROOF_SIZE + over * 2, 0.16, len / n + 0.12), k % 2 ? 0xc8a860 : 0xb89850, [0, y, z], [-ang, 0, 0], [1, 1, 1], 0.08);
   }
   // The gable ends, closed: boards, or stone.
-  for (const x of [-h + 0.06, h - 0.06]) b.add(gableWedge(ROOF_SIZE, ROOF_RISE, 0.12), slate ? 0x84806e : 0x8a6a44, [x, 0, 0], [0, 0, 0], [1, 1, 1], 0.05);
+  const gable = { slate: 0x84806e, tile: 0xa8a49a, shingle: 0x9a7448, log: 0x6e4c32, thatch: 0x8a6a44 }[style];
+  for (const x of [-h + 0.06, h - 0.06]) b.add(gableWedge(ROOF_SIZE, ROOF_RISE, 0.12), gable, [x, 0, 0], [0, 0, 0], [1, 1, 1], style === 'tile' || style === 'shingle' ? 0.02 : 0.05);
   return b.build();
 }
 export const thatchRoofModel = () => roofPiece(153, { slate: false });
 export const slateRoofPieceModel = () => roofPiece(155, { slate: true });
+export const logRoofModel = () => roofPiece(157, { style: 'log' });
+export const shingleRoofModel = () => roofPiece(159, { style: 'shingle' });
+export const tileRoofModel = () => roofPiece(161, { style: 'tile' });
+
+// --- The building sets: log, plank, rough stone, cut stone ------------------------
+
+/** A log wall, 4 m long: whole logs laid one on another, saddle-notched, the ends crossing past; moss chinked between. */
+export function logWallModel() {
+  const b = new Parts(171), rand = mulberry32(171), L = WALL_LENGTH;
+  for (let k = 0, y = 0.1; y < 3.15; k++, y += 0.33) {
+    const r = 0.17 + rand() * 0.02, past = k % 2 ? 0.18 : 0.04;
+    b.log([-L / 2 - past, y, (rand() - 0.5) * 0.03], [L / 2 + past, y, (rand() - 0.5) * 0.03], r, [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)], 0xc8a070, 7);
+  }
+  // (The chinking: moss and clay pressed between the logs.)
+  b.add(new BoxGeometry(L, 3.2, 0.18), 0x6a6448, [0, 1.55, 0], [0, 0, 0], [1, 1, 1], 0.06);
+  return b.build();
+}
+
+/** A plank wall, 4 m long: a squared frame, boards laid level and lapped, trimmed neat. */
+export function plankWallModel() {
+  const b = new Parts(173), rand = mulberry32(173), L = WALL_LENGTH, H = 3.2;
+  const BOARD = [0x9a7448, 0x8a663e, 0xa47e50, 0x94704a];
+  for (let k = 0, y = 0.05; y < H - 0.1; k++, y += 0.25) b.add(new BoxGeometry(L - 0.24, 0.27, 0.06), BOARD[Math.floor(rand() * BOARD.length)], [0, y + 0.13, 0.08], [0.06, 0, 0], [1, 1, 1], 0.03);
+  for (let k = 0, y = 0.05; y < H - 0.1; k++, y += 0.25) b.add(new BoxGeometry(L - 0.24, 0.27, 0.06), BOARD[Math.floor(rand() * BOARD.length)], [0, y + 0.13, -0.08], [-0.06, 0, 0], [1, 1, 1], 0.03);
+  for (const x of [-L / 2 + 0.1, 0, L / 2 - 0.1]) b.add(new BoxGeometry(0.2, H + 0.3, 0.26), 0x6a4c30, [x, H / 2 - 0.15, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  b.add(new BoxGeometry(L + 0.04, 0.2, 0.3), 0x6a4c30, [0, H + 0.05, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  b.add(new BoxGeometry(L + 0.04, 0.24, 0.3), 0x5e4430, [0, -0.08, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  return b.build();
+}
+
+/** A wall of cut stone, 4 m long: dressed blocks, square and true, in even courses under a coping. */
+export function cutStoneWallModel() {
+  const b = new Parts(175), rand = mulberry32(175), L = WALL_LENGTH, H = 3.2, CUT = [0xb2aea4, 0xaaa69c, 0xbab6ac, 0xa4a096];
+  for (let y = -0.3, row = 0; y < H - 0.3; y += 0.4, row++) {
+    for (let x = -L / 2 + (row % 2 ? -0.4 : 0); x < L / 2 - 0.01; x += 0.8) {
+      const x0 = Math.max(-L / 2, x), x1 = Math.min(L / 2, x + 0.8);
+      if (x1 - x0 < 0.05) continue;
+      b.add(new BoxGeometry(x1 - x0 - 0.02, 0.38, 0.58), CUT[Math.floor(rand() * CUT.length)], [(x0 + x1) / 2, y + 0.2, 0], [0, 0, 0], [1, 1, 1], 0.02);
+    }
+  }
+  b.add(new BoxGeometry(L + 0.06, 0.16, 0.7), 0x9a968c, [0, H + 0.02, 0], [0, 0, 0], [1, 1, 1], 0.01);
+  b.add(new BoxGeometry(L - 0.02, H + 0.28, 0.5), 0x7a766e, [0, (H - 0.3) / 2, 0], [0, 0, 0], [1, 1, 1], 0.01);
+  return b.build();
+}
+
+/** A log floor, 4 m square: logs flattened on top, side by side on sleepers and stumps. */
+export function logFloorModel(upper = false) {
+  const b = new Parts(177), rand = mulberry32(177), h = FLOOR_SIZE / 2;
+  for (let z = -h + 0.17; z < h; z += 0.34) {
+    b.log([-h, FLOOR_TOP - 0.15, z], [h, FLOOR_TOP - 0.15, z], 0.16, [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)], 0xc8a070, 7);
+    b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.04, 0.24), 0xa88a5c, [0, FLOOR_TOP - 0.02, z], [0, 0, 0], [1, 1, 1], 0.05); // (adzed flat)
+  }
+  if (upper) return b.build();
+  for (const x of [-h + 0.2, h - 0.2]) b.log([x, FLOOR_TOP - 0.42, -h], [x, FLOOR_TOP - 0.42, h], 0.15, 0x5e4630, 0xc8a070, 6);
+  for (const x of [-h + 0.2, h - 0.2]) for (const z of [-h + 0.25, 0, h - 0.25]) b.add(new CylinderGeometry(0.17, 0.19, 1.6, 7), 0x5a4230, [x, FLOOR_TOP - 1.3, z]);
+  return b.build();
+}
+
+/** A floor of cut stone, 4 m square: square flags, true and even, on a dressed footing. */
+export function cutStoneFloorModel(upper = false) {
+  const b = new Parts(179), rand = mulberry32(179), h = FLOOR_SIZE / 2, CUT = [0xb2aea4, 0xaaa69c, 0xbab6ac, 0xa4a096];
+  for (let x = -h; x < h - 0.01; x += 0.5) for (let z = -h; z < h - 0.01; z += 0.5) b.add(new BoxGeometry(0.48, 0.08, 0.48), CUT[Math.floor(rand() * CUT.length)], [x + 0.25, FLOOR_TOP - 0.04, z + 0.25], [0, 0, 0], [1, 1, 1], 0.02);
+  b.add(new BoxGeometry(FLOOR_SIZE, upper ? 0.3 : 0.1, FLOOR_SIZE), 0x8a867e, [0, FLOOR_TOP - (upper ? 0.2 : 0.1), 0]);
+  if (upper) return b.build();
+  for (const [x, z, sx, sz] of [[0, h - 0.15, FLOOR_SIZE, 0.3], [0, -h + 0.15, FLOOR_SIZE, 0.3], [h - 0.15, 0, 0.3, FLOOR_SIZE], [-h + 0.15, 0, 0.3, FLOOR_SIZE]]) {
+    b.add(new BoxGeometry(sx, 1.8, sz), 0x9a968c, [x, FLOOR_TOP - 1.05, z], [0, 0, 0], [1, 1, 1], 0.02);
+  }
+  return b.build();
+}
+
+/**
+ * Stairs: a flight 2 m wide and 4 m long, rising the height of a wall
+ * (from a floor to the top of the walls round it: up to a floor laid on
+ * them, or onto the roof). The foot at -z, the head at +z.
+ */
+export const STAIRS_LENGTH = 4;
+export const STAIRS_WIDTH = 2;
+export const STAIRS_RISE = 3.2;
+export function stairsModel(style) {
+  const b = new Parts(181 + ['log', 'plank', 'stone', 'cut'].indexOf(style) * 2), rand = mulberry32(181), W = STAIRS_WIDTH, L = STAIRS_LENGTH, n = 12;
+  const run = L / n, rise = STAIRS_RISE / n, CUT = [0xb2aea4, 0xaaa69c, 0xbab6ac], BOARD = [0x9a7448, 0x8a663e, 0xa47e50];
+  for (let k = 0; k < n; k++) {
+    const z = -L / 2 + run * (k + 0.5), top = rise * (k + 1);
+    if (style === 'log') b.log([-W / 2, top - 0.12, z], [W / 2, top - 0.12, z], 0.13, [0x7a5a3a, 0x6e5034, 0x83603e][k % 3], 0xc8a070, 6);
+    else if (style === 'plank') b.add(new BoxGeometry(W, 0.06, run + 0.04), BOARD[k % 3], [0, top - 0.03, z], [0, 0, 0], [1, 1, 1], 0.03);
+    else if (style === 'stone') b.add(new BoxGeometry(W * (0.96 + rand() * 0.06), top + 0.3, run + 0.02), STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)], [(rand() - 0.5) * 0.05, (top - 0.3) / 2, z], [0, (rand() - 0.5) * 0.03, 0], [1, 1, 1], 0.08);
+    else b.add(new BoxGeometry(W, top + 0.3, run + 0.01), CUT[k % 3], [0, (top - 0.3) / 2, z], [0, 0, 0], [1, 1, 1], 0.02);
+  }
+  const ang = Math.atan2(STAIRS_RISE, L), slope = Math.hypot(STAIRS_RISE, L);
+  if (style === 'log' || style === 'plank') {
+    // The stringers under the steps, a post at the head, and a rail up one side.
+    for (const x of [-W / 2 + 0.1, W / 2 - 0.1]) {
+      if (style === 'log') b.log([x, -0.1, -L / 2], [x, STAIRS_RISE - 0.25, L / 2], 0.13, 0x5e4630, 0xc8a070, 6);
+      else b.add(new BoxGeometry(0.1, 0.3, slope), 0x6a4c30, [x, STAIRS_RISE / 2 - 0.2, 0], [-ang, 0, 0], [1, 1, 1], 0.02);
+      b.add(new CylinderGeometry(0.1, 0.11, STAIRS_RISE, 6), 0x5a4230, [x, STAIRS_RISE / 2 - 0.25, L / 2 - 0.15]);
+    }
+    if (style === 'plank') {
+      b.add(new BoxGeometry(0.07, 0.07, slope), 0x6a4c30, [W / 2 - 0.05, STAIRS_RISE / 2 + 0.95, 0], [-ang, 0, 0], [1, 1, 1], 0.02);
+      for (let k = 0; k < 4; k++) b.add(new BoxGeometry(0.06, 1.0, 0.06), 0x6a4c30, [W / 2 - 0.05, (STAIRS_RISE * (k + 0.5)) / 4 + 0.45, -L / 2 + (L * (k + 0.5)) / 4]);
+    }
+  }
+  return b.build();
+}
+export const logStairsModel = () => stairsModel('log');
+export const plankStairsModel = () => stairsModel('plank');
+export const stoneStairsModel = () => stairsModel('stone');
+export const cutStairsModel = () => stairsModel('cut');
+
+/** A bedroll on the ground: a hide laid out, furs rolled on it, a rolled pillow. */
+export function bedrollModel() {
+  return new Parts(191)
+    .add(new BoxGeometry(1.0, 0.05, 2.0), 0x8a5a3a, [0, 0.03, 0], [0, 0, 0], [1, 1, 1], 0.06)
+    .add(new BoxGeometry(0.86, 0.1, 1.5), 0x9a7a58, [0, 0.1, 0.18], [0, 0, 0], [1, 1, 1], 0.08)
+    .add(new BoxGeometry(0.88, 0.06, 0.7), 0xc4a47a, [0, 0.17, 0.45], [0.05, 0, 0], [1, 1, 1], 0.06)
+    .add(new CylinderGeometry(0.13, 0.13, 0.7, 7), 0xece6d8, [0, 0.14, -0.78], [0, 0, Math.PI / 2])
+    .build();
+}
+
+/** A great bed: a carved frame on four posts, a canopy of spider silk over it, soft white bedding. */
+export function fancyBedModel() {
+  const b = new Parts(193), W = 1.5, L = 2.2, wood = 0x6a3e26, trim = 0x8a5634;
+  b.add(new BoxGeometry(W, 0.3, L), wood, [0, 0.35, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  b.add(new BoxGeometry(W - 0.1, 0.22, L - 0.1), 0xf4f0ea, [0, 0.6, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  b.add(new BoxGeometry(W - 0.08, 0.1, L * 0.6), 0x8a2a2e, [0, 0.74, 0.35], [0, 0, 0], [1, 1, 1], 0.03);
+  for (const x of [-0.38, 0.38]) b.add(new BoxGeometry(0.55, 0.14, 0.32), 0xffffff, [x, 0.78, -L / 2 + 0.3], [0, 0, 0], [1, 1, 1], 0.02);
+  b.add(new BoxGeometry(W, 1.2, 0.12), trim, [0, 0.9, -L / 2 - 0.02], [0, 0, 0], [1, 1, 1], 0.03);
+  for (const x of [-W / 2, W / 2]) for (const z of [-L / 2, L / 2]) {
+    b.add(new CylinderGeometry(0.07, 0.08, 2.3, 8), wood, [x, 1.15, z]);
+    b.add(new OctahedronGeometry(0.1, 0), trim, [x, 2.35, z]);
+  }
+  // The canopy and its drapes: pale, faintly shining silk.
+  b.add(new BoxGeometry(W + 0.1, 0.05, L + 0.1), 0xe8eef2, [0, 2.25, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  for (const x of [-W / 2 - 0.02, W / 2 + 0.02]) for (const z of [-L / 2 + 0.25, L / 2 - 0.25]) b.add(new BoxGeometry(0.04, 1.5, 0.45), 0xdfe8ee, [x, 1.5, z], [0, 0, 0], [1, 1, 1], 0.03);
+  return b.build();
+}

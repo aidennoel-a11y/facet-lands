@@ -4,7 +4,7 @@ import { Felling } from './Felling.js';
 import { GroundItems } from './GroundItems.js';
 import { Hud } from './Hud.js';
 import { Inventory } from './Inventory.js';
-import { BLADES, GRINDS, ITEMS, RECIPES, TIERS, stackOf, weightOf, tierOf } from './items.js';
+import { BLADES, GRINDS, ITEMS, RECIPES, TIERS, stackOf, weightOf, tierOf, usesText } from './items.js';
 import { bobberModel, bowModel } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
@@ -418,7 +418,9 @@ export class Game {
       case 'anvil': return 'Forge at the anvil';
       case 'grindstone': return 'Click it with a worn blade to grind it keen';
       case 'tanningRack': return s.jobs.length ? `Tanning: ${Math.round(100 - (s.jobs[0].left / s.jobs[0].total) * 100)}%` : 'Stretch a raw hide or fur on it (click with it)';
-      case 'bed': return 'Sleep';
+      case 'bed':
+      case 'bedroll':
+      case 'fancyBed': return 'Sleep';
       case 'raft': return 'Climb aboard';
       case 'snare': return s.caught ? 'Take the rabbit' : 'Set, and waiting (Shift+E to take it up)';
       case 'campfire':
@@ -623,6 +625,8 @@ export class Game {
       case 'anvil':
         return this.#menu(this.hud.toggleCraft(this.inventory));
       case 'bed':
+      case 'bedroll':
+      case 'fancyBed':
         return this.#sleep(s);
       case 'raft':
         return this.#board(s);
@@ -656,6 +660,7 @@ export class Game {
     const tier = tierOf(id);
     if (!this.unlocked(tier)) return this.hotbar?.flash(`Not yet: ${tier.tag.toLowerCase()} first`);
     if (r.at === 'anvil' && !this.hud.stations?.anvil) return this.hotbar?.flash('Forge that at an anvil: stand by one');
+    if (r.uses && !r.uses.some((t) => this.inventory.count(t) > 0)) return this.hotbar?.flash(`That needs ${usesText(r)} in your pack to make`);
     if (!Object.entries(r.needs).every(([k, n]) => this.inventory.count(k) >= n)) return this.hotbar?.flash('Not enough to make that');
     for (const [k, n] of Object.entries(r.needs)) this.inventory.remove(k, n);
     const n = r.makes ?? 1;
@@ -760,7 +765,7 @@ export class Game {
       if (!this.structures.isFire(at)) {
         const tree = this.trees.pick(origin, direction, REACH);
         const fallen = this.felling.pickFallen(origin, direction, REACH);
-        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor', 'woodWindow']);
+        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'bedroll', 'fancyBed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor', 'woodWindow', 'logWall', 'plankWall', 'logFloor', 'logStairs', 'plankStairs', 'logRoof', 'shingleRoof']);
         const wooden = at && WOODEN.has(at.type) ? built : null;
         const near = [tree && { d: tree.distance }, fallen && { d: fallen.distance }, wooden && { d: wooden.distance ?? REACH }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
         if (!near) return this.hotbar?.flash('Strike it at something that will burn: a campfire, a torch, wood, a tree');
@@ -1775,7 +1780,10 @@ export class Game {
       s.woke = true;
       this.sleepUntilMorning?.();
       this.survival.sleep();
-      this.hotbar?.flash('You wake, rested');
+      // (A great bed: you wake whole. A bedroll on the hard ground: stiff, not quite rested.)
+      if (s.bed.type === 'fancyBed') (this.survival.health = Math.min(100, this.survival.health + 40)), this.hotbar?.flash('You wake in the great bed, rested and whole');
+      else if (s.bed.type === 'bedroll') (this.survival.energy = Math.min(this.survival.energy, 75)), this.hotbar?.flash('You wake stiff from the hard ground');
+      else this.hotbar?.flash('You wake, rested');
     }
     if (s.t > 3.4) {
       this.sleeping = null;
@@ -1977,7 +1985,7 @@ export class Game {
         prompt = this.plan.ok ? `<kbd>Click</kbd> Let the rope down (${Math.round(this.plan.len)} m)` : null;
       } else if (placing && placing !== 'torch') {
         const at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
-        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow'].includes(placing) ? Math.PI : 0);
+        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall'].includes(placing) ? Math.PI : 0);
         this.plan = this.structures.plan(placing, at, yaw, ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
         const onPlot = placing === 'plot' && t?.kind === 'structure' && t.structure.type === 'plot';
         this.structures.preview(onPlot ? null : this.plan);

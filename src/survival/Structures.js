@@ -5,6 +5,8 @@ import {
   anvilModel, bedModel, campfireModel, caughtModel, chestModel, cropModel, dryingRackModel, FENCE_LENGTH, fenceGateDoorModel, fenceGatePostsModel, fenceModel,
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
+  logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, fancyBedModel,
 } from './models.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -43,6 +45,22 @@ const KINDS = {
   // join edge to edge into one floor: see plan.)
   woodFloor: { make: woodFloorModel, box: [FLOOR_SIZE / 2, FLOOR_SIZE / 2], floor: true, steep: 1.6 },
   stoneFloor: { make: stoneFloorModel, box: [FLOOR_SIZE / 2, FLOOR_SIZE / 2], floor: true, steep: 1.6, stone: true },
+  // The building sets: log (with the palisade), plank, rough stone, cut stone.
+  logWall: { make: logWallModel, box: [WALL_LENGTH / 2, 0.28], tall: 3.3, line: 'wall', len: WALL_LENGTH },
+  plankWall: { make: plankWallModel, box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH },
+  cutStoneWall: { make: cutStoneWallModel, box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true },
+  logFloor: { make: logFloorModel, box: [FLOOR_SIZE / 2, FLOOR_SIZE / 2], floor: true, steep: 1.6 },
+  cutStoneFloor: { make: cutStoneFloorModel, box: [FLOOR_SIZE / 2, FLOOR_SIZE / 2], floor: true, steep: 1.6, stone: true },
+  // (Stairs: walked up, from a floor to the top of the walls: see floorTop.)
+  logStairs: { make: logStairsModel, box: [STAIRS_WIDTH / 2, STAIRS_LENGTH / 2], stairs: true, steep: 1.2 },
+  plankStairs: { make: plankStairsModel, box: [STAIRS_WIDTH / 2, STAIRS_LENGTH / 2], stairs: true, steep: 1.2 },
+  stoneStairs: { make: stoneStairsModel, box: [STAIRS_WIDTH / 2, STAIRS_LENGTH / 2], stairs: true, steep: 1.2, stone: true },
+  cutStairs: { make: cutStairsModel, box: [STAIRS_WIDTH / 2, STAIRS_LENGTH / 2], stairs: true, steep: 1.2, stone: true },
+  logRoof: { make: logRoofModel, roof: true, steep: 99 },
+  shingleRoof: { make: shingleRoofModel, roof: true, steep: 99 },
+  tileRoof: { make: tileRoofModel, roof: true, steep: 99, stone: true },
+  bedroll: { make: bedrollModel, box: [0.5, 1.0], tall: 0.2, bed: true, tilt: true },
+  fancyBed: { make: fancyBedModel, box: [0.8, 1.15], tall: 0.8, bed: true },
   anvil: { make: anvilModel, box: [0.5, 0.3], tall: 0.95 },
   grindstone: { make: grindstoneModel, box: [0.3, 0.45], tall: 1.2 },
   tanningRack: { make: tanningRackModel, box: [0.9, 0.2], jobs: 1 },
@@ -50,7 +68,7 @@ const KINDS = {
   rope: { make: ropeStakeModel, circle: 0 },
   stake: { make: stakeModel, circle: 0.26, tall: 3.3 },
   chest: { make: chestModel, box: [0.52, 0.32], tall: 0.6 },
-  bed: { make: bedModel, box: [0.62, 1.08], tall: 0.45 },
+  bed: { make: bedModel, box: [0.62, 1.08], tall: 0.45, bed: true },
   dryingRack: { make: dryingRackModel, circle: 0, jobs: 4 },
   // (Stood over a campfire: what hangs in it smokes while the fire burns.)
   smokingRack: { make: smokingRackModel, jobs: 4, over: true },
@@ -92,8 +110,9 @@ export class Structures {
     this.onDone = null; // (s, stack): something's finished cooking, smelting or drying
   }
 
-  model(type) {
-    return this.models[type] ?? (this.models[type] = KINDS[type].make());
+  model(type, upper = false) {
+    const key = upper ? `${type}:upper` : type;
+    return this.models[key] ?? (this.models[key] = KINDS[type].make(upper));
   }
 
   // --- Building ------------------------------------------------------------------
@@ -111,10 +130,30 @@ export class Structures {
     const kind = KINDS[type];
     // (On a floor, things stand on its boards or flags, not the ground under it.)
     if (!kind.floor) {
-      const bare = ground;
-      ground = (px, pz) => Math.max(bare(px, pz), this.floorTop(px, pz) ?? -Infinity);
+      // (Not one laid up over where you're pointing: a floor upstairs isn't in the way of building under it.)
+      const bare = ground, below = (point.y ?? Infinity) + 0.3;
+      ground = (px, pz) => Math.max(bare(px, pz), this.floorTop(px, pz, below) ?? -Infinity);
     }
-    let level = null;
+    let level = null, upper = null;
+    if (kind.floor) {
+      // (Pointed up at the top of the walls round a floor: one laid up there, a storey higher, on the walls.)
+      for (const f of this.list) {
+        if (!KINDS[f.type].floor || Math.hypot(f.x - x, f.z - z) > FLOOR_SIZE * 1.6) continue;
+        const up = f.y + 3.2;
+        if (Math.abs(point.y - (up + FLOOR_TOP)) < 1.2 && point.y > f.y + 2) upper = up;
+      }
+    }
+    if (kind.stairs) {
+      // (Square to the floor it stands on, or the one nearest.)
+      let near = null, bd = FLOOR_SIZE * 2;
+      for (const f of this.list) {
+        if (!KINDS[f.type].floor) continue;
+        const d = Math.hypot(f.x - x, f.z - z);
+        if (d < bd) (bd = d), (near = f);
+      }
+      const base = near ? near.rot : 0;
+      rot = base + Math.round((rot - base) / (Math.PI / 2)) * (Math.PI / 2);
+    }
     if (kind.floor) {
       // Square to the nearest floor, and edge to edge with it: one floor,
       // laid out on its grid (and level with it, where the ground allows).
@@ -179,7 +218,9 @@ export class Structures {
       let near = null, bd = FLOOR_SIZE * 1.6;
       for (const f of this.list) {
         if (!KINDS[f.type].floor && !KINDS[f.type].roof) continue;
-        const d = Math.hypot(f.x - x, f.z - z);
+        // (Of the storeys there, the one whose wall tops you're pointing at.)
+        const top = KINDS[f.type].roof ? f.y : f.y + FLOOR_TOP + 3.2;
+        const d = Math.hypot(f.x - x, f.z - z) + Math.abs(top - (point.y ?? top)) * 0.5;
         if (d < bd) (bd = d), (near = f);
       }
       if (near) {
@@ -212,6 +253,7 @@ export class Structures {
     if (kind.roof) y = roofY ?? hi + 3.2;
     // (A floor laid on from another, at its level if the ground's not in the way.)
     if (kind.floor && level !== null && level >= hi - 0.05 && level < lo + 1.4) y = level;
+    if (upper !== null) y = upper;
     // (Laid on the slope: its tilt, from the lie of the ground under it.)
     let tilt = null;
     if (kind.tilt) {
@@ -239,7 +281,7 @@ export class Structures {
       if (wet < 4 || deep < 0.2) (ok = false), (why = 'Set it in water');
       y = wetLevel - 0.4;
     } else if (wet) (ok = false), (why = "Can't build in the water");
-    else if (hi - lo > (kind.line ? 1.4 : kind.steep ?? (kind.tilt ? 1.4 : 0.6))) (ok = false), (why = 'The ground is too steep here');
+    else if (upper === null && hi - lo > (kind.line ? 1.4 : kind.steep ?? (kind.tilt ? 1.4 : 0.6))) (ok = false), (why = 'The ground is too steep here');
     // Nothing in the way: across its whole footprint (a wall along its
     // length; a roof just where its posts stand, as it goes over things),
     // no tree, bush, boulder, log or other thing built.
@@ -247,7 +289,7 @@ export class Structures {
       const spots = [];
       if (kind.roof) spots.length = 0;
       else if (kind.posts) for (const [u, v] of kind.posts) spots.push([u, v, 0.2]);
-      else if (kind.floor) spots.push([0, 0, 0.1]);
+      else if (kind.floor) { if (upper === null) spots.push([0, 0, 0.1]); }
       else if (kind.line) for (let u = -half[0] + 0.15; u <= half[0] - 0.15 + 1e-6; u += 0.4) spots.push([u, 0, half[1]]);
       else for (const fu of [-1, -0.5, 0, 0.5, 1]) for (const fv of [-1, -0.5, 0, 0.5, 1]) spots.push([fu * half[0] * 0.85, fv * half[1] * 0.85, 0.12]);
       for (const [u, v, r] of spots) {
@@ -260,7 +302,7 @@ export class Structures {
         }
       }
     }
-    return { type, x, y, z, rot, ok, why, tilt };
+    return { type, x, y, z, rot, ok, why, tilt, upper: upper !== null };
   }
 
   // Whether something already built stands at (px, pz) (within `r`), in the
@@ -292,10 +334,11 @@ export class Structures {
       if (this.ghost) this.ghost.visible = false;
       return;
     }
-    if (this.ghostType !== plan.type) {
+    if (this.ghostType !== plan.type || this.ghostUpper !== !!plan.upper) {
+      this.ghostUpper = !!plan.upper;
       if (this.ghost) this.scene.remove(this.ghost);
       this.ghost = new Group();
-      this.ghost.add(new Mesh(this.model(plan.type), this.ghostMaterial));
+      this.ghost.add(new Mesh(this.model(plan.type, !!plan.upper), this.ghostMaterial));
       if (KINDS[plan.type].door) {
         const door = new Mesh(this.doorModel(plan.type), this.ghostMaterial);
         door.position.x = -this.#doorWidth(plan.type) / 2;
@@ -331,7 +374,7 @@ export class Structures {
 
   /** Builds it. Returns the new structure. */
   build(plan, extra = {}) {
-    const s = { id: this.nextId++, type: plan.type, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, tilt: plan.tilt ?? null, lit: false, fuel: 0, jobs: [], ...extra };
+    const s = { id: this.nextId++, type: plan.type, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, tilt: plan.tilt ?? null, upper: !!plan.upper, lit: false, fuel: 0, jobs: [], ...extra };
     s.jobs = (s.jobs ?? []).map((j) => ({ ...j }));
     if (s.type === 'chest' || s.type === 'cellar') {
       const inv = new Inventory(s.type === 'cellar' ? 24 : 10);
@@ -339,7 +382,7 @@ export class Structures {
       s.contents = inv;
     }
     const mesh = new Group();
-    const body = new Mesh(this.model(s.type), this.material);
+    const body = new Mesh(this.model(s.type, !!s.upper), this.material);
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);
@@ -670,7 +713,8 @@ export class Structures {
     for (const s of this.list) {
       const k = KINDS[s.type];
       if (Math.abs(s.x - position.x) > 5 || Math.abs(s.z - position.z) > 5) continue;
-      if (k.floor) continue; // (stood on: see floorTop)
+      if (k.floor || k.stairs) continue; // (stood on: see floorTop)
+      if (feetY + 1.7 < s.y) continue; // (up a storey, over your head)
       if (feetY > s.y + (k.tall ?? 0.5) - 0.05 && !k.posts) continue; // (up on top)
       if (k.door && s.open) {
         // (Only its posts are in the way.)
@@ -733,7 +777,7 @@ export class Structures {
       } else if (kind.posts) {
         const c = Math.cos(s.rot), sn = Math.sin(s.rot);
         for (const [u, v] of kind.posts) out.push(s.x + u * c + v * sn, s.z - u * sn + v * c, 0.2);
-      } else out.push(s.x, s.z, s.type === 'campfire' || s.type === 'furnace' ? 0.85 : s.type === 'bed' ? 1 : 0.5);
+      } else out.push(s.x, s.z, s.type === 'campfire' || s.type === 'furnace' ? 0.85 : KINDS[s.type].bed ? 1 : 0.5);
     }
     return out;
   }
@@ -768,7 +812,8 @@ export class Structures {
       else if (s.type === 'anvil' || s.type === 'grindstone') points.push([s.x, s.y + 0.8, s.z, 0.6]);
       else if (s.type === 'tanningRack') for (const h of [0.6, 1.3]) points.push([s.x, s.y + h, s.z, 0.75]);
       else if (s.type === 'stake') for (const h of [0.5, 1.4, 2.3]) points.push([s.x, s.y + h, s.z, 0.4]);
-      else if (s.type === 'bed') for (const v of [-0.7, 0, 0.7]) points.push([s.x + bx * v, s.y + 0.35, s.z + bz * v, 0.55]);
+      else if (KINDS[s.type].bed) for (const v of [-0.7, 0, 0.7]) points.push([s.x + bx * v, s.y + (s.type === 'bedroll' ? 0.15 : 0.35), s.z + bz * v, 0.55]);
+      else if (KINDS[s.type].stairs) for (const v of [-1.5, -0.5, 0.5, 1.5]) points.push([s.x + bx * v, s.y + (STAIRS_RISE * (v + 2)) / 4, s.z + bz * v, 0.8]);
       else if (s.type === 'raft') for (const v of [-0.8, 0, 0.8]) points.push([s.x + bx * v, s.y + 0.3, s.z + bz * v, 1]);
       else if (s.type === 'furnace') for (const h of [0.4, 1]) points.push([s.x, s.y + h, s.z, 0.75]);
       else if (s.type === 'dryingRack') for (const h of [0.5, 1.1]) points.push([s.x, s.y + h, s.z, 0.6]);
@@ -799,7 +844,7 @@ export class Structures {
     return this.list.map((s) => ({
       type: s.type, x: r(s.x), y: r(s.y), z: r(s.z), rot: +s.rot.toFixed(3), lit: s.lit, fuel: Math.round(s.fuel), burnt: !!s.burnt,
       contents: s.contents?.slots, open: !!s.open, caught: s.type === 'fishTrap' ? s.caught || 0 : !!s.caught, jobs: s.jobs.map(({ stack, out, left, total, done }) => ({ stack, out, left, total, done })),
-      tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0,
+      tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0, upper: s.upper || undefined,
     }));
   }
 
@@ -866,7 +911,7 @@ export class Structures {
     this.onChange = null;
     for (const s of list ?? []) {
       if (!KINDS[s.type]) continue;
-      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0 });
+      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0, upper: !!s.upper });
     }
     this.onChange = quiet;
   }
@@ -882,11 +927,21 @@ export class Structures {
   floorTop(x, z, feetY = Infinity) {
     let top = null;
     for (const s of this.list) {
-      if (!KINDS[s.type].floor || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
+      const k = KINDS[s.type];
+      if (!(k.floor || k.stairs) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
       const ox = x - s.x, oz = z - s.z, c = Math.cos(s.rot), sn = Math.sin(s.rot);
       const u = ox * c - oz * sn, v = ox * sn + oz * c;
+      let t;
+      if (k.stairs) {
+        // (Up the flight: from its foot to the top of the walls at its head.)
+        if (Math.abs(u) > STAIRS_WIDTH / 2 + 0.05 || Math.abs(v) > STAIRS_LENGTH / 2 + 0.05) continue;
+        t = s.y + STAIRS_RISE * Math.min(1, Math.max(0, (v + STAIRS_LENGTH / 2) / STAIRS_LENGTH));
+        if (t > feetY + 0.7) continue;
+        if (top === null || t > top) top = t;
+        continue;
+      }
       if (Math.abs(u) > FLOOR_SIZE / 2 + 0.05 || Math.abs(v) > FLOOR_SIZE / 2 + 0.05) continue;
-      const t = s.y + FLOOR_TOP;
+      t = s.y + FLOOR_TOP;
       if (t > feetY + 0.7) continue;
       if (top === null || t > top) top = t;
     }

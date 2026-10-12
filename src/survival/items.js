@@ -149,7 +149,22 @@ export const ITEMS = {
   anvil: { name: 'Anvil', place: 'anvil', weight: 30, group: 'Building' },
   grindstone: { name: 'Grindstone', place: 'grindstone', weight: 18, group: 'Building' },
   tanningRack: { name: 'Tanning rack', place: 'tanningRack', weight: 4, group: 'Building' },
-  woodFloor: { name: 'Wooden floor', place: 'woodFloor', weight: 16, group: 'Building' },
+  woodFloor: { name: 'Plank floor', place: 'woodFloor', weight: 16, group: 'Building' },
+  // The building sets: logs (no more than an axe), planks (a steel axe to cut them true), rough stone, cut stone (a steel pickaxe to dress it).
+  logWall: { name: 'Log wall', place: 'logWall', weight: 24, group: 'Building' },
+  logFloor: { name: 'Log floor', place: 'logFloor', weight: 18, group: 'Building' },
+  logStairs: { name: 'Log stairs', place: 'logStairs', weight: 16, group: 'Building' },
+  logRoof: { name: 'Log roof', place: 'logRoof', weight: 24, group: 'Building' },
+  plankWall: { name: 'Plank wall', place: 'plankWall', weight: 18, group: 'Building' },
+  plankStairs: { name: 'Plank stairs', place: 'plankStairs', weight: 12, group: 'Building' },
+  shingleRoof: { name: 'Shingle roof', place: 'shingleRoof', weight: 16, group: 'Building' },
+  stoneStairs: { name: 'Stone stairs', place: 'stoneStairs', weight: 30, group: 'Building' },
+  cutStoneWall: { name: 'Cut stone wall', place: 'cutStoneWall', weight: 30, group: 'Building' },
+  cutStoneFloor: { name: 'Cut stone floor', place: 'cutStoneFloor', weight: 30, group: 'Building' },
+  cutStairs: { name: 'Cut stone stairs', place: 'cutStairs', weight: 30, group: 'Building' },
+  tileRoof: { name: 'Stone tile roof', place: 'tileRoof', weight: 28, group: 'Building' },
+  bedroll: { name: 'Bedroll', place: 'bedroll', weight: 3, group: 'Building' },
+  fancyBed: { name: 'Great bed', place: 'fancyBed', weight: 14, group: 'Building' },
   stoneFloor: { name: 'Stone floor', place: 'stoneFloor', weight: 30, group: 'Building' },
   stoneWall: { name: 'Stone wall', place: 'stoneWall', weight: 30, group: 'Building' },
   stoneFence: { name: 'Stone fence', place: 'stoneFence', weight: 18, group: 'Building' },
@@ -201,7 +216,21 @@ export const RECIPES = [
   { id: 'campfire', needs: { log: 3 }, note: 'Set it down, then light it with flint and steel' },
   { id: 'furnace', needs: { rock: 10 }, note: 'Burns logs; smelts iron ore into bars' },
   { id: 'stake', needs: { log: 1 }, note: 'One sharpened log, stood upright' },
-  { id: 'wall', needs: { log: 5, vine: 1 }, note: 'A section of palisade: walls join end to end' },
+  { id: 'wall', needs: { log: 5 }, note: 'A section of palisade, sharpened logs: walls join end to end' },
+  { id: 'logWall', needs: { log: 6 }, note: 'Whole logs laid one on another, notched at the ends: joins end to end with any wall' },
+  { id: 'logFloor', needs: { log: 4 }, note: 'Logs adzed flat, side by side on stumps, 4 m square: floors join edge to edge. Aim at the top of your walls to lay one a storey up' },
+  { id: 'logStairs', needs: { log: 4 }, note: 'A flight of log steps up to the top of your walls (and a floor laid up there)' },
+  { id: 'logRoof', needs: { log: 5 }, note: 'Split logs laid down a slope, set on top of your walls' },
+  { id: 'bedroll', needs: { deerSkin: 1, wool: 2 }, note: 'A bed on the ground: sleep the night (stiffly), and wake here after dying' },
+  { id: 'plankWall', needs: { log: 3, stick: 4 }, uses: ['forgedAxe'], note: 'Boards lapped on a squared frame: neat and tight. Needs a steel axe to cut the planks' },
+  { id: 'plankStairs', needs: { log: 2, stick: 4 }, uses: ['forgedAxe'], note: 'A flight of plank steps with a rail, up to the top of your walls. Needs a steel axe' },
+  { id: 'shingleRoof', needs: { log: 3, stick: 2 }, uses: ['forgedAxe'], note: 'Cedar shingles in even courses, set on top of your walls. Needs a steel axe' },
+  { id: 'stoneStairs', needs: { rock: 24 }, note: 'Rough stone steps, solid to the ground, up to the top of your walls' },
+  { id: 'cutStoneWall', needs: { rock: 44 }, uses: ['forgedPickaxe', 'tuskPickaxe'], note: 'Dressed stone, square and true: never burns. Needs a steel pickaxe to cut it' },
+  { id: 'cutStoneFloor', needs: { rock: 10 }, uses: ['forgedPickaxe', 'tuskPickaxe'], note: 'Square cut flags, 4 m: floors join edge to edge. Needs a steel pickaxe' },
+  { id: 'cutStairs', needs: { rock: 28 }, uses: ['forgedPickaxe', 'tuskPickaxe'], note: 'Cut stone steps up to the top of your walls. Needs a steel pickaxe' },
+  { id: 'tileRoof', needs: { rock: 10, log: 3 }, uses: ['forgedPickaxe', 'tuskPickaxe'], note: 'Cut stone tiles on rafters: a roof that never burns. Needs a steel pickaxe' },
+  { id: 'fancyBed', needs: { log: 4, silk: 8, wool: 4 }, uses: ['forgedAxe'], note: 'A carved four-poster under a canopy of spider silk: wake rested and healed. Needs a steel axe to carve it' },
   { id: 'gate', needs: { log: 4, vine: 2 }, note: 'Joins a palisade; E to open and close' },
   { id: 'chest', needs: { log: 5 }, note: 'Holds ten stacks; food in it keeps three times as long' },
   { id: 'bed', needs: { log: 2, wool: 3 }, note: 'Sleep the night through; you wake here after dying' },
@@ -231,7 +260,7 @@ export const RECIPES = [
   { id: 'cellar', needs: { rock: 10, log: 4 }, note: 'Dug into the ground: holds 24 stacks, food in it never spoils, and no bear gets in' },
   { id: 'fishTrap', needs: { stick: 6, vine: 3 }, note: 'Set it in a river or lake: it catches fish while you are away (up to three)' },
   { id: 'smokingRack', needs: { stick: 6, vine: 2, log: 1 }, note: 'Stand it over a campfire: raw meat and fish hung on it smoke while the fire burns, and keep for good' },
-  { id: 'woodFloor', needs: { log: 3, stick: 4 }, note: 'Planks on posts, 4 m square: floors join edge to edge, level over the slope' },
+  { id: 'woodFloor', needs: { log: 3, stick: 4 }, uses: ['forgedAxe'], note: 'Planks on posts, 4 m square: floors join edge to edge. Aim at the top of your walls to lay one a storey up. Needs a steel axe' },
   { id: 'stoneFloor', needs: { rock: 8 }, note: 'Flagstones on a stone footing, 4 m square: floors join edge to edge' },
   { id: 'stoneWall', needs: { rock: 40 }, note: 'Rough-cut stone, joins end to end like the palisade (and with it): it never burns' },
   { id: 'stoneFence', needs: { rock: 20 }, note: 'A low wall of field stones, to pen sheep: joins end to end like a fence' },
@@ -270,11 +299,13 @@ export const RECIPES = [
  */
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'woodFloor', 'stoneFloor', 'stoneWall', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'fineFlintSteel', 'pot', 'shears', 'saddle', 'anvil'] },
-  { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt'] },
+  { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];
+/** What tool a recipe needs in your pack (not used up), in words. */
+export const usesText = (r) => (r.uses?.some((t) => /Axe/.test(t)) ? 'a steel axe' : 'a steel pickaxe');
 /** The tier a recipe's in. */
 export const tierOf = (id) => TIERS.find((t) => t.ids.includes(id)) ?? TIERS[0];
 
@@ -427,6 +458,21 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   re('poisonBolt', 'bolt', [['#9aa4b0', '#4a7a2a']]);
   re('greatSaddle', 'saddle', [['#6a3a20', '#3a2818']]);
   re('hideRoof', 'roof', [['#c8a860', '#5a3a26'], ['#a88a44', '#3a2818']]);
+  re('logRoof', 'roof', [['#c8a860', '#7a5232'], ['#a88a44', '#5a3c24']]);
+  re('shingleRoof', 'roof', [['#c8a860', '#a47e50'], ['#a88a44', '#7a5a36']]);
+  re('tileRoof', 'slateRoof', [['#5a6270', '#b2aea4'], ['#3e444c', '#8a867e']]);
+  re('cutStoneWall', 'stoneWall', [['#8a8780', '#b2aea4'], ['#5a5852', '#8a867e'], ['#5c7a3a', '#b2aea4']]);
+  re('cutStoneFloor', 'woodFloor', [['#a47e50', '#b2aea4'], ['#7a5a36', '#8a867e'], ['#5e4630', '#9a968c']]);
+  re('logFloor', 'woodFloor', [['#a47e50', '#8a6a44'], ['#7a5a36', '#5a3c24']]);
+  ICONS.logWall = `<path d="M3 8h26v4H3zM3 13h26v4H3zM3 18h26v4H3zM3 23h26v4H3z" fill="#7a5a3a"/><path d="M3 12h26M3 17h26M3 22h26" stroke="#6a6448" stroke-width="1.2"/><circle cx="4" cy="10" r="2" fill="#c8a070"/><circle cx="28" cy="15" r="2" fill="#c8a070"/><circle cx="4" cy="20" r="2" fill="#c8a070"/><circle cx="28" cy="25" r="2" fill="#c8a070"/>`;
+  ICONS.plankWall = `<path d="M4 7h24v21H4z" fill="#9a7448"/><path d="M4 11h24M4 15h24M4 19h24M4 23h24" stroke="#7a5a36" stroke-width="1"/><path d="M4 7h3v21H4zM25 7h3v21h-3zM14.5 7h3v21h-3z" fill="#6a4c30"/>`;
+  const STAIRS = (a, b) => `<path d="M4 28h24V6h-5v5h-5v6h-5v5H8v6z" fill="${a}"/><path d="M8 22h5v1H8zM13 17h5v1h-5zM18 11h5v1h-5zM23 6h5v1h-5z" fill="${b}"/>`;
+  ICONS.logStairs = STAIRS('#7a5a3a', '#c8a070');
+  ICONS.plankStairs = STAIRS('#a47e50', '#6a4c30');
+  ICONS.stoneStairs = STAIRS('#8a8780', '#5a5852');
+  ICONS.cutStairs = STAIRS('#b2aea4', '#8a867e');
+  ICONS.bedroll = `<path d="M3 20h26v5H3z" fill="#8a5a3a"/><path d="M8 17h20v4H8z" fill="#9a7a58"/><ellipse cx="6" cy="18.5" rx="3" ry="2.2" fill="#ece6d8"/>`;
+  ICONS.fancyBed = `<path d="M4 6h24v2H4z" fill="#e8eef2"/><path d="M5 6v22M27 6v22" stroke="#6a3e26" stroke-width="2"/><path d="M6 8h3v12H6zM23 8h3v12h-3z" fill="#dfe8ee"/><path d="M5 20h22v5H5z" fill="#6a3e26"/><path d="M6 17h20v4H6z" fill="#f4f0ea"/><path d="M14 17h12v4H14z" fill="#8a2a2e"/>`;
   re('paleCloak', 'furCloak', [['#8a7458', '#e8e4dc'], ['#c8b89a', '#ffffff']]);
   re('caveCloak', 'furCloak', [['#8a7458', '#3a3230']]);
 }
