@@ -109,8 +109,8 @@ export class CaveField {
     const wz = z + this.warp.noise2D(x / 95 + 40, z / 95 - 40) * 26;
     const wy = y + this.warp.noise2D(x / 70 - 80, z / 70 + 80) * 7;
     const f = 1 / 64;
-    const a = this.tunnelA.noise3D(wx * f, wy * f * 1.7, wz * f);
-    const b = this.tunnelB.noise3D(wx * f, wy * f * 1.7, wz * f);
+    const a = this.tunnelA.noise3D(wx * f, wy * f * 2.3, wz * f);
+    const b = this.tunnelB.noise3D(wx * f, wy * f * 2.3, wz * f);
     const tunnel = (Math.sqrt(a * a + b * b) - 0.16) * 34;
 
     // Rooms: broad, flattened blobs.
@@ -195,6 +195,10 @@ export class CaveField {
       // (Where the spaghetti's noise is read from: shoved about, so it snakes.)
       sx: spag > -0.05 ? (x + this.warp.noise2D(x / 80 + 20, z / 80) * 18) / 64 : 0,
       sz: spag > -0.05 ? (z + this.warp.noise2D(x / 80, z / 80 + 20) * 18) / 64 : 0,
+      // (How tall the spaghetti's turns are: mostly it runs near level,
+      // winding gently down to the deeper parts; in a few places, one
+      // country in ten or so, it plunges in shafts.)
+      vs: spag > -0.05 ? 30 + 50 * Math.min(1, Math.max(0, (this.spagRegion.noise2D(x * 0.0009 + 50, z * 0.0009 - 50) - 0.5) / 0.2)) : 30,
     };
   }
 
@@ -299,10 +303,10 @@ export class CaveField {
     // Spaghetti: long thin tunnels winding on and on.
     if (col.spag > -0.05 && y > this.deep) {
       // (Some 12 m across: narrow for a cave, but always room to walk;
-      // tending to run level rather than plunge.)
-      const fy = y / 90;
+      // running near level, sloping gently, rather than plunging: see vs.)
+      const fy = y / col.vs;
       const a = this.spagA.noise3D(col.sx, fy, col.sz), b = this.spagB.noise3D(col.sx, fy, col.sz);
-      let sd = (Math.sqrt(a * a + b * b) - 0.16) * 40;
+      let sd = (Math.sqrt(a * a + b * b) - 0.19) * 40;
       sd = Math.max(sd, -col.spag * 40, this.deep - y);
       d = Math.min(d, sd);
     }
@@ -315,17 +319,20 @@ export class CaveField {
    */
   biomeScores(x, z) {
     const g = this.generator, w = g.getBiomeWeights(x, z, {}), H = g.getHeight(x, z);
-    const n = this.kind.noise2D(x / 900, z / 900), m = this.kind.noise2D(x / 300 + 31, z / 300 - 17);
+    const n = this.kind.noise2D(x / 1800, z / 1800), m = this.kind.noise2D(x / 300 + 31, z / 300 - 17);
     const sm = (a, b, v) => Math.min(1, Math.max(0, (v - a) / (b - a)));
+    // (The four great kinds, lush, volcanic, crystal and mushroom, each in
+    // broad patches of much the same size, a kilometre or so across.)
+    const patch = (ox, oz, scale) => 1.35 * sm(0.42, 0.6, this.kind.noise2D(x / scale + ox, z / scale + oz));
     return {
-      lush: w.jungle + w.mangrove + 0.8 * w.wetland + 0.7 * w.redwood + 0.6 * w.smoky + 0.35 * (w.temperate + w.parkland) + 0.4 * n,
-      volcanic: 1.2 * w.volcanic + 0.25 * m,
+      lush: 0.75 * (w.jungle + w.mangrove + 0.8 * w.wetland + 0.7 * w.redwood + 0.6 * w.smoky) + 0.15 * n + patch(210, -150, 1900),
+      volcanic: 1.2 * w.volcanic + 0.25 * m + patch(-300, 210, 2100),
       ice: sm(120, 190, H) * (1 - w.jungle - w.desert) + 0.35 * (w.pine + w.blackHills) * sm(0.2, 0.6, n * 0.5 + 0.5) + 0.2 * m,
       dry: w.desert + w.badlands + 0.5 * w.savanna + w.saltFlat,
       // (Two rarer kinds, each in its own patches whatever the country over
       // them: the crystal caverns, deep down; the mushroom forests.)
-      crystal: 1.35 * sm(0.5, 0.68, this.kind.noise2D(x / 820 + 70, z / 820 + 40)),
-      mushroom: 1.35 * sm(0.5, 0.68, this.kind.noise2D(x / 760 - 120, z / 760 + 90)) + 0.12 * (w.wetland + w.temperate),
+      crystal: patch(70, 40, 2000),
+      mushroom: patch(-120, 90, 1900) + 0.12 * (w.wetland + w.temperate),
     };
   }
 

@@ -84,7 +84,7 @@ const bp = new Vector3(), bs = new Vector3(), bq = new Quaternion(), be = new Eu
 const details = new Set();
 const rocks = new Set(); // (each chunk's rock: finely faceted near you, plainer further off)
 let inside = false;
-const FAR_DETAILS = new Set(['cave stalagmites', 'cave water', 'cave lava', 'cave steam', 'cave crystal', 'cave giant mushrooms']);
+const FAR_DETAILS = new Set(['cave stalagmites', 'cave water', 'cave lava', 'cave steam', 'cave lava smoke', 'cave crystal', 'cave giant mushrooms']);
 let eyeChunk = null, ringWait = 0;
 const chunkOf = (mesh) => {
   let p = mesh;
@@ -234,6 +234,8 @@ const steams = new Set();
 const steamGeometry = new OctahedronGeometry(0.35, 1);
 const steamMaterial = new MeshBasicMaterial({ color: 0xd8d4d0, transparent: true, opacity: 0.22, depthWrite: false });
 const PUFFS = 14;
+// (And the smoke off the lava lakes: slow, dark, rising high into the roof.)
+const smokeMaterial = new MeshBasicMaterial({ color: 0x3e3834, transparent: true, opacity: 0.26, depthWrite: false });
 
 /** Swims the cave fish and flies the bats (call every frame); `eye`: where you are, if underground. */
 export function updateCaveLife(time, eye = null) {
@@ -491,6 +493,7 @@ export function createCaveLayer(config) {
       for (const f of group.userData.flocks ?? []) roostFlocks.delete(f);
       if (group.userData.vineSet) vineSets.delete(group.userData.vineSet);
       if (group.userData.steam) steams.delete(group.userData.steam);
+      if (group.userData.smoke) steams.delete(group.userData.smoke);
       if (group.userData.shroomSet) shroomSets.delete(group.userData.shroomSet);
       if (group.userData.glowSet) glowSets.delete(group.userData.glowSet);
       group.traverse((m) => (details.delete(m), rocks.delete(m)));
@@ -667,6 +670,20 @@ export function createCaveLayer(config) {
               else cells.set(key, { x, y: lp.getY(k), z, n: 1 });
             }
             for (const c of cells.values()) list.push({ x: c.x / c.n, y: c.y / c.n + 2.5, z: c.z / c.n, strength: 24, reach: 32, colour: 0xff6420, lava: true });
+            // Smoke rising off it, here and there over the lake.
+            const vents = [];
+            let k = 0;
+            for (const c of cells.values()) if (k++ % 2 === 0 && vents.length < 20) vents.push({ x: c.x / c.n, y: c.y / c.n + 0.3, z: c.z / c.n, s: 1.7, phase: (k * 0.61) % 1 * 6 });
+            if (vents.length) {
+              const mesh = new InstancedMesh(steamGeometry, smokeMaterial, vents.length * PUFFS);
+              mesh.name = 'cave lava smoke';
+              mesh.boundingSphere = boundsOf(vents.flatMap((v) => [v.x - cx * size, v.y, v.z - cz * size, v.x - cx * size, v.y + 13, v.z - cz * size]), 6);
+              mesh.renderOrder = 3;
+              group.add(detail(mesh));
+              const st = { vents, mesh, x0: cx * size, z0: cz * size, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size };
+              steams.add(st);
+              group.userData.smoke = st;
+            }
           }
           if (list.length) {
             const gs = { list, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size };
