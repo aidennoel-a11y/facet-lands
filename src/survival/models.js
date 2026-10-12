@@ -883,3 +883,197 @@ export function oreNodeModel(id) {
   }
   return b.build();
 }
+
+// --- Building in stone, and floors ---------------------------------------------
+
+// (Stone, a block at a time: rough-cut, each its own grey, a few mossed over.)
+const STONE_GREYS = [0x8a8780, 0x7c7a74, 0x96928a, 0x6e6c68, 0x84806e, 0x9a968c];
+const MOSS_GREENS = [0x4f6a34, 0x5c7a3a, 0x46602e];
+function stoneCourses(b, rand, { length, height, depth, y0 = -0.3, course = 0.36, mossTop = 0.3 }) {
+  for (let y = y0, row = 0; y < height - 0.05; y += course, row++) {
+    const h = Math.min(course, height - y) - 0.03;
+    let x = -length / 2 + (row % 2 ? 0.25 : 0);
+    if (row % 2) {
+      // (Each other course set over the joins beneath: a half block at its end.)
+      b.add(new BoxGeometry(0.22, h, depth), STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)], [-length / 2 + 0.11, y + h / 2, 0], [0, 0, 0], [1, 1, 1], 0.08);
+    }
+    while (x < length / 2 - 0.05) {
+      const w = Math.min(0.45 + rand() * 0.45, length / 2 - x);
+      const top = y + h > height - course;
+      const colour = top && rand() < mossTop ? MOSS_GREENS[Math.floor(rand() * 3)] : STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)];
+      b.add(new BoxGeometry(w - 0.03, h * (0.92 + rand() * 0.08), depth * (0.94 + rand() * 0.1)), colour, [x + w / 2, y + h / 2, (rand() - 0.5) * 0.04], [0, (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.02], [1, 1, 1], 0.08);
+      x += w;
+    }
+  }
+  // (The mortar behind, so no light shows between the blocks.)
+  b.add(new BoxGeometry(length - 0.02, height - y0 - 0.02, depth * 0.8), 0x5a5852, [0, (height + y0) / 2, 0], [0, 0, 0], [1, 1, 1], 0.02);
+}
+
+/** A section of stone wall, 4 m long (joins end to end like the palisade): courses of rough-cut blocks. */
+export function stoneWallModel() {
+  const b = new Parts(131), rand = mulberry32(131);
+  stoneCourses(b, rand, { length: WALL_LENGTH, height: 3.2, depth: 0.6, mossTop: 0.35 });
+  return b.build();
+}
+
+/** A low wall of field stones, 3 m long (joins end to end like a fence): dry-stacked, capped with flat stones. */
+export function stoneFenceModel() {
+  const b = new Parts(133), rand = mulberry32(133), L = FENCE_LENGTH;
+  for (let y = -0.1, row = 0; y < 0.8; y += 0.28, row++) {
+    for (let x = -L / 2 + 0.2 + (row % 2) * 0.15; x < L / 2 - 0.1; x += 0.32 + rand() * 0.12) {
+      const r = 0.18 + rand() * 0.06;
+      b.add(new DodecahedronGeometry(r, 0), STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)], [x, y + r * 0.7, (rand() - 0.5) * 0.12], [rand() * 3, rand() * 3, rand() * 3], [1.2, 0.75, 1.1], 0.1);
+    }
+  }
+  for (let x = -L / 2 + 0.25; x < L / 2; x += 0.5) {
+    b.add(new BoxGeometry(0.52, 0.1, 0.5), rand() < 0.3 ? MOSS_GREENS[Math.floor(rand() * 3)] : STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)], [x, 0.95, 0], [0, (rand() - 0.5) * 0.2, (rand() - 0.5) * 0.08], [1, 1, 1], 0.08);
+  }
+  b.add(new BoxGeometry(L - 0.1, 0.9, 0.36), 0x5a5852, [0, 0.45, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  return b.build();
+}
+
+/**
+ * A chimney: a stone stack 5.5 m tall, its hearth open at the foot (set
+ * your campfire in front of it, or a furnace beside it, and the smoke goes
+ * up it: see Structures).
+ */
+export const CHIMNEY_TOP = 5.6;
+export function chimneyModel() {
+  const b = new Parts(135), rand = mulberry32(135), W = 1.2;
+  for (let y = -0.3, row = 0; y < CHIMNEY_TOP - 0.3; y += 0.32, row++) {
+    const w = y < 1.6 ? W : 0.8;
+    const h = 0.29;
+    for (const side of [0, 1, 2, 3]) {
+      // (The hearth: the front left open, low down.)
+      if (side === 0 && y > -0.1 && y < 1.0) continue;
+      const along = side < 2;
+      const off = (side % 2 ? -1 : 1) * (w / 2 - 0.12);
+      const shift = (row % 2 ? 0.08 : -0.08) + (rand() - 0.5) * 0.04;
+      b.add(new BoxGeometry(along ? w : 0.24, h, along ? 0.24 : w - 0.48), STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)], along ? [shift, y + h / 2, off] : [off, y + h / 2, shift * 0.5], [0, 0, 0], [1, 1, 1], 0.08);
+    }
+  }
+  // The lintel over the hearth, the soot inside it, and the stack's cap.
+  b.add(new BoxGeometry(W + 0.06, 0.3, 0.3), 0x6e6c68, [0, 1.12, W / 2 - 0.12]);
+  b.add(new BoxGeometry(W - 0.5, 1.0, W - 0.5), 0x24201c, [0, 0.4, 0]);
+  b.add(new BoxGeometry(1.0, 0.14, 1.0), 0x7c7a74, [0, CHIMNEY_TOP - 0.25, 0]);
+  b.add(new CylinderGeometry(0.16, 0.2, 0.4, 8), 0xa0603a, [0, CHIMNEY_TOP, 0]);
+  return b.build();
+}
+
+/** A roof of slates on a timber frame, 4 m square: like the thatch, but stone, and keeps out every storm. */
+export function slateRoofModel() {
+  const b = new Parts(137), rand = mulberry32(137), h = ROOF_SIZE / 2;
+  for (const [x, z] of [[-h + 0.15, -h + 0.15], [h - 0.15, -h + 0.15], [-h + 0.15, h - 0.15], [h - 0.15, h - 0.15]]) b.log([x, -0.2, z], [x, 2.9, z], 0.11, 0x5e4630, 0xc8a070, 6);
+  b.log([-h - 0.2, 3.9, 0], [h + 0.2, 3.9, 0], 0.11, 0x5a4230, 0xc8a070, 6);
+  const SLATE = [0x4e5560, 0x5a6270, 0x464c56, 0x626a74];
+  for (const side of [-1, 1]) {
+    b.log([-h - 0.2, 2.9, side * h], [h + 0.2, 2.9, side * h], 0.1, 0x5a4230, 0xc8a070, 6);
+    for (let k = 0; k < 6; k++) {
+      const t = (k + 0.5) / 6, y = 3.92 - t * 1.15, z = side * t * (h + 0.4);
+      for (let x = -h - 0.25 + (k % 2) * 0.2; x < h + 0.25; x += 0.42) {
+        b.add(new BoxGeometry(0.44, 0.05, (h + 0.4) / 4.6), SLATE[Math.floor(rand() * SLATE.length)], [x + 0.2, y + 0.03, z], [side * 0.52 + (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.04, 0], [1, 1, 1], 0.05);
+      }
+    }
+  }
+  b.add(new BoxGeometry(ROOF_SIZE + 0.5, 0.14, 0.3), 0x3e444c, [0, 3.97, 0]);
+  // The gable ends, in stone.
+  for (const x of [-h + 0.05, h - 0.05]) b.add(new ConeGeometry(h + 0.2, 1.0, 3), 0x84806e, [x, 3.35, 0], [0, 0, Math.PI / 2], [0.2, 1, 1.9]);
+  return b.build();
+}
+
+/**
+ * A floor, 4 m square, to stand on and build on: of planks on joists and
+ * posts, or of flagstones on a stone footing. Laid level, it stands up off
+ * the slope on its footing (drawn down into the ground).
+ */
+export const FLOOR_SIZE = 4;
+export const FLOOR_TOP = 0.2;
+export function woodFloorModel() {
+  const b = new Parts(139), rand = mulberry32(139), h = FLOOR_SIZE / 2;
+  const n = 10, w = FLOOR_SIZE / n;
+  for (let k = 0; k < n; k++) {
+    const shade = [0x9a7448, 0x8a663e, 0xa47e50, 0x84603a][Math.floor(rand() * 4)];
+    b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.06, w - 0.03), shade, [0, FLOOR_TOP - 0.03, -h + w * (k + 0.5)], [0, 0, 0], [1, 1, 1], 0.05);
+  }
+  for (const x of [-h + 0.12, 0, h - 0.12]) b.add(new BoxGeometry(0.16, 0.16, FLOOR_SIZE), 0x5e4630, [x, FLOOR_TOP - 0.14, 0]);
+  for (const x of [-h + 0.12, 0, h - 0.12]) for (const z of [-h + 0.12, 0, h - 0.12]) b.add(new CylinderGeometry(0.13, 0.14, 1.8, 6), 0x5a4230, [x, FLOOR_TOP - 1.1, z]);
+  // (Boarded in round the sides, down to the ground.)
+  for (const [x, z, sx, sz] of [[0, h - 0.03, FLOOR_SIZE, 0.05], [0, -h + 0.03, FLOOR_SIZE, 0.05], [h - 0.03, 0, 0.05, FLOOR_SIZE], [-h + 0.03, 0, 0.05, FLOOR_SIZE]]) {
+    for (let k = 0; k < 6; k++) b.add(new BoxGeometry(sx, 0.27, sz), [0x7a5a36, 0x6e5030][k % 2], [x, FLOOR_TOP - 0.2 - k * 0.28, z], [0, 0, 0], [1, 1, 1], 0.05);
+  }
+  return b.build();
+}
+export function stoneFloorModel() {
+  const b = new Parts(141), rand = mulberry32(141), h = FLOOR_SIZE / 2;
+  // Flagstones, in rows of uneven lengths.
+  for (let z = -h, row = 0; z < h - 0.01; row++) {
+    const d = Math.min(0.6 + rand() * 0.35, h - z);
+    for (let x = -h; x < h - 0.01;) {
+      const w = Math.min(0.55 + rand() * 0.6, h - x);
+      const colour = rand() < 0.08 ? MOSS_GREENS[Math.floor(rand() * 3)] : STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)];
+      b.add(new BoxGeometry(w - 0.04, 0.08, d - 0.04), colour, [x + w / 2, FLOOR_TOP - 0.04 + rand() * 0.012, z + d / 2], [0, 0, 0], [1, 1, 1], 0.06);
+      x += w;
+    }
+    z += d;
+  }
+  // The bed of mortar under them, and the footing round the edge, down into the ground.
+  b.add(new BoxGeometry(FLOOR_SIZE, 0.1, FLOOR_SIZE), 0x5a5852, [0, FLOOR_TOP - 0.1, 0]);
+  for (const [x, z, sx, sz] of [[0, h - 0.15, FLOOR_SIZE, 0.3], [0, -h + 0.15, FLOOR_SIZE, 0.3], [h - 0.15, 0, 0.3, FLOOR_SIZE], [-h + 0.15, 0, 0.3, FLOOR_SIZE]]) {
+    b.add(new BoxGeometry(sx, 1.8, sz), 0x6e6c68, [x, FLOOR_TOP - 1.05, z], [0, 0, 0], [1, 1, 1], 0.05);
+  }
+  return b.build();
+}
+
+// --- Keeping food ---------------------------------------------------------------
+
+/** A root cellar: a mound of turf over a stone-faced way down, a plank door in it. Cool and dark: food keeps. */
+export function cellarModel() {
+  const b = new Parts(143), rand = mulberry32(143);
+  // The mound, turfed over.
+  b.add(new IcosahedronGeometry(1.6, 1), 0x5c7a3a, [0, -0.25, -0.35], [0, 0.3, 0], [1.05, 0.75, 1.0], 0.12);
+  b.add(new IcosahedronGeometry(1.2, 1), 0x6a8a44, [0.2, 0.15, -0.6], [0.2, 0.6, 0], [1, 0.6, 1], 0.12);
+  // The stone face round the door.
+  for (let y = -0.1, row = 0; y < 1.5; y += 0.3, row++) {
+    for (let x = -1.0 + (row % 2) * 0.18; x < 1.0; x += 0.36 + rand() * 0.1) {
+      if (Math.abs(x) < 0.42 && y < 1.2) continue; // (the doorway)
+      b.add(new BoxGeometry(0.34, 0.27, 0.3), STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)], [x, y + 0.14, 0.95], [0, (rand() - 0.5) * 0.08, 0], [1, 1, 1], 0.08);
+    }
+  }
+  b.add(new BoxGeometry(1.1, 0.22, 0.36), 0x6e6c68, [0, 1.28, 0.95]);
+  // The door: planks, two bands, a ring.
+  for (let k = 0; k < 4; k++) b.add(new BoxGeometry(0.19, 1.15, 0.06), [0x7a5a36, 0x6e5030][k % 2], [-0.29 + k * 0.195, 0.58, 1.02]);
+  for (const y of [0.3, 0.9]) b.add(new BoxGeometry(0.8, 0.07, 0.03), 0x3a3634, [0, y, 1.06]);
+  b.add(new TorusGeometry(0.06, 0.012, 4, 8), 0x3a3634, [0.22, 0.6, 1.08]);
+  return b.build();
+}
+
+/** A fish trap: a cone of woven withies, its mouth upstream, lashed to a stake in the water. */
+export function fishTrapModel() {
+  const b = new Parts(145);
+  for (let k = 0; k < 10; k++) {
+    const a = (k / 10) * Math.PI * 2;
+    b.log([Math.cos(a) * 0.28, Math.sin(a) * 0.28 + 0.3, 0.45], [Math.cos(a) * 0.04, Math.sin(a) * 0.04 + 0.3, -0.5], 0.012, 0x9a7a4a, 0xc8a070, 3);
+  }
+  for (const [z, r] of [[0.42, 0.27], [0.1, 0.19], [-0.25, 0.1]]) {
+    for (let k = 0; k < 10; k++) {
+      const a0 = (k / 10) * Math.PI * 2, a1 = ((k + 1) / 10) * Math.PI * 2;
+      b.log([Math.cos(a0) * r, Math.sin(a0) * r + 0.3, z], [Math.cos(a1) * r, Math.sin(a1) * r + 0.3, z], 0.01, 0x7a5a36, 0x7a5a36, 3);
+    }
+  }
+  b.log([0.35, -0.4, 0], [0.35, 1.1, 0], 0.035, 0x6e5234, 0xc8a070, 5);
+  b.log([0.35, 0.55, 0], [0.05, 0.4, 0.05], 0.01, 0x4f8a34, 0x4f8a34, 3);
+  return b.build();
+}
+
+/** A smoking rack: a tall frame of poles to stand over a campfire, meat and fish hung high in the smoke. */
+export function smokingRackModel() {
+  const b = new Parts(147);
+  for (const x of [-0.85, 0.85]) {
+    b.log([x, 0, -0.6], [x * 0.9, 2.1, 0], 0.04, 0x6e5234, 0xc8a070, 5);
+    b.log([x, 0, 0.6], [x * 0.9, 2.1, 0], 0.04, 0x6e5234, 0xc8a070, 5);
+  }
+  for (const [y, z] of [[1.75, 0.18], [1.75, -0.18], [2.05, 0]]) b.log([-0.95, y, z], [0.95, y, z], 0.03, 0x5a4230, 0xc8a070, 5);
+  // (Boughs laid over the top, to hold the smoke in.)
+  for (let k = 0; k < 6; k++) b.add(new BoxGeometry(0.3, 0.04, 0.9), [0x4f6a34, 0x5c7a3a][k % 2], [-0.75 + k * 0.3, 2.13, 0], [0, 0, (k % 2 ? 1 : -1) * 0.1], [1, 1, 1], 0.1);
+  return b.build();
+}

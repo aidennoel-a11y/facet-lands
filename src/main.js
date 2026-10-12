@@ -248,10 +248,14 @@ for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.mate
  * cave floor underground. The cave system reads the same procedural field
  * the cave meshes are built from, so floors, walls and roofs match them.
  */
+let floorTop = null; // (see the Game, below: what's laid on the ground)
 function groundAt(x, feetY, z) {
   const g = generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
   // Boulders are solid: you stand on their tops (and walk into their sides as walls).
   if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), logs.surfaceAt(x, z));
+  // (On a floor you've laid: its boards or flags.)
+  const floor = floorTop?.(x, z, feetY);
+  if (floor !== null && floor !== undefined) g.height = Math.max(g.height, floor);
   // The roofs of sea caves and spans of sea arches: stood on from above,
   // swum or walked under from below.
   const over = g.height < WORLD.seaLevel + 40 ? generator.overhangAt(x, z) : null;
@@ -610,6 +614,7 @@ const game = new Game({
     return Number.isFinite(h) ? Math.max(h, rocks.surfaceAt(x, z)) : generator.getHeight(x, z);
   },
 });
+floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 // (Online: what the others hold, drawn in their hands: see Multiplayer.)
 mp.items = { ids: Object.keys(ITEMS), geometry: (id) => game.items.model(id), material: game.items.material, holdPose: Game.holdPose };
 // Online, one world for everyone: what's done to it, the sky, the animals

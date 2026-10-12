@@ -66,7 +66,7 @@ const VEG = ['berries', 'mushroom', 'apple'];
 const MEATS = ['rawMeat', 'cookedMeat', 'rawFish', 'cookedFish'];
 // How long things take: meat on the fire a minute; ore in the furnace half
 // a minute; meat on the drying rack three; a waterskin coming to the boil.
-const TIMES = { cook: 60, smelt: 30, dry: 180, boil: 20, stew: 60, tan: 240, char: 20, steel: 45 };
+const TIMES = { cook: 60, smelt: 30, dry: 180, boil: 20, stew: 60, tan: 240, char: 20, steel: 45, smoke: 150 };
 // What a ripe crop gives.
 const HARVEST = { wheat: [['wheat', 3], ['seedWheat', 2]], corn: [['corn', 2], ['seedCorn', 2]], potato: [['potato', 4], ['seedPotato', 1]], carrot: [['carrot', 3], ['seedCarrot', 2]] };
 // Past this much in your pack (kg) you slow down; past twice it, you can't run.
@@ -379,6 +379,10 @@ export class Game {
     if (done) return `Take what's ready`;
     switch (s.type) {
       case 'chest': return 'Open the chest';
+      case 'cellar': return 'Open the root cellar';
+      case 'fishTrap': return s.caught ? `Take the fish (${s.caught})` : (this.winter ?? 0) > 0.7 ? 'Iced in: nothing swims into it' : 'Set, and waiting (Shift+E to take it up)';
+      case 'smokingRack':
+        return s.jobs.length ? `Smoking: ${s.jobs.map((j) => `${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}${s.smoking ? '' : ' (no fire under it)'}` : 'Hang raw meat or fish in it (click with it), over a burning campfire';
       case 'gate':
       case 'fenceGate': return s.open ? 'Shut the gate' : 'Open the gate';
       case 'plot': {
@@ -540,7 +544,7 @@ export class Game {
     if (down) {
       // Taking it back down.
       if (s.lit) return this.hotbar?.flash('Too hot to take down: let it burn out');
-      if (s.type === 'chest' && s.contents.slots.some(Boolean)) return this.hotbar?.flash('Empty it first');
+      if (s.contents && s.contents.slots.some(Boolean)) return this.hotbar?.flash('Empty it first');
       for (const st of this.structures.takeAll(s)) this.#give(st.id, st.count ?? 1, s);
       if (s.type === 'plot') {
         this.structures.remove(s);
@@ -565,6 +569,19 @@ export class Game {
       case 'chest':
         this.hud.openChest(s.contents, this.inventory);
         return this.#menu(true);
+      case 'cellar':
+        this.hud.openChest(s.contents, this.inventory, 'Root cellar', 'Click to move a stack across · cool and dark: food in here never spoils · E or Esc to close');
+        return this.#menu(true);
+      case 'fishTrap': {
+        if (!s.caught) return this.hotbar?.flash('Nothing in it yet');
+        const n = s.caught;
+        s.caught = 0;
+        s.catchMesh.visible = false;
+        this.#give('rawFish', n, s);
+        this.dirty = true;
+        this.sound?.call('splash', 0, 0.3);
+        return this.hotbar?.flash(n > 1 ? `${n} fish from the trap` : 'A fish from the trap');
+      }
       case 'gate':
       case 'fenceGate':
         this.structures.toggle(s);
@@ -705,7 +722,7 @@ export class Game {
       if (!this.structures.isFire(at)) {
         const tree = this.trees.pick(origin, direction, REACH);
         const fallen = this.felling.pickFallen(origin, direction, REACH);
-        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'dryingRack', 'tanningRack', 'roof', 'raft']);
+        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor']);
         const wooden = at && WOODEN.has(at.type) ? built : null;
         const near = [tree && { d: tree.distance }, fallen && { d: fallen.distance }, wooden && { d: wooden.distance ?? REACH }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
         if (!near) return this.hotbar?.flash('Strike it at something that will burn: a campfire, a torch, wood, a tree');
@@ -893,6 +910,12 @@ export class Game {
         this.sound?.call('pour', 0, 0.4);
         return say('Watered');
       }
+    }
+    if (at.type === 'smokingRack' && item.smokes) {
+      if (!this.structures.work(at, { id: s.id, count: 1 }, Inventory.stack(item.smokes, 1), TIMES.smoke)) return say('The rack is full');
+      take();
+      this.cooldown = 0.3;
+      return say(`${item.name} hung in the smoke${at.smoking ? '' : ': it wants a campfire burning under it'}`);
     }
     if (at.type === 'dryingRack' && item.dries) {
       if (!this.structures.work(at, { id: s.id, count: 1 }, Inventory.stack(item.dries, 1), TIMES.dry)) return say('The rack is full');
@@ -1696,6 +1719,15 @@ export class Game {
         this.dirty = true;
       }
     }
+    // Fish traps: now and then a fish swims in (not when the water's iced over).
+    for (const s of this.structures.list) {
+      if (s.type !== 'fishTrap' || (s.caught || 0) >= 3 || (this.winter ?? 0) > 0.7) continue;
+      if (Math.random() < 1 / 300) {
+        s.caught = (s.caught || 0) + 1;
+        s.catchMesh.visible = true;
+        this.dirty = true;
+      }
+    }
     // A campfire left burning with nobody by it, in the dry: the grass may catch.
     for (const s of this.structures.list) {
       if (s.type !== 'campfire' || !s.lit) continue;
@@ -1817,6 +1849,8 @@ export class Game {
     if (this.spoilWait <= 0) {
       const rotted = this.inventory.spoil(5);
       this.items.spoil(5);
+      // (In a chest food keeps three times as long; in a root cellar, for good.)
+      for (const st of this.structures.list) if (st.type === 'chest') st.contents.spoil(5 / 3);
       this.spoilWait = 5;
       if (rotted.length) this.hotbar?.flash(`${rotted[0]} has gone off`);
     }
@@ -1844,7 +1878,7 @@ export class Game {
         prompt = this.plan.ok ? `<kbd>Click</kbd> Let the rope down (${Math.round(this.plan.len)} m)` : null;
       } else if (placing && placing !== 'torch') {
         const at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
-        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate'].includes(placing) ? Math.PI : 0);
+        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence'].includes(placing) ? Math.PI : 0);
         this.plan = this.structures.plan(placing, at, yaw, ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
         const onPlot = placing === 'plot' && t?.kind === 'structure' && t.structure.type === 'plot';
         this.structures.preview(onPlot ? null : this.plan);

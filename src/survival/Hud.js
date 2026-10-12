@@ -242,9 +242,11 @@ export class Hud {
 
   // --- A chest -------------------------------------------------------------------
 
-  openChest(chest, pack) {
+  openChest(chest, pack, title = 'Chest', note = 'Click to move a stack across · food keeps three times as long in here · E or Esc to close') {
     this.closeAll();
     this.el('.chest-ui').hidden = false;
+    this.el('.chest-ui header h2').textContent = title;
+    this.el('.chest-ui header p').textContent = note;
     this.chest = { chest, pack };
     this.renderChest();
   }

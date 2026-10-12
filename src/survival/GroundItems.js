@@ -21,6 +21,8 @@ const BUILT = {
   campfire: M.campfireModel, furnace: M.furnaceModel, wall: M.wallModel, gate: M.gateFrameModel, stake: M.stakeModel, chest: M.chestModel, bed: M.bedModel,
   dryingRack: M.dryingRackModel, snare: M.snareModel, raft: M.raftModel, roof: M.roofModel, hideRoof: M.roofModel, fence: M.fenceModel, fenceGate: M.fenceGatePostsModel,
   anvil: M.anvilModel, grindstone: M.grindstoneModel, tanningRack: M.tanningRackModel,
+  woodFloor: M.woodFloorModel, stoneFloor: M.stoneFloorModel, stoneWall: M.stoneWallModel, stoneFence: M.stoneFenceModel, chimney: M.chimneyModel, slateRoof: M.slateRoofModel,
+  cellar: M.cellarModel, fishTrap: M.fishTrapModel, smokingRack: M.smokingRackModel,
 };
 
 /**
@@ -76,7 +78,7 @@ export class GroundItems {
         spear: () => spearModel(), steelSpear: () => spearModel(0x9aa4b0),
         axe: () => axeModel(), steelAxe: () => axeModel(...steel),
         pickaxe: () => pickaxeModel(), steelPickaxe: () => pickaxeModel(...steel),
-        rawMeat: () => meatModel(false), cookedMeat: () => meatModel(true), rawFish: () => fishModel(false), cookedFish: () => fishModel(true),
+        rawMeat: () => meatModel(false), cookedMeat: () => meatModel(true), rawFish: () => fishModel(false), cookedFish: () => fishModel(true), smokedMeat: () => meatModel(true), smokedFish: () => fishModel(true),
         forgedSpear: () => spearModel(0xd8e0ea), forgedAxe: () => axeModel(0xdfe6ee, 0xffffff), forgedPickaxe: () => pickaxeModel(0xdfe6ee, 0xffffff),
         crossbow: crossbowModel, bolt: boltModel, hoe: hoeModel, shears: shearsModel, steelBar: () => ironBarModel(0xe4eaf0),
         bow: bowModel, arrow: arrowModel, fishingRod: rodModel, waterskin: waterskinModel, pot: potModel, ironBar: ironBarModel,
