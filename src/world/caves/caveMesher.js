@@ -3,6 +3,7 @@ import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
 import { CaveField } from './CaveField.js';
+import { shroomHeight, shroomOf } from './giantShrooms.js';
 
 export const CELLS = 40; // grid cells per chunk edge (3.2 m each for 128 m chunks)
 
@@ -782,39 +783,37 @@ export function decorateChunk(grid, field) {
   // flaring at the foot, a broad cap with dark gills under it; some caps
   // glow, blue-green or violet.
   const CAPS = [[0x9a5a34, 0xc08a5a, null], [0x7a4a6a, 0xa86a94, [0.16, 0.05, 0.2]], [0x2e7a7a, 0x5ac8c0, [0.04, 0.26, 0.24]], [0xb8925a, 0xe0c890, null], [0x8a2e26, 0xd8a890, null]];
-  const giantMushroom = (x, y, z, height, capR, s) => {
-    const stemR = Math.max(0.18, capR * 0.16);
-    const pts = [];
-    for (let k = 0; k <= 8; k++) {
-      const t = k / 8;
-      pts.push(new Vector2(stemR * (1 + 0.9 * Math.pow(1 - t, 3)) * (1 + 0.05 * Math.sin(t * 13 + s * 20)), t * height));
+  // (The giants themselves are drawn, and cut down, one by one: see
+  // CaveLayer and giantShrooms. Here, where each stands, how tall, its seed.)
+  const giants = []; // [x, y, z, height, seed, ...]
+  const giantMushroom = (x, y, z, room, s) => {
+    const shroom = shroomOf(s), height = shroomHeight(shroom.kind, s, room);
+    if (height < 1.4) return;
+    giants.push(x, y, z, height, s);
+    if (shroom.glows) lights.push(x, y + height * 0.85, z, 3);
+    obstacles.push(x, z, Math.max(0.25, height * (shroom.kind === 2 ? 0.17 : 0.08)), y - 0.3, y + height);
+  };
+  // Crystal caverns, under the high roofs: great beams of crystal, like
+  // the cave of the giant crystals, lying across one another at all angles,
+  // milk-white, pale blue, rose or honey, the size of trees.
+  const BEAMS = [[0xd8e4ea, 0xf8fcff, [0.1, 0.12, 0.14]], [0xb8d8ec, 0xe8f6ff, [0.06, 0.12, 0.18]], [0xe8c8d4, 0xfff0f4, [0.14, 0.08, 0.1]], [0xe8d0a0, 0xfff4dc, [0.14, 0.11, 0.06]], [0xc0e8d8, 0xf0fff8, [0.07, 0.15, 0.12]]];
+  const beam = (x, y, z, len, r, yaw, pitch, s) => {
+    const [lo, hi, glow] = BEAMS[Math.floor(s * 997) % BEAMS.length];
+    const body = new CylinderGeometry(r, r * 1.08, len, 6, 1).toNonIndexed();
+    body.translate(0, len / 2, 0);
+    const point = new ConeGeometry(r, r * 1.6, 6, 1).toNonIndexed();
+    point.translate(0, len + r * 0.8, 0);
+    for (const g of [body, point]) {
+      g.deleteAttribute('uv');
+      g.rotateZ(pitch);
+      g.rotateY(yaw);
+      g.translate(x - x0, y - 0.6, z - z0);
+      low.set(lo);
+      tip.set(hi);
+      piece(g, x, y, z, (c, cyv, v) => c.copy(low).lerp(tip, 0.4 + 0.6 * hash2(v, Math.round(x * 10), seed + 47)), glow);
     }
-    const stem = new LatheGeometry(pts, 8).toNonIndexed();
-    stem.deleteAttribute('uv');
-    stem.rotateZ((s - 0.5) * 0.12);
-    stem.translate(x - x0, y - 0.3, z - z0);
-    piece(stem, x, y, z, (c, cyv, v) => c.set(0xe8dcc8).multiplyScalar(0.82 + 0.18 * Math.min(1, (cyv - y) / height) + hash2(v, Math.round(x * 9), seed + 43) * 0.08));
-    const [dark, light, glow] = CAPS[Math.floor(s * 991) % CAPS.length];
-    const cap = [];
-    for (let k = 0; k <= 6; k++) {
-      const a = (k / 6) * (Math.PI / 2);
-      cap.push(new Vector2(Math.max(0.01, capR * Math.cos(a)), capR * 0.42 * Math.sin(a) + (k === 0 ? -capR * 0.08 : 0)));
-    }
-    const top = new LatheGeometry(cap.reverse(), 12).toNonIndexed();
-    top.deleteAttribute('uv');
-    top.translate(x - x0, y + height - 0.3, z - z0);
-    low.set(dark);
-    tip.set(light);
-    piece(top, x, y, z, (c, cyv, v) => {
-      const spot = hash2(v, Math.round(x * 13 + z), seed + 44);
-      c.copy(low).lerp(tip, Math.min(1, (cyv - (y + height - 0.3)) / (capR * 0.42))).multiplyScalar(spot > 0.9 ? 1.35 : 0.9 + spot * 0.15);
-    }, glow);
-    const gills = new CylinderGeometry(capR * 0.95, stemR * 1.2, capR * 0.12, 12, 1).toNonIndexed();
-    gills.deleteAttribute('uv');
-    gills.translate(x - x0, y + height - 0.3 - capR * 0.1, z - z0);
-    piece(gills, x, y, z, (c) => c.set(glow ? 0x3a4a5a : 0x5a463e), glow ? glow.map((g) => g * 0.6) : null);
-    if (glow) lights.push(x, y + height - capR * 0.3, z, 3);
-    obstacles.push(x, z, stemR * 1.4, y - 0.3, y + height);
+    // (Its foot is in the way; the rest of it is over your head, or you climb over it.)
+    obstacles.push(x, z, r * 1.1, y - 0.5, y + Math.min(len * Math.cos(pitch), 3));
   };
 
   for (let gz = step / 2; gz < field.chunkSize; gz += step) {
@@ -859,12 +858,18 @@ export function decorateChunk(grid, field) {
               crystalCluster(x, floor, z, Math.min(gap * 0.7, giant ? 5 + r2 * 7 : 0.6 + r1 * 2.6), r1, false);
             }
             if (gap > 4 && r2 < 0.35) crystalCluster(x + 0.4, roof, z - 0.3, Math.min(gap * 0.35, 0.6 + r3 * 2.2), r2, true);
+            // (And the great beams, where the cavern's big enough for them.)
+            if (gap > 9 && r3 < 0.1 && !inEntrance) {
+              const n = 1 + Math.floor(r1 * 3);
+              for (let k = 0; k < n; k++) {
+                const yaw = (r2 + k * 0.37) * Math.PI * 2, pitch = 0.5 + ((r1 * 7 + k * 0.31) % 1) * 0.8;
+                const len = Math.min(gap * 1.4, 7 + ((r3 * 31 + k * 0.53) % 1) * 15), r = 0.35 + len * 0.045;
+                beam(x + (k - 1) * 0.8, floor, z + ((k * 0.7) % 1.4) - 0.7, len, r, yaw, pitch, (r2 + k * 0.19) % 1);
+              }
+            }
           } else if (kind === 6) {
             // Mushroom forests: the giants, and between them clumps of small ones.
-            if (h < 0.32 && gap > 4.5 && !inEntrance && f(x, floor + 0.6, z) < -0.2) {
-              const height = Math.min(gap * 0.75, 3 + r1 * 9);
-              giantMushroom(x, floor, z, height, Math.min(height * (0.32 + 0.22 * r2), 5.5), r1);
-            } else if (h < 0.5 && gap > 1.6 && !inEntrance) {
+            if (h < 0.32 && gap > 2.6 && !inEntrance && f(x, floor + 0.6, z) < -0.2) giantMushroom(x, floor, z, gap, (r1 * 0.7 + r2 * 0.3 + h) % 1); else if (h < 0.5 && gap > 1.6 && !inEntrance) {
               into = plants;
               for (let m = 0; m < 3 + Math.floor(r2 * 3); m++) {
                 const a = m * 2.4 + r1 * 9, d = 0.15 + (m % 3) * 0.2, mx = x + Math.cos(a) * d, mz = z + Math.sin(a) * d;
@@ -1098,7 +1103,7 @@ export function decorateChunk(grid, field) {
     g.computeBoundingSphere();
     return g;
   };
-  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights, geysers };
+  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights, geysers, giants };
 }
 
 /**
@@ -1109,7 +1114,7 @@ export function decorateChunk(grid, field) {
  */
 export function buildChunkData(field, cx, cz, chunkSize) {
   const grid = sampleChunk(field, cx, cz, chunkSize);
-  if (!grid) return { grid: null, rock: null, rockFar: null, deco: null, plants: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), lights: new Float32Array(0), geysers: new Float32Array(0), water: null, lava: null };
+  if (!grid) return { grid: null, rock: null, rockFar: null, deco: null, plants: null, obstacles: new Float32Array(0), features: new Float32Array(0), pools: new Float32Array(0), vines: new Float32Array(0), lights: new Float32Array(0), geysers: new Float32Array(0), giants: new Float32Array(0), water: null, lava: null };
   const plain = {};
   const rock = meshChunk(grid, field, plain);
   const deco = decorateChunk(grid, field);
@@ -1135,6 +1140,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
     vines: new Float32Array(deco.vines),
     lights: new Float32Array(deco.lights),
     geysers: new Float32Array(deco.geysers),
+    giants: new Float32Array(deco.giants),
     water: liquid.water ?? null,
     lava: liquid.lava ?? null,
   };
@@ -1151,5 +1157,6 @@ export function chunkDataBuffers(data) {
   if (data.vines) out.push(data.vines.buffer);
   if (data.lights) out.push(data.lights.buffer);
   if (data.geysers) out.push(data.geysers.buffer);
+  if (data.giants) out.push(data.giants.buffer);
   return [...new Set(out)];
 }

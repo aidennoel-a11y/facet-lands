@@ -194,6 +194,10 @@ export class Game {
     this.felling.loadStumps(saved?.stumps);
     this.loadBurns?.(saved?.burns ?? []);
     this.loadCut?.(saved?.cut ?? []);
+    if (this.shrooms) {
+      this.shrooms.cut.clear();
+      for (const k of saved?.shrooms ?? []) this.shrooms.cut.add(k);
+    }
     this.ruinChests = new Set(saved?.ruins?.chests ?? []);
     this.ruinsSeen = new Set(saved?.ruins?.seen ?? []);
     this.waypoint = saved?.ruins?.waypoint ?? null;
@@ -238,6 +242,7 @@ export class Game {
       progress: [...this.progress],
       burns: this.burnsJSON?.() ?? null,
       cut: this.cutJSON?.() ?? null,
+      shrooms: this.shrooms ? [...this.shrooms.cut] : [],
       ruins: { chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
@@ -1137,9 +1142,30 @@ export class Game {
       const animal = this.#aimNear(origin, direction, REACH);
       const fallen = this.felling.pickFallen(origin, direction, REACH);
       const tree = this.trees.pick(origin, direction, REACH);
-      const near = [animal && { k: 'animal', d: animal.distance }, fallen && { k: 'fallen', d: fallen.distance }, tree && { k: 'tree', d: tree.distance }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
+      const shroom = this.shrooms?.pick(origin, direction, REACH);
+      const near = [animal && { k: 'animal', d: animal.distance }, fallen && { k: 'fallen', d: fallen.distance }, tree && { k: 'tree', d: tree.distance }, shroom && { k: 'shroom', d: shroom.distance }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
       if (!near) return this.sound?.call('whoosh', 0, 0.2);
       if (near.k === 'animal') return this.#strike(i, animal, origin);
+      if (near.k === 'shroom') {
+        // A giant mushroom: soft, a few blows, and down it comes, falling apart.
+        this.inventory.wear(i, 1);
+        this.sound?.call('chop', 0, 0.5);
+        this.felling.spray(new Vector3(shroom.x, origin.y - 0.3, shroom.z), origin, 0xe8dcc8);
+        this.shroomHits ??= new Map();
+        const hits = (this.shroomHits.get(shroom.key) ?? 0) + power;
+        const needs = Math.max(2, Math.round(shroom.height / 2.5));
+        if (hits < needs) {
+          this.shroomHits.set(shroom.key, hits);
+          this.breaking = { label: 'Cutting the mushroom', frac: hits / needs, until: this.time + 2.5 };
+          return;
+        }
+        this.shroomHits.delete(shroom.key);
+        const away = Math.atan2(shroom.x - origin.x, shroom.z - origin.z);
+        for (const [id, n] of this.shrooms.fell(shroom, away)) this.#give(id, n, { x: shroom.x, y: shroom.y + 0.5, z: shroom.z });
+        this.sound?.call('treefall', 0, 0.35);
+        this.dirty = true;
+        return this.hotbar?.flash('Down it comes, falling apart');
+      }
       this.inventory.wear(i, 1);
       if (this.anim?.kind === 'chop') this.anim.bite = true; // (the blade sticks a moment: see drawHeld)
       this.sound?.call('chop', 0, 0.7);
@@ -1959,7 +1985,7 @@ export class Game {
       } else this.structures.preview(null);
       if (!prompt && t) prompt = `<kbd>E</kbd> ${t.text}`;
       if (!prompt && held) {
-        if (AXES[held.id] && (this.felling.pickFallen(origin, direction, REACH) || this.trees.pick(origin, direction, REACH))) prompt = '<kbd>Click</kbd> Chop';
+        if (AXES[held.id] && (this.felling.pickFallen(origin, direction, REACH) || this.trees.pick(origin, direction, REACH) || this.shrooms?.pick(origin, direction, REACH))) prompt = '<kbd>Click</kbd> Chop';
         if (PICKS[held.id] && this.#boulderAlong(origin, direction, REACH)) prompt = '<kbd>Click</kbd> Break rock';
       }
     } else this.structures.preview(null);

@@ -8,6 +8,7 @@ import { createGrassLayer, grassClearings, grassPushers } from './world/layers/G
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
+import { fellShroom, pickShroom, shroomsCut } from './world/layers/CaveLayer.js';
 import { caveFocus, caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
@@ -613,7 +614,7 @@ function testView() {
 }
 testView();
 const body = new PlayerBody(scene);
-const torches = new Torches(scene, { maxLights: 10 });
+const torches = new Torches(scene, { maxLights: 14 });
 torches.loadWorld(WORLD.seed);
 
 // --- Staying alive -----------------------------------------------------------------
@@ -629,6 +630,8 @@ const game = new Game({
   fireHeat: (x, y, z) => fires.heatAt(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
   // (The burnt ground, saved with the world; and the days, for the burnt woods growing back.)
   spiders,
+  // (The giant mushrooms in the caves: cut down with an axe, see CaveLayer.)
+  shrooms: { pick: (o, d, r) => pickShroom(o, d, r), fell: (hit, away) => fellShroom(hit, scene, away), cut: shroomsCut },
   // (The long grass cut with a sickle: see GrassCut.)
   cutGrass: (x, z, r) => grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24),
   cutJSON: () => grassCut.toJSON(),

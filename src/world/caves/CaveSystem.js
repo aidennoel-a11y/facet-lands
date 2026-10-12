@@ -121,6 +121,7 @@ export class CaveSystem {
       entry.vines = data.vines ?? new Float32Array(0);
       entry.lights = data.lights ?? new Float32Array(0);
       entry.geysers = data.geysers ?? new Float32Array(0);
+      entry.giants = data.giants ?? new Float32Array(0);
       entry.water = toLiquid(data.water);
       entry.lava = toLiquid(data.lava);
       entry.ready = true;
@@ -373,6 +374,14 @@ export class CaveSystem {
       }
     }
     return { height, inCave, ceiling };
+  }
+
+  /** Something no longer in the way at (x, z) (a giant mushroom cut down): its obstacle gone. */
+  clearObstacle(x, z) {
+    const data = this.cache.get(`${Math.floor(x / this.chunkSize)},${Math.floor(z / this.chunkSize)}`);
+    const list = data?.obstacles;
+    if (!list) return;
+    for (let k = 0; k < list.length; k += 5) if (Math.abs(list[k] - x) < 0.01 && Math.abs(list[k + 1] - z) < 0.01) list[k + 2] = 0;
   }
 
   /** Pushes a walking player (circle at `position`, feet at feetY) out of stalagmites. */

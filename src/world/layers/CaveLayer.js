@@ -1,6 +1,7 @@
 import { BoxGeometry, BufferAttribute, Color, DoubleSide, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bonesModel } from '../../survival/models.js';
+import { shroomGeometry, shroomOf, shroomPieces } from '../caves/giantShrooms.js';
 
 /**
  * Cave material: vertex-coloured rock whose *daylight* (sun, moon and sky
@@ -82,7 +83,7 @@ const bp = new Vector3(), bs = new Vector3(), bq = new Quaternion(), be = new Eu
 const details = new Set();
 const rocks = new Set(); // (each chunk's rock: finely faceted near you, plainer further off)
 let inside = false;
-const FAR_DETAILS = new Set(['cave stalagmites', 'cave water', 'cave lava', 'cave steam', 'cave crystal']);
+const FAR_DETAILS = new Set(['cave stalagmites', 'cave water', 'cave lava', 'cave steam', 'cave crystal', 'cave giant mushrooms']);
 let eyeChunk = null, ringWait = 0;
 const chunkOf = (mesh) => {
   let p = mesh;
@@ -151,7 +152,69 @@ const vineSets = new Set(); // (each chunk's vines: see updateCaveLife)
 // lent real lights, with the torches (see Torches.update).
 const glowSets = new Set();
 export const caveGlowLights = [];
+
+// The giant mushrooms (see giantShrooms): each chunk's, drawn by kind;
+// those cut down (by key, saved with the world), and the pieces of the ones
+// falling apart now.
+const shroomSets = new Set();
+export const shroomsCut = new Set();
+const debris = [];
+const dm = new Matrix4(), dq = new Quaternion(), dp = new Vector3(), ds = new Vector3(), de = new Euler();
+
+/** The giant mushroom along a ray from `origin` (unit `dir`) within `reach`: { set, i, x, y, z, height, s, distance } or null. */
+export function pickShroom(origin, dir, reach) {
+  let best = null;
+  for (const set of shroomSets) {
+    if (Math.abs(set.cx - origin.x) > 100 || Math.abs(set.cz - origin.z) > 100) continue;
+    for (const g of set.list) {
+      if (g.cut || Math.abs(g.x - origin.x) > reach + 6 || Math.abs(g.z - origin.z) > reach + 6) continue;
+      const stemR = Math.max(0.35, g.height * (g.kind === 2 ? 0.17 : 0.08)) + 0.15, capR = g.height * g.ratio;
+      // (Its stem, and its cap: stepped along the ray.)
+      for (let t = 0.3; t <= reach; t += 0.2) {
+        const px = origin.x + dir.x * t, py = origin.y + dir.y * t, pz = origin.z + dir.z * t;
+        const h = Math.hypot(px - g.x, pz - g.z), up = py - g.y;
+        if ((h < stemR && up > -0.3 && up < g.height) || (h < capR && up > g.height * 0.8 && up < g.height * 1.25)) {
+          if (!best || t < best.distance) best = { ...g, set, distance: t };
+          break;
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Down it comes, falling apart: hidden, out of the way (its obstacle
+ * taken away), and its pieces tumbling to the floor; remembered as cut.
+ * Returns what it gives: [[id, n], ...].
+ */
+export function fellShroom(hit, scene, away) {
+  const g = hit.set.list[hit.i];
+  if (g.cut) return [];
+  g.cut = true;
+  shroomsCut.add(g.key);
+  g.mesh.setMatrixAt(g.index, dm.makeScale(0, 0, 0));
+  g.mesh.instanceMatrix.needsUpdate = true;
+  hit.set.caves?.clearObstacle?.(g.x, g.z);
+  const shroom = shroomOf(g.s);
+  for (const piece of shroomPieces(shroom.kind, shroom.capIndex)) {
+    const mesh = new Mesh(piece.geometry, hit.set.material);
+    const [cx, cy, cz] = piece.centre;
+    mesh.position.set(g.x + Math.cos(g.turn) * cx * g.height + Math.sin(g.turn) * cz * g.height, g.y + cy * g.height, g.z - Math.sin(g.turn) * cx * g.height + Math.cos(g.turn) * cz * g.height);
+    mesh.scale.setScalar(g.height);
+    mesh.rotation.y = g.turn;
+    scene.add(mesh);
+    const out = Math.random() * Math.PI * 2;
+    debris.push({
+      mesh, vx: Math.sin(away) * 2 + Math.cos(out) * 1.5, vy: 1 + Math.random() * 2, vz: Math.cos(away) * 2 + Math.sin(out) * 1.5,
+      spin: [rnd(-2, 2), rnd(-2, 2), rnd(-2, 2)], floor: g.y + 0.05, life: 25, scene,
+    });
+  }
+  return shroom.glows ? [['caveMushroom', 2 + Math.floor(g.height / 4)], ['glowcap', 2]] : [['caveMushroom', 2 + Math.floor(g.height / 3)]];
+}
+const rnd = (a, b) => a + Math.random() * (b - a);
 let glowWait = 0;
+const UPV = new Vector3(0, 1, 0);
 const DOWN = new Vector3(0, -1, 0), vq = new Quaternion(), vt = new Vector3(), vs = new Vector3(), vp = new Vector3();
 
 /** Sets one vine's matrix: hanging from its top, swung by (sx, sz) (its foot pushed that way, in metres per metre). */
@@ -173,7 +236,25 @@ const PUFFS = 14;
 
 /** Swims the cave fish and flies the bats (call every frame); `eye`: where you are, if underground. */
 export function updateCaveLife(time, eye = null) {
+  const dt = Math.min(0.1, Math.max(0, time - (caveTime.value || time)));
   caveTime.value = time;
+  // The pieces of a mushroom cut down: tumbling to the floor, lying a while, sinking away.
+  for (let k = debris.length - 1; k >= 0; k--) {
+    const d = debris[k], m = d.mesh;
+    d.life -= dt;
+    if (m.position.y > d.floor + 0.1) {
+      d.vy -= 9.8 * dt;
+      m.position.x += d.vx * dt;
+      m.position.y = Math.max(d.floor, m.position.y + d.vy * dt);
+      m.position.z += d.vz * dt;
+      m.rotation.x += d.spin[0] * dt;
+      m.rotation.z += d.spin[2] * dt;
+    } else if (d.life < 3) m.position.y -= dt * 0.3;
+    if (d.life <= 0) {
+      d.scene.remove(m);
+      debris.splice(k, 1);
+    }
+  }
   if (!!eye !== inside) {
     inside = !!eye;
     ringWait = 0;
@@ -197,10 +278,10 @@ export function updateCaveLife(time, eye = null) {
     glowWait = time + 0.3;
     const near = [];
     for (const set of glowSets) {
-      if (Math.abs(eye.x - set.cx) > 150 || Math.abs(eye.z - set.cz) > 150) continue;
+      if (Math.abs(eye.x - set.cx) > 170 || Math.abs(eye.z - set.cz) > 170) continue;
       for (const g of set.list) {
         const d = (g.x - eye.x) ** 2 + (g.y - eye.y) ** 2 + (g.z - eye.z) ** 2;
-        if (d < (g.lava ? 70 * 70 : 50 * 50)) near.push([d, g]);
+        if (d < (g.lava ? 70 * 70 : 100 * 100)) near.push([d, g]);
       }
     }
     near.sort((a, b) => a[0] - b[0]);
@@ -209,7 +290,10 @@ export function updateCaveLife(time, eye = null) {
     // reaches; then the nearest of the rest.)
     let lava = 0;
     for (const [d, g] of near) if (g.lava && lava < 3 && d < 70 * 70) caveGlowLights.push(g), lava++;
-    for (const [, g] of near) if (!g.lava && caveGlowLights.length < 7) caveGlowLights.push(g);
+    // (The rest by how near they are for how far each reaches: a strong one a
+    // way off before a faint one close by.)
+    near.sort((a, b) => Math.sqrt(a[0]) / a[1].reach - Math.sqrt(b[0]) / b[1].reach);
+    for (const [, g] of near) if (!g.lava && caveGlowLights.length < 11) caveGlowLights.push(g);
   }
   for (const st of steams) {
     if (Math.abs(eye.x - st.cx) > 160 || Math.abs(eye.z - st.cz) > 160) continue;
@@ -405,6 +489,7 @@ export function createCaveLayer(config) {
       for (const f of group.userData.flocks ?? []) roostFlocks.delete(f);
       if (group.userData.vineSet) vineSets.delete(group.userData.vineSet);
       if (group.userData.steam) steams.delete(group.userData.steam);
+      if (group.userData.shroomSet) shroomSets.delete(group.userData.shroomSet);
       if (group.userData.glowSet) glowSets.delete(group.userData.glowSet);
       group.traverse((m) => (details.delete(m), rocks.delete(m)));
       const [cx, cz] = group.userData.chunk;
@@ -485,6 +570,40 @@ export function createCaveLayer(config) {
           plants.receiveShadow = true;
           group.add(detail(plants));
         }
+        if (data.giants?.length) {
+          // The giant mushrooms: one instanced mesh to each kind and cap colour in the chunk.
+          const byKey = new Map(), list = [];
+          for (let k = 0, i = 0; k < data.giants.length; k += 5, i++) {
+            const s0 = data.giants[k + 4], shroom = shroomOf(s0);
+            const key = `${shroom.kind}:${shroom.capIndex}`;
+            if (!byKey.has(key)) byKey.set(key, []);
+            const g = { x: data.giants[k], y: data.giants[k + 1], z: data.giants[k + 2], height: data.giants[k + 3], s: s0, kind: shroom.kind, ratio: shroom.ratio, turn: (s0 * 7.3) % (Math.PI * 2), key: `${cx},${cz},${i}`, i: list.length };
+            g.cut = shroomsCut.has(g.key);
+            byKey.get(key).push(g);
+            list.push(g);
+          }
+          for (const [key, gs] of byKey) {
+            const [kind, capIndex] = key.split(':').map(Number);
+            const mesh = new InstancedMesh(shroomGeometry(kind, capIndex), material, gs.length);
+            mesh.name = 'cave giant mushrooms';
+            mesh.castShadow = false;
+            mesh.receiveShadow = true;
+            gs.forEach((g, n) => {
+              g.mesh = mesh;
+              g.index = n;
+              if (g.cut) mesh.setMatrixAt(n, dm.makeScale(0, 0, 0));
+              else mesh.setMatrixAt(n, dm.compose(dp.set(g.x - cx * size, g.y - 0.3, g.z - cz * size), dq.setFromAxisAngle(UPV, g.turn), ds.setScalar(g.height)));
+            });
+            mesh.instanceMatrix.needsUpdate = true;
+            mesh.computeBoundingSphere();
+            group.add(detail(mesh));
+          }
+          // (Those cut down in an earlier visit: out of the way.)
+          for (const g of list) if (g.cut) caves.clearObstacle?.(g.x, g.z);
+          const set = { list, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size, material, caves };
+          shroomSets.add(set);
+          group.userData.shroomSet = set;
+        }
         if (data.geysers?.length) {
           const vents = [];
           for (let k = 0; k < data.geysers.length; k += 4) vents.push({ x: data.geysers[k], y: data.geysers[k + 1], z: data.geysers[k + 2], s: data.geysers[k + 3], phase: (k * 0.37) % 1 * 6 });
@@ -520,18 +639,18 @@ export function createCaveLayer(config) {
           const list = [];
           const f = data.features ?? [];
           for (let k = 0; k < f.length; k += 6) {
-            if (f[k] === 2) list.push({ x: f[k + 1], y: f[k + 2] + 0.6, z: f[k + 3], strength: 7, reach: 9, colour: 0x7fd8ff, steady: true });
-            else if (f[k] === 3) list.push({ x: f[k + 1], y: f[k + 2] + 0.4, z: f[k + 3], strength: 5, reach: 7, colour: 0x7affc8, steady: true });
+            if (f[k] === 2) list.push({ x: f[k + 1], y: f[k + 2] + 0.6, z: f[k + 3], strength: 11, reach: 18, colour: 0x7fd8ff, steady: true });
+            else if (f[k] === 3) list.push({ x: f[k + 1], y: f[k + 2] + 0.4, z: f[k + 3], strength: 9, reach: 15, colour: 0x7affc8, steady: true });
           }
           const li = data.lights ?? [];
           for (let k = 0; k < li.length; k += 4) {
-            if (li[k + 3] === 0) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 10, reach: 18, colour: 0x7ae8e0, steady: true });
-            else if (li[k + 3] === 2) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 9, reach: 14, colour: 0xb69aff, steady: true }); // (a crystal cluster)
-            else if (li[k + 3] === 3) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 11, reach: 16, colour: 0x6ae0d0, steady: true }); // (a glowing mushroom cap)
-            else list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 7, reach: 10, colour: 0x8affc8, steady: true });
+            if (li[k + 3] === 0) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 12, reach: 24, colour: 0x7ae8e0, steady: true });
+            else if (li[k + 3] === 2) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 16, reach: 28, colour: 0xb69aff, steady: true }); // (a crystal cluster)
+            else if (li[k + 3] === 3) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 18, reach: 32, colour: 0x6ae0d0, steady: true }); // (a glowing mushroom cap)
+            else list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 12, reach: 20, colour: 0x8affc8, steady: true });
           }
           const v = data.vines ?? [];
-          for (let k = 0; k < v.length; k += 7) if (v[k + 4] === 3) list.push({ x: v[k], y: v[k + 1] - v[k + 3] * 0.6, z: v[k + 2], strength: 3, reach: 6, colour: 0xf0c060, steady: true });
+          for (let k = 0; k < v.length; k += 7) if (v[k + 4] === 3) list.push({ x: v[k], y: v[k + 1] - v[k + 3] * 0.6, z: v[k + 2], strength: 5, reach: 11, colour: 0xf0c060, steady: true });
           // (Lava: a light every so often over it, deep orange.)
           const lp = data.lava?.attributes.position;
           // (A lava lake: a light over every 12 m or so of it, strong and far-reaching.)
