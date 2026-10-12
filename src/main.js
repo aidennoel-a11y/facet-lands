@@ -727,6 +727,7 @@ const bigMap = new BiomeMap({
     camera.getWorldDirection(dir);
     return { x: camera.position.x, z: camera.position.z, heading: Math.atan2(dir.x, -dir.z) };
   },
+  fog: () => (game.mode === 'survival' ? { explored: game.explored, size: WORLD.chunkSize } : null),
   // (Testing: the ruins marked on it too.)
   ruins: (x, z, r) => (game.mode === 'testing' ? ruins.sitesNear(x, z, Math.min(r, 9000), generator) : ruins.sitesNear(x, z, Math.min(r, 9000), generator).filter((s) => game.ruinsSeen.has(s.key))),
   teleport: (x, z) => {
@@ -1964,6 +1965,7 @@ function tick(now) {
   // (Testing: every ruin for 2 km round, the far ones pointed to from the map's edge.)
   const testing = game.mode === 'testing';
   minimap.marks = [...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...ruins.sitesNear(camera.position.x, camera.position.z, testing ? 2000 : 700, generator).filter((r) => testing || game.ruinsSeen.has(r.key)).map((r) => ({ x: r.x, z: r.z, kind: 'ruin', edge: testing }))];
+  minimap.fog = game.mode === 'survival' ? { explored: game.explored, size: WORLD.chunkSize, version: game.exploredVersion ?? 0 } : null;
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
 
   frames++;

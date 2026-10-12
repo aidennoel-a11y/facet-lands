@@ -1,3 +1,4 @@
+import { paintFog } from './mapFog.js';
 import { MAP_LABELS } from './mapLabels.js';
 
 const TILE = 64; // samples per tile edge
@@ -33,7 +34,8 @@ const STYLE = `
  * @param teleport  (x, z) => take you there
  */
 export class BiomeMap {
-  constructor({ task, where, teleport, ruins }) {
+  constructor({ task, where, teleport, ruins, fog }) {
+    this.fog = fog; // (() => { explored, size } in survival, or null: see mapFog)
     this.ruins = ruins; // ((x, z, r) => the ruins to mark, round there)
     this.task = task;
     this.where = where;
@@ -173,6 +175,8 @@ export class BiomeMap {
   // (The label under a canvas pixel, if its tile is drawn.)
   #labelAt(px, py) {
     const w = this.#toWorld(px, py);
+    const fog = this.fog?.();
+    if (fog && !fog.explored.has(`${Math.floor(w.x / fog.size)},${Math.floor(w.z / fog.size)}`)) return null; // (not yet explored: nothing known)
     const span = TILE * this.scale;
     const tx = Math.floor(w.x / span), tz = Math.floor(w.z / span);
     const tile = this.tiles.get(`${this.scale}:${tx}:${tz}`);
@@ -243,6 +247,9 @@ export class BiomeMap {
       if (this.pending >= 8) break;
       this.#request(tx, tz, scale);
     }
+    // (In survival: only the land you've explored.)
+    const fog = this.fog?.();
+    if (fog) ctx.drawImage(paintFog((this.fogMask ??= document.createElement('canvas')), w, n, fog.explored, fog.size, (x, z) => [(x - x0) / scale, (z - z0) / scale], scale), 0, 0);
     // The ruins, as little orange keeps.
     const found = this.ruins?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? [];
     for (const r of found) {

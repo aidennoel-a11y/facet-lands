@@ -1,4 +1,5 @@
 import { minimapPixels } from './minimapPixels.js';
+import { paintFog } from './mapFog.js';
 
 /**
  * Top-down, hill-shaded map of the terrain around the camera, drawn
@@ -92,7 +93,20 @@ export class Minimap {
     ctx.translate(w / 2, w / 2);
     ctx.scale(scale, scale);
     ctx.drawImage(this.buffer, -n / 2 - ox, -n / 2 - oz);
+    // (In survival: only the land you've explored; the rest under the fog.)
+    const fog = this.fog;
+    if (fog) {
+      const key = `${this.center.x},${this.center.z},${fog.version}`;
+      if (this.fogKey !== key) {
+        this.fogKey = key;
+        const x0 = this.center.x - (n * s) / 2, z0 = this.center.z - (n * s) / 2;
+        paintFog((this.fogMask ??= document.createElement('canvas')), n, n, fog.explored, fog.size, (x, z) => [(x - x0) / s, (z - z0) / s], s);
+      }
+      ctx.drawImage(this.fogMask, -n / 2 - ox, -n / 2 - oz);
+    }
+    const hidden = (x, z) => fog && !fog.explored.has(`${Math.floor(x / fog.size)},${Math.floor(z / fog.size)}`);
     for (const mouth of this.caveMouths) {
+      if (hidden(mouth.x, mouth.z)) continue;
       const x = (mouth.x - position.x) / s;
       const z = (mouth.z - position.z) / s;
       ctx.beginPath();

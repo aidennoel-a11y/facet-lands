@@ -125,6 +125,7 @@ export class Game {
     this.time = 0;
     this.ruinChests = new Set(); // (the ruins' chests set out already: see ruinChest)
     this.ruinsSeen = new Set(); // (the ruins you've been to)
+    this.explored = new Set(); // ("cx,cz": the chunks you've been near, the 5 x 5 round you: all the survival map shows)
     this.waypoint = null; // (where an old map showed ruins: { x, z, key })
     this.cooldown = 0;
     this.pending = []; // blows landing a moment after the swing: { time, fn }
@@ -200,6 +201,7 @@ export class Game {
     }
     this.ruinChests = new Set(saved?.ruins?.chests ?? []);
     this.ruinsSeen = new Set(saved?.ruins?.seen ?? []);
+    this.explored = new Set(saved?.explored ?? []);
     this.waypoint = saved?.ruins?.waypoint ?? null;
     this.structures.load(saved?.structures ?? []);
     this.wildlife.loadTame(saved?.tame ?? []);
@@ -244,6 +246,7 @@ export class Game {
       cut: this.cutJSON?.() ?? null,
       shrooms: this.shrooms ? [...this.shrooms.cut] : [],
       ruins: { chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
+      explored: [...this.explored],
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
     try {
@@ -1854,6 +1857,17 @@ export class Game {
     const ground = (x, z) => this.groundAt(x, z);
     this.items.update(dt, (x, z, y) => this.groundAt(x, z, y));
     // (The ruins you've been to: and the map's mark, once you're there.)
+    // The land round you, filled in on your map.
+    if (this.mode === 'survival') {
+      const size = this.config.chunkSize ?? 128, cx = Math.floor(cam.x / size), cz = Math.floor(cam.z / size);
+      if (cx !== this.exploredAt?.[0] || cz !== this.exploredAt?.[1]) {
+        this.exploredAt = [cx, cz];
+        for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+          const key = `${cx + dx},${cz + dz}`;
+          if (!this.explored.has(key)) (this.explored.add(key), (this.dirty = true), (this.exploredVersion = (this.exploredVersion ?? 0) + 1));
+        }
+      }
+    }
     this.ruinWait = (this.ruinWait ?? 0) - dt;
     if (this.ruinWait <= 0 && this.ruinsNear) {
       this.ruinWait = 2;
