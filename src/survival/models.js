@@ -1463,3 +1463,34 @@ export function houseDoorModel(style) {
   }
   return b.build();
 }
+
+/**
+ * The altar before the Lost Keep's gate: a carved block of stone with
+ * twelve sockets round its top, one for each great beast's trophy (see
+ * altarStoneModel: what shows in a socket once it's set).
+ */
+export const ALTAR_SOCKETS = 12;
+export function altarModel() {
+  const b = new Parts(241), rand = mulberry32(241);
+  b.add(new BoxGeometry(1.9, 0.9, 1.3), 0x6e6c68, [0, 0.45, 0], [0, 0, 0], [1, 1, 1], 0.05);
+  b.add(new BoxGeometry(2.1, 0.16, 1.5), 0x8a867e, [0, 0.98, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  b.add(new BoxGeometry(2.0, 0.12, 1.4), 0x5a5852, [0, 0.06, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  // (Carved bands down its faces.)
+  for (const z of [-0.66, 0.66]) for (let x = -0.8; x <= 0.8; x += 0.4) b.add(new BoxGeometry(0.08, 0.6, 0.04), 0x7a7870, [x, 0.5, z]);
+  for (let k = 0; k < ALTAR_SOCKETS; k++) {
+    const [x, z] = altarSocket(k);
+    b.add(new CylinderGeometry(0.1, 0.08, 0.05, 8), 0x2a2826, [x, 1.065, z], [0, 0, 0], [1, 1, 1], 0.02);
+  }
+  b.add(new CylinderGeometry(0.22, 0.26, 0.08, 10), 0x9a7a48, [0, 1.08, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  void rand;
+  return b.build();
+}
+/** Where a socket is on the altar's top. */
+export function altarSocket(k) {
+  const per = ALTAR_SOCKETS / 2, row = Math.floor(k / per), i = k % per;
+  return [-0.8 + (i * 1.6) / (per - 1), row ? 0.5 : -0.5];
+}
+/** What's set in a socket: a glowing stone (the trophy given, made light). */
+export function altarStoneModel() {
+  return new Parts(243).add(new OctahedronGeometry(0.09, 0), 0xffffff, [0, 1.16, 0], [0, 0, 0], [1, 1.5, 1], 0.02).build();
+}

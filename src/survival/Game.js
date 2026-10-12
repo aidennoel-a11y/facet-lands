@@ -4,7 +4,7 @@ import { Felling } from './Felling.js';
 import { GroundItems } from './GroundItems.js';
 import { Hud } from './Hud.js';
 import { Inventory } from './Inventory.js';
-import { BLADES, GRINDS, ITEMS, RECIPES, TIERS, stackOf, weightOf, tierOf, usesText } from './items.js';
+import { BLADES, GRINDS, ITEMS, RECIPES, RELICS, TIERS, stackOf, weightOf, tierOf, usesText } from './items.js';
 import { bobberModel, bowModel } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
@@ -69,6 +69,8 @@ const MEATS = ['rawMeat', 'cookedMeat', 'rawFish', 'cookedFish'];
 const TIMES = { cook: 60, smelt: 30, dry: 180, boil: 20, stew: 60, tan: 240, char: 20, steel: 45, smoke: 150 };
 // What's left in the chests in the ruins: [id, least, most, chance] (in a
 // chest up the tower, the better things more likely).
+// (A steady number 0..1 from a whole number: the old maps' marks.)
+const hashOf = (n) => ((Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1 + 1) % 1;
 const RUIN_LOOT = [
   ['arrow', 4, 10, 0.4], ['bandage', 2, 3, 0.35], ['rope', 1, 2, 0.3], ['coal', 2, 5, 0.35], ['ironBar', 1, 3, 0.35], ['flint', 2, 3, 0.3],
   ['jerky', 2, 4, 0.35], ['torch', 2, 3, 0.3], ['seedWheat', 2, 4, 0.15], ['seedCarrot', 2, 4, 0.15], ['crystal', 1, 2, 0.15],
@@ -126,6 +128,8 @@ export class Game {
     this.ruinChests = new Set(); // (the ruins' chests set out already: see ruinChest)
     this.ruinsSeen = new Set(); // (the ruins you've been to)
     this.explored = new Set(); // ("cx,cz": the chunks you've been near, the 5 x 5 round you: all the survival map shows)
+    // The Lost Keep: its gate opened (all the trophies set in its altar), its heart reached, what the old maps have told of it.
+    this.keep = { open: false, won: false, clues: 0, mark: null };
     this.waypoint = null; // (where an old map showed ruins: { x, z, key })
     this.cooldown = 0;
     this.pending = []; // blows landing a moment after the swing: { time, fn }
@@ -202,6 +206,8 @@ export class Game {
     this.ruinChests = new Set(saved?.ruins?.chests ?? []);
     this.ruinsSeen = new Set(saved?.ruins?.seen ?? []);
     this.explored = new Set(saved?.explored ?? []);
+    this.keep = { open: false, won: false, clues: 0, mark: null, ...(saved?.keep ?? {}) };
+    this.onKeep?.(this.keep.open);
     this.waypoint = saved?.ruins?.waypoint ?? null;
     this.structures.load(saved?.structures ?? []);
     this.wildlife.loadTame(saved?.tame ?? []);
@@ -247,6 +253,7 @@ export class Game {
       shrooms: this.shrooms ? [...this.shrooms.cut] : [],
       ruins: { chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
       explored: [...this.explored],
+      keep: this.keep,
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
     try {
@@ -405,7 +412,11 @@ export class Game {
     const done = s.jobs?.some((j) => j.done);
     if (done) return `Take what's ready`;
     switch (s.type) {
-      case 'chest': return 'Open the chest';
+      case 'chest': return s.ruinKey === 'keep:heart' ? 'The heart of the Lost Keep: open it' : 'Open the chest';
+      case 'keepAltar': {
+        const n = s.offered.length;
+        return n >= RELICS.length ? 'The altar of the Lost Keep: every trophy set; the gate stands open' : `The altar of the Lost Keep: ${n} of ${RELICS.length} trophies set (E: set those you carry)`;
+      }
       case 'cellar': return 'Open the root cellar';
       case 'fishTrap': return s.caught ? `Take the fish (${s.caught})` : (this.winter ?? 0) > 0.7 ? 'Iced in: nothing swims into it' : 'Set, and waiting (Shift+E to take it up)';
       case 'smokingRack':
@@ -578,6 +589,7 @@ export class Game {
   }
 
   #useStructure(s, down) {
+    if (down && s.type === 'keepAltar') return this.hotbar?.flash('It is cut from the living rock: it will not move');
     if (down) {
       // Taking it back down.
       if (s.lit) return this.hotbar?.flash('Too hot to take down: let it burn out');
@@ -603,7 +615,10 @@ export class Game {
       return this.hotbar?.flash(done.map((st) => ITEMS[st.id].name).join(', '));
     }
     switch (s.type) {
+      case 'keepAltar':
+        return this.#offer(s);
       case 'chest':
+        if (s.ruinKey === 'keep:heart' && !this.keep.won) this.#won();
         this.hud.openChest(s.contents, this.inventory);
         return this.#menu(true);
       case 'cellar':
@@ -2407,6 +2422,21 @@ export class Game {
   ruinChest(c) {
     if (this.ruinChests.has(c.key) || this.structures.list.some((s) => s.ruinKey === c.key)) return;
     this.ruinChests.add(c.key);
+    if (c.altar) {
+      // The Lost Keep's altar (see #offer).
+      const s = this.structures.build({ type: 'keepAltar', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { ruinKey: c.key, offered: [] });
+      s.ruinKey = c.key;
+      this.dirty = true;
+      return;
+    }
+    if (c.heart) {
+      // The heart of the Lost Keep: the best of everything.
+      const contents = [['goldBar', 6], ['steelBar', 6], ['oldSword', 1], ['crystal', 6], ['forgedPickaxe', 1], ['steelArmour', 1], ['smokedMeat', 6], ['coalTorch', 6]].map(([id, n]) => Inventory.stack(id, n));
+      const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents, ruinKey: c.key });
+      s.ruinKey = c.key;
+      this.dirty = true;
+      return;
+    }
     const contents = [];
     const room = (st) => contents.length < 10 && contents.push(st);
     for (const [id, lo, hi, chance] of RUIN_LOOT) if (Math.random() < chance * (c.best ? 1.4 : 1)) room(Inventory.stack(id, lo + Math.floor(Math.random() * (hi - lo + 1))));
@@ -2415,6 +2445,39 @@ export class Game {
     const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents, ruinKey: c.key });
     s.ruinKey = c.key;
     this.dirty = true;
+  }
+
+  /**
+   * At the Lost Keep's altar: every trophy you carry that's still wanted is
+   * set in its socket. With the last of them, the sealed gate opens.
+   */
+  #offer(s) {
+    if (s.offered.length >= RELICS.length) return this.hotbar?.flash('Every socket is filled: the gate stands open');
+    const given = RELICS.filter((id) => !s.offered.includes(id) && this.inventory.count(id) > 0);
+    for (const id of given) {
+      this.inventory.remove(id, 1);
+      s.offered.push(id);
+    }
+    this.structures.showOffered(s);
+    this.dirty = true;
+    const missing = RELICS.filter((id) => !s.offered.includes(id));
+    if (!given.length) return this.hotbar?.flash(`It wants the trophies of the great beasts. Still wanted: ${missing.map((id) => ITEMS[id].name).join(', ')}`);
+    this.sound?.call('craft', 0, 0.6);
+    if (missing.length) return this.hotbar?.flash(`Set in the altar: ${given.map((id) => ITEMS[id].name).join(', ')}. ${missing.length} still wanted`);
+    // The last: the gate.
+    this.keep.open = true;
+    this.onKeep?.(true);
+    this.sound?.call('treefall', 0, 1);
+    this.hud.toast('The sealed gate of the Lost Keep grinds open');
+    return this.hotbar?.flash('The stones blaze up, one by one, and the great gate grinds open');
+  }
+
+  // The heart of the Lost Keep reached: the end of the long road (play goes on).
+  #won() {
+    this.keep.won = true;
+    this.dirty = true;
+    this.hud.won?.({ days: Math.floor(this.age ?? 0), bosses: Object.keys(this.wildlife.bossDeaths ?? {}).length });
+    this.hud.onWonClose = () => this.#menu(this.hud.busy);
   }
 
   // An old map: it shows where the nearest ruin you've not been to lies.
@@ -2432,7 +2495,17 @@ export class Game {
     this.cooldown = 0.6;
     this.sound?.call('pickup', 0, 0.4);
     this.dirty = true;
-    return this.hotbar?.flash(`The map marks ruins ${d > 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d / 10) * 10} m`} to the ${way} (on your map)`);
+    // And in its corner, in another hand, where the Lost Keep lies: rough
+    // at first, closer with every old map read.
+    const keep = this.keepAt?.();
+    let more = '';
+    if (keep && !this.keep.open) {
+      this.keep.clues = (this.keep.clues ?? 0) + 1;
+      const r2 = [700, 300, 0][Math.min(2, this.keep.clues - 1)], a2 = hashOf(this.keep.clues) * Math.PI * 2;
+      this.keep.mark = { x: keep.x + Math.cos(a2) * r2 * 0.6, z: keep.z + Math.sin(a2) * r2 * 0.6, r: r2 };
+      more = r2 ? ` In its corner, in an older hand, the Lost Keep, somewhere within ${r2} m of a mark` : ' In its corner, the Lost Keep, marked plain';
+    }
+    return this.hotbar?.flash(`The map marks ruins ${d > 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d / 10) * 10} m`} to the ${way} (on your map).${more}`);
   }
 
   /** How near the nearest lit fire is (for its crackle). */

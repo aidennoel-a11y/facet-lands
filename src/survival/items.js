@@ -319,6 +319,13 @@ export const TIERS = [
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];
+/**
+ * The Lost Keep's altar wants one of each great beast's trophy: all of
+ * them, the Broodmother's heart with the rest (see Game.#offer).
+ */
+export const RELICS = ['grizzlyPelt', 'alphaFang', 'paleFur', 'greatAntlers', 'greatHide', 'crocHide', 'lionPelt', 'tigerPelt', 'venomSac', 'boarTusk', 'caveBearPelt', 'broodHeart'];
+// (Each one's stone in the altar, its own colour.)
+export const RELIC_COLOURS = [0x8a6a50, 0xe8e4d8, 0xf4f0e8, 0xc8b490, 0x6a4430, 0x6a8a4a, 0xd8a848, 0xe07830, 0x60c040, 0xd8d0c0, 0x5a504a, 0xc02030];
 /** What tool a recipe needs in your pack (not used up), in words. */
 export const usesText = (r) => (r.uses?.some((t) => /Axe/.test(t)) ? 'a steel axe' : 'a steel pickaxe');
 /** The tier a recipe's in. */

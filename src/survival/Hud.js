@@ -61,6 +61,12 @@ export class Hud {
         <p class="death-days"></p>
         <p class="death-best"></p>
         <button type="button" class="respawn">Try again</button>
+      </section>
+      <section class="death won" hidden>
+        <h2>The heart of the Lost Keep</h2>
+        <p>Every great beast brought down, their trophies set in the altar, the sealed gate opened: you have reached the heart of the Lost Keep.</p>
+        <p class="won-days"></p>
+        <button type="button" class="won-on">Go on exploring</button>
       </section>`;
     this.el = (sel) => root.querySelector(sel);
     this.bars = Object.fromEntries(BARS.map(([id]) => [id, root.querySelector(`[data-vital="${id}"]`)]));
@@ -70,11 +76,12 @@ export class Hud {
     this.onRespawn = null;
     this.onLeave = null;
     this.el('.respawn').addEventListener('click', () => (this.deathButton === 'leave' ? this.onLeave?.() : this.onRespawn?.()));
+    this.el('.won-on').addEventListener('click', () => ((this.el('.won').hidden = true), this.onWonClose?.()));
     this.sleepAmount = 0;
   }
 
   get busy() {
-    return ['.craft', '.creative', '.chest-ui', '.death'].some((sel) => !this.el(sel).hidden);
+    return ['.craft', '.creative', '.chest-ui', '.death', '.won'].some((sel) => !this.el(sel).hidden);
   }
 
   /**
@@ -290,6 +297,12 @@ export class Hud {
     this.deathButton = button;
     this.el('.respawn').textContent = { again: 'Try again', new: 'Start a new life', leave: 'Back to the menu' }[button];
     this.el('.death').hidden = false;
+  }
+
+  /** The end of the long road: the Lost Keep's heart reached. */
+  won({ days, bosses }) {
+    this.el('.won-days').textContent = `${days} ${days === 1 ? 'day' : 'days'} in the wild, ${bosses} great ${bosses === 1 ? 'beast' : 'beasts'} brought down.`;
+    this.el('.won').hidden = false;
   }
 
   /** Survival: the day of this life, the season, and the longest life yet (or hidden: null). */

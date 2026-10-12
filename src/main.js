@@ -686,6 +686,8 @@ const game = new Game({
 });
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 ruins.onChest = (c) => game.ruinChest(c);
+game.onKeep = (open) => ruins.openKeep(open);
+game.keepAt = () => ruins.keep(generator);
 game.ruinsNear = (x, z, r) => ruins.sitesNear(x, z, r, generator);
 // (Online: what the others hold, drawn in their hands: see Multiplayer.)
 mp.items = { ids: Object.keys(ITEMS), geometry: (id) => game.items.model(id), material: game.items.material, holdPose: Game.holdPose };
@@ -736,6 +738,8 @@ const bigMap = new BiomeMap({
     return { x: camera.position.x, z: camera.position.z, heading: Math.atan2(dir.x, -dir.z) };
   },
   fog: () => (game.mode === 'survival' ? { explored: game.explored, size: WORLD.chunkSize } : null),
+  // (The Lost Keep: where the old maps put it, or, testing, where it is.)
+  keep: () => (game.mode === 'testing' ? { ...ruins.keep(generator), r: 0 } : game.keep?.mark ?? null),
   // (Testing: the ruins marked on it too.)
   ruins: (x, z, r) => (game.mode === 'testing' ? ruins.sitesNear(x, z, Math.min(r, 9000), generator) : ruins.sitesNear(x, z, Math.min(r, 9000), generator).filter((s) => game.ruinsSeen.has(s.key))),
   teleport: (x, z) => {
@@ -1974,7 +1978,8 @@ function tick(now) {
   // (On the map: the ruins you've been to, and where an old map showed more.)
   // (Testing: every ruin for 2 km round, the far ones pointed to from the map's edge.)
   const testing = game.mode === 'testing';
-  minimap.marks = [...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...ruins.sitesNear(camera.position.x, camera.position.z, testing ? 2000 : 700, generator).filter((r) => testing || game.ruinsSeen.has(r.key)).map((r) => ({ x: r.x, z: r.z, kind: 'ruin', edge: testing }))];
+  const keepMark = testing ? { ...ruins.keep(generator), r: 0 } : game.keep?.mark;
+  minimap.marks = [...(keepMark ? [{ x: keepMark.x, z: keepMark.z, r: keepMark.r, kind: 'keep' }] : []), ...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...ruins.sitesNear(camera.position.x, camera.position.z, testing ? 2000 : 700, generator).filter((r) => !r.keep && (testing || game.ruinsSeen.has(r.key))).map((r) => ({ x: r.x, z: r.z, kind: 'ruin', edge: testing }))];
   minimap.fog = game.mode === 'survival' ? { explored: game.explored, size: WORLD.chunkSize, version: game.exploredVersion ?? 0 } : null;
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
 

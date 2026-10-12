@@ -60,13 +60,36 @@ function colour(g, hex, rand, vary = 0.16) {
 
 // The ten kinds of ruin, all in the one old stone, and how far each spreads
 // (metres from its middle): the land under it must take that.
-export const RUIN_KINDS = ['stronghold', 'watchtower', 'gatehouse', 'temple', 'hall', 'chapel', 'castle', 'hamlet', 'circle', 'aqueduct'];
-const RUIN_SIZE = [18, 9, 13, 12, 16, 10, 24, 18, 9, 20];
+export const RUIN_KINDS = ['stronghold', 'watchtower', 'gatehouse', 'temple', 'hall', 'chapel', 'castle', 'hamlet', 'circle', 'aqueduct', 'keep'];
+const RUIN_SIZE = [18, 9, 13, 12, 16, 10, 24, 18, 9, 20, 34];
+
+/**
+ * The Lost Keep: one in each world, three kilometres or so from its middle,
+ * on open ground (the first of a ring of places round that the land will
+ * take). A great castle, its walls whole and too high to climb, its one way
+ * in shut by a sealed gate; before the gate, an altar that wants the
+ * trophies of all the great beasts (see Game.#offer). Set them all and the
+ * gate opens; in the heart of the keep, the last chest.
+ */
+const keeps = new WeakMap();
+export function keepSite(generator, seaLevel) {
+  if (keeps.has(generator)) return keeps.get(generator);
+  let found = null, last = null;
+  for (let k = 0; k < 64 && !found; k++) {
+    const a = hash2(k, 7, generator.seed ^ 0x6ee9) * Math.PI * 2, r = 2600 + 1200 * hash2(k, 8, generator.seed ^ 0x6ee9);
+    const site = { x: Math.cos(a) * r, z: Math.sin(a) * r, rot: hash2(k, 9, generator.seed ^ 0x6ee9) * Math.PI * 2, seed: 4242 + k, key: 'keep', kind: 10, size: RUIN_SIZE[10], keep: true };
+    last = site;
+    if (ruinFits(site, generator, seaLevel)) found = site;
+  }
+  found ??= last;
+  keeps.set(generator, found);
+  return found;
+}
 
 // One ruin: its stone, into `parts` (geometries in the chunk's frame, its
 // corner at x0, z0), what's solid of it into `solids` (world), and its
 // chests to `onChest`.
-function buildRuin(site, generator, x0, z0, parts, solids, onChest) {
+function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = null) {
   const rand = mulberry32(site.seed);
   const rot = site.rot, ca = Math.cos(rot), sa = Math.sin(rot);
   const w = generator.getBiomeWeights(site.x, site.z, {});
@@ -77,12 +100,13 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest) {
   const wx = (u, v) => site.x + ca * u + sa * v, wz = (u, v) => site.z - sa * u + ca * v;
   const ground = (u, v) => generator.getHeight(wx(u, v), wz(u, v));
   // A piece, made in the ruin's frame (x = u, z = v), turned and set into the chunk.
+  let into = parts; // (the Keep's sealed gate goes into a mesh of its own: see gateParts)
   const put = (g, hex, vary) => {
     g = g.index ? g.toNonIndexed() : g;
     g.deleteAttribute('uv');
     g.rotateY(rot);
     g.translate(site.x - x0, 0, site.z - z0);
-    parts.push(colour(g, hex, rand, vary));
+    into.push(colour(g, hex, rand, vary));
   };
   const block = (u, v, y, su, sy, sv, hex, [rx, ry, rz] = [0, 0, 0]) => {
     const g = new BoxGeometry(su, sy, sv).toNonIndexed();
@@ -93,9 +117,9 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest) {
     put(g, hex);
   };
   // Something solid: a box in the ruin's frame (half-sizes), bottom to top (world heights).
-  const solid = (u, v, hu, hv, bottom, top, turn = 0) => solids.push({ x: wx(u, v), z: wz(u, v), hx: hu, hz: hv, rot: rot + turn, bottom, top, r: Math.hypot(hu, hv) });
+  const solid = (u, v, hu, hv, bottom, top, turn = 0, gate = false) => solids.push({ x: wx(u, v), z: wz(u, v), hx: hu, hz: hv, rot: rot + turn, bottom, top, r: Math.hypot(hu, hv), gate });
   // The chests: `best` ones hold the better things.
-  const chest = (u, v, y, name, best = false) => onChest?.({ key: `${site.key}:${name}`, x: wx(u, v), y, z: wz(u, v), rot: rot + rand() * 0.6 - 0.3, best });
+  const chest = (u, v, y, name, best = false, extra = {}) => onChest?.({ key: `${site.key}:${name}`, x: wx(u, v), y, z: wz(u, v), rot: rot + rand() * 0.6 - 0.3, best, ...extra });
 
   // A run of wall from (u1, v1) to (u2, v2), `thick`, each 0.6 m of it
   // standing as high as `height(t)` says (0 where it's fallen), in courses
@@ -448,6 +472,47 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest) {
       if (rand() < 0.5) chest(gap * 3 - 1.4, -1.8, ground(gap * 3 - 1.4, -1.8), 'pier2', true);
       break;
     }
+    case 10: {
+      // The Lost Keep: a curtain wall, whole and high, round a great court;
+      // towers at its corners and either side of its gate; the great keep
+      // tower in the middle, its stair up to a hall high in it. The gate
+      // sealed with a slab of carved stone; the altar before it.
+      const S = 22, W = 7.2, whole = () => W;
+      wallRun(-S, -S, -S, -2.6, 1.4, whole, { mossy: 0.2 });
+      wallRun(-S, 2.6, -S, S, 1.4, whole, { mossy: 0.2 });
+      wallRun(-S, S, S, S, 1.4, whole, { mossy: 0.2 });
+      wallRun(S, S, S, -S, 1.4, whole, { mossy: 0.2 });
+      wallRun(S, -S, -S, -S, 1.4, whole, { mossy: 0.2 });
+      for (const [u, v] of [[-S - 3, -S - 3], [S - 3, -S - 3], [-S - 3, S - 3], [S - 3, S - 3]]) tower(u, v, 6, 12 + rand() * 2, false);
+      tower(-S - 4, -8.6, 6, 13, false);
+      tower(-S - 4, 2.6, 6, 13, false);
+      // (Over the gate: a high arch, and a walk of stone across from tower to tower.)
+      const gg = ground(-S, 0);
+      arch(-S, 0, gg + 5.2, 2.6);
+      block(-S, 0, gg + W - 0.3, 1.6, 0.8, 6.2, stone());
+      // The sealed gate: a slab of dark stone filling the arch, cut with rings.
+      into = gateParts ?? parts;
+      block(-S, 0, gg + 2.55, 1.2, 5.6, 5.1, 0x4a4842);
+      for (let k = 0; k < 3; k++) block(-S - 0.62, 0, gg + 1.3 + k * 1.5, 0.08, 0.5 + k * 0.3, 2.4 - k * 0.5, 0x7a6a48, [0, 0, 0]);
+      into = parts;
+      solid(-S, 0, 0.7, 2.6, gg - 0.5, gg + 5.4, 0, true);
+      // The great keep in the middle: its stair up to the hall, and the heart of it.
+      const top = tower(-5, -5, 10, 20 + rand() * 3, true);
+      // The court: cobbled from the gate to the keep's door.
+      cobbles(-S + 1, -5, -1.5, 1.5, 0.15);
+      // Outside: the way up to the gate, and the altar before it, on a dais.
+      cobbles(-S - 26, -S - 2, -1.6, 1.6, 0.25);
+      const au = -S - 9, ag = ground(au, 0);
+      block(au, 0, ag + 0.15, 4.4, 0.6, 4.4, stone());
+      block(au, 0, ag + 0.55, 3.2, 0.3, 3.2, stone());
+      solid(au, 0, 2.2, 2.2, ag - 0.3, ag + 0.7);
+      for (const v of [-3.4, 3.4]) column(au, v, null, 4.4, 1);
+      rubble(10, S + 8, S + 16);
+      chest(au, 0, ag + 0.7, 'altar', false, { altar: true, rot: rot - Math.PI / 2 });
+      chest(top.u + 2, top.v + 2, top.y, 'heart', true, { heart: true });
+      chest(S - 3, S - 3, ground(S - 3, S - 3), 'court', true);
+      break;
+    }
     default: {
       // A stronghold: a courtyard's walls, a tower in its far corner, a gateway standing before it, columns down one side.
       const S = 8, T = 0.7;
@@ -474,12 +539,14 @@ export function createRuinLayer(config) {
   const site = (I, K, generator) => {
     const key = `${I},${K}`;
     if (!fits.has(key)) {
-      const s = ruinSite(I, K, generator.seed);
-      fits.set(key, s && ruinFits(s, generator, config.seaLevel) ? s : null);
+      const s = ruinSite(I, K, generator.seed), keep = keepSite(generator, config.seaLevel);
+      // (None crowding the Lost Keep.)
+      fits.set(key, s && Math.hypot(s.x - keep.x, s.z - keep.z) > 160 && ruinFits(s, generator, config.seaLevel) ? s : null);
     }
     return fits.get(key);
   };
   const solids = new Map(); // "cx,cz" -> [{ x, z, hx, hz, rot, bottom, top, r }] (world)
+  const gates = new Set(); // (the Keep's sealed gate, while it's built)
   // (The stone near a point: what's in the chunks round it.)
   const near = (x, z) => {
     const size = config.chunkSize, cx = Math.floor(x / size), cz = Math.floor(z / size), out = [];
@@ -498,6 +565,18 @@ export function createRuinLayer(config) {
     name: 'ruins',
     material,
     onChest: null, // ({ key, x, y, z, rot, best }) => a chest's place, when its ruin's built near you
+    keepOpen: false, // (the Lost Keep's gate: see openKeep)
+
+    /** The Lost Keep's sealed gate opened (or shut again: a new world). */
+    openKeep(open) {
+      layer.keepOpen = open;
+      for (const g of gates) g.visible = !open;
+    },
+
+    /** Where the Lost Keep is. */
+    keep(generator) {
+      return keepSite(generator, config.seaLevel);
+    },
 
     /** The ruins near (x, z), within `r` metres: [{ x, z, key, ... }] (only those the land takes). */
     sitesNear(x, z, r, generator) {
@@ -508,6 +587,8 @@ export function createRuinLayer(config) {
           if (s && Math.hypot(s.x - x, s.z - z) <= r) out.push(s);
         }
       }
+      const keep = keepSite(generator, config.seaLevel);
+      if (Math.hypot(keep.x - x, keep.z - z) <= r) out.push(keep);
       return out;
     },
 
@@ -515,7 +596,7 @@ export function createRuinLayer(config) {
     surfaceAt(x, z, feetY) {
       let top = -Infinity;
       for (const b of near(x, z)) {
-        if (b.top > feetY + 0.65 || b.top < top) continue;
+        if (b.top > feetY + 0.65 || b.top < top || (b.gate && layer.keepOpen)) continue;
         const [u, v] = frame(b, x, z);
         if (Math.abs(u) <= b.hx && Math.abs(v) <= b.hz) top = b.top;
       }
@@ -526,6 +607,7 @@ export function createRuinLayer(config) {
     collide(position, radius, feetY) {
       for (const b of near(position.x, position.z)) {
         if (feetY > b.top - 0.6 || feetY + 1.75 < b.bottom) continue; // (up on it, or under it)
+      if (b.gate && layer.keepOpen) continue; // (the Keep's gate, open)
         const [u, v, c, s] = frame(b, position.x, position.z);
         const cu = Math.max(-b.hx, Math.min(b.hx, u)), cv = Math.max(-b.hz, Math.min(b.hz, v));
         let du = u - cu, dv = v - cv, d = Math.hypot(du, dv);
@@ -549,7 +631,9 @@ export function createRuinLayer(config) {
       if (lod > 2) return null;
       const size = config.chunkSize, x0 = cx * size, z0 = cz * size;
       const I0 = Math.floor(x0 / CELL), K0 = Math.floor(z0 / CELL);
-      const parts = [], list = [];
+      const parts = [], list = [], gateParts = [];
+      const keep = keepSite(generator, config.seaLevel);
+      if (Math.floor(keep.x / size) === cx && Math.floor(keep.z / size) === cz) buildRuin(keep, generator, x0, z0, parts, list, lod === 0 ? layer.onChest : null, gateParts);
       for (let K = K0 - 1; K <= K0 + 1; K++) {
         for (let I = I0 - 1; I <= I0 + 1; I++) {
           const s = site(I, K, generator);
@@ -568,6 +652,18 @@ export function createRuinLayer(config) {
       const group = new Group();
       group.name = 'ruins';
       group.add(mesh);
+      if (gateParts.length) {
+        // (The Keep's sealed gate: its own mesh, gone once it's opened.)
+        const g = mergeGeometries(gateParts);
+        g.computeVertexNormals();
+        const gate = new Mesh(g, material);
+        gate.name = 'keep gate';
+        gate.castShadow = gate.receiveShadow = true;
+        gate.visible = !layer.keepOpen;
+        group.add(gate);
+        gates.add(gate);
+        group.userData.gate = gate;
+      }
       group.userData.key = `${cx},${cz}`;
       group.userData.solids = list;
       solids.set(group.userData.key, list);
@@ -576,6 +672,7 @@ export function createRuinLayer(config) {
 
     dispose(group) {
       if (solids.get(group.userData.key) === group.userData.solids) solids.delete(group.userData.key);
+      if (group.userData.gate) gates.delete(group.userData.gate);
       for (const mesh of group.children) mesh.geometry.dispose();
     },
   };

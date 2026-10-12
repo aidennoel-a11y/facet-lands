@@ -34,7 +34,8 @@ const STYLE = `
  * @param teleport  (x, z) => take you there
  */
 export class BiomeMap {
-  constructor({ task, where, teleport, ruins, fog }) {
+  constructor({ task, where, teleport, ruins, fog, keep }) {
+    this.keep = keep; // (() => { x, z, r } where the Lost Keep is marked, or null)
     this.fog = fog; // (() => { explored, size } in survival, or null: see mapFog)
     this.ruins = ruins; // ((x, z, r) => the ruins to mark, round there)
     this.task = task;
@@ -252,7 +253,31 @@ export class BiomeMap {
     if (fog) ctx.drawImage(paintFog((this.fogMask ??= document.createElement('canvas')), w, n, fog.explored, fog.size, (x, z) => [(x - x0) / scale, (z - z0) / scale], scale), 0, 0);
     // The ruins, as little orange keeps.
     const found = this.ruins?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? [];
+    const km = this.keep?.();
+    if (km) {
+      const kx = (km.x - x0) / scale, ky = (km.z - z0) / scale;
+      if (km.r) {
+        ctx.beginPath();
+        ctx.arc(kx, ky, Math.max(6, km.r / scale), 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(232, 184, 64, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.fillStyle = '#e8b840';
+      ctx.strokeStyle = '#2a2420';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(kx - 6, ky + 5); ctx.lineTo(kx - 6, ky - 3); ctx.lineTo(kx - 3, ky - 3); ctx.lineTo(kx - 3, ky - 7); ctx.lineTo(kx + 3, ky - 7); ctx.lineTo(kx + 3, ky - 3); ctx.lineTo(kx + 6, ky - 3); ctx.lineTo(kx + 6, ky + 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = 'bold 11px system-ui';
+      ctx.fillText('The Lost Keep', kx + 9, ky + 4);
+    }
     for (const r of found) {
+      if (r.keep) continue;
       const rx = (r.x - x0) / scale, ry = (r.z - z0) / scale;
       if (rx < -6 || ry < -6 || rx > w + 6 || ry > n + 6) continue;
       ctx.fillStyle = '#e0a040';

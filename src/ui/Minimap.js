@@ -123,6 +123,32 @@ export class Minimap {
     for (const m of this.marks ?? []) {
       let x = (m.x - position.x) / s, z = (m.z - position.z) / s;
       const d = Math.hypot(x, z);
+      if (m.kind === 'keep') {
+        // The Lost Keep: a ring where the old maps put it (a mark at the edge, if it's off the map), a gold tower in it.
+        const far = d > edge;
+        if (far) (x *= edge / d), (z *= edge / d);
+        ctx.save();
+        ctx.translate(x, z);
+        if (!far && m.r) {
+          ctx.beginPath();
+          ctx.arc(0, 0, m.r / s, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(232, 184, 64, 0.85)';
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([3, 2]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.fillStyle = '#e8b840';
+        ctx.strokeStyle = '#2a2420';
+        ctx.lineWidth = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(-3, 3); ctx.lineTo(-3, -2); ctx.lineTo(-1.5, -2); ctx.lineTo(-1.5, -4); ctx.lineTo(1.5, -4); ctx.lineTo(1.5, -2); ctx.lineTo(3, -2); ctx.lineTo(3, 3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        continue;
+      }
       if (m.kind === 'goal') {
         if (d > edge) (x *= edge / d), (z *= edge / d);
         ctx.save();

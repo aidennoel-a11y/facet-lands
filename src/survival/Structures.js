@@ -6,8 +6,9 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH,
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel,
 } from './models.js';
+import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const FLAMES = [new Color(1, 0.55, 0.12), new Color(1, 0.75, 0.25), new Color(1, 0.38, 0.08)];
@@ -69,6 +70,8 @@ const KINDS = {
   tileRoof: { make: tileRoofModel, roof: true, steep: 99, stone: true },
   bedroll: { make: bedrollModel, box: [0.5, 1.0], tall: 0.2, bed: true, tilt: true },
   fancyBed: { make: fancyBedModel, box: [0.8, 1.15], tall: 0.8, bed: true },
+  // (The Lost Keep's altar: not built, found. See Game.#offer.)
+  keepAltar: { make: altarModel, box: [1.0, 0.7], tall: 1.1 },
   anvil: { make: anvilModel, box: [0.5, 0.3], tall: 0.95 },
   grindstone: { make: grindstoneModel, box: [0.3, 0.45], tall: 1.2 },
   tanningRack: { make: tanningRackModel, box: [0.9, 0.2], jobs: 1 },
@@ -415,6 +418,18 @@ export class Structures {
       }
       rope.castShadow = true;
       mesh.add(rope);
+    }
+    if (s.type === 'keepAltar') {
+      // Its sockets: a stone in each, shown once that trophy is set (see showOffered).
+      s.offered ??= [];
+      s.stones = RELIC_COLOURS.map((c, k) => {
+        const m = new Mesh(this.models.altarStone ??= altarStoneModel(), new MeshLambertMaterial({ color: c, emissive: c, emissiveIntensity: 0.6 }));
+        const [x, z] = altarSocket(k);
+        m.position.set(x, 0, z);
+        mesh.add(m);
+        return m;
+      });
+      this.showOffered(s);
     }
     if (s.type === 'plot') {
       s.cropMesh = new Mesh(undefined, this.material);
@@ -865,6 +880,11 @@ export class Structures {
     return best;
   }
 
+  /** The altar's stones: one lit in each socket whose trophy has been set (see RELICS). */
+  showOffered(s) {
+    s.stones?.forEach((m, k) => (m.visible = s.offered.includes(RELICS[k])));
+  }
+
   /** Moves a structure (a raft being paddled). */
   move(s, x, y, z, rot) {
     Object.assign(s, { x, y, z, rot });
@@ -879,7 +899,7 @@ export class Structures {
     return this.list.map((s) => ({
       type: s.type, x: r(s.x), y: r(s.y), z: r(s.z), rot: +s.rot.toFixed(3), lit: s.lit, fuel: Math.round(s.fuel), burnt: !!s.burnt,
       contents: s.contents?.slots, open: !!s.open, caught: s.type === 'fishTrap' ? s.caught || 0 : !!s.caught, jobs: s.jobs.map(({ stack, out, left, total, done }) => ({ stack, out, left, total, done })),
-      tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0, upper: s.upper || undefined,
+      tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0, upper: s.upper || undefined, offered: s.offered,
     }));
   }
 
@@ -946,7 +966,7 @@ export class Structures {
     this.onChange = null;
     for (const s of list ?? []) {
       if (!KINDS[s.type]) continue;
-      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0, upper: !!s.upper });
+      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0, upper: !!s.upper, offered: s.offered });
     }
     this.onChange = quiet;
   }
