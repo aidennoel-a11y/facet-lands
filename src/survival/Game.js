@@ -48,7 +48,7 @@ const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a bla
 const AXES = { axe: 1, steelAxe: 2, forgedAxe: 3 };
 const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2, tuskPickaxe: 3 };
 const SPEARS = new Set(['spear', 'steelSpear', 'forgedSpear']);
-const SWORDS = new Set(['sword', 'fangSword']);
+const SWORDS = new Set(['sword', 'fangSword', 'oldSword']);
 const BOWS = new Set(['bow', 'antlerBow']);
 // (Torches: the plain one, and the coal torch: brighter, further, the one for the caves.)
 const TORCHES = new Set(['torch', 'coalTorch']);
@@ -67,6 +67,14 @@ const MEATS = ['rawMeat', 'cookedMeat', 'rawFish', 'cookedFish'];
 // How long things take: meat on the fire a minute; ore in the furnace half
 // a minute; meat on the drying rack three; a waterskin coming to the boil.
 const TIMES = { cook: 60, smelt: 30, dry: 180, boil: 20, stew: 60, tan: 240, char: 20, steel: 45, smoke: 150 };
+// What's left in the chests in the ruins: [id, least, most, chance] (in a
+// chest up the tower, the better things more likely).
+const RUIN_LOOT = [
+  ['arrow', 4, 10, 0.4], ['bandage', 2, 3, 0.35], ['rope', 1, 2, 0.3], ['coal', 2, 5, 0.35], ['ironBar', 1, 3, 0.35], ['flint', 2, 3, 0.3],
+  ['jerky', 2, 4, 0.35], ['torch', 2, 3, 0.3], ['seedWheat', 2, 4, 0.15], ['seedCarrot', 2, 4, 0.15], ['crystal', 1, 2, 0.15],
+  ['goldBar', 1, 2, 0.15], ['steelBar', 1, 2, 0.12], ['bolt', 4, 8, 0.1], ['coalTorch', 2, 3, 0.15], ['smokedMeat', 2, 3, 0.15],
+];
+const RUIN_RARE = [['oldMap', 0.4, 0.5], ['oldSword', 0.06, 0.25], ['forgedPickaxe', 0.04, 0.1], ['steelArmour', 0.02, 0.08]];
 // What a ripe crop gives.
 const HARVEST = { wheat: [['wheat', 3], ['seedWheat', 2]], corn: [['corn', 2], ['seedCorn', 2]], potato: [['potato', 4], ['seedPotato', 1]], carrot: [['carrot', 3], ['seedCarrot', 2]] };
 // Past this much in your pack (kg) you slow down; past twice it, you can't run.
@@ -115,6 +123,9 @@ export class Game {
     this.ghosts = []; // (online: the others' in flight, only to be seen: see ghostShot)
     this.harvested = new Map(); // tree key -> time picked (the fruit comes again after a while)
     this.time = 0;
+    this.ruinChests = new Set(); // (the ruins' chests set out already: see ruinChest)
+    this.ruinsSeen = new Set(); // (the ruins you've been to)
+    this.waypoint = null; // (where an old map showed ruins: { x, z, key })
     this.cooldown = 0;
     this.pending = []; // blows landing a moment after the swing: { time, fn }
     this.lastHeat = { wait: 0, heat: 0, seasonality: 0 };
@@ -182,6 +193,9 @@ export class Game {
     for (const k of saved?.mushrooms ?? []) this.mushrooms?.taken.add(k);
     this.felling.loadStumps(saved?.stumps);
     this.loadBurns?.(saved?.burns ?? []);
+    this.ruinChests = new Set(saved?.ruins?.chests ?? []);
+    this.ruinsSeen = new Set(saved?.ruins?.seen ?? []);
+    this.waypoint = saved?.ruins?.waypoint ?? null;
     this.structures.load(saved?.structures ?? []);
     this.wildlife.loadTame(saved?.tame ?? []);
     this.wildlife.loadBosses(saved?.bosses ?? {});
@@ -222,6 +236,7 @@ export class Game {
       clock: this.clock?.get() ?? null,
       progress: [...this.progress],
       burns: this.burnsJSON?.() ?? null,
+      ruins: { chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
     try {
@@ -753,6 +768,7 @@ export class Game {
       this.sound?.call('drink', 0, 0.5);
       return this.hotbar?.flash(sick ? 'It tasted foul: you feel feverish' : `You drink (${s.water} left)`);
     }
+    if (s.id === 'oldMap') return this.#readMap(i);
     if (s.id === 'bandage') {
       const was = this.survival.bandage();
       this.inventory.take(i);
@@ -1787,6 +1803,15 @@ export class Game {
     const cam = this.camera.position;
     const ground = (x, z) => this.groundAt(x, z);
     this.items.update(dt, (x, z, y) => this.groundAt(x, z, y));
+    // (The ruins you've been to: and the map's mark, once you're there.)
+    this.ruinWait = (this.ruinWait ?? 0) - dt;
+    if (this.ruinWait <= 0 && this.ruinsNear) {
+      this.ruinWait = 2;
+      for (const r of this.ruinsNear(cam.x, cam.z, 30)) {
+        if (!this.ruinsSeen.has(r.key)) (this.ruinsSeen.add(r.key), (this.dirty = true));
+        if (this.waypoint?.key === r.key) (this.waypoint = null), this.hotbar?.flash('The ruins the map showed');
+      }
+    }
     // (The burnt woods growing back.)
     this.regrowWait = (this.regrowWait ?? 0) - dt;
     if (this.regrowWait <= 0 && this.worldDay) {
@@ -2297,6 +2322,41 @@ export class Game {
       if (Math.hypot(s.x - this.camera.position.x, s.z - this.camera.position.z) < 60) this.hotbar?.flash('A bear is into your stores!');
     }
     return took;
+  }
+
+  /**
+   * A chest in a ruin (see RuinLayer): set there, full of what was left,
+   * the first time you come near it; there for good after (opened or not).
+   */
+  ruinChest(c) {
+    if (this.ruinChests.has(c.key) || this.structures.list.some((s) => s.ruinKey === c.key)) return;
+    this.ruinChests.add(c.key);
+    const contents = [];
+    const room = (st) => contents.length < 10 && contents.push(st);
+    for (const [id, lo, hi, chance] of RUIN_LOOT) if (Math.random() < chance * (c.best ? 1.4 : 1)) room(Inventory.stack(id, lo + Math.floor(Math.random() * (hi - lo + 1))));
+    for (const [id, low, best] of RUIN_RARE) if (Math.random() < (c.best ? best : low)) room(Inventory.stack(id, 1));
+    if (!contents.length) room(Inventory.stack('arrow', 5));
+    const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents, ruinKey: c.key });
+    s.ruinKey = c.key;
+    this.dirty = true;
+  }
+
+  // An old map: it shows where the nearest ruin you've not been to lies.
+  #readMap(i) {
+    const p = this.camera.position;
+    const sites = (this.ruinsNear?.(p.x, p.z, 4000) ?? []).filter((r) => !this.ruinsSeen.has(r.key) && Math.hypot(r.x - p.x, r.z - p.z) > 40);
+    if (!sites.length) return this.hotbar?.flash('The map is too faded to make out');
+    sites.sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z));
+    const r = sites[0], d = Math.hypot(r.x - p.x, r.z - p.z);
+    const dirs = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+    const a = Math.atan2(r.x - p.x, -(r.z - p.z));
+    const way = dirs[Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
+    this.waypoint = { x: r.x, z: r.z, key: r.key };
+    this.inventory.take(i);
+    this.cooldown = 0.6;
+    this.sound?.call('pickup', 0, 0.4);
+    this.dirty = true;
+    return this.hotbar?.flash(`The map marks ruins ${d > 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d / 10) * 10} m`} to the ${way} (on your map)`);
   }
 
   /** How near the nearest lit fire is (for its crackle). */

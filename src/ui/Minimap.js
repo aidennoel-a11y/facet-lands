@@ -103,6 +103,33 @@ export class Minimap {
       ctx.strokeStyle = '#f4efe6';
       ctx.stroke();
     }
+    // Ruins you've found (a small grey keep), and the mark an old map
+    // made (a red cross: at the map's edge, pointing, if it's further off).
+    const edge = (n * 0.75) / 2 - 4;
+    for (const m of this.marks ?? []) {
+      let x = (m.x - position.x) / s, z = (m.z - position.z) / s;
+      const d = Math.hypot(x, z);
+      if (m.kind === 'goal') {
+        if (d > edge) (x *= edge / d), (z *= edge / d);
+        ctx.save();
+        ctx.translate(x, z);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.6;
+        ctx.beginPath();
+        ctx.moveTo(-3, -3); ctx.lineTo(3, 3); ctx.moveTo(3, -3); ctx.lineTo(-3, 3);
+        ctx.stroke();
+        ctx.strokeStyle = '#c0281a';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.restore();
+      } else if (d < edge) {
+        ctx.fillStyle = '#6e6c68';
+        ctx.strokeStyle = '#f4efe6';
+        ctx.lineWidth = 0.8;
+        ctx.fillRect(x - 2.2, z - 2.2, 4.4, 4.4);
+        ctx.strokeRect(x - 2.2, z - 2.2, 4.4, 4.4);
+      }
+    }
     ctx.restore();
 
     // Player marker, pointing the way the camera faces.

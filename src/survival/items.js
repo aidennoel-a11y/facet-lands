@@ -93,6 +93,9 @@ export const ITEMS = {
   forgedPickaxe: { name: 'Steel pickaxe', tool: true, durability: 400, weight: 2, group: 'Tools' },
   forgedSpear: { name: 'Steel spear', tool: true, durability: 180, weight: 1.6, sharp: 2, group: 'Tools' },
   sword: { name: 'Steel sword', tool: true, durability: 260, weight: 1.6, sharp: 3, group: 'Tools' }, // (quick, deep cuts: see Game.#stab)
+  // (Found only in the ruins: a knight's blade, old but keen; and maps that show where other ruins lie.)
+  oldSword: { name: "Old knight's sword", tool: true, durability: 300, weight: 1.7, sharp: 3.5, group: 'Tools' },
+  oldMap: { name: 'Old map', weight: 0.05, group: 'Tools' },
   fangSword: { name: 'Fang sword', tool: true, durability: 360, weight: 1.6, sharp: 4, group: 'Tools' }, // (Greymane's fang set in its hilt: the keenest blade)
   antlerBow: { name: 'Antler bow', tool: true, durability: 240, weight: 1.4, power: 1.5, group: 'Tools' }, // (stiffer: arrows fly further and strike harder)
   tuskPickaxe: { name: 'Tusk pickaxe', tool: true, durability: 500, weight: 2.2, group: 'Tools' },
@@ -407,6 +410,8 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   re('tigerArmour', 'steelArmour', [['#9aa4b0', '#d8782a']]);
   re('crocArmour', 'steelArmour', [['#9aa4b0', '#4a5a3a']]);
   re('fangSword', 'sword', [['#dfe6ee', '#f4f0e4'], ['#8a949e', '#e0d8c0']]);
+  re('oldSword', 'sword', [['#dfe6ee', '#a8aca4'], ['#8a949e', '#b08a3a']]);
+  ICONS.oldMap = `<path d="M5 7l7-2 8 2 7-2v20l-7 2-8-2-7 2z" fill="#d8c8a0"/><path d="M12 5v20M20 7v20" stroke="#b8a47a"/><path d="M8 18c3-4 6 2 10-3s5-2 6-4" stroke="#8a5a3a" stroke-dasharray="1.5 1.5" fill="none"/><path d="M22 9l3 3M25 9l-3 3" stroke="#b02a1a" stroke-width="1.6"/>`;
   re('antlerBow', 'bow', [['#8a5d38', '#d8c8a0']]);
   re('tuskPickaxe', 'forgedPickaxe', [['#dfe6ee', '#f0e6d0'], ['#c8c4bc', '#f0e6d0']]);
   re('poisonArrow', 'arrow', [['#3e4250', '#4a7a2a']]);

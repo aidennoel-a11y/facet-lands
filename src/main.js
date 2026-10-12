@@ -10,6 +10,7 @@ import { CaveSpiders } from './wildlife/CaveSpiders.js';
 import { caveFocus, caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
+import { createRuinLayer } from './world/layers/RuinLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
 import { createRiverLayer, mistLight } from './world/layers/RiverLayer.js';
 import { createReedLayer } from './world/layers/ReedLayer.js';
@@ -259,6 +260,9 @@ caves.onFinds = (cx, cz, features, group) => game.items.addCave(cx, cz, features
 caves.onGone = (cx, cz) => game.items.removeCave(cx, cz);
 chunks.addLayer(createEntranceLayer(WORLD, caves.material));
 chunks.addLayer(rocks);
+// The ruins of old strongholds, here and there (see RuinLayer): their chests set out by the Game.
+const ruins = createRuinLayer(WORLD);
+chunks.addLayer(ruins);
 chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
 // The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).
 for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.material, farGrass.material, rocks.material, farTrees.material, logs.material, water.material, rivers.material]) if (m) addCloudShadow(m);
@@ -272,7 +276,7 @@ let floorTop = null; // (see the Game, below: what's laid on the ground)
 function groundAt(x, feetY, z) {
   const g = generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
   // Boulders are solid: you stand on their tops (and walk into their sides as walls).
-  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), logs.surfaceAt(x, z));
+  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), logs.surfaceAt(x, z), ruins.surfaceAt(x, z, feetY));
   // (On a floor you've laid: its boards or flags.)
   const floor = floorTop?.(x, z, feetY);
   if (floor !== null && floor !== undefined) g.height = Math.max(g.height, floor);
@@ -562,6 +566,7 @@ const controls = new PlayerControls(camera, canvas, {
     // (Into the leaves a little way, not through them; and they slow you.)
     controls.speedFactor = trees.leaves(position, radius, feet, controls.eyeHeight + 0.1);
     game.structures.collide(position, radius, feet);
+    ruins.collide(position, radius, feet);
     generator.caves.collide(position, radius, feet);
     bodiesCollide(position, radius, feet);
   },
@@ -640,6 +645,8 @@ const game = new Game({
   },
 });
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
+ruins.onChest = (c) => game.ruinChest(c);
+game.ruinsNear = (x, z, r) => ruins.sitesNear(x, z, r, generator);
 // (Online: what the others hold, drawn in their hands: see Multiplayer.)
 mp.items = { ids: Object.keys(ITEMS), geometry: (id) => game.items.model(id), material: game.items.material, holdPose: Game.holdPose };
 // Online, one world for everyone: what's done to it, the sky, the animals
@@ -1906,6 +1913,8 @@ function tick(now) {
   for (const child of hidden) child.visible = true;
 
   camera.position.y -= tremble;
+  // (On the map: the ruins you've been to, and where an old map showed more.)
+  minimap.marks = [...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...ruins.sitesNear(camera.position.x, camera.position.z, 700, generator).filter((r) => game.ruinsSeen.has(r.key)).map((r) => ({ x: r.x, z: r.z, kind: 'ruin' }))];
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
 
   frames++;
