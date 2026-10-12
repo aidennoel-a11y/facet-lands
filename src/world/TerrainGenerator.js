@@ -371,7 +371,8 @@ export class TerrainGenerator {
     // On the open sea's warm coasts: mangroves. They take over whatever
     // was there.
     // (Not over the wetlands: they stay as they are.)
-    const m = this.#mangrove(x, z, a, range) * (1 - smoothstep(0.2, 0.5, out.wetland));
+    let m = this.#mangrove(x, z, a, range) * (1 - smoothstep(0.2, 0.5, out.wetland));
+    if (m > 0) m *= smoothstep(0.35, 0.7, this.#mangroveSpread(x, z)); // (kept off its edges: see #mangroveSpread)
     if (m > 0) for (const id of BIOME_IDS) out[id] *= 1 - m;
     out.mangrove = m;
     return out;
@@ -494,6 +495,53 @@ export class TerrainGenerator {
     if (m > 0) m *= smoothstep(T.mangrove, T.mangrove + 0.2, this.coastNoise.fbm(x * 0.00028 + 310, z * 0.00028 - 170, 2));
     if (m <= 0 || this.#volcanoBelt(x, z) > 0.3) return 0;
     return m * smoothstep(0, 0.45, this.#seaCoast(x, z)); // (eased in over a good distance from the coast: no wall where the hills behind meet it)
+  }
+
+  /**
+   * The mangrove coasts' share spread smooth over a few hundred metres (on
+   * a 48 m grid, remembered): the land is brought down to the swamp by
+   * this, so it slopes down to it over that distance, high ground behind
+   * it or not, never a wall where the swamp's edge would be. (The swamp
+   * itself, its trees and mud, keeps to where this is well up: see
+   * #biomeWeights.)
+   */
+  #mangroveSpread(x, z) {
+    const G = 48;
+    const gx = Math.floor(x / G), gz = Math.floor(z / G);
+    const fx = x / G - gx, fz = z / G - gz;
+    const cache = this._mangroveSpread ?? (this._mangroveSpread = new Map());
+    const at = (i, j) => {
+      const key = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.get(key);
+      if (v === undefined) {
+        const cx = i * G, cz = j * G;
+        // (Quick outs first: no mangrove coast for hundreds of metres round
+        // where the coast noise is well low, or it's dry or up in the ranges.)
+        let coast = this.coastNoise.fbm(cx * 0.00028 + 310, cz * 0.00028 - 170, 2) > T.mangrove - 0.1 ? 1 : 0;
+        if (coast) {
+          const range = this.#rangeField(cx, cz, {}).value;
+          coast = range < 0.5 && this.getAridity(cx, cz, range) < T.savannaStart + 0.06 ? this.#seaCoast(cx, cz) : -1;
+        }
+        for (let k = 0; k < 8 && coast === 0; k++) coast = this.#seaCoast(cx + Math.cos((k / 8) * Math.PI * 2) * 400, cz + Math.sin((k / 8) * Math.PI * 2) * 400);
+        v = 0;
+        if (coast > 0) {
+          const one = (px, pz) => {
+            const range = this.#rangeField(px, pz, {}).value;
+            return this.#mangrove(px, pz, this.getAridity(px, pz, range), range);
+          };
+          let sum = one(cx, cz) * 2;
+          for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2;
+            sum += one(cx + Math.cos(a) * 110, cz + Math.sin(a) * 110) + one(cx + Math.cos(a + 0.4) * 230, cz + Math.sin(a + 0.4) * 230) + one(cx + Math.cos(a + 0.2) * 350, cz + Math.sin(a + 0.2) * 350) * 0.6;
+          }
+          v = sum / 22.8;
+        }
+        if (cache.size > 60000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    return (at(gx, gz) * (1 - fx) + at(gx + 1, gz) * fx) * (1 - fz) + (at(gx, gz + 1) * (1 - fx) + at(gx + 1, gz + 1) * fx) * fz;
   }
 
   /** The broad continent noise alone (low near the coasts), remembered for the last point. */
@@ -1265,10 +1313,14 @@ export class TerrainGenerator {
     // Mangrove coasts: the land eases down to a maze of mud banks and
     // channels just above the tide, and the sea off them shoals into warm
     // shallows a metre or so deep, where the mangroves stand.
-    if (w.mangrove > 0) {
+    // (By the swamp's share spread smooth, so whatever's behind it, hills
+    // or a mountain plateau, comes down to it on a long slope.)
+    // (The far-reaching planning, rivers and probes, makes do with the plain share: quicker.)
+    const mangrove = this._probing || this._riverWork ? w.mangrove : w.wetland < 0.5 ? smoothstep(0.04, 0.6, this.#mangroveSpread(x, z)) * (1 - smoothstep(0.2, 0.5, w.wetland)) : 0;
+    if (mangrove > 0) {
       const target = seaLevel - 0.7 + 0.7 * this.#marsh(x, z);
-      if (height > target) height += (target - height) * w.mangrove * (1 - smoothstep(4, 40, height - target) * (1 - w.mangrove * w.mangrove));
-      else if (height < target - 1.4) height += (target - 1.4 - height) * w.mangrove * (1 - smoothstep(seaLevel - 14, seaLevel - 22, height));
+      if (height > target) height += (target - height) * mangrove;
+      else if (height < target - 1.4) height += (target - 1.4 - height) * mangrove * (1 - smoothstep(seaLevel - 14, seaLevel - 22, height));
     }
     const soft = w.wetland + w.mangrove;
     // Islands, here and there out in a lake or the sea: a wooded hump of
@@ -2999,7 +3051,9 @@ export class TerrainGenerator {
     const open = temperate * (1 - hz) * (1 - vz);
     if (open <= 0) return 0;
     const smoky = open * this.#smokyZone(x, z, range);
-    return smoky > 0 ? smoky * (1 - this.#mangrove(x, z, a, range)) : 0;
+    if (smoky <= 0) return 0;
+    const m = this.#mangrove(x, z, a, range);
+    return smoky * (1 - (m > 0 ? m * smoothstep(0.35, 0.7, this.#mangroveSpread(x, z)) : 0));
   }
 
   /** Whether a Smoky Mountains blob's outline comes within `margin` metres of (x, z). */
