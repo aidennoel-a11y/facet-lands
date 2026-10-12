@@ -8,7 +8,7 @@ const gridAt = (x, z) => { const k = `${Math.floor(x / 128)},${Math.floor(z / 12
 const air = (x, y, z) => { const gr = gridAt(x, z); return gr && y > gr.yMin && y < gr.yMin + (gr.ny - 1) * gr.cell ? sampleGrid(gr, x, y, z) : 50; };
 const g = new TerrainGenerator(process.argv[2] ?? 'polaris', WORLD), f = g.caves.field;
 const found = {};
-for (let k = 0; k < 40000 && Object.keys(found).length < 6; k++) {
+for (let k = 0; k < 40000 && Object.keys(found).length < 8; k++) {
   const x = Math.round(Math.sin(k * 12.9898) * 3000), z = Math.round(Math.sin(k * 78.233) * 3000);
   const H = g.getHeight(x, z), col = f.column(x, z, H);
   if (col.river && col.river.across < 1 && !found.river) {
@@ -19,7 +19,7 @@ for (let k = 0; k < 40000 && Object.keys(found).length < 6; k++) {
   const s = f.biomeScores(x, z);
   for (let y = 40; y > -110; y -= 3) {
     if (f.caves(x, y, z, H, f.regionRock(x, z), col) < -1 && f.caves(x, y - 3, z, H, f.regionRock(x, z), col) > 0 && air(x, y, z) < -1 && air(x, y + 2, z) < -0.5) {
-      const kind = ['plain', 'lush', 'volcanic', 'ice', 'dry'][CaveField.biomeAt(s, y)];
+      const kind = ['plain', 'lush', 'volcanic', 'ice', 'dry', 'crystal', 'mushroom'][CaveField.biomeAt(s, y)];
       if (!found[kind]) found[kind] = [x, z, y + 1.5];
       break;
     }

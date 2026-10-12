@@ -401,6 +401,14 @@ export class Insects {
         // (The cloud drifts a little about its spot with the air, and bobs.)
         const wx = w.x + Math.sin(T * 0.05 + w.seed) * 1.5, wz = w.z + Math.cos(T * 0.04 + w.seed) * 1.5;
         const count = Math.round(w.n * fade);
+        // (Walk into one, or close by it, and you hear them: a thin buzzing
+        // whine about your ears, now and then.)
+        const near = Math.hypot(wx - cam.x, w.y - cam.y, wz - cam.z);
+        w.heard = (w.heard ?? 0) - dt;
+        if (near < 4 && w.heard <= 0 && fade > 0.5) {
+          w.heard = rnd(1.2, 3.5) * (near < 1.5 ? 0.6 : 1);
+          ctx.sound?.call(dusk > 0.5 ? 'whine' : 'flybuzz', ctx.pan(wx, wz), 0.12 + 0.3 * (1 - near / 4));
+        }
         for (let k = 0; k < count && n < cap; k++) {
           const h = w.seed + k * 7.31;
           const r = w.r * (0.4 + 0.6 * ((k * 0.618) % 1));
@@ -443,9 +451,10 @@ export class Insects {
       f.z += f.vz * dt;
       const d = Math.hypot(f.x - cam.x, f.y - cam.y, f.z - cam.z);
       f.heard -= dt;
-      if (d < 0.8 && f.heard <= 0) {
-        f.heard = rnd(4, 12);
-        ctx.sound?.call(night ? 'whine' : 'flybuzz', ctx.pan(f.x, f.z), 0.35);
+      // (One going by your ear: louder the closer it passes.)
+      if (d < 1.4 && f.heard <= 0) {
+        f.heard = rnd(2, 6);
+        ctx.sound?.call(night ? 'whine' : 'flybuzz', ctx.pan(f.x, f.z), 0.2 + 0.35 * (1 - d / 1.4));
       }
       if (night || m >= this.fly2Mesh.instanceMatrix.count) continue; // (a mosquito: too small to see)
       e.set(0, Math.atan2(f.vx, f.vz), 0);

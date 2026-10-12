@@ -1,7 +1,8 @@
 // Everything you can carry: what it's called, how many go in a slot (ten,
 // but a tool is one to a slot), how long a tool lasts (`durability`: uses),
-// what eating it does, how long food keeps (`spoils`: seconds; food in a
-// chest keeps), how heavy it is (`weight`, kg), and what it becomes when
+// what eating it does (and how long it keeps you full: `full`, seconds,
+// hunger draining a third as fast), how long food keeps (`spoils`: seconds; food in a
+// chest keeps longer), how heavy it is (`weight`, kg), and what it becomes when
 // you set it down (`place`). And the recipes to make things.
 
 export const STACK = 10;
@@ -52,31 +53,31 @@ export const ITEMS = {
   seedCarrot: { name: 'Carrot seeds', weight: 0.05, sow: 'carrot', group: 'Farming' },
   wheat: { name: 'Wheat', weight: 0.3, group: 'Farming' },
   // Food.
-  berries: { name: 'Berries', food: { hunger: 8, thirst: 3 }, spoils: 1500, weight: 0.1, group: 'Food' },
-  apple: { name: 'Apple', food: { hunger: 12, thirst: 5 }, spoils: 2400, weight: 0.2, group: 'Food' },
-  mushroom: { name: 'Mushroom', food: { hunger: 6 }, spoils: 1500, weight: 0.1, group: 'Food' },
+  berries: { name: 'Berries', food: { hunger: 8, thirst: 3, full: 45 }, spoils: 1500, weight: 0.1, group: 'Food' },
+  apple: { name: 'Apple', food: { hunger: 12, thirst: 5, full: 90 }, spoils: 2400, weight: 0.2, group: 'Food' },
+  mushroom: { name: 'Mushroom', food: { hunger: 6, full: 60 }, spoils: 1500, weight: 0.1, group: 'Food' },
   // (In the dark of the caves: the pale cave mushroom, good to eat; the
   // deathcap, very like it, that will kill you; the glowcap, a mouthful.)
-  caveMushroom: { name: 'Cave mushroom', food: { hunger: 10 }, spoils: 1800, weight: 0.1, group: 'Food' },
-  deathcap: { name: 'Pale deathcap', food: { hunger: 3, health: -35, sick: 1 }, spoils: 2400, weight: 0.1, group: 'Food' },
-  glowcap: { name: 'Glowcap', food: { hunger: 3 }, spoils: 2400, weight: 0.05, group: 'Food' },
-  blindFish: { name: 'Blind cave fish', food: { hunger: 6, health: -3, sick: 0.5 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.4, group: 'Food' },
-  rawMeat: { name: 'Raw meat', food: { hunger: 10, health: -4, sick: 0.5 }, spoils: 900, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 1, group: 'Food' },
-  cookedMeat: { name: 'Cooked meat', food: { hunger: 35, health: 4 }, spoils: 2400, weight: 0.8, group: 'Food' },
-  rawFish: { name: 'Raw fish', food: { hunger: 8, health: -3, sick: 0.5 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.8, group: 'Food' },
-  cookedFish: { name: 'Cooked fish', food: { hunger: 25, health: 3 }, spoils: 1800, weight: 0.6, group: 'Food' },
-  jerky: { name: 'Jerky', food: { hunger: 22 }, weight: 0.3, group: 'Food' }, // (dried: it keeps)
+  caveMushroom: { name: 'Cave mushroom', food: { hunger: 10, full: 120 }, spoils: 1800, weight: 0.1, group: 'Food' },
+  deathcap: { name: 'Pale deathcap', food: { hunger: 3, health: -35, sick: 1, full: 30 }, spoils: 2400, weight: 0.1, group: 'Food' },
+  glowcap: { name: 'Glowcap', food: { hunger: 3, full: 30 }, spoils: 2400, weight: 0.05, group: 'Food' },
+  blindFish: { name: 'Blind cave fish', food: { hunger: 6, health: -3, sick: 0.5, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.4, group: 'Food' },
+  rawMeat: { name: 'Raw meat', food: { hunger: 10, health: -4, sick: 0.5, full: 180 }, spoils: 900, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 1, group: 'Food' },
+  cookedMeat: { name: 'Cooked meat', food: { hunger: 35, health: 4, full: 600 }, spoils: 2400, weight: 0.8, group: 'Food' },
+  rawFish: { name: 'Raw fish', food: { hunger: 8, health: -3, sick: 0.5, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.8, group: 'Food' },
+  cookedFish: { name: 'Cooked fish', food: { hunger: 25, health: 3, full: 360 }, spoils: 1800, weight: 0.6, group: 'Food' },
+  jerky: { name: 'Jerky', food: { hunger: 22, full: 360 }, weight: 0.3, group: 'Food' }, // (dried: it keeps)
   // (Smoked over a fire: it keeps, and it's better eating than jerky.)
-  smokedMeat: { name: 'Smoked meat', food: { hunger: 30, health: 3 }, weight: 0.6, group: 'Food' },
-  smokedFish: { name: 'Smoked fish', food: { hunger: 24, health: 2 }, weight: 0.4, group: 'Food' },
-  corn: { name: 'Ear of corn', food: { hunger: 8 }, spoils: 3000, cooks: 'roastCorn', weight: 0.3, group: 'Food' },
-  roastCorn: { name: 'Roast corn', food: { hunger: 22, health: 2 }, spoils: 2400, weight: 0.3, group: 'Food' },
-  potato: { name: 'Potato', food: { hunger: 5, health: -1 }, spoils: 6000, cooks: 'bakedPotato', weight: 0.3, group: 'Food' },
-  bakedPotato: { name: 'Baked potato', food: { hunger: 26, health: 3 }, spoils: 2400, weight: 0.3, group: 'Food' },
-  carrot: { name: 'Carrot', food: { hunger: 9, thirst: 2 }, spoils: 3600, weight: 0.15, group: 'Food' },
-  dough: { name: 'Dough', food: { hunger: 4, health: -1 }, spoils: 1200, cooks: 'bread', weight: 0.5, group: 'Food' },
-  bread: { name: 'Bread', food: { hunger: 32, health: 3 }, spoils: 6000, weight: 0.4, group: 'Food' },
-  stew: { name: 'Stew', food: { hunger: 50, thirst: 25, health: 12, cure: true }, spoils: 1800, weight: 1, group: 'Food' },
+  smokedMeat: { name: 'Smoked meat', food: { hunger: 30, health: 3, full: 540 }, weight: 0.6, group: 'Food' },
+  smokedFish: { name: 'Smoked fish', food: { hunger: 24, health: 2, full: 400 }, weight: 0.4, group: 'Food' },
+  corn: { name: 'Ear of corn', food: { hunger: 8, full: 120 }, spoils: 3000, cooks: 'roastCorn', weight: 0.3, group: 'Food' },
+  roastCorn: { name: 'Roast corn', food: { hunger: 22, health: 2, full: 300 }, spoils: 2400, weight: 0.3, group: 'Food' },
+  potato: { name: 'Potato', food: { hunger: 5, health: -1, full: 150 }, spoils: 6000, cooks: 'bakedPotato', weight: 0.3, group: 'Food' },
+  bakedPotato: { name: 'Baked potato', food: { hunger: 26, health: 3, full: 420 }, spoils: 2400, weight: 0.3, group: 'Food' },
+  carrot: { name: 'Carrot', food: { hunger: 9, thirst: 2, full: 100 }, spoils: 3600, weight: 0.15, group: 'Food' },
+  dough: { name: 'Dough', food: { hunger: 4, health: -1, full: 90 }, spoils: 1200, cooks: 'bread', weight: 0.5, group: 'Food' },
+  bread: { name: 'Bread', food: { hunger: 32, health: 3, full: 480 }, spoils: 6000, weight: 0.4, group: 'Food' },
+  stew: { name: 'Stew', food: { hunger: 50, thirst: 25, health: 12, cure: true, full: 720 }, spoils: 1800, weight: 1, group: 'Food' },
   // Tools and weapons.
   axe: { name: 'Stone axe', tool: true, durability: 90, weight: 1.5, sharp: 1, group: 'Tools' },
   pickaxe: { name: 'Stone pickaxe', tool: true, durability: 90, weight: 1.8, group: 'Tools' },

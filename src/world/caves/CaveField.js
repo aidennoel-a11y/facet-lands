@@ -322,15 +322,25 @@ export class CaveField {
       volcanic: 1.2 * w.volcanic + 0.25 * m,
       ice: sm(120, 190, H) * (1 - w.jungle - w.desert) + 0.35 * (w.pine + w.blackHills) * sm(0.2, 0.6, n * 0.5 + 0.5) + 0.2 * m,
       dry: w.desert + w.badlands + 0.5 * w.savanna + w.saltFlat,
+      // (Two rarer kinds, each in its own patches whatever the country over
+      // them: the crystal caverns, deep down; the mushroom forests.)
+      crystal: 1.35 * sm(0.5, 0.68, this.kind.noise2D(x / 820 + 70, z / 820 + 40)),
+      mushroom: 1.35 * sm(0.5, 0.68, this.kind.noise2D(x / 760 - 120, z / 760 + 90)) + 0.12 * (w.wetland + w.temperate),
     };
   }
 
-  /** 0 plain rock, 1 lush, 2 volcanic, 3 ice, 4 dry sandstone: from the scores, and how deep (everything very deep turns volcanic). */
+  /**
+   * 0 plain rock, 1 lush, 2 volcanic, 3 ice, 4 dry sandstone, 5 crystal
+   * caverns, 6 mushroom forest: from the scores, and how deep (everything
+   * very deep turns volcanic; the crystals only grow well down).
+   */
   static biomeAt(s, y) {
     const volcanic = s.volcanic + Math.min(1, Math.max(0, (-88 - y) / 20)) * 0.9;
-    const best = Math.max(s.lush, volcanic, s.ice, s.dry);
+    const crystal = (s.crystal ?? 0) * Math.min(1, Math.max(0, (-28 - y) / 14));
+    const mushroom = s.mushroom ?? 0;
+    const best = Math.max(s.lush, volcanic, s.ice, s.dry, crystal, mushroom);
     if (best < 0.5) return 0;
-    return best === volcanic ? 2 : best === s.ice ? 3 : best === s.lush ? 1 : 4;
+    return best === volcanic ? 2 : best === crystal ? 5 : best === mushroom ? 6 : best === s.ice ? 3 : best === s.lush ? 1 : 4;
   }
 
   // --- Entrances ---------------------------------------------------------------

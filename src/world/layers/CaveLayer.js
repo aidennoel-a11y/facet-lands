@@ -526,6 +526,8 @@ export function createCaveLayer(config) {
           const li = data.lights ?? [];
           for (let k = 0; k < li.length; k += 4) {
             if (li[k + 3] === 0) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 10, reach: 18, colour: 0x7ae8e0, steady: true });
+            else if (li[k + 3] === 2) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 9, reach: 14, colour: 0xb69aff, steady: true }); // (a crystal cluster)
+            else if (li[k + 3] === 3) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 11, reach: 16, colour: 0x6ae0d0, steady: true }); // (a glowing mushroom cap)
             else list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 7, reach: 10, colour: 0x8affc8, steady: true });
           }
           const v = data.vines ?? [];

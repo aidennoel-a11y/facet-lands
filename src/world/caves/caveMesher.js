@@ -26,6 +26,9 @@ const PALETTES = [
   { wall: [0x302c30, 0x38333a, 0x2a2629, 0x3e383c, 0x332d2e], floor: [0x3a2e28, 0x2e2420, 0x44342a], ceiling: 0x252124, low: 0x3a3236, tip: 0x5a4a44 },
   { wall: [0x98b6cc, 0xaac6da, 0x88a8c0, 0xb8d2e2, 0x9cbcd2], floor: [0xd8e4ee, 0xcadae6, 0xe2ecf2], ceiling: 0x7c9ab4, low: 0xa8c4d8, tip: 0xe8f4fc },
   { wall: [0x9a7a58, 0xa88a64, 0x8a6a4a, 0xb0906a, 0x94704e], floor: [0xb09070, 0xa08060, 0xb89a78], ceiling: 0x7a5e44, low: 0x9a7e60, tip: 0xc8b090 },
+  // (Crystal caverns: dark violet-grey stone. Mushroom forests: dark earthy rock, the floor pale with the mould's threads.)
+  { wall: [0x46405a, 0x504a66, 0x3c374e, 0x5a5470, 0x433e56], floor: [0x4a4660, 0x55506c, 0x403c54], ceiling: 0x34304a, low: 0x7a6aa8, tip: 0xd8c8ff },
+  { wall: [0x56483e, 0x605246, 0x4c4038, 0x6a5a4c, 0x52463c], floor: [0x9a8e78, 0x8a7e6a, 0xa89c84, 0x7e725e], ceiling: 0x3e3430, low: 0x8a7a68, tip: 0xc8b8a0 },
 ];
 const STONE_LOW = new Color(0x857d71);
 const STONE_TIP = new Color(0xbdb4a4);
@@ -62,11 +65,11 @@ export function caveAt(grid, x, y, z) {
   const fx = Math.min(3.999, Math.max(0, (x - x0) / kStep)), fz = Math.min(3.999, Math.max(0, (z - z0) / kStep));
   const i = Math.floor(fx), k = Math.floor(fz), tx = fx - i, tz = fz - k;
   const a = kinds[k * 5 + i], b = kinds[k * 5 + i + 1], c = kinds[(k + 1) * 5 + i], d = kinds[(k + 1) * 5 + i + 1];
-  const mix = (key) => (a[key] * (1 - tx) + b[key] * tx) * (1 - tz) + (c[key] * (1 - tx) + d[key] * tx) * tz;
-  const scores = { lush: mix('lush'), volcanic: mix('volcanic'), ice: mix('ice'), dry: mix('dry') };
+  const mix = (key) => ((a[key] ?? 0) * (1 - tx) + (b[key] ?? 0) * tx) * (1 - tz) + ((c[key] ?? 0) * (1 - tx) + (d[key] ?? 0) * tx) * tz;
+  const scores = { lush: mix('lush'), volcanic: mix('volcanic'), ice: mix('ice'), dry: mix('dry'), crystal: mix('crystal'), mushroom: mix('mushroom') };
   const kind = CaveField.biomeAt(scores, y);
   // (Green where the lush outweighs the rest, fading out below the line the kind changes at.)
-  const other = Math.max(scores.volcanic + Math.max(0, (-88 - y) / 20) * 0.9, scores.ice, scores.dry);
+  const other = Math.max(scores.volcanic + Math.max(0, (-88 - y) / 20) * 0.9, scores.ice, scores.dry, scores.crystal * Math.min(1, Math.max(0, (-28 - y) / 14)), scores.mushroom);
   const green = kind === 1 ? 1 : kind === 0 ? smooth(0.25, 0.5, scores.lush) * (1 - smooth(0.35, 0.5, other)) : 0;
   return { kind, green };
 }
@@ -410,6 +413,7 @@ export function meshChunk(grid, field, out = {}) {
           let gr = 0, gg = 0, gb = 0;
           // (Volcanic rock glows only where the lava is: see the lava, and its light.)
           if (kind === 3) (gr = 0.02), (gg = 0.05), (gb = 0.08);
+          else if (kind === 5) (gr = 0.025), (gg = 0.012), (gb = 0.05); // (a violet shimmer in the crystal stone)
 
           for (let q = 0; q < 3; q++) {
             const ev = tri[q];
@@ -610,7 +614,7 @@ export function decorateChunk(grid, field) {
   // stained red with iron. (Ice is ice, and basalt basalt.)
   const shades = (kind, x, z) => {
     const pal = PALETTES[kind];
-    if (kind === 2 || kind === 3) return [pal.low, pal.tip];
+    if (kind === 2 || kind === 3 || kind === 5) return [pal.low, pal.tip];
     const h = hash2(Math.round(x * 2 + 5), Math.round(z * 2 - 5), seed + 21);
     const wall = PALETTES[kind === 1 ? 0 : kind].wall;
     if (h < 0.4) return [wall[Math.floor(h * 12) % wall.length], wall[(Math.floor(h * 12) + 2) % wall.length]];
@@ -743,6 +747,76 @@ export function decorateChunk(grid, field) {
     return y + H;
   };
 
+  // Crystal caverns: clusters of six-sided crystals, each a prism with a
+  // point, leaning out from where they grew; amethyst, quartz, sea-green or
+  // rose, glowing faintly from within. Up from the floor or down from the roof.
+  const CRYSTALS = [[0x7a5ac8, 0xe0d0ff, [0.18, 0.1, 0.34]], [0xb8c8d4, 0xffffff, [0.16, 0.18, 0.22]], [0x3aa8a0, 0xc0fff4, [0.06, 0.26, 0.24]], [0xc87a9a, 0xffd8e8, [0.26, 0.1, 0.16]]];
+  const crystalCluster = (x, y, z, size, s, down) => {
+    const [lo, hi, glow] = CRYSTALS[Math.floor(s * 997) % CRYSTALS.length];
+    const n = 3 + Math.floor(((s * 7) % 1) * 5);
+    for (let k = 0; k < n; k++) {
+      const a = s * 6.28 + k * 2.39, tilt = k === 0 ? 0.08 : 0.25 + ((k * 0.37 + s) % 1) * 0.45;
+      const len = size * (k === 0 ? 1 : 0.35 + ((k * 0.61 + s * 3) % 1) * 0.55), r = len * (0.11 + ((k * 0.29) % 1) * 0.05);
+      const body = new CylinderGeometry(r, r * 1.05, len, 6, 1).toNonIndexed();
+      body.translate(0, len / 2, 0);
+      const point = new ConeGeometry(r, r * 2.2, 6, 1).toNonIndexed();
+      point.translate(0, len + r * 1.1, 0);
+      for (const g of [body, point]) {
+        g.deleteAttribute('uv');
+        g.rotateZ(tilt);
+        g.rotateY(a);
+        if (down) g.rotateX(Math.PI);
+        g.translate(x - x0, y + (down ? 0.3 : -0.3), z - z0);
+        low.set(lo);
+        tip.set(hi);
+        piece(g, x, y, z, (c, cyv, v) => {
+          const t = Math.min(1, Math.abs(cyv - y) / (len + r * 2));
+          c.copy(low).lerp(tip, t * 0.85 + 0.15 * hash2(v, Math.round(x * 10), seed + 41));
+        }, glow);
+      }
+    }
+    if (size > 1.2) lights.push(x, y + (down ? -size * 0.4 : size * 0.4), z, 2);
+    if (!down) obstacles.push(x, z, Math.max(0.3, size * 0.22), y - 0.3, y + size);
+  };
+  // Mushroom forests: mushrooms grown to the size of trees, a pale stem
+  // flaring at the foot, a broad cap with dark gills under it; some caps
+  // glow, blue-green or violet.
+  const CAPS = [[0x9a5a34, 0xc08a5a, null], [0x7a4a6a, 0xa86a94, [0.16, 0.05, 0.2]], [0x2e7a7a, 0x5ac8c0, [0.04, 0.26, 0.24]], [0xb8925a, 0xe0c890, null], [0x8a2e26, 0xd8a890, null]];
+  const giantMushroom = (x, y, z, height, capR, s) => {
+    const stemR = Math.max(0.18, capR * 0.16);
+    const pts = [];
+    for (let k = 0; k <= 8; k++) {
+      const t = k / 8;
+      pts.push(new Vector2(stemR * (1 + 0.9 * Math.pow(1 - t, 3)) * (1 + 0.05 * Math.sin(t * 13 + s * 20)), t * height));
+    }
+    const stem = new LatheGeometry(pts, 8).toNonIndexed();
+    stem.deleteAttribute('uv');
+    stem.rotateZ((s - 0.5) * 0.12);
+    stem.translate(x - x0, y - 0.3, z - z0);
+    piece(stem, x, y, z, (c, cyv, v) => c.set(0xe8dcc8).multiplyScalar(0.82 + 0.18 * Math.min(1, (cyv - y) / height) + hash2(v, Math.round(x * 9), seed + 43) * 0.08));
+    const [dark, light, glow] = CAPS[Math.floor(s * 991) % CAPS.length];
+    const cap = [];
+    for (let k = 0; k <= 6; k++) {
+      const a = (k / 6) * (Math.PI / 2);
+      cap.push(new Vector2(Math.max(0.01, capR * Math.cos(a)), capR * 0.42 * Math.sin(a) + (k === 0 ? -capR * 0.08 : 0)));
+    }
+    const top = new LatheGeometry(cap.reverse(), 12).toNonIndexed();
+    top.deleteAttribute('uv');
+    top.translate(x - x0, y + height - 0.3, z - z0);
+    low.set(dark);
+    tip.set(light);
+    piece(top, x, y, z, (c, cyv, v) => {
+      const spot = hash2(v, Math.round(x * 13 + z), seed + 44);
+      c.copy(low).lerp(tip, Math.min(1, (cyv - (y + height - 0.3)) / (capR * 0.42))).multiplyScalar(spot > 0.9 ? 1.35 : 0.9 + spot * 0.15);
+    }, glow);
+    const gills = new CylinderGeometry(capR * 0.95, stemR * 1.2, capR * 0.12, 12, 1).toNonIndexed();
+    gills.deleteAttribute('uv');
+    gills.translate(x - x0, y + height - 0.3 - capR * 0.1, z - z0);
+    piece(gills, x, y, z, (c) => c.set(glow ? 0x3a4a5a : 0x5a463e), glow ? glow.map((g) => g * 0.6) : null);
+    if (glow) lights.push(x, y + height - capR * 0.3, z, 3);
+    obstacles.push(x, z, stemR * 1.4, y - 0.3, y + height);
+  };
+
   for (let gz = step / 2; gz < field.chunkSize; gz += step) {
     for (let gx = step / 2; gx < field.chunkSize; gx += step) {
       const wx0 = x0 + gx, wz0 = z0 + gz;
@@ -777,7 +851,34 @@ export function decorateChunk(grid, field) {
           const r3 = hash2(Math.round(x * 5 + 3), Math.round(roof * 5 - z), seed + 4);
           if (!inEntrance && gap > 2.2 && f(x, floor + 0.4, z) < -0.2) floors.push(x, floor, z, hash2(Math.round(x * 7), Math.round(floor * 7), seed + 5), roof);
           if (gap > 9 && h < 0.4) roofs.push(x, roof, z, r3);
-          if (h < 0.55) {
+          if (kind === 5) {
+            // Crystal caverns: clusters all over the floor, great ones under the
+            // high roofs, and more hanging from the roof.
+            if (h < 0.45 && gap > 2.5 && !inEntrance) {
+              const giant = gap > 12 && r1 < 0.15;
+              crystalCluster(x, floor, z, Math.min(gap * 0.7, giant ? 5 + r2 * 7 : 0.6 + r1 * 2.6), r1, false);
+            }
+            if (gap > 4 && r2 < 0.35) crystalCluster(x + 0.4, roof, z - 0.3, Math.min(gap * 0.35, 0.6 + r3 * 2.2), r2, true);
+          } else if (kind === 6) {
+            // Mushroom forests: the giants, and between them clumps of small ones.
+            if (h < 0.32 && gap > 4.5 && !inEntrance && f(x, floor + 0.6, z) < -0.2) {
+              const height = Math.min(gap * 0.75, 3 + r1 * 9);
+              giantMushroom(x, floor, z, height, Math.min(height * (0.32 + 0.22 * r2), 5.5), r1);
+            } else if (h < 0.5 && gap > 1.6 && !inEntrance) {
+              into = plants;
+              for (let m = 0; m < 3 + Math.floor(r2 * 3); m++) {
+                const a = m * 2.4 + r1 * 9, d = 0.15 + (m % 3) * 0.2, mx = x + Math.cos(a) * d, mz = z + Math.sin(a) * d;
+                const hgt = 0.1 + ((m * 0.37 + r3) % 1) * 0.35;
+                box(mx, floor + hgt / 2, mz, 0.04, hgt, 0.04, 0xe0d4c0);
+                const capG = new ConeGeometry(0.07 + hgt * 0.35, 0.06 + hgt * 0.15, 5).toNonIndexed();
+                capG.deleteAttribute('uv');
+                capG.translate(mx - x0, floor + hgt + 0.02, mz - z0);
+                const [cd, , cg] = CAPS[Math.floor(r3 * 991 + m) % CAPS.length];
+                piece(capG, mx, floor, mz, (c) => c.set(cd), cg);
+              }
+              into = parts;
+            }
+          } else if (h < 0.55) {
             if (gap > 3 && gap < 40 && r1 < 0.16 && flat) {
               // A column: stalagmite and stalactite grown together, in any
               // cave where the roof's in reach (great ones under high roofs).
@@ -957,10 +1058,10 @@ export function decorateChunk(grid, field) {
       [5, kind === 2 ? 0.01 : 0.03],
       [10, deep > 0.4 ? 0.03 * deep : 0],
       [6, y < -60 ? 0.012 + 0.02 * deep : 0],
-      [2, kind === 3 ? 0.07 : 0.025 + 0.03 * deep],
-      [3, kind === 1 ? 0.16 : kind === 2 || kind === 3 ? 0 : 0.04],
-      [7, kind === 1 ? 0.07 : kind === 0 || kind === 4 ? 0.035 : 0],
-      [8, kind === 2 || kind === 3 ? 0 : 0.018],
+      [2, kind === 3 ? 0.07 : kind === 5 ? 0.16 : 0.025 + 0.03 * deep],
+      [3, kind === 1 || kind === 6 ? 0.16 : kind === 2 || kind === 3 || kind === 5 ? 0 : 0.04],
+      [7, kind === 6 ? 0.12 : kind === 1 ? 0.07 : kind === 0 || kind === 4 ? 0.035 : 0],
+      [8, kind === 2 || kind === 3 || kind === 5 ? 0 : kind === 6 ? 0.04 : 0.018],
       [4, 0.015],
       [11, kind === 0 || kind === 1 || kind === 4 ? (roof - y > 9 ? 0.03 : 0.006) : 0],
     ];
@@ -988,7 +1089,7 @@ export function decorateChunk(grid, field) {
   for (let k = 0; k < roofs.length; k += 4) {
     const [x, y, z, r] = roofs.slice(k, k + 4);
     const kind = biomeIn(grid, x, y, z);
-    if (r < 0.03 && (kind === 0 || kind === 1 || kind === 4)) features.push(12, x, y, z, r * 97 % 6.28, 1);
+    if (r < 0.03 && (kind === 0 || kind === 1 || kind === 4 || kind === 6)) features.push(12, x, y, z, r * 97 % 6.28, 1);
   }
   const merge = (list) => {
     if (!list.length) return null;
