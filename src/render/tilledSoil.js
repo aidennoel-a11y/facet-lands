@@ -17,40 +17,33 @@ export function addTilledSoil(material) {
   material.onBeforeCompile = (shader, renderer) => {
     previous?.call(material, shader, renderer);
     shader.uniforms.uTilled = tilledUniform;
-    // Each corner of the land is turned earth or not, and a whole face takes
-    // its corner's word for it (flat, not blended): so it's the ground's own
-    // faces, under the plot, that are brown earth now, each a shade of its own.
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\nuniform vec4 uTilled[${TILLED}];\nflat out vec3 vTill;`)
-      .replace(
-        '#include <begin_vertex>',
-        /* glsl */ `#include <begin_vertex>
-        {
-          vec2 xz = (modelMatrix * vec4(transformed, 1.0)).xz;
-          vTill = vec3(0.0, 0.0, fract(sin(dot(floor(xz * 3.0), vec2(12.9898, 78.233))) * 43758.5453));
-          for (int i = 0; i < ${TILLED}; i++) {
-            vec4 p = uTilled[i];
-            vec2 d = xz - p.xy;
-            if (abs(d.x) > 3.0 || abs(d.y) > 3.0) continue;
-            float c = cos(p.z), s = sin(p.z);
-            vec2 l = vec2(c * d.x - s * d.y, s * d.x + c * d.y);
-            if (max(abs(l.x), abs(l.y)) < ${(TILLED_HALF + 0.6).toFixed(2)}) vTill = vec3(1.0, p.w, vTill.z);
-          }
-        }`,
-      );
+      .replace('#include <common>', '#include <common>\nvarying vec2 vTillXZ;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTillXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nflat in vec3 vTill;')
+      .replace('#include <common>', `#include <common>\nvarying vec2 vTillXZ;\nuniform vec4 uTilled[${TILLED}];`)
       .replace(
         '#include <color_fragment>',
         /* glsl */ `#include <color_fragment>
-        if (vTill.x > 0.5) {
-          // (Linear colours: turned earth, #6a5038 to #4a3424, darker where it's been watered.)
-          vec3 soil = mix(vec3(0.068, 0.034, 0.018), vec3(0.144, 0.081, 0.040), vTill.z);
-          diffuseColor.rgb = soil * (1.0 - 0.35 * vTill.y);
+        for (int i = 0; i < ${TILLED}; i++) {
+          vec4 p = uTilled[i];
+          vec2 d = vTillXZ - p.xy;
+          if (abs(d.x) > 2.0 || abs(d.y) > 2.0) continue;
+          float c = cos(p.z), s = sin(p.z);
+          vec2 l = vec2(c * d.x - s * d.y, s * d.x + c * d.y);
+          // (Ragged edges: the turned earth frays out into the grass.)
+          float rag = 0.12 * sin(l.x * 9.0 + l.y * 4.0) + 0.08 * sin(l.y * 13.0 - l.x * 7.0);
+          float inside = 1.0 - smoothstep(${TILLED_HALF.toFixed(2)} - 0.15, ${TILLED_HALF.toFixed(2)} + 0.1, max(abs(l.x), abs(l.y)) + rag);
+          if (inside <= 0.0) continue;
+          float furrow = smoothstep(0.35, 0.65, abs(fract(l.y * 2.0) - 0.5) * 2.0); // (rows half a metre apart)
+          // (Linear colours: dark turned earth #4a3424 in the furrows, #6a5038 on the ridges.)
+          vec3 soil = mix(vec3(0.068, 0.034, 0.018), vec3(0.144, 0.081, 0.040), furrow);
+          soil *= 1.0 - 0.35 * p.w;
+          diffuseColor.rgb = mix(diffuseColor.rgb, soil, inside);
         }`,
       );
   };
   const previousKey = material.customProgramCacheKey?.bind(material);
-  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|tilled-faces`;
+  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|tilled`;
   return material;
 }
