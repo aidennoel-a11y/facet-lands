@@ -164,6 +164,13 @@ export const ITEMS = {
   cutStairs: { name: 'Cut stone stairs', place: 'cutStairs', weight: 30, group: 'Building' },
   tileRoof: { name: 'Stone tile roof', place: 'tileRoof', weight: 28, group: 'Building' },
   bedroll: { name: 'Bedroll', place: 'bedroll', weight: 3, group: 'Building' },
+  logWindow: { name: 'Log wall, window', place: 'logWindow', weight: 22, group: 'Building' },
+  logDoor: { name: 'Log wall, door', place: 'logDoor', weight: 22, group: 'Building' },
+  plankWindow: { name: 'Plank wall, window', place: 'plankWindow', weight: 16, group: 'Building' },
+  plankDoor: { name: 'Plank wall, door', place: 'plankDoor', weight: 18, group: 'Building' },
+  stoneDoor: { name: 'Stone wall, door', place: 'stoneDoor', weight: 28, group: 'Building' },
+  cutWindow: { name: 'Cut stone wall, window', place: 'cutWindow', weight: 28, group: 'Building' },
+  cutDoor: { name: 'Cut stone wall, door', place: 'cutDoor', weight: 28, group: 'Building' },
   fancyBed: { name: 'Great bed', place: 'fancyBed', weight: 14, group: 'Building' },
   stoneFloor: { name: 'Stone floor', place: 'stoneFloor', weight: 30, group: 'Building' },
   stoneWall: { name: 'Stone wall', place: 'stoneWall', weight: 30, group: 'Building' },
@@ -221,6 +228,13 @@ export const RECIPES = [
   { id: 'logFloor', needs: { log: 4 }, note: 'Logs adzed flat, side by side on stumps, 4 m square: floors join edge to edge. Aim at the top of your walls to lay one a storey up' },
   { id: 'logStairs', needs: { log: 4 }, note: 'A flight of log steps up to the top of your walls (and a floor laid up there)' },
   { id: 'logRoof', needs: { log: 5 }, note: 'Split logs laid down a slope, set on top of your walls' },
+  { id: 'logWindow', needs: { log: 5 }, note: 'A log wall with a framed window in it: joins end to end with the walls' },
+  { id: 'logDoor', needs: { log: 6 }, note: 'A log wall with a doorway and a door of split logs: E to open and close it' },
+  { id: 'plankWindow', needs: { log: 3, stick: 5 }, uses: ['forgedAxe'], note: 'A plank wall with a framed casement window. Needs a steel axe' },
+  { id: 'plankDoor', needs: { log: 3, stick: 4, ironBar: 1 }, uses: ['forgedAxe'], note: 'A plank wall with a boarded door on iron hinges: E to open and close it. Needs a steel axe' },
+  { id: 'stoneDoor', needs: { rock: 30, log: 3 }, note: 'A stone wall with a doorway, a heavy studded door in it: E to open and close it' },
+  { id: 'cutWindow', needs: { rock: 34, stick: 3 }, uses: ['forgedPickaxe', 'tuskPickaxe'], note: 'Cut stone with a window, a carved sill and lintel. Needs a steel pickaxe' },
+  { id: 'cutDoor', needs: { rock: 30, log: 3, ironBar: 1 }, uses: ['forgedPickaxe', 'tuskPickaxe'], note: 'Cut stone with a doorway under a carved lintel, a dark studded door: E to open and close it. Needs a steel pickaxe' },
   { id: 'bedroll', needs: { deerSkin: 1, wool: 2 }, note: 'A bed on the ground: sleep the night (stiffly), and wake here after dying' },
   { id: 'plankWall', needs: { log: 3, stick: 4 }, uses: ['forgedAxe'], note: 'Boards lapped on a squared frame: neat and tight. Needs a steel axe to cut the planks' },
   { id: 'plankStairs', needs: { log: 2, stick: 4 }, uses: ['forgedAxe'], note: 'A flight of plank steps with a rail, up to the top of your walls. Needs a steel axe' },
@@ -299,9 +313,9 @@ export const RECIPES = [
  */
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'fineFlintSteel', 'pot', 'shears', 'saddle', 'anvil'] },
-  { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed'] },
+  { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];
 /** What tool a recipe needs in your pack (not used up), in words. */
@@ -471,6 +485,15 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   ICONS.plankStairs = STAIRS('#a47e50', '#6a4c30');
   ICONS.stoneStairs = STAIRS('#8a8780', '#5a5852');
   ICONS.cutStairs = STAIRS('#b2aea4', '#8a867e');
+  const DOOR = (wall, door, line) => `<path d="M3 6h26v22H3z" fill="${wall}"/><path d="M3 11h26M3 16h26M3 21h26" stroke="${line}" stroke-width="1"/><path d="M11 12h10v16H11z" fill="${door}"/><path d="M11 12h10" stroke="${line}" stroke-width="2"/><circle cx="19" cy="20.5" r="1" fill="#2e2e32"/>`;
+  const WIN = (wall, line) => `<path d="M3 6h26v22H3z" fill="${wall}"/><path d="M3 11h26M3 16h26M3 21h26" stroke="${line}" stroke-width="1"/><path d="M10 11h12v9H10z" fill="#9ec4dc"/><path d="M10 11h12v9H10zM16 11v9M10 15.5h12" fill="none" stroke="#5e4630" stroke-width="1.4"/>`;
+  ICONS.logWindow = WIN('#7a5a3a', '#6a6448');
+  ICONS.logDoor = DOOR('#7a5a3a', '#8a6a44', '#5a3c24');
+  ICONS.plankWindow = WIN('#9a7448', '#7a5a36');
+  ICONS.plankDoor = DOOR('#9a7448', '#b08a58', '#6a4c30');
+  ICONS.stoneDoor = DOOR('#8a8780', '#5e4228', '#5a5852');
+  ICONS.cutWindow = WIN('#b2aea4', '#8a867e');
+  ICONS.cutDoor = DOOR('#b2aea4', '#4a3220', '#8a867e');
   ICONS.bedroll = `<path d="M3 20h26v5H3z" fill="#8a5a3a"/><path d="M8 17h20v4H8z" fill="#9a7a58"/><ellipse cx="6" cy="18.5" rx="3" ry="2.2" fill="#ece6d8"/>`;
   ICONS.fancyBed = `<path d="M4 6h24v2H4z" fill="#e8eef2"/><path d="M5 6v22M27 6v22" stroke="#6a3e26" stroke-width="2"/><path d="M6 8h3v12H6zM23 8h3v12h-3z" fill="#dfe8ee"/><path d="M5 20h22v5H5z" fill="#6a3e26"/><path d="M6 17h20v4H6z" fill="#f4f0ea"/><path d="M14 17h12v4H14z" fill="#8a2a2e"/>`;
   re('paleCloak', 'furCloak', [['#8a7458', '#e8e4dc'], ['#c8b89a', '#ffffff']]);

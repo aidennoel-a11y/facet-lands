@@ -411,7 +411,15 @@ export class Game {
       case 'smokingRack':
         return s.jobs.length ? `Smoking: ${s.jobs.map((j) => `${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}${s.smoking ? '' : ' (no fire under it)'}` : 'Hang raw meat or fish in it (click with it), over a burning campfire';
       case 'gate':
-      case 'fenceGate': return s.open ? 'Shut the gate' : 'Open the gate';
+      case 'fenceGate':
+      case 'logDoor':
+      case 'plankDoor':
+      case 'stoneDoor':
+      case 'cutDoor': return s.open ? 'Shut the gate' : 'Open the gate';
+      case 'logDoor':
+      case 'plankDoor':
+      case 'stoneDoor':
+      case 'cutDoor': return s.open ? 'Shut the door' : 'Open the door';
       case 'plot': {
         if (!s.crop) return 'Dug and ready: sow seeds in it (click with them)';
         if (s.growth >= 1) return `Harvest the ${s.crop === 'potato' ? 'potatoes' : s.crop === 'carrot' ? 'carrots' : s.crop}`;
@@ -768,7 +776,7 @@ export class Game {
       if (!this.structures.isFire(at)) {
         const tree = this.trees.pick(origin, direction, REACH);
         const fallen = this.felling.pickFallen(origin, direction, REACH);
-        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'bedroll', 'fancyBed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor', 'woodWindow', 'logWall', 'plankWall', 'logFloor', 'logStairs', 'plankStairs', 'logRoof', 'shingleRoof']);
+        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'bedroll', 'fancyBed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor', 'woodWindow', 'logWall', 'plankWall', 'logFloor', 'logStairs', 'plankStairs', 'logRoof', 'shingleRoof', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor']);
         const wooden = at && WOODEN.has(at.type) ? built : null;
         const near = [tree && { d: tree.distance }, fallen && { d: fallen.distance }, wooden && { d: wooden.distance ?? REACH }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
         if (!near) return this.hotbar?.flash('Strike it at something that will burn: a campfire, a torch, wood, a tree');
@@ -1999,7 +2007,7 @@ export class Game {
         prompt = this.plan.ok ? `<kbd>Click</kbd> Let the rope down (${Math.round(this.plan.len)} m)` : null;
       } else if (placing && placing !== 'torch') {
         const at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
-        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall'].includes(placing) ? Math.PI : 0);
+        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'stoneDoor', 'cutWindow', 'cutDoor'].includes(placing) ? Math.PI : 0);
         this.plan = this.structures.plan(placing, at, yaw, ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
         const onPlot = placing === 'plot' && t?.kind === 'structure' && t.structure.type === 'plot';
         this.structures.preview(onPlot ? null : this.plan);

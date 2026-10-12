@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, fancyBedModel,
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH,
 } from './models.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -56,6 +56,14 @@ const KINDS = {
   plankStairs: { make: plankStairsModel, box: [STAIRS_WIDTH / 2, STAIRS_LENGTH / 2], stairs: true, steep: 1.2 },
   stoneStairs: { make: stoneStairsModel, box: [STAIRS_WIDTH / 2, STAIRS_LENGTH / 2], stairs: true, steep: 1.2, stone: true },
   cutStairs: { make: cutStairsModel, box: [STAIRS_WIDTH / 2, STAIRS_LENGTH / 2], stairs: true, steep: 1.2, stone: true },
+  // (Windows and doors in each set: a door swings open in the middle, the wall either side stays.)
+  logWindow: { make: () => openWallModel('log', 'window'), box: [WALL_LENGTH / 2, 0.28], tall: 3.3, line: 'wall', len: WALL_LENGTH },
+  logDoor: { make: () => openWallModel('log', 'door'), box: [WALL_LENGTH / 2, 0.28], tall: 3.3, line: 'wall', len: WALL_LENGTH, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'log' },
+  plankWindow: { make: () => openWallModel('plank', 'window'), box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH },
+  plankDoor: { make: () => openWallModel('plank', 'door'), box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'plank' },
+  stoneDoor: { make: () => openWallModel('stone', 'door'), box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'stone' },
+  cutWindow: { make: () => openWallModel('cut', 'window'), box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true },
+  cutDoor: { make: () => openWallModel('cut', 'door'), box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'cut' },
   logRoof: { make: logRoofModel, roof: true, steep: 99 },
   shingleRoof: { make: shingleRoofModel, roof: true, steep: 99 },
   tileRoof: { make: tileRoofModel, roof: true, steep: 99, stone: true },
@@ -356,11 +364,12 @@ export class Structures {
 
   doorModel(type = 'gate') {
     const key = `${type}Door`;
-    return this.models[key] ?? (this.models[key] = type === 'fenceGate' ? fenceGateDoorModel() : gateDoorModel());
+    const style = KINDS[type]?.doorStyle;
+    return this.models[key] ?? (this.models[key] = style ? houseDoorModel(style) : type === 'fenceGate' ? fenceGateDoorModel() : gateDoorModel());
   }
 
   #doorWidth(type) {
-    return type === 'fenceGate' ? FENCE_LENGTH - 0.3 : GATE_DOOR_WIDTH;
+    return KINDS[type]?.doorWidth ?? (type === 'fenceGate' ? FENCE_LENGTH - 0.3 : GATE_DOOR_WIDTH);
   }
 
   // Turned to face `rot`, and laid on the slope (`tilt`: the ground's slope, [-dy/dx, -dy/dz]).
@@ -716,6 +725,12 @@ export class Structures {
       if (k.floor || k.stairs) continue; // (stood on: see floorTop)
       if (feetY + 1.7 < s.y) continue; // (up a storey, over your head)
       if (feetY > s.y + (k.tall ?? 0.5) - 0.05 && !k.posts) continue; // (up on top)
+      if (k.door && s.open && k.doorWidth) {
+        // (A house door open: only the doorway's clear; the wall either side of it is in the way.)
+        const side = (k.len - k.doorWidth) / 4;
+        for (const end of [-1, 1]) this.#pushBox(position, radius, s, end * (k.doorWidth / 2 + side), side, k.box[1]);
+        continue;
+      }
       if (k.door && s.open) {
         // (Only its posts are in the way.)
         const ax = Math.cos(s.rot), az = -Math.sin(s.rot);
@@ -754,6 +769,26 @@ export class Structures {
     }
   }
 
+  // Out of a box in a structure's frame: its middle `uc` along it, half-sizes hu x hv.
+  #pushBox(position, radius, s, uc, hu, hv) {
+    const ax = Math.cos(s.rot), az = -Math.sin(s.rot), bx = Math.sin(s.rot), bz = Math.cos(s.rot);
+    const ox = position.x - s.x, oz = position.z - s.z;
+    const u = ox * ax + oz * az - uc, v = ox * bx + oz * bz;
+    const cu = Math.max(-hu, Math.min(hu, u)), cv = Math.max(-hv, Math.min(hv, v));
+    let du = u - cu, dv = v - cv, d = Math.hypot(du, dv);
+    if (d >= radius) return;
+    if (d === 0) {
+      const pu = hu - Math.abs(u), pv = hv - Math.abs(v);
+      if (pu < pv) (du = Math.sign(u) || 1), (dv = 0), (d = -pu);
+      else (du = 0), (dv = Math.sign(v) || 1), (d = -pv);
+      position.x += (ax * du + bx * dv) * (radius - d);
+      position.z += (az * du + bz * dv) * (radius - d);
+      return;
+    }
+    position.x += ((ax * du + bx * dv) / d) * (radius - d);
+    position.z += ((az * du + bz * dv) / d) * (radius - d);
+  }
+
   #pushCircle(position, radius, x, z, r) {
     const ox = position.x - x, oz = position.z - z, d = Math.hypot(ox, oz), min = radius + r;
     if (d < min && d > 0) (position.x += (ox / d) * (min - d)), (position.z += (oz / d) * (min - d));
@@ -771,7 +806,7 @@ export class Structures {
         const ax = Math.cos(s.rot), az = -Math.sin(s.rot), n = Math.round(kind.len / 0.5);
         for (let k = 0; k <= n; k++) {
           const u = -kind.len / 2 + (k / n) * kind.len;
-          if (kind.door && s.open && Math.abs(u) < kind.len / 2 - 0.3) continue;
+          if (kind.door && s.open && Math.abs(u) < (kind.doorWidth ? kind.doorWidth / 2 : kind.len / 2 - 0.3)) continue;
           out.push(s.x + ax * u, s.z + az * u, 0.3);
         }
       } else if (kind.posts) {

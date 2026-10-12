@@ -21,19 +21,20 @@ const res = await page.evaluate(() => {
     return st.build({ ...plan, ok: true });
   };
   const SETS = [
-    ['logFloor', 'logWall', 'logStairs', 'logRoof'],
-    ['woodFloor', 'plankWall', 'plankStairs', 'shingleRoof'],
-    ['stoneFloor', 'stoneWall', 'stoneStairs', 'slateRoof'],
-    ['cutStoneFloor', 'cutStoneWall', 'cutStairs', 'tileRoof'],
+    ['logFloor', 'logWall', 'logStairs', 'logRoof', 'logWindow', 'logDoor'],
+    ['woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'plankWindow', 'plankDoor'],
+    ['stoneFloor', 'stoneWall', 'stoneStairs', 'slateRoof', 'stoneWindow', 'stoneDoor'],
+    ['cutStoneFloor', 'cutStoneWall', 'cutStairs', 'tileRoof', 'cutWindow', 'cutDoor'],
   ];
   const stairs = [];
-  SETS.forEach(([floor, wall, stair, roof], k) => {
+  SETS.forEach(([floor, wall, stair, roof, win, door], k) => {
     const cx = p.x - 15 + k * 10, cz = p.z - 16;
     const f = put(floor, cx, cz, 0);
     put(floor, cx, cz + 4.1, 0); // (a second floor square beside it)
     put(wall, cx, cz - 2.1, 0); // (back wall, on the floor's edge)
-    put(wall, cx - 2.1, cz, Math.PI / 2);
-    put(wall, cx + 2.1, cz, Math.PI / 2);
+    put(win, cx - 2.1, cz, Math.PI / 2);
+    const d = put(door, cx + 2.1, cz, Math.PI / 2);
+    if (k % 2 === 0) st.toggle(d); // (two of the doors left open)
     // A floor up a storey: aimed at the top of the walls.
     put(floor, cx, cz, 0, f.y + 3.4);
     // Stairs on the second square, up to it.
@@ -42,7 +43,7 @@ const res = await page.evaluate(() => {
   });
   put('bedroll', p.x - 4, p.z - 6, 0.3);
   put('fancyBed', p.x + 1, p.z - 6, 0);
-  camera.position.set(p.x + 2, ground(p.x, p.z) + 7, p.z + 8);
+  camera.position.set(p.x + 14, ground(p.x, p.z) + 6, p.z - 4);
   camera.lookAt(p.x - 2, ground(p.x, p.z) + 1, p.z - 16);
   window.world.controls.euler.setFromQuaternion(camera.quaternion, 'YXZ');
   window.__stairs = stairs.map((s) => ({ x: s.x, y: s.y, z: s.z, rot: s.rot, type: s.type }));

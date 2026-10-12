@@ -920,7 +920,7 @@ export function oreNodeModel(id) {
 // (Stone, a block at a time: rough-cut, each its own grey, a few mossed over.)
 const STONE_GREYS = [0x8a8780, 0x7c7a74, 0x96928a, 0x6e6c68, 0x84806e, 0x9a968c];
 const MOSS_GREENS = [0x4f6a34, 0x5c7a3a, 0x46602e];
-function stoneCourses(b, rand, { length, height, depth, y0 = -0.3, course = 0.36, mossTop = 0.3 }) {
+function stoneCourses(b, rand, { length, height, depth, y0 = -0.3, course = 0.36, mossTop = 0.3, skip = null }) {
   for (let y = y0, row = 0; y < height - 0.05; y += course, row++) {
     const h = Math.min(course, height - y) - 0.03;
     let x = -length / 2 + (row % 2 ? 0.25 : 0);
@@ -932,12 +932,12 @@ function stoneCourses(b, rand, { length, height, depth, y0 = -0.3, course = 0.36
       const w = Math.min(0.45 + rand() * 0.45, length / 2 - x);
       const top = y + h > height - course;
       const colour = top && rand() < mossTop ? MOSS_GREENS[Math.floor(rand() * 3)] : STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)];
-      b.add(new BoxGeometry(w - 0.03, h * (0.92 + rand() * 0.08), depth * (0.94 + rand() * 0.1)), colour, [x + w / 2, y + h / 2, (rand() - 0.5) * 0.04], [0, (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.02], [1, 1, 1], 0.08);
+      if (!skip?.(x + w / 2, y + h / 2)) b.add(new BoxGeometry(w - 0.03, h * (0.92 + rand() * 0.08), depth * (0.94 + rand() * 0.1)), colour, [x + w / 2, y + h / 2, (rand() - 0.5) * 0.04], [0, (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.02], [1, 1, 1], 0.08);
       x += w;
     }
   }
   // (The mortar behind, so no light shows between the blocks.)
-  b.add(new BoxGeometry(length - 0.02, height - y0 - 0.02, depth * 0.8), 0x5a5852, [0, (height + y0) / 2, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  if (!skip) b.add(new BoxGeometry(length - 0.02, height - y0 - 0.02, depth * 0.8), 0x5a5852, [0, (height + y0) / 2, 0], [0, 0, 0], [1, 1, 1], 0.02);
 }
 
 /** A section of stone wall, 4 m long (joins end to end like the palisade): courses of rough-cut blocks. */
@@ -1357,5 +1357,109 @@ export function fancyBedModel() {
   // The canopy and its drapes: pale, faintly shining silk.
   b.add(new BoxGeometry(W + 0.1, 0.05, L + 0.1), 0xe8eef2, [0, 2.25, 0], [0, 0, 0], [1, 1, 1], 0.03);
   for (const x of [-W / 2 - 0.02, W / 2 + 0.02]) for (const z of [-L / 2 + 0.25, L / 2 - 0.25]) b.add(new BoxGeometry(0.04, 1.5, 0.45), 0xdfe8ee, [x, 1.5, z], [0, 0, 0], [1, 1, 1], 0.03);
+  return b.build();
+}
+
+// --- Windows and doors for every set ----------------------------------------------
+
+// The openings: a window 1.4 m across, 1 m to 2.2 m up; a door 1.2 m across, 2.3 m high.
+export const HOUSE_DOOR_WIDTH = 1.2;
+const OPENING = { window: { w: 1.4, lo: 1.0, hi: 2.2 }, door: { w: HOUSE_DOOR_WIDTH, lo: -0.4, hi: 2.3 } };
+
+// The mortar or chinking behind a wall, round its opening.
+function coreAround(b, o, L, H, D, colour, y0 = -0.3) {
+  const side = (L - o.w) / 2;
+  for (const x of [-(o.w + side) / 2, (o.w + side) / 2]) b.add(new BoxGeometry(side, H - y0, D), colour, [x, (H + y0) / 2, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  if (o.lo > y0) b.add(new BoxGeometry(o.w, o.lo - y0, D), colour, [0, (o.lo + y0) / 2, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  b.add(new BoxGeometry(o.w, H - o.hi, D), colour, [0, (H + o.hi) / 2, 0], [0, 0, 0], [1, 1, 1], 0.02);
+}
+
+// A frame round the opening: sill (a window), head, jambs; for a window, the bars of its casement.
+function frameOpening(b, o, D, wood, window) {
+  if (window) b.add(new BoxGeometry(o.w + 0.2, 0.12, D + 0.1), wood, [0, o.lo - 0.02, 0.03], [0, 0, 0], [1, 1, 1], 0.03);
+  b.add(new BoxGeometry(o.w + 0.2, 0.18, D + 0.04), wood, [0, o.hi + 0.07, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  for (const x of [-o.w / 2 - 0.05, o.w / 2 + 0.05]) b.add(new BoxGeometry(0.12, o.hi - Math.max(o.lo, -0.05), D + 0.04), wood, [x, (o.hi + Math.max(o.lo, -0.05)) / 2, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  if (window) {
+    b.add(new BoxGeometry(0.05, o.hi - o.lo, 0.06), 0x3e2c1c, [0, (o.hi + o.lo) / 2, 0]);
+    b.add(new BoxGeometry(o.w, 0.05, 0.06), 0x3e2c1c, [0, (o.hi + o.lo) / 2, 0]);
+  }
+}
+
+/** A wall section with a window or a doorway, for a set: 'log', 'plank', 'stone' or 'cut'. */
+export function openWallModel(style, what) {
+  const o = OPENING[what], window = what === 'window', L = WALL_LENGTH, H = 3.2;
+  const b = new Parts(201 + ['log', 'plank', 'stone', 'cut'].indexOf(style) * 4 + (window ? 0 : 2)), rand = mulberry32(201);
+  const inside = (x, y, pad = 0) => Math.abs(x) < o.w / 2 + pad && y > o.lo - pad && y < o.hi + pad;
+  if (style === 'log') {
+    for (let k = 0, y = 0.1; y < 3.15; k++, y += 0.33) {
+      const r = 0.17 + rand() * 0.02, past = k % 2 ? 0.18 : 0.04, bark = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
+      if (y > o.lo - r && y < o.hi + r * 0.5) {
+        b.log([-L / 2 - past, y, 0], [-o.w / 2 - 0.08, y, 0], r, bark, 0xc8a070, 7);
+        b.log([o.w / 2 + 0.08, y, 0], [L / 2 + past, y, 0], r, bark, 0xc8a070, 7);
+      } else b.log([-L / 2 - past, y, 0], [L / 2 + past, y, 0], r, bark, 0xc8a070, 7);
+    }
+    coreAround(b, o, L, H, 0.18, 0x6a6448, 0);
+    frameOpening(b, o, 0.4, 0x8a6a44, window);
+  } else if (style === 'plank') {
+    const BOARD = [0x9a7448, 0x8a663e, 0xa47e50, 0x94704a];
+    for (const side of [0.08, -0.08]) for (let y = 0.05; y < H - 0.1; y += 0.25) {
+      const yc = y + 0.13;
+      if (yc > o.lo && yc < o.hi) {
+        const w = (L - 0.24 - o.w) / 2;
+        for (const x of [-(o.w + w) / 2 - 0.06, (o.w + w) / 2 + 0.06]) b.add(new BoxGeometry(w, 0.27, 0.06), BOARD[Math.floor(rand() * 4)], [x, yc, side], [Math.sign(side) * 0.06, 0, 0], [1, 1, 1], 0.03);
+      } else b.add(new BoxGeometry(L - 0.24, 0.27, 0.06), BOARD[Math.floor(rand() * 4)], [0, yc, side], [Math.sign(side) * 0.06, 0, 0], [1, 1, 1], 0.03);
+    }
+    for (const x of [-L / 2 + 0.1, L / 2 - 0.1]) b.add(new BoxGeometry(0.2, H + 0.3, 0.26), 0x6a4c30, [x, H / 2 - 0.15, 0], [0, 0, 0], [1, 1, 1], 0.02);
+    b.add(new BoxGeometry(L + 0.04, 0.2, 0.3), 0x6a4c30, [0, H + 0.05, 0], [0, 0, 0], [1, 1, 1], 0.02);
+    if (window) b.add(new BoxGeometry(L + 0.04, 0.24, 0.3), 0x5e4430, [0, -0.08, 0], [0, 0, 0], [1, 1, 1], 0.02);
+    else for (const x of [-(L + o.w) / 4, (L + o.w) / 4]) b.add(new BoxGeometry((L - o.w) / 2, 0.24, 0.3), 0x5e4430, [x, -0.08, 0], [0, 0, 0], [1, 1, 1], 0.02);
+    frameOpening(b, o, 0.3, 0x6a4c30, window);
+  } else if (style === 'stone') {
+    stoneCourses(b, rand, { length: L, height: H, depth: 0.6, mossTop: 0.35, skip: (x, y) => inside(x, y, 0.05) });
+    coreAround(b, o, L, H, 0.3, 0x5a5852);
+    b.add(new BoxGeometry(o.w + 0.5, 0.3, 0.62), 0x84806e, [0, o.hi + 0.12, 0]); // (the lintel)
+    if (window) b.add(new BoxGeometry(o.w + 0.4, 0.14, 0.72), 0x9a968c, [0, o.lo - 0.05, 0.04]);
+    frameOpening(b, o, 0.16, 0x5e4630, window);
+  } else {
+    const CUT = [0xb2aea4, 0xaaa69c, 0xbab6ac, 0xa4a096];
+    for (let y = -0.3, row = 0; y < H - 0.3; y += 0.4, row++) {
+      for (let x = -L / 2 + (row % 2 ? -0.4 : 0); x < L / 2 - 0.01; x += 0.8) {
+        let x0 = Math.max(-L / 2, x), x1 = Math.min(L / 2, x + 0.8);
+        const yc = y + 0.2;
+        if (yc > o.lo - 0.1 && yc < o.hi + 0.1) {
+          // (Blocks cut to the opening's edge.)
+          if (x1 > -o.w / 2 && x0 < o.w / 2) {
+            if (x0 < -o.w / 2) x1 = -o.w / 2;
+            else if (x1 > o.w / 2) x0 = o.w / 2;
+            else continue;
+          }
+        }
+        if (x1 - x0 < 0.05) continue;
+        b.add(new BoxGeometry(x1 - x0 - 0.02, 0.38, 0.58), CUT[Math.floor(rand() * CUT.length)], [(x0 + x1) / 2, y + 0.2, 0], [0, 0, 0], [1, 1, 1], 0.02);
+      }
+    }
+    b.add(new BoxGeometry(L + 0.06, 0.16, 0.7), 0x9a968c, [0, H + 0.02, 0], [0, 0, 0], [1, 1, 1], 0.01);
+    coreAround(b, o, L, H, 0.4, 0x7a766e);
+    b.add(new BoxGeometry(o.w + 0.4, 0.34, 0.66), 0xc4c0b6, [0, o.hi + 0.15, 0], [0, 0, 0], [1, 1, 1], 0.01); // (a carved lintel)
+    if (window) b.add(new BoxGeometry(o.w + 0.3, 0.12, 0.74), 0xc4c0b6, [0, o.lo - 0.04, 0.04], [0, 0, 0], [1, 1, 1], 0.01);
+    frameOpening(b, o, 0.14, 0x4e3624, window);
+  }
+  return b.build();
+}
+
+/** A house door, hinged at its left edge (x = 0): for a set. */
+export function houseDoorModel(style) {
+  const b = new Parts(231 + ['log', 'plank', 'stone', 'cut'].indexOf(style)), w = HOUSE_DOOR_WIDTH - 0.04, h = 2.3;
+  if (style === 'log') {
+    for (let k = 0; k < 4; k++) b.add(new BoxGeometry(w / 4 - 0.02, h, 0.12), [0x8a6a44, 0x7a5a3a][k % 2], [(w / 4) * (k + 0.5), h / 2 - 0.35, 0], [0, 0, 0], [1, 1, 1], 0.06);
+    for (const y of [0.1, 1.5]) b.add(new BoxGeometry(w, 0.14, 0.07), 0x5a3c24, [w / 2, y, -0.09]);
+    b.add(new BoxGeometry(0.1, 1.6, 0.06), 0x5a3c24, [w / 2, 0.8, -0.1], [0, 0, 0.7]);
+  } else {
+    const wood = style === 'plank' ? 0x9a7448 : style === 'stone' ? 0x5e4228 : 0x4a3220;
+    for (let k = 0; k < 6; k++) b.add(new BoxGeometry(w / 6 - 0.01, h, 0.09), wood, [(w / 6) * (k + 0.5), h / 2 - 0.35, 0], [0, 0, 0], [1, 1, 1], 0.03);
+    for (const y of [0.15, 1.6]) b.add(new BoxGeometry(w * 0.7, 0.07, 0.03), 0x2e2e32, [w * 0.35, y, 0.06]); // (iron hinge straps)
+    b.add(new BoxGeometry(0.06, 0.18, 0.08), 0x3a3a40, [w - 0.14, 0.75, 0.08]); // (the handle)
+    if (style !== 'plank') for (let x = 0.15; x < w; x += 0.3) for (let y = -0.1; y < 1.9; y += 0.5) b.add(new BoxGeometry(0.04, 0.04, 0.03), 0x2e2e32, [x, y, 0.06]); // (iron studs)
+  }
   return b.build();
 }

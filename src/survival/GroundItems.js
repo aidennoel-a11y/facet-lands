@@ -25,6 +25,8 @@ const BUILT = {
   cellar: M.cellarModel, fishTrap: M.fishTrapModel, smokingRack: M.smokingRackModel,
   logWall: M.logWallModel, plankWall: M.plankWallModel, cutStoneWall: M.cutStoneWallModel, logFloor: M.logFloorModel, cutStoneFloor: M.cutStoneFloorModel,
   logStairs: M.logStairsModel, plankStairs: M.plankStairsModel, stoneStairs: M.stoneStairsModel, cutStairs: M.cutStairsModel,
+  logWindow: () => M.openWallModel('log', 'window'), logDoor: () => M.openWallModel('log', 'door'), plankWindow: () => M.openWallModel('plank', 'window'), plankDoor: () => M.openWallModel('plank', 'door'),
+  stoneDoor: () => M.openWallModel('stone', 'door'), cutWindow: () => M.openWallModel('cut', 'window'), cutDoor: () => M.openWallModel('cut', 'door'),
   logRoof: M.logRoofModel, shingleRoof: M.shingleRoofModel, tileRoof: M.tileRoofModel, bedroll: M.bedrollModel, fancyBed: M.fancyBedModel,
 };
 
