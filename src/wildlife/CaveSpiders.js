@@ -19,6 +19,14 @@ function part(geometry, colour, [x, y, z] = [0, 0, 0], [sx, sy, sz] = [1, 1, 1])
   return g;
 }
 
+// Where it can be hit (its own frame, facing +z, at size 1): x, y, z, radius.
+const SHAPE = [
+  [0, 0.58, -0.55, 0.52], // (the abdomen)
+  [0, 0.5, 0.05, 0.34], // (the thorax)
+  [0, 0.48, 0.32, 0.2], // (the head and fangs)
+  ...[1, -1].flatMap((side) => [[0.45, 0.22], [0.55, 0.0], [0.55, -0.22], [0.45, -0.42], [0.85, 0.5], [0.95, 0.12], [0.95, -0.3], [0.85, -0.7]].map(([x, z], i) => [side * x, i < 4 ? 0.8 : 0.45, z, i < 4 ? 0.26 : 0.22])), // (the legs: knees, then feet)
+];
+
 // The body: a great bristling abdomen behind, the head-and-thorax before it,
 // the fangs, and a cluster of eyes catching the light. (Facing +z; its
 // middle over the ground at 0.)
@@ -175,17 +183,27 @@ export class CaveSpiders {
     }
   }
 
-  /** A blow or a shot: `along` a ray from `origin`, within `max`: { distance, point, animal (the spider), spider: true } or null. */
+  /**
+   * A blow or a shot: `along` a ray from `origin`, within `max`: { distance,
+   * point, animal (the spider), spider: true } or null. Its shape, as it's
+   * drawn: the great abdomen behind, the thorax and head before it, and the
+   * legs out to either side (a shot through a leg still hits it).
+   */
   aim(origin, dir, max = 150) {
     let best = null;
     for (const s of this.spiders) {
       if (!s.alive) continue;
-      const cx = s.x - origin.x, cy = s.y + 0.5 * s.size - origin.y, cz = s.z - origin.z;
-      const t = cx * dir.x + cy * dir.y + cz * dir.z, r = 0.6 * s.size;
-      const d2 = cx * cx + cy * cy + cz * cz - t * t;
-      if (d2 > r * r || t < 0) continue;
-      const hit = t - Math.sqrt(r * r - d2);
-      if (hit <= max && (!best || hit < best.distance)) best = { distance: hit, point: origin.clone().addScaledVector(dir, hit), animal: s, spider: true, head: false };
+      const k = s.size;
+      if (Math.hypot(s.x - origin.x, s.z - origin.z) > max + 2 * k) continue;
+      const c = Math.cos(s.heading), sn = Math.sin(s.heading);
+      for (const [lx, ly, lz, r] of SHAPE) {
+        const cx = s.x + (lx * c + lz * sn) * k - origin.x, cy = s.y + ly * k - origin.y, cz = s.z + (-lx * sn + lz * c) * k - origin.z;
+        const t = cx * dir.x + cy * dir.y + cz * dir.z, rr = r * k;
+        const d2 = cx * cx + cy * cy + cz * cz - t * t;
+        if (d2 > rr * rr || t < -rr) continue;
+        const hit = Math.max(0, t - Math.sqrt(rr * rr - d2));
+        if (hit <= max && (!best || hit < best.distance)) best = { distance: hit, point: origin.clone().addScaledVector(dir, hit), animal: s, spider: true, head: false };
+      }
     }
     return best;
   }

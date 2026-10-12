@@ -70,5 +70,26 @@ if (placed) {
   }, placed);
   await page.waitForTimeout(3000);
   await page.screenshot({ path: `${out}.png` });
+  // From the foot of it: stand a little out from its end, look at it, E, and climb.
+  const climb = await page.evaluate(async (p) => {
+    const { game, camera, controls, groundAt } = window.world;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    if (controls.mode !== 'walk') document.getElementById('fly')?.click();
+    const bx = Math.sin(p.rot), bz = Math.cos(p.rot), [fd, fy] = p.path[p.path.length - 1];
+    const fx = p.x + bx * fd, fz = p.z + bz * fd, footY = p.y + fy;
+    const sx = fx + bx * 1.4, sz = fz + bz * 1.4, g = groundAt(sx, footY + 1, sz).height;
+    camera.position.set(sx, (Number.isFinite(g) ? g : footY) + controls.eyeHeight, sz);
+    camera.lookAt(fx, footY + 1.2, fz);
+    controls.euler.setFromQuaternion(camera.quaternion, 'YXZ');
+    await wait(400);
+    const before = camera.position.y;
+    game.interact();
+    const on = !!game.climbing;
+    controls.keys.add('KeyW');
+    await wait(4000);
+    controls.keys.delete('KeyW');
+    return { on, rose: +(camera.position.y - before).toFixed(2), still: !!game.climbing };
+  }, placed);
+  console.log('from the foot:', JSON.stringify(climb));
 }
 await browser.close();

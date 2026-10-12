@@ -742,7 +742,9 @@ export class Structures {
   pick(origin, dir, reach) {
     let best = null;
     for (const s of this.list) {
-      if (Math.abs(s.x - origin.x) > reach + 4 || Math.abs(s.z - origin.z) > reach + 4) continue;
+      // (A rope reaches far from its stake: down a slope it may end tens of metres off.)
+      const spread = s.type === 'rope' ? 4 + (s.path?.length ? Math.max(...s.path.map(([d]) => Math.abs(d))) : 1) : 4;
+      if (Math.abs(s.x - origin.x) > reach + spread || Math.abs(s.z - origin.z) > reach + spread) continue;
       // Points on it to aim at: along a wall's length; up a stake.
       const ax = Math.cos(s.rot), az = -Math.sin(s.rot), bx = Math.sin(s.rot), bz = Math.cos(s.rot);
       const points = [];
@@ -758,6 +760,9 @@ export class Structures {
             points.push([s.x + bx * d, s.y + y, s.z + bz * d, 0.5]);
           }
         }
+        // (Its foot, easy to take hold of from below: the last metre or two, at a man's height over it.)
+        const [fd, fy] = s.path[s.path.length - 1];
+        for (const h of [0.5, 1.2, 1.9]) points.push([s.x + bx * fd, s.y + fy + h, s.z + bz * fd, 0.9]);
       } else if (s.type === 'rope') for (let h = 0; h <= s.len + 0.5; h += 0.8) points.push([s.x + bx * 0.35, s.y + 0.3 - h, s.z + bz * 0.35, 0.5]);
       else if (s.type === 'plot') points.push([s.x, s.y + 0.25, s.z, 1.1]);
       else if (s.type === 'anvil' || s.type === 'grindstone') points.push([s.x, s.y + 0.8, s.z, 0.6]);
