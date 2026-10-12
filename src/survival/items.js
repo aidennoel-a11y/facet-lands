@@ -49,6 +49,7 @@ export const ITEMS = {
   venomSac: { name: "The Old Rattler's venom", weight: 0.3, group: 'Trophies' },
   boarTusk: { name: "Ironhide's tusks", weight: 1.5, group: 'Trophies' },
   caveBearPelt: { name: "The Cave Bear's pelt", weight: 5, group: 'Trophies' },
+  broodHeart: { name: "The Broodmother's heart", weight: 2, group: 'Trophies' },
   seedWheat: { name: 'Wheat seeds', weight: 0.05, sow: 'wheat', group: 'Farming' },
   seedCorn: { name: 'Corn kernels', weight: 0.05, sow: 'corn', group: 'Farming' },
   seedPotato: { name: 'Seed potato', weight: 0.2, sow: 'potato', group: 'Farming' },
@@ -452,6 +453,7 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   re('lionPelt', 'pelt', [['#9a7a58', '#b08a58'], ['#c4a47a', '#5a3a20']]);
   re('tigerPelt', 'pelt', [['#9a7a58', '#d8782a'], ['#c4a47a', '#1a1210']]);
   re('paleFur', 'pelt', [['#9a7a58', '#e0dcd2'], ['#c4a47a', '#f4f0e8']]);
+  ICONS.broodHeart = `<path d="M16 27C6 20 4 14 7 10s8-3 9 1c1-4 6-5 9-1s1 10-9 17z" fill="#5a1418"/><path d="M10 11c2-2 5-1 5 2" stroke="#a03038" stroke-width="1.6" fill="none"/><circle cx="20" cy="14" r="1.4" fill="#d04040"/><circle cx="13" cy="18" r="1" fill="#d04040"/>`;
   re('caveBearPelt', 'pelt', [['#9a7a58', '#3a3230'], ['#c4a47a', '#5a504a']]);
   re('greatHide', 'hide', [['#8a5a3a', '#4a3020'], ['#b06a58', '#6a4430']]);
   re('crocHide', 'hide', [['#8a5a3a', '#4a5a3a'], ['#b06a58', '#6a7a50']]);

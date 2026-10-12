@@ -4,6 +4,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 const rnd = (a, b) => a + Math.random() * (b - a);
 const TAU = Math.PI * 2;
 const MAX = 8; // (spiders about you at once, at most)
+// The Broodmother: the great spider of the vast caverns (see #brood).
+export const BROOD = { name: 'The Broodmother', size: 3.1, health: 1100, bite: 30 };
+const BROOD_TINT = new Color(0.95, 0.55, 0.5), PLAIN = new Color(1, 1, 1);
 const LEGS = 8;
 
 // One piece of the body, coloured.
@@ -70,6 +73,8 @@ export class CaveSpiders {
     }
     this.wait = 3;
     this.onKill = null; // (spider) => it's dead: what it leaves
+    this.bodies.setColorAt(0, PLAIN);
+    this.legs.setColorAt(0, PLAIN);
   }
 
   // Where a spider would stand at (x, z), from about height `y`: the cave floor, or null.
@@ -89,8 +94,9 @@ export class CaveSpiders {
     this.wait -= dt;
     if (this.wait <= 0) {
       this.wait = 2;
-      for (const s of this.spiders) if (!ctx.under || Math.hypot(s.x - eye.x, s.y - eye.y, s.z - eye.z) > 90) s.gone = true;
-      if (ctx.under && this.spiders.filter((s) => s.alive).length < 3 && Math.random() < 0.45) {
+      for (const s of this.spiders) if (!ctx.under || Math.hypot(s.x - eye.x, s.y - eye.y, s.z - eye.z) > (s.boss ? 170 : 90)) s.gone = true;
+      if (ctx.under && ctx.alive !== false) this.#brood(ctx, feet);
+      if (ctx.under && this.spiders.filter((s) => s.alive && !s.boss).length < 3 && Math.random() < 0.45) {
         // (Out of the dark a way off, somewhere it can stand.)
         for (let tries = 0; tries < 30; tries++) {
           const a = rnd(0, TAU), d = rnd(22, 45), x = eye.x + Math.sin(a) * d, z = eye.z + Math.cos(a) * d;
@@ -115,6 +121,40 @@ export class CaveSpiders {
     this.#draw(ctx);
   }
 
+  /**
+   * The Broodmother: in the vastest of the great chambers only (the ones
+   * hundreds of metres across), well inside one, she comes out of the dark
+   * at its far side. Once killed, not again there for some days.
+   */
+  #brood(ctx, feet) {
+    const eye = ctx.eye;
+    if (this.spiders.some((s) => s.boss && s.alive)) return;
+    const ch = ctx.chamberAt?.(eye.x, eye.z);
+    if (!ch || ch.e > 0.85 || ch.c.rx * ch.c.rz < 110 * 110) return;
+    const key = `brood@${Math.round(ch.c.x)},${Math.round(ch.c.z)}`;
+    if (ctx.broodGone?.(key)) return;
+    for (let tries = 0; tries < 40; tries++) {
+      const a = rnd(0, TAU), d = rnd(28, 50), x = eye.x + Math.sin(a) * d, z = eye.z + Math.cos(a) * d;
+      let y = null;
+      for (const from of [feet + 8, feet + 3, feet - 3, feet - 8]) {
+        const g = ctx.caves.groundAt(x, from, z, ctx.terrain(x, z));
+        if (g.inCave && Number.isFinite(g.height) && g.height < from - 0.5 && Math.abs(g.height - feet) < 14 && g.ceiling - g.height > 7) {
+          y = g.height;
+          break;
+        }
+      }
+      if (y === null) continue;
+      this.spiders.push({ x, y, z, heading: rnd(0, TAU), size: BROOD.size, alive: true, health: BROOD.health, maxHealth: BROOD.health, boss: BROOD, key, spider: true, state: 'lurk', timer: 1, cool: 0, gait: 0, speed: 0, rear: 0, dead: 0, shy: 0, call: 8 });
+      ctx.sound?.call('hiss', ctx.pan(x, z), 1);
+      return;
+    }
+  }
+
+  /** Testing: the Broodmother here. */
+  spawnBrood(x, y, z) {
+    this.spiders.push({ x, y, z, heading: 0, size: BROOD.size, alive: true, health: BROOD.health, maxHealth: BROOD.health, boss: BROOD, key: `brood@test`, spider: true, state: 'lurk', timer: 1, cool: 0, gait: 0, speed: 0, rear: 0, dead: 0, shy: 0, call: 8 });
+  }
+
   #think(s, dt, ctx, feet) {
     const eye = ctx.eye;
     if (!s.alive) {
@@ -131,15 +171,25 @@ export class CaveSpiders {
     if (lit && s.shy <= 0 && d < 4 && Math.random() < dt * 1.5) (s.shy = rnd(2, 4)), ctx.sound?.call('hiss', ctx.pan(s.x, s.z), 0.6);
     let want = s.heading, speed = 0;
     if (ctx.alive === false) s.state = 'lurk';
-    else if (s.state === 'lurk' && d < 20 && level) (s.state = 'hunt'), ctx.sound?.call('hiss', ctx.pan(s.x, s.z), 0.4);
+    else if (s.state === 'lurk' && d < (s.boss ? 45 : 20) && level) (s.state = 'hunt'), ctx.sound?.call('hiss', ctx.pan(s.x, s.z), s.boss ? 1 : 0.4);
+    s.hunting = s.state !== 'lurk';
+    // (The Broodmother, fighting: now and then she calls her brood to her.)
+    if (s.boss && s.hunting && (s.call -= dt) <= 0) {
+      s.call = rnd(12, 18);
+      for (let k = 0; k < 2 && this.spiders.length < MAX; k++) {
+        const a = rnd(0, TAU), x = s.x + Math.sin(a) * 4, z = s.z + Math.cos(a) * 4, y = this.#floor(x, s.y, z, ctx.caves, ctx.terrain, 4);
+        if (y !== null) this.spiders.push({ x, y, z, heading: a, size: rnd(0.7, 0.95), alive: true, health: 40, state: 'hunt', timer: 2, cool: 1, gait: 0, speed: 0, rear: 0, dead: 0, shy: 0 });
+      }
+      ctx.sound?.call('hiss', ctx.pan(s.x, s.z), 1);
+    }
     if (s.state === 'lurk') {
       s.timer -= dt;
       if (s.timer <= 0) (s.timer = rnd(2, 6)), (s.target = s.heading + rnd(-2, 2)), (s.moveFor = rnd(0.5, 2));
       if ((s.moveFor = (s.moveFor ?? 0) - dt) > 0) (want = s.target ?? s.heading), (speed = 1.2);
     } else if (s.state === 'hunt') {
-      if (d > 35 || !level) s.state = 'lurk';
+      if (d > (s.boss ? 70 : 35) || !level) s.state = 'lurk';
       else if (s.shy > 0) (want = toYou + Math.PI), (speed = 3);
-      else if (d > 4.5) (want = toYou + Math.sin(performance.now() / 700 + s.size * 9) * 0.5), (speed = 4.2);
+      else if (d > 3 + s.size * 1.5) (want = toYou + Math.sin(performance.now() / 700 + s.size * 9) * 0.5), (speed = s.boss ? 5 : 4.2);
       else if (s.cool <= 0) {
         // Rear up, then lunge.
         s.rear += dt;
@@ -158,8 +208,8 @@ export class CaveSpiders {
       speed = 9;
       if (d < 1.3 + s.size * 0.4) {
         // The bite.
-        ctx.hurt?.(Math.round(12 * s.size));
-        if (Math.random() < 0.3) ctx.poison?.();
+        ctx.hurt?.(s.boss ? s.boss.bite : Math.round(12 * s.size));
+        if (Math.random() < (s.boss ? 0.6 : 0.3)) ctx.poison?.();
         s.state = 'hunt';
         s.cool = rnd(1.4, 2.4);
       } else if (s.lunge.t > 0.5) (s.state = 'hunt'), (s.cool = rnd(1, 1.8));
@@ -237,6 +287,7 @@ export class CaveSpiders {
       else if (rear) q.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -rear));
       const bob = dead ? 0.55 * k : Math.abs(Math.sin(s.gait * 2)) * 0.04 * k;
       m.compose(p.set(s.x, s.y + bob, s.z), q, sc.setScalar(k));
+      this.bodies.setColorAt(n, s.boss ? BROOD_TINT : PLAIN);
       this.bodies.setMatrixAt(n++, m);
       // The legs: four a side, each a thigh up and out to the knee and a
       // shank down to the foot, stepping by turns as it goes.
@@ -259,6 +310,7 @@ export class CaveSpiders {
           const len = dir.length();
           q.setFromUnitVectors(UP, dir.normalize());
           m.compose(from, q, sc.set(thick * k, len, thick * k));
+          this.legs.setColorAt(l, s.boss ? BROOD_TINT : PLAIN);
           this.legs.setMatrixAt(l++, m);
         }
       }
@@ -266,5 +318,7 @@ export class CaveSpiders {
     this.bodies.count = n;
     this.legs.count = l;
     this.bodies.instanceMatrix.needsUpdate = this.legs.instanceMatrix.needsUpdate = true;
+    if (this.bodies.instanceColor) this.bodies.instanceColor.needsUpdate = true;
+    if (this.legs.instanceColor) this.legs.instanceColor.needsUpdate = true;
   }
 }

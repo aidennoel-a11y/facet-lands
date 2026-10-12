@@ -1334,6 +1334,10 @@ export class Game {
   #hitSpider(hit, sharp, from) {
     const out = this.spiders.wound(hit.animal, sharp);
     this.#wounded(hit, from);
+    if (hit.animal.boss) {
+      this.#bossFight(hit.animal);
+      return this.hotbar?.flash(out === 'dead' ? `${hit.animal.boss.name} is dead` : 'A hit: she shrieks');
+    }
     this.hotbar?.flash(out === 'dead' ? 'The spider curls up, dead' : 'A hit: it hisses');
   }
 
@@ -1941,7 +1945,7 @@ export class Game {
     const bf = this.bossFight;
     if (bf && bf.a.alive && !bf.a.gone && Math.hypot(bf.a.x - cam.x, bf.a.z - cam.z) < 40) bf.until = Math.max(bf.until, bf.a.hunting || bf.a.charging > 0 ? this.time + 10 : bf.until);
     if (bf && (!bf.a.alive || bf.a.gone)) bf.until = Math.min(bf.until, (bf.dead ??= this.time) + 3);
-    if (bf && this.time < bf.until) this.hud.boss(bf.a.boss.name, Wildlife.bossHealth(bf.a));
+    if (bf && this.time < bf.until) this.hud.boss(bf.a.boss.name, bf.a.spider ? Math.max(0, bf.a.health / bf.a.maxHealth) : Wildlife.bossHealth(bf.a));
     else (this.bossFight = null), this.hud.boss(null);
     // Settling a wild horse (how calm it is), or riding one (its wind).
     const calming = this.wildlife.calming;

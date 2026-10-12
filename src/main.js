@@ -223,7 +223,15 @@ const grassCut = new GrassCut();
 const fires = new Wildfires(scene);
 // (Big spiders in the dark of the caves: see CaveSpiders. Killed, one leaves its silk.)
 const spiders = new CaveSpiders(scene);
-spiders.onKill = (s) => game.items.drop({ id: 'silk', count: 2 }, s.x, s.y + 0.5, s.z);
+spiders.onKill = (s) => {
+  if (!s.boss) return game.items.drop({ id: 'silk', count: 2 }, s.x, s.y + 0.5, s.z);
+  // The Broodmother: her heart (one of the great beasts' trophies) and a mass of silk; not back in her chamber for some days.
+  game.items.drop({ id: 'broodHeart', count: 1 }, s.x, s.y + 1, s.z);
+  game.items.drop({ id: 'silk', count: 12 }, s.x + 1, s.y + 1, s.z);
+  (game.wildlife.bossDeaths ??= {})[s.key] = Math.round((dayNight.day + dayNight.hour / 24) * 100) / 100;
+  game.progress?.add?.('trophy');
+  game.dirty = true;
+};
 // (What burns: the trees and bushes, each losing its leaves if it burns long: see Felling.scorch.)
 fires.fuel = (x, z, r) => trees.within(x, z, r);
 // (How much there is to burn at (x, z): the grass, thickest and driest on
@@ -1871,6 +1879,8 @@ function tick(now) {
     eye: camera.position, under: caveFocus.under && controls.mode === 'walk', caves: generator.caves, terrain: (x, z) => chunks.groundHeightAt(x, z),
     hurt: (d) => game.hurt(d, 'a cave spider'), poison: () => game.survival.poison(25), fear: game.fearLights(),
     sound, pan: (x, z) => panTowards(camera, x, z), alive: game.survival.alive && !(peaceful?.checked ?? false),
+    chamberAt: (x, z) => generator.caves.field.chamberAt(x, z),
+    broodGone: (key) => { const died = game.wildlife.bossDeaths?.[key]; return died !== undefined && dayNight.day + dayNight.hour / 24 - died < 6; },
   });
   updateVisibility();
   const haze = heatHaze(dt);
@@ -2018,7 +2028,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, dayNight, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, dayNight, spiders, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)
