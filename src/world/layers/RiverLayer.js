@@ -1,3 +1,4 @@
+import { boundsOf, throwReach } from '../../render/cullBounds.js';
 import {
   BoxGeometry,
   BufferAttribute,
@@ -232,7 +233,10 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
     geometry.setAttribute('aMistIce', new InstancedBufferAttribute(mistIce ?? new Float32Array(at.length / 3), 1));
     geometry.instanceCount = at.length / 3;
     const mesh = new Mesh(geometry, mistMaterial);
-    mesh.frustumCulled = false; // (it moves on the GPU; there are only a few)
+    // (It moves on the GPU: its bounds take in where every puff rises and swells to.)
+    let rise = 0, puffSize = 0;
+    for (let k = 0; k < mistLife.length; k += 4) (rise = Math.max(rise, mistLife[k + 3])), (puffSize = Math.max(puffSize, mistLife[k + 2]));
+    geometry.boundingSphere = boundsOf(at, rise + puffSize * 1.6 + 1);
     mesh.renderOrder = 3; // (over the water)
     mesh.name = 'mist';
     return mesh;
@@ -246,7 +250,8 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
     geometry.setAttribute('aLife', new InstancedBufferAttribute(lives, 3));
     geometry.setAttribute('aIce', new InstancedBufferAttribute(ice ?? new Float32Array(lives.length / 3), 1));
     const mesh = new InstancedMesh(geometry, sprayMaterial, starts.length / 3);
-    mesh.frustumCulled = false; // it moves on the GPU; there are only a few
+    // (It moves on the GPU: its bounds take in everywhere a drop flies.)
+    mesh.boundingSphere = boundsOf(starts, throwReach(velocities, (i) => lives[i * 3]) + 1);
     mesh.name = 'spray';
     return mesh;
   }

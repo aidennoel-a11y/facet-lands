@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import './render/splitShadow.js'; // (first: the sun's shadow in two maps, before any material copies the shader code)
 import { WORLD } from './config.js';
 import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
@@ -66,6 +67,22 @@ let QUALITY = applyQuality();
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.antialias, powerPreference: 'high-performance' }); // (the strong graphics chip, on a laptop with two)
 renderer.shadowMap.enabled = true;
+// The solid things close round you (within 60 m) drawn first, then the
+// rest (and in each, those sharing a material together, nearest first):
+// what's behind the near ground and trees is then mostly found hidden
+// before its colour is worked out, not painted over. (three.js's own order
+// puts the material first: trees far off before the ground at your feet.)
+const nearFirst = (a, b) => {
+  if (a.groupOrder !== b.groupOrder) return a.groupOrder - b.groupOrder;
+  if (a.renderOrder !== b.renderOrder) return a.renderOrder - b.renderOrder;
+  const ba = a.z < 60 ? 0 : 1, bb = b.z < 60 ? 0 : 1;
+  if (ba !== bb) return ba - bb;
+  if (a.material.id !== b.material.id) return a.material.id - b.material.id;
+  if (a.z !== b.z) return a.z - b.z;
+  return a.id - b.id;
+};
+renderer.setOpaqueSort(nearFirst);
+renderer.__sort = nearFirst; // (for tools/_abbench.mjs, to time it against three.js's own order)
 renderer.shadowMap.type = THREE.PCFShadowMap;
 // (The soft edge of a shadow is sampled in the same pattern everywhere, not
 // turned by a noise from pixel to pixel: that noise wants a frame-blending
@@ -1022,6 +1039,12 @@ function updateVisibility() {
   const surface = !underground || nearMouth;
   // Near a mouth you can see down the tunnel beyond it, so show all caves.
   chunks.setVisibility(surface, underground || nearMouth ? 'all' : 'mouths', p);
+  // (Deep in, only the caves you could see into from where you are: see
+  // CaveSystem.visibleChunks. Looked at again a few times a second.)
+  if (!surface) {
+    const now = performance.now();
+    if (now >= caveSight.next) (caveSight.next = now + 150), chunks.setCaveSet(generator.caves.visibleChunks(p));
+  } else chunks.setCaveSet(null);
   clouds.group.visible = surface;
   // (Deep underground, no sun reaches: its shadows aren't redrawn, which
   // would mean drawing all the cave round you over again each frame.)
@@ -1079,6 +1102,7 @@ function caveSounds(dt) {
 }
 
 let sheltered = false; // underground: no rain or lightning, sounds muffled
+const caveSight = { next: 0 }; // (see updateVisibility)
 let shadowTurn = 0, cloudOwed = 0; // (see the frame: the clouds moved every other frame)
 
 // Where the sun's (or moon's) shadow map reaches: only chunks there need
@@ -1091,7 +1115,7 @@ function shadowReach(dt) {
   shadowCheck.wait -= dt;
   if (shadowCheck.wait > 0) return;
   shadowCheck.wait = 0.25;
-  const light = dayNight.light;
+  const light = dayNight.farLight; // (the far map's box: the whole reach)
   if (!light.castShadow || !renderer.shadowMap.enabled) {
     chunks.setShadowVolume(null);
     return;
@@ -1529,14 +1553,7 @@ function useQuality() {
   openFog.near = d * 0.45;
   openFog.far = d * 0.95;
   dayNight.horizonDistance = d * 0.9;
-  const shadow = dayNight.light.shadow, e = WORLD.shadowExtent / 2;
-  if (shadow.mapSize.x !== WORLD.shadowMapSize) {
-    shadow.mapSize.set(WORLD.shadowMapSize, WORLD.shadowMapSize);
-    shadow.map?.dispose();
-    shadow.map = null;
-  }
-  Object.assign(shadow.camera, { left: -e, right: e, top: e, bottom: -e });
-  shadow.camera.updateProjectionMatrix();
+  dayNight.setShadowSize(WORLD.shadowExtent, WORLD.shadowMapSize);
   PIXEL_RATIO = Math.min(window.devicePixelRatio, QUALITY.pixelRatio);
   resize();
   perfCheck.step = 0;
@@ -1550,6 +1567,7 @@ function useQuality() {
 // off, a step at a time: first the screen resolution, then the shadows'
 // detail. Never back up again, and only these two (nothing is rebuilt), so
 // no flicker or hitch.
+let lightsWarmed = false;
 const perfCheck = { step: 0, settle: 0, frames: 0, time: 0 };
 function checkPerformance(dt) {
   const P = perfCheck;
@@ -1567,11 +1585,8 @@ function checkPerformance(dt) {
     resize();
     return perfNote('Lowered the resolution a little to keep it smooth');
   }
-  const shadow = dayNight.light.shadow;
-  if (shadow.mapSize.x > 1024) {
-    shadow.mapSize.set(shadow.mapSize.x / 2, shadow.mapSize.y / 2);
-    shadow.map?.dispose();
-    shadow.map = null;
+  if (dayNight.shadowMapSize > 1024) {
+    dayNight.setShadowSize(WORLD.shadowExtent, dayNight.shadowMapSize / 2);
     return perfNote('Softened the shadows a little to keep it smooth');
   }
 }
@@ -1748,6 +1763,9 @@ function tick(now) {
   // reverse, a fading flash growing ever brighter.)
   const dt = Math.max(0, Math.min(elapsed, 0.1));
   checkPerformance(elapsed);
+  // (Once the land's in: the drawing made ready for each number of fire
+  // lights, so the first torch lit doesn't stall a frame. See Torches.)
+  if (!lightsWarmed && startMenu?.world && chunks.pendingCount === 0) (lightsWarmed = true), torches.prewarm(renderer, scene, camera);
   lastTime = now;
   // (A world starting: only the land built, behind the loading screen.)
   if (loading) {
@@ -1997,7 +2015,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, dayNight, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

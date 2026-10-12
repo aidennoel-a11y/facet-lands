@@ -100,6 +100,17 @@ export class ChunkManager {
     for (const chunk of this.chunks.values()) this.#applyVisibility(chunk);
   }
 
+  /**
+   * Underground: only these chunks' caves drawn ("cx,cz": those you could
+   * see into, see CaveSystem.visibleChunks), or all of them (null).
+   */
+  setCaveSet(set) {
+    const same = set === this.caveSet || (set && this.caveSet && set.size === this.caveSet.size && [...set].every((k) => this.caveSet.has(k)));
+    if (same) return;
+    this.caveSet = set;
+    if (this.visibility.caves === 'all') for (const chunk of this.chunks.values()) this.#applyVisibility(chunk);
+  }
+
   #applyVisibility(chunk) {
     const { surface, caves } = this.visibility;
     chunk.mesh.visible = surface && !chunk.merged;
@@ -110,7 +121,7 @@ export class ChunkManager {
     const eye = this.eye;
     const near = (object) => !!eye && object.userData.mouths?.some((m) => Math.hypot(m.x - eye.x, m.z - eye.z) < 45);
     for (const { layer, object } of chunk.layerObjects) {
-      object.visible = layer.name === 'caves' ? caves === 'all' || (object.userData.hasMouth === true && near(object)) : surface;
+      object.visible = layer.name === 'caves' ? (caves === 'all' && (!this.caveSet || this.caveSet.has(chunk.key))) || (object.userData.hasMouth === true && near(object)) : surface;
     }
   }
 

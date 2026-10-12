@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
 import { caveRoof, mesaArchAt } from '../TerrainGenerator.js';
 import { surfSpots } from '../decorPlacement.js';
+import { boundsOf, throwReach } from '../../render/cullBounds.js';
 
 /** A little flat five-armed starfish, base at y = 0, arms reaching out ~1. */
 function starfish() {
@@ -127,7 +128,8 @@ export function createSeaCoastLayer(config, terrainMaterial) {
     geometry.setAttribute('aVelocity', new InstancedBufferAttribute(new Float32Array(velocities), 3));
     geometry.setAttribute('aLife', new InstancedBufferAttribute(new Float32Array(lives), 4));
     const mesh = new InstancedMesh(geometry, surfMaterial, starts.length / 3);
-    mesh.frustumCulled = false; // (it moves on the GPU)
+    // (It moves on the GPU: its bounds take in everywhere a speck flies, so it's left out when off the screen.)
+    mesh.boundingSphere = boundsOf(starts, throwReach(velocities, (i) => 2 * Math.max(0, velocities[i * 3 + 1]) / 9.8) + 1);
     mesh.name = 'surf';
     return mesh;
   }

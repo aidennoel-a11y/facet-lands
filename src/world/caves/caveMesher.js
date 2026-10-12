@@ -203,6 +203,55 @@ function passable(values, n, ny, x0, z0, cell, yMin, entrances) {
   }
 }
 
+/**
+ * The chunk's separate stretches of cave (air joined to air), for drawing
+ * only what could be seen (see CaveSystem.visibleChunks): each grid point's
+ * stretch (`labels`, 0 in rock, 255 when there are too many to tell apart),
+ * and where each stretch meets each of the chunk's four sides
+ * (`portals`: per stretch, per side -x +x -z +z, the lowest and highest
+ * grid row and the first and last point along the side; -1 where it
+ * doesn't reach that side).
+ */
+export function cavePortals(grid) {
+  const { values, n, ny } = grid;
+  const labels = new Uint8Array(values.length);
+  const portals = [];
+  const stack = [];
+  let count = 0;
+  for (let c0 = 0; c0 < values.length; c0++) {
+    if (labels[c0] || values[c0] >= 0) continue;
+    const id = Math.min(255, ++count);
+    const p = new Float32Array(16).fill(-1);
+    stack.push(c0);
+    labels[c0] = id;
+    while (stack.length) {
+      const c = stack.pop();
+      const j = c % ny, col = (c - j) / ny, i = col % n, k = (col - i) / n;
+      const side = (s, along) => {
+        const o = s * 4;
+        if (p[o] < 0) (p[o] = p[o + 1] = j), (p[o + 2] = p[o + 3] = along);
+        else (p[o] = Math.min(p[o], j)), (p[o + 1] = Math.max(p[o + 1], j)), (p[o + 2] = Math.min(p[o + 2], along)), (p[o + 3] = Math.max(p[o + 3], along));
+      };
+      if (i === 0) side(0, k);
+      if (i === n - 1) side(1, k);
+      if (k === 0) side(2, i);
+      if (k === n - 1) side(3, i);
+      if (j > 0 && !labels[c - 1] && values[c - 1] < 0) (labels[c - 1] = id), stack.push(c - 1);
+      if (j < ny - 1 && !labels[c + 1] && values[c + 1] < 0) (labels[c + 1] = id), stack.push(c + 1);
+      if (i > 0 && !labels[c - ny] && values[c - ny] < 0) (labels[c - ny] = id), stack.push(c - ny);
+      if (i < n - 1 && !labels[c + ny] && values[c + ny] < 0) (labels[c + ny] = id), stack.push(c + ny);
+      if (k > 0 && !labels[c - n * ny] && values[c - n * ny] < 0) (labels[c - n * ny] = id), stack.push(c - n * ny);
+      if (k < n - 1 && !labels[c + n * ny] && values[c + n * ny] < 0) (labels[c + n * ny] = id), stack.push(c + n * ny);
+    }
+    if (id < 255) portals.push(...p);
+    else {
+      // (Too many to tell apart: the rest all count as one, open on every side.)
+      if (portals.length < 255 * 16) portals.push(0, ny, 0, n, 0, ny, 0, n, 0, ny, 0, n, 0, ny, 0, n);
+    }
+  }
+  return { labels, portals: new Float32Array(portals) };
+}
+
 /** Trilinear sample of a chunk grid at world coordinates (caller checks bounds). */
 export function sampleGrid(grid, x, y, z) {
   const { x0, z0, cell, n, ny, yMin, values } = grid;
@@ -1128,8 +1177,11 @@ export function buildChunkData(field, cx, cz, chunkSize) {
       glow: g.attributes.glow.array,
     };
   const { values, x0, z0, cell, n, ny, yMin } = grid;
+  const { labels, portals } = cavePortals(grid);
   return {
     grid: { cx, cz, x0, z0, cell, n, ny, yMin, values },
+    labels,
+    portals,
     rock: pack(rock),
     rockFar: rock ? pack(plain.far) : null,
     deco: pack(deco.geometry),
@@ -1150,6 +1202,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
 export function chunkDataBuffers(data) {
   const out = [];
   if (data.grid) out.push(data.grid.values.buffer);
+  if (data.labels) out.push(data.labels.buffer, data.portals.buffer);
   for (const part of [data.rock, data.rockFar, data.deco, data.plants, data.water, data.lava]) if (part) for (const a of Object.values(part)) out.push(a.buffer);
   out.push(data.obstacles.buffer);
   if (data.features) out.push(data.features.buffer);

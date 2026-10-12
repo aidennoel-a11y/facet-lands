@@ -334,15 +334,25 @@ export class DayNight {
     scene.add(this.hemi);
 
     // One light plays the sun by day and the moon by night.
+    // Its shadow in two maps (see splitShadow.js): a sharp one close round
+    // you, its own, redrawn every frame; and one out to the shadows' full
+    // reach, held by a second light that gives no light, redrawn every
+    // other frame (far off, a frame late is never seen).
     const light = new DirectionalLight();
-    light.castShadow = true;
-    light.shadow.mapSize.set(config.shadowMapSize, config.shadowMapSize);
-    const e = config.shadowExtent / 2;
-    Object.assign(light.shadow.camera, { left: -e, right: e, top: e, bottom: -e, near: 1, far: 1600 });
-    light.shadow.bias = -0.0004;
-    light.shadow.normalBias = 0.09; // (enough that faceted ground and crowns don't shadow themselves in patches)
-    scene.add(light, light.target);
+    const far = new DirectionalLight(0x000000, 0);
+    for (const l of [light, far]) {
+      l.castShadow = true;
+      l.shadow.camera.near = 1;
+      l.shadow.camera.far = 1600;
+      l.shadow.bias = -0.0004;
+      l.shadow.normalBias = 0.09; // (enough that faceted ground and crowns don't shadow themselves in patches)
+    }
+    far.shadow.autoUpdate = false;
+    scene.add(light, light.target, far, far.target); // (the sun first: it's the near map, see splitShadow.js)
     this.light = light;
+    this.farLight = far;
+    this._shadowFrame = 0;
+    this.setShadowSize(config.shadowExtent, config.shadowMapSize);
 
     this._lightDir = new Vector3();
     this._shadowDir = new Vector3(); // (see update: the light's direction, in steps)
@@ -350,6 +360,30 @@ export class DayNight {
     this._basis = new Matrix4();
     this._inverse = new Matrix4();
     this._focus = new Vector3();
+  }
+
+  /**
+   * How far the shadows reach (metres across) and how sharp the far map is
+   * (texels across); the near one covers the nearest part, as sharp or sharper.
+   */
+  setShadowSize(extent, mapSize) {
+    const near = Math.min(160, extent * 0.45), nearSize = Math.max(1024, mapSize / 2);
+    for (const [l, e, size] of [[this.light, near, nearSize], [this.farLight, extent, mapSize]]) {
+      if (l.shadow.mapSize.x !== size) {
+        l.shadow.mapSize.set(size, size);
+        l.shadow.map?.dispose();
+        l.shadow.map = null;
+      }
+      Object.assign(l.shadow.camera, { left: -e / 2, right: e / 2, top: e / 2, bottom: -e / 2 });
+      l.shadow.camera.updateProjectionMatrix();
+      l.userData.extent = e;
+    }
+    this.farLight.shadow.needsUpdate = true;
+  }
+
+  /** The far shadow map's sharpness (texels across): see setShadowSize. */
+  get shadowMapSize() {
+    return this.farLight.shadow.mapSize.x;
   }
 
   /** "09:30" style label for the current hour. */
@@ -541,11 +575,13 @@ export class DayNight {
 
     // Toggling castShadow recompiles every material, so only the user's
     // Shadows switch changes it (not the dim moments at dawn and dusk).
-    light.castShadow = this.shadows;
+    light.castShadow = this.farLight.castShadow = this.shadows;
+    // (The far map redrawn every other frame.)
+    this._shadowFrame = (this._shadowFrame + 1) % 2;
+    if (this._shadowFrame === 0) this.farLight.shadow.needsUpdate = true;
 
-    // Centre the shadow box a little ahead of the player, where they're
+    // Centre the shadow boxes a little ahead of the player, where they're
     // looking (shadows behind them are never seen), snapped to whole texels.
-    const texel = this.config.shadowExtent / this.config.shadowMapSize;
     // The shadows are cast along the light's direction, but it's only
     // brought up to date in small steps (a fifth of a degree), not every
     // frame: the sun creeps across the sky, and its height above the
@@ -560,17 +596,19 @@ export class DayNight {
     else sd.lerp(dir, Math.min(1, (this._dt ?? 0.016) / 1.2)).normalize();
     this._basis.lookAt(sd, new Vector3(0, 0, 0), new Vector3(0, 1, 0));
     this._inverse.copy(this._basis).transpose();
-    const f = this._focus.copy(focus);
-    if (this.viewDir) {
-      const l = Math.hypot(this.viewDir.x, this.viewDir.z);
-      if (l > 1e-3) f.addScaledVector(this._ahead.set(this.viewDir.x / l, 0, this.viewDir.z / l), this.config.shadowExtent * 0.32);
+    for (const l of [light, this.farLight]) {
+      const extent = l.userData.extent, texel = extent / l.shadow.mapSize.x;
+      const f = this._focus.copy(focus);
+      if (this.viewDir) {
+        const len = Math.hypot(this.viewDir.x, this.viewDir.z);
+        if (len > 1e-3) f.addScaledVector(this._ahead.set(this.viewDir.x / len, 0, this.viewDir.z / len), extent * (l === light ? 0.25 : 0.32));
+      }
+      f.applyMatrix4(this._inverse);
+      f.x = Math.round(f.x / texel) * texel;
+      f.y = Math.round(f.y / texel) * texel;
+      f.applyMatrix4(this._basis);
+      l.target.position.copy(f);
+      l.position.copy(f).addScaledVector(sd, 800);
     }
-    f.applyMatrix4(this._inverse);
-    f.x = Math.round(f.x / texel) * texel;
-    f.y = Math.round(f.y / texel) * texel;
-    f.applyMatrix4(this._basis);
-
-    light.target.position.copy(f);
-    light.position.copy(f).addScaledVector(sd, 800);
   }
 }

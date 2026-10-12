@@ -1,4 +1,5 @@
-import { BoxGeometry, BufferAttribute, Color, DoubleSide, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Vector3 } from 'three';
+import { boundsOf } from '../../render/cullBounds.js';
+import { BoxGeometry, BufferAttribute, Color, DoubleSide, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Sphere, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bonesModel } from '../../survival/models.js';
 import { shroomGeometry, shroomOf, shroomPieces } from '../caves/giantShrooms.js';
@@ -426,7 +427,8 @@ export function createCaveLayer(config) {
     if (!fish.length) return null;
     const mesh = new InstancedMesh(fishGeometry, fishMaterial, fish.length);
     mesh.name = 'cave fish';
-    mesh.frustumCulled = false;
+    // (Its bounds: round the circles they swim, so it's left out when off the screen.)
+    mesh.boundingSphere = boundsOf(fish.flatMap((f) => [f.x - x0, f.y, f.z - z0]), 2.2);
     return { mesh, fish, x0, z0 };
   };
 
@@ -528,7 +530,8 @@ export function createCaveLayer(config) {
             const bats = Array.from({ length: n }, (_, j) => ({ r: 1.5 + ((j * 7 + k) % 5) * 0.8, drop: 1.2 + (j % 3) * 0.7, squash: 0.5 + (j % 4) * 0.15, speed: (j % 2 ? 1 : -1) * (1.6 + (j % 3) * 0.5), phase: j * 2.1 + k }));
             const mesh = new InstancedMesh(batGeometry, batMaterial, n);
             mesh.name = 'cave bats flying';
-            mesh.frustumCulled = false;
+            // (Its bounds: round where they wheel under the roost.)
+            mesh.boundingSphere = new Sphere(new Vector3(fx - cx * size, fy - 1.5, fz - cz * size), 7);
             group.add(detail(mesh));
             const flock = { mesh, bats, x: fx, y: fy, z: fz, x0: cx * size, z0: cz * size };
             roostFlocks.add(flock);
@@ -609,7 +612,8 @@ export function createCaveLayer(config) {
           for (let k = 0; k < data.geysers.length; k += 4) vents.push({ x: data.geysers[k], y: data.geysers[k + 1], z: data.geysers[k + 2], s: data.geysers[k + 3], phase: (k * 0.37) % 1 * 6 });
           const mesh = new InstancedMesh(steamGeometry, steamMaterial, vents.length * PUFFS);
           mesh.name = 'cave steam';
-          mesh.frustumCulled = false;
+          // (Its bounds: up the columns of steam over the vents.)
+          mesh.boundingSphere = boundsOf(vents.flatMap((v) => [v.x - cx * size, v.y, v.z - cz * size, v.x - cx * size, v.y + 7 * v.s, v.z - cz * size]), 4);
           mesh.renderOrder = 3;
           group.add(detail(mesh));
           const st = { vents, mesh, x0: cx * size, z0: cz * size, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size };

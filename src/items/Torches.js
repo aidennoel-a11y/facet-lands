@@ -82,6 +82,37 @@ export class Torches {
       this.lights.push(light);
     }
     this._flame = new Vector3();
+    // How many of the lights are switched on at all: 0, a few, or all of
+    // them (see #setTier). Each light switched on costs every lit pixel on
+    // the screen its sum, used or not, so in the plain day, with no fire
+    // about, none are.
+    this.tier = maxLights;
+    this.tiers = [0, Math.min(4, maxLights), maxLights];
+    this.fewerSince = 0;
+    this.#setTier(0);
+  }
+
+  #setTier(n) {
+    if (n === this.tier) return;
+    this.tier = n;
+    this.lights.forEach((light, i) => (light.visible = i < n));
+  }
+
+  /**
+   * Has the drawing of everything made ready for each number of lights, so
+   * a fire lit later doesn't stall a frame while it's made ready then.
+   */
+  prewarm(renderer, scene, camera) {
+    const was = this.tier;
+    for (const n of this.tiers) {
+      if (n === was) continue;
+      this.#setTier(n);
+      // (Handed to the graphics driver to finish in the background where it
+      // can: no freeze while it's done.)
+      if (renderer.compileAsync) renderer.compileAsync(scene, camera).catch(() => {});
+      else renderer.compile(scene, camera);
+    }
+    this.#setTier(was);
   }
 
   get count() {
@@ -297,6 +328,15 @@ export class Torches {
       all.push(x);
     }
     const nearest = all.length <= this.lights.length ? all : all.sort((a, b) => a.distance - b.distance).slice(0, this.lights.length);
+    // (Up to more lights at once; back down only after a few seconds with
+    // fewer, so lighting and putting out a fire doesn't keep switching.)
+    const want = this.tiers.find((n) => n >= nearest.length) ?? this.lights.length;
+    const now = performance.now();
+    if (want > this.tier) this.#setTier(want), (this.fewerSince = 0);
+    else if (want < this.tier) {
+      if (!this.fewerSince) this.fewerSince = now;
+      else if (now - this.fewerSince > 4000) this.#setTier(want), (this.fewerSince = 0);
+    } else this.fewerSince = 0;
     this.lights.forEach((light, i) => {
       const t = nearest[i];
       if (!t) {

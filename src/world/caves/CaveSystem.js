@@ -122,6 +122,8 @@ export class CaveSystem {
       entry.lights = data.lights ?? new Float32Array(0);
       entry.geysers = data.geysers ?? new Float32Array(0);
       entry.giants = data.giants ?? new Float32Array(0);
+      entry.labels = data.labels ?? null;
+      entry.portals = data.portals ?? null;
       entry.water = toLiquid(data.water);
       entry.lava = toLiquid(data.lava);
       entry.ready = true;
@@ -135,6 +137,71 @@ export class CaveSystem {
     } else {
       apply(buildChunkData(this.field, cx, cz, this.chunkSize));
     }
+  }
+
+  /**
+   * The cave chunks you could see into from `eye`, underground: starting in
+   * the stretch of cave you're in, out through the sides of each chunk it
+   * reaches into the stretches of the next that meet it there, and on, but
+   * never back the way it came (a line of sight only ever goes on, one way
+   * along each axis). A Set of "cx,cz", or null where it can't tell (you're
+   * in rock, or your chunk isn't built yet): then all are shown.
+   */
+  visibleChunks(eye, range = 8) {
+    const size = this.chunkSize;
+    const cx0 = Math.floor(eye.x / size), cz0 = Math.floor(eye.z / size);
+    const start = this.cache.get(`${cx0},${cz0}`);
+    if (!start?.ready || !start.grid || !start.labels) return null;
+    const { x0, z0, cell, n, ny, yMin } = start.grid;
+    const at = (i, j, k) => (i < 0 || k < 0 || j < 0 || i >= n || k >= n || j >= ny ? 0 : start.labels[(k * n + i) * ny + j]);
+    const fi = Math.round((eye.x - x0) / cell), fj = Math.round((eye.y - yMin) / cell), fk = Math.round((eye.z - z0) / cell);
+    let id = at(fi, fj, fk);
+    // (Your eye right by the rock: the nearest air round it.)
+    for (let r = 1; r <= 2 && !id; r++) {
+      for (let dk = -r; dk <= r && !id; dk++) for (let di = -r; di <= r && !id; di++) for (let dj = -r; dj <= r && !id; dj++) id = at(fi + di, fj + dj, fk + dk);
+    }
+    if (!id) return null;
+    const seen = new Set([`${cx0},${cz0}`]);
+    const masks = new Map(); // "cx,cz,id" -> the ways it was reached by
+    const queue = [[cx0, cz0, id, 0]];
+    masks.set(`${cx0},${cz0},${id}`, [0]);
+    const STEP = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    while (queue.length) {
+      const [cx, cz, comp, mask] = queue.shift();
+      const entry = this.cache.get(`${cx},${cz}`);
+      const ports = entry.portals;
+      for (let s = 0; s < 4; s++) {
+        if (mask & (1 << (s ^ 1))) continue; // (never back again)
+        const o = (comp - 1) * 16 + s * 4;
+        if (o + 3 >= ports.length || ports[o] < 0) continue;
+        const nx = cx + STEP[s][0], nz = cz + STEP[s][1];
+        if (Math.abs(nx - cx0) > range || Math.abs(nz - cz0) > range) continue;
+        const key = `${nx},${nz}`;
+        const next = this.cache.get(key);
+        if (!next?.ready) {
+          seen.add(key); // (not built yet: nothing there to hide)
+          continue;
+        }
+        if (!next.grid || !next.portals) continue;
+        seen.add(key);
+        // Its stretches that meet ours across the side: overlapping in height and along it.
+        const lo = ports[o] * cell + entry.grid.yMin, hi = ports[o + 1] * cell + entry.grid.yMin;
+        const nm = mask | (1 << s), back = (s ^ 1) * 4, np = next.portals;
+        for (let c = 0; c * 16 < np.length; c++) {
+          const q = c * 16 + back;
+          if (np[q] < 0) continue;
+          const nlo = np[q] * next.grid.cell + next.grid.yMin, nhi = np[q + 1] * next.grid.cell + next.grid.yMin;
+          if (nhi < lo - cell || nlo > hi + cell || np[q + 3] < ports[o + 2] - 1 || np[q + 2] > ports[o + 3] + 1) continue;
+          const mk = `${key},${c + 1}`, had = masks.get(mk);
+          // (Again only if by a way that lets it go on somewhere new.)
+          if (had && had.some((m) => (m & nm) === m)) continue;
+          if (had) had.push(nm);
+          else masks.set(mk, [nm]);
+          queue.push([nx, nz, c + 1, nm]);
+        }
+      }
+    }
+    return seen;
   }
 
   release(cx, cz) {
