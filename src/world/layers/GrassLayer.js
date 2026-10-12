@@ -3,6 +3,8 @@ import { mulberry32 } from '../../noise/random.js';
 import { addWind } from '../../render/wind.js';
 import { seasonalGrass } from '../../render/Seasons.js';
 import { placeGrass } from '../grassPlacement.js';
+import { cloudShadowUniforms } from '../../render/cloudShadow.js';
+import { cutUniforms } from '../../render/grassCut.js';
 
 /**
  * Spots cleared of grass (x, z, radius, 0): where something stands on the
@@ -10,7 +12,7 @@ import { placeGrass } from '../grassPlacement.js';
  * nothing, so grass never grows up through it. Filled in each moment with
  * what's built near you (see main); unused ones have radius 0.
  */
-export const GRASS_CLEARINGS = 24;
+export const GRASS_CLEARINGS = 64;
 export const grassClearings = { value: Array.from({ length: GRASS_CLEARINGS }, () => new Vector4(0, 0, 0, 0)) };
 
 /**
@@ -172,8 +174,12 @@ export function createGrassLayer(config, { far = false } = {}) {
     previous?.call(material, shader, renderer);
     shader.uniforms.uClearings = grassClearings;
     shader.uniforms.uPushers = grassPushers;
+    shader.uniforms.uBurnMap = cloudShadowUniforms.uBurnMap;
+    shader.uniforms.uBurnOrigin = cloudShadowUniforms.uBurnOrigin;
+    shader.uniforms.uBurnSize = cloudShadowUniforms.uBurnSize;
+    Object.assign(shader.uniforms, cutUniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\nuniform vec4 uClearings[${GRASS_CLEARINGS}];\nuniform vec4 uPushers[${GRASS_PUSHERS}];`)
+      .replace('#include <common>', `#include <common>\nuniform vec4 uClearings[${GRASS_CLEARINGS}];\nuniform vec4 uPushers[${GRASS_PUSHERS}];\nuniform sampler2D uBurnMap;\nuniform vec2 uBurnOrigin;\nuniform float uBurnSize;\nuniform sampler2D uCutMap;\nuniform vec2 uCutOrigin;\nuniform float uCutSize;\nvarying float vBurnt;`)
       .replace(
         '#include <project_vertex>',
         /* glsl */ `{
@@ -202,13 +208,25 @@ export function createGrassLayer(config, { far = false } = {}) {
             transformed.xz += lp * transformed.y * 0.9;
             transformed.y *= 1.0 - 0.45 * pushed;
           }
+          // Burnt: most of it gone, the rest charred black stubble. Cut with a sickle: stubble.
+          vec2 buv = (tuft - uBurnOrigin) / uBurnSize;
+          float burnt = (buv.x > 0.0 && buv.y > 0.0 && buv.x < 1.0 && buv.y < 1.0) ? smoothstep(0.35, 0.8, texture2D(uBurnMap, buv).r) : 0.0;
+          float spared = step(0.8, fract(sin(dot(floor(tuft * 3.0), vec2(12.9898, 78.233))) * 43758.5453));
+          keep *= mix(1.0, spared * 0.35, burnt);
+          vBurnt = burnt;
+          vec2 cuv = (tuft - uCutOrigin) / uCutSize;
+          float cut = (cuv.x > 0.0 && cuv.y > 0.0 && cuv.x < 1.0 && cuv.y < 1.0) ? texture2D(uCutMap, cuv).r : 0.0;
+          transformed.y *= 1.0 - 0.85 * cut;
           transformed *= keep;
         }
         #include <project_vertex>`,
       );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vBurnt;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.045, 0.04), vBurnt);');
   };
   const previousKey = material.customProgramCacheKey?.bind(material);
-  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|clearings-push`;
+  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|clearings-push-burn-cut`;
 
   const layer = {
     name: far ? 'farGrass' : 'grass',

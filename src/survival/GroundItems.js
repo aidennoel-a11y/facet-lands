@@ -3,7 +3,7 @@ import { hash2 } from '../noise/random.js';
 import { Inventory } from './Inventory.js';
 import { ITEMS } from './items.js';
 import * as M from './models.js';
-import { coalModel, goldOreModel, mountainOreModel, swordModel, arrowModel, axeModel, boltModel, bowModel, crossbowModel, hoeModel, shearsModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, stickModel, waterskinModel } from './models.js';
+import { coalModel, goldOreModel, mountainOreModel, swordModel, arrowModel, axeModel, boltModel, bowModel, crossbowModel, hoeModel, sickleModel, shearsModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, stickModel, waterskinModel } from './models.js';
 
 const m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s = new Vector3(), up = new Vector3(0, 1, 0), tint = new Color();
 const hidden = new Matrix4().makeScale(0, 0, 0);
@@ -19,9 +19,9 @@ export const ORE_NODES = new Set(['iron', 'coal', 'goldOre', 'mountainOre']);
 // (Things that are built: a small one of what it builds. See model.)
 const BUILT = {
   campfire: M.campfireModel, furnace: M.furnaceModel, wall: M.wallModel, gate: M.gateFrameModel, stake: M.stakeModel, chest: M.chestModel, bed: M.bedModel,
-  dryingRack: M.dryingRackModel, snare: M.snareModel, raft: M.raftModel, roof: M.roofModel, hideRoof: M.roofModel, fence: M.fenceModel, fenceGate: M.fenceGatePostsModel,
+  dryingRack: M.dryingRackModel, snare: M.snareModel, raft: M.raftModel, roof: M.thatchRoofModel, hideRoof: M.thatchRoofModel, fence: M.fenceModel, fenceGate: M.fenceGatePostsModel,
   anvil: M.anvilModel, grindstone: M.grindstoneModel, tanningRack: M.tanningRackModel,
-  woodFloor: M.woodFloorModel, stoneFloor: M.stoneFloorModel, stoneWall: M.stoneWallModel, stoneFence: M.stoneFenceModel, chimney: M.chimneyModel, slateRoof: M.slateRoofModel,
+  woodFloor: M.woodFloorModel, stoneFloor: M.stoneFloorModel, stoneWall: M.stoneWallModel, stoneFence: M.stoneFenceModel, chimney: M.chimneyModel, slateRoof: M.slateRoofPieceModel, woodWindow: M.woodWindowModel, stoneWindow: M.stoneWindowModel,
   cellar: M.cellarModel, fishTrap: M.fishTrapModel, smokingRack: M.smokingRackModel,
 };
 
@@ -80,7 +80,7 @@ export class GroundItems {
         pickaxe: () => pickaxeModel(), steelPickaxe: () => pickaxeModel(...steel),
         rawMeat: () => meatModel(false), cookedMeat: () => meatModel(true), rawFish: () => fishModel(false), cookedFish: () => fishModel(true), smokedMeat: () => meatModel(true), smokedFish: () => fishModel(true),
         forgedSpear: () => spearModel(0xd8e0ea), forgedAxe: () => axeModel(0xdfe6ee, 0xffffff), forgedPickaxe: () => pickaxeModel(0xdfe6ee, 0xffffff),
-        crossbow: crossbowModel, bolt: boltModel, hoe: hoeModel, shears: shearsModel, steelBar: () => ironBarModel(0xe4eaf0),
+        crossbow: crossbowModel, bolt: boltModel, hoe: hoeModel, sickle: sickleModel, shears: shearsModel, steelBar: () => ironBarModel(0xe4eaf0),
         bow: bowModel, arrow: arrowModel, fishingRod: rodModel, waterskin: waterskinModel, pot: potModel, ironBar: ironBarModel,
         coal: coalModel, mountainOre: mountainOreModel, goldOre: goldOreModel, goldBar: () => ironBarModel(0xe0b440), sword: () => swordModel(),
         // (Everything else, each its own shape.)
@@ -279,12 +279,12 @@ export class GroundItems {
     }
   }
 
-  /** @param ground (x, z) => height */
+  /** @param ground (x, z, fromY) => height (what it lands on, from as high as it is: a floor, a cave floor) */
   update(dt, ground) {
     for (const d of this.drops) {
       d.age += dt;
       if (d.settled) continue;
-      const g = ground(d.x, d.z);
+      const g = ground(d.x, d.z, d.y + 0.3);
       d.vy -= 18 * dt;
       d.y += d.vy * dt;
       if (!Number.isFinite(g) || d.y <= g) {

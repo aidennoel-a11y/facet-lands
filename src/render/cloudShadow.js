@@ -134,7 +134,7 @@ export function addCloudShadow(material) {
           vec3 char = mix(vec3(1.0), vec3(0.16, 0.13, 0.11), burnt);
           reflectedLight.directDiffuse *= char;
           reflectedLight.indirectDiffuse *= char;
-          reflectedLight.indirectDiffuse += vec3(1.0, 0.32, 0.06) * smoothstep(0.3, 0.9, b.g) * (0.5 + 0.5 * rag) * 1.4;
+          reflectedLight.indirectDiffuse += vec3(0.9, 0.3, 0.08) * smoothstep(0.3, 0.9, b.g) * (0.4 + 0.6 * rag) * 0.45;
         }`,
       )
       .replace(

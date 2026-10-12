@@ -211,15 +211,16 @@ export class Felling {
   #fell(hit, cutAt, how) {
     const world = this.trees.matrixOf(hit).clone();
     const cut = cutAt / hit.t.sy; // (in the tree's own units)
-    const whole = treeGeometry(hit.type, this.trees.bare);
+    const whole = how.burnt ? woodOnly(treeGeometry(hit.type, true)) : treeGeometry(hit.type, this.trees.bare);
     const falling = clipGeometry(whole, cut, true);
-    const leaves = LEAF_GEOMETRIES[hit.type] ? clipGeometry(LEAF_GEOMETRIES[hit.type], cut, true) : null;
-    this.#stump(hit.key, hit.type, world, cut);
+    const leaves = !how.burnt && LEAF_GEOMETRIES[hit.type] ? clipGeometry(LEAF_GEOMETRIES[hit.type], cut, true) : null;
+    this.#stump(hit.key, hit.type, world, cut, !!how.burnt);
     const pivot = new Vector3(0, cut, 0).applyMatrix4(world);
     const local = world.clone().premultiply(m4.makeTranslation(-pivot.x, -pivot.y, -pivot.z));
     const group = new Group();
     let leafMesh = null;
-    for (const [geometry, material] of [[falling, this.trees.material], [leaves, this.trees.leafMaterial]]) {
+    const wood = how.burnt ? (this.charred ??= new MeshLambertMaterial({ vertexColors: true, flatShading: true, color: 0x3a3430 })) : this.trees.material;
+    for (const [geometry, material] of [[falling, wood], [leaves, this.trees.leafMaterial]]) {
       if (!geometry) continue;
       const mesh = new InstancedMesh(geometry, material, 1);
       mesh.setMatrixAt(0, local);
@@ -308,6 +309,12 @@ export class Felling {
   scorch(hit) {
     if (hit.t.removed) return;
     const world = this.trees.matrixOf(hit).clone();
+    // (Some, burnt through low down, come crashing down: a blackened trunk on the ground.)
+    if (!hit.bush && Math.random() < 0.3) {
+      this.#fell(hit, 0.5 + Math.random() * 0.6, { away: Math.random() * Math.PI * 2, angle: 0.02, speed: 0.06, heft: 1, hold: 0.2, burnt: true });
+      this.stumps[this.stumps.length - 1].at = this.day ?? 0;
+      return;
+    }
     this.trees.remove(hit);
     if (hit.bush) {
       // (Burnt to nothing; it springs up again with the woods.)
@@ -351,7 +358,7 @@ export class Felling {
 
   // A stump where a tree was felled, or a snag where one burnt (saved: see stumpsJSON).
   #stump(key, type, matrix, cut, burnt = false) {
-    const geometry = burnt ? woodOnly(treeGeometry(type, true)) : clipGeometry(treeGeometry(type, true), cut, false);
+    const geometry = burnt ? (cut < 900 ? clipGeometry(woodOnly(treeGeometry(type, true)), cut, false) : woodOnly(treeGeometry(type, true))) : clipGeometry(treeGeometry(type, true), cut, false);
     const material = burnt ? (this.charred ??= new MeshLambertMaterial({ vertexColors: true, flatShading: true, color: 0x3a3430 })) : this.trees.material;
     const mesh = new InstancedMesh(geometry, material, 1);
     mesh.setMatrixAt(0, matrix);

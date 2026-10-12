@@ -4,7 +4,7 @@ import { Inventory } from './Inventory.js';
 import {
   anvilModel, bedModel, campfireModel, caughtModel, chestModel, cropModel, dryingRackModel, FENCE_LENGTH, fenceGateDoorModel, fenceGatePostsModel, fenceModel,
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
-  ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
+  ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
 } from './models.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -31,8 +31,11 @@ const KINDS = {
   gate: { make: gateFrameModel, box: [WALL_LENGTH / 2, 0.28], tall: 3.3, line: 'wall', len: WALL_LENGTH, door: true },
   fence: { make: fenceModel, box: [FENCE_LENGTH / 2, 0.12], tall: 1.2, line: 'fence', len: FENCE_LENGTH },
   fenceGate: { make: fenceGatePostsModel, box: [FENCE_LENGTH / 2, 0.12], tall: 1.2, line: 'fence', len: FENCE_LENGTH, door: true },
-  roof: { make: roofModel, posts: [[R, R], [-R, R], [R, -R], [-R, -R]], box: [ROOF_SIZE / 2, ROOF_SIZE / 2], tall: 4.1, steep: 1.2 },
-  slateRoof: { make: slateRoofModel, posts: [[R, R], [-R, R], [R, -R], [-R, -R]], box: [ROOF_SIZE / 2, ROOF_SIZE / 2], tall: 4.1, steep: 1.2, stone: true },
+  // (Roofs: a sloped piece set up on top of the walls, square to the floor under it.)
+  roof: { make: thatchRoofModel, roof: true, steep: 99 },
+  slateRoof: { make: slateRoofPieceModel, roof: true, steep: 99, stone: true },
+  woodWindow: { make: woodWindowModel, box: [WALL_LENGTH / 2, 0.28], tall: 3.3, line: 'wall', len: WALL_LENGTH },
+  stoneWindow: { make: stoneWindowModel, box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true },
   stoneWall: { make: stoneWallModel, box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true },
   stoneFence: { make: stoneFenceModel, box: [FENCE_LENGTH / 2, 0.28], tall: 1.05, line: 'fence', len: FENCE_LENGTH, stone: true },
   chimney: { make: chimneyModel, box: [0.6, 0.6], tall: CHIMNEY_TOP, stone: true },
@@ -153,6 +156,39 @@ export class Structures {
       if (best) {
         x = best.ex - (ax * best.mine * L) / 2;
         z = best.ez - (az * best.mine * L) / 2;
+      } else if (kind.line === 'wall') {
+        // (Or along the edge of a floor, end to end with its corners.)
+        let edge = null, bestE = 2.6;
+        for (const f of this.list) {
+          if (!KINDS[f.type].floor || Math.hypot(f.x - x, f.z - z) > FLOOR_SIZE * 1.5) continue;
+          const fa = [Math.cos(f.rot), -Math.sin(f.rot)], fb = [Math.sin(f.rot), Math.cos(f.rot)];
+          for (const [dir, along, turn] of [[fa, 1, Math.PI / 2], [fa, -1, Math.PI / 2], [fb, 1, 0], [fb, -1, 0]]) {
+            const ex = f.x + dir[0] * along * (FLOOR_SIZE / 2), ez = f.z + dir[1] * along * (FLOOR_SIZE / 2);
+            const d = Math.hypot(ex - x, ez - z);
+            if (d < bestE) (bestE = d), (edge = { x: ex, z: ez, rot: f.rot + turn });
+          }
+        }
+        if (edge) (x = edge.x), (z = edge.z), (rot = edge.rot);
+      }
+    }
+    // A roof piece: square over the floor under it, up at the top of the
+    // walls, sloping up away from you.
+    let roofY = null;
+    if (kind.roof) {
+      rot = Math.round(rot / (Math.PI / 2)) * (Math.PI / 2);
+      let near = null, bd = FLOOR_SIZE * 1.6;
+      for (const f of this.list) {
+        if (!KINDS[f.type].floor && !KINDS[f.type].roof) continue;
+        const d = Math.hypot(f.x - x, f.z - z);
+        if (d < bd) (bd = d), (near = f);
+      }
+      if (near) {
+        const ax2 = Math.cos(near.rot), az2 = -Math.sin(near.rot), bx2 = Math.sin(near.rot), bz2 = Math.cos(near.rot);
+        const u = Math.round(((x - near.x) * ax2 + (z - near.z) * az2) / FLOOR_SIZE) * FLOOR_SIZE, v = Math.round(((x - near.x) * bx2 + (z - near.z) * bz2) / FLOOR_SIZE) * FLOOR_SIZE;
+        x = near.x + ax2 * u + bx2 * v;
+        z = near.z + az2 * u + bz2 * v;
+        rot = near.rot + Math.round((rot - near.rot) / (Math.PI / 2)) * (Math.PI / 2);
+        roofY = KINDS[near.type].roof ? near.y : near.y + FLOOR_TOP + 3.2;
       }
     }
     const half = kind.box ? kind.box : type === 'raft' ? [1.2, 1.3] : [kind.circle || kind.reach || 0.5, kind.circle || kind.reach || 0.5];
@@ -173,6 +209,7 @@ export class Structures {
       }
     }
     let y = kind.line || type === 'stake' || kind.posts ? lo - 0.05 : kind.tilt ? ground(x, z) + 0.01 : kind.floor ? hi : lo;
+    if (kind.roof) y = roofY ?? hi + 3.2;
     // (A floor laid on from another, at its level if the ground's not in the way.)
     if (kind.floor && level !== null && level >= hi - 0.05 && level < lo + 1.4) y = level;
     // (Laid on the slope: its tilt, from the lie of the ground under it.)
@@ -208,7 +245,8 @@ export class Structures {
     // no tree, bush, boulder, log or other thing built.
     if (ok && type !== 'raft' && !kind.water) {
       const spots = [];
-      if (kind.posts) for (const [u, v] of kind.posts) spots.push([u, v, 0.2]);
+      if (kind.roof) spots.length = 0;
+      else if (kind.posts) for (const [u, v] of kind.posts) spots.push([u, v, 0.2]);
       else if (kind.floor) spots.push([0, 0, 0.1]);
       else if (kind.line) for (let u = -half[0] + 0.15; u <= half[0] - 0.15 + 1e-6; u += 0.4) spots.push([u, 0, half[1]]);
       else for (const fu of [-1, -0.5, 0, 0.5, 1]) for (const fv of [-1, -0.5, 0, 0.5, 1]) spots.push([fu * half[0] * 0.85, fv * half[1] * 0.85, 0.12]);
@@ -232,7 +270,7 @@ export class Structures {
     const kind = KINDS[type];
     for (const s of this.list) {
       const k = KINDS[s.type];
-      if (s.type === 'rope' || k.posts || kind.posts || k.over || kind.over) continue;
+      if (s.type === 'rope' || k.posts || kind.posts || k.over || kind.over || k.roof || kind.roof) continue;
       // (A floor's under things, not in their way; and floors meet edge to edge.)
       if (k.floor && !kind.floor) continue;
       if (kind.floor && !k.floor) continue;
@@ -856,10 +894,10 @@ export class Structures {
     for (const s of this.list) {
       if (Math.abs(s.x - x) > 9 || Math.abs(s.z - z) > 9) continue;
       const k = KINDS[s.type];
-      if (k.posts) {
+      if (k.posts || k.roof) {
         const ox = x - s.x, oz = z - s.z, c = Math.cos(s.rot), sn = Math.sin(s.rot);
         const u = ox * c - oz * sn, v = ox * sn + oz * c;
-        if (Math.abs(u) < ROOF_SIZE / 2 + 0.3 && Math.abs(v) < ROOF_SIZE / 2 + 0.3 && y > s.y - 1 && y < s.y + 3.6) roof = 1;
+        if (Math.abs(u) < ROOF_SIZE / 2 + 0.3 && Math.abs(v) < ROOF_SIZE / 2 + 0.3 && (k.roof ? y < s.y + ROOF_RISE && y > s.y - 4.5 : y > s.y - 1 && y < s.y + 3.6)) roof = 1;
       } else if (k.line === 'wall' && !(k.door && s.open)) {
         const ax = Math.cos(s.rot), az = -Math.sin(s.rot);
         lines.push([s.x - (ax * k.len) / 2, s.z - (az * k.len) / 2, s.x + (ax * k.len) / 2, s.z + (az * k.len) / 2]);

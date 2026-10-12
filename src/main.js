@@ -6,6 +6,7 @@ import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
+import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
 import { caveFocus, caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
@@ -200,6 +201,7 @@ lightning.onStrike = (x, y, z, distance) => {
   const chance = (((Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1) + 1) % 1;
   if (chance < 0.18 + 0.2 * summer + 0.15 * w.savanna) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
 };
+const grassCut = new GrassCut();
 const fires = new Wildfires(scene);
 // (Big spiders in the dark of the caves: see CaveSpiders. Killed, one leaves its silk.)
 const spiders = new CaveSpiders(scene);
@@ -216,6 +218,10 @@ fires.fuelAt = (x, z) => {
   const dry = 1.15 * (w.savanna ?? 0) + 0.85 * ((w.temperate ?? 0) + (w.parkland ?? 0) + (w.blackHills ?? 0)) + 0.75 * ((w.pine ?? 0) + (w.redwood ?? 0) + (w.smoky ?? 0))
     + 0.45 * ((w.jungle ?? 0) + (w.volcanic ?? 0) + (w.badlands ?? 0)) + 0.25 * ((w.wetland ?? 0) + (w.mangrove ?? 0)) + 0.03 * ((w.desert ?? 0) + (w.saltFlat ?? 0));
   let f = dry * (0.45 + 0.55 * generator.getGrassDensity(x, z)) + 0.45 * generator.getForestDensity(x, z) * Math.min(1, dry * 1.5);
+  // (Green grass, growing and full of sap, hardly takes; dry grass goes up:
+  // the savanna and the dry country, and everywhere late in the year.)
+  const dryness = Math.min(1, Math.max(0, 0.3 + 0.7 * ((w.savanna ?? 0) + (w.desert ?? 0) + (w.badlands ?? 0)) + 0.35 * seasonUniforms.uAutumn.value - 0.25 * seasonUniforms.uSpring.value));
+  f *= 0.35 + 0.65 * dryness;
   // (High up: thin grass, then bare rock and snow.)
   f *= 1 - Math.max(0, Math.min(1, (h - 110) / 60));
   // (Under the winter's snow, nothing burns.)
@@ -623,6 +629,10 @@ const game = new Game({
   fireHeat: (x, y, z) => fires.heatAt(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
   // (The burnt ground, saved with the world; and the days, for the burnt woods growing back.)
   spiders,
+  // (The long grass cut with a sickle: see GrassCut.)
+  cutGrass: (x, z, r) => grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24),
+  cutJSON: () => grassCut.toJSON(),
+  loadCut: (list) => grassCut.load(list),
   burnsJSON: () => fires.toJSON(),
   loadBurns: (list) => fires.load(list),
   worldDay: () => dayNight.day + dayNight.hour / 24,
@@ -1421,7 +1431,10 @@ function marshMist(dt) {
 
 // Grass never grows up through what you've built: the spots under the
 // things nearest you are cleared (see GrassLayer).
-const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, grindstone: 0.7, dryingRack: 0.8, tanningRack: 0.9, plot: 1.3, snare: 0.4, stake: 0.3 };
+const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, grindstone: 0.7, dryingRack: 0.8, tanningRack: 0.9, plot: 1.3, snare: 0.4, stake: 0.3,
+  woodFloor: 2.9, stoneFloor: 2.9, chimney: 0.95, cellar: 1.9, smokingRack: 1.1, roof: 0.3, slateRoof: 0.3 };
+// (Walls and fences: a strip of clearings along their length; see clearGrass.)
+const CLEARED_LINE = { wall: 0.55, gate: 0.55, stoneWall: 0.6, fence: 0.4, fenceGate: 0.4, stoneFence: 0.5, woodWindow: 0.55, stoneWindow: 0.6 };
 // The grass round you and the bigger animals near you bends away from them.
 const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'starling', 'crow', 'gull', 'hawk', 'wolfPup', 'bat', 'eagle', 'scorpion']);
 function pushGrass() {
@@ -1439,10 +1452,17 @@ function clearGrass() {
   const p = camera.position;
   const near = [];
   for (const s of game.structures.list) {
-    const r = CLEARED[s.type];
-    if (!r) continue;
     const d = Math.hypot(s.x - p.x, s.z - p.z);
-    if (d < 130) near.push([d, s, r]);
+    if (d > 130) continue;
+    const line = CLEARED_LINE[s.type];
+    if (line) {
+      // (Along the wall: a clearing every metre of it.)
+      const len = s.type.toLowerCase().includes('fence') ? 3 : 4, ax = Math.cos(s.rot), az = -Math.sin(s.rot);
+      for (let u = -len / 2 + 0.5; u <= len / 2 - 0.5 + 1e-6; u += 1) near.push([d, { x: s.x + ax * u, z: s.z + az * u, type: s.type }, line]);
+      continue;
+    }
+    const r = CLEARED[s.type];
+    if (r) near.push([d, s, r]);
   }
   near.sort((a, b) => a[0] - b[0]);
   grassClearings.value.forEach((v, k) => (near[k] ? v.set(near[k][1].x, near[k][1].z, near[k][2], 0) : v.set(0, 0, 0, 0)));
@@ -1874,6 +1894,7 @@ function tick(now) {
   const night = dayNight._w?.night ?? 0;
   const air = { time: worldNow, netTime: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
+  grassCut.update(dt, camera.position, air.day);
   volcanoes.update(dt, air);
   sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y, fog: scene.fog.color });
   devils.update(dt, { ...air, seed: generator.seed, hour: dayNight.hour, winter: seasonUniforms.uWinter.value, ground: (x, z) => chunks.groundHeightAt(x, z) });

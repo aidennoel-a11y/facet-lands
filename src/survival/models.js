@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, IcosahedronGeometry, Matrix4, OctahedronGeometry, Quaternion, TorusGeometry, Vector3 } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, IcosahedronGeometry, Matrix4, OctahedronGeometry, Quaternion, TorusGeometry, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../noise/random.js';
 
@@ -436,6 +436,16 @@ export const hoeModel = () =>
     .add(new CylinderGeometry(0.022, 0.026, 1.1, 5), 0x8a6038, [0, 0.55, 0])
     .add(new BoxGeometry(0.18, 0.04, 0.14), 0x8e8a84, [0, 1.08, 0.08], [0.2, 0, 0])
     .build();
+
+/** A sickle: a short handle, a thin blade curving round in a crescent. */
+export const sickleModel = () => {
+  const b = new Parts(86).add(new CylinderGeometry(0.02, 0.024, 0.3, 5), 0x8a6038, [0, 0.15, 0]);
+  for (let k = 0; k < 7; k++) {
+    const a = 0.2 + (k / 6) * 2.6, r = 0.16;
+    b.add(new BoxGeometry(0.075, 0.012, 0.022), 0xc8ccd0, [Math.sin(a) * r * 0.9, 0.3 + r - Math.cos(a) * r, 0], [0, 0, -a], [1, 1, 1], 0.04);
+  }
+  return b.build();
+};
 
 /** Shears: two blades on a spring of iron. */
 export const shearsModel = () =>
@@ -1077,3 +1087,101 @@ export function smokingRackModel() {
   for (let k = 0; k < 6; k++) b.add(new BoxGeometry(0.3, 0.04, 0.9), [0x4f6a34, 0x5c7a3a][k % 2], [-0.75 + k * 0.3, 2.13, 0], [0, 0, (k % 2 ? 1 : -1) * 0.1], [1, 1, 1], 0.1);
   return b.build();
 }
+
+// --- Windows, and roofs that sit on the walls ----------------------------------
+
+/** A stone wall section, 4 m, with a window in it: a stone sill, a lintel over it, a wooden frame. */
+export function stoneWindowModel() {
+  const b = new Parts(149), rand = mulberry32(149), L = WALL_LENGTH, H = 3.2, D = 0.6;
+  for (let y = -0.3, row = 0; y < H - 0.05; y += 0.36, row++) {
+    const h = Math.min(0.36, H - y) - 0.03;
+    let x = -L / 2 + (row % 2 ? 0.25 : 0);
+    if (row % 2) b.add(new BoxGeometry(0.22, h, D), STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)], [-L / 2 + 0.11, y + h / 2, 0], [0, 0, 0], [1, 1, 1], 0.08);
+    while (x < L / 2 - 0.05) {
+      const w = Math.min(0.45 + rand() * 0.45, L / 2 - x);
+      const mid = x + w / 2;
+      // (The opening: 1.2 m across, from 1 m up to 2.2 m.)
+      if (!(Math.abs(mid) < 0.7 && y + h / 2 > 1.0 && y + h / 2 < 2.2)) {
+        b.add(new BoxGeometry(w - 0.03, h * 0.96, D), STONE_GREYS[Math.floor(rand() * STONE_GREYS.length)], [mid, y + h / 2, (rand() - 0.5) * 0.04], [0, 0, 0], [1, 1, 1], 0.08);
+      }
+      x += w;
+    }
+  }
+  b.add(new BoxGeometry(1.6, 0.14, D + 0.12), 0x9a968c, [0, 0.98, 0.04]); // the sill
+  b.add(new BoxGeometry(1.7, 0.3, D + 0.02), 0x84806e, [0, 2.32, 0]); // the lintel
+  for (const x of [-0.6, 0.6]) b.add(new BoxGeometry(0.08, 1.2, 0.1), 0x5e4630, [x, 1.6, 0]);
+  b.add(new BoxGeometry(1.2, 0.07, 0.08), 0x5e4630, [0, 1.6, 0]);
+  b.add(new BoxGeometry(0.06, 1.2, 0.08), 0x5e4630, [0, 1.6, 0]);
+  // (The mortar core, with the opening left.)
+  for (const [x, w] of [[-1.35, 1.3], [1.35, 1.3]]) b.add(new BoxGeometry(w, H + 0.28, D * 0.5), 0x5a5852, [x, (H - 0.3) / 2, 0]);
+  b.add(new BoxGeometry(1.4, 1.3, D * 0.5), 0x5a5852, [0, 0.35, 0]);
+  b.add(new BoxGeometry(1.4, 0.9, D * 0.5), 0x5a5852, [0, 2.75, 0]);
+  return b.build();
+}
+
+/** A palisade section, 4 m, with a window: the middle logs cut short below and above a framed opening. */
+export function woodWindowModel() {
+  const b = new Parts(151), rand = mulberry32(77);
+  const n = 10, gap = WALL_LENGTH / n;
+  for (let k = 0; k < n; k++) {
+    const x = -WALL_LENGTH / 2 + gap * (k + 0.5);
+    const h = 3.0 + rand() * 0.7, r = 0.17 + rand() * 0.04;
+    const shade = 0x7a6448 + Math.floor(rand() * 3) * 0x040302;
+    if (Math.abs(x) < 0.75) {
+      // (Under the window and over it.)
+      b.add(new CylinderGeometry(r, r * 1.05, 1.3, 7), shade, [x, 0.35, 0]);
+      b.add(new CylinderGeometry(r, r, h - 2.3, 7), shade, [x, 2.3 + (h - 2.3) / 2 - 0.3, 0]);
+    } else b.add(new CylinderGeometry(r, r * 1.05, h, 7), shade, [x, h / 2 - 0.3, 0]);
+    b.add(new ConeGeometry(r, 0.55, 7), 0xb0946a, [x, h - 0.3 + 0.27, 0]);
+  }
+  for (const y of [0.9, 2.2]) b.log([-WALL_LENGTH / 2 + 0.05, y, -0.27], [WALL_LENGTH / 2 - 0.05, y, -0.27], 0.1, 0x6a5238, 0xb89468, 6);
+  // The frame: a sill, a head, the jambs, and a cross in it.
+  b.add(new BoxGeometry(1.7, 0.12, 0.5), 0x8a6a44, [0, 1.0, 0]);
+  b.add(new BoxGeometry(1.7, 0.12, 0.45), 0x8a6a44, [0, 2.0, 0]);
+  for (const x of [-0.8, 0.8]) b.add(new BoxGeometry(0.12, 1.1, 0.42), 0x7a5a36, [x, 1.5, 0]);
+  b.add(new BoxGeometry(0.06, 1.0, 0.08), 0x5a3c24, [0, 1.5, 0]);
+  b.add(new BoxGeometry(1.5, 0.06, 0.08), 0x5a3c24, [0, 1.5, 0]);
+  return b.build();
+}
+
+// A wedge of a gable: a right-angled triangle `run` long and `rise` high, `thick` deep, in the y-z plane.
+function gableWedge(run, rise, thick) {
+  const g = new BufferGeometry();
+  const t = thick / 2, z0 = -run / 2, z1 = run / 2;
+  const p = [
+    [-t, 0, z0], [-t, 0, z1], [-t, rise, z1], [t, 0, z0], [t, rise, z1], [t, 0, z1],
+    [-t, 0, z0], [t, 0, z0], [t, 0, z1], [-t, 0, z0], [t, 0, z1], [-t, 0, z1],
+    [-t, 0, z1], [t, 0, z1], [t, rise, z1], [-t, 0, z1], [t, rise, z1], [-t, rise, z1],
+    [-t, 0, z0], [-t, rise, z1], [t, rise, z1], [-t, 0, z0], [t, rise, z1], [t, 0, z0],
+  ].flat();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(p), 3));
+  return g;
+}
+
+/**
+ * A roof piece, 4 m square: a slope of thatch (or slates) on rafters,
+ * low along one side, rising 1.6 m to the other, its gable ends closed:
+ * set on top of the walls, the pieces side by side make a roof.
+ */
+export const ROOF_RISE = 1.6;
+function roofPiece(seed, { slate }) {
+  const b = new Parts(seed), rand = mulberry32(seed), h = ROOF_SIZE / 2, over = 0.3;
+  const len = Math.hypot(ROOF_SIZE + over * 2, ROOF_RISE), ang = Math.atan2(ROOF_RISE, ROOF_SIZE);
+  // The rafters, low edge to high, and the beams along them.
+  for (const x of [-h + 0.15, -h / 3, h / 3, h - 0.15]) b.log([x, -0.05 - over * Math.tan(ang), -h - over], [x, ROOF_RISE - 0.05 + over * Math.tan(ang), h + over], 0.08, 0x5e4630, 0xc8a070, 6);
+  for (const [z, y] of [[-h, 0], [h, ROOF_RISE]]) b.log([-h - over, y, z], [h + over, y, z], 0.1, 0x5a4230, 0xc8a070, 6);
+  // The covering, in courses up the slope.
+  const n = slate ? 8 : 5;
+  for (let k = 0; k < n; k++) {
+    const t = (k + 0.5) / n, z = -h - over + t * (ROOF_SIZE + over * 2), y = 0.12 + (z + h) * Math.tan(ang);
+    if (slate) {
+      const SL = [0x4e5560, 0x5a6270, 0x464c56, 0x626a74];
+      for (let x = -h - over + (k % 2) * 0.2; x < h + over; x += 0.42) b.add(new BoxGeometry(0.44, 0.05, len / n + 0.08), SL[Math.floor(rand() * SL.length)], [x + 0.2, y, z], [-ang + (rand() - 0.5) * 0.03, 0, 0], [1, 1, 1], 0.05);
+    } else b.add(new BoxGeometry(ROOF_SIZE + over * 2, 0.16, len / n + 0.12), k % 2 ? 0xc8a860 : 0xb89850, [0, y, z], [-ang, 0, 0], [1, 1, 1], 0.08);
+  }
+  // The gable ends, closed: boards, or stone.
+  for (const x of [-h + 0.06, h - 0.06]) b.add(gableWedge(ROOF_SIZE, ROOF_RISE, 0.12), slate ? 0x84806e : 0x8a6a44, [x, 0, 0], [0, 0, 0], [1, 1, 1], 0.05);
+  return b.build();
+}
+export const thatchRoofModel = () => roofPiece(153, { slate: false });
+export const slateRoofPieceModel = () => roofPiece(155, { slate: true });

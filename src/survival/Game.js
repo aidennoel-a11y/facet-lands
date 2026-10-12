@@ -193,6 +193,7 @@ export class Game {
     for (const k of saved?.mushrooms ?? []) this.mushrooms?.taken.add(k);
     this.felling.loadStumps(saved?.stumps);
     this.loadBurns?.(saved?.burns ?? []);
+    this.loadCut?.(saved?.cut ?? []);
     this.ruinChests = new Set(saved?.ruins?.chests ?? []);
     this.ruinsSeen = new Set(saved?.ruins?.seen ?? []);
     this.waypoint = saved?.ruins?.waypoint ?? null;
@@ -236,6 +237,7 @@ export class Game {
       clock: this.clock?.get() ?? null,
       progress: [...this.progress],
       burns: this.burnsJSON?.() ?? null,
+      cut: this.cutJSON?.() ?? null,
       ruins: { chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
@@ -695,6 +697,20 @@ export class Game {
     }
     const stone = BLADES.has(s.id) ? this.structures.pick(origin, direction, REACH)?.structure : null;
     if (stone?.type === 'grindstone') return this.#grind(i, s);
+    if (s.id === 'sickle') {
+      // Cutting the long grass: round where you look, on the ground ahead.
+      const at = this.solidHit?.(origin, direction, 4)?.point ?? origin.clone().addScaledVector(direction.clone().setY(0).normalize(), 1.8);
+      this.cutGrass?.(at.x, at.z, 1.5);
+      this.inventory.wear(i, 1);
+      this.cooldown = 0.45;
+      this.#animate('chop', 0.35);
+      this.sound?.call('brush', 0, 0.7);
+      if (Math.random() < 0.08) {
+        this.#give(['seedWheat', 'seedCarrot'][Math.floor(Math.random() * 2)], 1, { x: at.x, y: at.y + 0.3, z: at.z });
+        return this.hotbar?.flash('Seeds, in the cut grass');
+      }
+      return;
+    }
     if (s.id === 'hoe') {
       const plotAt = this.structures.pick(origin, direction, REACH)?.structure;
       if (plotAt?.type === 'plot') return this.hotbar?.flash(this.#structureText(plotAt));
@@ -739,7 +755,7 @@ export class Game {
       if (!this.structures.isFire(at)) {
         const tree = this.trees.pick(origin, direction, REACH);
         const fallen = this.felling.pickFallen(origin, direction, REACH);
-        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor']);
+        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor', 'woodWindow']);
         const wooden = at && WOODEN.has(at.type) ? built : null;
         const near = [tree && { d: tree.distance }, fallen && { d: fallen.distance }, wooden && { d: wooden.distance ?? REACH }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
         if (!near) return this.hotbar?.flash('Strike it at something that will burn: a campfire, a torch, wood, a tree');
@@ -1935,7 +1951,7 @@ export class Game {
         prompt = this.plan.ok ? `<kbd>Click</kbd> Let the rope down (${Math.round(this.plan.len)} m)` : null;
       } else if (placing && placing !== 'torch') {
         const at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
-        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence'].includes(placing) ? Math.PI : 0);
+        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow'].includes(placing) ? Math.PI : 0);
         this.plan = this.structures.plan(placing, at, yaw, ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
         const onPlot = placing === 'plot' && t?.kind === 'structure' && t.structure.type === 'plot';
         this.structures.preview(onPlot ? null : this.plan);

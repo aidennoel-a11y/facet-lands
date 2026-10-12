@@ -256,7 +256,7 @@ export class Wildfires {
           const up = Math.max(-0.5, Math.min(1.5, (h1 - h0) / (CELL * dl)));
           // (About half a metre a second through good grass downwind; a
           // creep against the wind; faster up a slope, slower down one.)
-          const rate = 0.05 * Math.min(1, fuel) * strength * (0.35 + windy * (3 * Math.max(0, along) - 0.25 * Math.max(0, -along)) + (1 - windy) * 0.6) * (1 + 1.2 * up) / dl;
+          const rate = 0.032 * Math.min(1, fuel) * strength * (0.35 + windy * (3 * Math.max(0, along) - 0.25 * Math.max(0, -along)) + (1 - windy) * 0.6) * (1 + 1.2 * up) / dl;
           if (Math.random() < rate * step) this.#light(ni, nk);
         }
       }
