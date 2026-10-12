@@ -309,8 +309,44 @@ export class Felling {
     if (hit.t.removed) return;
     const world = this.trees.matrixOf(hit).clone();
     this.trees.remove(hit);
-    if (hit.bush) return;
+    if (hit.bush) {
+      // (Burnt to nothing; it springs up again with the woods.)
+      this.stumps.push({ key: hit.key, type: hit.type, m: world.elements.map((v) => +v.toFixed(4)), cut: 0, burnt: true, bush: true, mesh: null, at: this.day ?? 0 });
+      return;
+    }
     this.#stump(hit.key, hit.type, world, 1e3, true);
+    this.stumps[this.stumps.length - 1].at = this.day ?? 0;
+  }
+
+  /**
+   * The burnt woods growing back (call now and then with the world's day):
+   * two days and a half after a fire, a snag gives way to a sapling, which
+   * grows to the tree it was over the next five.
+   */
+  regrow(day) {
+    this.day = day;
+    let changed = false;
+    for (const st of [...this.stumps]) {
+      if (!st.burnt || st.at === undefined) continue;
+      const age = day - st.at;
+      if (age < 2.5) continue;
+      if (st.mesh) {
+        this.stumpGroup.remove(st.mesh);
+        st.mesh.dispose();
+        st.mesh = null;
+        changed = true;
+      }
+      const grown = Math.min(1, 0.12 + (0.88 * (age - 2.5)) / 5);
+      if (Math.abs(grown - (st.grown ?? -1)) > 0.02 || grown >= 1) {
+        st.grown = grown;
+        this.trees.restore(st.key, new Matrix4().fromArray(st.m), grown);
+      }
+      if (grown >= 1) {
+        this.stumps.splice(this.stumps.indexOf(st), 1);
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   // A stump where a tree was felled, or a snag where one burnt (saved: see stumpsJSON).
@@ -328,7 +364,7 @@ export class Felling {
 
   /** The stumps, for saving; and back from a save. */
   stumpsJSON() {
-    return this.stumps.map(({ key, type, m, cut, burnt }) => ({ key, type, m, cut, burnt }));
+    return this.stumps.map(({ key, type, m, cut, burnt, bush, at }) => ({ key, type, m, cut, burnt, bush, at }));
   }
 
   /** One stump more (someone else's felling, online), unless it's there already. */
@@ -337,10 +373,18 @@ export class Felling {
   }
 
   loadStumps(list) {
-    for (const st of this.stumps) st.mesh.dispose();
+    for (const st of this.stumps) st.mesh?.dispose();
     this.stumpGroup.clear();
     this.stumps = [];
-    for (const st of list ?? []) if (st.m?.length === 16) this.#stump(st.key, st.type, new Matrix4().fromArray(st.m), st.cut, !!st.burnt);
+    for (const st of list ?? []) {
+      if (st.m?.length !== 16) continue;
+      if (st.bush) {
+        this.stumps.push({ ...st, mesh: null });
+        continue;
+      }
+      this.#stump(st.key, st.type, new Matrix4().fromArray(st.m), st.cut, !!st.burnt);
+      if (st.at !== undefined) this.stumps[this.stumps.length - 1].at = st.at;
+    }
   }
 
   // How far below the tree's axis its lowest side reaches, `along` metres

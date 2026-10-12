@@ -101,6 +101,26 @@ export class Puffs {
     this.scene = scene;
   }
 
+  /** Gives puff `k` a new life (`p` as for make): for a pool of puffs handed out as they're wanted. Then flush. */
+  setSlot(k, p) {
+    const g = this.mesh.geometry.attributes;
+    g.aOffset.array.set(p.offset, k * 3);
+    g.aVelocity.array.set(p.velocity, k * 3);
+    g.aLife.array.set([p.period, p.phase, p.from, p.to], k * 4);
+    g.aColour.array.set([p.colour.r, p.colour.g, p.colour.b, p.glow ?? 0], k * 4);
+  }
+
+  /** Puff `k` gone (sized to nothing). Then flush. */
+  hideSlot(k) {
+    const a = this.mesh.geometry.attributes.aLife.array;
+    a[k * 4 + 2] = a[k * 4 + 3] = 0;
+  }
+
+  /** Sends what setSlot and hideSlot changed to the graphics card. */
+  flush() {
+    for (const n of ['aOffset', 'aVelocity', 'aLife', 'aColour']) this.mesh.geometry.attributes[n].needsUpdate = true;
+  }
+
   dispose() {
     this.scene.remove(this.mesh);
     this.mesh.geometry.dispose();

@@ -201,6 +201,22 @@ lightning.onStrike = (x, y, z, distance) => {
 const fires = new Wildfires(scene);
 // (What burns: the trees and bushes, each losing its leaves if it burns long: see Felling.scorch.)
 fires.fuel = (x, z, r) => trees.within(x, z, r);
+// (How much there is to burn at (x, z): the grass, thickest and driest on
+// the savanna and the open plains; the woods and their litter; none on the
+// water, the sand and salt, the snow, nor the bare rock up high.)
+fires.fuelAt = (x, z) => {
+  const h = generator.getBaseHeight(x, z);
+  if (h < WORLD.seaLevel + 0.3 || waterAt(x, z, true)) return 0;
+  const w = generator.getBiomeWeights(x, z, {});
+  const dry = 1.15 * (w.savanna ?? 0) + 0.85 * ((w.temperate ?? 0) + (w.parkland ?? 0) + (w.blackHills ?? 0)) + 0.75 * ((w.pine ?? 0) + (w.redwood ?? 0) + (w.smoky ?? 0))
+    + 0.45 * ((w.jungle ?? 0) + (w.volcanic ?? 0) + (w.badlands ?? 0)) + 0.25 * ((w.wetland ?? 0) + (w.mangrove ?? 0)) + 0.03 * ((w.desert ?? 0) + (w.saltFlat ?? 0));
+  let f = dry * (0.45 + 0.55 * generator.getGrassDensity(x, z)) + 0.45 * generator.getForestDensity(x, z) * Math.min(1, dry * 1.5);
+  // (High up: thin grass, then bare rock and snow.)
+  f *= 1 - Math.max(0, Math.min(1, (h - 110) / 60));
+  // (Under the winter's snow, nothing burns.)
+  f *= 1 - Math.min(1, seasonUniforms.uWinter.value * generator.getSeasonality(x, z) * 1.6);
+  return Math.max(0, Math.min(1.5, f));
+};
 fires.onScorch = (t) => game.felling.scorch(t);
 const volcanoes = new Volcanoes(scene);
 const sandstorm = new Sandstorm(scene, Rain);
@@ -596,6 +612,10 @@ const game = new Game({
   ignite: (x, y, z) => fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
   // (Standing in a burning wood or on burning ground: see Wildfires.heatAt.)
   fireHeat: (x, y, z) => fires.heatAt(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
+  // (The burnt ground, saved with the world; and the days, for the burnt woods growing back.)
+  burnsJSON: () => fires.toJSON(),
+  loadBurns: (list) => fires.load(list),
+  worldDay: () => dayNight.day + dayNight.hour / 24,
   // (Sleeping the night through: on to the next morning.)
   sleepUntilMorning: () => {
     const h = dayNight.hour;
@@ -1834,7 +1854,7 @@ function tick(now) {
   // Fire, smoke and dust, lit by the light of the sky.
   ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
   const night = dayNight._w?.night ?? 0;
-  const air = { time: worldNow, netTime: worldNow, camera, generator, wind: clouds.wind, rain: localRain, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
+  const air = { time: worldNow, netTime: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
   volcanoes.update(dt, air);
   sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y, fog: scene.fog.color });

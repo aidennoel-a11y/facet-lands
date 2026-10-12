@@ -159,8 +159,9 @@ export class Showers {
     this.mesh.instanceMatrix.needsUpdate = true;
     this.rain.needsUpdate = true;
     // Blown downwind as it falls (some 7 m/s).
-    const blow = (0.25 + 0.75 * windStrength) / 7;
-    u.shear.value.set(wind.x * blow, wind.z * blow);
+    // (As the rain round you is: see Rain.update.)
+    const wl = Math.hypot(wind.x, wind.z) || 1, blow = (0.4 + 15 * Math.pow(Math.min(1.3, windStrength), 1.3)) / 22;
+    u.shear.value.set((wind.x / wl) * blow, (wind.z / wl) * blow);
     if (u.shear.value.length() > 0.7) u.shear.value.setLength(0.7);
     u.time.value = this.time;
     u.fogNear.value = fog.near;

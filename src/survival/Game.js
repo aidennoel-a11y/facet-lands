@@ -181,6 +181,7 @@ export class Game {
     for (const k of saved?.felled ?? []) this.trees.removed.add(k);
     for (const k of saved?.mushrooms ?? []) this.mushrooms?.taken.add(k);
     this.felling.loadStumps(saved?.stumps);
+    this.loadBurns?.(saved?.burns ?? []);
     this.structures.load(saved?.structures ?? []);
     this.wildlife.loadTame(saved?.tame ?? []);
     this.wildlife.loadBosses(saved?.bosses ?? {});
@@ -220,6 +221,7 @@ export class Game {
       bosses: this.wildlife.bossJSON(),
       clock: this.clock?.get() ?? null,
       progress: [...this.progress],
+      burns: this.burnsJSON?.() ?? null,
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
     try {
@@ -1761,6 +1763,12 @@ export class Game {
     const cam = this.camera.position;
     const ground = (x, z) => this.groundAt(x, z);
     this.items.update(dt, (x, z, y) => this.groundAt(x, z, y));
+    // (The burnt woods growing back.)
+    this.regrowWait = (this.regrowWait ?? 0) - dt;
+    if (this.regrowWait <= 0 && this.worldDay) {
+      this.regrowWait = 5;
+      if (this.felling.regrow(this.worldDay())) this.dirty = true;
+    }
     this.felling.update(dt, ground, (x, y, z, size) => {
       const d = Math.hypot(x - cam.x, z - cam.z);
       this.sound?.call('treefall', 0, Math.min(1, 0.4 + size / 20) / (1 + d / 30));

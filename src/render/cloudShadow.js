@@ -1,4 +1,4 @@
-import { ClampToEdgeWrapping, Color, DataTexture, LinearFilter, RedFormat, UnsignedByteType, Vector2, Vector4 } from 'three';
+import { ClampToEdgeWrapping, Color, DataTexture, LinearFilter, RedFormat, RGBAFormat, UnsignedByteType, Vector2 } from 'three';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -32,10 +32,17 @@ export const cloudShadowUniforms = {
   uMist: { value: 0 },
   uMistTop: { value: 0 },
   uMistColor: { value: new Color(0xdfe6ea) },
-  // Ground burnt by a wildfire (see Wildfires): up to eight scars, each
-  // (x, z, radius, how burnt 0..1).
-  uBurns: { value: Array.from({ length: 8 }, () => new Vector4(0, 0, 0, 0)) },
+  // Ground burnt by a wildfire (see Wildfires): a map of the land round
+  // you, how charred (red) and how alight (green) each few metres of it is.
+  uBurnMap: { value: null },
+  uBurnOrigin: { value: new Vector2() }, // world x, z of the map's corner
+  uBurnSize: { value: 1024 }, // metres across
 };
+export const burnMap = new DataTexture(new Uint8Array(256 * 256 * 4), 256, 256, RGBAFormat);
+burnMap.magFilter = LinearFilter;
+burnMap.minFilter = LinearFilter;
+burnMap.needsUpdate = true;
+cloudShadowUniforms.uBurnMap.value = burnMap;
 
 /**
  * Paints the cloud shadows. `clouds` are the cloud Object3Ds (see Clouds),
@@ -112,22 +119,22 @@ export function addCloudShadow(material) {
         }`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uCloudShadow;\nuniform vec2 uCloudOrigin;\nuniform float uCloudSize;\nuniform float uCloudStrength;\nvarying vec2 vCloudXZ;\nvarying float vCloudY;\nuniform float uMist;\nuniform float uMistTop;\nuniform vec3 uMistColor;\nuniform vec4 uBurns[8];')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uCloudShadow;\nuniform vec2 uCloudOrigin;\nuniform float uCloudSize;\nuniform float uCloudStrength;\nvarying vec2 vCloudXZ;\nvarying float vCloudY;\nuniform float uMist;\nuniform float uMistTop;\nuniform vec3 uMistColor;\nuniform sampler2D uBurnMap;\nuniform vec2 uBurnOrigin;\nuniform float uBurnSize;')
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
         reflectedLight.directDiffuse *= 1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r;
         {
-          // Burnt: charred black where a fire went through, ragged at the edge.
-          float burnt = 0.0;
+          // Burnt: charred black where a fire went through, ragged at the
+          // edge, greening over again; glowing where it's alight now.
+          vec2 buv = (vCloudXZ - uBurnOrigin) / uBurnSize;
+          vec4 b = (buv.x > 0.0 && buv.y > 0.0 && buv.x < 1.0 && buv.y < 1.0) ? texture2D(uBurnMap, buv) : vec4(0.0);
           float rag = fract(sin(dot(floor(vCloudXZ * 0.7), vec2(12.9898, 78.233))) * 43758.5453);
-          for (int i = 0; i < 8; i++) {
-            vec4 b = uBurns[i];
-            if (b.w > 0.0) burnt = max(burnt, b.w * (1.0 - smoothstep(b.z * (0.55 + 0.25 * rag), b.z, distance(vCloudXZ, b.xy))));
-          }
+          float burnt = smoothstep(0.15 + 0.3 * rag, 0.6 + 0.3 * rag, b.r);
           vec3 char = mix(vec3(1.0), vec3(0.16, 0.13, 0.11), burnt);
           reflectedLight.directDiffuse *= char;
           reflectedLight.indirectDiffuse *= char;
+          reflectedLight.indirectDiffuse += vec3(1.0, 0.32, 0.06) * smoothstep(0.3, 0.9, b.g) * (0.5 + 0.5 * rag) * 1.4;
         }`,
       )
       .replace(

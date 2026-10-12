@@ -6,6 +6,7 @@ import { placeTrees } from '../treePlacement.js';
 
 const matrix = new Matrix4();
 const position = new Vector3();
+const scaleAbout = new Matrix4(), scaleBy = new Matrix4(); // (a sapling: see restore)
 const rotation = new Quaternion();
 const spin = new Quaternion();
 const lean = new Vector3();
@@ -284,6 +285,38 @@ export function createTreeLayer({ rocks = null } = {}) {
         return { key, type, t, x: +cx * size + t.x, y: t.y, z: +cz * size + t.z, group, bush, radius: bush ? (prof?.radius ?? 0.8) * t.s * 0.8 : (TRUNK_RADIUS[type] ?? 0.3) * t.s };
       }
       return null;
+    },
+
+    /**
+     * A tree burnt down growing back (see Felling.regrow): no longer gone,
+     * and drawn `grown` of its full size (0..1) about its foot, its world
+     * transform `world` (as matrixOf gave it). Returns whether it's drawn
+     * (its chunk is loaded); either way, it's there from now on.
+     */
+    restore(key, world, grown = 1) {
+      layer.removed.delete(key);
+      const [cx, cz, type] = key.split(',');
+      const group = groups.get(`${cx},${cz}`);
+      if (!group) return false;
+      const t = (group.userData.placed[type] ?? []).find((t) => treeKey(+cx, +cz, type, t) === key);
+      const mesh = group.userData.meshes[type];
+      if (!t || !mesh) return false;
+      const size = layer.chunkSize;
+      if (t.removed) {
+        t.removed = false;
+        // (Solid again, its trunk.)
+        if (!NO_COLLIDE.has(type)) layer.trunks.get(group.userData.key)?.push(+cx * size + t.x, +cz * size + t.z, (TRUNK_RADIUS[type] ?? 0.3) * t.s);
+      }
+      group.updateMatrixWorld();
+      matrix.copy(group.matrixWorld).invert().multiply(world);
+      if (grown < 1) {
+        // (Small, about its foot: a sapling.)
+        const foot = position.setFromMatrixPosition(matrix);
+        matrix.premultiply(scaleAbout.makeTranslation(-foot.x, -foot.y, -foot.z)).premultiply(scaleBy.makeScale(grown, grown, grown)).premultiply(scaleAbout.makeTranslation(foot.x, foot.y, foot.z));
+      }
+      mesh.setMatrixAt(t.index, matrix);
+      mesh.instanceMatrix.needsUpdate = true;
+      return true;
     },
 
     /** Takes away a tree by its key (felled by someone else, online): now, if it's drawn, else when it is. */

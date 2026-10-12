@@ -102,8 +102,10 @@ export class Rain {
     u.centre.value.copy(focus);
     u.amount.value = amount;
     u.snow.value = snow;
-    const gust = 0.6 + 1.6 * strength;
-    u.fall.value.set(wind.x * gust, -22, wind.z * gust);
+    // (Blown along downwind, the way the clouds go and the trees bend:
+    // straight down in a calm, slanting hard in a gale.)
+    const wl = Math.hypot(wind.x, wind.z) || 1, blow = 0.4 + 15 * Math.pow(Math.min(1.3, strength), 1.3);
+    u.fall.value.set((wind.x / wl) * blow, -22, (wind.z / wl) * blow);
     // Snowflakes are white, and show brighter.
     u.colour.value.set(0xb8c4d2).lerp(light, 0.35).lerp(WHITE, snow * 0.8);
     this.material.uniforms.colour.value.multiplyScalar(1 + snow * 0.6);
