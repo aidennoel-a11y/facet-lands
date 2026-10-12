@@ -1,0 +1,252 @@
+import { BoxGeometry, BufferAttribute, Color, IcosahedronGeometry, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+const TAU = Math.PI * 2;
+const MAX = 8; // (spiders about you at once, at most)
+const LEGS = 8;
+
+// One piece of the body, coloured.
+function part(geometry, colour, [x, y, z] = [0, 0, 0], [sx, sy, sz] = [1, 1, 1]) {
+  const g = (geometry.index ? geometry.toNonIndexed() : geometry).scale(sx, sy, sz).translate(x, y, z);
+  g.deleteAttribute('uv');
+  const c = new Color(colour), n = g.attributes.position.count, col = new Float32Array(n * 3);
+  for (let k = 0; k < n; k += 3) {
+    const shade = 0.85 + Math.random() * 0.3;
+    for (let v = 0; v < 3; v++) col.set([c.r * shade, c.g * shade, c.b * shade], (k + v) * 3);
+  }
+  g.setAttribute('color', new BufferAttribute(col, 3));
+  return g;
+}
+
+// The body: a great bristling abdomen behind, the head-and-thorax before it,
+// the fangs, and a cluster of eyes catching the light. (Facing +z; its
+// middle over the ground at 0.)
+function bodyGeometry() {
+  const dark = 0x2a221c, brown = 0x4a3a2c, band = 0x7a6248;
+  const parts = [
+    part(new IcosahedronGeometry(0.42, 1), dark, [0, 0.55, -0.55], [1, 0.82, 1.25]),
+    part(new IcosahedronGeometry(0.3, 0), band, [0, 0.72, -0.62], [0.7, 0.4, 1]),
+    part(new IcosahedronGeometry(0.28, 1), brown, [0, 0.48, 0.05], [1, 0.62, 1.1]),
+    part(new BoxGeometry(0.06, 0.18, 0.06), 0x1a1412, [0.08, 0.36, 0.36]),
+    part(new BoxGeometry(0.06, 0.18, 0.06), 0x1a1412, [-0.08, 0.36, 0.36]),
+  ];
+  for (const [x, y, s] of [[0.06, 0.62, 1], [-0.06, 0.62, 1], [0.12, 0.58, 0.7], [-0.12, 0.58, 0.7], [0.03, 0.66, 0.6], [-0.03, 0.66, 0.6]]) {
+    parts.push(part(new IcosahedronGeometry(0.035 * s, 0), 0xc02018, [x, y, 0.3]));
+  }
+  const g = mergeGeometries(parts);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * Big cave spiders: in the dark of the caves, out of sight round you as you
+ * go, a leg-span as wide as your arms. They come skittering over the floor
+ * when they're on to you, rear and lunge, bite (some bites poisoned), back
+ * off and come again. A light thrust at one makes it shy off a moment.
+ * Struck hard enough, or shot, it dies, curled up; it leaves its silk.
+ */
+export class CaveSpiders {
+  constructor(scene) {
+    this.scene = scene;
+    this.spiders = [];
+    const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: 0x0a0605 });
+    this.bodies = new InstancedMesh(bodyGeometry(), material, MAX);
+    const leg = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+    this.legs = new InstancedMesh(leg, new MeshLambertMaterial({ color: 0x2e241c, flatShading: true }), MAX * LEGS * 2);
+    for (const m of [this.bodies, this.legs]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      m.name = 'cave spiders';
+      scene.add(m);
+    }
+    this.wait = 3;
+    this.onKill = null; // (spider) => it's dead: what it leaves
+  }
+
+  // Where a spider would stand at (x, z), from about height `y`: the cave floor, or null.
+  #floor(x, y, z, caves, terrain, drop = 3) {
+    const g = caves.groundAt(x, y + 1.5, z, terrain(x, z));
+    if (!g.inCave || !Number.isFinite(g.height) || Math.abs(g.height - y) > drop) return null;
+    return g.height;
+  }
+
+  /**
+   * @param ctx { eye (Vector3), under (whether you're down in the caves), caves (CaveSystem),
+   *   terrain(x, z), hurt(damage), poison(), fear [{ x, z, r }] (lights), sound, pan(x, z), alive }
+   */
+  update(dt, ctx) {
+    const eye = ctx.eye, feet = eye.y - 1.6;
+    // Coming and going: only down in the caves, and never too many.
+    this.wait -= dt;
+    if (this.wait <= 0) {
+      this.wait = 2;
+      for (const s of this.spiders) if (!ctx.under || Math.hypot(s.x - eye.x, s.y - eye.y, s.z - eye.z) > 90) s.gone = true;
+      if (ctx.under && this.spiders.filter((s) => s.alive).length < 3 && Math.random() < 0.45) {
+        // (Out of the dark a way off, somewhere it can stand.)
+        for (let tries = 0; tries < 30; tries++) {
+          const a = rnd(0, TAU), d = rnd(22, 45), x = eye.x + Math.sin(a) * d, z = eye.z + Math.cos(a) * d;
+          // (A floor with air over it: looked for down from a few heights.)
+          let y = null;
+          for (const from of [feet + 6, feet + 2, feet - 3, feet - 7]) {
+            const g = ctx.caves.groundAt(x, from, z, ctx.terrain(x, z));
+            if (g.inCave && Number.isFinite(g.height) && g.height < from - 0.5 && Math.abs(g.height - feet) < 12) {
+              y = g.height;
+              break;
+            }
+          }
+          if (y === null) continue;
+          const size = rnd(0.85, 1.25);
+          this.spiders.push({ x, y, z, heading: rnd(0, TAU), size, alive: true, health: 55 * size, state: 'lurk', timer: rnd(2, 6), cool: 0, gait: 0, speed: 0, rear: 0, dead: 0, shy: 0 });
+          break;
+        }
+      }
+      this.spiders = this.spiders.filter((s) => !s.gone);
+    }
+    for (const s of this.spiders) this.#think(s, dt, ctx, feet);
+    this.#draw(ctx);
+  }
+
+  #think(s, dt, ctx, feet) {
+    const eye = ctx.eye;
+    if (!s.alive) {
+      s.dead += dt;
+      if (s.dead > 90) s.gone = true;
+      return;
+    }
+    const dx = eye.x - s.x, dz = eye.z - s.z, d = Math.hypot(dx, dz), level = Math.abs(feet - s.y) < 2.5;
+    const toYou = Math.atan2(dx, dz);
+    s.cool = Math.max(0, s.cool - dt);
+    s.shy = Math.max(0, s.shy - dt);
+    // A light thrust at it: it shies off a moment.
+    const lit = (ctx.fear ?? []).some((f) => Math.hypot(f.x - s.x, f.z - s.z) < 3.5);
+    if (lit && s.shy <= 0 && d < 4 && Math.random() < dt * 1.5) (s.shy = rnd(2, 4)), ctx.sound?.call('hiss', ctx.pan(s.x, s.z), 0.6);
+    let want = s.heading, speed = 0;
+    if (ctx.alive === false) s.state = 'lurk';
+    else if (s.state === 'lurk' && d < 20 && level) (s.state = 'hunt'), ctx.sound?.call('hiss', ctx.pan(s.x, s.z), 0.4);
+    if (s.state === 'lurk') {
+      s.timer -= dt;
+      if (s.timer <= 0) (s.timer = rnd(2, 6)), (s.target = s.heading + rnd(-2, 2)), (s.moveFor = rnd(0.5, 2));
+      if ((s.moveFor = (s.moveFor ?? 0) - dt) > 0) (want = s.target ?? s.heading), (speed = 1.2);
+    } else if (s.state === 'hunt') {
+      if (d > 35 || !level) s.state = 'lurk';
+      else if (s.shy > 0) (want = toYou + Math.PI), (speed = 3);
+      else if (d > 4.5) (want = toYou + Math.sin(performance.now() / 700 + s.size * 9) * 0.5), (speed = 4.2);
+      else if (s.cool <= 0) {
+        // Rear up, then lunge.
+        s.rear += dt;
+        want = toYou;
+        if (s.rear > 0.45) {
+          s.rear = 0;
+          s.state = 'lunge';
+          s.lunge = { t: 0, dir: toYou };
+          ctx.sound?.call('hiss', ctx.pan(s.x, s.z), 0.8);
+        }
+      } else (want = toYou + Math.PI * 0.6), (speed = 2); // (backing round, between lunges)
+    }
+    if (s.state === 'lunge') {
+      s.lunge.t += dt;
+      want = s.lunge.dir;
+      speed = 9;
+      if (d < 1.3 + s.size * 0.4) {
+        // The bite.
+        ctx.hurt?.(Math.round(12 * s.size));
+        if (Math.random() < 0.3) ctx.poison?.();
+        s.state = 'hunt';
+        s.cool = rnd(1.4, 2.4);
+      } else if (s.lunge.t > 0.5) (s.state = 'hunt'), (s.cool = rnd(1, 1.8));
+    }
+    // Turning, and moving over the floor (round what's in the way).
+    let turn = Math.atan2(Math.sin(want - s.heading), Math.cos(want - s.heading));
+    s.heading += Math.max(-dt * 6, Math.min(dt * 6, turn));
+    s.speed += (speed - s.speed) * Math.min(1, dt * 8);
+    if (s.speed > 0.05) {
+      for (const off of [0, 0.6, -0.6, 1.2, -1.2]) {
+        const h = s.heading + off, nx = s.x + Math.sin(h) * s.speed * dt, nz = s.z + Math.cos(h) * s.speed * dt;
+        const y = this.#floor(nx, s.y, nz, ctx.caves, ctx.terrain);
+        if (y === null || Math.abs(y - s.y) > 0.9) continue;
+        s.x = nx;
+        s.z = nz;
+        s.y += (y - s.y) * Math.min(1, dt * 12);
+        if (off) s.heading = h;
+        break;
+      }
+      s.gait += s.speed * dt * 3.2 / s.size;
+    }
+  }
+
+  /** A blow or a shot: `along` a ray from `origin`, within `max`: { distance, point, animal (the spider), spider: true } or null. */
+  aim(origin, dir, max = 150) {
+    let best = null;
+    for (const s of this.spiders) {
+      if (!s.alive) continue;
+      const cx = s.x - origin.x, cy = s.y + 0.5 * s.size - origin.y, cz = s.z - origin.z;
+      const t = cx * dir.x + cy * dir.y + cz * dir.z, r = 0.6 * s.size;
+      const d2 = cx * cx + cy * cy + cz * cz - t * t;
+      if (d2 > r * r || t < 0) continue;
+      const hit = t - Math.sqrt(r * r - d2);
+      if (hit <= max && (!best || hit < best.distance)) best = { distance: hit, point: origin.clone().addScaledVector(dir, hit), animal: s, spider: true, head: false };
+    }
+    return best;
+  }
+
+  /** It's struck (`sharp`: how keen the blade or point): returns 'dead' or 'hurt'. */
+  wound(s, sharp = 1) {
+    s.health -= 20 * sharp;
+    s.state = 'hunt';
+    s.cool = Math.max(s.cool, 0.6);
+    if (s.health > 0) return 'hurt';
+    s.alive = false;
+    s.dead = 0;
+    this.onKill?.(s);
+    return 'dead';
+  }
+
+  clear() {
+    this.spiders = [];
+  }
+
+  #draw(ctx) {
+    const m = new Matrix4(), q = new Quaternion(), p = new Vector3(), sc = new Vector3(), a = new Vector3(), b = new Vector3(), dir = new Vector3(), UP = new Vector3(0, 1, 0);
+    let n = 0, l = 0;
+    for (const s of this.spiders) {
+      if (n >= MAX) break;
+      const k = s.size, rear = s.state === 'lunge' ? 0.25 : Math.min(1, s.rear * 2.2) * 0.3;
+      // (Dead: on its back, legs curled.)
+      const dead = !s.alive;
+      q.setFromAxisAngle(UP, s.heading);
+      if (dead) q.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI));
+      else if (rear) q.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -rear));
+      const bob = dead ? 0.55 * k : Math.abs(Math.sin(s.gait * 2)) * 0.04 * k;
+      m.compose(p.set(s.x, s.y + bob, s.z), q, sc.setScalar(k));
+      this.bodies.setMatrixAt(n++, m);
+      // The legs: four a side, each a thigh up and out to the knee and a
+      // shank down to the foot, stepping by turns as it goes.
+      const c = Math.cos(s.heading), sn = Math.sin(s.heading);
+      const world = (lx, ly, lz, out) => out.set(s.x + (lx * c + lz * sn) * k, s.y + ly * k + (dead ? 0.55 * k : 0), s.z + (-lx * sn + lz * c) * k);
+      for (let i = 0; i < LEGS; i++) {
+        const side = i < 4 ? 1 : -1, j = i % 4;
+        const along = 0.22 - j * 0.14, spread = [0.6, 0.15, -0.25, -0.65][j];
+        const phase = s.gait + ((j % 2) ^ (side > 0 ? 0 : 1)) * Math.PI;
+        const lift = dead ? 0 : Math.max(0, Math.sin(phase)) * 0.25, swing = dead ? 0 : Math.cos(phase) * 0.22;
+        const hipX = side * 0.18, hipZ = along;
+        const footX = side * (dead ? 0.35 : 1.0), footZ = along + spread + swing * (s.speed > 0.1 ? 1 : 0);
+        const kneeX = side * (dead ? 0.3 : 0.62), kneeZ = (hipZ + footZ) / 2;
+        const kneeY = dead ? 0.3 : 0.95 + lift * 0.5, footY = dead ? 0.55 : lift;
+        world(hipX, 0.5, hipZ, a);
+        world(kneeX, kneeY, kneeZ, b);
+        for (const [from, to, thick] of [[a, b, 0.07], [b, world(footX, footY, footZ, new Vector3()), 0.05]]) {
+          if (l >= this.legs.instanceMatrix.count) break;
+          dir.subVectors(to, from);
+          const len = dir.length();
+          q.setFromUnitVectors(UP, dir.normalize());
+          m.compose(from, q, sc.set(thick * k, len, thick * k));
+          this.legs.setMatrixAt(l++, m);
+        }
+      }
+    }
+    this.bodies.count = n;
+    this.legs.count = l;
+    this.bodies.instanceMatrix.needsUpdate = this.legs.instanceMatrix.needsUpdate = true;
+  }
+}

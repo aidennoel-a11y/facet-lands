@@ -98,7 +98,7 @@ export class GroundItems {
         armour: () => M.coatModel(0x7a5230, 0x5a3a20, 0x8a6038), steelArmour: () => M.coatModel(0x5a4a3a, 0x4a3a2a, 0xb8c0c8),
         scarArmour: () => M.coatModel(0x4a3426, 0x3a281c, 0xb8c0c8), lionArmour: () => M.coatModel(0xc89a5a, 0x6a4026, 0xb8c0c8),
         tigerArmour: () => M.coatModel(0xd8823a, 0x1e1612, 0xb8c0c8), crocArmour: () => M.coatModel(0x5a6a44, 0x3a4a2e, 0xb8c0c8),
-        crystal: M.crystalItemModel, glowcap: () => M.mushroomModel(0x7affc8, 0xd8f0e8), caveLamp: M.caveLampModel, guano: M.guanoModel,
+        crystal: M.crystalItemModel, silk: M.woolModel, silkRope: M.ropeModel, glowcap: () => M.mushroomModel(0x7affc8, 0xd8f0e8), caveLamp: M.caveLampModel, guano: M.guanoModel,
         caveMushroom: () => M.mushroomModel(0xd8ccb8, 0xece4d0), deathcap: () => M.mushroomModel(0xe8e4c8, 0xf4f0e0, 0), blindFish: () => fishModel(false),
       }[id];
       const built = BUILT[id];

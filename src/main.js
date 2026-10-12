@@ -6,6 +6,7 @@ import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
+import { CaveSpiders } from './wildlife/CaveSpiders.js';
 import { caveFocus, caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
@@ -199,6 +200,9 @@ lightning.onStrike = (x, y, z, distance) => {
   if (chance < 0.18 + 0.2 * summer + 0.15 * w.savanna) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
 };
 const fires = new Wildfires(scene);
+// (Big spiders in the dark of the caves: see CaveSpiders. Killed, one leaves its silk.)
+const spiders = new CaveSpiders(scene);
+spiders.onKill = (s) => game.items.drop({ id: 'silk', count: 2 }, s.x, s.y + 0.5, s.z);
 // (What burns: the trees and bushes, each losing its leaves if it burns long: see Felling.scorch.)
 fires.fuel = (x, z, r) => trees.within(x, z, r);
 // (How much there is to burn at (x, z): the grass, thickest and driest on
@@ -613,6 +617,7 @@ const game = new Game({
   // (Standing in a burning wood or on burning ground: see Wildfires.heatAt.)
   fireHeat: (x, y, z) => fires.heatAt(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
   // (The burnt ground, saved with the world; and the days, for the burnt woods growing back.)
+  spiders,
   burnsJSON: () => fires.toJSON(),
   loadBurns: (list) => fires.load(list),
   worldDay: () => dayNight.day + dayNight.hour / 24,
@@ -1807,6 +1812,12 @@ function tick(now) {
   caveSounds(dt);
   torches.update(worldNow, camera.position, caveGlowLights.length ? [...gameLights, ...caveGlowLights] : gameLights);
   updateCaveLife(now / 1000, sheltered ? camera.position : null);
+  // The spiders in the dark, round you when you're down in the caves.
+  spiders.update(Math.min(dt, 0.1), {
+    eye: camera.position, under: caveFocus.under && controls.mode === 'walk', caves: generator.caves, terrain: (x, z) => chunks.groundHeightAt(x, z),
+    hurt: (d) => game.hurt(d, 'a cave spider'), poison: () => game.survival.poison(25), fear: game.fearLights(),
+    sound, pan: (x, z) => panTowards(camera, x, z), alive: game.survival.alive && !(peaceful?.checked ?? false),
+  });
   updateVisibility();
   const haze = heatHaze(dt);
   sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater);
@@ -1947,7 +1958,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, mp, sync, waterAt, game, traces, fish, fires, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

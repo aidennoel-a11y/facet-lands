@@ -1240,14 +1240,27 @@ export class Game {
   // A blow's aim: along the ray, or a hand's breadth off it (a thrust or a
   // swing isn't a pin-point).
   #aimNear(o, d, reach) {
-    const direct = this.wildlife.aim(o, d, reach);
+    const direct = this.#aimAny(o, d, reach);
     if (direct) return direct;
     const right = new Vector3().crossVectors(d, UP).normalize(), up = new Vector3().crossVectors(right, d);
     for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const hit = this.wildlife.aim(o.clone().addScaledVector(right, a * 0.13).addScaledVector(up, b * 0.13), d, reach);
+      const hit = this.#aimAny(o.clone().addScaledVector(right, a * 0.13).addScaledVector(up, b * 0.13), d, reach);
       if (hit) return hit;
     }
     return null;
+  }
+
+  // The nearest creature along a ray: an animal, or a spider in the caves.
+  #aimAny(o, d, reach) {
+    const a = this.wildlife.aim(o, d, reach), s = this.spiders?.aim(o, d, reach);
+    return s && (!a || s.distance < a.distance) ? s : a;
+  }
+
+  // A spider struck or shot.
+  #hitSpider(hit, sharp, from) {
+    const out = this.spiders.wound(hit.animal, sharp);
+    this.#wounded(hit, from);
+    this.hotbar?.flash(out === 'dead' ? 'The spider curls up, dead' : 'A hit: it hisses');
   }
 
   // Spearing a fish (along a ray, or where a thrown spear goes in): whether one was caught.
@@ -1270,6 +1283,10 @@ export class Game {
   #strike(i, hit, from = this.camera.position) {
     const a = hit.animal;
     const sharp = ITEMS[this.inventory.slots[i]?.id]?.sharp ?? 1;
+    if (hit.spider) {
+      this.inventory.wear(i, 1);
+      return this.#hitSpider(hit, sharp, from);
+    }
     const outcome = this.wildlife.wound(a, { head: hit.head, from, hit, sharp });
     this.inventory.wear(i, 1);
     this.#wounded(hit, from);
@@ -1430,7 +1447,14 @@ export class Game {
       const step = sp.vel.length() * dt;
       dir.copy(sp.vel).normalize();
       // Into a creature?
-      const hit = this.wildlife.aim(sp.pos, dir, step + 0.3);
+      const hit = this.#aimAny(sp.pos, dir, step + 0.3);
+      if (hit?.spider && !sp.done) {
+        const shot = SHOTS[sp.kind];
+        this.#hitSpider(hit, (shot.sharp ?? ITEMS[sp.stack.id]?.sharp ?? 1) * (sp.power ?? 1) * (ITEMS[sp.stack.id]?.venom ? 2 : 1), sp.pos);
+        sp.done = true;
+        sp.life = 0;
+        continue;
+      }
       if (hit && !sp.done) {
         const shot = SHOTS[sp.kind];
         // (A stiffer bow's arrow strikes harder; venom doubles a hit, and lames.)

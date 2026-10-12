@@ -33,6 +33,8 @@ export const ITEMS = {
   goldBar: { name: 'Gold bar', weight: 2.5, group: 'Materials' },
   // (Found in the caves.)
   crystal: { name: 'Cave crystal', weight: 0.3, group: 'Materials' },
+  silk: { name: 'Spider silk', weight: 0.1, group: 'Materials' }, // (from the big spiders in the caves)
+  silkRope: { name: 'Silk rope', weight: 0.3, place: 'rope', group: 'Materials' }, // (as a rope, lighter)
   guano: { name: 'Bat guano', weight: 1, group: 'Farming' }, // (dug into a plot: the crop grows twice as fast a while)
   // Trophies: what only the great beasts give (see Wildlife BOSSES), each
   // for its own recipe.
@@ -200,6 +202,7 @@ export const RECIPES = [
   { id: 'dryingRack', needs: { stick: 4, vine: 2 }, note: 'Dries raw meat and fish into jerky that keeps' },
   { id: 'snare', needs: { stick: 2, vine: 2 }, note: 'Set it in the grass: it catches rabbits' },
   { id: 'raft', needs: { log: 6, vine: 3 }, note: 'Set it on the water; E to climb aboard' },
+  { id: 'silkRope', needs: { silk: 2 }, makes: 2, note: "Spider silk spun into rope: light and strong. Throw it down a drop like a rope" },
   { id: 'rope', needs: { vine: 3 }, note: 'Throw it down from a cliff top (click at the edge) to climb up and down' },
   { id: 'tanningRack', needs: { stick: 4, vine: 2 }, note: 'Stretch raw hides and furs on it: leather and tanned fur' },
   { id: 'coat', needs: { deerSkin: 2, vine: 1 }, note: 'Wear it to keep the cold out far longer' },
@@ -257,7 +260,7 @@ export const RECIPES = [
  * in RECIPES is in one of them.
  */
 export const TIERS = [
-  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'torch', 'coalTorch', 'caveLamp', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare'] },
+  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare'] },
   { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'woodFloor', 'stoneFloor', 'stoneWall', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'fineFlintSteel', 'pot', 'shears', 'saddle', 'anvil'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt'] },
@@ -352,6 +355,8 @@ export const ICONS = {
   smokingRack: `<path d="M6 28L10 6M26 28L22 6M6 6h20" stroke="#6e5234" stroke-width="2"/><path d="M9 11h14" stroke="#5a4230" stroke-width="1.6"/><path d="M12 11v6M16 11v6M20 11v6" stroke="#8a3a24" stroke-width="2"/><path d="M13 27l3-5 3 5z" fill="#ff8a2a"/><path d="M14 19c-2-2 2-3 0-5M18 19c-2-2 2-3 0-5" stroke="#b8b4ac" fill="none"/>`,
   smokedMeat: `<path d="M6 15c1-6 12-9 18-5s3 12-3 14-15 0-15-9z" fill="#5a2a16"/><path d="M10 14c3-3 9-4 12-1l-3 6z" fill="#7a3e1e"/><path d="M8 20l-4 4 3 2 3-4z" fill="#f0e6d6"/>`,
   smokedFish: `<path d="M4 16c5-7 15-7 20 0-5 7-15 7-20 0z" fill="#8a5a2a"/><path d="M24 16l5-5v10z" fill="#6a4020"/><path d="M8 16c3-4 9-4 12 0z" fill="#a8703a"/><circle cx="8" cy="15" r="1.2" fill="#1a1a1a"/>`,
+  silk: `<path d="M6 26C10 14 22 18 26 6" fill="none" stroke="#e8e4dc" stroke-width="1.6"/><path d="M8 24c6-4 10-2 16-12M11 27c4-6 9-6 13-14" fill="none" stroke="#d0ccc4" stroke-width="1"/><circle cx="26" cy="6" r="2.4" fill="#f4f0ea"/>`,
+  silkRope: `<path d="M8 6c10 0 14 6 8 10s-10 10 4 10" fill="none" stroke="#e8e4dc" stroke-width="3"/><path d="M8 6c10 0 14 6 8 10s-10 10 4 10" fill="none" stroke="#c8c0b4" stroke-width="1" stroke-dasharray="2 2"/>`,
   woodFloor: `<path d="M3 20l13-7 13 7-13 7z" fill="#a47e50"/><path d="M6.2 21.7l13-7M9.5 23.4l13-7M12.8 25.2l13-7" stroke="#7a5a36" stroke-width="1"/><path d="M3 20v3l13 7v-3zM29 20v3l-13 7v-3z" fill="#5e4630"/>`,
   stoneFloor: `<path d="M3 20l13-7 13 7-13 7z" fill="#8a8780"/><path d="M9 16.8l13 7M16 13l-7 10.5M22 16.2l-6 4M12 18.4l7 3.8" stroke="#5a5852" stroke-width="1"/><path d="M3 20v3l13 7v-3zM29 20v3l-13 7v-3z" fill="#6e6c68"/>`,
   stoneWall: `<path d="M3 8h26v20H3z" fill="#8a8780"/><path d="M3 13h26M3 18h26M3 23h26M10 8v5M20 8v5M6 13v5M15 13v5M25 13v5M11 18v5M21 18v5M7 23v5M17 23v5M26 23v5" stroke="#5a5852" stroke-width="1.2"/><path d="M3 8h9v3H3z" fill="#5c7a3a"/>`,
