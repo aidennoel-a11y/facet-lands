@@ -122,8 +122,17 @@ export class Minimap {
         ctx.lineWidth = 1.4;
         ctx.stroke();
         ctx.restore();
+      } else if (d >= edge && m.edge) {
+        // (A ruin off the map: a small mark at its edge, the way to go.)
+        x *= edge / d;
+        z *= edge / d;
+        ctx.fillStyle = '#e0a040';
+        ctx.strokeStyle = '#2a2420';
+        ctx.lineWidth = 0.8;
+        ctx.fillRect(x - 1.6, z - 1.6, 3.2, 3.2);
+        ctx.strokeRect(x - 1.6, z - 1.6, 3.2, 3.2);
       } else if (d < edge) {
-        ctx.fillStyle = '#6e6c68';
+        ctx.fillStyle = m.edge ? '#e0a040' : '#6e6c68';
         ctx.strokeStyle = '#f4efe6';
         ctx.lineWidth = 0.8;
         ctx.fillRect(x - 2.2, z - 2.2, 4.4, 4.4);

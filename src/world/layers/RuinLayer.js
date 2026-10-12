@@ -3,19 +3,19 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2, mulberry32 } from '../../noise/random.js';
 
 /**
- * Ruins: the stone bones of old strongholds, here and there over the land
- * (about one to a square of 640 m, on open, fairly level ground): a broken
- * square tower with a stone stair up its side to a floor high in it (a
- * lookout over the country), the walls of a courtyard fallen to stumps in
- * places, an arched gateway standing alone before it, columns (some broken
- * off), a cobbled way in, blocks tumbled in the grass; mossed and grown
- * over with ivy. Sandstone in the dry country. Chests were left in them
- * (see Game.ruinChest): one or two in the courtyard, a better one up the
- * tower.
+ * Ruins: the stone bones of old places, here and there over the land (about
+ * one to a square of 640 m, on open, fairly level ground), all of the one
+ * old, mossed, ivy-hung stone (sandstone in the dry country), in ten kinds
+ * (RUIN_KINDS), small to big: a stronghold's courtyard and tower, a lone
+ * watchtower, a gatehouse, a temple of columns on a platform, a great hall,
+ * a chapel, a castle with its keep and corner towers, a hamlet of fallen
+ * cottages round a well, a ring of standing stones, an aqueduct's arches.
+ * Chests were left in them (see Game.ruinChest), the `best` ones holding
+ * better things (up towers, by altars).
  *
- * Solid: walls, tower, columns and the big blocks are boxes you walk into;
- * the stair's steps, the lookout floor and the tops of the broken walls are
- * boxes you can stand on (see collide, surfaceAt).
+ * Solid: walls, towers, columns, piers and the big blocks are boxes you walk
+ * into; steps, platforms, floors and the tops of broken walls are boxes you
+ * can stand on (see collide, surfaceAt).
  */
 const CELL = 640;
 const GREY = [0xb4b0a6, 0xa6a298, 0xc2beb2, 0x9a978e, 0xb0aa94, 0xc6c0b2, 0xa29e92];
@@ -27,21 +27,22 @@ const IVY = [0x2e4a22, 0x3a5a28, 0x34522a];
 export function ruinSite(I, K, seed) {
   if (hash2(I, K, seed ^ 0x52a1) > 0.5) return null;
   const x = (I + 0.15 + 0.7 * hash2(I, K, seed ^ 0x52a2)) * CELL, z = (K + 0.15 + 0.7 * hash2(I, K, seed ^ 0x52a3)) * CELL;
-  return { x, z, rot: hash2(I, K, seed ^ 0x52a4) * Math.PI * 2, seed: Math.floor(hash2(I, K, seed ^ 0x52a5) * 1e9), key: `${I},${K}` };
+  const kind = Math.min(9, Math.floor(hash2(I, K, seed ^ 0x52a6) * 10));
+  return { x, z, rot: hash2(I, K, seed ^ 0x52a4) * Math.PI * 2, seed: Math.floor(hash2(I, K, seed ^ 0x52a5) * 1e9), key: `${I},${K}`, kind, size: RUIN_SIZE[kind] };
 }
 
 /** Whether the land at a site will take a ruin: dry, open, not steep, not up a mountain. */
 export function ruinFits(site, generator, seaLevel) {
   let lo = Infinity, hi = -Infinity;
   for (let k = 0; k < 17; k++) {
-    const a = (k / 8) * Math.PI * 2, r = k === 16 ? 0 : k < 8 ? 18 : 9;
+    const a = (k / 8) * Math.PI * 2, r = k === 16 ? 0 : k < 8 ? site.size : site.size / 2;
     const h = generator.getHeight(site.x + Math.cos(a) * r, site.z + Math.sin(a) * r);
     lo = Math.min(lo, h);
     hi = Math.max(hi, h);
   }
-  if (lo < seaLevel + 3 || hi - lo > 5.5) return false;
+  if (lo < seaLevel + 3 || hi - lo > 4 + site.size / 8) return false;
   if (generator.getMountainness(site.x, site.z) > 0.7) return false;
-  if (generator.caves?.mouthsNear?.(site.x - 40, site.z - 40, site.x + 40, site.z + 40)?.length) return false;
+  if (generator.caves?.mouthsNear?.(site.x - site.size - 22, site.z - site.size - 22, site.x + site.size + 22, site.z + site.size + 22)?.length) return false;
   return true;
 }
 
@@ -57,6 +58,11 @@ function colour(g, hex, rand, vary = 0.16) {
   return g;
 }
 
+// The ten kinds of ruin, all in the one old stone, and how far each spreads
+// (metres from its middle): the land under it must take that.
+export const RUIN_KINDS = ['stronghold', 'watchtower', 'gatehouse', 'temple', 'hall', 'chapel', 'castle', 'hamlet', 'circle', 'aqueduct'];
+const RUIN_SIZE = [18, 9, 13, 12, 16, 10, 24, 18, 9, 20];
+
 // One ruin: its stone, into `parts` (geometries in the chunk's frame, its
 // corner at x0, z0), what's solid of it into `solids` (world), and its
 // chests to `onChest`.
@@ -66,6 +72,7 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest) {
   const w = generator.getBiomeWeights(site.x, site.z, {});
   const STONE = (w.desert ?? 0) + (w.badlands ?? 0) + (w.saltFlat ?? 0) > 0.5 ? SAND : GREY;
   const stone = () => STONE[Math.floor(rand() * STONE.length)];
+  const moss = () => MOSS[Math.floor(rand() * MOSS.length)];
   // (The ruin's own frame: u along it, v across; to the world and back.)
   const wx = (u, v) => site.x + ca * u + sa * v, wz = (u, v) => site.z - sa * u + ca * v;
   const ground = (u, v) => generator.getHeight(wx(u, v), wz(u, v));
@@ -87,11 +94,14 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest) {
   };
   // Something solid: a box in the ruin's frame (half-sizes), bottom to top (world heights).
   const solid = (u, v, hu, hv, bottom, top, turn = 0) => solids.push({ x: wx(u, v), z: wz(u, v), hx: hu, hz: hv, rot: rot + turn, bottom, top, r: Math.hypot(hu, hv) });
+  // The chests: `best` ones hold the better things.
+  const chest = (u, v, y, name, best = false) => onChest?.({ key: `${site.key}:${name}`, x: wx(u, v), y, z: wz(u, v), rot: rot + rand() * 0.6 - 0.3, best });
 
   // A run of wall from (u1, v1) to (u2, v2), `thick`, each 0.6 m of it
   // standing as high as `height(t)` says (0 where it's fallen), in courses
   // of rough blocks; moss on the tops; ivy down the faces here and there.
-  const wallRun = (u1, v1, u2, v2, thick, height, { gap = null, mossy = 0.35 } = {}) => {
+  // `gaps` ([t0, t1, y0, y1], along it and up it) are doorways and windows.
+  const wallRun = (u1, v1, u2, v2, thick, height, { gaps = [], mossy = 0.35 } = {}) => {
     const len = Math.hypot(u2 - u1, v2 - v1), du = (u2 - u1) / len, dv = (v2 - v1) / len;
     const turn = Math.atan2(-dv, du); // (the run's own direction, as a turn of the frame)
     const n = Math.max(1, Math.round(len / 0.6)), step = len / n;
@@ -101,24 +111,30 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest) {
       const h = height(t, i);
       if (h <= 0.05) continue;
       const base = g0 - 0.5, top = g0 + h;
+      const gap = gaps.find((q) => t > q[0] && t < q[1]);
       for (let y = base, row = 0; y < top - 0.05; y += 0.42, row++) {
         const ch = Math.min(0.4, top - y);
+        if (gap && y - g0 > gap[2] - 0.2 && y - g0 < gap[3]) continue;
         // (Each other course set off by half a block: two half blocks to the column.)
         const split = (row + i) % 2 === 0;
         for (const [off, l] of split ? [[0, step]] : [[-step / 4, step / 2], [step / 4, step / 2]]) {
-          if (gap && t > gap[0] && t < gap[1] && y - g0 > gap[2] && y - g0 < gap[3]) continue;
           const bu = mu + du * off, bv = mv + dv * off;
           const top3 = y + ch > top - 0.42 && rand() < mossy;
-          block(bu, bv, y + ch / 2, l - 0.03, ch - 0.02, thick * (0.94 + rand() * 0.1), top3 ? MOSS[Math.floor(rand() * MOSS.length)] : stone(), [0, turn + (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.03]);
+          block(bu, bv, y + ch / 2, l - 0.03, ch - 0.02, thick * (0.94 + rand() * 0.1), top3 ? moss() : stone(), [0, turn + (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.03]);
         }
       }
-      // (Mortar behind, so no light shows between the blocks.)
-      block(mu, mv, (base + top) / 2, step, top - base - 0.04, thick * 0.4, 0x7a776e, [0, turn, 0]);
-      if (gap && t > gap[0] && t < gap[1]) {
-        // (A doorway through it: solid only below and above the opening.)
-        if (gap[2] > 0.05) solid(mu, mv, step / 2, thick / 2, base, g0 + gap[2], turn);
+      if (gap) {
+        // (A doorway or window through it: solid, and backed, only below and above the opening.)
+        if (gap[2] > 0.05) {
+          solid(mu, mv, step / 2, thick / 2, base, g0 + gap[2], turn);
+          block(mu, mv, (base + g0 + gap[2] - 0.2) / 2, step, g0 + gap[2] - 0.2 - base, thick * 0.4, 0x7a776e, [0, turn, 0]);
+        }
         if (h > gap[3]) solid(mu, mv, step / 2, thick / 2, g0 + gap[3], top, turn);
-      } else solid(mu, mv, step / 2 + 0.02, thick / 2, base, top, turn);
+      } else {
+        // (Mortar behind, so no light shows between the blocks.)
+        block(mu, mv, (base + top) / 2, step, top - base - 0.04, thick * 0.4, 0x7a776e, [0, turn, 0]);
+        solid(mu, mv, step / 2 + 0.02, thick / 2, base, top, turn);
+      }
       // Ivy hanging down its faces.
       if (rand() < 0.18 && h > 1.4) {
         const side = rand() < 0.5 ? 1 : -1, len2 = h * (0.4 + rand() * 0.5);
@@ -129,109 +145,326 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest) {
         const side = rand() < 0.5 ? 1 : -1, r = 0.35 + rand() * 0.45, g = new DodecahedronGeometry(r, 0);
         g.scale(1.2, 0.8, 1.1);
         g.translate(mu - dv * side * (thick / 2 + r * 0.8), g0 + r * 0.5, mv + du * side * (thick / 2 + r * 0.8));
-        put(g, MOSS[Math.floor(rand() * MOSS.length)], 0.3);
+        put(g, moss(), 0.3);
       }
     }
   };
-  // How high a stretch of courtyard wall still stands: in places fallen to
-  // nothing, in others to a stump; here and there a stretch near whole.
-  const ruined = (base) => {
+  // A closed run of wall round the points given.
+  const wallLoop = (pts, thick, height, gapsOf = () => ({})) => {
+    for (let k = 0; k < pts.length; k++) {
+      const [u1, v1] = pts[k], [u2, v2] = pts[(k + 1) % pts.length];
+      wallRun(u1, v1, u2, v2, thick, height, gapsOf(k));
+    }
+  };
+  // How high a stretch of wall still stands: in places fallen to nothing,
+  // in others to a stump; here and there a stretch near whole.
+  const ruined = (base, fallen = 0.82) => {
     const p = rand() * 10, q = rand() * 10;
     return (t) => {
       const h = base * (0.55 + 0.45 * Math.sin(t * 7.3 + p) * Math.sin(t * 3.1 + q)) + (rand() - 0.5) * 0.5;
-      return Math.sin(t * 11 + p) > 0.82 ? 0 : Math.max(0, h);
+      return Math.sin(t * 11 + p) > fallen ? 0 : Math.max(0, h);
     };
   };
 
-  // The courtyard walls, three sides and the stumps of the fourth, the way in through it.
-  const S = 8, T = 0.7;
-  wallRun(-S, -S, S, -S, T, ruined(2.6 + rand() * 1.4));
-  wallRun(S, -S, S, 3, T, ruined(2.4 + rand() * 1.4));
-  wallRun(-S, S, 3, S, T, ruined(2.2 + rand() * 1.6));
-  wallRun(-S, -S, -S, -2.2, T, ruined(1.6 + rand()));
-  wallRun(-S, 2.2, -S, S, T, ruined(1.6 + rand()));
+  // A square tower, `size` across with its corner at (u0, v0), broken off
+  // high up; a doorway in its near side (v0); with `stair`, a floor high in
+  // it, reached by steps up its outside and a gap in the wall at their top.
+  // Gives where the floor is (for a chest).
+  const tower = (u0, v0, size, H, stair = true) => {
+    const u1 = u0 + size, v1 = v0 + size, P = Math.min(H - 2.5, 3.5 + size * 0.2);
+    const broken = (t) => H - Math.max(0, Math.sin(t * 9 + (site.seed % 7)) * 2.6 + rand() * 1.2);
+    wallRun(u0, v0, u1, v0, 0.8, broken, { gaps: [[0.38, 0.62, 0, 2.4]] });
+    wallRun(u1, v0, u1, v1, 0.8, broken, { gaps: H > 6 ? [[0.42, 0.58, H * 0.62, H * 0.62 + 1.1]] : [] }); // (an arrow slit)
+    wallRun(u0, v0, u0, v1, 0.8, broken);
+    wallRun(u0, v1, u1, v1, 0.8, broken, { gaps: stair ? [[0.68, 0.94, P - 0.1, P + 2.3]] : [] });
+    const gt = ground((u0 + u1) / 2, (v0 + v1) / 2);
+    if (!stair) return null;
+    // The floor up in it: planks long gone, a stone slab on corbels.
+    block((u0 + u1) / 2, (v0 + v1) / 2, gt + P - 0.15, size - 0.7, 0.3, size - 0.7, stone());
+    solid((u0 + u1) / 2, (v0 + v1) / 2, (size - 0.7) / 2, (size - 0.7) / 2, gt + P - 0.3, gt + P);
+    // The stair: steps up along the outside of the far wall.
+    const steps = Math.round(P / 0.3), run = (size - 0.4) / steps;
+    for (let k = 0; k < steps; k++) {
+      const u = u0 + 0.2 + run * (k + 0.5), v = v1 + 0.95, top = gt + (k + 1) * (P / steps);
+      const g0 = Math.min(ground(u, v), gt) - 0.3;
+      block(u, v, (g0 + top) / 2, run + 0.02, top - g0, 1.1, stone());
+      solid(u, v, run / 2 + 0.01, 0.55, g0, top);
+    }
+    block(u1 - 0.6, v1 + 0.95, gt + P - 0.15, 1.2, 0.3, 1.1, stone()); // (a landing at the top)
+    return { u: u0 + 1.2, v: v0 + 1.2, y: gt + P };
+  };
 
-  // The tower, in the far corner: 5 m square, its walls broken off high
-  // up; a doorway into the courtyard; a floor high in it, reached by a
-  // stair up its outside and a gap in its wall at the top of the stair.
-  const H = 8 + rand() * 3, P = 4.5, A = 3, B = 8;
-  const broken = (t) => H - Math.max(0, Math.sin(t * 9 + site.seed % 7) * 2.6 + rand() * 1.2);
-  wallRun(A, A, B, A, 0.8, broken, { gap: [0.38, 0.62, 0, 2.4] }); // (the door, courtyard side)
-  wallRun(B, A, B, B, 0.8, broken);
-  wallRun(A, A, A, B, 0.8, broken);
-  wallRun(A, B, B, B, 0.8, broken, { gap: [0.68, 0.94, P - 0.1, P + 2.3] }); // (the way in at the top of the stair)
-  // The floor up in it: planks long gone, a stone slab on corbels.
-  const gt = ground((A + B) / 2, (A + B) / 2);
-  block((A + B) / 2, (A + B) / 2, gt + P - 0.15, B - A - 0.7, 0.3, B - A - 0.7, stone());
-  solid((A + B) / 2, (A + B) / 2, (B - A - 0.7) / 2, (B - A - 0.7) / 2, gt + P - 0.3, gt + P);
-  // The stair: steps up along the outside of the tower's far wall.
-  const steps = Math.round(P / 0.3), run = (B - A - 0.4) / steps;
-  for (let k = 0; k < steps; k++) {
-    const u = A + 0.2 + run * (k + 0.5), v = B + 0.95, top = gt + (k + 1) * (P / steps);
-    const g0 = Math.min(ground(u, v), gt) - 0.3;
-    block(u, v, (g0 + top) / 2, run + 0.02, top - g0, 1.1, stone());
-    solid(u, v, run / 2 + 0.01, 0.55, g0, top);
-  }
-  // A landing at the top, by the gap in the wall.
-  block(B - 0.6, B + 0.95, gt + P - 0.15, 1.2, 0.3, 1.1, stone());
-
-  // The gateway, standing alone before the courtyard: two piers and an arch.
-  const gu = -S - 5, gg = ground(gu, 0);
-  for (const side of [-1, 1]) {
-    for (let y = gg - 0.4, row = 0; y < gg + 3.2; y += 0.45, row++) block(gu, side * 1.75, y + 0.22, 1.0, 0.43, 1.0 + (row % 2) * 0.08, stone(), [0, (rand() - 0.5) * 0.05, 0]);
-    solid(gu, side * 1.75, 0.5, 0.5, gg - 0.4, gg + 3.2);
-    // (Moss on top of the pier, and ivy down it.)
-    if (rand() < 0.6) block(gu, side * 1.75, gg + 2.8, 1.06, 0.9, 0.08, IVY[Math.floor(rand() * 3)], [0, Math.PI / 2, 0]);
-  }
-  const R = 1.75;
-  for (let k = 0; k < 9; k++) {
-    const a = ((k + 0.5) / 9) * Math.PI;
-    // (A wedge of the arch, along its curve: some of the keystones fallen.)
-    if (k === 4 && rand() < 0.25) continue;
-    block(gu, R * Math.cos(a), gg + 3.2 + R * Math.sin(a), 0.95, 0.5, 0.62, k === 4 ? MOSS[1] : stone(), [Math.PI / 2 - a, 0, 0]);
-  }
-
-  // Columns down one side of the courtyard: some whole, some broken off.
-  for (let k = 0; k < 4; k++) {
-    const u = -5 + k * 3.2, v = -4.6, g0 = ground(u, v), whole = rand() < 0.35, h = whole ? 3.6 : 0.8 + rand() * 2.4;
+  // An arch of wedged stones, its middle at (u, v), springing from height
+  // y, `R` across to each side, spanning along v (`across` false: along u).
+  const arch = (u, v, y, R, across = true) => {
+    for (let k = 0; k < 9; k++) {
+      const a = ((k + 0.5) / 9) * Math.PI;
+      if (k === 4 && rand() < 0.25) continue; // (its keystone fallen)
+      const hex = k === 4 ? MOSS[1] : stone();
+      if (across) block(u, v + R * Math.cos(a), y + R * Math.sin(a), 0.95, 0.5, 0.62, hex, [Math.PI / 2 - a, 0, 0]);
+      else block(u + R * Math.cos(a), v, y + R * Math.sin(a), 0.62, 0.5, 0.95, hex, [0, 0, a - Math.PI / 2]);
+    }
+  };
+  // A pier of squared blocks from the ground up to `top` (world height).
+  const pier = (u, v, top, s = 1.0) => {
+    const g0 = ground(u, v);
+    for (let y = g0 - 0.4, row = 0; y < top - 0.05; y += 0.45, row++) {
+      const h = Math.min(0.43, top - y);
+      block(u, v, y + h / 2, s, h, s + (row % 2) * 0.08, stone(), [0, (rand() - 0.5) * 0.05, 0]);
+    }
+    solid(u, v, s / 2, s / 2, g0 - 0.4, top);
+    if (rand() < 0.4) block(u + s / 2 + 0.03, v, top - 0.6, 0.06, 1.2, s * 0.9, IVY[Math.floor(rand() * 3)]);
+  };
+  // The gateway: two piers and an arch over the way between them (along u).
+  const gateway = (gu, gv = 0, R = 1.75) => {
+    const gg = ground(gu, gv);
+    for (const side of [-1, 1]) pier(gu, gv + side * R, gg + 3.2);
+    arch(gu, gv, gg + 3.2, R);
+  };
+  // A column on its plinth from height `y0` (or the ground): whole, or broken off with its top lying by it.
+  const column = (u, v, y0 = null, tall = 3.6, wholeChance = 0.35) => {
+    const g0 = y0 ?? ground(u, v), whole = rand() < wholeChance, h = whole ? tall : 0.8 + rand() * (tall - 1.2);
     block(u, v, g0 - 0.1, 1.0, 0.4, 1.0, stone());
     const shaft = new CylinderGeometry(0.32, 0.36, h, 8, 1);
     shaft.translate(u, g0 + 0.1 + h / 2, v);
     put(shaft, stone(), 0.1);
     if (whole) block(u, v, g0 + 0.1 + h + 0.15, 0.9, 0.3, 0.9, stone());
     else if (rand() < 0.7) {
-      // (Its top lying where it fell.)
       const fall = rand() * Math.PI * 2, drum = new CylinderGeometry(0.32, 0.32, 1.2, 8, 1);
+      const fu = u + Math.cos(fall) * 1.6, fv = v - Math.sin(fall) * 1.6;
       drum.rotateZ(Math.PI / 2);
       drum.rotateY(fall);
-      drum.translate(u + Math.cos(fall) * 1.6, ground(u + Math.cos(fall) * 1.6, v) + 0.25, v - Math.sin(fall) * 1.6);
+      drum.translate(fu, Math.max(ground(fu, fv), y0 ?? -Infinity) + 0.25, fv);
       put(drum, stone(), 0.1);
     }
     solid(u, v, 0.36, 0.36, g0 - 0.3, g0 + 0.1 + h + (whole ? 0.3 : 0));
-  }
-
-  // The cobbled way: up to the gateway, through it and into the courtyard.
-  for (let u = -S - 14; u < 2; u += 0.55) {
-    for (let v = -1.3; v < 1.3; v += 0.55) {
-      if (rand() < (u > -S ? 0.45 : 0.22)) continue; // (grown over in places)
-      const ou = u + rand() * 0.1, ov = v + rand() * 0.1;
-      block(ou, ov, ground(ou, ov) + 0.02, 0.48, 0.1, 0.48, stone(), [0, rand() * 0.4, 0]);
+    return whole ? g0 + 0.1 + h + 0.3 : 0;
+  };
+  // A cobbled way, grown over in places.
+  const cobbles = (u1, u2, v1, v2, grown = 0.3) => {
+    for (let u = u1; u < u2; u += 0.55) {
+      for (let v = v1; v < v2; v += 0.55) {
+        if (rand() < grown) continue;
+        const ou = u + rand() * 0.1, ov = v + rand() * 0.1;
+        block(ou, ov, ground(ou, ov) + 0.02, 0.48, 0.1, 0.48, stone(), [0, rand() * 0.4, 0]);
+      }
     }
-  }
-  // Blocks tumbled down in the grass round the walls.
-  for (let k = 0; k < 14; k++) {
-    const a = rand() * Math.PI * 2, d = 6 + rand() * 6, u = Math.cos(a) * d, v = Math.sin(a) * d;
-    const s = 0.4 + rand() * 0.5;
-    block(u, v, ground(u, v) + s * 0.25, s * 1.4, s, s * 1.1, rand() < 0.2 ? MOSS[0] : stone(), [rand() * 0.4, rand() * 3, rand() * 0.4]);
-    if (s > 0.7) solid(u, v, s * 0.6, s * 0.5, ground(u, v) - 0.2, ground(u, v) + s * 0.7, 0);
-  }
+  };
+  // Blocks tumbled down in the grass round about.
+  const rubble = (count, near, far) => {
+    for (let k = 0; k < count; k++) {
+      const a = rand() * Math.PI * 2, d = near + rand() * (far - near), u = Math.cos(a) * d, v = Math.sin(a) * d;
+      const s = 0.4 + rand() * 0.5, g0 = ground(u, v);
+      block(u, v, g0 + s * 0.25, s * 1.4, s, s * 1.1, rand() < 0.2 ? MOSS[0] : stone(), [rand() * 0.4, rand() * 3, rand() * 0.4]);
+      if (s > 0.7) solid(u, v, s * 0.6, s * 0.5, g0 - 0.2, g0 + s * 0.7, 0);
+    }
+  };
+  // A raised floor of big slabs over (u1..u2, v1..v2), level at its highest ground and a step up: gives its top.
+  const platform = (u1, u2, v1, v2, rise = 0.5) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const [u, v] of [[u1, v1], [u2, v1], [u1, v2], [u2, v2], [(u1 + u2) / 2, (v1 + v2) / 2]]) {
+      const g = ground(u, v);
+      lo = Math.min(lo, g);
+      hi = Math.max(hi, g);
+    }
+    const top = hi + rise;
+    for (let u = u1; u < u2 - 0.01; u += 2) {
+      for (let v = v1; v < v2 - 0.01; v += 2) {
+        const su = Math.min(2, u2 - u), sv = Math.min(2, v2 - v);
+        block(u + su / 2, v + sv / 2, (lo - 0.5 + top) / 2 - (rand() < 0.15 ? 0.06 : 0), su - 0.04, top - lo + 0.5, sv - 0.04, rand() < 0.1 ? MOSS[2] : stone());
+      }
+    }
+    solid((u1 + u2) / 2, (v1 + v2) / 2, (u2 - u1) / 2, (v2 - v1) / 2, lo - 0.5, top);
+    return top;
+  };
+  // Steps down from a platform's edge at u = edge, out along -u, across v1..v2.
+  const stepsDown = (edge, v1, v2, top) => {
+    const g0 = ground(edge - 1, (v1 + v2) / 2);
+    const n = Math.max(1, Math.ceil((top - g0) / 0.28));
+    for (let k = 0; k < n; k++) {
+      const y = top - (k + 1) * ((top - g0) / n), u = edge - 0.45 - k * 0.5;
+      block(u, (v1 + v2) / 2, (y + g0 - 0.4) / 2 + 0.01, 0.5, y - g0 + 0.4, v2 - v1, stone());
+      solid(u, (v1 + v2) / 2, 0.25, (v2 - v1) / 2, g0 - 0.4, y);
+    }
+  };
 
-  // The chests: in the courtyard, and up in the tower.
-  if (onChest) {
-    const at = (u, v, y, name, best) => onChest({ key: `${site.key}:${name}`, x: wx(u, v), y, z: wz(u, v), rot: rot + rand() * 0.6 - 0.3, best });
-    at(-3.5, 4.6, ground(-3.5, 4.6), 'yard', false);
-    if (rand() < 0.5) at(1.5, -6.6, ground(1.5, -6.6), 'wall', false);
-    at(A + 1.2, A + 1.2, gt + P, 'tower', true);
+  switch (site.kind) {
+    case 1: {
+      // A lone watchtower on a rise, a stump of wall round it.
+      const top = tower(-3, -3, 6, 10 + rand() * 4, true);
+      wallRun(-7, -6, -7, 3, 0.6, ruined(1.3));
+      wallRun(-7, -6, 2, -7, 0.6, ruined(1.1));
+      rubble(10, 4.5, 8.5);
+      chest(top.u, top.v, top.y, 'tower', true);
+      if (rand() < 0.5) chest(-5.5, 4.5, ground(-5.5, 4.5), 'foot');
+      break;
+    }
+    case 2: {
+      // A gatehouse on an old road: the arch, two squat towers either side, the walls going off from them.
+      gateway(0, 0, 1.75);
+      tower(-2, 2.4, 4, 5 + rand() * 2, false);
+      tower(-2, -6.4, 4, 5 + rand() * 2, false);
+      wallRun(0, 6.4, 0, 13, 0.8, ruined(3));
+      wallRun(0, -6.4, 0, -13, 0.8, ruined(3));
+      cobbles(-11, 11, -1.3, 1.3, 0.3);
+      rubble(10, 5, 11);
+      chest(3, -3.2, ground(3, -3.2), 'gate');
+      if (rand() < 0.6) chest(-1, 4.2, ground(-1, 4.2), 'guard', true);
+      break;
+    }
+    case 3: {
+      // A temple: a stepped platform, two rows of columns (a few still under their lintels), an altar at the back.
+      const top = platform(-7, 7, -4.5, 4.5, 0.7);
+      stepsDown(-7, -3, 3, top);
+      const tops = [];
+      for (const v of [-3.3, 3.3]) for (let k = 0; k < 6; k++) tops.push([-5.5 + k * 2.2, v, column(-5.5 + k * 2.2, v, top, 4.2, 0.45)]);
+      for (let k = 0; k + 1 < tops.length; k++) {
+        const [u1, v1, t1] = tops[k], [u2, v2, t2] = tops[k + 1];
+        if (t1 && t2 && v1 === v2) block((u1 + u2) / 2, v1, Math.min(t1, t2) + 0.25, 3.2, 0.5, 0.9, stone());
+      }
+      block(5.6, 0, top + 0.5, 1.2, 1.0, 2.4, stone());
+      solid(5.6, 0, 0.6, 1.2, top, top + 1.0);
+      chest(4.4, 0, top, 'altar', true);
+      rubble(8, 8, 11);
+      break;
+    }
+    case 4: {
+      // A great hall: long walls with tall window gaps, a door each end, a row of columns down its middle.
+      const L = 12 + rand() * 3, W = 6;
+      const windows = [[0.15, 0.22, 1.6, 3.4], [0.39, 0.46, 1.6, 3.4], [0.54, 0.61, 1.6, 3.4], [0.78, 0.85, 1.6, 3.4]];
+      wallRun(-L, -W, L, -W, 0.8, ruined(4.6, 0.9), { gaps: windows });
+      wallRun(-L, W, L, W, 0.8, ruined(4.6, 0.9), { gaps: windows });
+      wallRun(-L, -W, -L, W, 0.8, ruined(5.2, 0.95), { gaps: [[0.4, 0.6, 0, 2.8]] });
+      wallRun(L, -W, L, W, 0.8, ruined(4, 0.95), { gaps: [[0.42, 0.58, 0, 2.4]] });
+      for (let u = -L + 4; u < L - 2; u += 4) column(u, 0, null, 4.4, 0.4);
+      cobbles(-L - 6, -L, -1.2, 1.2, 0.35);
+      rubble(14, W + 2, W + 9);
+      chest(L - 2, W - 1.6, ground(L - 2, W - 1.6), 'dais', true);
+      chest(-L + 2.5, -W + 1.6, ground(-L + 2.5, -W + 1.6), 'hall');
+      break;
+    }
+    case 5: {
+      // A chapel: a small nave, its end rounded into an apse, an altar stone, a gable still standing over the door.
+      const pts = [[-5, -3], [4, -3], [5.8, -2], [6.6, 0], [5.8, 2], [4, 3], [-5, 3]];
+      for (let k = 0; k < pts.length; k++) {
+        const [u1, v1] = pts[k], [u2, v2] = pts[(k + 1) % pts.length];
+        const door = k === pts.length - 1;
+        wallRun(u1, v1, u2, v2, 0.7, door ? () => 5 + rand() * 0.3 : ruined(3.2, 0.9), { gaps: door ? [[0.38, 0.62, 0, 2.6]] : k === 0 || k === 5 ? [[0.45, 0.6, 1.7, 2.9]] : [] });
+      }
+      block(5, 0, ground(5, 0) + 0.45, 1, 0.9, 2, stone());
+      solid(5, 0, 0.5, 1, ground(5, 0) - 0.2, ground(5, 0) + 0.9);
+      chest(3.8, 0, ground(3.8, 0), 'altar', true);
+      cobbles(-11, -5, -1, 1, 0.4);
+      rubble(7, 6.5, 10);
+      break;
+    }
+    case 6: {
+      // A castle: a curtain wall round a big bailey, towers at its corners, a keep in the middle, a gate in front.
+      const S = 15;
+      wallRun(-S, -S, -S, -2.4, 1.0, ruined(4.8));
+      wallRun(-S, 2.4, -S, S, 1.0, ruined(4.8));
+      wallRun(-S, S, S, S, 1.0, ruined(4.6));
+      wallRun(S, S, S, -S, 1.0, ruined(4.6));
+      wallRun(S, -S, -S, -S, 1.0, ruined(4.8));
+      for (const [u, v] of [[-S - 2, -S - 2], [S - 2, -S - 2], [-S - 2, S - 2], [S - 2, S - 2]]) tower(u, v, 4, 5.5 + rand() * 2.5, false);
+      gateway(-S, 0, 2);
+      const top = tower(-3, -3, 7, 12 + rand() * 3, true);
+      cobbles(-S - 8, -3, -1.4, 1.4, 0.4);
+      rubble(12, S + 3, S + 8);
+      chest(top.u, top.v, top.y, 'keep', true);
+      chest(-S + 3, S - 3, ground(-S + 3, S - 3), 'bailey');
+      if (rand() < 0.6) chest(S - 3, -S + 3, ground(S - 3, -S + 3), 'store');
+      break;
+    }
+    case 7: {
+      // An abandoned hamlet: the low walls of a few cottages round an old well.
+      const houses = [[-10, -8], [5, -10], [-9, 6], [6, 6]];
+      houses.forEach(([u, v], n) => {
+        const a = 4 + rand() * 2.5, b = 3.5 + rand() * 1.5;
+        wallLoop([[u, v], [u + a, v], [u + a, v + b], [u, v + b]], 0.6, ruined(1.8 + rand(), 0.75), (k) => (k === 0 ? { gaps: [[0.35, 0.6, 0, 2.2]] } : {}));
+        if (n % 2 === 0 || rand() < 0.4) chest(u + a - 1, v + b - 1, ground(u + a - 1, v + b - 1), `house${n}`, n === 0);
+      });
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2, u = Math.cos(a) * 1.15, v = Math.sin(a) * 1.15;
+        block(u, v, ground(u, v) + 0.3, 0.7, 1.0, 0.45, stone(), [0, -a + Math.PI / 2, 0]);
+      }
+      solid(0, 0, 1.4, 1.4, ground(0, 0) - 0.2, ground(0, 0) + 0.8);
+      block(0, 0, ground(0, 0) + 0.79, 1.7, 0.02, 1.7, 0x1c2a30);
+      cobbles(-4, 4, -1, 1, 0.55);
+      rubble(10, 3, 15);
+      break;
+    }
+    case 8: {
+      // A ring of standing stones, some fallen, some still under lintels; a flat stone in the middle.
+      const n = 10 + Math.floor(rand() * 4), R = 6, up = [];
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2, u = Math.cos(a) * R, v = Math.sin(a) * R, g0 = ground(u, v);
+        const h = 3.2 + rand() * 1.2, fallen = rand() < 0.25;
+        if (fallen) {
+          const lay = a + (rand() - 0.5) * 0.8;
+          block(u + Math.cos(lay) * 1.6, v + Math.sin(lay) * 1.6, g0 + 0.3, h, 0.6, 1.0, stone(), [0, -lay, 0]);
+          up.push(0);
+        } else {
+          block(u, v, g0 + h / 2 - 0.4, 1.0, h, 0.6, rand() < 0.2 ? MOSS[3] : stone(), [0, -a, (rand() - 0.5) * 0.08]);
+          solid(u, v, 0.5, 0.3, g0 - 0.4, g0 + h - 0.4, -a);
+          up.push(g0 + h - 0.4);
+        }
+      }
+      for (let k = 0; k < n; k++) {
+        const t1 = up[k], t2 = up[(k + 1) % n];
+        if (!t1 || !t2 || rand() < 0.4) continue;
+        const a = ((k + 0.5) / n) * Math.PI * 2, l = 2 * R * Math.sin(Math.PI / n) + 1;
+        block(Math.cos(a) * R, Math.sin(a) * R, Math.min(t1, t2) + 0.25, 0.7, 0.5, l, stone(), [0, -a, 0]);
+      }
+      const g0 = ground(0, 0);
+      block(0, 0, g0 + 0.3, 2.4, 0.6, 1.4, stone());
+      solid(0, 0, 1.2, 0.7, g0 - 0.2, g0 + 0.6);
+      chest(0, 1.5, ground(0, 1.5), 'circle', true);
+      break;
+    }
+    case 9: {
+      // An aqueduct: a row of tall piers, arches between them, the channel along their tops (broken off in places).
+      const N = 9, gap = 4.2, Rr = (gap - 1.2) / 2;
+      let hi = -Infinity;
+      for (let k = 0; k < N; k++) hi = Math.max(hi, ground((k - (N - 1) / 2) * gap, 0));
+      const Y = hi + 6 + rand() * 2, standing = [];
+      for (let k = 0; k < N; k++) {
+        const u = (k - (N - 1) / 2) * gap, whole = rand() < 0.75;
+        pier(u, 0, whole ? Y : ground(u, 0) + 1 + rand() * 3, 1.2);
+        standing.push(whole);
+      }
+      for (let k = 0; k + 1 < N; k++) {
+        if (!standing[k] || !standing[k + 1]) continue;
+        const u = (k - (N - 1) / 2 + 0.5) * gap;
+        arch(u, 0, Y - Rr - 0.35, Rr, false);
+        if (rand() < 0.75) {
+          block(u, 0, Y + 0.3, gap + 0.02, 0.6, 1.5, stone());
+          for (const side of [-1, 1]) block(u, side * 0.6, Y + 0.85, gap, 0.5, 0.3, rand() < 0.3 ? moss() : stone());
+          solid(u, 0, gap / 2, 0.75, Y - 0.2, Y + 0.6);
+        }
+      }
+      rubble(14, 3, 18);
+      chest(-gap * 2 + 1.4, 1.8, ground(-gap * 2 + 1.4, 1.8), 'pier');
+      if (rand() < 0.5) chest(gap * 3 - 1.4, -1.8, ground(gap * 3 - 1.4, -1.8), 'pier2', true);
+      break;
+    }
+    default: {
+      // A stronghold: a courtyard's walls, a tower in its far corner, a gateway standing before it, columns down one side.
+      const S = 8, T = 0.7;
+      wallRun(-S, -S, S, -S, T, ruined(2.6 + rand() * 1.4));
+      wallRun(S, -S, S, 3, T, ruined(2.4 + rand() * 1.4));
+      wallRun(-S, S, 3, S, T, ruined(2.2 + rand() * 1.6));
+      wallRun(-S, -S, -S, -2.2, T, ruined(1.6 + rand()));
+      wallRun(-S, 2.2, -S, S, T, ruined(1.6 + rand()));
+      const top = tower(3, 3, 5, 8 + rand() * 3, true);
+      gateway(-S - 5);
+      for (let k = 0; k < 4; k++) column(-5 + k * 3.2, -4.6);
+      cobbles(-S - 14, 2, -1.3, 1.3, 0.3);
+      rubble(14, 6, 12);
+      chest(-3.5, 4.6, ground(-3.5, 4.6), 'yard');
+      if (rand() < 0.5) chest(1.5, -6.6, ground(1.5, -6.6), 'wall');
+      chest(top.u, top.v, top.y, 'tower', true);
+    }
   }
 }
 

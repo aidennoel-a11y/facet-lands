@@ -33,7 +33,8 @@ const STYLE = `
  * @param teleport  (x, z) => take you there
  */
 export class BiomeMap {
-  constructor({ task, where, teleport }) {
+  constructor({ task, where, teleport, ruins }) {
+    this.ruins = ruins; // ((x, z, r) => the ruins to mark, round there)
     this.task = task;
     this.where = where;
     this.teleport = teleport;
@@ -241,6 +242,19 @@ export class BiomeMap {
     for (const [tx, tz] of want) {
       if (this.pending >= 8) break;
       this.#request(tx, tz, scale);
+    }
+    // The ruins, as little orange keeps.
+    const found = this.ruins?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? [];
+    for (const r of found) {
+      const rx = (r.x - x0) / scale, ry = (r.z - z0) / scale;
+      if (rx < -6 || ry < -6 || rx > w + 6 || ry > n + 6) continue;
+      ctx.fillStyle = '#e0a040';
+      ctx.strokeStyle = '#2a2420';
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(rx - 4, ry - 3, 8, 6);
+      ctx.strokeRect(rx - 4, ry - 3, 8, 6);
+      ctx.fillRect(rx - 4, ry - 6, 2.4, 3);
+      ctx.fillRect(rx + 1.6, ry - 6, 2.4, 3);
     }
     // You, as an arrow.
     const p = this.where();

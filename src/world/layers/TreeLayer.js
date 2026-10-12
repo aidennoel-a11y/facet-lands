@@ -473,10 +473,13 @@ export function createTreeLayer({ rocks = null } = {}) {
       const all = prepared?.trees ?? placeTrees(generator, config, cx, cz, groundHeightAt, rocks ? rocks.bouldersNear(cx, cz, generator, spacing) : null);
       // (Not the ones felled; each remembers where it is in its mesh.)
       const placed = {};
+      // (None where old stone stands: see keepOut.)
+      const out = layer.keepOut?.(originX - 30, originZ - 30, originX + chunkSize + 30, originZ + chunkSize + 30) ?? [];
       for (const [type, list] of Object.entries(all)) {
         const kept = [];
         for (const t0 of list) {
           if (layer.removed.size && layer.removed.has(treeKey(cx, cz, type, t0))) continue;
+          if (out.length && out.some(([x, z, r]) => (originX + t0.x - x) ** 2 + (originZ + t0.z - z) ** 2 < r * r)) continue;
           kept.push({ ...t0, index: kept.length });
         }
         if (kept.length) placed[type] = kept;

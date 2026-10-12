@@ -270,6 +270,8 @@ chunks.addLayer(rocks);
 // The ruins of old strongholds, here and there (see RuinLayer): their chests set out by the Game.
 const ruins = createRuinLayer(WORLD);
 chunks.addLayer(ruins);
+// (No trees growing up through them: each stands in its own clearing.)
+trees.keepOut = (x0, z0, x1, z1) => ruins.sitesNear((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 30, generator).map((s) => [s.x, s.z, s.size + 3]);
 chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
 // The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).
 for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.material, farGrass.material, rocks.material, farTrees.material, logs.material, water.material, rivers.material]) if (m) addCloudShadow(m);
@@ -708,6 +710,8 @@ const bigMap = new BiomeMap({
     camera.getWorldDirection(dir);
     return { x: camera.position.x, z: camera.position.z, heading: Math.atan2(dir.x, -dir.z) };
   },
+  // (Testing: the ruins marked on it too.)
+  ruins: (x, z, r) => (game.mode === 'testing' ? ruins.sitesNear(x, z, Math.min(r, 9000), generator) : ruins.sitesNear(x, z, Math.min(r, 9000), generator).filter((s) => game.ruinsSeen.has(s.key))),
   teleport: (x, z) => {
     if (!ui.fly.checked) ui.fly.click();
     camera.position.set(x, Math.max(generator.getBaseHeight(x, z), WORLD.seaLevel) + 45, z);
@@ -1938,7 +1942,9 @@ function tick(now) {
 
   camera.position.y -= tremble;
   // (On the map: the ruins you've been to, and where an old map showed more.)
-  minimap.marks = [...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...ruins.sitesNear(camera.position.x, camera.position.z, 700, generator).filter((r) => game.ruinsSeen.has(r.key)).map((r) => ({ x: r.x, z: r.z, kind: 'ruin' }))];
+  // (Testing: every ruin for 2 km round, the far ones pointed to from the map's edge.)
+  const testing = game.mode === 'testing';
+  minimap.marks = [...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...ruins.sitesNear(camera.position.x, camera.position.z, testing ? 2000 : 700, generator).filter((r) => testing || game.ruinsSeen.has(r.key)).map((r) => ({ x: r.x, z: r.z, kind: 'ruin', edge: testing }))];
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
 
   frames++;
