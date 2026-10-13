@@ -110,6 +110,7 @@ export class Hud {
     if (survival.bleeding > 0) chips.push(['bleed', 'Bleeding']);
     if (survival.venom > 0) chips.push(['bleed', 'Venom']);
     if (info.sheltered) chips.push(['load', 'Sheltered']);
+    if (info.hotSpring) chips.push(['load', 'Hot spring: warming']);
     if (info.heatstroke) chips.push(['bleed', 'Heatstroke']);
     if (info.blizzard) chips.push(['wet', 'Blizzard']);
     if (survival.energy < 20) chips.push(['tired', survival.energy <= 0 ? 'Exhausted' : 'Worn out']);
@@ -265,7 +266,7 @@ export class Hud {
     const { chest, pack } = this.chest;
     const fill = (sel, inv, side) => {
       const ol = this.el(sel);
-      ol.innerHTML = inv.slots.map((s, i) => `<li><button type="button" class="slot" data-side="${side}" data-i="${i}">${slotHtml(s)}</button></li>`).join('');
+      ol.innerHTML = inv.slots.slice(0, inv.open ?? inv.slots.length).map((s, i) => `<li><button type="button" class="slot" data-side="${side}" data-i="${i}">${slotHtml(s)}</button></li>`).join('');
       ol.onclick = (e) => {
         const b = e.target.closest('[data-i]');
         if (b) this.onChestMove?.(b.dataset.side, Number(b.dataset.i));

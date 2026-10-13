@@ -1,0 +1,51 @@
+// The newer things, built and used in testing: no errors, the bridge walkable, crafting the new recipes.   node tools/_newstuff.mjs out
+import { createRequire } from 'module';
+import { execSync } from 'child_process';
+const require = createRequire(import.meta.url);
+const { chromium } = require(execSync('npm root -g').toString().trim() + '/playwright');
+const out = process.argv[2] ?? 'newstuff';
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 900, height: 520 } });
+const errs = [];
+page.on('pageerror', (e) => errs.push(e.message + ' | ' + (e.stack ?? '').split('\n').slice(1, 3).join(' ')));
+await page.goto('http://localhost:4173/?seed=polaris&x=300&z=-200&up=0&vd=2&hide&hour=11&weather=clear', { timeout: 180000 });
+await page.waitForFunction(() => window.world?.chunks, null, { timeout: 200000 });
+await page.waitForTimeout(30000);
+const r = await page.evaluate(() => {
+  const { game, camera, controls, chunks } = window.world, st = game.structures, p = camera.position;
+  const ground = (x, z) => chunks.groundHeightAt(x, z);
+  const out = {};
+  const put = (type, dx, dz, extra = {}) => {
+    const x = p.x + dx, z = p.z + dz;
+    return st.build({ type, x, y: ground(x, z), z, rot: 0 }, extra);
+  };
+  const types = ['leanTo', 'waterFilter', 'repairBench', 'chair', 'table', 'shelf', 'trophyRack', 'coop'];
+  types.forEach((t, k) => put(t, -8 + (k % 4) * 4, -8 - Math.floor(k / 4) * 4));
+  const br = put('ropeBridge', 6, -4, { len: 18, rise: 1.5 });
+  const lb = put('logBridge', 9, -4, { len: 10, rise: 0 });
+  out.built = st.list.length;
+  out.bridgeMid = +(st.floorTop(br.x + Math.sin(br.rot) * 9, br.z + Math.cos(br.rot) * 9) - br.y).toFixed(2);
+  out.bridgeEnd = +(st.floorTop(br.x + Math.sin(br.rot) * 18, br.z + Math.cos(br.rot) * 18) - br.y).toFixed(2);
+  out.logMid = +(st.floorTop(lb.x, lb.z + 5) - lb.y).toFixed(2);
+  const lean = st.list.find((s) => s.type === 'leanTo');
+  out.leanShelter = st.shelterAt(lean.x, lean.y + 0.5, lean.z - 0.3);
+  // Crafting the new things (testing: all open).
+  const inv = game.inventory;
+  inv.clear();
+  for (const [id, n] of [['deerSkin', 10], ['rope', 6], ['vine', 6], ['log', 10]]) inv.add({ id, count: n });
+  game.craft('backpack');
+  out.open = inv.open;
+  game.craft('quiver');
+  inv.add({ id: 'arrow', count: 25 });
+  out.arrows = inv.slots.filter((s) => s?.id === 'arrow').map((s) => s.count);
+  out.slots = inv.slots.length;
+  camera.position.set(p.x - 4, ground(p.x - 4, p.z - 2) + 6, p.z + 2);
+  camera.lookAt(p.x, ground(p.x, p.z - 8), p.z - 8);
+  controls.euler.setFromQuaternion(camera.quaternion, 'YXZ');
+  return out;
+});
+console.log(JSON.stringify(r));
+await page.waitForTimeout(5000);
+await page.screenshot({ path: `${out}.png` });
+console.log('errors', errs);
+await browser.close();

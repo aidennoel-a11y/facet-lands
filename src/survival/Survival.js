@@ -188,7 +188,9 @@ export class Survival {
     this.wet = Math.min(1, Math.max(0, this.wet + (e.swimming ? dt * 0.5 : e.rain > 0.2 ? dt * 0.01 * e.rain : -dt * (0.004 + 0.05 * (e.fire ?? 0)))));
     // Warmth.
     this.cold = this.coldness(e);
-    if (e.fire > 0) this.warmth = Math.min(100, this.warmth + dt * 9 * e.fire);
+    // (In a hot spring: warm through, however cold it is out of it.)
+    if (e.hotSpring) (this.cold = 0), (this.warmth = Math.min(100, this.warmth + dt * 7)), (this.energy = Math.min(100, this.energy + dt * 0.15));
+    else if (e.fire > 0) this.warmth = Math.min(100, this.warmth + dt * 9 * e.fire);
     else if (this.cold > 0.03) this.warmth = Math.max(0, this.warmth - dt * this.cold * 0.55 * (e.coat || 1));
     else this.warmth = Math.min(100, this.warmth + dt * 1.2);
     // What hurts: starving, parched, freezing, standing in the fire.

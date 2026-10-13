@@ -28,6 +28,8 @@ const BUILT = {
   logStairs: M.logStairsModel, plankStairs: M.plankStairsModel, stoneStairs: M.stoneStairsModel, cutStairs: M.cutStairsModel,
   logWindow: () => M.openWallModel('log', 'window'), logDoor: () => M.openWallModel('log', 'door'), plankWindow: () => M.openWallModel('plank', 'window'), plankDoor: () => M.openWallModel('plank', 'door'),
   stoneDoor: () => M.openWallModel('stone', 'door'), cutWindow: () => M.openWallModel('cut', 'window'), cutDoor: () => M.openWallModel('cut', 'door'),
+  chair: M.chairModel, table: M.tableModel, shelf: M.shelfModel, trophyRack: M.trophyRackModel, coop: M.coopModel, logBridge: () => M.bridgeModel('log', 2.5, 0), ropeBridge: () => M.bridgeModel('rope', 2.5, 0),
+  leanTo: M.leanToModel, waterFilter: M.waterFilterModel, repairBench: M.repairBenchModel,
   logRoof: M.logRoofModel, shingleRoof: M.shingleRoofModel, tileRoof: M.tileRoofModel, bedroll: M.bedrollModel, fancyBed: M.fancyBedModel,
 };
 
@@ -99,6 +101,7 @@ export class GroundItems {
         seedWheat: () => M.seedsModel(0xd8b464), seedCorn: () => M.seedsModel(0xe8c030), seedPotato: () => M.potatoModel(), seedCarrot: () => M.seedsModel(0x7a6a4a), wheat: M.wheatModel,
         berries: M.berriesModel, apple: M.appleModel, mushroom: () => M.mushroomModel(), jerky: M.jerkyModel, corn: () => M.cornModel(false), roastCorn: () => M.cornModel(true),
         potato: () => M.potatoModel(false), bakedPotato: () => M.potatoModel(true), carrot: M.carrotModel, dough: M.doughModel, bread: M.breadModel, stew: M.stewModel,
+        rawEgg: () => M.eggModel(false), cookedEgg: () => M.eggModel(true), salt: () => M.seedsModel(0xf4f2ee), sand: () => M.seedsModel(0xe2c88a),
         flintSteel: () => M.flintSteelModel(false), fineFlintSteel: () => M.flintSteelModel(true),
         oldSword: () => swordModel(0xa8aca4, 0xc8ccc4, 0xb08a3a), oldMap: () => M.hideModel(),
         fangSword: () => swordModel(0xf0e8d4, 0xfaf4e4, 0x5a4a3a), antlerBow: () => bowModel(true, 0xcbb690), tuskPickaxe: () => pickaxeModel(0xe8dcc0, 0xf4ecd8),

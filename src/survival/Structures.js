@@ -6,8 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel,
-} from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, coopModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -75,6 +74,19 @@ const KINDS = {
   anvil: { make: anvilModel, box: [0.5, 0.3], tall: 0.95 },
   grindstone: { make: grindstoneModel, box: [0.3, 0.45], tall: 1.2 },
   tanningRack: { make: tanningRackModel, box: [0.9, 0.2], jobs: 1 },
+  // (A lean-to: a roof on poles, sheltering what's under it.)
+  leanTo: { make: leanToModel, posts: [[-1.2, 0.9], [1.2, 0.9]], shelter: [1.5, 1.4] },
+  // (Bridges: laid across a gorge or a river from where you stand; walked on, see floorTop. Each its own length: see build.)
+  logBridge: { make: () => bridgeModel('log', 0.1, 0), bridge: 'log', circle: 0 },
+  ropeBridge: { make: () => bridgeModel('rope', 0.1, 0), bridge: 'rope', circle: 0 },
+  // (Furniture.)
+  chair: { make: chairModel, box: [0.26, 0.26], tall: 0.5 },
+  table: { make: tableModel, box: [0.7, 0.43], tall: 0.8 },
+  shelf: { make: shelfModel, box: [0.65, 0.2], tall: 1.6 },
+  trophyRack: { make: trophyRackModel, circle: 0.2, tall: 1.9 },
+  coop: { make: coopModel, box: [0.85, 0.7], tall: 1.6 },
+  repairBench: { make: repairBenchModel, box: [0.8, 0.3], tall: 0.95 },
+  waterFilter: { make: waterFilterModel, circle: 0.35, tall: 1.3, jobs: 2 },
   plot: { make: plotModel, circle: 0, tilt: true, reach: 1 },
   rope: { make: ropeStakeModel, circle: 0 },
   stake: { make: stakeModel, circle: 0.26, tall: 3.3 },
@@ -388,13 +400,15 @@ export class Structures {
   build(plan, extra = {}) {
     const s = { id: this.nextId++, type: plan.type, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, tilt: plan.tilt ?? null, upper: !!plan.upper, lit: false, fuel: 0, jobs: [], ...extra };
     s.jobs = (s.jobs ?? []).map((j) => ({ ...j }));
-    if (s.type === 'chest' || s.type === 'cellar') {
-      const inv = new Inventory(s.type === 'cellar' ? 24 : 10);
+    if (s.type === 'chest' || s.type === 'cellar' || s.type === 'shelf') {
+      const inv = new Inventory(s.type === 'cellar' ? 24 : s.type === 'shelf' ? 6 : 10);
       if (extra.contents) extra.contents.forEach((st, i) => (inv.slots[i] = st));
       s.contents = inv;
     }
     const mesh = new Group();
-    const body = new Mesh(this.model(s.type, !!s.upper), this.material);
+    // (A bridge: its own length and rise, from here to the far side.)
+    const bk = KINDS[s.type].bridge;
+    const body = new Mesh(bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : this.model(s.type, !!s.upper), this.material);
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);
@@ -430,6 +444,16 @@ export class Structures {
         return m;
       });
       this.showOffered(s);
+    }
+    if (s.type === 'trophyRack') {
+      // (A great beast's trophy hung on its board: see showTrophy.)
+      s.trophyMesh = new Mesh(undefined, this.material);
+      s.trophyMesh.position.set(0, 1.25, 0.2);
+      s.trophyMesh.rotation.x = -Math.PI / 2 + 0.25;
+      s.trophyMesh.scale.setScalar(1.5);
+      s.trophyMesh.visible = false;
+      mesh.add(s.trophyMesh);
+      this.showTrophy(s);
     }
     if (s.type === 'plot') {
       s.cropMesh = new Mesh(undefined, this.material);
@@ -859,6 +883,10 @@ export class Structures {
         for (const h of [0.5, 1.2, 1.9]) points.push([s.x + bx * fd, s.y + fy + h, s.z + bz * fd, 0.9]);
       } else if (s.type === 'rope') for (let h = 0; h <= s.len + 0.5; h += 0.8) points.push([s.x + bx * 0.35, s.y + 0.3 - h, s.z + bz * 0.35, 0.5]);
       else if (s.type === 'plot') points.push([s.x, s.y + 0.25, s.z, 1.1]);
+      else if (kd.bridge) for (const v of [0, s.len ?? 6]) for (const side of [-1, 1]) points.push([s.x + ax * side * BRIDGE_WIDTH * 0.5 + bx * v, s.y + (s.rise ?? 0) * (v / (s.len ?? 6)) + 0.7, s.z + az * side * BRIDGE_WIDTH * 0.5 + bz * v, 0.4]);
+      else if (s.type === 'trophyRack') points.push([s.x, s.y + 1.5, s.z, 0.6]);
+      else if (s.type === 'coop') for (const h of [0.6, 1.2]) points.push([s.x, s.y + h, s.z, 0.9]);
+      else if (s.type === 'shelf') for (const h of [0.5, 1.2]) points.push([s.x, s.y + h, s.z, 0.7]);
       else if (s.type === 'anvil' || s.type === 'grindstone') points.push([s.x, s.y + 0.8, s.z, 0.6]);
       else if (s.type === 'tanningRack') for (const h of [0.6, 1.3]) points.push([s.x, s.y + h, s.z, 0.75]);
       else if (s.type === 'stake') for (const h of [0.5, 1.4, 2.3]) points.push([s.x, s.y + h, s.z, 0.4]);
@@ -898,9 +926,17 @@ export class Structures {
     const r = (v) => +v.toFixed(2);
     return this.list.map((s) => ({
       type: s.type, x: r(s.x), y: r(s.y), z: r(s.z), rot: +s.rot.toFixed(3), lit: s.lit, fuel: Math.round(s.fuel), burnt: !!s.burnt,
-      contents: s.contents?.slots, open: !!s.open, caught: s.type === 'fishTrap' ? s.caught || 0 : !!s.caught, jobs: s.jobs.map(({ stack, out, left, total, done }) => ({ stack, out, left, total, done })),
+      contents: s.contents?.slots, open: !!s.open, rise: s.rise, trophy: s.trophy, eggs: s.eggs, feathers: s.feathers, caught: s.type === 'fishTrap' ? s.caught || 0 : !!s.caught, jobs: s.jobs.map(({ stack, out, left, total, done }) => ({ stack, out, left, total, done })),
       tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0, upper: s.upper || undefined, offered: s.offered,
     }));
+  }
+
+  /** A trophy rack: what's hung on it (s.trophy, an item id), shown. */
+  showTrophy(s) {
+    if (!s.trophyMesh) return;
+    s.trophyMesh.visible = !!s.trophy;
+    if (s.trophy) s.trophyMesh.geometry = this.modelOf(s.trophy);
+    this.onChange?.();
   }
 
   /** A structure's name online: what it is and where (they never move). */
@@ -921,7 +957,7 @@ export class Structures {
     this.onChange = null;
     try {
       if (!s) {
-        this.build({ type: rec.type, x: rec.x, y: rec.y, z: rec.z, rot: rec.rot, tilt: rec.tilt }, { lit: rec.lit, fuel: rec.fuel, burnt: rec.burnt, contents: rec.contents, open: rec.open, caught: rec.caught, jobs: rec.jobs ?? [], len: rec.len, path: rec.path, ruinKey: rec.ruinKey, crop: rec.crop ?? null, growth: rec.growth ?? 0, watered: rec.watered ?? 0, fed: rec.fed ?? 0 });
+        this.build({ type: rec.type, x: rec.x, y: rec.y, z: rec.z, rot: rec.rot, tilt: rec.tilt }, { lit: rec.lit, fuel: rec.fuel, burnt: rec.burnt, contents: rec.contents, open: rec.open, caught: rec.caught, jobs: rec.jobs ?? [], len: rec.len, path: rec.path, ruinKey: rec.ruinKey, crop: rec.crop ?? null, growth: rec.growth ?? 0, watered: rec.watered ?? 0, fed: rec.fed ?? 0, rise: rec.rise, trophy: rec.trophy, eggs: rec.eggs ?? 0, feathers: rec.feathers ?? 0 });
         return;
       }
       s.fuel = rec.fuel;
@@ -966,7 +1002,7 @@ export class Structures {
     this.onChange = null;
     for (const s of list ?? []) {
       if (!KINDS[s.type]) continue;
-      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0, upper: !!s.upper, offered: s.offered });
+      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0, upper: !!s.upper, offered: s.offered, rise: s.rise, trophy: s.trophy, eggs: s.eggs ?? 0, feathers: s.feathers ?? 0 });
     }
     this.onChange = quiet;
   }
@@ -983,6 +1019,18 @@ export class Structures {
     let top = null;
     for (const s of this.list) {
       const k = KINDS[s.type];
+      if (k.bridge) {
+        // (A bridge: along its length, its deck, sagging in the middle if it's a rope one.)
+        const len = s.len ?? 6;
+        if (Math.abs(s.x - x) > len + 2 || Math.abs(s.z - z) > len + 2) continue;
+        const ox = x - s.x, oz = z - s.z, u = ox * Math.cos(s.rot) - oz * Math.sin(s.rot), v = ox * Math.sin(s.rot) + oz * Math.cos(s.rot);
+        if (Math.abs(u) > BRIDGE_WIDTH / 2 + 0.1 || v < -0.4 || v > len + 0.4) continue;
+        const f = Math.min(1, Math.max(0, v / len));
+        const t = s.y + (s.rise ?? 0) * f - bridgeSag(k.bridge, len) * Math.sin(Math.PI * f) + 0.03;
+        if (t > feetY + 0.7) continue;
+        if (top === null || t > top) top = t;
+        continue;
+      }
       if (!(k.floor || k.stairs) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
       const ox = x - s.x, oz = z - s.z, c = Math.cos(s.rot), sn = Math.sin(s.rot);
       const u = ox * c - oz * sn, v = ox * sn + oz * c;
@@ -1009,6 +1057,7 @@ export class Structures {
     if (top === null || Math.abs(top - feetY) > 0.35) return null;
     for (const s of this.list) {
       const k = KINDS[s.type];
+      if (k.bridge && Math.hypot(s.x - x, s.z - z) < (s.len ?? 6) + 1) return 'wood';
       if (!(k.floor || k.stairs) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
       return k.stone ? 'rock' : 'wood';
     }
@@ -1024,7 +1073,8 @@ export class Structures {
       if (k.posts || k.roof) {
         const ox = x - s.x, oz = z - s.z, c = Math.cos(s.rot), sn = Math.sin(s.rot);
         const u = ox * c - oz * sn, v = ox * sn + oz * c;
-        if (Math.abs(u) < ROOF_SIZE / 2 + 0.3 && Math.abs(v) < ROOF_SIZE / 2 + 0.3 && (k.roof ? y < s.y + ROOF_RISE && y > s.y - 4.5 : y > s.y - 1 && y < s.y + 3.6)) roof = 1;
+        const [hu, hv] = k.shelter ?? [ROOF_SIZE / 2 + 0.3, ROOF_SIZE / 2 + 0.3];
+        if (Math.abs(u) < hu && Math.abs(v) < hv && (k.roof ? y < s.y + ROOF_RISE && y > s.y - 4.5 : y > s.y - 1 && y < s.y + 3.6)) roof = 1;
       } else if (k.line === 'wall' && !(k.door && s.open)) {
         const ax = Math.cos(s.rot), az = -Math.sin(s.rot);
         lines.push([s.x - (ax * k.len) / 2, s.z - (az * k.len) / 2, s.x + (ax * k.len) / 2, s.z + (az * k.len) / 2]);

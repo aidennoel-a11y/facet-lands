@@ -36,6 +36,7 @@ const v = new Vector3(), dir = new Vector3(), q = new Quaternion(), FORWARD = ne
 
 // How far you can reach, on foot.
 const REACH = 3;
+const QUIVERED = new Set(['arrow', 'poisonArrow', 'bolt', 'poisonBolt']);
 const CACTI = new Set(['smallCactus', 'ocotillo']); // (bushes, but no vines on them)
 const FRUIT = { raspberryBush: 'berries', blueberryBush: 'berries', appleTree: 'apple' };
 const NAMES = {
@@ -109,7 +110,10 @@ export class Game {
    */
   constructor(o) {
     Object.assign(this, o);
-    this.inventory = new Inventory(9);
+    this.inventory = new Inventory(15, 9); // (nine slots; six more with a backpack)
+    // (A quiver: three times as many arrows or bolts to a slot.)
+    this.wildlife.makeBags = () => new Inventory(8); // (a horse's saddlebags, brought back from a save)
+    this.inventory.stackBonus = (id) => (QUIVERED.has(id) && this.inventory.slots.some((s) => s?.id === 'quiver') ? 3 : 1);
     this.progress = new Set(); // what's opened tiers of the crafting tree (see unlocked)
     this.survival = new Survival();
     this.hud = new Hud(o.hudRoot);
@@ -295,6 +299,10 @@ export class Game {
         } else if (!this.hud.busy) this.interact(null, e.shiftKey);
       }
       if (e.code === 'KeyQ' && !this.hud.busy) this.drop(e.shiftKey);
+      if (e.code === 'KeyB') {
+        if (this.hud.chest) (this.hud.closeAll(), this.#menu(false));
+        else if (!this.hud.busy) this.#openBags();
+      }
     });
     this.hud.onCraft = (id) => this.craft(id);
     this.hud.onTake = (id) => {
@@ -320,6 +328,21 @@ export class Game {
     // (The crafting tree: which tiers you've opened. See #learn.)
     this.hud.unlocked = (tier) => this.unlocked(tier);
     this.inventory.onChange(() => {
+      // (A backpack carried: six more slots. Put down, what was in them falls out on the ground.)
+      const inv = this.inventory, open = inv.slots.some((s) => s?.id === 'backpack') ? 15 : 9;
+      if (open !== inv.open) {
+        inv.open = open;
+        if (open === 9) {
+          const p = this.camera.position;
+          for (let k = 9; k < inv.slots.length; k++) {
+            if (!inv.slots[k]) continue;
+            this.items.drop(inv.slots[k], p.x + (Math.random() - 0.5), p.y - 1.2, p.z + (Math.random() - 0.5));
+            inv.slots[k] = null;
+          }
+          if (this.hotbar && this.hotbar.index >= 9) this.hotbar.select(0, true);
+        }
+        this.hotbar?.render();
+      }
       for (const id of ['ironBar', 'steelBar']) if (this.inventory.count(id)) this.#learn(id);
       if (this.inventory.slots.some((s) => s && ITEMS[s.id]?.group === 'Trophies')) this.#learn('trophy');
       if (!this.hud.el('.craft').hidden) this.hud.renderCraft(this.inventory);
@@ -387,6 +410,7 @@ export class Game {
       const needs = [beast.hunger < 30 ? 'hungry' : '', beast.thirst < 30 ? 'thirsty' : ''].filter(Boolean).join(' and ');
       const text = HORSE_FOOD[held?.id] ? 'Feed the horse'
         : held?.id === 'saddle' || held?.id === 'greatSaddle' ? (beast.saddled ? 'It has a saddle' : beast.young ? 'Too young for a saddle' : 'Saddle the horse')
+        : held?.id === 'saddlebags' && !beast.bags && !beast.young ? 'Put the saddlebags on'
         : beast.saddled ? 'Ride (Shift+E: lead it)' : beast.led ? 'Let it go' : 'Lead it (a saddle to ride it)';
       found.push({ kind: 'horse', distance: carcass.distance, animal: beast, text: needs ? `${text} · ${needs}` : text });
     }
@@ -412,7 +436,15 @@ export class Game {
     const water = this.#waterAlong(origin, direction, reach);
     if (water) {
       const fill = held?.id === 'waterskin';
-      found.push({ kind: 'water', distance: water.distance, ...water, text: water.salty ? 'Sea water: too salty to drink' : fill ? `Fill the waterskin${water.clean ? '' : ' (still water: boil it)'}` : `Drink${water.clean ? '' : ' (still water: it may make you ill)'}` });
+      found.push({ kind: 'water', distance: water.distance, ...water, text: water.salty && held?.id === 'pot' ? 'Fill the pot with sea water (boil it for salt)' : water.salty ? 'Sea water: too salty to drink' : fill ? `Fill the waterskin${water.clean ? '' : ' (still water: boil it)'}` : `Drink${water.clean ? '' : ' (still water: it may make you ill)'}` });
+    }
+    // The ground itself: salt to scrape up on the salt flats, sand to scoop up on a beach or in the desert.
+    if (!found.length) {
+      const hit = this.solidHit?.(origin, direction, reach);
+      if (hit && !hit.cave) {
+        const what = this.#groundStuff(hit.point.x, hit.point.z);
+        if (what) found.push({ kind: 'scoop', distance: hit.point.distanceTo(origin), id: what, text: what === 'salt' ? 'Scrape up salt' : 'Scoop up sand' });
+      }
     }
     found.sort((a, b) => a.distance - b.distance);
     return found[0] ?? null;
@@ -428,6 +460,17 @@ export class Game {
         return n >= RELICS.length ? 'The altar of the Lost Keep: every trophy set' : `The altar of the Lost Keep: ${n} of ${RELICS.length} trophies set (E: set those you carry)`;
       }
       case 'cellar': return 'Open the root cellar';
+      case 'shelf': return 'Open the shelves';
+      case 'chair': return 'Sit and rest';
+      case 'repairBench': return held && ITEMS[held.id]?.durability ? `Mend the ${ITEMS[held.id].name.toLowerCase()}` : 'The repair bench: E with a worn tool in hand';
+      case 'trophyRack': return s.trophy ? `${ITEMS[s.trophy].name} (E: take it down)` : 'Hang a great beast\'s trophy here';
+      case 'waterFilter': return 'Click with a waterskin of still water to filter it clean';
+      case 'leanTo': return 'A lean-to: out of the rain under it (sleep under it in a bedroll)';
+      case 'coop': {
+        const birds = this.#coopBirds(s);
+        const eggs = Math.floor(s.eggs ?? 0), feathers = Math.floor(s.feathers ?? 0);
+        return eggs || feathers ? `Collect ${[eggs ? `${eggs} egg${eggs > 1 ? 's' : ''}` : '', feathers ? `${feathers} feather${feathers > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ')}` : birds ? `${birds} bird${birds > 1 ? 's' : ''} living here: nothing laid yet` : 'No birds: lure tame turkeys or ducks here (wheat, seeds or corn in hand)';
+      }
       case 'fishTrap': return s.caught ? `Take the fish (${s.caught})` : (this.winter ?? 0) > 0.7 ? 'Iced in: nothing swims into it' : 'Set, and waiting (Shift+E to take it up)';
       case 'smokingRack':
         return s.jobs.length ? `Smoking: ${s.jobs.map((j) => `${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}${s.smoking ? '' : ' (no fire under it)'}` : 'Hang raw meat or fish in it (click with it), over a burning campfire';
@@ -464,6 +507,22 @@ export class Game {
         return s.jobs.length ? `Drying: ${s.jobs.map((j) => `${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}` : 'Hang raw meat or fish on it (click with it)';
       default: return `Shift+E: take down the ${ITEMS[s.type].name.toLowerCase()}`;
     }
+  }
+
+  // Sitting in a hot spring (a hot pool: see Rivers), in it to the waist or more.
+  #inHotSpring(cam) {
+    const w = this.waterAt?.(cam.x, cam.z);
+    return !!w?.hot && cam.y - this.controls.eyeHeight < w.level - 0.3;
+  }
+
+  // What the bare ground at (x, z) gives by the handful: 'salt' on the salt flats, 'sand' on a beach or the desert's sand, else null.
+  #groundStuff(x, z) {
+    const g = this.generator();
+    const w = g.getBiomeWeights(x, z, {});
+    if ((w.saltFlat ?? 0) > 0.45) return 'salt';
+    const h = g.getHeight(x, z), sea = this.config.seaLevel;
+    if ((w.desert ?? 0) > 0.55 || ((g.getOceanness?.(x, z) ?? 0) > 0.35 && h < sea + 2.5 && h > sea - 0.5)) return 'sand';
+    return null;
   }
 
   // The water a ray meets (within reach), if any: { distance, salty, clean (running water) }.
@@ -561,6 +620,12 @@ export class Game {
         this.dirty = true;
         return this.hotbar?.flash('Saddled: E to ride');
       }
+      if (held?.id === 'saddlebags' && !a.bags && !a.young) {
+        this.inventory.remove('saddlebags', 1);
+        a.bags = new Inventory(8);
+        this.dirty = true;
+        return this.hotbar?.flash('Saddlebags on: B by your horse (or riding it) to open them');
+      }
       if (a.saddled && !down) return this.#ride(a);
       a.led = !a.led;
       return this.hotbar?.flash(a.led ? 'Leading the horse' : 'You let it go: it will stay about here');
@@ -590,9 +655,25 @@ export class Game {
       return this.hotbar?.flash('Mushroom');
     }
     if (t.kind === 'structure') return this.#useStructure(t.structure, down);
+    if (t.kind === 'scoop') {
+      if (this.cooldown > 0) return;
+      // (The salt flats: a crust of it, thick: far more than a pot of sea water gives.)
+      const n = t.id === 'salt' ? 3 + Math.floor(Math.random() * 4) : 2;
+      this.#give(t.id, n);
+      this.cooldown = 0.8;
+      this.#animate('chop', 0.4);
+      this.sound?.call('dig', 0, 0.5);
+      return this.hotbar?.flash(`${ITEMS[t.id].name} ×${n}`);
+    }
     if (t.kind === 'water') {
-      if (t.salty) return this.hotbar?.flash(t.text);
       const i = this.hotbar.index, held = this.inventory.slots[i];
+      if (held?.id === 'pot' && t.salty) {
+        held.brine = true;
+        this.inventory.changed();
+        this.sound?.call('drink', 0, 0.4);
+        return this.hotbar?.flash('A pot of sea water: boil it on a fire for salt');
+      }
+      if (t.salty) return this.hotbar?.flash(t.text);
       if (held?.id === 'waterskin') {
         held.water = ITEMS.waterskin.holds;
         held.clean = t.clean;
@@ -669,6 +750,46 @@ export class Game {
         return this.#climb(s);
       case 'anvil':
         return this.#menu(this.hud.toggleCraft(this.inventory));
+      case 'repairBench':
+        return this.#repair();
+      case 'shelf':
+        this.sound?.call('wood', 0, 0.35);
+        this.hud.openChest(s.contents, this.inventory, 'Shelves', 'Click to move a stack across · E or Esc to close');
+        return this.#menu(true);
+      case 'chair':
+        // (Sitting a while: rested, a little.)
+        if (this.time < (this.satUntil ?? 0)) return this.hotbar?.flash('You sit, resting');
+        this.satUntil = this.time + 8;
+        this.survival.energy = Math.min(100, this.survival.energy + 8);
+        this.sound?.call('creak', 0, 0.3);
+        return this.hotbar?.flash('You sit a while and rest');
+      case 'trophyRack': {
+        const i = this.hotbar.index, held = this.inventory.slots[i];
+        if (s.trophy) {
+          this.#give(s.trophy, 1, s);
+          const was = s.trophy;
+          s.trophy = null;
+          this.structures.showTrophy(s);
+          return this.hotbar?.flash(`${ITEMS[was].name} taken down`);
+        }
+        if (!held || ITEMS[held.id]?.group !== 'Trophies') return this.hotbar?.flash('E with a great beast\'s trophy in hand to hang it up');
+        s.trophy = held.id;
+        this.inventory.take(i);
+        this.structures.showTrophy(s);
+        this.sound?.call('place', 0, 0.5);
+        return this.hotbar?.flash(`${ITEMS[held.id].name} hung up for all to see`);
+      }
+      case 'coop': {
+        const eggs = Math.floor(s.eggs ?? 0), feathers = Math.floor(s.feathers ?? 0);
+        if (!eggs && !feathers) return this.hotbar?.flash(this.#structureText(s));
+        if (eggs) this.#give('rawEgg', eggs, s);
+        if (feathers) this.#give('feather', feathers, s);
+        s.eggs -= eggs;
+        s.feathers -= feathers;
+        this.dirty = true;
+        this.sound?.call('pickup', 0, 0.5);
+        return this.hotbar?.flash([eggs ? `Eggs ×${eggs}` : '', feathers ? `feathers ×${feathers}` : ''].filter(Boolean).join(', '));
+      }
       case 'bed':
       case 'bedroll':
       case 'fancyBed':
@@ -686,6 +807,36 @@ export class Game {
       default:
         return this.hotbar?.flash(this.#structureText(s));
     }
+  }
+
+  // B: your horse's saddlebags (riding it, or close by it).
+  #openBags() {
+    const p = this.camera.position;
+    const a = this.mount ?? this.wildlife.animals.filter((h) => h.tame && h.bags && h.alive && !h.gone && Math.hypot(h.x - p.x, h.z - p.z) < 5).sort((u, v) => Math.hypot(u.x - p.x, u.z - p.z) - Math.hypot(v.x - p.x, v.z - p.z))[0];
+    if (!a?.bags) return this.hotbar?.flash(this.mount ? 'Your horse has no saddlebags' : 'No horse with saddlebags close by');
+    this.sound?.call('rustle', 0, 0.4);
+    this.hud.openChest(a.bags, this.inventory, 'Saddlebags', 'Click to move a stack across · your horse carries these · B, E or Esc to close');
+    return this.#menu(true);
+  }
+
+  // At the repair bench, a worn tool in hand: mended good as new, for a
+  // little of what it was made of (less the less worn it is: never more
+  // than half a new one's).
+  #repair() {
+    const i = this.hotbar.index, s = this.inventory.slots[i], item = s && ITEMS[s.id];
+    if (!item?.durability) return this.hotbar?.flash('Hold a worn tool, weapon or armour and E at the bench to mend it');
+    if (s.dur >= item.durability) return this.hotbar?.flash('It needs no mending');
+    const r = RECIPES.find((x) => x.id === s.id);
+    const worn = 1 - s.dur / item.durability;
+    const cost = Object.entries(r?.needs ?? { stick: 1 }).map(([k, n]) => [k, Math.max(1, Math.round(n * 0.45 * worn))]);
+    const short = cost.filter(([k, n]) => this.inventory.count(k) < n);
+    if (short.length) return this.hotbar?.flash(`To mend it: ${cost.map(([k, n]) => `${ITEMS[k].name.toLowerCase()} ×${n}`).join(', ')}`);
+    for (const [k, n] of cost) this.inventory.remove(k, n);
+    s.dur = item.durability;
+    this.inventory.changed();
+    this.sound?.call('grind', 0, 0.6);
+    this.skill?.('crafting', 2);
+    return this.hotbar?.flash(`${item.name} mended (${cost.map(([k, n]) => `${ITEMS[k].name.toLowerCase()} ×${n}`).join(', ')})`);
   }
 
   /** Q: drops one of what's in your hand (Shift: the whole stack). */
@@ -898,6 +1049,16 @@ export class Game {
       }
       return;
     }
+    if (item.place === 'logBridge' || item.place === 'ropeBridge') {
+      const plan = this.plan;
+      if (!plan?.ok) return this.hotbar?.flash(plan?.why ?? 'Stand at the edge, looking across');
+      this.structures.build(plan, { len: plan.len, rise: plan.rise });
+      this.inventory.take(i);
+      this.cooldown = 0.5;
+      this.sound?.call('place', 0, 0.6);
+      this.#learn(item.place);
+      return this.hotbar?.flash(`The bridge is across: ${Math.round(plan.len)} m`);
+    }
     if (item.place === 'rope') {
       const plan = this.plan;
       if (!plan?.ok) return this.hotbar?.flash(plan?.why ?? 'Stand at the edge of a cliff, looking out over it');
@@ -918,6 +1079,7 @@ export class Game {
       this.sound?.call('place', 0, 0.5);
       return;
     }
+    if (item.carried) return this.hotbar?.flash(item.carried);
     this.hotbar?.flash(`${item.name}: craft it into something (Tab)`);
   }
 
@@ -937,6 +1099,30 @@ export class Game {
       take();
       this.cooldown = 0.3;
       return say(at.lit ? `${item.name} on the fire: a minute to cook` : `${item.name} on the fire: light it`);
+    }
+    // A pot of sea water on a burning fire: boiled away to salt.
+    if (at.type === 'campfire' && s.id === 'pot' && s.brine) {
+      if (!this.structures.work(at, { id: 'pot', count: 1 }, Inventory.stack('salt', 3), TIMES.stew)) return say('No room on the fire');
+      s.brine = false;
+      this.inventory.wear(i, 1);
+      this.inventory.changed();
+      this.cooldown = 0.3;
+      return say(at.lit ? 'The sea water on to boil away: salt in a minute' : 'The sea water on the fire: light it');
+    }
+    // Still water through the filter: sand and charcoal, and out it comes clean.
+    if (at.type === 'waterFilter' && s.id === 'waterskin') {
+      if (!s.water) return say('Fill it first');
+      if (s.clean) return say('It is clean already');
+      const skin = this.inventory.slots[i];
+      this.inventory.slots[i] = null;
+      this.inventory.changed();
+      if (!this.structures.work(at, { ...skin }, { ...skin, clean: true }, 15)) {
+        this.inventory.slots[i] = skin;
+        this.inventory.changed();
+        return say('The filter is full');
+      }
+      this.sound?.call('pour', 0, 0.4);
+      return say('Pouring it through the sand and charcoal: clean in a moment');
     }
     if (at.type === 'campfire' && s.id === 'waterskin') {
       if (!s.water) return say('Fill it first');
@@ -1070,6 +1256,55 @@ export class Game {
   // it, down along the ground to where it levels off. The rope lies on the
   // ground as it goes: path, [distance out, height below the stake] at each
   // bend. { type, ok, why, x, y, z, rot, len, path }
+  // How many of your tame turkeys and ducks live near a hen-house.
+  #coopBirds(s) {
+    return this.wildlife.animals.filter((a) => a.tame && a.alive && !a.gone && (a.kind === 'turkey' || a.kind === 'duck') && Math.hypot(a.x - s.x, a.z - s.z) < 18).length;
+  }
+
+  // The hen-houses: each bird living near one lays an egg every five
+  // minutes or so (fewer in winter), and now and then drops a feather.
+  #coops(dt) {
+    this.coopWait = (this.coopWait ?? 0) - dt;
+    if (this.coopWait > 0) return;
+    const step = 5 - this.coopWait;
+    this.coopWait = 5;
+    for (const s of this.structures.list) {
+      if (s.type !== 'coop') continue;
+      const n = Math.min(8, this.#coopBirds(s));
+      if (!n) continue;
+      s.eggs = Math.min(20, (s.eggs ?? 0) + n * step / 300 * (1 - 0.7 * (this.winter ?? 0)));
+      s.feathers = Math.min(20, (s.feathers ?? 0) + n * step / 600);
+    }
+  }
+
+  // Where a bridge would go: from the edge you stand at, straight out the
+  // way you look, over the gap (a drop, or water) to the first ground on
+  // the far side about as high as this. { type, ok, why, x, y, z, rot, len, rise }
+  #bridgePlan(type) {
+    const cam = this.camera.position, yaw = this.controls.euler.y, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const feet = cam.y - this.controls.eyeHeight, max = type === 'ropeBridge' ? 26 : 14;
+    const g = (d) => this.groundAt(cam.x + fx * d, cam.z + fz * d);
+    const wet = (d) => (this.waterAt(cam.x + fx * d, cam.z + fz * d)?.level ?? -Infinity) > g(d) + 0.1;
+    const no = (why) => ({ type, ok: false, why });
+    let a = 0;
+    while (a < 4 && g(a + 0.5) > feet - 0.7 && !wet(a + 0.5)) a += 0.5;
+    if (a >= 4) return no('Stand at the edge of a river or a drop, looking across it');
+    let gap = false, b = null;
+    for (let d = a + 0.5; d <= a + max; d += 0.5) {
+      const h = g(d);
+      if (!Number.isFinite(h)) break;
+      if (h < feet - 1.2 || wet(d)) gap = true;
+      else if (gap && Math.abs(h - feet) < 3.5) {
+        b = d;
+        break;
+      }
+    }
+    if (!gap) return no('Nothing to cross there: look out over a river or a drop');
+    if (b === null) return no(`Too far to the other side (a ${type === 'ropeBridge' ? 'rope bridge reaches 26 m' : 'log bridge reaches 14 m'})`);
+    const y0 = g(a), y1 = g(b + 0.4);
+    return { type, ok: true, x: cam.x + fx * a, y: y0, z: cam.z + fz * a, rot: Math.atan2(fx, fz), len: b - a + 0.8, rise: y1 - y0 };
+  }
+
   #ropePlan() {
     const cam = this.camera.position, yaw = this.controls.euler.y, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const feet = cam.y - this.controls.eyeHeight;
@@ -1891,6 +2126,15 @@ export class Game {
       if (s.bed.type === 'fancyBed') (this.survival.health = Math.min(100, this.survival.health + 40)), this.hotbar?.flash('You wake in the great bed, rested and whole');
       else if (s.bed.type === 'bedroll') (this.survival.energy = Math.min(this.survival.energy, 75)), this.hotbar?.flash('You wake stiff from the hard ground');
       else this.hotbar?.flash('You wake, rested');
+      // (Out in the rain all night, no roof over you: soaked, chilled, hardly rested.)
+      if ((this.rainOnYou ?? 0) > 0.2) {
+        const sv = this.survival;
+        sv.wet = 1;
+        sv.warmth = Math.max(5, sv.warmth - 35);
+        sv.energy = Math.min(sv.energy, 50);
+        sv.health = Math.max(5, sv.health - 6);
+        this.hotbar?.flash('A night out in the rain, no roof over you: soaked and chilled to the bone');
+      }
     }
     if (s.t > 3.4) {
       this.sleeping = null;
@@ -1997,6 +2241,7 @@ export class Game {
     const i = this.hotbar.index;
     const held = this.inventory.slots[i];
     if (this.sleeping) this.#sleepStep(dt);
+    this.#coops(dt);
     this.#fishing(dt, held);
     this.#wind(dt, held);
     this.#snares(dt);
@@ -2022,6 +2267,7 @@ export class Game {
     if (cave !== null) (shelter.roof = 1), (shelter.walls = 1);
     const sheltered = shelter.roof * (0.35 + 0.65 * shelter.walls);
     this.sheltered = sheltered;
+    this.rainOnYou = cave !== null ? 0 : (ctx.rain ?? 0) * (1 - shelter.roof); // (for a night slept out in it)
     const fire = Math.max(this.structures.warmthAt(cam.x, cam.y - this.controls.eyeHeight, cam.z), sheltered > 0.6 ? this.structures.warmthAt(cam.x, cam.y - this.controls.eyeHeight, cam.z, 4) : 0);
     // Out in the open desert sun at midday (no shade, no water on you): heatstroke, if you let yourself dry out.
     const exposed = walking && !this.controls.swimming && shelter.roof < 0.5 && heat.heat > 1.4 && ctx.day > 0.6 && ctx.rain < 0.2 ? (ctx.sun ?? 1) : 0;
@@ -2053,6 +2299,7 @@ export class Game {
       winter: ctx.winter, spring: ctx.spring, autumn: ctx.autumn, summer: ctx.summer,
       seasonality: heat.seasonality, altitude: cam.y - this.controls.eyeHeight, night: ctx.night, rain: ctx.rain * (1 - shelter.roof), snowing: ctx.snowing && shelter.roof < 0.5,
       shelter: sheltered, exposed, storm: cave !== null ? 0 : ctx.blizzard ?? 0, dust: (ctx.dust ?? 0) * (1 - sheltered),
+      hotSpring: this.#inHotSpring(cam),
       cave, inLava: !!ctx.lava,
     };
     if (cave !== null) {
@@ -2090,7 +2337,11 @@ export class Game {
       const t = this.#target({ origin, direction });
       const item = held && ITEMS[held.id];
       const placing = item?.place === 'caveLamp' ? 'torch' : item?.place ?? (held?.id === 'hoe' ? 'plot' : null);
-      if (placing === 'rope') {
+      if (placing === 'logBridge' || placing === 'ropeBridge') {
+        this.plan = this.#bridgePlan(placing);
+        this.structures.preview(null);
+        prompt = this.plan.ok ? `<kbd>Click</kbd> Lay the ${placing === 'logBridge' ? 'log' : 'rope'} bridge across (${Math.round(this.plan.len)} m)` : this.plan.why;
+      } else if (placing === 'rope') {
         // (Worked out again only now and then, or as you move or turn: it
         // feels along the ground a good way down.)
         const key = `${Math.round(cam.x * 5)},${Math.round(cam.y * 5)},${Math.round(cam.z * 5)},${Math.round(this.controls.euler.y * 20)}`;
@@ -2124,7 +2375,7 @@ export class Game {
     // (Which way the wind blows, as you look.)
     const w = this.wind?.() ?? { x: 0, z: 0 }, yaw = this.controls.euler.y;
     const along = -w.x * Math.sin(yaw) - w.z * Math.cos(yaw), across = w.x * Math.cos(yaw) - w.z * Math.sin(yaw);
-    this.hud.update(this.survival, this.inventory, { active: walking, load, heavy, wind: Math.atan2(across, along), sheltered: sheltered > 0.5, heatstroke: this.survival.hot > 90 && this.survival.thirst < 40, blizzard: (ctx.blizzard ?? 0) > 0.3 && walking });
+    this.hud.update(this.survival, this.inventory, { active: walking, load, heavy, wind: Math.atan2(across, along), sheltered: sheltered > 0.5, heatstroke: this.survival.hot > 90 && this.survival.thirst < 40, blizzard: (ctx.blizzard ?? 0) > 0.3 && walking, hotSpring: e.hotSpring });
 
     // Held in your hand.
     this.#drawHeld(dt, held, walking);
@@ -2187,7 +2438,7 @@ export class Game {
     return {
       x: p.x, y: p.y, z: p.z, mode: c.mode, crouch: c.crouch, moving: c.moving, sprint: c.sprinting, alive: this.survival.alive && !this.riding && !this.climbing,
       cover: Math.min(1, this.#grassCover(p.x, p.z) + (ITEMS[this.inventory.worn?.id]?.hush ? 0.35 : 0)),
-      lure: this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'wheat',
+      lure: ['wheat', 'seedWheat', 'seedCorn', 'corn'].includes(this.inventory.slots[this.hotbar?.index ?? 0]?.id),
       torch: TORCHES.has(this.inventory.slots[this.hotbar?.index ?? 0]?.id),
       food: !!HORSE_FOOD[this.inventory.slots[this.hotbar?.index ?? 0]?.id],
       damage: (amount, kind, a) => {

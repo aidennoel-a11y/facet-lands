@@ -422,7 +422,7 @@ export class Wildlife {
   tameJSON() {
     return this.animals.filter((a) => a.tame && a.alive && !a.gone).map((a) => ({
       kind: a.kind, x: +a.x.toFixed(1), z: +a.z.toFixed(1), young: a.young ? 0.5 : 0, sheared: a.sheared ? Math.max(0, Math.round(this.time - a.sheared)) : null,
-      ...(a.kind === 'horse' ? { saddled: a.saddled === 'great' ? 'great' : !!a.saddled, hunger: Math.round(a.hunger ?? 80), thirst: Math.round(a.thirst ?? 80), stallion: !!a.stallion } : {}),
+      ...(a.kind === 'horse' ? { saddled: a.saddled === 'great' ? 'great' : !!a.saddled, hunger: Math.round(a.hunger ?? 80), thirst: Math.round(a.thirst ?? 80), stallion: !!a.stallion, bags: a.bags ? a.bags.slots : null } : {}),
     }));
   }
 
@@ -967,6 +967,7 @@ export class Wildlife {
         this.#tame(a);
         if (t.sheared !== null && t.sheared !== undefined) a.sheared = this.time - t.sheared;
         if (t.kind === 'horse') Object.assign(a, { saddled: t.saddled === 'great' ? 'great' : !!t.saddled, hunger: t.hunger ?? 80, thirst: t.thirst ?? 80, stallion: !!t.stallion, stamina: 100 });
+        if (t.bags) (a.bags = this.makeBags?.() ?? null) && a.bags.load({ slots: t.bags });
       }
       this.pendingTame = left;
     }
@@ -2647,7 +2648,7 @@ export class Wildlife {
     }
     // Sheep come to you if you've wheat in your hand; follow you a while and
     // they're yours (tame: they stay where you leave them, and don't run).
-    const lured = a.kind === 'sheep' && onFoot && p.lure && t.d < 16;
+    const lured = (a.kind === 'sheep' || a.kind === 'turkey' || a.kind === 'duck') && onFoot && p.lure && t.d < 16 && !a.flying;
     if (lured) {
       a.fear = 0;
       a.followed = (a.followed ?? 0) + dt;

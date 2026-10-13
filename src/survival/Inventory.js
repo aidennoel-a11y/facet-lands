@@ -8,8 +8,10 @@ import { ITEMS, stackOf } from './items.js';
  * with ten slots.
  */
 export class Inventory {
-  constructor(size = 9) {
+  constructor(size = 9, open = size) {
     this.slots = new Array(size).fill(null);
+    this.open = open; // (how many of the slots can be used: a backpack opens the rest)
+    this.stackBonus = null; // (id) => how many times a full stack of it a slot holds (a quiver: arrows)
     this.worn = null; // (a coat)
     this.armour = null;
     this.listeners = new Set();
@@ -37,10 +39,15 @@ export class Inventory {
     return this.slots.reduce((n, s) => n + (s?.id === id ? s.count : 0), 0);
   }
 
+  /** How many of `id` go in one slot. */
+  max(id) {
+    return stackOf(id) * (this.stackBonus?.(id) ?? 1);
+  }
+
   /** How many of `id` there's room for. */
   room(id) {
-    const max = stackOf(id);
-    return this.slots.reduce((n, s) => n + (!s ? max : s.id === id ? max - s.count : 0), 0);
+    const max = this.max(id);
+    return this.slots.slice(0, this.open).reduce((n, s) => n + (!s ? max : s.id === id ? Math.max(0, max - s.count) : 0), 0);
   }
 
   /**
@@ -49,9 +56,9 @@ export class Inventory {
    */
   add(stack, prefer = -1) {
     let left = stack.count;
-    const max = stackOf(stack.id);
+    const max = this.max(stack.id);
     if (max > 1) {
-      for (const s of this.slots) {
+      for (const s of this.slots.slice(0, this.open)) {
         if (!left) break;
         if (s?.id !== stack.id || s.count >= max) continue;
         const n = Math.min(left, max - s.count);
@@ -60,7 +67,7 @@ export class Inventory {
         if (stack.fresh !== undefined) s.fresh = Math.min(s.fresh ?? Infinity, stack.fresh);
       }
     }
-    const order = [...this.slots.keys()];
+    const order = [...this.slots.keys()].filter((i) => i < this.open);
     if (prefer >= 0) order.sort((a, b) => (a === prefer ? -1 : b === prefer ? 1 : a - b));
     for (const i of order) {
       if (!left) break;

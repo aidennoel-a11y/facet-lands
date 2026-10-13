@@ -483,6 +483,162 @@ export function grindstoneModel() {
 }
 
 /** A tanning rack: a frame of poles, a hide stretched in it on thongs. */
+/**
+ * A lean-to: two forked poles in front holding a ridge pole, long poles
+ * leaning from it back down to the ground, and leafy boughs laid over
+ * them, thick enough to shed the rain.
+ */
+export function leanToModel() {
+  const b = new Parts(141);
+  const rand = mulberry32(141);
+  const bark = 0x6e4c32;
+  for (const x of [-1.2, 1.2]) b.log([x, -0.1, 0.9], [x, 1.85, 0.9], 0.06, bark);
+  b.log([-1.45, 1.8, 0.9], [1.45, 1.8, 0.9], 0.055, bark);
+  for (let k = 0; k < 6; k++) {
+    const x = -1.2 + k * 0.48;
+    b.log([x, 1.82, 0.95], [x, -0.05, -1.3], 0.04, 0x7a5638);
+  }
+  // (The boughs: green, overlapping, a little ragged.)
+  const leaf = [0x4f7a34, 0x5c8a3c, 0x46702e];
+  for (let row = 0; row < 5; row++) {
+    for (let k = 0; k < 6; k++) {
+      const t = (row + 0.5) / 5, y = 1.82 - t * 1.85, z = 0.95 - t * 2.25;
+      b.add(new BoxGeometry(0.62 + rand() * 0.2, 0.06, 0.55), leaf[(row + k) % 3], [-1.25 + k * 0.5 + (rand() - 0.5) * 0.1, y + 0.08, z], [0.68 + (rand() - 0.5) * 0.15, (rand() - 0.5) * 0.3, (rand() - 0.5) * 0.2], [1, 1, 1], 0.15);
+    }
+  }
+  return b.build();
+}
+
+/** A water filter: a bark cone on a little tripod, sand and charcoal in it, a pot under it to catch the water. */
+/** A repair bench: a heavy plank top on log legs, a vice at one end, a whetstone and a few tools laid on it. */
+/**
+ * A bridge `len` metres long, rising `rise` from where it starts to where
+ * it ends, along +z: a log bridge (two big logs laid across, split planks
+ * pegged over them, a pole rail each side) or a rope bridge (planks slung
+ * on ropes, sagging in the middle, rope rails, posts at each end).
+ */
+export const BRIDGE_WIDTH = 1.6;
+export function bridgeSag(style, len) {
+  return style === 'rope' ? Math.min(1.2, 0.05 * len) : 0;
+}
+export function bridgeModel(style, len, rise) {
+  const b = new Parts(151 + Math.round(len));
+  const rand = mulberry32(151 + Math.round(len * 10));
+  const sag = bridgeSag(style, len), W = BRIDGE_WIDTH / 2;
+  const at = (t) => rise * t - sag * Math.sin(Math.PI * t);
+  if (style === 'log') {
+    for (const x of [-0.5, 0.5]) b.log([x, at(0) - 0.25, -0.4], [x, at(1) - 0.25, len + 0.4], 0.22, 0x6e4c32, 0xc8a070, 8);
+  }
+  // (The deck: a plank every 0.33 m, each its own shade, a little askew.)
+  const n = Math.ceil(len / 0.33);
+  for (let k = 0; k <= n; k++) {
+    const t = k / n, z = t * len, slope = Math.atan2(rise - sag * Math.PI * Math.cos(Math.PI * t), len);
+    b.add(new BoxGeometry(BRIDGE_WIDTH + (rand() - 0.5) * 0.15, 0.06, 0.28), [0x9a7048, 0x8a6040, 0xa87a50][k % 3], [(rand() - 0.5) * 0.06, at(t) + (style === 'log' ? 0 : -0.03), z], [-slope, (rand() - 0.5) * 0.06, 0], [1, 1, 1], 0.1);
+  }
+  // (Rails: rope for a rope bridge, poles for a log one; a post at each end, each side.)
+  const rail = style === 'rope' ? 0xc8a878 : 0x7a5638, rr = style === 'rope' ? 0.025 : 0.05;
+  for (const x of [-W, W]) {
+    const steps = 12;
+    for (let k = 0; k < steps; k++) {
+      const t0 = k / steps, t1 = (k + 1) / steps;
+      b.log([x, at(t0) + 0.95, t0 * len], [x, at(t1) + 0.95, t1 * len], rr, rail, rail, 5);
+      if (style === 'rope') b.log([x, at(t0) + 0.02, t0 * len], [x, at(t0) + 0.95, t0 * len], 0.012, rail, rail, 4);
+      else if (k % 3 === 0) b.log([x, at(t0) - 0.05, t0 * len], [x, at(t0) + 0.95, t0 * len], 0.04, rail, rail, 5);
+    }
+    for (const t of [0, 1]) b.log([x, at(t) - 0.6, t * len], [x, at(t) + 1.15, t * len], 0.08, 0x6e4c32);
+  }
+  return b.build();
+}
+
+/** A chair: a seat, four legs, a slatted back. */
+/** An egg (or a cooked one, cut open). */
+export function eggModel(cooked) {
+  const b = new Parts(166);
+  b.add(new DodecahedronGeometry(0.05, 1), cooked ? 0xfafaf4 : 0xf0e6d2, [0, 0.05, 0], [0, 0, 0], [0.85, 1.15, 0.85], 0.03);
+  if (cooked) b.add(new CylinderGeometry(0.025, 0.025, 0.01, 8), 0xf0b830, [0, 0.1, 0]);
+  return b.build();
+}
+
+/** A chair: a seat, four legs, a slatted back. */
+export function chairModel() {
+  const b = new Parts(161);
+  b.add(new BoxGeometry(0.5, 0.06, 0.5), 0x9a7048, [0, 0.46, 0]);
+  for (const [x, z] of [[-0.21, -0.21], [0.21, -0.21], [-0.21, 0.21], [0.21, 0.21]]) b.add(new BoxGeometry(0.05, 0.46, 0.05), 0x7a5638, [x, 0.23, z]);
+  for (const x of [-0.21, 0.21]) b.add(new BoxGeometry(0.05, 0.5, 0.05), 0x7a5638, [x, 0.72, -0.21]);
+  for (const y of [0.62, 0.78, 0.92]) b.add(new BoxGeometry(0.42, 0.06, 0.03), 0x8a6040, [0, y, -0.21]);
+  return b.build();
+}
+
+/** A table: a plank top on four legs, with a jug and a cup. */
+export function tableModel() {
+  const b = new Parts(162);
+  b.add(new BoxGeometry(1.4, 0.07, 0.85), 0x9a7048, [0, 0.76, 0]);
+  for (const [x, z] of [[-0.6, -0.35], [0.6, -0.35], [-0.6, 0.35], [0.6, 0.35]]) b.add(new BoxGeometry(0.07, 0.76, 0.07), 0x7a5638, [x, 0.38, z]);
+  b.add(new CylinderGeometry(0.07, 0.09, 0.2, 7), 0xa86a44, [0.35, 0.89, 0.1]);
+  b.add(new CylinderGeometry(0.04, 0.035, 0.08, 6), 0xc8b090, [0.1, 0.83, -0.15]);
+  return b.build();
+}
+
+/** Shelves: an open frame of three boards against a wall: storage (six slots). */
+export function shelfModel() {
+  const b = new Parts(163);
+  for (const x of [-0.6, 0.6]) b.add(new BoxGeometry(0.06, 1.6, 0.36), 0x7a5638, [x, 0.8, 0]);
+  for (const y of [0.1, 0.6, 1.1, 1.58]) b.add(new BoxGeometry(1.26, 0.05, 0.36), 0x9a7048, [0, y, 0]);
+  b.add(new BoxGeometry(1.26, 1.6, 0.03), 0x6a4a30, [0, 0.8, -0.17]);
+  return b.build();
+}
+
+/** A trophy rack: a board on a post, to hang one of the great beasts' trophies on. */
+export function trophyRackModel() {
+  const b = new Parts(164);
+  b.log([0, 0, 0], [0, 1.9, 0], 0.07, 0x6e4c32);
+  b.add(new BoxGeometry(1.1, 0.75, 0.08), 0x8a6040, [0, 1.55, 0.08]);
+  b.add(new BoxGeometry(0.04, 0.12, 0.12), 0x5a3a24, [0, 1.45, 0.16]);
+  for (const [x, z] of [[-0.35, 0.3], [0.35, 0.3], [0, -0.35]]) b.log([0, 0.5, 0], [x, -0.05, z], 0.04, 0x6e4c32);
+  return b.build();
+}
+
+/** A hen-house for turkeys and ducks: a little plank hut on legs, a ramp up, a nesting box with straw. */
+export function coopModel() {
+  const b = new Parts(165);
+  for (const [x, z] of [[-0.75, -0.6], [0.75, -0.6], [-0.75, 0.6], [0.75, 0.6]]) b.add(new BoxGeometry(0.08, 0.5, 0.08), 0x6e4c32, [x, 0.25, z]);
+  b.add(new BoxGeometry(1.6, 0.9, 1.3), 0x9a7048, [0, 0.95, 0]);
+  b.add(new BoxGeometry(1.8, 0.06, 0.9), 0x6a4a30, [0, 1.55, -0.35], [0.5, 0, 0]);
+  b.add(new BoxGeometry(1.8, 0.06, 0.9), 0x6a4a30, [0, 1.55, 0.35], [-0.5, 0, 0]);
+  b.add(new BoxGeometry(0.4, 0.45, 0.04), 0x2a2018, [0.3, 0.85, 0.66]);
+  b.add(new BoxGeometry(0.36, 0.04, 1.1), 0x8a6040, [0.3, 0.3, 1.15], [0.45, 0, 0]);
+  b.add(new BoxGeometry(0.5, 0.3, 0.4), 0x8a6040, [-0.6, 0.95, 0.86]);
+  b.add(new BoxGeometry(0.44, 0.08, 0.34), 0xd8c070, [-0.6, 1.1, 0.86]);
+  return b.build();
+}
+
+export function repairBenchModel() {
+  const b = new Parts(143);
+  b.add(new BoxGeometry(1.6, 0.12, 0.6), 0x9a7048, [0, 0.82, 0]);
+  for (const [x, z] of [[-0.68, -0.22], [0.68, -0.22], [-0.68, 0.22], [0.68, 0.22]]) b.log([x, 0, z], [x, 0.78, z], 0.06, 0x6e4c32);
+  b.add(new BoxGeometry(1.4, 0.06, 0.06), 0x6e4c32, [0, 0.3, 0.22]);
+  b.add(new BoxGeometry(0.22, 0.18, 0.2), 0x7a7e84, [0.62, 0.97, 0]);
+  b.add(new BoxGeometry(0.06, 0.08, 0.3), 0x5a5e64, [0.62, 1.08, 0]);
+  b.add(new BoxGeometry(0.3, 0.06, 0.1), 0xb8b4a8, [-0.4, 0.91, 0.1]);
+  b.add(new BoxGeometry(0.04, 0.03, 0.34), 0x8a5d38, [-0.05, 0.9, -0.12], [0, 0.4, 0]);
+  b.add(new BoxGeometry(0.1, 0.05, 0.06), 0x9aa0a8, [0.08, 0.91, -0.24], [0, 0.4, 0]);
+  return b.build();
+}
+
+export function waterFilterModel() {
+  const b = new Parts(142);
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * Math.PI * 2;
+    b.log([Math.cos(a) * 0.4, 0, Math.sin(a) * 0.4], [Math.cos(a) * 0.08, 1.25, Math.sin(a) * 0.08], 0.03, 0x7a5638);
+  }
+  b.add(new ConeGeometry(0.28, 0.5, 8, 1, true), 0x8a6a48, [0, 0.95, 0], [Math.PI, 0, 0]);
+  b.add(new CylinderGeometry(0.25, 0.22, 0.06, 8), 0xe2c88a, [0, 1.18, 0]);
+  b.add(new CylinderGeometry(0.2, 0.18, 0.05, 8), 0x2a2420, [0, 1.07, 0]);
+  b.add(new CylinderGeometry(0.17, 0.14, 0.22, 8), 0x8a5a3a, [0, 0.11, 0]);
+  b.add(new CylinderGeometry(0.15, 0.15, 0.02, 8), 0x5a9ac8, [0, 0.2, 0]);
+  return b.build();
+}
+
 export function tanningRackModel() {
   const b = new Parts(93);
   b.log([-0.8, 0, 0], [-0.8, 1.9, 0], 0.045, 0x8a5d38, 0xc8a070, 5);

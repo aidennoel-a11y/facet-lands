@@ -12,6 +12,8 @@ export const ITEMS = {
   stick: { name: 'Stick', weight: 0.3, group: 'Materials' },
   rock: { name: 'Small rock', weight: 1, group: 'Materials' },
   flint: { name: 'Flint', weight: 0.4, group: 'Materials' },
+  salt: { name: 'Salt', weight: 0.2, group: 'Materials' }, // (boiled out of sea water in a pot, or scraped up on the salt flats)
+  sand: { name: 'Sand', weight: 1.2, group: 'Materials' }, // (scooped up on a beach or in the desert)
   log: { name: 'Log', weight: 9, group: 'Materials' },
   vine: { name: 'Plant vine', weight: 0.2, group: 'Materials' },
   iron: { name: 'Iron ore', weight: 2.5, group: 'Materials' },
@@ -72,6 +74,10 @@ export const ITEMS = {
   blindFish: { name: 'Blind cave fish', food: { hunger: 6, health: -3, sick: 0.2, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.4, group: 'Food' },
   rawMeat: { name: 'Raw meat', food: { hunger: 10, health: -4, sick: 0.35, full: 180 }, spoils: 900, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 1, group: 'Food' },
   cookedMeat: { name: 'Cooked meat', food: { hunger: 35, health: 4, full: 600 }, spoils: 2400, weight: 0.8, group: 'Food' },
+  rawEgg: { name: 'Egg', food: { hunger: 6, health: -1, sick: 0.08, full: 60 }, spoils: 4000, cooks: 'cookedEgg', weight: 0.06, group: 'Food' },
+  cookedEgg: { name: 'Cooked egg', food: { hunger: 14, full: 200 }, spoils: 2000, weight: 0.06, group: 'Food' },
+  saltedMeat: { name: 'Salted meat', food: { hunger: 16, thirst: -6, full: 360 }, spoils: 40000, weight: 0.8, group: 'Food' }, // (cured in salt: keeps for weeks)
+  saltedFish: { name: 'Salted fish', food: { hunger: 13, thirst: -6, full: 300 }, spoils: 40000, weight: 0.6, group: 'Food' },
   rawFowl: { name: 'Raw bird', food: { hunger: 8, health: -4, sick: 0.75, full: 150 }, spoils: 700, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 0.8, group: 'Food' }, // (turkey, duck, grouse: raw, it'll very likely make you ill)
   rawFish: { name: 'Raw fish', food: { hunger: 8, health: -3, sick: 0.2, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.8, group: 'Food' },
   cookedFish: { name: 'Cooked fish', food: { hunger: 25, health: 3, full: 360 }, spoils: 1800, weight: 0.6, group: 'Food' },
@@ -156,6 +162,19 @@ export const ITEMS = {
   anvil: { name: 'Anvil', place: 'anvil', weight: 30, group: 'Building' },
   grindstone: { name: 'Grindstone', place: 'grindstone', weight: 18, group: 'Building' },
   tanningRack: { name: 'Tanning rack', place: 'tanningRack', weight: 4, group: 'Building' },
+  quiver: { name: 'Quiver', weight: 0.8, group: 'Worn', carried: 'Carry it: your arrows and bolts stack three times as deep' }, // (carried: arrows and bolts stack three times as deep)
+  backpack: { name: 'Backpack', weight: 1.5, group: 'Worn', carried: 'Carry it: six more slots, past the ninth' }, // (carried: six more slots)
+  saddlebags: { name: 'Saddlebags', weight: 2.5, group: 'Worn', carried: 'E on your tame horse with them in hand to put them on' }, // (put on a tame horse: eight slots it carries for you)
+  repairBench: { name: 'Repair bench', place: 'repairBench', weight: 12, group: 'Building' }, // (mend worn tools for a little of what they're made of)
+  logBridge: { name: 'Log bridge', place: 'logBridge', weight: 30, group: 'Building' }, // (laid across a river or a gap, up to 14 m)
+  ropeBridge: { name: 'Rope bridge', place: 'ropeBridge', weight: 12, group: 'Building' }, // (slung across a gorge, up to 26 m)
+  chair: { name: 'Chair', place: 'chair', weight: 4, group: 'Building' },
+  table: { name: 'Table', place: 'table', weight: 9, group: 'Building' },
+  shelf: { name: 'Shelves', place: 'shelf', weight: 8, group: 'Building' }, // (six slots of storage)
+  trophyRack: { name: 'Trophy rack', place: 'trophyRack', weight: 5, group: 'Building' }, // (hang a great beast's trophy on it)
+  coop: { name: 'Hen-house', place: 'coop', weight: 14, group: 'Building' }, // (tame turkeys and ducks lay in it)
+  leanTo: { name: 'Lean-to', place: 'leanTo', weight: 6, group: 'Building' }, // (a quick shelter of poles and leafy boughs: out of the rain)
+  waterFilter: { name: 'Water filter', place: 'waterFilter', weight: 6, group: 'Building' }, // (sand and charcoal in a bark cone: still water through it comes out clean)
   woodFloor: { name: 'Plank floor', place: 'woodFloor', weight: 16, group: 'Building' },
   // The building sets: logs (no more than an axe), planks (a steel axe to cut them true), rough stone, cut stone (a steel pickaxe to dress it).
   logWall: { name: 'Log wall', place: 'logWall', weight: 24, group: 'Building' },
@@ -260,6 +279,21 @@ export const RECIPES = [
   { id: 'raft', needs: { log: 6, vine: 3 }, note: 'Set it on the water; E to climb aboard' },
   { id: 'silkRope', needs: { silk: 2 }, makes: 2, note: "Spider silk spun into rope: light and strong. Throw it down a drop like a rope" },
   { id: 'rope', needs: { vine: 3 }, note: 'Throw it down from a cliff top (click at the edge) to climb up and down' },
+  { id: 'quiver', needs: { deerSkin: 1, vine: 1 }, note: 'Carry it: arrows and bolts stack three times as deep (30 to a slot)' },
+  { id: 'backpack', needs: { deerSkin: 3, rope: 1 }, note: 'Carry it: six more slots. Put it down and what was in them falls out' },
+  { id: 'saddlebags', needs: { deerSkin: 3, rope: 1 }, note: 'E on your tame horse with them in hand; B by your horse (or riding) to open them: eight slots it carries' },
+  { id: 'repairBench', needs: { log: 3, rock: 4, stick: 2 }, note: 'E at it with a worn tool in hand: mended good as new for a little of what it was made of (far cheaper than a new one)' },
+  { id: 'logBridge', needs: { log: 6, rope: 2 }, note: 'Stand at a river bank or the edge of a gap, looking across: laid across to the far side (up to 14 m)' },
+  { id: 'ropeBridge', needs: { rope: 6, stick: 12, log: 2 }, note: 'Stand at the edge of a gorge, looking across: slung over to the far side (up to 26 m)' },
+  { id: 'chair', needs: { log: 1, stick: 4 }, note: 'Sit and rest a while (E): you get your strength back faster' },
+  { id: 'table', needs: { log: 2, stick: 4 }, note: 'A table, for your house' },
+  { id: 'shelf', needs: { log: 2, stick: 3 }, note: 'Shelves: six slots of storage (E)' },
+  { id: 'trophyRack', needs: { log: 1, stick: 3, rope: 1 }, note: 'E with a great beast\'s trophy in hand to hang it up; E with your hand empty to take it down' },
+  { id: 'coop', needs: { log: 3, stick: 6, wheat: 2 }, note: 'Tame turkeys and ducks (lure them with wheat, seeds or corn in your hand) that live near it lay eggs, and drop feathers: E to collect' },
+  { id: 'leanTo', needs: { stick: 8, vine: 4 }, note: 'A quick shelter: poles and leafy boughs. Under it you keep out of the rain, and sleep dry' },
+  { id: 'waterFilter', needs: { stick: 3, sand: 3, charcoal: 2, vine: 1 }, note: 'Sand and charcoal: E at it with a waterskin of still water and it comes out clean (no boiling)' },
+  { id: 'saltedMeat', needs: { rawMeat: 2, salt: 1 }, makes: 2, note: 'Meat cured in salt: keeps for weeks (thirsty food, though)' },
+  { id: 'saltedFish', needs: { rawFish: 2, salt: 1 }, makes: 2, note: 'Fish cured in salt: keeps for weeks' },
   { id: 'tanningRack', needs: { stick: 4, vine: 2 }, note: 'Stretch raw hides and furs on it: leather and tanned fur' },
   { id: 'coat', needs: { deerSkin: 2, vine: 1 }, note: 'Wear it to keep the cold out far longer' },
   { id: 'furCloak', needs: { pelt: 3, rope: 1 }, note: 'The warmest thing to wear in the winter' },
@@ -319,8 +353,8 @@ export const RECIPES = [
  * in RECIPES is in one of them.
  */
 export const TIERS = [
-  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
+  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
@@ -363,6 +397,25 @@ export const ICONS = {
   cookedMeat: MEAT('#7a3e1e', '#a85a2a'),
   rawFish: FISH('#8aa4b4', '#b8cad4'),
   cookedFish: FISH('#a8703a', '#c8904a'),
+  quiver: `<path d="M11 4l10 2-3 23-8-1z" fill="#8a5a34"/><path d="M12 8l8 2M11 14l8 1" stroke="#6a4024"/><path d="M13 4l1-3M16 4l1-3M19 5l1-3" stroke="#d8d0c0" stroke-width="1.5"/>`,
+  backpack: `<path d="M8 10c0-5 16-5 16 0v17H8z" fill="#8a5a34"/><path d="M10 16h12v8H10z" fill="#a8744a"/><path d="M12 6c0-3 8-3 8 0" stroke="#5a3a24" stroke-width="2" fill="none"/><path d="M15 19h2" stroke="#3a2a1a" stroke-width="2"/>`,
+  saddlebags: `<path d="M3 12h11v12H3zM18 12h11v12H18z" fill="#8a5a34"/><path d="M14 13h4" stroke="#5a3a24" stroke-width="3"/><path d="M3 16h11M18 16h11" stroke="#5a3a24"/>`,
+  repairBench: `<path d="M3 16h26v4H3z" fill="#8a6038"/><path d="M5 20v8M27 20v8" stroke="#6a4424" stroke-width="3"/><path d="M14 8l6 6-2 2-6-6z" fill="#9aa0a8"/><path d="M12 12l-4 4" stroke="#8a5d38" stroke-width="2"/>`,
+  logBridge: `<path d="M2 18h28v4H2z" fill="#8a6040"/><path d="M4 18v-6M28 18v-6M4 13h24" stroke="#6a4424" stroke-width="2"/><path d="M8 18v4M13 18v4M18 18v4M23 18v4" stroke="#5a3a24"/>`,
+  ropeBridge: `<path d="M2 14q14 10 28 0" stroke="#c8a878" stroke-width="2" fill="none"/><path d="M2 20q14 10 28 0" stroke="#8a6040" stroke-width="4" fill="none"/><path d="M3 10v12M29 10v12" stroke="#6a4424" stroke-width="2.5"/>`,
+  chair: `<path d="M9 16h14v3H9z" fill="#9a7048"/><path d="M10 19v9M22 19v9M10 16V4M22 16V4M10 7h12M10 11h12" stroke="#7a5638" stroke-width="2"/>`,
+  table: `<path d="M3 12h26v3H3z" fill="#9a7048"/><path d="M6 15v13M26 15v13" stroke="#7a5638" stroke-width="2.5"/><path d="M19 7h4v5h-4z" fill="#a86a44"/>`,
+  shelf: `<path d="M5 3v26M27 3v26" stroke="#7a5638" stroke-width="2.5"/><path d="M5 8h22M5 16h22M5 24h22" stroke="#9a7048" stroke-width="2.5"/><path d="M9 12h4v4H9zM17 20h5v4h-5z" fill="#c4945a"/>`,
+  trophyRack: `<path d="M16 14v16" stroke="#6e4c32" stroke-width="3"/><path d="M6 4h20v12H6z" fill="#8a6040"/><path d="M10 8c2-3 4-3 6 0 2-3 4-3 6 0-2 4-10 4-12 0z" fill="#e8dcc0"/>`,
+  coop: `<path d="M4 14l12-9 12 9z" fill="#6a4a30"/><path d="M6 14h20v10H6z" fill="#9a7048"/><path d="M14 18h5v6h-5z" fill="#2a2018"/><path d="M6 24v5M26 24v5" stroke="#6e4c32" stroke-width="2"/>`,
+  rawEgg: `<ellipse cx="16" cy="17" rx="8" ry="10" fill="#f0e6d2"/><ellipse cx="13" cy="13" rx="2.5" ry="3.5" fill="#fffaf0"/>`,
+  cookedEgg: `<ellipse cx="16" cy="17" rx="12" ry="9" fill="#fafaf4"/><circle cx="16" cy="16" r="5" fill="#f0b830"/>`,
+  salt: `<path d="M6 24c2-8 6-12 10-12s8 4 10 12z" fill="#f4f2ee"/><path d="M10 22l3-4 3 3 3-5 4 6" stroke="#d8d4cc" fill="none"/><circle cx="12" cy="25" r="1" fill="#e4e0d8"/><circle cx="21" cy="24" r="1" fill="#e4e0d8"/>`,
+  sand: `<path d="M5 25c3-9 7-13 11-13s8 4 11 13z" fill="#e2c88a"/><path d="M9 22c3-1 5-1 7 0M15 18c2 0 4 1 5 2" stroke="#c8ac6a" fill="none"/>`,
+  saltedMeat: `<path d="M6 15c1-6 12-9 18-5s3 12-3 14-15 0-15-9z" fill="#a84a3a"/><circle cx="11" cy="14" r="1" fill="#fff"/><circle cx="16" cy="12" r="1" fill="#fff"/><circle cx="19" cy="17" r="1" fill="#fff"/><circle cx="13" cy="19" r="1" fill="#fff"/>`,
+  saltedFish: `<path d="M4 16c6-7 16-7 20 0-4 7-14 7-20 0z" fill="#9a8a70"/><path d="M24 16l5-5v10z" fill="#8a7a60"/><circle cx="10" cy="15" r="1" fill="#fff"/><circle cx="15" cy="17" r="1" fill="#fff"/><circle cx="19" cy="14" r="1" fill="#fff"/>`,
+  leanTo: `<path d="M4 27L14 7h4l10 20z" fill="#5a8a3a"/><path d="M14 7L4 27M18 7l10 20M12 7h8" stroke="#7a5230" stroke-width="2"/><path d="M8 20h16M10 15h12" stroke="#4a7a2e"/>`,
+  waterFilter: `<path d="M9 5h14l-4 16h-6z" fill="#8a6a48"/><path d="M11 9h10M12 13h8" stroke="#e2c88a" stroke-width="2"/><path d="M12 16h8" stroke="#2a2420" stroke-width="2"/><path d="M16 22v3" stroke="#6ab4e8" stroke-width="2"/><ellipse cx="16" cy="28" rx="5" ry="2" fill="#6ab4e8"/>`,
   jerky: `<path d="M6 10l18-3 3 4-18 4zM5 16l19-2 2 4-19 3zM7 22l17-1 2 4-17 1z" fill="#6a2e18"/><path d="M8 11l14-2M8 17l14-2M9 23l14-1" stroke="#8a4424" stroke-width="1"/>`,
   stew: `<path d="M4 15h24c0 7-5 12-12 12S4 22 4 15z" fill="#6a4a30"/><ellipse cx="16" cy="15" rx="12" ry="3.5" fill="#a8582a"/><circle cx="12" cy="14.5" r="1.5" fill="#d8b478"/><circle cx="19" cy="15.5" r="1.5" fill="#c82038"/><path d="M11 9c0-2 2-2 2-4M17 9c0-2 2-2 2-4" stroke="#c8c8c8" fill="none"/>`,
   axe: AXE,

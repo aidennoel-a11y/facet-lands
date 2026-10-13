@@ -1730,3 +1730,6 @@ kbd {
   background: #9a3a2e;
   transition: width 0.3s ease-out;
 }
+/* (The backpack's six more slots, set a little apart and tinted.) */
+.hotbar-slots li.pack .slot { background: rgba(214, 170, 100, 0.2); }
+.hotbar-slots li.pack:nth-child(10) { margin-left: 10px; }

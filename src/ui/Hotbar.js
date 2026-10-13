@@ -68,8 +68,12 @@ export class Hotbar {
 
   render() {
     this.inventory.slots.forEach((s, i) => {
-      const html = slotHtml(s, String(i + 1));
+      // (Past the ninth: the backpack's, shown only while you carry one.)
+      const open = i < (this.inventory.open ?? this.slots.length);
       const button = this.slots[i];
+      button.parentElement.hidden = !open;
+      button.parentElement.classList.toggle('pack', i >= 9);
+      const html = slotHtml(s, i < 9 ? String(i + 1) : '');
       if (button.dataset.html !== html) {
         button.innerHTML = html;
         button.dataset.html = html;
@@ -92,7 +96,7 @@ export class Hotbar {
 
   /** Moves the selection by one slot (wraps around). */
   step(direction) {
-    const n = this.slots.length;
+    const n = Math.min(this.slots.length, this.inventory.open ?? this.slots.length);
     this.select((this.index + direction + n) % n);
   }
 
