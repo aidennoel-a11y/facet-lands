@@ -1,3 +1,5 @@
+import { Vector2 } from 'three';
+
 /**
  * The seasons: spring, summer, autumn and winter, turning over by
  * themselves (a few game days each) or pinned from the panel.
@@ -31,6 +33,8 @@ export const seasonUniforms = {
   uFallClock: { value: 0 }, // how far on the leaves' turning is: 0 three days before the turn into autumn, 1 two days after it (see uFallSpan)
   uFallSpan: { value: 7 }, // (that span, in days)
   uHighSnow: { value: 0 }, // snow lying on the mountains (above 80 m), from mid autumn to mid spring (0..1)
+  // The fruit trees and bushes near you picked clean lately (x, z): no fruit on them till it comes again (see Game).
+  uPicked: { value: Array.from({ length: 16 }, () => new Vector2(1e9, 1e9)) },
 };
 
 function smoothstep(a, b, x) {
@@ -317,7 +321,7 @@ export function seasonalTrees(material, leaves = false, randFrom = null, warmFro
       shader.vertexShader = shader.vertexShader
         .replace(
           '#include <common>',
-          `#include <common>\nattribute vec3 aSeason;\nattribute vec3 aFall;\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nvarying float vTreeWarm;\nvarying float vTreeY;\nuniform float uWinter;\nuniform float uFruit;${leaves || randFrom ? '' : '\nattribute float aCrown;\nvarying float vTreeNorth;'}`,
+          `#include <common>\nattribute vec3 aSeason;\nattribute vec3 aFall;\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nvarying float vTreeWarm;\nvarying float vTreeY;\nuniform float uWinter;\nuniform float uFruit;\nuniform vec2 uPicked[16];${leaves || randFrom ? '' : '\nattribute float aCrown;\nvarying float vTreeNorth;'}`,
         )
         .replace(
           '#include <begin_vertex>',
@@ -354,7 +358,15 @@ export function seasonalTrees(material, leaves = false, randFrom = null, warmFro
           ${leaves || randFrom ? '' : `// Fruit and berries (aSeason.z = 2), each a little block centred on
           // a quarter-metre grid point: grown out from nothing in early summer,
           // gone again by winter.
-          if (aSeason.z > 1.5) transformed = mix((floor(position * 4.0) + 0.5) * 0.25, transformed, uFruit);
+          if (aSeason.z > 1.5) {
+            float fruitOn = uFruit;
+            #ifdef USE_INSTANCING
+              // (None on a tree or bush you've picked clean.)
+              vec2 fruitTree = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;
+              for (int i = 0; i < 16; i++) if (distance(fruitTree, uPicked[i]) < 0.6) fruitOn = 0.0;
+            #endif
+            transformed = mix((floor(position * 4.0) + 0.5) * 0.25, transformed, fruitOn);
+          }
           // Winter: a deciduous tree's crown (its leaves) shrinks away to
           // nothing, leaving the bare boughs.
           float bare = smoothstep(0.55, 0.95, uWinter) * aSeason.x * (1.0 - vTreeWarm);

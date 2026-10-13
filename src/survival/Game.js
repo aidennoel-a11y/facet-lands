@@ -39,6 +39,7 @@ const v = new Vector3(), dir = new Vector3(), q = new Quaternion(), FORWARD = ne
 // How far you can reach, on foot.
 const REACH = 3;
 const QUIVERED = new Set(['arrow', 'poisonArrow', 'bolt', 'poisonBolt']);
+const WORN_SLOT = { coat: 'worn', armour: 'armour', back: 'back' }; // (where each kind of thing worn goes: see Inventory)
 const CACTI = new Set(['smallCactus', 'ocotillo']); // (bushes, but no vines on them)
 const FRUIT = { raspberryBush: 'berries', blueberryBush: 'berries', appleTree: 'apple' };
 const NAMES = {
@@ -97,10 +98,10 @@ export const TEST_KIT = [['axe', 1], ['spear', 1], ['flintSteel', 1], ['bow', 1]
  *
  * Keys (walking): click to use what's in your hand (chop, mine, stab, eat,
  * light a fire, put meat on it, set something down; hold with a bow to draw
- * it), right-click to throw a spear (or the same as E otherwise), E to pick
+ * it), right-click to throw a spear (or the same as Q otherwise), Q to pick
  * up, pick fruit, drink or fill a waterskin, butcher, open a chest, open a
- * gate, sleep, board a raft, take what's cooked; Shift+E to take something
- * you built back down; Q to drop one (Shift+Q the stack), Tab to craft, Z
+ * gate, sleep, board a raft, take what's cooked; Shift+Q to take something
+ * you built back down; R to drop one (Shift+R the stack), E for what you carry, Tab to craft, Z
  * for every item (testing), C / Ctrl to crouch.
  */
 export class Game {
@@ -197,6 +198,8 @@ export class Game {
     this.rocks?.removed.clear();
     this.mushrooms?.taken.clear();
     this.harvested.clear();
+    this.pickedAt?.clear();
+    for (const v of seasonUniforms.uPicked.value) v.set(1e9, 1e9);
     this.#getOff();
     let saved = null;
     try {
@@ -284,7 +287,7 @@ export class Game {
   #bind() {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
-      if (e.code === 'Tab' || e.code === 'KeyI') {
+      if (e.code === 'Tab') {
         e.preventDefault();
         if (!this.survival.alive) return;
         this.#menu(this.hud.toggleCraft(this.inventory));
@@ -304,19 +307,39 @@ export class Game {
         return;
       }
       if (!this.walking || !this.survival.alive || this.sleeping) return;
-      if (e.code === 'KeyE') {
+      // E: what you carry (and wear), to sort; or, with a chest open, shut it.
+      if (e.code === 'KeyE' || e.code === 'KeyI') {
         if (this.hud.chest) {
           this.hud.closeAll();
           this.#menu(false);
-        } else if (!this.hud.busy) this.interact(null, e.shiftKey);
+        } else if (!this.hud.busy || !this.hud.el('.inv-ui').hidden) this.#menu(this.hud.toggleInventory(this.inventory));
       }
-      if (e.code === 'KeyQ' && !this.hud.busy) this.drop(e.shiftKey);
+      // Q: pick up, or use what you're pointing at; R: drop what's in your hand.
+      if (e.code === 'KeyQ' && !this.hud.busy) this.interact(null, e.shiftKey);
+      if (e.code === 'KeyR' && !this.hud.busy) this.drop(e.shiftKey);
       if (e.code === 'KeyB') {
         if (this.hud.chest) (this.hud.closeAll(), this.#menu(false));
         else if (!this.hud.busy) this.#openBags();
       }
     });
     this.hud.onCraft = (id) => this.craft(id);
+    // The inventory (E): stacks moved and sorted, things put on and taken off.
+    this.hud.onInvMove = (a, b) => {
+      if (this.inventory.move(a, b)) this.sound?.call('pickup', 0, 0.25);
+      this.hud.renderInventory();
+    };
+    this.hud.onInvSort = () => {
+      this.inventory.sort(['Tools', 'Worn', 'Food', 'Materials', 'Farming', 'Building', 'Trophies', 'Spawners']);
+      this.hud.renderInventory();
+    };
+    this.hud.onInvWear = (i) => {
+      this.#putOn(i);
+      this.hud.renderInventory();
+    };
+    this.hud.onInvTakeOff = (slot) => {
+      this.#takeOff(slot);
+      this.hud.renderInventory();
+    };
     this.hud.onSkills = () => this.survival.alive && this.mode === 'survival' && this.#menu(this.hud.toggleSkills(this.record));
     this.hud.onTake = (id) => {
       const left = this.inventory.add(Inventory.stack(id, stackOf(id)), this.hotbar?.index);
@@ -341,15 +364,18 @@ export class Game {
     // (The crafting tree: which tiers you've opened. See #learn.)
     this.hud.unlocked = (tier) => this.unlocked(tier);
     this.inventory.onChange(() => {
-      // (A backpack carried: six more slots. Put down, what was in them falls out on the ground.)
-      const inv = this.inventory, open = inv.slots.some((s) => s?.id === 'backpack') ? 15 : 9;
+      // (A backpack on your back: six more slots. Taken off, what was in them
+      // goes into the first nine where there's room; the rest falls out on the ground.)
+      const inv = this.inventory, open = inv.back?.id === 'backpack' ? 15 : 9;
       if (open !== inv.open) {
         inv.open = open;
         if (open === 9) {
           const p = this.camera.position;
           for (let k = 9; k < inv.slots.length; k++) {
             if (!inv.slots[k]) continue;
-            this.items.drop(inv.slots[k], p.x + (Math.random() - 0.5), p.y - 1.2, p.z + (Math.random() - 0.5));
+            const free = inv.slots.slice(0, 9).findIndex((x) => !x);
+            if (free >= 0) inv.slots[free] = inv.slots[k];
+            else this.items.drop(inv.slots[k], p.x + (Math.random() - 0.5), p.y - 1.2, p.z + (Math.random() - 0.5));
             inv.slots[k] = null;
           }
           if (this.hotbar && this.hotbar.index >= 9) this.hotbar.select(0, true);
@@ -360,6 +386,7 @@ export class Game {
       if (this.inventory.slots.some((s) => s && ITEMS[s.id]?.group === 'Trophies')) this.#learn('trophy');
       if (!this.hud.el('.craft').hidden) this.hud.renderCraft(this.inventory);
       this.hud.renderChest();
+      this.hud.renderInventory();
       this.dirty = true;
     });
   }
@@ -399,7 +426,7 @@ export class Game {
     return ray ?? { origin: this.camera.position.clone(), direction: this.camera.getWorldDirection(new Vector3()) };
   }
 
-  /** What's in front of you that E would do something with. */
+  /** What's in front of you that Q would do something with. */
   #target(ray, down = false) {
     const { origin, direction } = this.#ray(ray);
     const reach = REACH;
@@ -424,7 +451,7 @@ export class Game {
       const text = HORSE_FOOD[held?.id] ? 'Feed the horse'
         : held?.id === 'saddle' || held?.id === 'greatSaddle' ? (beast.saddled ? 'It has a saddle' : beast.young ? 'Too young for a saddle' : 'Saddle the horse')
         : held?.id === 'saddlebags' && !beast.bags && !beast.young ? 'Put the saddlebags on'
-        : beast.saddled ? 'Ride (Shift+E: lead it)' : beast.led ? 'Let it go' : 'Lead it (a saddle to ride it)';
+        : beast.saddled ? 'Ride (Shift+Q: lead it)' : beast.led ? 'Let it go' : 'Lead it (a saddle to ride it)';
       found.push({ kind: 'horse', distance: carcass.distance, animal: beast, text: needs ? `${text} · ${needs}` : text });
     }
     const tree = this.trees.pick(origin, direction, reach);
@@ -479,13 +506,13 @@ export class Game {
       case 'chest': return s.ruinKey === 'keep:heart' ? 'The heart of the Lost Keep: open it' : 'Open the chest';
       case 'keepAltar': {
         const n = s.offered.length;
-        return n >= RELICS.length ? 'The altar of the Lost Keep: every trophy set' : `The altar of the Lost Keep: ${n} of ${RELICS.length} trophies set (E: set those you carry)`;
+        return n >= RELICS.length ? 'The altar of the Lost Keep: every trophy set' : `The altar of the Lost Keep: ${n} of ${RELICS.length} trophies set (Q: set those you carry)`;
       }
       case 'cellar': return 'Open the root cellar';
       case 'shelf': return 'Open the shelves';
       case 'chair': return 'Sit and rest';
-      case 'repairBench': return held && ITEMS[held.id]?.durability ? `Mend the ${ITEMS[held.id].name.toLowerCase()}` : 'The repair bench: E with a worn tool in hand';
-      case 'trophyRack': return s.trophy ? `${ITEMS[s.trophy].name} (E: take it down)` : 'Hang a great beast\'s trophy here';
+      case 'repairBench': return held && ITEMS[held.id]?.durability ? `Mend the ${ITEMS[held.id].name.toLowerCase()}` : 'The repair bench: Q with a worn tool in hand';
+      case 'trophyRack': return s.trophy ? `${ITEMS[s.trophy].name} (Q: take it down)` : 'Hang a great beast\'s trophy here';
       case 'waterFilter': return 'Click with a waterskin of still water to filter it clean';
       case 'leanTo': return 'A lean-to: out of the rain under it (sleep under it in a bedroll)';
       case 'coop': {
@@ -493,7 +520,7 @@ export class Game {
         const eggs = Math.floor(s.eggs ?? 0), feathers = Math.floor(s.feathers ?? 0);
         return eggs || feathers ? `Collect ${[eggs ? `${eggs} egg${eggs > 1 ? 's' : ''}` : '', feathers ? `${feathers} feather${feathers > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ')}` : birds ? `${birds} bird${birds > 1 ? 's' : ''} living here: nothing laid yet` : 'No birds: lure tame turkeys or ducks here (wheat, seeds or corn in hand)';
       }
-      case 'fishTrap': return s.caught ? `Take the fish (${s.caught})` : (this.winter ?? 0) > 0.7 ? 'Iced in: nothing swims into it' : 'Set, and waiting (Shift+E to take it up)';
+      case 'fishTrap': return s.caught ? `Take the fish (${s.caught})` : (this.winter ?? 0) > 0.7 ? 'Iced in: nothing swims into it' : 'Set, and waiting (Shift+Q to take it up)';
       case 'smokingRack':
         return s.jobs.length ? `Smoking: ${s.jobs.map((j) => `${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}${s.smoking ? '' : ' (no fire under it)'}` : 'Hang raw meat or fish in it (click with it), over a burning campfire';
       case 'gate':
@@ -517,9 +544,10 @@ export class Game {
       case 'tanningRack': return s.jobs.length ? `Tanning: ${Math.round(100 - (s.jobs[0].left / s.jobs[0].total) * 100)}%` : 'Stretch a raw hide or fur on it (click with it)';
       case 'bed':
       case 'bedroll':
+      case 'strawBed':
       case 'fancyBed': return 'Sleep';
       case 'raft': return 'Climb aboard';
-      case 'snare': return s.caught ? 'Take the rabbit' : 'Set, and waiting (Shift+E to take it up)';
+      case 'snare': return s.caught ? 'Take the rabbit' : 'Set, and waiting (Shift+Q to take it up)';
       case 'campfire':
       case 'furnace': {
         const working = s.jobs.length ? ` · ${s.jobs.map((j) => `${ITEMS[j.stack.id].name.toLowerCase()} ${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}` : '';
@@ -527,7 +555,7 @@ export class Game {
       }
       case 'dryingRack':
         return s.jobs.length ? `Drying: ${s.jobs.map((j) => `${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}` : 'Hang raw meat or fish on it (click with it)';
-      default: return `Shift+E: take down the ${ITEMS[s.type].name.toLowerCase()}`;
+      default: return `Shift+Q: take down the ${ITEMS[s.type].name.toLowerCase()}`;
     }
   }
 
@@ -572,7 +600,7 @@ export class Game {
     return n - left;
   }
 
-  /** E: picks up, picks fruit, drinks, butchers, and uses what you've built (Shift: takes it down). */
+  /** Q: picks up, picks fruit, drinks, butchers, and uses what you've built (Shift: takes it down). */
   interact(ray, down = false) {
     if (this.mount) return this.#dismount(true);
     if (this.riding) return this.#getOff(true);
@@ -640,7 +668,7 @@ export class Game {
         this.inventory.remove(held.id, 1);
         a.saddled = held.id === 'greatSaddle' ? 'great' : true;
         this.dirty = true;
-        return this.hotbar?.flash('Saddled: E to ride');
+        return this.hotbar?.flash('Saddled: Q to ride');
       }
       if (held?.id === 'saddlebags' && !a.bags && !a.young) {
         this.inventory.remove('saddlebags', 1);
@@ -658,6 +686,7 @@ export class Game {
       const n = id === 'apple' ? 2 + Math.floor(Math.random() * 2) : 3 + Math.floor(Math.random() * 3);
       this.#give(id, n);
       this.harvested.set(t.tree.key, this.time);
+      (this.pickedAt ??= new Map()).set(t.tree.key, { x: t.tree.x, z: t.tree.z });
       this.sound?.call('pickup', 0, 0.5);
       return this.hotbar?.flash(`${ITEMS[id].name} ×${n}`);
     }
@@ -818,7 +847,7 @@ export class Game {
           this.structures.showTrophy(s);
           return this.hotbar?.flash(`${ITEMS[was].name} taken down`);
         }
-        if (!held || ITEMS[held.id]?.group !== 'Trophies') return this.hotbar?.flash('E with a great beast\'s trophy in hand to hang it up');
+        if (!held || ITEMS[held.id]?.group !== 'Trophies') return this.hotbar?.flash('Q with a great beast\'s trophy in hand to hang it up');
         s.trophy = held.id;
         this.inventory.take(i);
         this.structures.showTrophy(s);
@@ -838,6 +867,7 @@ export class Game {
       }
       case 'bed':
       case 'bedroll':
+      case 'strawBed':
       case 'fancyBed':
         return this.#sleep(s);
       case 'raft':
@@ -934,7 +964,7 @@ export class Game {
   // than half a new one's).
   #repair() {
     const i = this.hotbar.index, s = this.inventory.slots[i], item = s && ITEMS[s.id];
-    if (!item?.durability) return this.hotbar?.flash('Hold a worn tool, weapon or armour and E at the bench to mend it');
+    if (!item?.durability) return this.hotbar?.flash('Hold a worn tool, weapon or armour and Q at the bench to mend it');
     if (s.dur >= item.durability) return this.hotbar?.flash('It needs no mending');
     const r = RECIPES.find((x) => x.id === s.id);
     const worn = 1 - s.dur / item.durability;
@@ -949,7 +979,7 @@ export class Game {
     return this.hotbar?.flash(`${item.name} mended (${cost.map(([k, n]) => `${ITEMS[k].name.toLowerCase()} ×${n}`).join(', ')})`);
   }
 
-  /** Q: drops one of what's in your hand (Shift: the whole stack). */
+  /** R: drops one of what's in your hand (Shift: the whole stack). */
   drop(all) {
     const i = this.hotbar.index;
     const s = this.inventory.take(i, all);
@@ -1019,7 +1049,7 @@ export class Game {
     if (s.id === 'sickle') {
       // Cutting the long grass: round where you look, on the ground ahead.
       const at = this.solidHit?.(origin, direction, 4)?.point ?? origin.clone().addScaledVector(direction.clone().setY(0).normalize(), 1.8);
-      this.cutGrass?.(at.x, at.z, 1.5);
+      const mown = this.cutGrass?.(at.x, at.z, 1.5) ?? 0;
       this.inventory.wear(i, 1);
       // (Wild crops in the sweep of the blade: their grain or roots, and maybe their seed.)
       const reaped = this.items.wildNear?.(at.x, at.z, 2.4) ?? []; // (anywhere in a patch)
@@ -1045,6 +1075,12 @@ export class Game {
       if (Math.random() < 0.08) {
         this.#give(['seedWheat', 'seedCarrot'][Math.floor(Math.random() * 2)], 1, { x: at.x, y: at.y + 0.3, z: at.z });
         return this.hotbar?.flash('Seeds, in the cut grass');
+      }
+      // (Standing grass, cut: an armful of straw, for a bed.)
+      if (mown >= 3) {
+        const n = mown >= 6 ? 2 : 1;
+        this.#give('straw', n, { x: at.x, y: at.y + 0.3, z: at.z });
+        return this.hotbar?.flash(`Straw ×${n}`);
       }
       return;
     }
@@ -1092,7 +1128,7 @@ export class Game {
       if (!this.structures.isFire(at)) {
         const tree = this.trees.pick(origin, direction, REACH);
         const fallen = this.felling.pickFallen(origin, direction, REACH);
-        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'bedroll', 'fancyBed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor', 'woodWindow', 'logWall', 'plankWall', 'logFloor', 'logStairs', 'plankStairs', 'logRoof', 'shingleRoof', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor']);
+        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'bedroll', 'strawBed', 'fancyBed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor', 'woodWindow', 'logWall', 'plankWall', 'logFloor', 'logStairs', 'plankStairs', 'logRoof', 'shingleRoof', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor']);
         const wooden = at && WOODEN.has(at.type) ? built : null;
         const near = [tree && { d: tree.distance }, fallen && { d: fallen.distance }, wooden && { d: wooden.distance ?? REACH }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
         if (!near) return this.hotbar?.flash('Strike it at something that will burn: a campfire, a torch, wood, a tree');
@@ -1112,7 +1148,7 @@ export class Game {
     // Things for a fire, a furnace or a drying rack.
     if (at && this.#workAt(i, s, at)) return;
     if (s.id === 'waterskin') {
-      if (!s.water) return this.hotbar?.flash('Empty: fill it at water (E)');
+      if (!s.water) return this.hotbar?.flash('Empty: fill it at water (Q)');
       s.water--;
       this.inventory.changed();
       const sick = this.survival.consume({ thirst: 22, sick: s.clean ? 0 : 0.15 });
@@ -1136,14 +1172,7 @@ export class Game {
       this.sound?.call('eat', 0, 0.5);
       return this.hotbar?.flash(`Ate: ${item.name}${sick ? ' (raw: you feel feverish)' : item.food.health < 0 ? ' (raw: it turns your stomach)' : ''}`);
     }
-    if (item.wear) {
-      const slot = item.wear === 'coat' ? 'worn' : 'armour';
-      const worn = this.inventory[slot];
-      this.inventory[slot] = { ...s };
-      this.inventory.slots[i] = worn;
-      this.inventory.changed();
-      return this.hotbar?.flash(`Wearing: ${item.name}`);
-    }
+    if (item.wear) return this.#putOn(i);
     if (item.place === 'caveLamp') {
       if (placeTorch?.(origin, direction, true)) {
         this.inventory.take(i);
@@ -1177,7 +1206,7 @@ export class Game {
       this.inventory.take(i);
       this.cooldown = 0.4;
       this.sound?.call('place', 0, 0.4);
-      return this.hotbar?.flash(`The rope runs ${Math.round(plan.len)} m down: E on it to climb`);
+      return this.hotbar?.flash(`The rope runs ${Math.round(plan.len)} m down: Q on it to climb`);
     }
     if (item.place) {
       const plan = this.plan;
@@ -1329,7 +1358,40 @@ export class Game {
       this.cooldown = 0.3;
       return say(`${item.name} hung up to dry: jerky in three minutes`);
     }
+    // (Food that won't go on it: not eaten by mistake, looking at a rack or a fire.)
+    const RACKS = { dryingRack: 'drying rack', smokingRack: 'smoking rack', tanningRack: 'tanning rack', campfire: 'fire' };
+    if (item.food && RACKS[at.type]) return say(`${item.name} won't go on the ${RACKS[at.type]}: look away from it to eat`);
     return false;
+  }
+
+  // Something to wear, from slot `i`, put on (what was worn there before into the slot).
+  #putOn(i) {
+    const s = this.inventory.slots[i], item = ITEMS[s?.id];
+    if (!item?.wear) return;
+    const slot = WORN_SLOT[item.wear];
+    const was = this.inventory[slot];
+    if (slot === 'back' && was && i >= 9) return this.hotbar?.flash('Take it from the pack first');
+    this.inventory[slot] = { ...s, count: 1 };
+    this.inventory.slots[i] = s.count > 1 ? { ...s, count: s.count - 1 } : was;
+    if (s.count > 1 && was && this.inventory.add(was)) this.items.drop(was, this.camera.position.x, this.camera.position.y - 1, this.camera.position.z);
+    this.inventory.changed();
+    this.sound?.call('pickup', 0, 0.4);
+    return this.hotbar?.flash(slot === 'back' ? `On your back: ${item.name} (six more slots)` : `Wearing: ${item.name}`);
+  }
+
+  // What's worn (`slot`: worn, armour or back) taken off, into what you carry.
+  #takeOff(slot) {
+    const inv = this.inventory, st = inv[slot];
+    if (!st) return;
+    // (A backpack: into one of the first nine slots, and what was in it with it,
+    // where there's room; the rest falls to the ground.)
+    const free = inv.slots.slice(0, 9).findIndex((x) => !x);
+    if (free < 0) return this.hotbar?.flash('No room to take it off: free a slot first');
+    inv[slot] = null;
+    inv.slots[free] = st;
+    inv.changed();
+    this.sound?.call('pickup', 0, 0.4);
+    this.hotbar?.flash(`Took off: ${ITEMS[st.id].name}`);
   }
 
   // A blade ground keen again on the grindstone (as good as new), three
@@ -1482,7 +1544,7 @@ export class Game {
   }
 
   // Up or down a rope, hand over hand, your feet against the rock: W up, S
-  // down, E to let go (and off at the top onto the ledge, at the bottom
+  // down, Q to let go (and off at the top onto the ledge, at the bottom
   // onto the ground). Along its path: down the face, over the slopes.
   #climb(s) {
     const bx = Math.sin(s.rot), bz = Math.cos(s.rot), p = this.camera.position, eye = this.controls.eyeHeight;
@@ -1523,7 +1585,7 @@ export class Game {
       this.controls.grounded = true;
       this.controls.moving = input.forward !== 0;
     };
-    this.hotbar?.flash('On the rope: W to climb, S to go down, E to let go');
+    this.hotbar?.flash('On the rope: W to climb, S to go down, Q to let go');
   }
 
   #letGo(say = false) {
@@ -1534,7 +1596,7 @@ export class Game {
     if (say) this.hotbar?.flash('You let go');
   }
 
-  /** Right-click: throws a spear; otherwise the same as E. */
+  /** Right-click: throws a spear; otherwise the same as Q. */
   alt(ray) {
     if (!this.walking || !this.survival.alive || this.hud.busy) return;
     const i = this.hotbar.index;
@@ -1546,7 +1608,7 @@ export class Game {
   #bareHands(origin, direction) {
     const t = this.#target({ origin, direction });
     if (t) return this.interact({ origin, direction });
-    this.hotbar?.flash('Empty hand: pick things up with E');
+    this.hotbar?.flash('Empty hand: pick things up with Q');
   }
 
   // A blow that lands a moment after the swing starts (on the down stroke).
@@ -2154,7 +2216,7 @@ export class Game {
       if (!a.balked) this.balkSaid = false;
     };
     this.sound?.call('neigh', 0, 0.4);
-    this.hotbar?.flash('Riding: W to go, Shift to gallop, Space to jump, E to get down');
+    this.hotbar?.flash('Riding: W to go, Shift to gallop, Space to jump, Q to get down');
   }
 
   // Down from the saddle, beside it.
@@ -2199,7 +2261,7 @@ export class Game {
       this.controls.grounded = true;
       this.controls.moving = Math.abs(s.speed) > 0.2;
     };
-    this.hotbar?.flash('On the raft: W to paddle, E to get off');
+    this.hotbar?.flash('On the raft: W to paddle, Q to get off');
   }
 
   // Off the raft: onto land close by, if there's any, else into the water.
@@ -2249,6 +2311,7 @@ export class Game {
       // (A great bed: you wake whole. A bedroll on the hard ground: stiff, not quite rested.)
       if (s.bed.type === 'fancyBed') (this.survival.health = Math.min(100, this.survival.health + 40)), this.hotbar?.flash('You wake in the great bed, rested and whole');
       else if (s.bed.type === 'bedroll') (this.survival.energy = Math.min(this.survival.energy, 75)), this.hotbar?.flash('You wake stiff from the hard ground');
+      else if (s.bed.type === 'strawBed') (this.survival.energy = Math.min(this.survival.energy, 85)), this.hotbar?.flash('You wake on the straw, rested, if a little itchy');
       else this.hotbar?.flash('You wake, rested');
       // (Out in the rain all night, no roof over you: soaked, chilled, hardly rested.)
       if ((this.rainOnYou ?? 0) > 0.2) {
@@ -2327,6 +2390,17 @@ export class Game {
     this.pending = this.pending.filter((p) => p.time > 0);
     const cam = this.camera.position;
     const ground = (x, z) => this.groundAt(x, z);
+    // (The trees and bushes picked clean lately, nearest first: drawn without their fruit.)
+    if (this.pickedAt?.size && (this.pickWait = (this.pickWait ?? 0) - dt) <= 0) {
+      this.pickWait = 0.5;
+      const near = [];
+      for (const [key, p] of this.pickedAt) {
+        if (this.time - (this.harvested.get(key) ?? -1e9) >= 900) this.pickedAt.delete(key);
+        else near.push(p);
+      }
+      near.sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z));
+      seasonUniforms.uPicked.value.forEach((v, k) => v.set(near[k]?.x ?? 1e9, near[k]?.z ?? 1e9));
+    }
     this.items.update(dt, (x, z, y) => this.groundAt(x, z, y));
     // (The ruins you've been to: and the map's mark, once you're there.)
     // The land round you, filled in on your map.
@@ -2398,7 +2472,7 @@ export class Game {
     const exposed = walking && !this.controls.swimming && shelter.roof < 0.5 && heat.heat > 1.4 && ctx.day > 0.6 && ctx.rain < 0.2 ? (ctx.sun ?? 1) : 0;
     const jumped = this.controls.takeJumps();
     // What you carry weighs you down.
-    const load = this.inventory.slots.reduce((n, s) => n + weightOf(s), 0);
+    const load = this.inventory.slots.reduce((n, s) => n + weightOf(s), 0) + weightOf(this.inventory.back);
     const heavy = Math.max(0, (load - LOAD - (this.mount ? 40 : 0)) / LOAD); // (a horse's saddlebags carry 40 kg more)
     this.controls.burden = Math.max(0.45, 1 - heavy * 0.5);
     this.controls.noSprint = heavy > 0.5 || this.survival.energy < 20;
@@ -2456,7 +2530,7 @@ export class Game {
     // (However it came: hunger or cold here, or a bite, a fall, a blow since the last frame.)
     if (!this.survival.alive && !this.dead) this.#die();
 
-    // What's under the crosshair: what E would do, and where a thing to be built would go.
+    // What's under the crosshair: what Q would do, and where a thing to be built would go.
     let prompt = null;
     this.plan = null;
     if (walking && this.survival.alive && !this.hud.busy && !this.riding) {
@@ -2487,7 +2561,7 @@ export class Game {
         this.structures.preview(onPlot ? null : this.plan);
         if (!onPlot) prompt = this.plan.ok ? `<kbd>Click</kbd> ${placing === 'plot' ? 'Dig a plot' : `Build ${item.name.toLowerCase()}`}` : this.plan.why;
       } else this.structures.preview(null);
-      if (!prompt && t) prompt = `<kbd>E</kbd> ${t.text}`;
+      if (!prompt && t) prompt = `<kbd>Q</kbd> ${t.text}`;
       // Crouched, looking at the ground: the tracks there, read (the better your tracking, the older the tracks you can make out).
       if (!prompt && this.controls.crouch && this.readTracks) {
         const hit = this.solidHit?.(origin, direction, 8);
@@ -2506,9 +2580,9 @@ export class Game {
         if (PICKS[held.id] && this.#boulderAlong(origin, direction, REACH)) prompt = '<kbd>Click</kbd> Break rock';
       }
     } else this.structures.preview(null);
-    if (this.riding) prompt = '<kbd>W</kbd> Paddle · <kbd>E</kbd> Get off';
-    if (this.mount) prompt = '<kbd>W</kbd> Ride · <kbd>Shift</kbd> Gallop · <kbd>Space</kbd> Jump · <kbd>E</kbd> Get down';
-    if (this.climbing) prompt = '<kbd>W</kbd> Climb · <kbd>S</kbd> Down · <kbd>E</kbd> Let go';
+    if (this.riding) prompt = '<kbd>W</kbd> Paddle · <kbd>Q</kbd> Get off';
+    if (this.mount) prompt = '<kbd>W</kbd> Ride · <kbd>Shift</kbd> Gallop · <kbd>Space</kbd> Jump · <kbd>Q</kbd> Get down';
+    if (this.climbing) prompt = '<kbd>W</kbd> Climb · <kbd>S</kbd> Down · <kbd>Q</kbd> Let go';
     this.hud.stations = { anvil: !!this.structures.nearest('anvil', cam.x, cam.z, 5) };
     this.hud.prompt(prompt);
     this.hud.draw(this.drawing ? Math.min(1, (this.time - this.drawing.since) / 0.9) : null);

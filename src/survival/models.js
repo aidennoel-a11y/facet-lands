@@ -1574,6 +1574,20 @@ export function bedrollModel() {
     .build();
 }
 
+/** A straw bed: a heap of cut grass, dried gold, raked into a long mound, a little more at the head. */
+export function strawBedModel() {
+  const b = new Parts(197), straw = [0xd4b45a, 0xc8a64c, 0xe0c46a, 0xb89a44];
+  b.add(new BoxGeometry(1.05, 0.12, 2.0), 0xc4a24a, [0, 0.06, 0], [0, 0, 0], [1, 1, 1], 0.08);
+  for (let k = 0; k < 9; k++) {
+    const z = -0.85 + (k / 8) * 1.7, x = (k % 3 - 1) * 0.28;
+    b.add(new DodecahedronGeometry(0.32, 0), straw[k % 4], [x, 0.14, z], [k, k * 1.7, 0], [1.1, 0.35, 1.2], 0.1);
+  }
+  b.add(new DodecahedronGeometry(0.34, 0), 0xe0c46a, [0, 0.2, -0.78], [1, 2, 0], [1.4, 0.45, 0.8], 0.08); // (heaped at the head)
+  // (Loose stalks lying across the top.)
+  for (let k = 0; k < 8; k++) b.add(new BoxGeometry(0.02, 0.02, 0.6), 0xe8cc78, [(k % 4 - 1.5) * 0.22, 0.24, -0.6 + Math.floor(k / 4) * 0.9], [0, k * 0.7, 0]);
+  return b.build();
+}
+
 /** A great bed: a carved frame on four posts, a canopy of spider silk over it, soft white bedding. */
 export function fancyBedModel() {
   const b = new Parts(193), W = 1.5, L = 2.2, wood = 0x6a3e26, trim = 0x8a5634;

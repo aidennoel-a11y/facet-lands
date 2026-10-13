@@ -30,7 +30,7 @@ const BUILT = {
   stoneDoor: () => M.openWallModel('stone', 'door'), cutWindow: () => M.openWallModel('cut', 'window'), cutDoor: () => M.openWallModel('cut', 'door'),
   chair: M.chairModel, table: M.tableModel, shelf: M.shelfModel, trophyRack: M.trophyRackModel, coop: M.coopModel, logBridge: () => M.bridgeModel('log', 2.5, 0), ropeBridge: () => M.bridgeModel('rope', 2.5, 0),
   leanTo: M.leanToModel, waterFilter: M.waterFilterModel, repairBench: M.repairBenchModel,
-  logRoof: M.logRoofModel, shingleRoof: M.shingleRoofModel, tileRoof: M.tileRoofModel, bedroll: M.bedrollModel, fancyBed: M.fancyBedModel,
+  logRoof: M.logRoofModel, shingleRoof: M.shingleRoofModel, tileRoof: M.tileRoofModel, bedroll: M.bedrollModel, strawBed: M.strawBedModel, fancyBed: M.fancyBedModel,
 };
 
 /**
@@ -101,7 +101,7 @@ export class GroundItems {
         seedWheat: () => M.seedsModel(0xd8b464), seedCorn: () => M.seedsModel(0xe8c030), seedPotato: () => M.potatoModel(), seedCarrot: () => M.seedsModel(0x7a6a4a), wheat: M.wheatModel,
         berries: M.berriesModel, apple: M.appleModel, mushroom: () => M.mushroomModel(), jerky: M.jerkyModel, corn: () => M.cornModel(false), roastCorn: () => M.cornModel(true),
         potato: () => M.potatoModel(false), bakedPotato: () => M.potatoModel(true), carrot: M.carrotModel, dough: M.doughModel, bread: M.breadModel, stew: M.stewModel,
-        honey: () => M.seedsModel(0xe8a020), rawEgg: () => M.eggModel(false), cookedEgg: () => M.eggModel(true), salt: () => M.seedsModel(0xf4f2ee), sand: () => M.seedsModel(0xe2c88a),
+        honey: () => M.seedsModel(0xe8a020), rawEgg: () => M.eggModel(false), cookedEgg: () => M.eggModel(true), salt: () => M.seedsModel(0xf4f2ee), straw: M.wheatModel, sand: () => M.seedsModel(0xe2c88a),
         flintSteel: () => M.flintSteelModel(false), fineFlintSteel: () => M.flintSteelModel(true),
         oldSword: () => swordModel(0xa8aca4, 0xc8ccc4, 0xb08a3a), oldMap: () => M.hideModel(),
         fangSword: () => swordModel(0xf0e8d4, 0xfaf4e4, 0x5a4a3a), antlerBow: () => bowModel(true, 0xcbb690), tuskPickaxe: () => pickaxeModel(0xe8dcc0, 0xf4ecd8),
@@ -277,7 +277,7 @@ export class GroundItems {
     if (tilt) mesh.quaternion.copy(tilt);
     this.dropGroup.add(mesh);
     // (Each with its own name, to be known by online: see WorldSync.)
-    const d = { stack, x, y, z, vy, mesh, settled: false, stuck: !!tilt, age: 0, uid: uid ?? `${this.uidPrefix ?? 'me'}.${(this.nextUid = (this.nextUid ?? 0) + 1)}` };
+    const d = { stack, x, y, z, vy, mesh, turn, settled: false, stuck: !!tilt, age: 0, uid: uid ?? `${this.uidPrefix ?? 'me'}.${(this.nextUid = (this.nextUid ?? 0) + 1)}` };
     this.drops.push(d);
     return d;
   }
@@ -315,9 +315,52 @@ export class GroundItems {
       if (!Number.isFinite(g) || d.y <= g) {
         if (Number.isFinite(g)) d.y = g;
         d.settled = true;
+        if (Number.isFinite(g) && !d.stuck) this.#rest(d, ground);
       }
       d.mesh.position.set(d.x, d.y, d.z);
     }
+  }
+
+  // A dropped thing come to rest: moved aside off anything already lying
+  // there (not one inside another), laid along the slope of the ground under
+  // it, and lifted so none of it sinks into the ground.
+  #rest(d, ground) {
+    const geo = d.mesh.geometry;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const box = geo.boundingBox;
+    d.restR = Math.min(0.6, Math.max(0.12, Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.45));
+    for (let pass = 0; pass < 8; pass++) {
+      let moved = false;
+      for (const o of this.drops) {
+        if (o === d || !o.settled || o.restR === undefined || Math.abs(o.y - d.y) > 1) continue;
+        let dx = d.x - o.x, dz = d.z - o.z;
+        const dist = Math.hypot(dx, dz), need = d.restR + o.restR;
+        if (dist >= need) continue;
+        if (dist < 1e-3) (dx = Math.cos(d.turn ?? pass)), (dz = Math.sin(d.turn ?? pass));
+        const len = Math.hypot(dx, dz);
+        d.x = o.x + (dx / len) * need;
+        d.z = o.z + (dz / len) * need;
+        moved = true;
+      }
+      if (!moved) break;
+    }
+    const from = d.y + 0.5, y = ground(d.x, d.z, from);
+    if (Number.isFinite(y)) d.y = y;
+    // (The lie of the ground under it.)
+    const e = 0.25, h = (x, z) => {
+      const v = ground(x, z, from);
+      return Number.isFinite(v) ? v : d.y;
+    };
+    const normal = new Vector3(-(h(d.x + e, d.z) - h(d.x - e, d.z)) / (2 * e), 1, -(h(d.x, d.z + e) - h(d.x, d.z - e)) / (2 * e)).normalize();
+    if (normal.y < 0.55) {
+      // (Too steep to lie along: as steep as it can.)
+      const hl = Math.hypot(normal.x, normal.z) || 1, k = Math.sqrt(1 - 0.55 * 0.55) / hl;
+      normal.set(normal.x * k, 0.55, normal.z * k);
+    }
+    const yaw = new Quaternion().setFromAxisAngle(up, d.turn ?? 0);
+    d.mesh.quaternion.setFromUnitVectors(up, normal).multiply(yaw);
+    // (Its underside on the ground, not in it.)
+    d.y += Math.max(0, -box.min.y) * normal.y + 0.01;
   }
 
   /**

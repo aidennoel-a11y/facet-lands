@@ -538,6 +538,7 @@ kbd {
 
 /* Crafting, and a chest. */
 .craft,
+.inv-ui,
 .chest-ui {
   position: fixed;
   left: 50%;
@@ -556,6 +557,7 @@ kbd {
   z-index: 10;
 }
 .craft header,
+.inv-ui header,
 .chest-ui header {
   display: flex;
   justify-content: space-between;
@@ -566,17 +568,21 @@ kbd {
 .craft h2,
 .chest-ui h2,
 .chest-ui h3,
+.inv-ui h2,
+.inv-ui h3,
 .death h2 {
   margin: 0;
   font: 700 22px/1 var(--display);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.inv-ui h3,
 .chest-ui h3 {
   margin: 12px 0 6px;
   font-size: 15px;
 }
 .craft header p,
+.inv-ui header p,
 .chest-ui header p {
   margin: 0;
   font-size: 12px;
@@ -1789,3 +1795,90 @@ kbd {
 .ach-list li.got { opacity: 1; background: rgba(242, 216, 128, 0.14); }
 .ach-list b { font-size: 13px; }
 .ach-list li.got b { color: #f2d880; }
+
+/* The inventory (E): you and what you wear, beside what you carry. */
+.inv-ui {
+  width: min(680px, calc(100vw - 2 * var(--gutter)));
+}
+.inv-ui header p {
+  flex: 1;
+}
+.inv-sort {
+  font: 600 13px/1 var(--display, sans-serif);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 7px 12px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.inv-sort:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+.inv-body {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+.inv-figure {
+  flex: 0 0 170px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 12px;
+}
+.inv-person {
+  width: 120px;
+  height: 200px;
+}
+.inv-worn {
+  display: flex;
+  gap: 6px;
+}
+.inv-worn .slot.empty {
+  opacity: 0.6;
+}
+.worn-empty {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.inv-grid {
+  flex: 1;
+  min-width: 0;
+}
+.inv-grid ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.inv-grid .slot {
+  position: relative;
+}
+.inv-ui .slot.picked {
+  outline: 3px solid #f2d880;
+  outline-offset: 1px;
+}
+.inv-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+@media (max-width: 560px) {
+  .inv-body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .inv-figure {
+    flex: none;
+  }
+}

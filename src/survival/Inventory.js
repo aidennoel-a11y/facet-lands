@@ -14,6 +14,7 @@ export class Inventory {
     this.stackBonus = null; // (id) => how many times a full stack of it a slot holds (a quiver: arrows)
     this.worn = null; // (a coat)
     this.armour = null;
+    this.back = null; // (a backpack, on your back: it opens the slots past the ninth)
     this.listeners = new Set();
   }
 
@@ -142,11 +143,64 @@ export class Inventory {
     this.slots.fill(null);
     this.worn = null;
     this.armour = null;
+    this.back = null;
+    this.changed();
+  }
+
+  /**
+   * Moves the stack in slot `a` to slot `b`: onto it if it's the same thing
+   * (as much as fits), else the two change places. Returns whether anything moved.
+   */
+  move(a, b) {
+    if (a === b || a >= this.open || b >= this.open) return false;
+    const from = this.slots[a], to = this.slots[b];
+    if (!from) return false;
+    if (to && to.id === from.id && this.max(from.id) > 1) {
+      const n = Math.min(from.count, this.max(from.id) - to.count);
+      if (n <= 0) return false;
+      to.count += n;
+      from.count -= n;
+      if (from.fresh !== undefined) to.fresh = Math.min(to.fresh ?? Infinity, from.fresh);
+      if (from.count <= 0) this.slots[a] = null;
+    } else {
+      this.slots[a] = to;
+      this.slots[b] = from;
+    }
+    this.changed();
+    return true;
+  }
+
+  /**
+   * Tidies what you carry: like things stacked together, in order of kind
+   * (`groups`: the order of ITEMS' groups) then name; tools and weapons first,
+   * into the hotbar.
+   */
+  sort(groups) {
+    const stacks = this.slots.slice(0, this.open).filter(Boolean);
+    const merged = [];
+    for (const st of stacks) {
+      const max = this.max(st.id);
+      let left = st.count;
+      for (const m of merged) {
+        if (!left || m.id !== st.id || max <= 1 || m.count >= max || m.dur !== undefined) continue;
+        const n = Math.min(left, max - m.count);
+        m.count += n;
+        left -= n;
+        if (st.fresh !== undefined) m.fresh = Math.min(m.fresh ?? Infinity, st.fresh);
+      }
+      if (left) merged.push({ ...st, count: left });
+    }
+    const rank = (st) => {
+      const g = groups.indexOf(ITEMS[st.id]?.group);
+      return g < 0 ? groups.length : g;
+    };
+    merged.sort((p, q) => rank(p) - rank(q) || ITEMS[p.id].name.localeCompare(ITEMS[q.id].name) || q.count - p.count);
+    for (let i = 0; i < this.open; i++) this.slots[i] = merged[i] ?? null;
     this.changed();
   }
 
   toJSON() {
-    return { slots: this.slots, worn: this.worn, armour: this.armour };
+    return { slots: this.slots, worn: this.worn, armour: this.armour, back: this.back };
   }
 
   load(data) {
@@ -154,6 +208,10 @@ export class Inventory {
     (data?.slots ?? []).forEach((s, i) => i < this.slots.length && (this.slots[i] = s));
     this.worn = data?.worn ?? null;
     this.armour = data?.armour ?? null;
+    this.back = data?.back ?? null;
+    // (From before backpacks were worn: one carried in a slot goes on your back.)
+    const k = this.back ? -1 : this.slots.findIndex((st) => st?.id === 'backpack');
+    if (k >= 0) (this.back = this.slots[k]), (this.slots[k] = null);
     this.changed();
   }
 }

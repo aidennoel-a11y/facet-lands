@@ -46,8 +46,11 @@ self.onmessage = (event) => {
     for (const course of g.rivers.inBox(x - R, z - R, x + R, z + R)) {
       const P = course.points;
       let best = null;
+      // (Not where it lies still: across the pond it rises from, or the lake it ends in.)
+      const still = (p) => [course.pond, course.tarn].some((w) => w?.r && Math.hypot(p.x - w.x, p.z - w.z) < w.r + 3);
       for (let i = 0; i < P.length - 1; i++) {
         const a = P[i], b = P[i + 1];
+        if (still(a) && still(b)) continue;
         const dx = b.x - a.x, dz = b.z - a.z, run = Math.hypot(dx, dz) || 1, drop = a.level - b.level;
         if (drop / run >= 0.4 && drop >= 0.8 && Math.hypot(b.x - x, b.z - z) < R) falls.push({ x: b.x, y: b.level, z: b.z, drop, width: Math.max(a.width, b.width) });
         const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (run * run)));

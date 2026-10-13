@@ -20,13 +20,18 @@ export class GrassCut {
   }
 
   /** Cut round (x, z), `r` metres, on `day` (world days). */
+  /** Returns how many square metres of it were standing (not cut already). */
   cut(x, z, r, day) {
+    let fresh = 0;
     for (let k = Math.floor(z - r); k <= Math.floor(z + r); k++) {
       for (let i = Math.floor(x - r); i <= Math.floor(x + r); i++) {
-        if (Math.hypot(i + 0.5 - x, k + 0.5 - z) <= r) this.cells.set(`${i},${k}`, day);
+        if (Math.hypot(i + 0.5 - x, k + 0.5 - z) > r) continue;
+        if (!this.cells.has(`${i},${k}`)) fresh++;
+        this.cells.set(`${i},${k}`, day);
       }
     }
     this.wait = 0;
+    return fresh;
   }
 
   /** Keeps the map round you up to date (now and then, or when you've cut more). */

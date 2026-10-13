@@ -49,7 +49,19 @@ function nameTag(name, colour) {
   return sprite;
 }
 
-class Remote {
+/** What you're doing, packed for the others (and for your own figure, seen from behind: see main's third person). */
+export function packFlags(me, items) {
+  let flags = (me.crouch ? FLAG.crouch : 0) | (me.sprint ? FLAG.sprint : 0) | (me.swim ? FLAG.swim : 0) | (me.fly ? FLAG.fly : 0);
+  // (What's in your hand and what you're doing with it: see ACTS.)
+  const p = me.pose;
+  if (p && items) {
+    const act = Math.max(0, ACTS.indexOf(p.act));
+    flags |= (act << 4) | ((p.n & 1) << 7) | ((items.ids.indexOf(p.held) + 1) << 8) | (Math.round(p.draw * 15) << 20);
+  }
+  return flags;
+}
+
+export class Remote {
   constructor(scene, { id, name, colour }) {
     this.id = id;
     this.name = name;
@@ -406,14 +418,7 @@ export class Multiplayer {
     this.sendWait -= dt;
     if (this.sendWait > 0) return;
     this.sendWait = SEND_EVERY;
-    let flags = (me.crouch ? FLAG.crouch : 0) | (me.sprint ? FLAG.sprint : 0) | (me.swim ? FLAG.swim : 0) | (me.fly ? FLAG.fly : 0);
-    // (What's in your hand and what you're doing with it: see ACTS.)
-    const p = me.pose;
-    if (p && this.items) {
-      const act = Math.max(0, ACTS.indexOf(p.act));
-      flags |= (act << 4) | ((p.n & 1) << 7) | ((this.items.ids.indexOf(p.held) + 1) << 8) | (Math.round(p.draw * 15) << 20);
-    }
-    this.ws.send(JSON.stringify({ t: 'state', s: [me.x, me.y, me.z, me.yaw, me.pitch, flags] }));
+    this.ws.send(JSON.stringify({ t: 'state', s: [me.x, me.y, me.z, me.yaw, me.pitch, packFlags(me, this.items)] }));
   }
 
   #reset() {

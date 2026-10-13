@@ -209,7 +209,7 @@ export class PlayerControls {
     return {
       forward: (k.has('KeyW') || k.has('ArrowUp') || this.autoMove ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0),
       strafe: (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0),
-      up: (k.has('Space') || k.has('KeyE') ? 1 : 0) - (k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyQ') || k.has('KeyC') ? 1 : 0),
+      up: (k.has('Space') ? 1 : 0) - (k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyC') ? 1 : 0), // (Q and E: picking up and the inventory)
     };
   }
 

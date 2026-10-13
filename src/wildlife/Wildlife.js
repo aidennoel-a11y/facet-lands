@@ -1004,6 +1004,7 @@ export class Wildlife {
       else if (a.circling) this.#circler(a, step, c);
       else if (a.kind === 'monkey') this.#monkey(a, step, c);
       else this.#songbird(a, step, c);
+      this.#prints(a, c);
       if (prof) prof[a.kind] = (prof[a.kind] ?? 0) + performance.now() - t0;
     }
     // (No walking through anyone: a creature standing in the way of one of you is pushed aside.)
@@ -1028,6 +1029,28 @@ export class Wildlife {
     const td = prof ? performance.now() : 0;
     this.#draw();
     if (prof) prof.draw = (prof.draw ?? 0) + performance.now() - td;
+  }
+
+  // Prints, in the snow and the mud, of those that don't step with legs of
+  // their own (see #walker: stepFeet): a snake's trail, a bird hopping about
+  // on the ground, a monkey come down; and anything with legs whose feet
+  // aren't being worked out. One every stride along its way, near you.
+  #prints(a, c) {
+    const was = a.printAt;
+    a.printAt = { x: a.x, z: a.z };
+    if (!was || a.feet || !a.alive || a.swimming || a.flying || !c.step) return;
+    const cam = c.camera.position;
+    if (Math.abs(a.x - cam.x) > 70 || Math.abs(a.z - cam.z) > 70) return;
+    const g = c.ground(a.x, a.z);
+    if (!Number.isFinite(g) || Math.abs((a.y ?? g) - g) > 0.4) return; // (up a tree, on a branch, in the air)
+    const sp = SPECIES[a.kind], serpent = !!sp.serpent;
+    a.printGone = (a.printGone ?? 0) + Math.hypot(a.x - was.x, a.z - was.z);
+    const stride = serpent ? 0.12 * a.scale : Math.max(0.12, (sp.radius ?? 0.25) * a.scale * 1.4);
+    if (a.printGone < stride) return;
+    a.printGone %= stride;
+    // (Left and right in turn, but a snake's one line.)
+    const side = serpent ? 0 : (a.printSide = 1 - (a.printSide ?? 0)) ? 1 : -1, off = serpent ? 0 : 0.06 * a.scale;
+    c.step(a, a.x + Math.cos(a.heading ?? 0) * off * side, a.z - Math.sin(a.heading ?? 0) * off * side, (a.speed ?? 0) > (sp.walk ?? 1) * 2);
   }
 
   #hideAll() {

@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, coopModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, coopModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -68,6 +68,7 @@ const KINDS = {
   shingleRoof: { make: shingleRoofModel, roof: true, steep: 99 },
   tileRoof: { make: tileRoofModel, roof: true, steep: 99, stone: true },
   bedroll: { make: bedrollModel, box: [0.5, 1.0], tall: 0.2, bed: true, tilt: true },
+  strawBed: { make: strawBedModel, box: [0.55, 1.0], tall: 0.3, bed: true, tilt: true },
   fancyBed: { make: fancyBedModel, box: [0.8, 1.15], tall: 0.8, bed: true },
   // (The Lost Keep's altar: not built, found. See Game.#offer.)
   keepAltar: { make: altarModel, box: [1.0, 0.7], tall: 1.1 },
@@ -577,9 +578,16 @@ export class Structures {
         mesh = new Mesh(this.models[`hide${j.done}`] ?? (this.models[`hide${j.done}`] = stretchedHideModel(j.done)), this.material);
       } else if (s.type === 'campfire') {
         mesh = new Mesh(this.modelOf(id), this.material);
-        const a = (k / 3) * Math.PI * 2;
-        mesh.position.set(Math.cos(a) * 0.3, id === 'pot' || id === 'waterskin' || id === 'stew' ? 0.35 : 0.62, Math.sin(a) * 0.3);
-        if (id !== 'pot' && id !== 'waterskin' && id !== 'stew') mesh.scale.setScalar(0.8);
+        if (id === 'pot' || id === 'waterskin' || id === 'stew') {
+          const a = (k / 3) * Math.PI * 2;
+          mesh.position.set(Math.cos(a) * 0.3, 0.35, Math.sin(a) * 0.3);
+        } else {
+          // (Meat, fish, bread... laid on the stones of the ring, leaning in to the flames.)
+          const a = ((1 + 3 * k) / 9) * Math.PI * 2; // (on a stone: see campfireModel)
+          mesh.position.set(Math.cos(a) * 0.58, 0.2, Math.sin(a) * 0.58);
+          mesh.rotation.set(0, Math.PI / 2 - a, -0.35, 'YXZ'); // (its length along the ring, tipped towards the fire)
+          mesh.scale.setScalar(0.8);
+        }
       } else return;
       mesh.castShadow = true;
       g.add(mesh);
@@ -890,7 +898,7 @@ export class Structures {
       else if (s.type === 'anvil' || s.type === 'grindstone') points.push([s.x, s.y + 0.8, s.z, 0.6]);
       else if (s.type === 'tanningRack') for (const h of [0.6, 1.3]) points.push([s.x, s.y + h, s.z, 0.75]);
       else if (s.type === 'stake') for (const h of [0.5, 1.4, 2.3]) points.push([s.x, s.y + h, s.z, 0.4]);
-      else if (KINDS[s.type].bed) for (const v of [-0.7, 0, 0.7]) points.push([s.x + bx * v, s.y + (s.type === 'bedroll' ? 0.15 : 0.35), s.z + bz * v, 0.55]);
+      else if (KINDS[s.type].bed) for (const v of [-0.7, 0, 0.7]) points.push([s.x + bx * v, s.y + (s.type === 'bedroll' ? 0.15 : s.type === 'strawBed' ? 0.25 : 0.35), s.z + bz * v, 0.55]);
       else if (KINDS[s.type].stairs) for (const v of [-1.5, -0.5, 0.5, 1.5]) points.push([s.x + bx * v, s.y + (STAIRS_RISE * (v + 2)) / 4, s.z + bz * v, 0.8]);
       else if (s.type === 'raft') for (const v of [-0.8, 0, 0.8]) points.push([s.x + bx * v, s.y + 0.3, s.z + bz * v, 1]);
       else if (s.type === 'furnace') for (const h of [0.4, 1]) points.push([s.x, s.y + h, s.z, 0.75]);

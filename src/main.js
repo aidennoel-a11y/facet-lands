@@ -59,7 +59,7 @@ import { sparkleUniforms } from './render/waterSparkle.js';
 import { addCloudShadow, cloudShadowUniforms } from './render/cloudShadow.js';
 import { Minimap } from './ui/Minimap.js';
 import { BiomeMap } from './ui/BiomeMap.js';
-import { Multiplayer } from './net/Multiplayer.js';
+import { Multiplayer, Remote, packFlags } from './net/Multiplayer.js';
 import { WorldSync } from './net/WorldSync.js';
 import { applyQuality, MAX_VIEW } from './quality.js';
 
@@ -603,6 +603,12 @@ const ANIMAL_PRINTS = {
   deer: [PRINT.hoof, 0.11], elk: [PRINT.hoof, 0.1], moose: [PRINT.hoof, 0.16], bison: [PRINT.hoof, 0.17], blackBear: [PRINT.paw, 0.22], grizzly: [PRINT.paw, 0.26],
   rabbit: [PRINT.rabbit, 0.09], hare: [PRINT.rabbit, 0.06], wolf: [PRINT.paw, 0.12], wolfPup: [PRINT.paw, 0.07], coyote: [PRINT.paw, 0.09], fox: [PRINT.paw, 0.07],
   sheep: [PRINT.hoof, 0.08], boar: [PRINT.hoof, 0.1], cougar: [PRINT.paw, 0.12], turkey: [PRINT.paw, 0.1], duck: [PRINT.paw, 0.05],
+  tiger: [PRINT.paw, 0.15], lion: [PRINT.paw, 0.14], jaguar: [PRINT.paw, 0.12], panther: [PRINT.paw, 0.12], hyena: [PRINT.paw, 0.1], panda: [PRINT.paw, 0.18],
+  mountainGoat: [PRINT.hoof, 0.07], horse: [PRINT.hoof, 0.13], camel: [PRINT.paw, 0.17], elephant: [PRINT.square, 0.4], hippo: [PRINT.square, 0.26],
+  crocodile: [PRINT.paw, 0.14], scorpion: [PRINT.square, 0.025],
+  // (Those without legs of their own to step with: see Wildlife.#prints. A snake's a smooth trail; a bird on the ground, its little forked feet.)
+  snake: [PRINT.square, 0.06], python: [PRINT.square, 0.12], monkey: [PRINT.paw, 0.06],
+  songbird: [PRINT.paw, 0.025], starling: [PRINT.paw, 0.025], crow: [PRINT.paw, 0.04], gull: [PRINT.paw, 0.045], hawk: [PRINT.paw, 0.05], owl: [PRINT.paw, 0.05], eagle: [PRINT.paw, 0.06],
 };
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
@@ -703,6 +709,41 @@ function treeBump(dx, dz) {
   bumped.touching = touching;
 }
 
+// Third person (F3): you, seen from a few metres behind and a little above,
+// the camera drawn in short of anything in the way (the ground, a hill).
+// Only the drawing: everything else goes on from your own eyes.
+let thirdPerson = false;
+let selfFigure = null;
+const eyeSaved = new THREE.Vector3(), behind = new THREE.Vector3();
+function thirdPersonView(dt, now) {
+  const on = thirdPerson && !loading && controls.mode === 'walk' && !game.sleeping;
+  if (game.hand) game.hand.visible = !on;
+  if (!on) {
+    if (selfFigure) selfFigure.root.visible = false;
+    return null;
+  }
+  selfFigure ??= new Remote(scene, { id: 'me', name: 'You', colour: '#c8965a' });
+  selfFigure.tag.visible = false;
+  const t = now / 1000, me = { crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: false, pose: game.pose() };
+  selfFigure.push([camera.position.x, camera.position.y - controls.eyeHeight, camera.position.z, controls.euler.y, controls.euler.x, packFlags(me, mp.items)], t);
+  selfFigure.update(dt, t + 0.15, mp.items); // (drawn as you are now, not a moment behind as the others are)
+  eyeSaved.copy(camera.position);
+  camera.getWorldDirection(behind);
+  // (Back along the way you look, a little up: stopped short of the ground.)
+  const want = 3.6;
+  let reach = want;
+  for (let d = 0.4; d <= want; d += 0.3) {
+    const x = eyeSaved.x - behind.x * d, y = eyeSaved.y - behind.y * d + d * 0.12, z = eyeSaved.z - behind.z * d;
+    const g = chunks.groundHeightAt(x, z);
+    if (Number.isFinite(g) && y < g + 0.35) {
+      reach = Math.max(0.4, d - 0.3);
+      break;
+    }
+  }
+  camera.position.set(eyeSaved.x - behind.x * reach, eyeSaved.y - behind.y * reach + reach * 0.12, eyeSaved.z - behind.z * reach);
+  return eyeSaved;
+}
+
 const controls = new PlayerControls(camera, canvas, {
   groundAt,
   seaLevel: WORLD.seaLevel,
@@ -778,7 +819,12 @@ const game = new Game({
   // (The giant mushrooms in the caves: cut down with an axe, see CaveLayer.)
   shrooms: { pick: (o, d, r) => pickShroom(o, d, r), fell: (hit, away) => fellShroom(hit, scene, away), cut: shroomsCut },
   // (The long grass cut with a sickle: see GrassCut.)
-  cutGrass: (x, z, r) => grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24),
+  // (How much standing grass the blade went through: none on rock, sand, snow or in the water.)
+  cutGrass: (x, z, r) => {
+    const fresh = grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24);
+    const kind = fresh ? stepSurface(x, z) : null;
+    return kind === 'grass' || kind === 'dirt' || kind === 'leaves' ? fresh : 0;
+  },
   cutJSON: () => grassCut.toJSON(),
   loadCut: (list) => grassCut.load(list),
   burnsJSON: () => fires.toJSON(),
@@ -1029,9 +1075,15 @@ ui.fly.addEventListener('change', () => {
 const peaceful = document.getElementById('peaceful');
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
-  // P (or F3) shows and hides everything on screen but the crosshair: the
+  // F3: seen from behind, or through your own eyes.
+  if (e.code === 'F3') {
+    e.preventDefault();
+    thirdPerson = !thirdPerson;
+    return;
+  }
+  // P shows and hides everything on screen but the crosshair: the
   // panel, the minimap, the hotbar.
-  if (e.code === 'KeyP' || e.code === 'F3') {
+  if (e.code === 'KeyP') {
     e.preventDefault();
     const hud = document.getElementById('hud');
     const hide = !hud.hidden;
@@ -1050,7 +1102,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyG') ui.wireframe.click();
   if (e.code === 'KeyT') ui.cycle.click();
   if (e.code === 'KeyH') ui.shadows.click();
-  if (e.code === 'KeyR') ui.rays.click();
+  if (e.code === 'KeyR' && game.mode === 'testing') ui.rays.click(); // (R drops things, playing)
   if (e.code === 'KeyN') ui.night.click();
   if (e.code === 'KeyM') ui.sound.click();
   if (e.code === 'KeyL') {
@@ -1396,7 +1448,7 @@ function waterSounds(dt, e) {
   for (const r of waterNear.runs) {
     const d = Math.hypot(r.x - p.x, (r.y - p.y) * 0.7, r.z - p.z);
     if (r.stream && r.width < 6) {
-      const v = (0.35 + Math.min(0.65, r.steep * 5)) / (1 + (d / 10) ** 2);
+      const v = (0.15 + Math.min(0.85, r.steep * 6)) / (1 + (d / 10) ** 2); // (a slow, level stream all but silent)
       brook += v;
       brookPan += v * panTowards(camera, r.x, r.z);
     } else {
@@ -2053,7 +2105,7 @@ function tick(now) {
     autumn: seasonUniforms.uAutumn.value,
     step: (a, x, z, running) => {
       const [shape, size] = ANIMAL_PRINTS[a.kind] ?? [PRINT.hoof, 0.12];
-      footfall(x, z, a.heading, shape, size * a.scale, running ? 1 : 0.35, true);
+      footfall(x, z, a.heading, shape, size * a.scale, running ? 1 : 0.35, size >= 0.07); // (the faint tracks in grass to follow: not a bird's or a snake's)
       logTrack(a, x, z, size);
       // (Close by, you hear them: hooves and paws on the ground, a branch
       // cracking as a big one comes through the woods.)
@@ -2109,6 +2161,7 @@ function tick(now) {
   lavaHeat(dt);
   const tremble = volcanoes.shake > 0 && !controls.swimming ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0;
   camera.position.y += tremble;
+  const eye = thirdPersonView(dt, now);
   camera.updateMatrixWorld();
   chunks.cull(camera.position); // (the land behind the hills not drawn)
   // (Every other frame, for what can wait a frame: see the clouds.)
@@ -2130,6 +2183,7 @@ function tick(now) {
   }
   for (const child of hidden) child.visible = true;
 
+  if (eye) camera.position.copy(eye); // (back to your own eyes, for everything else)
   camera.position.y -= tremble;
   // (On the map: the ruins you've been to, and where an old map showed more.)
   // (Testing: every ruin for 2 km round, the far ones pointed to from the map's edge.)

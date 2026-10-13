@@ -20,6 +20,32 @@ const GROUPS = ['Tools', 'Materials', 'Trophies', 'Food', 'Farming', 'Worn', 'Bu
  * creative menu (Z: every item, for testing), a chest's contents, the red
  * of being hurt, the frost of the cold, the dark of sleep, and the end.
  */
+/**
+ * You, as the inventory shows you: a figure in what you wear, the coat and
+ * armour in their colours, a backpack (if worn) on your back, its straps
+ * over your shoulders.
+ */
+const WEAR_COLOUR = {
+  coat: '#a8743e', furCloak: '#8a7458', paleCloak: '#e8e4dc', caveCloak: '#3a3634',
+  armour: '#7a5230', steelArmour: '#8a96a0', scarArmour: '#4a3426', lionArmour: '#c89a5a', tigerArmour: '#d07a2a', crocArmour: '#4a6a3a',
+};
+function personSvg(inv) {
+  const coat = inv.worn ? WEAR_COLOUR[inv.worn.id] ?? '#8a6a4a' : null, armour = inv.armour ? WEAR_COLOUR[inv.armour.id] ?? '#7a5230' : null, pack = inv.back?.id === 'backpack';
+  const skin = '#e2b48c', shirt = '#9a8a6a', legs = '#5a4a3a';
+  return `
+    ${pack ? '<rect x="22" y="62" width="76" height="70" rx="12" fill="#6a4426"/><rect x="30" y="68" width="60" height="22" rx="6" fill="#8a5a34"/>' : ''}
+    <circle cx="60" cy="34" r="17" fill="${skin}"/>
+    <path d="M44 28q16-16 32 0v-6q-16-14-32 0z" fill="#5a3a22"/>
+    <rect x="52" y="49" width="16" height="9" fill="${skin}"/>
+    <path d="M36 60h48l8 64H28z" fill="${coat ?? shirt}"/>
+    ${armour ? `<path d="M40 64h40l5 46H35z" fill="${armour}"/><path d="M40 78h40M39 92h42" stroke="rgba(0,0,0,.25)" stroke-width="3"/>` : ''}
+    <path d="M36 62l-14 54h10l12-40z" fill="${coat ?? shirt}"/><path d="M84 62l14 54H88L76 76z" fill="${coat ?? shirt}"/>
+    <circle cx="27" cy="120" r="6" fill="${skin}"/><circle cx="93" cy="120" r="6" fill="${skin}"/>
+    <path d="M38 124h20l-2 76H42zM62 124h20l-4 76H64z" fill="${legs}"/>
+    <path d="M40 200h18v8H36zM64 200h18l4 8H64z" fill="#3a2a1c"/>
+    ${pack ? '<path d="M44 60l4 50M76 60l-4 50" stroke="#4a2e18" stroke-width="5"/>' : ''}`;
+}
+
 export class Hud {
   constructor(root) {
     this.root = root;
@@ -28,6 +54,7 @@ export class Hud {
         ${BARS.map(([id, label, colour, icon]) => `<div class="vital" data-vital="${id}" title="${label}"><svg viewBox="0 0 32 32" aria-hidden="true" fill="${colour}">${icon}</svg><span class="vital-bar"><i style="background:${colour}"></i></span></div>`).join('')}
         <div class="worn worn-coat" hidden title="Wearing"></div>
         <div class="worn worn-armour" hidden title="Wearing"></div>
+        <div class="worn worn-back" hidden title="On your back"></div>
         <div class="wind" title="The wind: your scent goes the way it blows"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l7 20-7-5-7 5z" fill="#dfe8ee"/></svg></div>
       </div>
       <div class="status"></div>
@@ -56,6 +83,26 @@ export class Hud {
       <section class="creative" hidden aria-label="Creative: every item">
         <header><h2>Every item</h2><p>Click for a stack in your hotbar · Z or Esc to close</p></header>
         <div class="creative-groups"></div>
+      </section>
+      <section class="inv-ui" hidden aria-label="Inventory">
+        <header><h2>Inventory</h2><p>Click a stack, then where it should go · E or Esc to close</p><button type="button" class="inv-sort">Sort</button></header>
+        <div class="inv-body">
+          <div class="inv-figure">
+            <svg class="inv-person" viewBox="0 0 120 220" aria-hidden="true"></svg>
+            <div class="inv-worn">
+              <button type="button" class="slot" data-worn="worn" title="Coat"></button>
+              <button type="button" class="slot" data-worn="armour" title="Armour"></button>
+              <button type="button" class="slot" data-worn="back" title="Back"></button>
+            </div>
+          </div>
+          <div class="inv-grid">
+            <h3>Hotbar</h3>
+            <ol class="inv-hot"></ol>
+            <h3 class="inv-pack-head">Backpack</h3>
+            <ol class="inv-pack"></ol>
+          </div>
+        </div>
+        <p class="inv-note">Coats, armour and a backpack go on you: click one, then its place on the figure (or click it in your hand).</p>
       </section>
       <section class="chest-ui" hidden aria-label="Chest">
         <header><h2>Chest</h2><p>Click to move a stack across · food in here keeps · E or Esc to close</p></header>
@@ -90,7 +137,7 @@ export class Hud {
   }
 
   get busy() {
-    return ['.craft', '.creative', '.chest-ui', '.death', '.won', '.skills-ui'].some((sel) => !this.el(sel).hidden);
+    return ['.craft', '.creative', '.chest-ui', '.inv-ui', '.death', '.won', '.skills-ui'].some((sel) => !this.el(sel).hidden);
   }
 
   /**
@@ -104,7 +151,7 @@ export class Hud {
       el.querySelector('i').style.width = `${Math.max(0, v)}%`;
       el.classList.toggle('low', v < 25);
     }
-    for (const [sel, stack] of [['.worn-coat', inventory.worn], ['.worn-armour', inventory.armour]]) {
+    for (const [sel, stack] of [['.worn-coat', inventory.worn], ['.worn-armour', inventory.armour], ['.worn-back', inventory.back]]) {
       const el = this.el(sel);
       el.hidden = !stack;
       if (stack) {
@@ -294,6 +341,78 @@ export class Hud {
     return true;
   }
 
+  // --- What you carry (E) ------------------------------------------------------------
+
+  toggleInventory(inventory) {
+    const panel = this.el('.inv-ui');
+    if (!panel.hidden) return this.closeAll();
+    this.closeAll();
+    panel.hidden = false;
+    this.inventory = inventory;
+    this.invSel = null;
+    this.renderInventory();
+    return true;
+  }
+
+  /**
+   * The inventory: you, with what you wear (coat, armour, a backpack on your
+   * back), and every slot you carry (the hotbar; the backpack's, if worn).
+   * Click a stack to take it up, then a slot to put it there (on a stack of
+   * the same: added to it; on something else: they change places); on the
+   * figure's places, to put on or take off.
+   */
+  renderInventory() {
+    const inv = this.inventory;
+    if (!inv || this.el('.inv-ui').hidden) return;
+    const sel = this.invSel;
+    const slot = (s, i) => `<li><button type="button" class="slot${sel === i ? ' picked' : ''}" data-i="${i}">${slotHtml(s)}${i < 9 ? `<span class="slot-key">${i + 1}</span>` : ''}</button></li>`;
+    this.el('.inv-hot').innerHTML = inv.slots.slice(0, 9).map(slot).join('');
+    const pack = inv.open > 9;
+    this.el('.inv-pack-head').hidden = !pack;
+    this.el('.inv-pack').innerHTML = pack ? inv.slots.slice(9, inv.open).map((s, k) => slot(s, k + 9)).join('') : '';
+    for (const b of this.el('.inv-worn').querySelectorAll('[data-worn]')) {
+      const st = inv[b.dataset.worn];
+      b.innerHTML = st ? slotHtml(st) : `<span class="worn-empty">${b.title}</span>`;
+      b.classList.toggle('empty', !st);
+    }
+    this.el('.inv-person').innerHTML = personSvg(inv);
+    const grid = this.el('.inv-grid'), note = this.el('.inv-note');
+    grid.onclick = (e) => {
+      const b = e.target.closest('[data-i]');
+      if (!b) return;
+      const i = Number(b.dataset.i);
+      if (this.invSel === null) {
+        if (!inv.slots[i]) return;
+        this.invSel = i;
+        note.textContent = `${ITEMS[inv.slots[i].id].name}: click where it should go${ITEMS[inv.slots[i].id].wear ? ', or its place on the figure to put it on' : ''}`;
+        return this.renderInventory();
+      }
+      const from = this.invSel;
+      this.invSel = null;
+      if (from === i) return this.renderInventory();
+      this.onInvMove?.(from, i);
+    };
+    this.el('.inv-worn').onclick = (e) => {
+      const b = e.target.closest('[data-worn]');
+      if (!b) return;
+      const want = b.dataset.worn;
+      if (this.invSel !== null) {
+        const s = inv.slots[this.invSel], kind = ITEMS[s?.id]?.wear;
+        const fits = { coat: 'worn', armour: 'armour', back: 'back' }[kind] === want;
+        const i = this.invSel;
+        this.invSel = null;
+        if (fits) return this.onInvWear?.(i);
+        note.textContent = `That doesn't go there`;
+        return this.renderInventory();
+      }
+      if (inv[want]) this.onInvTakeOff?.(want);
+    };
+    this.el('.inv-sort').onclick = () => {
+      this.invSel = null;
+      this.onInvSort?.();
+    };
+  }
+
   // --- A chest -------------------------------------------------------------------
 
   openChest(chest, pack, title = 'Chest', note = 'Click to move a stack across · food keeps three times as long in here · E or Esc to close') {
@@ -321,8 +440,9 @@ export class Hud {
   }
 
   closeAll() {
-    for (const sel of ['.craft', '.creative', '.chest-ui', '.skills-ui']) this.el(sel).hidden = true;
+    for (const sel of ['.craft', '.creative', '.chest-ui', '.skills-ui', '.inv-ui']) this.el(sel).hidden = true;
     this.chest = null;
+    this.invSel = null;
     return false;
   }
 
