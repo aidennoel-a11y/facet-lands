@@ -732,7 +732,13 @@ function thirdPersonView(dt, now) {
   // (Back along the way you look, a little up: stopped short of the ground.)
   const want = 3.6;
   let reach = want;
-  for (let d = 0.4; d <= want; d += 0.3) {
+  // (Not through a tree trunk, a wall or a roof behind you, either.)
+  const back = behind.clone().negate();
+  const trunk = trees.pick(eyeSaved, back, want);
+  if (trunk) reach = Math.min(reach, Math.max(0.4, trunk.distance - 0.5));
+  const built = game.structures.pick(eyeSaved, back, want);
+  if (built) reach = Math.min(reach, Math.max(0.4, built.distance - 0.4));
+  for (let d = 0.4; d <= reach; d += 0.3) {
     const x = eyeSaved.x - behind.x * d, y = eyeSaved.y - behind.y * d + d * 0.12, z = eyeSaved.z - behind.z * d;
     const g = chunks.groundHeightAt(x, z);
     if (Number.isFinite(g) && y < g + 0.35) {
