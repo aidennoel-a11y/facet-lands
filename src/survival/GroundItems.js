@@ -123,7 +123,7 @@ export class GroundItems {
     const seed = generator.seed ^ 0x9e3779;
     const G = 6, cells = Math.floor(size / G);
     const surface = { normalY: 1 };
-    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [] };
+    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], iron: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [] };
     const items = [];
     // (The country, sampled every 32 m.)
     const land = new Map();
@@ -175,7 +175,11 @@ export class GroundItems {
         if (!(y > sea + 0.3) || surface.normalY < 0.72) continue;
         // High in the mountains, some of the loose stone is coal, or the dark
         // ore that steel is made from (see Game.#mine).
-        if (id === 'rock' && y > 150) {
+        // Now and then, among the loose stones, a lump of rusty iron ore showing
+        // through: once in a while anywhere, far more often in the mountains and
+        // their foothills.
+        if (id === 'rock' && hash2(gi, gj, seed + 8) < 0.04 + 0.05 * smoothstep(0.2, 0.55, mount)) id = 'iron';
+        else if (id === 'rock' && y > 150) {
           const r = hash2(gi, gj, seed + 6) * smoothstep(150, 200, y);
           if (r > 0.82) id = 'mountainOre';
           else if (r > 0.6) id = 'coal';

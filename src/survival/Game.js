@@ -1326,10 +1326,14 @@ export class Game {
           this.dirty = true;
         }
         const flint = Math.random() < (stone ? 0.3 : 0.14);
+        // (Iron ore in the rock, now and then: more often up in the mountains and their foothills.)
+        const mount = this.generator?.()?.getMountainness?.(where.x, where.z) ?? 0;
+        const ore = Math.random() < (stone ? 0.08 : 0.05) + 0.12 * Math.min(1, Math.max(0, (mount - 0.2) / 0.35));
+        if (ore) this.#give('iron', 1, at);
         const n = 1 + (Math.random() < 0.4 ? 1 : 0) + (stone ? Math.min(2, Math.floor(stone.size)) : 0);
         this.#give('rock', n, at);
         if (flint) this.#give('flint', 1, at);
-        this.hotbar?.flash(`${ITEMS.rock.name}${n > 1 ? ` ×${n}` : ''}${flint ? ', and flint' : ''}`);
+        this.hotbar?.flash(`${ITEMS.rock.name}${n > 1 ? ` ×${n}` : ''}${flint ? ', and flint' : ''}${ore ? ', and iron ore!' : ''}`);
       }
     });
   }
