@@ -40,7 +40,7 @@ const PORT = Number(process.env.PORT) || 8787;
 // The version of the game this server speaks (net/Multiplayer.js's
 // VERSION): raised whenever what goes between them changes. A world is
 // only joined by players on the same version as its host.
-const VERSION = 3;
+const VERSION = 4;
 const TICK = 1000 / 15; // (how often everyone's positions go out)
 const MAX_PLAYERS = 16;
 const COLOURS = ['#d8572a', '#3a86c8', '#e0b030', '#5aa34a', '#a35ac8', '#d84a8a', '#3ab0a8', '#8a6a4a'];

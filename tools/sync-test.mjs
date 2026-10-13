@@ -110,7 +110,7 @@ await b.waitForTimeout(6000); // (sent on the host's next frame: slow, two brows
 ok('the guest sees the host\'s arrow fly', (await b.evaluate(() => window.shots)) > 0);
 // What the host holds, and swinging it: the guest sees it in their hand.
 // (Walking, the host comes down from the flying start: landed, and well again if the drop hurt, then the axe.)
-await a.evaluate(() => (window.world.controls.mode = 'walk'));
+await a.evaluate(() => window.world.controls.setMode('walk')); // (as the game switches: the first landing doesn't hurt)
 await a.waitForTimeout(8000);
 await a.evaluate(() => { const g = window.world.game; g.survival.alive = true; g.survival.health = 100; g.inventory.slots[g.hotbar.index] = { id: 'axe', count: 1, dur: 50 }; g.inventory.changed?.(); });
 await b.waitForTimeout(3000);

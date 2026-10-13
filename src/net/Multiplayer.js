@@ -136,7 +136,7 @@ class Remote {
   // What's in their hand, and what they're doing with it: swinging an axe,
   // drawing a bow, throwing a spear.
   #hands(dt, flags, pitch, swim, items) {
-    const heldIndex = (flags >> 8) & 255, act = (flags >> 4) & 7, draw = ((flags >> 16) & 15) / 15;
+    const heldIndex = (flags >> 8) & 4095, act = (flags >> 4) & 7, draw = ((flags >> 20) & 15) / 15; // (held: 12 bits, room for 4095 kinds of thing)
     const id = items?.ids[heldIndex - 1] ?? null;
     if (heldIndex !== this.heldIndex && items) {
       this.heldIndex = heldIndex;
@@ -203,7 +203,7 @@ class Remote {
  * VERSION): raised whenever that changes, so a game and a server, or two
  * players, that don't match say so instead of quietly not sharing things.
  */
-export const VERSION = 3;
+export const VERSION = 4;
 
 /** The game's own server, online for everyone (see server/README.md: it runs on Render). */
 export const DEFAULT_SERVER = 'wss://facet-lands-server.onrender.com';
@@ -411,7 +411,7 @@ export class Multiplayer {
     const p = me.pose;
     if (p && this.items) {
       const act = Math.max(0, ACTS.indexOf(p.act));
-      flags |= (act << 4) | ((p.n & 1) << 7) | ((this.items.ids.indexOf(p.held) + 1) << 8) | (Math.round(p.draw * 15) << 16);
+      flags |= (act << 4) | ((p.n & 1) << 7) | ((this.items.ids.indexOf(p.held) + 1) << 8) | (Math.round(p.draw * 15) << 20);
     }
     this.ws.send(JSON.stringify({ t: 'state', s: [me.x, me.y, me.z, me.yaw, me.pitch, flags] }));
   }

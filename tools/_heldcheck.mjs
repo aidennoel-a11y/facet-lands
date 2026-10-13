@@ -1,0 +1,16 @@
+import { createRequire } from 'module';
+import { execSync } from 'child_process';
+const require = createRequire(import.meta.url);
+const { chromium } = require(execSync('npm root -g').toString().trim() + '/playwright');
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 480, height: 300 } });
+page.on('pageerror', (e) => console.log('ERR', e.message, (e.stack ?? '').split('\n').slice(1, 3).join(' ')));
+await page.goto('http://localhost:4173/?seed=vz500g&x=1243&z=1567&up=0&vd=2&hide&hour=11', { timeout: 180000 });
+await page.waitForFunction(() => window.world?.chunks, null, { timeout: 200000 });
+await page.waitForTimeout(20000);
+await page.evaluate(() => (window.world.controls.mode = 'walk'));
+await page.waitForTimeout(6000);
+await page.evaluate(() => { const g = window.world.game; g.survival.alive = true; g.survival.health = 100; g.inventory.slots[g.hotbar.index] = { id: 'axe', count: 1, dur: 50 }; g.inventory.changed?.(); });
+await page.waitForTimeout(4000);
+console.log(await page.evaluate(() => { const g = window.world.game; return JSON.stringify({ cause: g.survival.cause, last: g.survival.lastHurt, panels: ['.craft', '.creative', '.chest-ui', '.death', '.won', '.skills-ui'].filter((s) => !g.hud.el(s).hidden), heldId: g.heldId, idx: g.hotbar.index, slot: g.inventory.slots[g.hotbar.index], open: g.inventory.open, alive: g.survival.alive, walking: g.walking, busy: g.hud.busy, sleeping: !!g.sleeping, pose: g.pose() }); }));
+await browser.close();

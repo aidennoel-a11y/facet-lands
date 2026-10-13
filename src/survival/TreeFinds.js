@@ -3,6 +3,7 @@ import { hash2 } from '../noise/random.js';
 import { beehiveModel, nestModel, nestEggsModel } from './models.js';
 
 const m4 = new Matrix4(), q = new Quaternion(), p = new Vector3(), s = new Vector3(1, 1, 1), UP = new Vector3(0, 1, 0);
+const BIG = new Vector3(1.7, 1.7, 1.7), HIVE = new Vector3(1.4, 1.4, 1.4); // (drawn a little larger than life: to be seen up there)
 const MAX = 64; // (drawn at once, the nearest)
 const BEES = 24; // (bees about each hive close by)
 
@@ -57,7 +58,7 @@ export class TreeFinds {
           if (h >= 0.06) continue;
           const kind = h < 0.012 ? 'hive' : 'nest';
           // (In the fork of a low bough: out from the trunk a little, at the crown's foot.)
-          const a = h * 1000, off = Math.min(0.9, r * 0.3);
+          const a = h * 1000, off = Math.min(1.6, r * 0.45);
           out.push({ key: `${Math.round(tx * 10)},${Math.round(tz * 10)}`, kind, x: tx + Math.cos(a) * off, y: bottom + (kind === 'hive' ? -0.35 : 0.1), z: tz + Math.sin(a) * off });
         }
       }
@@ -89,7 +90,7 @@ export class TreeFinds {
     for (const f of this.near) {
       q.setFromAxisAngle(UP, (f.x * 7.1) % 6.28);
       p.set(f.x, f.y, f.z);
-      m4.compose(p, q, s);
+      m4.compose(p, q, f.kind === 'nest' ? BIG : HIVE);
       if (f.kind === 'nest') {
         this.nests.setMatrixAt(n++, m4);
         if (laying && !this.empty(f, now)) this.eggs.setMatrixAt(e++, m4);

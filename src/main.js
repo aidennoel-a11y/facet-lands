@@ -2138,7 +2138,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, geese, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)
