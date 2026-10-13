@@ -624,6 +624,49 @@ export function cropModel(kind, ripe = false) {
   return b.build();
 }
 
+/**
+ * A patch of a crop growing wild, fully grown: the plants scattered as
+ * they seeded themselves, thick in the middle and thinning out at the
+ * edges of a ragged patch some three or four metres across, each its own
+ * height and lean (wheat golden and ripe, corn tall with its cobs out,
+ * potatoes in leafy flowering clumps, carrots in feathery tops over their
+ * orange shoulders).
+ */
+export function wildCropModel(kind) {
+  const b = new Parts(131 + kind.length);
+  const rand = mulberry32(kind.length * 13 + 5);
+  const count = { wheat: 70, corn: 12, potato: 18, carrot: 26 }[kind];
+  // (The patch's ragged outline: a few lobes.)
+  const lobes = [rand() * 6, rand() * 6, 0.25 + rand() * 0.2, 0.15 + rand() * 0.15];
+  const edge = (a) => 1.7 * (1 + lobes[2] * Math.sin(2 * a + lobes[0]) + lobes[3] * Math.sin(3 * a + lobes[1]));
+  for (let n = 0; n < count; n++) {
+    const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * edge(a) * (0.35 + 0.65 * rand());
+    const x = Math.cos(a) * d, z = Math.sin(a) * d, big = 0.8 + 0.4 * rand() - 0.15 * (d / 1.8);
+    if (kind === 'wheat') {
+      for (let k = 0; k < 3; k++) {
+        const dx = (rand() - 0.5) * 0.25, dz = (rand() - 0.5) * 0.25, h = (0.85 + rand() * 0.3) * big, lx = (rand() - 0.5) * 0.3, lz = (rand() - 0.5) * 0.3;
+        b.add(new BoxGeometry(0.015, h, 0.015), 0xe2c470, [x + dx, h / 2, z + dz], [lx, 0, lz]);
+        b.add(new BoxGeometry(0.04, 0.15, 0.04), 0xf4d888, [x + dx + lz * h * 0.5, h + 0.04, z + dz - lx * h * 0.5], [lx, 0, lz]);
+      }
+    } else if (kind === 'corn') {
+      const h = 2.0 * big, lean = [(rand() - 0.5) * 0.12, (rand() - 0.5) * 0.12];
+      b.add(new BoxGeometry(0.05, h, 0.05), 0x5a9a34, [x, h / 2, z], [lean[0], 0, lean[1]]);
+      const t = rand() * 6;
+      for (let k = 0; k < 5; k++) b.add(new BoxGeometry(0.55, 0.02, 0.08), 0x4e8c30, [x + 0.22 * Math.cos(t + k * 1.9), (0.35 + k * 0.32) * big, z + 0.22 * Math.sin(t + k * 1.9)], [0, -(t + k * 1.9), -0.45]);
+      b.add(new BoxGeometry(0.09, 0.28, 0.09), 0xf0c830, [x + 0.07, 1.05 * big, z], [0, 0, 0.35]);
+      if (rand() < 0.6) b.add(new BoxGeometry(0.09, 0.26, 0.09), 0xe8c028, [x - 0.06, 0.85 * big, z + 0.03], [0.2, 0, -0.35]);
+      b.add(new BoxGeometry(0.04, 0.22, 0.04), 0xc8a060, [x, h + 0.08, z]);
+    } else if (kind === 'potato') {
+      for (let k = 0; k < 3; k++) b.add(new DodecahedronGeometry(0.2 * big, 0), k ? 0x4e8a30 : 0x5a9a38, [x + (rand() - 0.5) * 0.25, 0.2 * big, z + (rand() - 0.5) * 0.25], [rand(), rand(), 0], [1, 0.75, 1]);
+      for (let k = 0; k < 3; k++) b.add(new DodecahedronGeometry(0.04, 0), 0xf0e8f8, [x + (rand() - 0.5) * 0.3, 0.38 * big, z + (rand() - 0.5) * 0.3]);
+    } else {
+      for (let k = 0; k < 7; k++) b.add(new BoxGeometry(0.02, 0.4 * big, 0.07), 0x4e9a34, [x + (rand() - 0.5) * 0.1, 0.2 * big, z + (rand() - 0.5) * 0.1], [(rand() - 0.5) * 0.8, rand() * 3, (rand() - 0.5) * 0.8]);
+      b.add(new ConeGeometry(0.04, 0.08, 5), 0xe8762a, [x, 0.03, z], [Math.PI, 0, 0]);
+    }
+  }
+  return b.build();
+}
+
 // --- Everything else you carry (base at y = 0, lying on the ground) ---------------
 // Each thing its own shape, so what's in your hand reads as what it is.
 

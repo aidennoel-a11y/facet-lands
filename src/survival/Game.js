@@ -758,7 +758,7 @@ export class Game {
       this.cutGrass?.(at.x, at.z, 1.5);
       this.inventory.wear(i, 1);
       // (Wild crops in the sweep of the blade: their grain or roots, and maybe their seed.)
-      const reaped = this.items.wildNear?.(at.x, at.z, 1.6) ?? [];
+      const reaped = this.items.wildNear?.(at.x, at.z, 2.4) ?? []; // (anywhere in a patch)
       if (reaped.length) {
         this.cooldown = 0.45;
         this.#animate('chop', 0.35);

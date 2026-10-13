@@ -78,8 +78,7 @@ export class GroundItems {
     const key = id + variant;
     if (variant === 'node') return (this.models[key] ??= M.oreNodeModel(id));
     // (A wild crop: a small stand of it, ripe, as a farmed one in a plot but a patch about a metre across.)
-    // (Low leafy ones stand up taller than in a plot, to be seen over the long grass.)
-    if (WILD_CROPS[id]) return (this.models[key] ??= M.cropModel(WILD_CROPS[id], true).scale(0.55, { wheat: 1, corn: 0.8, potato: 1.9, carrot: 2.4 }[WILD_CROPS[id]], 0.55));
+    if (WILD_CROPS[id]) return (this.models[key] ??= M.wildCropModel(WILD_CROPS[id]));
     if (!this.models[key]) {
       const steel = [0xb8c0c8, 0xeef2f6];
       const make = {
@@ -156,7 +155,7 @@ export class GroundItems {
         let id = null;
         const pGold = mesaTop ? 0.005 : 0;
         // Wild crops out on the open plains (and the parkland's meadows), now and then: wheat the likeliest.
-        const pWild = 0.006 * (1 - Math.min(1, forest * 1.8)) * Math.min(1, w.temperate + 0.6 * w.parkland);
+        const pWild = 0.005 * (1 - Math.min(1, forest * 1.8)) * Math.min(1, w.temperate + 0.6 * w.parkland);
         if (h > 1 - pGold) id = 'goldOre';
         else if (h > 1 - pGold - pWild) {
           const r = hash2(gi, gj, seed + 7);
@@ -197,7 +196,9 @@ export class GroundItems {
       const mesh = new InstancedMesh(this.model(id, ORE_NODES.has(id) ? 'node' : ''), this.material, list.length);
       mesh.name = id;
       list.forEach((it, k) => {
-        mesh.setMatrixAt(k, m4.compose(p.set(it.x - x0, it.y, it.z - z0), q.setFromAxisAngle(up, it.turn), s.setScalar(1)));
+        // (Wild crops: each patch its own size, and sunk a little where the ground slopes.)
+        const wild = WILD_CROPS[id] ? 0.8 + 0.5 * ((it.turn * 7.31) % 1) : 1;
+        mesh.setMatrixAt(k, m4.compose(p.set(it.x - x0, it.y - (wild !== 1 ? 0.05 : 0), it.z - z0), q.setFromAxisAngle(up, it.turn), s.setScalar(wild)));
         it.mesh = mesh;
       });
       mesh.computeBoundingSphere();

@@ -16,7 +16,7 @@ const r = await page.evaluate(() => {
   for (const it of all) counts[it.id] = (counts[it.id] ?? 0) + 1;
   const it = all.find((a) => a.id === 'wildWheat') ?? all[0];
   if (!it) return { counts, chunks: items.chunks.size };
-  camera.position.set(it.x + 2.2, it.y + 1.7, it.z + 2.2);
+  camera.position.set(it.x + 4, it.y + 2.2, it.z + 4);
   camera.lookAt(it.x, it.y + 0.3, it.z);
   controls.euler.setFromQuaternion(camera.quaternion, 'YXZ');
   window.__it = it;
