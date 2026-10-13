@@ -1833,7 +1833,12 @@ function loadingFrame(now) {
   sync.update();
   // (Drawn about once a second: so the graphics card has everything ready
   // to draw before you come in, and the first frames don't stall.)
-  if (now - loading.drawn > 1000) {
+  // (The very first, after the graphics card has got its shaders ready in
+  // the background: made all at once, in the middle of a draw, they can
+  // hold up the page for seconds.)
+  if (!loading.compiled) {
+    loading.compiling ??= (renderer.compileAsync ? renderer.compileAsync(scene, camera) : Promise.resolve()).catch(() => {}).then(() => loading && (loading.compiled = true));
+  } else if (now - loading.drawn > 1000) {
     loading.drawn = now;
     const t = performance.now();
     renderer.render(scene, camera);
