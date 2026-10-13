@@ -16,6 +16,7 @@ const smoothstep = (a, b, x) => {
 };
 // Ore, lying in the rock: a vein to break out with a pickaxe, never picked up by hand (see Game.#mine).
 export const ORE_NODES = new Set(['iron', 'coal', 'goldOre', 'mountainOre']);
+export const WILD_CROPS = { wildWheat: 'wheat', wildCorn: 'corn', wildPotato: 'potato', wildCarrot: 'carrot' };
 // (Things that are built: a small one of what it builds. See model.)
 const BUILT = {
   campfire: M.campfireModel, furnace: M.furnaceModel, wall: M.wallModel, gate: M.gateFrameModel, stake: M.stakeModel, chest: M.chestModel, bed: M.bedModel,
@@ -76,6 +77,9 @@ export class GroundItems {
   model(id, variant = '') {
     const key = id + variant;
     if (variant === 'node') return (this.models[key] ??= M.oreNodeModel(id));
+    // (A wild crop: a small stand of it, ripe, as a farmed one in a plot but a patch about a metre across.)
+    // (Low leafy ones stand up taller than in a plot, to be seen over the long grass.)
+    if (WILD_CROPS[id]) return (this.models[key] ??= M.cropModel(WILD_CROPS[id], true).scale(0.55, { wheat: 1, corn: 0.8, potato: 1.9, carrot: 2.4 }[WILD_CROPS[id]], 0.55));
     if (!this.models[key]) {
       const steel = [0xb8c0c8, 0xeef2f6];
       const make = {
@@ -83,7 +87,7 @@ export class GroundItems {
         spear: () => spearModel(), steelSpear: () => spearModel(0x9aa4b0),
         axe: () => axeModel(), steelAxe: () => axeModel(...steel),
         pickaxe: () => pickaxeModel(), steelPickaxe: () => pickaxeModel(...steel),
-        rawMeat: () => meatModel(false), cookedMeat: () => meatModel(true), rawFish: () => fishModel(false), cookedFish: () => fishModel(true), smokedMeat: () => meatModel(true), smokedFish: () => fishModel(true),
+        rawMeat: () => meatModel(false), rawFowl: () => meatModel(false), cookedMeat: () => meatModel(true), rawFish: () => fishModel(false), cookedFish: () => fishModel(true), smokedMeat: () => meatModel(true), smokedFish: () => fishModel(true),
         forgedSpear: () => spearModel(0xd8e0ea), forgedAxe: () => axeModel(0xdfe6ee, 0xffffff), forgedPickaxe: () => pickaxeModel(0xdfe6ee, 0xffffff),
         crossbow: crossbowModel, bolt: boltModel, hoe: hoeModel, sickle: sickleModel, shears: shearsModel, steelBar: () => ironBarModel(0xe4eaf0),
         bow: bowModel, arrow: arrowModel, fishingRod: rodModel, waterskin: waterskinModel, pot: potModel, ironBar: ironBarModel,
@@ -120,7 +124,7 @@ export class GroundItems {
     const seed = generator.seed ^ 0x9e3779;
     const G = 6, cells = Math.floor(size / G);
     const surface = { normalY: 1 };
-    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], mountainOre: [], goldOre: [] };
+    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [] };
     const items = [];
     // (The country, sampled every 32 m.)
     const land = new Map();
@@ -151,7 +155,13 @@ export class GroundItems {
         const pSeed = 0.007 * (1 - Math.min(1, forest * 1.6)) * Math.min(1, w.temperate + w.savanna + w.smoky + 0.5 * w.pine);
         let id = null;
         const pGold = mesaTop ? 0.005 : 0;
+        // Wild crops out on the open plains (and the parkland's meadows), now and then: wheat the likeliest.
+        const pWild = 0.006 * (1 - Math.min(1, forest * 1.8)) * Math.min(1, w.temperate + 0.6 * w.parkland);
         if (h > 1 - pGold) id = 'goldOre';
+        else if (h > 1 - pGold - pWild) {
+          const r = hash2(gi, gj, seed + 7);
+          id = r < 0.45 ? 'wildWheat' : r < 0.65 ? 'wildCarrot' : r < 0.85 ? 'wildPotato' : 'wildCorn';
+        }
         else if (h < pFlint) id = 'flint';
         else if (h < pFlint + pStick) id = 'stick';
         else if (h < pFlint + pStick + pRock) id = 'rock';
@@ -308,6 +318,18 @@ export class GroundItems {
   lying(x, z, r, id) {
     const C = this.config.chunkSize, src = this.chunks.get(`${Math.floor(x / C)},${Math.floor(z / C)}`);
     return !!src?.items.some((it) => !it.gone && it.id === id && Math.abs(it.x - x) < r && Math.abs(it.z - z) < r);
+  }
+
+  /** The wild crops standing within `r` of (x, z) (see WILD_CROPS). */
+  wildNear(x, z, r) {
+    const C = this.config.chunkSize, out = [];
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const src = this.chunks.get(`${Math.floor(x / C) + dx},${Math.floor(z / C) + dz}`);
+        for (const it of src?.items ?? []) if (!it.gone && WILD_CROPS[it.id] && Math.hypot(it.x - x, it.z - z) < r) out.push(it);
+      }
+    }
+    return out;
   }
 
   pick(origin, dir, reach) {

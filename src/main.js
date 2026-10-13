@@ -6,7 +6,7 @@ import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
-import { addTilledSoil, tilledUniform } from './render/tilledSoil.js';
+import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
 import { fellShroom, pickShroom, shroomsCut } from './world/layers/CaveLayer.js';
@@ -585,7 +585,7 @@ function placeCamera(onGround = false) {
 
 // The nearest spot to (x, z) that's dry land, not high on a peak, well
 // away from desert, salt flat and badlands, in woods or foothills where
-// flint and stones lie about (searched outward in rings).
+// flint and stones lie about, and by a stream or river (searched outward in rings).
 function greenGround(x, z) {
   const dry = (w) => (w.desert ?? 0) + (w.saltFlat ?? 0) + (w.badlands ?? 0);
   const ok = (px, pz) => {
@@ -598,14 +598,27 @@ function greenGround(x, z) {
     const mount = generator.getMountainness(px, pz);
     return wooded > 0.45 || (mount > 0.35 && mount < 0.75);
   };
-  if (ok(x, z)) return { x, z };
-  for (let r = 150; r <= 9000; r += 150) {
-    const n = Math.max(8, Math.round(r / 60));
+  // (Best of all, by running water: a stream or a river within a short walk, not standing in it.)
+  const byWater = (px, pz) => {
+    const w = generator.rivers.at(px, pz, 45);
+    return !!w && !w.pond && w.d > w.half + 3;
+  };
+  let fallback = null;
+  if (ok(x, z)) {
+    if (byWater(x, z)) return { x, z };
+    fallback = { x, z };
+  }
+  for (let r = 100; r <= 9000; r += 100) {
+    const n = Math.max(8, Math.round(r / 50));
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
-      if (ok(px, pz)) return { x: px, z: pz };
+      if (!ok(px, pz)) continue;
+      fallback ??= { x: px, z: pz };
+      if (byWater(px, pz)) return { x: px, z: pz };
     }
+    if (fallback && r > 4000) return fallback; // (no running water anywhere near: green ground will do)
   }
+  if (fallback) return fallback;
   return { x, z };
 }
 
@@ -1531,6 +1544,7 @@ function pushGrass() {
   list.sort((a, b) => a[0] - b[0]);
   grassPushers.value.forEach((v, k) => (list[k] ? v.set(list[k][1], list[k][2], list[k][3], 0) : v.set(0, 0, 0, 0)));
 }
+const tilled = { sign: null }; // (the plots last painted: see clearGrass)
 function clearGrass() {
   const p = camera.position;
   const near = [];
@@ -1550,12 +1564,16 @@ function clearGrass() {
   near.sort((a, b) => a[0] - b[0]);
   grassClearings.value.forEach((v, k) => (near[k] ? v.set(near[k][1].x, near[k][1].z, near[k][2], 0) : v.set(0, 0, 0, 0)));
   // (And the plots you've dug, painted onto the ground: see tilledSoil.)
-  const plots = near.filter(([, s]) => s.type === 'plot');
-  tilledUniform.value.forEach((v, k) => {
-    const s = plots[k]?.[1];
-    if (s) v.set(s.x, s.z, s.rot ?? 0, s.watered > 0 ? 1 : 0);
-    else v.set(1e9, 1e9, 0, 0);
-  });
+  // (Painted into a map of the ground round you, afresh when a plot's dug,
+  // watered or gone, or you've walked off towards the map's edge.)
+  const plots = [];
+  for (const s of game.structures.list) if (s.type === 'plot' && Math.abs(s.x - p.x) < 70 && Math.abs(s.z - p.z) < 70) plots.push({ x: s.x, z: s.z, rot: s.rot ?? 0, watered: s.watered > 0 });
+  const sign = plots.map((q) => `${q.x.toFixed(1)},${q.z.toFixed(1)},${q.watered ? 1 : 0}`).join(';');
+  const o = tilledOrigin.value, mid = { x: o.x + o.z / 2, z: o.y + o.z / 2 };
+  if (sign !== tilled.sign || Math.abs(p.x - mid.x) > 24 || Math.abs(p.z - mid.z) > 24) {
+    tilled.sign = sign;
+    paintTilled(p.x, p.z, plots);
+  }
 }
 
 // Mist in the valleys on a still morning: a layer lying over the low

@@ -20,7 +20,7 @@ if (await page.$('[data-go="play"]')) await page.click('[data-go="play"]').catch
 await page.waitForFunction(() => document.querySelector('.load-screen')?.classList.contains('ls-done'), null, { timeout: 600000, polling: 500 });
 const r = () => page.evaluate(() => {
   const { camera, generator, game, seasons, controls } = window.world, p = camera.position;
-  return { aboveGround: +(p.y - controls.eyeHeight - generator.getHeight(p.x, p.z)).toFixed(2), biome: generator.getBiome(p.x, p.z).id, season: seasons.time, mode: game.mode, walk: controls.mode, health: game.survival?.health };
+  const w = generator.rivers.at(p.x, p.z, 60); return { water: w ? { away: Math.round(w.d - w.half), pond: w.pond, stream: w.stream } : null, aboveGround: +(p.y - controls.eyeHeight - generator.getHeight(p.x, p.z)).toFixed(2), biome: generator.getBiome(p.x, p.z).id, season: seasons.time, mode: game.mode, walk: controls.mode, health: game.survival?.health };
 });
 console.log('start', JSON.stringify(await r()));
 await page.waitForTimeout(8000);

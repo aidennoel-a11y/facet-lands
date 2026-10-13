@@ -64,7 +64,7 @@ const UP = new Vector3(0, 1, 0);
 const SHOTS = { spear: { tip: 1.16, bury: 0.3 }, arrow: { tip: 0.42, bury: 0.16, sharp: 1 }, bolt: { tip: 0.27, bury: 0.14, sharp: 2 } };
 const LIGHTERS = new Set(['flintSteel', 'fineFlintSteel']);
 const VEG = ['berries', 'mushroom', 'apple'];
-const MEATS = ['rawMeat', 'cookedMeat', 'rawFish', 'cookedFish'];
+const MEATS = ['rawMeat', 'cookedMeat', 'rawFowl', 'rawFish', 'cookedFish'];
 // How long things take: meat on the fire a minute; ore in the furnace half
 // a minute; meat on the drying rack three; a waterskin coming to the boil.
 const TIMES = { cook: 60, smelt: 30, dry: 180, boil: 20, stew: 60, tan: 240, char: 20, steel: 45, smoke: 150 };
@@ -370,7 +370,8 @@ export class Game {
     const found = [];
     const held = this.inventory.slots[this.hotbar?.index ?? 0];
     const item = this.items.pick(origin, direction, reach);
-    if (item?.item.node) found.push({ kind: 'vein', distance: item.distance, item, text: `${ITEMS[item.id].name} in the rock: break it out with a pickaxe` });
+    if (item && ITEMS[item.id]?.wild) found.push({ kind: 'vein', distance: item.distance, item, text: `${ITEMS[item.id].name}: cut it with a sickle` });
+    else if (item?.item.node) found.push({ kind: 'vein', distance: item.distance, item, text: `${ITEMS[item.id].name} in the rock: break it out with a pickaxe` });
     else if (item) found.push({ kind: 'item', distance: item.distance, item, text: `Pick up ${ITEMS[item.id].name.toLowerCase()}` });
     const carcass = this.wildlife.aim(origin, direction, reach, true);
     if (carcass && !carcass.animal.alive) found.push({ kind: 'carcass', distance: carcass.distance, animal: carcass.animal, text: `Butcher the ${NAMES[carcass.animal.kind] ?? 'animal'}` });
@@ -597,7 +598,7 @@ export class Game {
         this.sound?.call('drink', 0, 0.4);
         return this.hotbar?.flash(t.clean ? 'Filled with running water' : 'Filled with still water: boil it on a fire first');
       }
-      const sick = this.survival.consume({ thirst: 22, sick: t.clean ? 0.03 : 0.25 });
+      const sick = this.survival.consume({ thirst: 22, sick: t.clean ? 0.03 : 0.15 });
       this.sound?.call('drink', 0, 0.5);
       return this.hotbar?.flash(sick ? 'You drink... it tastes foul: you feel feverish' : 'You drink');
     }
@@ -756,6 +757,24 @@ export class Game {
       const at = this.solidHit?.(origin, direction, 4)?.point ?? origin.clone().addScaledVector(direction.clone().setY(0).normalize(), 1.8);
       this.cutGrass?.(at.x, at.z, 1.5);
       this.inventory.wear(i, 1);
+      // (Wild crops in the sweep of the blade: their grain or roots, and maybe their seed.)
+      const reaped = this.items.wildNear?.(at.x, at.z, 1.6) ?? [];
+      if (reaped.length) {
+        this.cooldown = 0.45;
+        this.#animate('chop', 0.35);
+        this.sound?.call('brush', 0, 0.8);
+        const got = {};
+        for (const it of reaped) {
+          this.items.take({ kind: 'ground', item: it });
+          const crop = ITEMS[it.id].wild, seed = `seed${crop[0].toUpperCase()}${crop.slice(1)}`;
+          const n = crop === 'corn' ? 1 + Math.floor(Math.random() * 2) : 2 + Math.floor(Math.random() * 2);
+          got[crop] = (got[crop] ?? 0) + n;
+          if (Math.random() < 0.6) got[seed] = (got[seed] ?? 0) + 1 + Math.floor(Math.random() * 2);
+        }
+        for (const [id, n] of Object.entries(got)) this.#give(id, n, { x: at.x, y: at.y + 0.3, z: at.z });
+        this.dirty = true;
+        return this.hotbar?.flash(Object.entries(got).map(([id, n]) => `${ITEMS[id].name} ×${n}`).join(', '));
+      }
       this.cooldown = 0.45;
       this.#animate('chop', 0.35);
       this.sound?.call('brush', 0, 0.7);
@@ -832,7 +851,7 @@ export class Game {
       if (!s.water) return this.hotbar?.flash('Empty: fill it at water (E)');
       s.water--;
       this.inventory.changed();
-      const sick = this.survival.consume({ thirst: 22, sick: s.clean ? 0 : 0.25 });
+      const sick = this.survival.consume({ thirst: 22, sick: s.clean ? 0 : 0.15 });
       this.#animate('use', 0.4);
       this.cooldown = 0.5;
       this.sound?.call('drink', 0, 0.5);

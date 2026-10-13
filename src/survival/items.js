@@ -55,6 +55,11 @@ export const ITEMS = {
   seedPotato: { name: 'Seed potato', weight: 0.2, sow: 'potato', group: 'Farming' },
   seedCarrot: { name: 'Carrot seeds', weight: 0.05, sow: 'carrot', group: 'Farming' },
   wheat: { name: 'Wheat', weight: 0.3, group: 'Farming' },
+  // (Wild crops growing out on the plains: never carried, cut with a sickle for their grain, roots and seed.)
+  wildWheat: { name: 'Wild wheat', wild: 'wheat', weight: 0, group: 'Farming' },
+  wildCorn: { name: 'Wild corn', wild: 'corn', weight: 0, group: 'Farming' },
+  wildPotato: { name: 'Wild potato plants', wild: 'potato', weight: 0, group: 'Farming' },
+  wildCarrot: { name: 'Wild carrots', wild: 'carrot', weight: 0, group: 'Farming' },
   // Food.
   berries: { name: 'Berries', food: { hunger: 8, thirst: 3, full: 45 }, spoils: 1500, weight: 0.1, group: 'Food' },
   apple: { name: 'Apple', food: { hunger: 12, thirst: 5, full: 90 }, spoils: 2400, weight: 0.2, group: 'Food' },
@@ -64,10 +69,11 @@ export const ITEMS = {
   caveMushroom: { name: 'Cave mushroom', food: { hunger: 10, full: 120 }, spoils: 1800, weight: 0.1, group: 'Food' },
   deathcap: { name: 'Pale deathcap', food: { hunger: 3, health: -35, sick: 1, full: 30 }, spoils: 2400, weight: 0.1, group: 'Food' },
   glowcap: { name: 'Glowcap', food: { hunger: 3, full: 30 }, spoils: 2400, weight: 0.05, group: 'Food' },
-  blindFish: { name: 'Blind cave fish', food: { hunger: 6, health: -3, sick: 0.5, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.4, group: 'Food' },
-  rawMeat: { name: 'Raw meat', food: { hunger: 10, health: -4, sick: 0.5, full: 180 }, spoils: 900, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 1, group: 'Food' },
+  blindFish: { name: 'Blind cave fish', food: { hunger: 6, health: -3, sick: 0.2, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.4, group: 'Food' },
+  rawMeat: { name: 'Raw meat', food: { hunger: 10, health: -4, sick: 0.35, full: 180 }, spoils: 900, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 1, group: 'Food' },
   cookedMeat: { name: 'Cooked meat', food: { hunger: 35, health: 4, full: 600 }, spoils: 2400, weight: 0.8, group: 'Food' },
-  rawFish: { name: 'Raw fish', food: { hunger: 8, health: -3, sick: 0.5, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.8, group: 'Food' },
+  rawFowl: { name: 'Raw bird', food: { hunger: 8, health: -4, sick: 0.75, full: 150 }, spoils: 700, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 0.8, group: 'Food' }, // (turkey, duck, grouse: raw, it'll very likely make you ill)
+  rawFish: { name: 'Raw fish', food: { hunger: 8, health: -3, sick: 0.2, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.8, group: 'Food' },
   cookedFish: { name: 'Cooked fish', food: { hunger: 25, health: 3, full: 360 }, spoils: 1800, weight: 0.6, group: 'Food' },
   jerky: { name: 'Jerky', food: { hunger: 22, full: 360 }, weight: 0.3, group: 'Food' }, // (dried: it keeps)
   // (Smoked over a fire: it keeps, and it's better eating than jerky.)
@@ -353,6 +359,7 @@ export const ICONS = {
   apple: `<path d="M16 10c-6-3-11 2-10 8s6 10 10 8c4 2 9-2 10-8s-4-11-10-8z" fill="#c8261c"/><path d="M16 10c3-1 7 0 8 4l-6-1z" fill="#e05040"/><path d="M16 10l1-5" stroke="#5a3c24" stroke-width="1.6"/><path d="M17 6l6-2-3 4z" fill="#4f8a34"/>`,
   mushroom: `<path d="M5 16c1-7 21-7 22 0z" fill="#c49a60"/><path d="M13 16h6l1 11h-8z" fill="#ece0c4"/><path d="M8 13l4-4 4 1z" fill="#d8b478"/>`,
   rawMeat: MEAT('#c84848', '#e87070'),
+  rawFowl: MEAT('#e8a8a0', '#f4ccc4'),
   cookedMeat: MEAT('#7a3e1e', '#a85a2a'),
   rawFish: FISH('#8aa4b4', '#b8cad4'),
   cookedFish: FISH('#a8703a', '#c8904a'),

@@ -177,7 +177,7 @@ const YIELD = {
   bison: { rawMeat: 6, hide: 2 }, blackBear: { rawMeat: 5, fur: 2 }, grizzly: { rawMeat: 6, fur: 2 }, wolf: { rawMeat: 2, fur: 1 }, coyote: { rawMeat: 2, fur: 1 },
   fox: { rawMeat: 1, fur: 1 }, rabbit: { rawMeat: 1 }, hare: { rawMeat: 1, fur: 1 }, boar: { rawMeat: 5, hide: 1 }, cougar: { rawMeat: 3, fur: 1 },
   tiger: { rawMeat: 6, fur: 2 }, jaguar: { rawMeat: 4, fur: 1 }, monkey: { rawMeat: 1 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 },
-  turkey: { rawMeat: 2, feather: 3 }, duck: { rawMeat: 1, feather: 2 }, snake: { rawMeat: 1 },
+  turkey: { rawFowl: 2, feather: 3 }, duck: { rawFowl: 1, feather: 2 }, owl: { rawFowl: 1, feather: 2 }, snake: { rawMeat: 1 },
   lion: { rawMeat: 5, fur: 2 }, hyena: { rawMeat: 2, fur: 1 }, elephant: { rawMeat: 20, hide: 4 }, hippo: { rawMeat: 14, hide: 3 }, camel: { rawMeat: 7, hide: 2 },
   python: { rawMeat: 3, hide: 1 }, eagle: { feather: 4 }, bat: {}, scorpion: {}, horse: { rawMeat: 8, hide: 2 },
 };

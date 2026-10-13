@@ -579,31 +579,10 @@ export function ropePathModel(path) {
 /** A dug plot, 2 m square: dark turned earth in furrows. */
 export const PLOT_SIZE = 2;
 export function plotModel() {
-  // The turned earth itself: a patch of faceted soil laid over the ground,
-  // in ridges and furrows half a metre apart, each facet a shade of its
-  // own, its edge sunk into the ground round it (and the ground under it
-  // painted dark too: see render/tilledSoil). Then a few clods on it.
+  // The turned earth is the ground itself, painted dark in furrows (see
+  // render/tilledSoil); only a few clods lie on it.
   const b = new Parts(109);
   const rand = mulberry32(1091);
-  const N = 6, S = 2.4, cell = S / N, hgt = [];
-  for (let k = 0; k <= N; k++) {
-    hgt.push([]);
-    for (let i = 0; i <= N; i++) {
-      const edge = i === 0 || k === 0 || i === N || k === N;
-      const z = -S / 2 + k * cell, ridge = 0.5 + 0.5 * Math.cos((z / 0.5) * Math.PI * 2);
-      hgt[k].push(edge ? -0.06 : 0.035 + 0.05 * ridge + (rand() - 0.5) * 0.025);
-    }
-  }
-  const soil = new BufferGeometry(), pos = [];
-  const at = (i, k) => [-S / 2 + i * cell + (i > 0 && i < N ? (rand() - 0.5) * 0.08 : 0), hgt[k][i], -S / 2 + k * cell];
-  for (let k = 0; k < N; k++) {
-    for (let i = 0; i < N; i++) {
-      const a = at(i, k), bb = at(i + 1, k), c = at(i + 1, k + 1), d = at(i, k + 1);
-      pos.push(...a, ...d, ...c, ...a, ...c, ...bb);
-    }
-  }
-  soil.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
-  b.add(soil, 0x5a3e28, [0, 0, 0], [0, 0, 0], [1, 1, 1], 0.28);
   for (let k = 0; k < 10; k++) b.add(new BoxGeometry(0.12, 0.05, 0.1), 0x3c2a1c, [(rand() - 0.5) * 1.8, -0.01, -0.75 + Math.floor(rand() * 4) * 0.5], [0, rand() * 3, 0], [1, 1, 1], 0.1);
   return b.build();
 }
