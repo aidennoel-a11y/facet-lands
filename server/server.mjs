@@ -31,6 +31,9 @@
 //
 // And over plain HTTP, GET /worlds: the worlds open now, for the game's list.
 import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { extname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 const PORT = Number(process.env.PORT) || 8787;
@@ -178,9 +181,32 @@ const http = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
     return res.end(JSON.stringify(list));
   }
-  res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' });
-  res.end(`Facet Lands server, version ${VERSION}: ${rooms.size} world${rooms.size === 1 ? '' : 's'} open\n`);
+  if (req.url?.startsWith('/status')) {
+    res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' });
+    return res.end(`Facet Lands server, version ${VERSION}: ${rooms.size} world${rooms.size === 1 ? '' : 's'} open\n`);
+  }
+  serveGame(req, res);
 });
+
+// The game itself (a copy of the built game in game/), so everyone can play
+// straight from this server's address: https://<server>/
+const GAME = fileURLToPath(new URL('./game/', import.meta.url));
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.mp3': 'audio/mpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.ico': 'image/x-icon', '.md': 'text/plain' };
+async function serveGame(req, res) {
+  let path = decodeURIComponent((req.url ?? '/').split('?')[0]);
+  if (path.endsWith('/')) path += 'index.html';
+  const file = normalize(join(GAME, path));
+  if (!file.startsWith(GAME)) return res.writeHead(403).end();
+  try {
+    const body = await readFile(file);
+    const type = TYPES[extname(file)] ?? 'application/octet-stream';
+    res.writeHead(200, { 'content-type': type, 'cache-control': type.startsWith('text/html') ? 'no-cache' : 'public, max-age=3600' });
+    res.end(body);
+  } catch {
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    res.end(`Facet Lands server, version ${VERSION}: ${rooms.size} world${rooms.size === 1 ? '' : 's'} open\n`);
+  }
+}
 const wss = new WebSocketServer({ server: http, maxPayload: 4 * 1024 * 1024 });
 wss.on('connection', (ws) => {
   ws.alive = true;

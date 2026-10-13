@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Facet Lands</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500&display=swap"
+    />
+    <script type="module" crossorigin src="./assets/index-BGM20fme.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-D-y0QhAG.css">
+  </head>
+  <body>
+    <canvas id="scene" aria-label="Procedurally generated low-poly terrain"></canvas>
+
+    <section class="panel" aria-label="World controls">
+      <header class="brand">
+        <h1>Facet Lands</h1>
+        <p>Low-poly terrain · chunked</p>
+      </header>
+
+      <form id="seed-form" class="seed">
+        <label for="seed">Seed</label>
+        <div class="seed-row">
+          <input id="seed" type="text" autocomplete="off" spellcheck="false" />
+          <button type="submit">Build</button>
+          <button type="button" id="random-seed" title="Random seed">Random</button>
+        </div>
+      </form>
+
+      <dl class="stats">
+        <div><dt>FPS</dt><dd id="stat-fps">–</dd></div>
+        <div><dt>Chunks</dt><dd id="stat-chunks">–</dd></div>
+        <div><dt>Trees</dt><dd id="stat-trees">–</dd></div>
+        <div><dt>Wind</dt><dd id="stat-wind">–</dd></div>
+        <div><dt>Altitude</dt><dd id="stat-alt">–</dd></div>
+        <div><dt>Speed</dt><dd id="stat-speed">–</dd></div>
+        <div><dt>Tris</dt><dd id="stat-tris">–</dd></div>
+        <div><dt>Draws</dt><dd id="stat-draws">–</dd></div>
+        <div><dt>CPU</dt><dd id="stat-cpu">–</dd></div>
+        <div style="grid-column: 1 / -1"><dt>Biome</dt><dd id="stat-biome">–</dd></div>
+        <div style="grid-column: 1 / -1"><dt>Position</dt><dd id="stat-pos">–</dd></div>
+      </dl>
+
+      <div class="time">
+        <label for="time">Time <output id="clock">09:30</output></label>
+        <label class="cycle"><input id="cycle" type="checkbox" checked /> Day cycle <kbd>T</kbd></label>
+        <input id="time" type="range" min="0" max="23.99" step="0.01" value="9.5" aria-label="Time of day" />
+        <div class="presets" role="group" aria-label="Jump to time">
+          <button type="button" data-hour="6.2">Dawn</button>
+          <button type="button" data-hour="12">Noon</button>
+          <button type="button" data-hour="17.9">Dusk</button>
+          <button type="button" data-hour="0">Night</button>
+        </div>
+        <div class="presets" role="group" aria-label="Skip ahead (for testing the seasons)">
+          <button type="button" id="skip-day">Skip a day</button>
+          <output id="season-day"></output>
+        </div>
+        <div class="weather">
+          <label>Weather <kbd>K</kbd>
+            <select id="weather">
+              <option value="auto" selected>Auto</option>
+              <option value="clear">Clear</option>
+              <option value="fair">Fair</option>
+              <option value="cloudy">Cloudy</option>
+              <option value="overcast">Overcast</option>
+              <option value="rain">Rain</option>
+              <option value="storm">Storm</option>
+            </select>
+          </label>
+          <label>Sunset
+            <select id="sunset">
+              <option value="auto" selected>Auto</option>
+              <option value="vivid">Vivid</option>
+              <option value="dull">Dull</option>
+            </select>
+          </label>
+          <label>Season <kbd>L</kbd>
+            <select id="season">
+              <option value="auto" selected>Auto</option>
+              <option value="0">Spring</option>
+              <option value="1">Summer</option>
+              <option value="2">Autumn</option>
+              <option value="3">Winter</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="toggles">
+        <label><input id="fly" type="checkbox" checked /> Fly <kbd>V</kbd></label>
+        <label title="Fly straight through the ground and rock (into the caves)"><input id="noclip" type="checkbox" /> No clip <kbd>J</kbd></label>
+        <label><input id="automove" type="checkbox" /> Auto-move <kbd>F</kbd></label>
+        <label><input id="wireframe" type="checkbox" /> Triangles <kbd>G</kbd></label>
+        <label><input id="shadows" type="checkbox" checked /> Shadows <kbd>H</kbd></label>
+        <label><input id="rays" type="checkbox" checked /> Ray effects <kbd>R</kbd></label>
+        <label><input id="night" type="checkbox" /> Night vision <kbd>N</kbd></label>
+        <label><input id="sound" type="checkbox" checked /> Sound <kbd>M</kbd></label>
+        <label><input id="mouselock" type="checkbox" checked /> Mouse lock <kbd>X</kbd></label>
+        <label><input id="peaceful" type="checkbox" /> Peaceful</label>
+        <label title="Only the animals, each labelled (for testing)"><input id="animals-only" type="checkbox" /> Animals only</label>
+        <label>Map <kbd>B</kbd> · hide all <kbd>P</kbd></label>
+        <label>Craft <kbd>Tab</kbd> · all items <kbd>Z</kbd> · use <kbd>E</kbd> · drop <kbd>Q</kbd> · crouch <kbd>C</kbd></label>
+      </div>
+
+      <div class="tests" role="group" aria-label="Spawn for testing">
+        <button type="button" id="test-storm">Dust storm</button>
+        <button type="button" id="test-devil">Dust devil</button>
+      </div>
+    </section>
+
+    <div id="crosshair" aria-hidden="true"></div>
+
+    <div id="hud"></div>
+
+    <nav id="hotbar" class="hotbar" aria-label="Hotbar"></nav>
+
+    <canvas id="minimap" width="360" height="360" aria-label="Minimap, north up (dark dots are cave entrances)"></canvas>
+
+  </body>
+</html>

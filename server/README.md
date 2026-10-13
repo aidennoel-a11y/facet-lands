@@ -44,7 +44,12 @@ wakes up.
 Fly.io and Railway work the same way: a Node service started with
 `npm start` in `server/`, listening on the `PORT` they give it.
 
+## Playing from it
+
+The server also hands out the game itself (a copy of the built game in
+`game/`, refreshed by `npm run build` at the top of the repository), so
+everyone can just open the server's address (`https://…`) and play.
+
 ## Checking it's up
 
-Open the server's address in a browser (`https://…`). It answers with how
-many worlds are open.
+Open `https://…/status`. It answers with how many worlds are open.
