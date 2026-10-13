@@ -1,0 +1,17 @@
+import { createRequire } from 'module';
+import { execSync } from 'child_process';
+const require = createRequire(import.meta.url);
+const { chromium } = require(execSync('npm root -g').toString().trim() + '/playwright');
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 800, height: 450 } });
+const errs = [];
+page.on('pageerror', (e) => errs.push(e.message));
+page.on('console', (m) => m.type() === 'error' && errs.push(m.text().slice(0, 300)));
+await page.addInitScript(() => localStorage.setItem('facet-lands:quality', 'low'));
+await page.goto('http://localhost:4173/?seed=ztuz7s&x=-978&z=684&up=60&pitch=-0.1&hide&hour=14&season=2.6', { timeout: 180000 });
+await page.waitForFunction(() => window.world?.chunks && window.world.chunks.pendingCount === 0, null, { timeout: 500000, polling: 1000 });
+await page.waitForTimeout(3000);
+const n = await page.evaluate(() => window.world.farTrees.group.children.filter((m) => m.material === window.world.farTrees.cardMaterial && m.visible).length);
+await page.screenshot({ path: process.argv[2] });
+console.log(JSON.stringify({ cardPools: n, errs }));
+await browser.close();

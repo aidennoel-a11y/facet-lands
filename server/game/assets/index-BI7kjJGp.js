@@ -5143,11 +5143,12 @@ varying float vShade;
 varying vec2 vImpUv;`).replace(`#include <beginnormal_vertex>`,`vec3 toCam = cameraPosition - aSpot.xyz;
         vec2 camFlat = normalize(toCam.xz + vec2(1e-4, 0.0));
         // (Lit as though it faced up and towards you: like a crown's top and front.)
-        vec3 objectNormal = normalize(vec3(camFlat.x, 0.0, camFlat.y) * 0.55 + vec3(0.0, 0.85, 0.0));`).replace(`#include <begin_vertex>`,`float far = smoothstep(300.0, 1800.0, length(toCam.xz));
+        vec3 objectNormal = normalize(vec3(camFlat.x, 0.0, camFlat.y) * 0.55 + vec3(0.0, 0.85, 0.0));`).replace(`#include <begin_vertex>`,`#include <begin_vertex>
+        float far = smoothstep(300.0, 1800.0, length(toCam.xz));
         // (Mirrored or not, tree by tree, so a wood isn't all one tree.)
         float mirror = sin(aShape.y) < 0.0 ? -1.0 : 1.0;
         vec3 right = vec3(camFlat.y, 0.0, -camFlat.x);
-        vec3 transformed = right * position.x * mirror * aSpot.w * (1.0 + 0.9 * far) + vec3(0.0, position.y * aShape.x * (1.0 + 0.25 * far), 0.0) + aSpot.xyz;
+        transformed = right * position.x * mirror * aSpot.w * (1.0 + 0.9 * far) + vec3(0.0, position.y * aShape.x * (1.0 + 0.25 * far), 0.0) + aSpot.xyz;
         vImpUv = uv;
         vShade = 0.82 + aShape.z * 0.3;`),e.fragmentShader=e.fragmentShader.replace(`#include <common>`,`#include <common>
 uniform sampler2D uImpostor;
