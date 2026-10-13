@@ -1325,9 +1325,9 @@ export class Wildlife {
     // woods and the hills) or a few coyotes (out on the open country) come
     // by, from out of sight, roaming (and they leave again by day: see
     // `night` in the herd).
-    this.nightCool = (this.nightCool ?? rnd(20, 60)) - 0.5;
+    this.nightCool = (this.nightCool ?? rnd(10, 30)) - 0.5;
     if (day < 0.25 && this.nightCool <= 0) {
-      this.nightCool = rnd(70, 150);
+      this.nightCool = rnd(35, 80);
       const near = (kind) => this.animals.some((a) => a.kind === kind && a.alive && Math.hypot(a.x - cx, a.z - cz) < 200);
       const s = spot(140, 260, (x, z) => g.getMountainness(x, z) < 0.6 && g.getBiomeWeights(x, z, {}).desert < 0.5, 10);
       if (s) {
@@ -1336,11 +1336,24 @@ export class Wildlife {
         const herd = kind && this.#spawnHerd(kind, s, kind === 'wolf' ? 3 + Math.floor(rnd(0, 3)) : 1 + Math.floor(rnd(0, 3)));
         if (herd) {
           herd.night = true;
+          herd.callWait = rnd(3, 12); // (heard before they're seen)
           // (Roaming your way: passing by some way off, to be seen, or to find you.)
           const a = rnd(0, TAU);
           herd.goal = { x: cx + Math.sin(a) * 45, z: cz + Math.cos(a) * 45 };
           herd.goalWait = 60;
         }
+      }
+    }
+    // Far off in the night, in wolf country (the woods and the hills), now
+    // and then a pack you can't see howls: from somewhere out there, faint.
+    this.farHowl = (this.farHowl ?? rnd(20, 60)) - 0.5;
+    if (day < 0.25 && this.farHowl <= 0) {
+      this.farHowl = rnd(60, 160);
+      const w = g.getBiomeWeights(cx, cz, {}), wild = (w.pine ?? 0) + (w.smoky ?? 0) + (w.blackHills ?? 0) + (w.redwood ?? 0) * 0.5 + (w.parkland ?? 0) * 0.6 + (w.temperate ?? 0) * Math.min(1, g.getForestDensity(cx, cz) * 1.5);
+      const packNear = this.animals.some((a) => a.kind === 'wolf' && a.alive && Math.hypot(a.x - cx, a.z - cz) < 700);
+      if (wild > 0.5 && !packNear) {
+        const a = rnd(0, TAU), d = rnd(600, 1400);
+        ctx.sound?.call('howl', ctx.pan(cx + Math.sin(a) * d, cz + Math.cos(a) * d), rnd(0.18, 0.32));
       }
     }
     // (Come the day, the night's visitors go off, out of sight.)
@@ -2797,9 +2810,17 @@ export class Wildlife {
       const from = herd?.fear ?? a.fearFrom ?? ctx.camera.position;
       want = this.#escape(a, sp, from, ctx);
       if (herd?.mid) {
-        // (Keeping with the herd as it runs.)
-        const toMid = Math.atan2(herd.mid.x - a.x, herd.mid.z - a.z);
-        if (Math.hypot(herd.mid.x - a.x, herd.mid.z - a.z) > 12) want += angleTo(want, toMid) * 0.35;
+        // (Each its own way a little, fanning out as they bolt; now and then
+        // one or a few break off altogether and run their own way, picked
+        // afresh each time the herd's put to flight. Most keep with the
+        // herd, drawn back in if they stray far.)
+        if (a.splay === undefined || herd.fleeTime > (a.splayLast ?? 0) + 1) {
+          a.splay = Math.random() < 0.22 ? rnd(0.9, 1.5) * (Math.random() < 0.5 ? -1 : 1) : rnd(-0.45, 0.45);
+        }
+        a.splayLast = herd.fleeTime;
+        want += a.splay;
+        const toMid = Math.atan2(herd.mid.x - a.x, herd.mid.z - a.z), far = Math.hypot(herd.mid.x - a.x, herd.mid.z - a.z);
+        if (Math.abs(a.splay) < 0.6 && far > 14) want += angleTo(want, toMid) * 0.3;
       }
       if (a.kind === 'rabbit' || a.kind === 'hare') want += Math.sin(this.time * 3 + a.phase) * 0.6; // zig-zag
       speed = sp.run * (a.young ? 0.85 : 1);

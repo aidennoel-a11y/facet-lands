@@ -26,6 +26,7 @@ export const seasonUniforms = {
   uSnowfall: { value: 0 }, // fresh snow lying on everything after it has snowed, 0..1
   uMossy: { value: 0 }, // how damp the country round about is: moss on the north sides of the trees (0..1)
   uFruit: { value: 0 }, // the fruit and berries on the trees and bushes: set in early summer, gone by winter (0..1)
+  uSeasonTime: { value: 0.6 }, // the time of year, in seasons (0 spring .. 4): for what's ripe when
   uRipe: { value: 0 }, // and how ripe they are: green, then coloured by late summer (0..1)
   uFallClock: { value: 0 }, // how far on the leaves' turning is: 0 three days before the turn into autumn, 1 two days after it (see uFallSpan)
   uFallSpan: { value: 7 }, // (that span, in days)
@@ -132,8 +133,10 @@ export class Seasons {
     seasonUniforms.uWinter.value = amount(3);
     // Fruit sets in early summer, ripens by late summer, and falls in late autumn.
     const t = this.time;
-    seasonUniforms.uFruit.value = smoothstep(1.0, 1.4, t) * (1 - smoothstep(2.7, 3.05, t));
-    seasonUniforms.uRipe.value = smoothstep(1.3, 1.8, t);
+    // (Ripe by midsummer: the berries over by the fourth day of autumn, the apples by the ninth.)
+    seasonUniforms.uSeasonTime.value = t;
+    seasonUniforms.uFruit.value = smoothstep(1.0, 1.3, t) * (1 - smoothstep(2.72, 2.85, t));
+    seasonUniforms.uRipe.value = smoothstep(1.2, 1.45, t);
   }
 }
 

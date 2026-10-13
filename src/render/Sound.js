@@ -24,6 +24,7 @@ const CLIPS = {
   'rock-surf': 1, 'body-splash': 3, 'shore-calm': 1, 'shore-mid': 1, 'shore-waves': 1, 'rock-coast': 1, 'rough-sea': 1,
   bark: 3, 'wolf-growl': 1, 'bear-growl': 3, 'bear-huff': 3, hiss: 1, pig: 2, sheep: 3, turkey: 1, frog: 3,
   'bird-cardinal': 3, 'bird-bluebird': 3, 'bird-goldfinch': 3,
+  horse: 5, roar: 4, elephant: 3, cattle: 4, goat: 4, rabbit: 4,
 };
 
 // (A number 0..1 for these, the same for everyone online.)
@@ -635,6 +636,52 @@ export class Sound {
       src.start(start, Math.random() * 2);
       src.stop(start + len + 0.05);
     };
+    // A voice (an animal's howl or cry): a soft, round note following a
+    // pitch contour ([[0..1 of the way, × f], ...]), swelling in and fading
+    // out, with a quaver (vibrato `rate` Hz, `depth` × f), its second
+    // harmonic faint over it, a breath of air through it, and its echo off
+    // the hills round about.
+    const voice = (start, len, f, peak, shape, rate = 0, depth = 0) => {
+      const g = ctx.createGain(), lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = Math.min(6000, f * 3.2);
+      const echo = ctx.createDelay(1), back = ctx.createGain(), dull = ctx.createBiquadFilter();
+      echo.delayTime.value = 0.28 + Math.random() * 0.15;
+      back.gain.value = 0.32;
+      dull.type = 'lowpass';
+      dull.frequency.value = 1400;
+      g.connect(lp).connect(out);
+      lp.connect(echo).connect(dull).connect(back).connect(echo);
+      back.connect(out);
+      const oscs = [['triangle', 1, 1], ['sine', 2, 0.18]].map(([type, h, level]) => {
+        const o = ctx.createOscillator(), og = ctx.createGain();
+        o.type = type;
+        o.frequency.setValueAtTime(f * h * shape[0][1], start);
+        for (const [u, m] of shape.slice(1)) o.frequency.linearRampToValueAtTime(f * h * m, start + u * len);
+        if (rate) {
+          const lfo = ctx.createOscillator(), dg = ctx.createGain();
+          lfo.frequency.value = rate;
+          dg.gain.value = f * h * depth;
+          lfo.connect(dg).connect(o.frequency);
+          lfo.start(start);
+          lfo.stop(start + len + 0.05);
+        }
+        og.gain.value = level;
+        o.connect(og).connect(g);
+        o.start(start);
+        o.stop(start + len + 0.05);
+        return o;
+      });
+      void oscs;
+      // (The echo's loop let go once it's died away.)
+      setTimeout(() => (back.disconnect(), echo.disconnect()), Math.max(0, start - ctx.currentTime + len + 3) * 1000);
+      const attack = Math.min(0.4, len * 0.25), release = Math.min(0.9, len * 0.35);
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start + attack);
+      g.gain.setValueAtTime(peak, start + len - release);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+      noise(start, len, f * 1.5, 1.2, peak * 0.12);
+    };
     // Noise through a low- or high-pass filter (a wash of it), and a
     // droplet: a tiny bright tick.
     const wash = (start, len, type, freq, peak, attack = 0.01, sweep = null) => {
@@ -717,7 +764,13 @@ export class Sound {
       case 'hiss': done = c('hiss', 0.8 + 0.3 * r, 0.8); break;
       case 'oink': done = c('pig', 0.8, 0.8); break; // (a wild boar: deeper than a farm pig)
       case 'baa': done = c('sheep', 1, 0.8); break;
-      case 'goat': done = c('sheep', 1.3, 0.3, t, { lowpass: 3500 }); break; // (a goat: softer and further off than a sheep)
+      case 'goat': done = c('goat', 0.95 + 0.15 * r, 0.6); break;
+      case 'neigh': done = c('horse', 0.92 + 0.15 * r, 0.9); break;
+      case 'roar': done = c('roar', 0.85 + 0.15 * r, 1); break; // (a lion, a tiger)
+      case 'trumpet': done = c('elephant', 0.9 + 0.15 * r, 1); break;
+      case 'grunt': done = c('cattle', 0.62 + 0.08 * r, 0.9, t, { lowpass: 1800 }); break; // (a bison: a deep grunting bellow)
+      case 'bellow': case 'moose': done = c('cattle', 0.55 + 0.1 * r, 1, t, { lowpass: 1500 }); break; // (a moose: lower still, longer)
+      case 'squeak': done = c('rabbit', 1 + 0.2 * r, 0.6); break;
       case 'gobble': done = c('turkey', 1, 0.9); break;
       case 'croak': done = c('frog', 1, 0.8); break;
       case 'crack': done = c('snap', 0.75 + 0.2 * r, 1); break;
@@ -782,12 +835,44 @@ export class Sound {
     } else if (kind === 'flutter') {
       noise(t, 0.9, 1400, 0.8, 0.07, 22);
     } else if (kind === 'howl') {
-      // A long rising, falling howl, and another voice joining in.
-      tone(t, 2.6, 'sine', 380, 520, 600, 1.2, 0.12, 5);
-      tone(t + 1.1, 2.2, 'sine', 460, 600, 700, 1.2, 0.08, 6);
+      // Wolves: a pack's chorus. One starts, a long, pure howl swelling up
+      // from low to its note, holding it with a slight quaver, and sliding
+      // down at the end; the others join in a moment later, each on its own
+      // note (a young one higher, breaking), so they rise and cross.
+      const voices = 1 + Math.floor(Math.random() * 4);
+      for (let v = 0; v < voices; v++) {
+        const young = v > 0 && Math.random() < 0.3, f = young ? 560 + Math.random() * 160 : 340 + Math.random() * 140;
+        const start = t + (v ? 0.8 + Math.random() * 2.2 : 0), len = young ? 1.6 + Math.random() : 3 + Math.random() * 2.2;
+        const shape = young ? [[0, 0.85], [0.2, 1.05], [0.45, 0.95], [0.55, 1.08], [1, 0.82]] : [[0, 0.8], [0.18, 1], [0.6, 1.03], [0.82, 0.98], [1, 0.74]];
+        voice(start, len, f, (v ? 0.06 : 0.09) * (young ? 0.7 : 1), shape, 5 + Math.random() * 1.5, 0.012);
+      }
     } else if (kind === 'yip') {
-      const n = 4 + Math.floor(Math.random() * 5);
-      for (let k = 0; k < n; k++) tone(t + k * 0.16 + Math.random() * 0.05, 0.12, 'sawtooth', 900 + Math.random() * 300, 1300, 1200, 1.5, 0.05);
+      // Coyotes: a tumbling chorus of yips and barks breaking into short,
+      // high, wavering howls, two or three of them at once, all over each other.
+      const dogs = 2 + Math.floor(Math.random() * 2);
+      for (let d = 0; d < dogs; d++) {
+        let at = t + d * (0.15 + Math.random() * 0.5);
+        const pitch = 0.85 + Math.random() * 0.35, end = t + 2.6 + Math.random() * 1.6;
+        while (at < end) {
+          const r = Math.random();
+          if (r < 0.55) {
+            // A yip: a sharp little cry snapping down.
+            const f = (1000 + Math.random() * 400) * pitch;
+            voice(at, 0.09 + Math.random() * 0.07, f, 0.045, [[0, 1.15], [0.3, 1], [1, 0.6]], 0, 0);
+            at += 0.12 + Math.random() * 0.14;
+          } else if (r < 0.7) {
+            // A bark: a rough, short cough of a sound.
+            noise(at, 0.1, 900 * pitch, 2.5, 0.05);
+            tone(at, 0.11, 'sawtooth', 620 * pitch, 420 * pitch, 800, 1.4, 0.035);
+            at += 0.25 + Math.random() * 0.2;
+          } else {
+            // A short howl, high and quavering.
+            const len = 0.6 + Math.random() * 0.7;
+            voice(at, len, (780 + Math.random() * 220) * pitch, 0.05, [[0, 0.85], [0.25, 1.05], [0.7, 1], [1, 0.7]], 8 + Math.random() * 3, 0.03);
+            at += len * 0.8;
+          }
+        }
+      }
     } else if (kind === 'croak') {
       // A frog: a low, rattling croak or two.
       const n = 1 + Math.floor(Math.random() * 2), f = 160 + Math.random() * 90;

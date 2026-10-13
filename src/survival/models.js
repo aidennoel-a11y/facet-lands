@@ -916,6 +916,33 @@ export function miniature(geometry, size = 0.28) {
  * mountain ore that steel is made from, dark slate with silver-blue
  * crystals.
  */
+/**
+ * A boulder with iron in it, as the grey boulders lying about the land but
+ * shot through with rusty ore: orange-brown lumps and streaks showing in
+ * its faces, a stain run down from them.
+ */
+export function ironBoulderModel() {
+  const b = R(331);
+  const rand = mulberry32(331);
+  b.add(new DodecahedronGeometry(0.7, 0), 0x8a867e, [0, 0.38, 0], [0.3, 0.5, 0.2], [1.3, 0.78, 1.08]);
+  b.add(new DodecahedronGeometry(0.42, 0), 0x7e7a72, [0.62, 0.2, 0.3], [0.5, 0.1, 0.4], [1, 0.75, 1]);
+  b.add(new DodecahedronGeometry(0.3, 0), 0x928e86, [-0.55, 0.14, -0.35], [0.2, 0.7, 0.1], [1, 0.7, 1.1]);
+  const rust = [0xa0502c, 0xb8683a, 0x8a3e24, 0xc07040];
+  for (let k = 0; k < 16; k++) {
+    // (Set into the rock's faces: half sunk, half showing.)
+    const a = rand() * Math.PI * 2, el = -0.1 + rand() * 1.1;
+    const x = Math.cos(a) * Math.cos(el) * 0.82, y = 0.38 + Math.sin(el) * 0.48, z = Math.sin(a) * Math.cos(el) * 0.68;
+    const size = 0.07 + rand() * 0.09;
+    b.add(new DodecahedronGeometry(size, 0), rust[k % rust.length], [x, y, z], [rand() * 3, rand() * 3, rand() * 3], [1.4, 0.7, 1], 0.05);
+  }
+  // (Rust stains run down the sides.)
+  for (let k = 0; k < 5; k++) {
+    const a = rand() * Math.PI * 2;
+    b.add(new BoxGeometry(0.1, 0.35, 0.03), 0x9a5a38, [Math.cos(a) * 0.86, 0.3, Math.sin(a) * 0.72], [0, -a + Math.PI / 2, 0.15], [1, 1, 1], 0.03);
+  }
+  return b.build();
+}
+
 export function oreNodeModel(id) {
   const look = {
     iron: { rock: 0x7a746c, bits: [0xa0502c, 0xb8683a, 0x8a3e24], n: 8, shape: 'dodeca' },

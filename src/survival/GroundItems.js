@@ -77,6 +77,7 @@ export class GroundItems {
   model(id, variant = '') {
     const key = id + variant;
     if (variant === 'node') return (this.models[key] ??= M.oreNodeModel(id));
+    if (variant === 'boulder') return (this.models[key] ??= M.ironBoulderModel());
     // (A wild crop: a small stand of it, ripe, as a farmed one in a plot but a patch about a metre across.)
     if (WILD_CROPS[id]) return (this.models[key] ??= M.wildCropModel(WILD_CROPS[id]));
     if (!this.models[key]) {
@@ -178,7 +179,7 @@ export class GroundItems {
         // Now and then, among the loose stones, a lump of rusty iron ore showing
         // through: once in a while anywhere, far more often in the mountains and
         // their foothills.
-        if (id === 'rock' && hash2(gi, gj, seed + 8) < 0.04 + 0.05 * smoothstep(0.2, 0.55, mount)) id = 'iron';
+        if (id === 'rock' && hash2(gi, gj, seed + 8) < 0.01 + 0.035 * smoothstep(0.3, 0.6, mount)) id = 'iron';
         else if (id === 'rock' && y > 150) {
           const r = hash2(gi, gj, seed + 6) * smoothstep(150, 200, y);
           if (r > 0.82) id = 'mountainOre';
@@ -187,6 +188,7 @@ export class GroundItems {
         if (generator.rivers?.at(x0 + lx, z0 + lz, 0.5)) continue;
         const turn = hash2(gi, gj, seed + 3) * Math.PI * 2;
         const item = { key, id, x: x0 + lx, y, z: z0 + lz, turn, index: found[id].length, node: ORE_NODES.has(id) };
+        if (id === 'iron') (item.size = 2.1), (item.boulder = true); // (a boulder with iron in it: see ironBoulderModel)
         found[id].push(item);
         items.push(item);
       }
@@ -197,7 +199,7 @@ export class GroundItems {
     group.userData.key = `${cx},${cz}`;
     for (const [id, list] of Object.entries(found)) {
       if (!list.length) continue;
-      const mesh = new InstancedMesh(this.model(id, ORE_NODES.has(id) ? 'node' : ''), this.material, list.length);
+      const mesh = new InstancedMesh(this.model(id, id === 'iron' ? 'boulder' : ORE_NODES.has(id) ? 'node' : ''), this.material, list.length);
       mesh.name = id;
       list.forEach((it, k) => {
         // (Wild crops: each patch its own size, and sunk a little where the ground slopes.)
@@ -357,7 +359,7 @@ export class GroundItems {
           for (const it of src.items) {
             if (it.gone) continue;
             if (Math.abs(it.x - origin.x) > reach + 1 || Math.abs(it.z - origin.z) > reach + 1) continue;
-            consider(it.x, it.y + (it.node ? 0.2 : 0.08), it.z, it.node ? 0.42 * (it.size ?? 1) : it.key.startsWith('cave:') ? 0.25 * (it.size ?? 1) : 0.18, (t) => ({ kind: 'ground', item: it, id: it.id, distance: t }));
+            consider(it.x, it.y + (it.boulder ? 0.4 : it.node ? 0.2 : 0.08), it.z, it.node ? 0.42 * (it.size ?? 1) : it.key.startsWith('cave:') ? 0.25 * (it.size ?? 1) : 0.18, (t) => ({ kind: 'ground', item: it, id: it.id, distance: t }));
           }
         }
       }

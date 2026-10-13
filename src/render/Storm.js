@@ -41,6 +41,8 @@ export class Rain {
       centre: { value: new Vector3() },
       box: { value: new Vector3(80, 48, 80) },
       fall: { value: new Vector3(0, -22, 0) },
+      travel: { value: new Vector3() }, // how far the rain has fallen, all told (the wind's changes added up as they come)
+      travelSnow: { value: new Vector3() }, // (and the snow)
       amount: { value: 0 },
       snow: { value: 0 },
       colour: { value: new Color(0xb8c4d2) },
@@ -54,6 +56,8 @@ export class Rain {
         uniform vec3 centre;
         uniform vec3 box;
         uniform vec3 fall;
+        uniform vec3 travel;
+        uniform vec3 travelSnow;
         uniform float amount;
         uniform float snow;
         attribute vec4 drop;
@@ -62,9 +66,14 @@ export class Rain {
         void main() {
           // Each drop falls at its own speed; the box wraps around the camera.
           // Snow drifts down slowly, swirling; rain streaks.
+          // (Where it's got to: the distance fallen so far, as the wind has
+          // changed, not the wind now times the time, so a gust turning or
+          // dying away doesn't fling every drop across the sky; and each
+          // streak lies along the way it's moving now.)
           vec3 velocity = mix(fall * (0.85 + 0.3 * drop.w), vec3(fall.x * 0.35, -2.2 - drop.w, fall.z * 0.35), snow);
+          vec3 moved = mix(travel * (0.85 + 0.3 * drop.w), travelSnow + vec3(0.0, -drop.w * time, 0.0), snow);
           vec3 corner = centre - box * 0.5;
-          vec3 p = mod(drop.xyz * box + velocity * time - corner, box) + corner;
+          vec3 p = mod(drop.xyz * box + moved - corner, box) + corner;
           p.xz += snow * 0.6 * vec2(sin(time * 1.3 + drop.x * 40.0), cos(time * 1.1 + drop.z * 40.0));
           p -= normalize(velocity) * tail * mix(0.9 + 0.5 * drop.w, 0.12, snow);
           // Lighter rain: fewer drops.
@@ -98,6 +107,7 @@ export class Rain {
     this.mesh.visible = amount > 0.01;
     if (!this.mesh.visible) return;
     const u = this.uniforms;
+    const dt = Math.min(0.25, Math.max(0, time - u.time.value));
     u.time.value = time;
     u.centre.value.copy(focus);
     u.amount.value = amount;
@@ -105,7 +115,15 @@ export class Rain {
     // (Blown along downwind, the way the clouds go and the trees bend:
     // straight down in a calm, slanting hard in a gale.)
     const wl = Math.hypot(wind.x, wind.z) || 1, blow = 0.4 + 15 * Math.pow(Math.min(1.3, strength), 1.3);
-    u.fall.value.set((wind.x / wl) * blow, -22, (wind.z / wl) * blow);
+    // (Eased towards the wind as it changes, as falling drops would be.)
+    const f = u.fall.value, k = Math.min(1, dt * 1.5);
+    f.x += ((wind.x / wl) * blow - f.x) * k;
+    f.z += ((wind.z / wl) * blow - f.z) * k;
+    f.y = -22;
+    u.travel.value.addScaledVector(f, dt);
+    u.travelSnow.value.x += f.x * 0.35 * dt;
+    u.travelSnow.value.y += -2.2 * dt;
+    u.travelSnow.value.z += f.z * 0.35 * dt;
     // Snowflakes are white, and show brighter.
     u.colour.value.set(0xb8c4d2).lerp(light, 0.35).lerp(WHITE, snow * 0.8);
     this.material.uniforms.colour.value.multiplyScalar(1 + snow * 0.6);

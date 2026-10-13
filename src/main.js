@@ -851,7 +851,7 @@ function setSeed(seed, saveKey = null, place = true) {
   fires.clear();
   volcanoes.clear();
   insects.clear();
-  if (place && game.mode !== 'testing') seasons.time = 1.5; // (a new world starts in the middle of summer)
+  if (place && game.mode !== 'testing') (seasons.time = 1.5), (dayNight.hour = 8); // (a new world starts on a summer's morning, midsummer)
   if (place) placeCamera(game.mode === 'survival'); // (not when you'll be put back where you were)
 }
 

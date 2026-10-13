@@ -391,10 +391,12 @@ export class Game {
       found.push({ kind: 'horse', distance: carcass.distance, animal: beast, text: needs ? `${text} · ${needs}` : text });
     }
     const tree = this.trees.pick(origin, direction, reach);
-    const ripe = tree && FRUIT[tree.type] && seasonUniforms.uFruit.value > 0.6 && seasonUniforms.uRipe.value > 0.7;
+    // (Ripe from midsummer: berries till the fourth day of autumn, apples till the ninth.)
+    const year = seasonUniforms.uSeasonTime.value, days = this.config.daysPerSeason ?? 12;
+    const ripe = tree && FRUIT[tree.type] && year >= 1.45 && year < 2 + (FRUIT[tree.type] === 'apple' ? 9 : 4) / days;
     const picked = tree && this.harvested.has(tree.key) && this.time - this.harvested.get(tree.key) < 900;
     if (tree && FRUIT[tree.type] && (ripe || !tree.bush)) {
-      found.push({ kind: 'fruit', distance: tree.distance, tree, ripe, picked, text: picked ? 'Picked clean' : ripe ? `Pick ${FRUIT[tree.type] === 'apple' ? 'apples' : 'berries'}` : seasonUniforms.uFruit.value > 0.3 ? 'Not ripe yet' : 'No fruit this time of year' });
+      found.push({ kind: 'fruit', distance: tree.distance, tree, ripe, picked, text: picked ? 'Picked clean' : ripe ? `Pick ${FRUIT[tree.type] === 'apple' ? 'apples' : 'berries'}` : year > 1 && year < 1.45 ? 'Not ripe yet' : 'No fruit this time of year' });
     } else if (tree?.bush && !CACTI.has(tree.type)) {
       // (Any bush: pull a plant vine or two from it, then leave it be a while.)
       const pulled = this.vined?.has(tree.key) && this.time - this.vined.get(tree.key) < 600;
@@ -1328,7 +1330,7 @@ export class Game {
         const flint = Math.random() < (stone ? 0.3 : 0.14);
         // (Iron ore in the rock, now and then: more often up in the mountains and their foothills.)
         const mount = this.generator?.()?.getMountainness?.(where.x, where.z) ?? 0;
-        const ore = Math.random() < (stone ? 0.08 : 0.05) + 0.12 * Math.min(1, Math.max(0, (mount - 0.2) / 0.35));
+        const ore = Math.random() < (stone ? 0.04 : 0.02) + 0.1 * Math.min(1, Math.max(0, (mount - 0.3) / 0.3));
         if (ore) this.#give('iron', 1, at);
         const n = 1 + (Math.random() < 0.4 ? 1 : 0) + (stone ? Math.min(2, Math.floor(stone.size)) : 0);
         this.#give('rock', n, at);
@@ -1546,9 +1548,22 @@ export class Game {
     const power = ITEMS[this.inventory.slots[i]?.id]?.power ?? 1;
     this.inventory.wear(i, 1);
     this.#animate('loose', 0.25);
-    this.#launch('arrow', Inventory.stack(ammo, 1), origin, direction, (16 + 34 * draw) * power, power);
+    this.#launch('arrow', Inventory.stack(ammo, 1), origin, this.#sway(direction), (16 + 34 * draw) * power, power);
     this.cooldown = 0.35;
     this.sound?.call('whoosh', 0, 0.35 + 0.3 * draw);
+  }
+
+  // Shooting on the move: running, the shot goes wild (some degrees off,
+  // any way); walking, a little off; standing still (or crouched), true.
+  #sway(direction) {
+    const c = this.controls, moving = c.moving ?? (c.currentSpeed ?? 0) > 0.5;
+    const spread = c.sprinting ? 0.14 : moving && !c.crouch ? 0.025 : 0;
+    if (!spread) return direction;
+    const d = direction.clone();
+    d.x += (Math.random() - 0.5) * 2 * spread;
+    d.y += (Math.random() - 0.5) * 2 * spread * 0.8;
+    d.z += (Math.random() - 0.5) * 2 * spread;
+    return d.normalize();
   }
 
   // The crossbow: wind it (a bolt from your pack, two seconds), then a
@@ -1560,7 +1575,7 @@ export class Game {
       s.loaded = false;
       this.inventory.wear(i, 1);
       this.inventory.changed();
-      this.#launch('bolt', Inventory.stack(s.venom ? 'poisonBolt' : 'bolt', 1), origin, direction, 75);
+      this.#launch('bolt', Inventory.stack(s.venom ? 'poisonBolt' : 'bolt', 1), origin, this.#sway(direction), 75);
       this.cooldown = 0.3;
       this.#animate('kick', 0.3);
       this.sound?.call('twang', 0, 0.7);

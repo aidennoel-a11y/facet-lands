@@ -48,3 +48,7 @@ License texts:
 - CC BY-SA 3.0: https://creativecommons.org/licenses/by-sa/3.0/ (the modified files above are shared under the same license)
 - MIT: https://opensource.org/licenses/MIT
 - Pixabay Content License: https://pixabay.com/service/license-summary/
+| `roar-*`, `elephant-*`, `cattle-*`, `goat-*`, `horse-3`, `horse-4`, `horse-5` | Wildfire Games (0 A.D.) | CC BY-SA 3.0 | wildfiregames.com, github.com/0ad/0ad (binaries/data/mods/public/audio/actor/fauna); creativecommons.org/licenses/by-sa/3.0 |
+| `horse-1` | GoodListener | CC BY 3.0 | freesound.org/people/GoodListener/sounds/322454 (via VoxeLibre) |
+| `horse-2` | ERH | CC BY 3.0 | freesound.org/people/ERH/sounds/32043 (via VoxeLibre) |
+| `rabbit-*` | Alshred | CC0 1.0 | freesound.org/people/Alshred/sounds/403773 (via VoxeLibre) |
