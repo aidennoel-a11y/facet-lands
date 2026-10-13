@@ -9,7 +9,7 @@ const [out = 'far', seed = 'qklsht', x = '-394', z = '-7905', up = '2'] = proces
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1000, height: 560 } });
 page.on('pageerror', (e) => console.log('ERR', e.message));
-await page.addInitScript(() => localStorage.setItem('facet-lands:quality', 'high'));
+await page.addInitScript((q) => localStorage.setItem('facet-lands:quality', q), process.env.Q ?? 'high');
 await page.goto(`http://localhost:4173/?seed=${seed}&x=${x}&z=${z}&up=${up}&pitch=-0.12&hide&hour=14&loadscreen`, { timeout: 180000 });
 await page.waitForFunction(() => document.querySelector('.load-screen')?.classList.contains('ls-done'), null, { timeout: 900000, polling: 500 });
 await page.waitForFunction(() => window.world.chunks.pendingCount === 0, null, { timeout: 1500000, polling: 1000 }).catch(() => console.log('(still building)'));

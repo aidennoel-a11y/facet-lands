@@ -386,11 +386,12 @@ export function createFarTreeLayer(config) {
       )
       .replace(
         '#include <begin_vertex>',
-        /* glsl */ `float far = smoothstep(300.0, 1800.0, length(toCam.xz));
+        /* glsl */ `#include <begin_vertex>
+        float far = smoothstep(300.0, 1800.0, length(toCam.xz));
         // (Mirrored or not, tree by tree, so a wood isn't all one tree.)
         float mirror = sin(aShape.y) < 0.0 ? -1.0 : 1.0;
         vec3 right = vec3(camFlat.y, 0.0, -camFlat.x);
-        vec3 transformed = right * position.x * mirror * aSpot.w * (1.0 + 0.9 * far) + vec3(0.0, position.y * aShape.x * (1.0 + 0.25 * far), 0.0) + aSpot.xyz;
+        transformed = right * position.x * mirror * aSpot.w * (1.0 + 0.9 * far) + vec3(0.0, position.y * aShape.x * (1.0 + 0.25 * far), 0.0) + aSpot.xyz;
         vImpUv = uv;
         vShade = 0.82 + aShape.z * 0.3;`,
       );
