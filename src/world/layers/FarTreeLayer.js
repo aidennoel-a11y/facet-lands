@@ -2,6 +2,12 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  LinearFilter,
+  LinearMipmapLinearFilter,
+  OrthographicCamera,
+  Scene,
+  ShaderMaterial,
+  WebGLRenderTarget,
   DynamicDrawUsage,
   Group,
   InstancedBufferAttribute,
@@ -190,6 +196,142 @@ function farGeometry(type, detailed) {
 }
 
 /**
+ * The furthest trees of all (past a kilometre): each just a picture of
+ * the tree, a flat card turned to face you (two triangles), drawn once from
+ * the tree's real model, head on, into a sheet of them (see buildImpostors).
+ * At that distance a tree's a handful of pixels, and a picture of it looks
+ * more like it than a few-sided solid. The sheet's top half holds the
+ * trees' colours; its bottom half, for each pixel, what it is (leaves or
+ * not, snow-catching or not, and which way it faces): so the cards still
+ * turn with the seasons like the rest.
+ */
+const CELL = 128; // (pixels a side of each picture)
+const COLS = 8;
+const impostors = { target: null, cells: new Map(), rows: 1 };
+
+function impostorTypes() {
+  return Object.keys(TREE_GEOMETRIES).filter((t) => !SMALL_PLANTS.has(t));
+}
+
+/** Each kind of tree's size, for its card: half its width (from the trunk out), and its height. */
+function treeBox(type) {
+  const g = TREE_GEOMETRIES[type];
+  g.computeBoundingBox();
+  const b = g.boundingBox;
+  const half = Math.max(Math.abs(b.min.x), Math.abs(b.max.x), Math.abs(b.min.z), Math.abs(b.max.z)) * 1.04;
+  return { half, top: b.max.y * 1.03 };
+}
+
+/** Draws every kind of tree into the sheet of pictures (once, at the start). */
+export function buildImpostors(renderer) {
+  if (impostors.target) return impostors.target.texture;
+  const types = impostorTypes();
+  const rows = Math.ceil(types.length / COLS);
+  const target = new WebGLRenderTarget(COLS * CELL, rows * CELL * 2, { minFilter: LinearMipmapLinearFilter, magFilter: LinearFilter, generateMipmaps: true });
+  const vertex = /* glsl */ `
+    attribute vec3 aSeason;
+    varying vec3 vCol;
+    varying vec3 vSea;
+    varying vec3 vNorm;
+    void main() {
+      vCol = color;
+      vSea = aSeason;
+      vNorm = normal;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`;
+  const colour = new ShaderMaterial({
+    vertexColors: true,
+    vertexShader: vertex,
+    fragmentShader: /* glsl */ `
+      varying vec3 vCol;
+      varying vec3 vSea;
+      varying vec3 vNorm;
+      void main() {
+        if (vSea.z > 1.5) discard; // (no fruit)
+        // (A little of its roundness kept: lighter on top and to the front, darker beneath.)
+        vec3 n = normalize(vNorm);
+        float shade = 0.82 + 0.16 * n.y + 0.08 * n.z;
+        gl_FragColor = vec4(vCol * shade, 1.0);
+      }`,
+  });
+  const kind = new ShaderMaterial({
+    vertexColors: true,
+    vertexShader: vertex,
+    fragmentShader: /* glsl */ `
+      varying vec3 vCol;
+      varying vec3 vSea;
+      varying vec3 vNorm;
+      void main() {
+        if (vSea.z > 1.5) discard;
+        gl_FragColor = vec4(clamp(vSea.x, 0.0, 1.0), clamp(vSea.y, 0.0, 1.0), normalize(vNorm).y * 0.5 + 0.5, 1.0);
+      }`,
+  });
+  const scene = new Scene();
+  const camera = new OrthographicCamera(-1, 1, 1, 0, 0.1, 400);
+  camera.position.set(0, 0, 200);
+  camera.lookAt(0, 0, 0);
+  const before = { target: renderer.getRenderTarget(), colour: renderer.getClearColor(new Color()), alpha: renderer.getClearAlpha(), autoClear: renderer.autoClear, scissor: renderer.getScissorTest() };
+  renderer.setRenderTarget(target);
+  renderer.autoClear = false;
+  renderer.setScissorTest(true);
+  types.forEach((type, k) => {
+    const geometry = TREE_GEOMETRIES[type];
+    if (!geometry.attributes.normal) geometry.computeVertexNormals();
+    const { half, top } = treeBox(type);
+    Object.assign(camera, { left: -half, right: half, top, bottom: 0 });
+    camera.position.y = 0;
+    camera.updateProjectionMatrix();
+    const col = k % COLS, row = Math.floor(k / COLS);
+    impostors.cells.set(type, { col, row, half, top });
+    const mesh = new Mesh(geometry, colour);
+    scene.add(mesh);
+    for (const [material, y0, avg] of [[colour, (rows + row) * CELL, true], [kind, row * CELL, false]]) {
+      mesh.material = material;
+      // (Cleared to the tree's own colour, see-through: so its edges, blurred into the background far off, don't darken.)
+      renderer.setClearColor(avg ? crownColour(type) : 0x000000, 0);
+      renderer.setViewport(col * CELL, y0, CELL, CELL);
+      renderer.setScissor(col * CELL, y0, CELL, CELL);
+      renderer.clear();
+      renderer.render(scene, camera);
+    }
+    scene.remove(mesh);
+  });
+  renderer.setScissorTest(before.scissor);
+  renderer.autoClear = before.autoClear;
+  renderer.setClearColor(before.colour, before.alpha);
+  renderer.setRenderTarget(before.target);
+  colour.dispose();
+  kind.dispose();
+  impostors.target = target;
+  impostors.rows = rows;
+  return target.texture;
+}
+
+function crownColour(type) {
+  const real = TREE_GEOMETRIES[type], crown = real.userData.crown ?? real, c = crown.attributes.color, avg = new Color(0, 0, 0);
+  for (let k = 0; k < c.count; k++) avg.r += c.getX(k), avg.g += c.getY(k), avg.b += c.getZ(k);
+  return avg.multiplyScalar(1 / Math.max(1, c.count));
+}
+
+/** A tree's card: two triangles, as wide and tall as the tree, mapped to its picture. */
+function impostorGeometry(type) {
+  const { col, row, half, top } = impostors.cells.get(type);
+  const rows = impostors.rows;
+  const u0 = col / COLS, u1 = (col + 1) / COLS;
+  // (The colour pictures are the sheet's top half: v from the top half's foot.)
+  const v0 = (rows + row) / (rows * 2), v1 = (rows + row + 1) / (rows * 2);
+  const g = new InstancedBufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array([-half, 0, 0, half, 0, 0, half, top, 0, -half, top, 0]), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array([u0, v0, u1, v0, u1, v1, u0, v1]), 2));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(12).fill(0), 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  g.setAttribute('aSeason', new BufferAttribute(new Float32Array(12), 3));
+  const fall = FALL[type] ?? [0.85, 0.45, 0.06];
+  g.setAttribute('aFall', new BufferAttribute(new Float32Array([...fall, ...fall, ...fall, ...fall]), 3));
+  return g;
+}
+
+/**
  * Trees out to the edge of the view, beyond the full-detail ones: a
  * handful of triangles each (see farGeometry), standing exactly where the
  * real trees do (see placeTrees), so as you come closer they simply gain
@@ -228,6 +370,47 @@ export function createFarTreeLayer(config) {
   material.customProgramCacheKey = () => 'far-trees';
   seasonalTrees(material, false, 'aShape.z', 'aShape.w', 'aSpot.y');
 
+  // The furthest: the cards (see buildImpostors), turned about their upright to face you.
+  const impostorUniform = { value: null };
+  const cardMaterial = new MeshLambertMaterial();
+  cardMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.uImpostor = impostorUniform;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aSpot;\nattribute vec4 aShape;\nvarying float vShade;\nvarying vec2 vImpUv;')
+      .replace(
+        '#include <beginnormal_vertex>',
+        /* glsl */ `vec3 toCam = cameraPosition - aSpot.xyz;
+        vec2 camFlat = normalize(toCam.xz + vec2(1e-4, 0.0));
+        // (Lit as though it faced up and towards you: like a crown's top and front.)
+        vec3 objectNormal = normalize(vec3(camFlat.x, 0.0, camFlat.y) * 0.55 + vec3(0.0, 0.85, 0.0));`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `float far = smoothstep(300.0, 1800.0, length(toCam.xz));
+        // (Mirrored or not, tree by tree, so a wood isn't all one tree.)
+        float mirror = sin(aShape.y) < 0.0 ? -1.0 : 1.0;
+        vec3 right = vec3(camFlat.y, 0.0, -camFlat.x);
+        vec3 transformed = right * position.x * mirror * aSpot.w * (1.0 + 0.9 * far) + vec3(0.0, position.y * aShape.x * (1.0 + 0.25 * far), 0.0) + aSpot.xyz;
+        vImpUv = uv;
+        vShade = 0.82 + aShape.z * 0.3;`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uImpostor;\nvarying float vShade;\nvarying vec2 vImpUv;')
+      .replace(
+        '#include <color_fragment>',
+        /* glsl */ `vec4 impColour = texture2D(uImpostor, vImpUv);
+        if (impColour.a < 0.4) discard;
+        diffuseColor.rgb = impColour.rgb;
+        diffuseColor.rgb *= vec3(vShade * (0.96 + (vShade - 0.82) * 0.27), vShade, vShade * 0.95);
+        vec4 impKind = texture2D(uImpostor, vImpUv - vec2(0.0, 0.5));
+        #define vSeason vec3(impKind.r, impKind.g, 0.0)
+        #define vSeasonUp (impKind.b * 2.0 - 1.0)
+        #include <color_fragment>`,
+      );
+  };
+  cardMaterial.customProgramCacheKey = () => 'far-tree-cards';
+  seasonalTrees(cardMaterial, false, 'aShape.z', 'aShape.w', 'aSpot.y');
+
   // One pool per kind of tree in each square of the land (TILE chunks a
   // side): instances packed at the front, a chunk's handle knowing which
   // slots are its own. A square out of view (behind you, off to the side)
@@ -235,16 +418,18 @@ export function createFarTreeLayer(config) {
   const TILE = 6;
   const pools = new Map();
   function pool(type, detailed, tx, tz) {
-    const key = `${type}:${detailed ? 1 : 0}:${tx},${tz}`;
+    // (The furthest, the cards, once their pictures are drawn.)
+    const card = !detailed && impostors.cells.has(type);
+    const key = `${type}:${card ? 2 : detailed ? 1 : 0}:${tx},${tz}`;
     let p = pools.get(key);
     if (!p) {
-      const geometry = farGeometry(type, detailed);
+      const geometry = card ? impostorGeometry(type) : farGeometry(type, detailed);
       p = { geometry, mesh: null, capacity: 0, count: 0, spot: null, shape: null, owner: [], slot: [], lo: Infinity, hi: -1 };
       grow(p, 256);
       const size = TILE * config.chunkSize;
       // (The square, from well below the sea to above the highest trees on the highest peaks.)
       geometry.boundingSphere = new Sphere(new Vector3((tx + 0.5) * size, 150, (tz + 0.5) * size), Math.hypot(size / 2, size / 2, 300));
-      p.mesh = new Mesh(geometry, material);
+      p.mesh = new Mesh(geometry, card ? cardMaterial : material);
       p.mesh.frustumCulled = true;
       p.mesh.name = `far ${type}`;
       group.add(p.mesh);
@@ -311,7 +496,13 @@ export function createFarTreeLayer(config) {
     name: 'farTrees',
     group,
     material,
+    cardMaterial,
     count: 0,
+
+    /** Draws the furthest trees' pictures (needs the renderer): call once, before the world's built. */
+    prepare(renderer) {
+      impostorUniform.value = buildImpostors(renderer);
+    },
 
     update() {
       for (const [key, p] of pools) {

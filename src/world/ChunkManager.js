@@ -280,8 +280,13 @@ export class ChunkManager {
     // (With a pile of finished chunks waiting, starting a world or flying
     // fast, more of the frame goes to putting them in; walking, the usual
     // small slice, so it stays smooth.)
+    // (And when the frames are coming slow, less: the land fills in a
+    // little later, rather than the game stuttering while it does.)
+    const start = performance.now(), gap = start - (this.lastProcess ?? start);
+    this.lastProcess = start;
+    this.slow = gap > 19 ? Math.min(1, (this.slow ?? 0) + 0.2) : Math.max(0, (this.slow ?? 0) - 0.05);
     const backlog = this.ready.length > 6;
-    const deadline = performance.now() + this.config.chunkBuildBudgetMs * (backlog ? 2.5 : 1) * this.budgetScale;
+    const deadline = start + this.config.chunkBuildBudgetMs * (backlog ? 2.5 - 1.5 * this.slow : 1 - 0.5 * this.slow) * this.budgetScale;
     this.#dispatch();
     // Put together what's ready (at least one, so progress is guaranteed).
     let steps = 0;

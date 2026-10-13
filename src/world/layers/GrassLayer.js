@@ -167,6 +167,8 @@ export function createGrassLayer(config, { far = false } = {}) {
     speed: 1.9,
     fade: far ? config.farGrassFade : config.grassFade,
     gust: 0.3,
+    // (Swaying only near you: past 50 m or so it's never seen; the far grass, never.)
+    still: far ? [0, 0.001] : [40, 60],
   });
   seasonalGrass(material);
   const previous = material.onBeforeCompile;

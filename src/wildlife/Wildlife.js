@@ -977,19 +977,21 @@ export class Wildlife {
     for (const flock of this.flocks) this.#flock(flock, dt, this.#near(flock.centre, views));
     // (For testing: `profile` set to {}, the time each kind takes, ms, summed.)
     const prof = this.profile;
-    // (Far off, they think less often: every second frame past 60 m, every
-    // fourth past 150, every eighth past 300, each with the time gone by
-    // since; staggered, so it's never all at once. Close by, or hunting you,
-    // charging, ridden, led: every frame.)
+    // (Far off, they think less often: thirty times a second past 60 m, ten
+    // times past 150; behind you (out of view) past 30 m, ten times too.
+    // Each with the time gone by since; staggered, so it's never all at once.
+    // Close by, or hunting you, charging, ridden, led: every frame.)
     this.frame = (this.frame ?? 0) + 1;
     for (const a of this.animals) {
       const t0 = prof ? performance.now() : 0;
       const c = this.#near(a, views);
-      a.owed = (a.owed ?? 0) + dt;
-      const cam = c.camera.position, d = Math.max(Math.abs(a.x - cam.x), Math.abs(a.z - cam.z));
+      if (a.owed === undefined) a.owed = ((a.id ?? 0) * 0.618) % 1 * 0.1; // (the stagger)
+      a.owed += dt;
+      const cam = c.camera.position, dx = a.x - cam.x, dz = a.z - cam.z, d = Math.max(Math.abs(dx), Math.abs(dz));
       const busy = a.hunting || a.charging > 0 || a.ridden || a.led || a.leap || a.stalking || (a.boss && d < 150) || !a.alive && a.rag;
-      const every = busy || d < 60 ? 1 : d < 150 ? 2 : d < 300 ? 4 : 8;
-      if (every > 1 && (this.frame + (a.id ?? 0)) % every) {
+      const behind = d > 30 && c.forward && dx * c.forward.x + dz * c.forward.z < -0.2 * Math.hypot(dx, dz);
+      const every = busy || d < 60 && !behind ? 0 : d < 150 && !behind ? 1 / 30 : 0.1;
+      if (a.owed < every) {
         if (prof) prof.skipped = (prof.skipped ?? 0) + 1;
         continue;
       }

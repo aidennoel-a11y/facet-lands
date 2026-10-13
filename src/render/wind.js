@@ -63,12 +63,12 @@ export function describeWind(strength) {
  *   fade      [start, end] distance from the camera over which instances
  *             shrink to nothing (used for grass), or null
  */
-export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, gust = 0 } = {}) {
+export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, gust = 0, still = null } = {}) {
   const f = (n) => n.toFixed(4);
   // (A gust bends it right over downwind, and shows the paler undersides:
   // \`vGust\` for the fragment shader.)
   const gustCode = gust
-    ? `vGust = windGust(wOrigin.xz, uWindTime, uWindDir, uWindStrength);
+    ? `vGust = windGust(wOrigin.xz, uWindTime, uWindDir, uWindStrength) * wNear;
         transformed.xz += uWindDir * pow(max(transformed.y, 0.0), 1.5) * ${f(gust)} * vGust;`
     : '';
   const fadeCode = fade
@@ -90,17 +90,20 @@ export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, g
         #else
           vec3 wOrigin = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         #endif
+        vGust = 0.0;
+        // (Past \`still\`, it stands still: too far off for its swaying to be seen, so not worked out.)
+        ${still ? `float wNear = 1.0 - smoothstep(${f(still[0])}, ${f(still[1])}, distance(wOrigin.xz, cameraPosition.xz));\n        if (wNear > 0.0) {` : 'float wNear = 1.0;\n        {'}
         float wPhase = uWindTime * ${f(speed)} + wOrigin.x * 0.045 + wOrigin.z * 0.037;
-        float wBend = pow(max(transformed.y, 0.0), 1.5) * ${f(strength)} * uWindStrength;
+        float wBend = pow(max(transformed.y, 0.0), 1.5) * ${f(strength)} * uWindStrength * wNear;
         transformed.x += (sin(wPhase) + 0.35 * sin(wPhase * 2.7 + position.z)) * wBend;
         transformed.z += (0.6 * cos(wPhase * 0.8) + 0.25 * sin(wPhase * 3.1 + position.x)) * wBend;
-        vGust = 0.0;
         ${gustCode}
+        }
         ${fadeCode}`,
       );
     if (!shader.fragmentShader.includes('varying float vGust;')) shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGust;');
   };
-  const key = `wind-${strength}-${speed}-${fade}-${gust}`;
+  const key = `wind-${strength}-${speed}-${fade}-${gust}-${still}`;
   material.customProgramCacheKey = () => key;
   return material;
 }

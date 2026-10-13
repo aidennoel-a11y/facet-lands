@@ -337,7 +337,7 @@ export class DayNight {
     // Its shadow in two maps (see splitShadow.js): a sharp one close round
     // you, its own, redrawn every frame; and one out to the shadows' full
     // reach, held by a second light that gives no light, redrawn every
-    // other frame (far off, a frame late is never seen).
+    // third frame (far off, a frame late is never seen).
     const light = new DirectionalLight();
     const far = new DirectionalLight(0x000000, 0);
     for (const l of [light, far]) {
@@ -576,8 +576,8 @@ export class DayNight {
     // Toggling castShadow recompiles every material, so only the user's
     // Shadows switch changes it (not the dim moments at dawn and dusk).
     light.castShadow = this.farLight.castShadow = this.shadows;
-    // (The far map redrawn every other frame.)
-    this._shadowFrame = (this._shadowFrame + 1) % 2;
+    // (The far map redrawn every third frame.)
+    this._shadowFrame = (this._shadowFrame + 1) % 3;
     if (this._shadowFrame === 0) this.farLight.shadow.needsUpdate = true;
 
     // Centre the shadow boxes a little ahead of the player, where they're

@@ -3,7 +3,7 @@ import { ShaderChunk } from 'three';
 /**
  * The sun's shadow in two parts (see DayNight): a sharp map close round
  * you, redrawn every frame, and a broader one out to the shadows' reach,
- * redrawn every other frame. The broad one belongs to a second directional
+ * redrawn every third frame. The broad one belongs to a second directional
  * light that gives no light of its own; here, every lit material takes the
  * sun's shadow from the near map where it reaches and from the far one
  * beyond, blending the two over a band at the near map's edge (so no line

@@ -283,6 +283,7 @@ chunks.addLayer(createFlowerLayer(WORLD));
 chunks.addLayer(createUnderstoryLayer(WORLD));
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
+farTrees.prepare(renderer); // (the furthest trees' pictures)
 scene.add(farTrees.group);
 chunks.addLayer(farTrees);
 chunks.addLayer(grass);
@@ -304,7 +305,7 @@ chunks.addLayer(ruins);
 trees.keepOut = (x0, z0, x1, z1) => ruins.sitesNear((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 30, generator).map((s) => [s.x, s.z, s.size + 3]);
 chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
 // The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).
-for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.material, farGrass.material, rocks.material, farTrees.material, logs.material, water.material, rivers.material]) if (m) addCloudShadow(m);
+for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.material, farGrass.material, rocks.material, farTrees.material, farTrees.cardMaterial, logs.material, water.material, rivers.material]) if (m) addCloudShadow(m);
 
 /**
  * What you'd stand on at (x, z) from feet height `feetY`: the terrain, or a
@@ -897,7 +898,11 @@ function setSeed(seed, saveKey = null, place = true) {
   volcanoes.clear();
   insects.clear();
   if (place && game.mode !== 'testing') (seasons.time = 1.5), (dayNight.hour = 8); // (a new world starts on a summer's morning, midsummer)
-  if (place) placeCamera(game.mode === 'survival'); // (not when you'll be put back where you were)
+  if (place) {
+    const t = performance.now();
+    placeCamera(game.mode === 'survival'); // (not when you'll be put back where you were)
+    performance.measure('placeCamera', { start: t });
+  }
 }
 
 ui.seedForm.addEventListener('submit', (e) => {
@@ -1830,7 +1835,9 @@ function loadingFrame(now) {
   // to draw before you come in, and the first frames don't stall.)
   if (now - loading.drawn > 1000) {
     loading.drawn = now;
+    const t = performance.now();
     renderer.render(scene, camera);
+    performance.measure('loading draw', { start: t });
   }
   const { done, total } = chunks.readyNear(camera.position, RINGS);
   loadScreen.querySelector('.ls-bar span').style.width = `${Math.round((100 * done) / total)}%`;
@@ -1845,9 +1852,10 @@ function loadingFrame(now) {
   }
   if (loading.warm === 0) {
     loading.warm = 1;
-    const p = camera.position;
+    const p = camera.position, t = performance.now();
     groundAt(p.x, p.y, p.z);
     waterAt(p.x, p.z);
+    performance.measure('rivers warm', { start: t });
     return;
   }
   loadScreen.querySelector('.ls-note').textContent = done < total ? `${done} of ${total} pieces of land` : 'Ready';
@@ -2197,9 +2205,11 @@ if (!TESTING) {
       // out where you start can take a moment, and the screen shouldn't freeze.)
       startLoading(world.name, true);
       requestAnimationFrame(() => requestAnimationFrame(() => {
+        const t = performance.now();
         useQuality();
         game.mode = world.mode;
         setSeed(world.seed, world.mode === 'testing' ? null : world.id, !world.camera);
+        performance.measure('world setup', { start: t });
         ui.seed.value = world.seed;
         applyMode(world.mode);
         // (Back where you left off.)
