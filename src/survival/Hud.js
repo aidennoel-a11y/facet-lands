@@ -64,7 +64,7 @@ export class Hud {
       </section>
       <section class="death won" hidden>
         <h2>The heart of the Lost Keep</h2>
-        <p>Every great beast brought down, their trophies set in the altar, the sealed gate opened: you have reached the heart of the Lost Keep.</p>
+        <p>Every great beast brought down, their trophies set in the altar at the top of the Lost Keep: you have reached the end of the long road.</p>
         <p class="won-days"></p>
         <button type="button" class="won-on">Go on exploring</button>
       </section>`;

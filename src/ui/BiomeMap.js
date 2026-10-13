@@ -34,7 +34,8 @@ const STYLE = `
  * @param teleport  (x, z) => take you there
  */
 export class BiomeMap {
-  constructor({ task, where, teleport, ruins, fog, keep }) {
+  constructor({ task, where, teleport, ruins, fog, keep, more }) {
+    this.more = more; // (() => whether the ruins aren't all worked out yet: drawn again in a moment)
     this.keep = keep; // (() => { x, z, r } where the Lost Keep is marked, or null)
     this.fog = fog; // (() => { explored, size } in survival, or null: see mapFog)
     this.ruins = ruins; // ((x, z, r) => the ruins to mark, round there)
@@ -187,6 +188,16 @@ export class BiomeMap {
     return MAP_LABELS[k]?.[0] ?? null;
   }
 
+  /** The map's own label at a world point, from a tile already drawn (null if none is yet). */
+  labelAtWorld(x, z) {
+    const span = TILE * this.scale;
+    const tx = Math.floor(x / span), tz = Math.floor(z / span);
+    const tile = this.tiles.get(`${this.scale}:${tx}:${tz}`);
+    if (!tile || tile === 'pending') return null;
+    const i = Math.min(TILE - 1, Math.floor((x - tx * span) / this.scale)), j = Math.min(TILE - 1, Math.floor((z - tz * span) / this.scale));
+    return MAP_LABELS[tile.labels[j * TILE + i]]?.[0] ?? null;
+  }
+
   #request(tx, tz, scale) {
     const key = `${scale}:${tx}:${tz}`;
     const epoch = this.epoch;
@@ -252,7 +263,7 @@ export class BiomeMap {
     const fog = this.fog?.();
     if (fog) ctx.drawImage(paintFog((this.fogMask ??= document.createElement('canvas')), w, n, fog.explored, fog.size, (x, z) => [(x - x0) / scale, (z - z0) / scale], scale), 0, 0);
     // The ruins, as little orange keeps.
-    const found = this.ruins?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? [];
+    const found = this.ruins?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5, (x, z) => this.labelAtWorld(x, z)) ?? [];
     const km = this.keep?.();
     if (km) {
       const kx = (km.x - x0) / scale, ky = (km.z - z0) / scale;
@@ -288,6 +299,7 @@ export class BiomeMap {
       ctx.fillRect(rx - 4, ry - 6, 2.4, 3);
       ctx.fillRect(rx + 1.6, ry - 6, 2.4, 3);
     }
+    if (this.more?.() && !this.moreSoon) this.moreSoon = setTimeout(() => ((this.moreSoon = null), this.draw()), 60);
     // You, as an arrow.
     const p = this.where();
     const mx = (p.x - x0) / scale, my = (p.z - z0) / scale;

@@ -741,7 +741,8 @@ const bigMap = new BiomeMap({
   // (The Lost Keep: where the old maps put it, or, testing, where it is.)
   keep: () => (game.mode === 'testing' ? { ...ruins.keep(generator), r: 0 } : game.keep?.mark ?? null),
   // (Testing: the ruins marked on it too.)
-  ruins: (x, z, r) => (game.mode === 'testing' ? ruins.sitesNear(x, z, Math.min(r, 9000), generator) : ruins.sitesNear(x, z, Math.min(r, 9000), generator).filter((s) => game.ruinsSeen.has(s.key))),
+  // (A few new places worked out each time it's drawn: it fills in over a moment, never freezing. In survival, only those you've been to.)
+  ruins: (x, z, r, labelAt) => (game.mode === 'testing' ? ruins.sitesRoughly(x, z, Math.min(r, 20000), generator, labelAt) : ruins.sitesOf(game.ruinsSeen, generator)),
   teleport: (x, z) => {
     if (!ui.fly.checked) ui.fly.click();
     camera.position.set(x, Math.max(generator.getBaseHeight(x, z), WORLD.seaLevel) + 45, z);
@@ -1979,7 +1980,7 @@ function tick(now) {
   // (Testing: every ruin for 2 km round, the far ones pointed to from the map's edge.)
   const testing = game.mode === 'testing';
   const keepMark = testing ? { ...ruins.keep(generator), r: 0 } : game.keep?.mark;
-  minimap.marks = [...(keepMark ? [{ x: keepMark.x, z: keepMark.z, r: keepMark.r, kind: 'keep' }] : []), ...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...ruins.sitesNear(camera.position.x, camera.position.z, testing ? 2000 : 700, generator).filter((r) => !r.keep && (testing || game.ruinsSeen.has(r.key))).map((r) => ({ x: r.x, z: r.z, kind: 'ruin', edge: testing }))];
+  minimap.marks = [...(keepMark ? [{ x: keepMark.x, z: keepMark.z, r: keepMark.r, kind: 'keep' }] : []), ...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...(testing ? ruins.sitesNear(camera.position.x, camera.position.z, 2000, generator, 4) : ruins.sitesOf(game.ruinsSeen, generator)).filter((r) => !r.keep).map((r) => ({ x: r.x, z: r.z, kind: 'ruin', edge: testing }))];
   minimap.fog = game.mode === 'survival' ? { explored: game.explored, size: WORLD.chunkSize, version: game.exploredVersion ?? 0 } : null;
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
 
@@ -2033,7 +2034,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, dayNight, spiders, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

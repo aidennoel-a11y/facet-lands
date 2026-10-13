@@ -24,7 +24,7 @@ const look = async () => page.evaluate((k) => {
   const { camera, controls, generator: g } = window.world;
   const ca = Math.cos(k.rot), sa = Math.sin(k.rot), u = -40, v = 8, x = k.x + ca * u + sa * v, z = k.z - sa * u + ca * v;
   camera.position.set(x, g.getHeight(x, z) + 15, z);
-  camera.lookAt(k.x - ca * 22, g.getHeight(k.x, k.z) + 3, k.z + sa * 22);
+  camera.lookAt(k.x, g.getHeight(k.x, k.z) + 9, k.z);
   controls.euler.setFromQuaternion(camera.quaternion, 'YXZ');
 }, k);
 await look();
@@ -47,7 +47,8 @@ const res = await page.evaluate(async () => {
   const first = { set: altar.offered.length, open: game.keep.open };
   give(ids.slice(8));
   game.interact(ray());
-  return { altar: true, first, then: { set: altar.offered.length, open: game.keep.open, gateOpen: window.world.game.keep.open }, stones: altar.stones.filter((m) => m.visible).length };
+  const heart = game.structures.list.find((s) => s.ruinKey === 'keep:heart');
+  return { altar: true, altarUp: +(altar.y - window.world.generator.getHeight(altar.x, altar.z)).toFixed(1), first, then: { set: altar.offered.length, won: game.keep.won, heart: !!heart, items: heart?.contents.slots.filter(Boolean).length }, stones: altar.stones.filter((m) => m.visible).length };
 });
 console.log(JSON.stringify(res));
 await look();

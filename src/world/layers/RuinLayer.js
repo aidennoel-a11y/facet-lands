@@ -4,7 +4,7 @@ import { hash2, mulberry32 } from '../../noise/random.js';
 
 /**
  * Ruins: the stone bones of old places, here and there over the land (about
- * one to a square of 640 m, on open, fairly level ground), all of the one
+ * one to a square of 1.3 km, on open, fairly level ground), all of the one
  * old, mossed, ivy-hung stone (sandstone in the dry country), in ten kinds
  * (RUIN_KINDS), small to big: a stronghold's courtyard and tower, a lone
  * watchtower, a gatehouse, a temple of columns on a platform, a great hall,
@@ -25,7 +25,7 @@ const IVY = [0x2e4a22, 0x3a5a28, 0x34522a];
 
 /** The ruin in grid cell (I, K), if any: { x, z, rot, seed, key } (not yet checked against the land). */
 export function ruinSite(I, K, seed) {
-  if (hash2(I, K, seed ^ 0x52a1) > 0.5) return null;
+  if (hash2(I, K, seed ^ 0x52a1) > 0.25) return null; // (one cell in four or so: then only where the land will take one)
   const x = (I + 0.15 + 0.7 * hash2(I, K, seed ^ 0x52a2)) * CELL, z = (K + 0.15 + 0.7 * hash2(I, K, seed ^ 0x52a3)) * CELL;
   const kind = Math.min(9, Math.floor(hash2(I, K, seed ^ 0x52a6) * 10));
   return { x, z, rot: hash2(I, K, seed ^ 0x52a4) * Math.PI * 2, seed: Math.floor(hash2(I, K, seed ^ 0x52a5) * 1e9), key: `${I},${K}`, kind, size: RUIN_SIZE[kind] };
@@ -64,22 +64,34 @@ export const RUIN_KINDS = ['stronghold', 'watchtower', 'gatehouse', 'temple', 'h
 const RUIN_SIZE = [18, 9, 13, 12, 16, 10, 24, 18, 9, 20, 34];
 
 /**
- * The Lost Keep: one in each world, three kilometres or so from its middle,
- * on open ground (the first of a ring of places round that the land will
- * take). A great castle, its walls whole and too high to climb, its one way
- * in shut by a sealed gate; before the gate, an altar that wants the
- * trophies of all the great beasts (see Game.#offer). Set them all and the
- * gate opens; in the heart of the keep, the last chest.
+ * The Lost Keep: one in each world, very far out (15 to 20 km from its
+ * middle, where you start), on open, dry, fairly level ground (the first of
+ * a ring of places round that the land will take). A great castle, its
+ * walls whole and too high to climb; in the middle, the great keep, a stair
+ * winding up round it to its top, and up there an altar that wants the
+ * trophies of all the great beasts (see Game.#offer). Set them all: the end
+ * of the long road, and the last chest.
  */
+// (Read from the land before its rivers: quick, so far out, where nothing's been worked out yet.)
+function keepFits(site, generator, seaLevel) {
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < 17; k++) {
+    const a = (k / 8) * Math.PI * 2, r = k === 16 ? 0 : k < 8 ? site.size : site.size / 2;
+    const h = generator.landHeight(site.x + Math.cos(a) * r, site.z + Math.sin(a) * r);
+    lo = Math.min(lo, h);
+    hi = Math.max(hi, h);
+  }
+  return lo > seaLevel + 4 && hi - lo < 8 && generator.getMountainness(site.x, site.z) < 0.7;
+}
 const keeps = new WeakMap();
 export function keepSite(generator, seaLevel) {
   if (keeps.has(generator)) return keeps.get(generator);
   let found = null, last = null;
   for (let k = 0; k < 64 && !found; k++) {
-    const a = hash2(k, 7, generator.seed ^ 0x6ee9) * Math.PI * 2, r = 2600 + 1200 * hash2(k, 8, generator.seed ^ 0x6ee9);
+    const a = hash2(k, 7, generator.seed ^ 0x6ee9) * Math.PI * 2, r = 15000 + 5000 * hash2(k, 8, generator.seed ^ 0x6ee9);
     const site = { x: Math.cos(a) * r, z: Math.sin(a) * r, rot: hash2(k, 9, generator.seed ^ 0x6ee9) * Math.PI * 2, seed: 4242 + k, key: 'keep', kind: 10, size: RUIN_SIZE[10], keep: true };
     last = site;
-    if (ruinFits(site, generator, seaLevel)) found = site;
+    if (keepFits(site, generator, seaLevel)) found = site;
   }
   found ??= last;
   keeps.set(generator, found);
@@ -475,8 +487,8 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = 
     case 10: {
       // The Lost Keep: a curtain wall, whole and high, round a great court;
       // towers at its corners and either side of its gate; the great keep
-      // tower in the middle, its stair up to a hall high in it. The gate
-      // sealed with a slab of carved stone; the altar before it.
+      // tower in the middle, a stair winding up round it to its top, and the
+      // altar up there.
       const S = 22, W = 7.2, whole = () => W;
       wallRun(-S, -S, -S, -2.6, 1.4, whole, { mossy: 0.2 });
       wallRun(-S, 2.6, -S, S, 1.4, whole, { mossy: 0.2 });
@@ -490,26 +502,51 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = 
       const gg = ground(-S, 0);
       arch(-S, 0, gg + 5.2, 2.6);
       block(-S, 0, gg + W - 0.3, 1.6, 0.8, 6.2, stone());
-      // The sealed gate: a slab of dark stone filling the arch, cut with rings.
-      into = gateParts ?? parts;
-      block(-S, 0, gg + 2.55, 1.2, 5.6, 5.1, 0x4a4842);
-      for (let k = 0; k < 3; k++) block(-S - 0.62, 0, gg + 1.3 + k * 1.5, 0.08, 0.5 + k * 0.3, 2.4 - k * 0.5, 0x7a6a48, [0, 0, 0]);
-      into = parts;
-      solid(-S, 0, 0.7, 2.6, gg - 0.5, gg + 5.4, 0, true);
-      // The great keep in the middle: its stair up to the hall, and the heart of it.
-      const top = tower(-5, -5, 10, 20 + rand() * 3, true);
+      // The great keep in the middle: square and whole, 17 m to its flat
+      // top, a stair winding up round its outside, the altar up on its top.
+      const K = 5, P = 17, gk = ground(0, 0), keepTop = gk + P;
+      wallRun(-K, -K, K, -K, 0.9, () => P, { gaps: [[0.4, 0.6, 0, 2.6]], mossy: 0.15 });
+      wallRun(K, -K, K, K, 0.9, () => P, { gaps: [[0.45, 0.55, 8, 9.4]], mossy: 0.15 });
+      wallRun(K, K, -K, K, 0.9, () => P, { gaps: [[0.45, 0.55, 12, 13.4]], mossy: 0.15 });
+      wallRun(-K, K, -K, -K, 0.9, () => P, { mossy: 0.15 });
+      // (Its top: flags on a slab, and a parapet round three sides; open on the side the stair comes up.)
+      block(0, 0, keepTop - 0.15, 2 * K + 0.6, 0.3, 2 * K + 0.6, stone());
+      solid(0, 0, K + 0.3, K + 0.3, keepTop - 0.6, keepTop);
+      for (const [u1, v1, u2, v2] of [[-K, -K, K, -K], [K, -K, K, K], [K, K, -K, K]]) {
+        const len = Math.hypot(u2 - u1, v2 - v1), n = Math.round(len / 1.0);
+        for (let k = 0; k < n; k++) {
+          if (k % 2) continue; // (merlons and gaps)
+          const t = (k + 0.5) / n, u = u1 + (u2 - u1) * t, v = v1 + (v2 - v1) * t;
+          block(u, v, keepTop + 0.5, u1 === u2 ? 0.6 : 1.0, 1.0, u1 === u2 ? 1.0 : 0.6, stone());
+          solid(u, v, u1 === u2 ? 0.3 : 0.5, u1 === u2 ? 0.5 : 0.3, keepTop, keepTop + 1);
+        }
+      }
+      // The stair: round the outside, once, from the ground at the north-west
+      // corner up to the top there (gentle: a long way round for the height).
+      const h = K + 0.95, perim = 8 * h, start = 1.6, n = Math.ceil(P / 0.3), run = (perim - start) / n;
+      const along = (d) => {
+        // (A point on the square round the keep, `d` along it from the corner (-h, h), going +u first.)
+        const side = Math.min(3, Math.floor(d / (2 * h))), t = d - side * 2 * h;
+        return [[-h + t, h, 0], [h, h - t, 1], [h - t, -h, 0], [-h, -h + t, 1]][side];
+      };
+      for (let k = 0; k < n; k++) {
+        const [u, v, across] = along(start + run * (k + 0.5)), stepTop = gk + ((k + 1) * P) / n, g0 = Math.min(ground(u, v), gk) - 0.3;
+        block(u, v, (g0 + stepTop) / 2, across ? 1.2 : run + 0.06, stepTop - g0, across ? run + 0.06 : 1.2, stone());
+        solid(u, v, across ? 0.6 : run / 2 + 0.02, across ? run / 2 + 0.02 : 0.6, g0, stepTop);
+      }
+      // (Landings at the turns.)
+      for (const [u, v, k] of [[h, h, 0.25], [h, -h, 0.5], [-h, -h, 0.75], [-h, h, 1]]) {
+        const top = gk + Math.min(P, P * ((k * perim - start) / (perim - start))), g0 = Math.min(ground(u, v), gk) - 0.3;
+        block(u, v, (g0 + top) / 2, 1.2, top - g0, 1.2, stone());
+        solid(u, v, 0.6, 0.6, g0, top);
+      }
+      // (Over the gate: no door now; the way stands open.)
       // The court: cobbled from the gate to the keep's door.
-      cobbles(-S + 1, -5, -1.5, 1.5, 0.15);
-      // Outside: the way up to the gate, and the altar before it, on a dais.
+      cobbles(-S + 1, -K, -1.5, 1.5, 0.15);
       cobbles(-S - 26, -S - 2, -1.6, 1.6, 0.25);
-      const au = -S - 9, ag = ground(au, 0);
-      block(au, 0, ag + 0.15, 4.4, 0.6, 4.4, stone());
-      block(au, 0, ag + 0.55, 3.2, 0.3, 3.2, stone());
-      solid(au, 0, 2.2, 2.2, ag - 0.3, ag + 0.7);
-      for (const v of [-3.4, 3.4]) column(au, v, null, 4.4, 1);
       rubble(10, S + 8, S + 16);
-      chest(au, 0, ag + 0.7, 'altar', false, { altar: true, rot: rot - Math.PI / 2 });
-      chest(top.u + 2, top.v + 2, top.y, 'heart', true, { heart: true });
+      // Up on the top: the altar, wanting the trophies of the great beasts (see Game.#offer).
+      chest(1.5, 0, keepTop, 'altar', false, { altar: true, rot: rot });
       chest(S - 3, S - 3, ground(S - 3, S - 3), 'court', true);
       break;
     }
@@ -536,9 +573,14 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = 
 export function createRuinLayer(config) {
   const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const fits = new Map(); // "I,K" -> the site, or null
-  const site = (I, K, generator) => {
+  // (`budget`: how many more places may be worked out now; past it, unknown ones are skipped, and `layer.more` says so.)
+  const site = (I, K, generator, budget = null) => {
     const key = `${I},${K}`;
     if (!fits.has(key)) {
+      if (budget) {
+        if (budget.left <= 0) return (layer.more = true), null;
+        budget.left--;
+      }
       const s = ruinSite(I, K, generator.seed), keep = keepSite(generator, config.seaLevel);
       // (None crowding the Lost Keep.)
       fits.set(key, s && Math.hypot(s.x - keep.x, s.z - keep.z) > 160 && ruinFits(s, generator, config.seaLevel) ? s : null);
@@ -547,6 +589,7 @@ export function createRuinLayer(config) {
   };
   const solids = new Map(); // "cx,cz" -> [{ x, z, hx, hz, rot, bottom, top, r }] (world)
   const gates = new Set(); // (the Keep's sealed gate, while it's built)
+  const rough = new Map(); // (the big map's rough guesses: see sitesRoughly)
   // (The stone near a point: what's in the chunks round it.)
   const near = (x, z) => {
     const size = config.chunkSize, cx = Math.floor(x / size), cz = Math.floor(z / size), out = [];
@@ -579,16 +622,63 @@ export function createRuinLayer(config) {
     },
 
     /** The ruins near (x, z), within `r` metres: [{ x, z, key, ... }] (only those the land takes). */
-    sitesNear(x, z, r, generator) {
+    sitesNear(x, z, r, generator, budget = null) {
       const out = [];
+      const left = budget === null ? null : { left: budget };
+      if (left) layer.more = false;
       for (let K = Math.floor((z - r) / CELL); K <= Math.floor((z + r) / CELL); K++) {
         for (let I = Math.floor((x - r) / CELL); I <= Math.floor((x + r) / CELL); I++) {
-          const s = site(I, K, generator);
+          const s = site(I, K, generator, left);
           if (s && Math.hypot(s.x - x, s.z - z) <= r) out.push(s);
         }
       }
       const keep = keepSite(generator, config.seaLevel);
       if (Math.hypot(keep.x - x, keep.z - z) <= r) out.push(keep);
+      return out;
+    },
+
+    /**
+     * For the big map (testing): the ruins over a wide stretch, judged
+     * roughly from the land before its rivers (quick, however far: the
+     * real ones are judged closer, when they're built). A few new places
+     * each call (`budget`); `layer.more` while some are left.
+     */
+    sitesRoughly(x, z, r, generator, labelAt) {
+      // (Judged from the map's own drawing: no ruin on water, a mountainside or the ice.)
+      const NOT = new Set(['Ocean', 'Coral reef', 'Kelp forest', 'Lake', 'Mountains', 'Snowy peaks', 'Volcano', 'Sea cliffs', 'Wetlands', 'Marsh']);
+      const out = [], keep = keepSite(generator, config.seaLevel);
+      layer.more = false;
+      for (let K = Math.floor((z - r) / CELL); K <= Math.floor((z + r) / CELL); K++) {
+        for (let I = Math.floor((x - r) / CELL); I <= Math.floor((x + r) / CELL); I++) {
+          const key = `${I},${K}`;
+          let s = fits.has(key) ? fits.get(key) : rough.get(key);
+          if (s === undefined) {
+            const c = ruinSite(I, K, generator.seed);
+            if (c) {
+              const label = labelAt?.(c.x, c.z);
+              if (label === null || label === undefined) continue; // (its part of the map not drawn yet)
+              s = Math.hypot(c.x - keep.x, c.z - keep.z) > 160 && !NOT.has(label) ? c : null;
+            } else s = null;
+            rough.set(key, s);
+          }
+          if (s && Math.hypot(s.x - x, s.z - z) <= r) out.push(s);
+        }
+      }
+      if (Math.hypot(keep.x - x, keep.z - z) <= r) out.push(keep);
+      return out;
+    },
+
+    /** The ruins by their keys ("I,K", or 'keep'): those you've been to, with no working out. */
+    sitesOf(keys, generator) {
+      const out = [];
+      for (const key of keys) {
+        if (key === 'keep') out.push(keepSite(generator, config.seaLevel));
+        else {
+          const [I, K] = key.split(',').map(Number);
+          const s = Number.isFinite(I) && Number.isFinite(K) ? ruinSite(I, K, generator.seed) : null;
+          if (s) out.push(s);
+        }
+      }
       return out;
     },
 

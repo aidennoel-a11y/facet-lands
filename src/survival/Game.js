@@ -415,7 +415,7 @@ export class Game {
       case 'chest': return s.ruinKey === 'keep:heart' ? 'The heart of the Lost Keep: open it' : 'Open the chest';
       case 'keepAltar': {
         const n = s.offered.length;
-        return n >= RELICS.length ? 'The altar of the Lost Keep: every trophy set; the gate stands open' : `The altar of the Lost Keep: ${n} of ${RELICS.length} trophies set (E: set those you carry)`;
+        return n >= RELICS.length ? 'The altar of the Lost Keep: every trophy set' : `The altar of the Lost Keep: ${n} of ${RELICS.length} trophies set (E: set those you carry)`;
       }
       case 'cellar': return 'Open the root cellar';
       case 'fishTrap': return s.caught ? `Take the fish (${s.caught})` : (this.winter ?? 0) > 0.7 ? 'Iced in: nothing swims into it' : 'Set, and waiting (Shift+E to take it up)';
@@ -618,8 +618,7 @@ export class Game {
       case 'keepAltar':
         return this.#offer(s);
       case 'chest':
-        if (s.ruinKey === 'keep:heart' && !this.keep.won) this.#won();
-        this.hud.openChest(s.contents, this.inventory);
+            this.hud.openChest(s.contents, this.inventory);
         return this.#menu(true);
       case 'cellar':
         this.hud.openChest(s.contents, this.inventory, 'Root cellar', 'Click to move a stack across · cool and dark: food in here never spoils · E or Esc to close');
@@ -2452,7 +2451,7 @@ export class Game {
    * set in its socket. With the last of them, the sealed gate opens.
    */
   #offer(s) {
-    if (s.offered.length >= RELICS.length) return this.hotbar?.flash('Every socket is filled: the gate stands open');
+    if (s.offered.length >= RELICS.length) return this.hotbar?.flash('Every socket is filled: the heart of the Keep is yours');
     const given = RELICS.filter((id) => !s.offered.includes(id) && this.inventory.count(id) > 0);
     for (const id of given) {
       this.inventory.remove(id, 1);
@@ -2464,16 +2463,20 @@ export class Game {
     if (!given.length) return this.hotbar?.flash(`It wants the trophies of the great beasts. Still wanted: ${missing.map((id) => ITEMS[id].name).join(', ')}`);
     this.sound?.call('craft', 0, 0.6);
     if (missing.length) return this.hotbar?.flash(`Set in the altar: ${given.map((id) => ITEMS[id].name).join(', ')}. ${missing.length} still wanted`);
-    // The last: the gate.
+    // The last: the stones blaze up, and out of the altar's foot, the heart of the Keep.
     this.keep.open = true;
     this.onKeep?.(true);
     this.sound?.call('treefall', 0, 1);
-    this.hud.toast('The sealed gate of the Lost Keep grinds open');
-    return this.hotbar?.flash('The stones blaze up, one by one, and the great gate grinds open');
+    const bx = Math.cos(s.rot), bz = -Math.sin(s.rot);
+    this.ruinChest({ key: 'keep:heart', heart: true, x: s.x + bx * 1.8, y: s.y, z: s.z + bz * 1.8, rot: s.rot });
+    this.hud.toast('The heart of the Lost Keep');
+    this.#won();
+    return this.hotbar?.flash('The stones blaze up one by one, and a chest rises beside the altar');
   }
 
-  // The heart of the Lost Keep reached: the end of the long road (play goes on).
+  // Every trophy set at the top of the Lost Keep: the end of the long road (play goes on).
   #won() {
+    if (this.keep.won) return;
     this.keep.won = true;
     this.dirty = true;
     this.hud.won?.({ days: Math.floor(this.age ?? 0), bosses: Object.keys(this.wildlife.bossDeaths ?? {}).length });
@@ -2483,7 +2486,7 @@ export class Game {
   // An old map: it shows where the nearest ruin you've not been to lies.
   #readMap(i) {
     const p = this.camera.position;
-    const sites = (this.ruinsNear?.(p.x, p.z, 4000) ?? []).filter((r) => !this.ruinsSeen.has(r.key) && Math.hypot(r.x - p.x, r.z - p.z) > 40);
+    const sites = (this.ruinsNear?.(p.x, p.z, 2500) ?? []).filter((r) => !r.keep && !this.ruinsSeen.has(r.key) && Math.hypot(r.x - p.x, r.z - p.z) > 40);
     if (!sites.length) return this.hotbar?.flash('The map is too faded to make out');
     sites.sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z));
     const r = sites[0], d = Math.hypot(r.x - p.x, r.z - p.z);
