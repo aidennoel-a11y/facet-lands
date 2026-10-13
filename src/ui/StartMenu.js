@@ -209,6 +209,7 @@ export class StartMenu {
       <p class="sm-qnote">${QUALITY[quality()].blurb}${qualityChosen() ? '' : ' <em>Picked to suit this computer.</em>'}</p>
       <p class="sm-hw">${esc(describeHardware())}</p>
       ${graphicsInfo().software ? `<p class="sm-warn"><strong>Your graphics card isn't being used.</strong> The browser is drawing the game on the processor instead, which is very slow. Install your computer's graphics driver (from its maker's support site), and check hardware acceleration is on in the browser's settings (Chrome: Settings, System, "Use graphics acceleration when available").</p>` : ''}
+      ${graphicsInfo().integrated ? `<p class="sm-warn"><strong>The game is on your processor's built-in graphics.</strong> If this computer also has a graphics card of its own (an NVIDIA GeForce, say), the browser isn't using it. On Windows: Settings, System, Display, Graphics; pick your browser (add it if it's not listed), Options, "High performance"; then close every browser window and open it again.</p>` : ''}
       <a class="sm-credits" href="sounds/CREDITS.md" target="_blank" rel="noopener">Sound credits</a>`);
     this.#on('[data-go="start"]', () => this.choose());
     // (Put into effect when a world starts: see main's useQuality.)

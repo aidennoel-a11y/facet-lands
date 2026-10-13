@@ -107,7 +107,10 @@ export function graphicsInfo() {
   // GPU (0x000028E0) Direct3D11 vs_5_0 ps_5_0, D3D11)": the middle part's the card.)
   const parts = name.replace(/^ANGLE \(|\)$/g, '').replace(/ANGLE Metal Renderer: /, '').split(', ');
   const card = (parts.length > 1 ? parts[1] : parts[0]).replace(/\s*\(0x[0-9a-f]+\).*$/i, '').replace(/\s+(Direct3D|OpenGL|Metal).*$/i, '').trim();
-  graphics = { name: card, software, suggested };
+  // (The chip built into the processor: on a laptop that also has a card of
+  // its own, Windows often hands the browser this weaker one.)
+  const integrated = !software && !strong && /intel|uhd|iris|vega|radeon(\(tm\))?\s*(\d{3}m\s*)?graphics/i.test(name);
+  graphics = { name: card, software, suggested, integrated };
   return graphics;
 }
 
