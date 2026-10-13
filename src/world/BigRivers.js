@@ -643,6 +643,41 @@ export class BigRivers {
     }
   }
 
+  /**
+   * The same as #ensure, a piece at a time: each region's river traced,
+   * then joined up, with a yield after each (so the page needn't freeze
+   * while they're worked out: see Rivers.prepare).
+   */
+  *prepare(x, z) {
+    const ri = Math.floor(x / REGION), rj = Math.floor(z / REGION);
+    if (this.covered.has(BigRivers.#key(ri, rj))) return;
+    const g = this.generator;
+    const each = (fn) => {
+      const was = g._riverWork;
+      g._riverWork = true;
+      g._noToe = (g._noToe ?? 0) + 1;
+      try {
+        fn();
+      } finally {
+        g._riverWork = was;
+        g._noToe--;
+      }
+    };
+    for (let dj = -REACH; dj <= REACH; dj++) {
+      for (let di = -REACH; di <= REACH; di++) {
+        each(() => this.#raw(ri + di, rj + dj));
+        yield;
+      }
+    }
+    for (let dj = -REACH; dj <= REACH; dj++) {
+      for (let di = -REACH; di <= REACH; di++) {
+        each(() => this.#final(ri + di, rj + dj));
+        yield;
+      }
+    }
+    this.#ensure(x, z);
+  }
+
   /** Makes sure every river that can shape (x, z) is in the index. */
   #ensure(x, z) {
     const ri = Math.floor(x / REGION), rj = Math.floor(z / REGION);

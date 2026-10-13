@@ -128,6 +128,42 @@ export class Rivers {
     this.fresh.covered.push(key);
   }
 
+  /**
+   * The same as #ensure, a region at a time: yields after each, so the
+   * page needn't freeze while the rivers round a new place are laid out
+   * (see main's search for where you start).
+   */
+  *prepare(x, z) {
+    const rx = Math.floor(x / REGION), rz = Math.floor(z / REGION);
+    if (this.covered.has(this.#key(rx, rz))) return;
+    yield* this.big.prepare?.(x, z) ?? [];
+    const g = this.generator;
+    const each = (fn) => {
+      g._noToe = (g._noToe ?? 0) + 1;
+      try {
+        fn();
+      } finally {
+        g._noToe--;
+      }
+    };
+    for (let dz = -RIVER_REACH; dz <= RIVER_REACH; dz++) {
+      for (let dx = -RIVER_REACH; dx <= RIVER_REACH; dx++) {
+        if (this.riverRegions.has(this.#key(rx + dx, rz + dz))) continue;
+        // (The great rivers this region's look at, first: see BigRivers.prepare.)
+        for (const [cx, cz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) yield* this.big.prepare?.((rx + dx + cx) * REGION, (rz + dz + cz) * REGION) ?? [];
+        each(() => this.#ensureRivers(rx + dx, rz + dz));
+        yield;
+      }
+    }
+    for (let dz = -STREAM_REACH; dz <= STREAM_REACH; dz++) {
+      for (let dx = -STREAM_REACH; dx <= STREAM_REACH; dx++) {
+        each(() => this.#ensureStreams(rx + dx, rz + dz));
+        yield;
+      }
+    }
+    this.#ensure(x, z); // (all done now: just marks it covered)
+  }
+
   #ensureRivers(rx, rz) {
     const k = this.#key(rx, rz);
     if (this.riverRegions.has(k)) return;

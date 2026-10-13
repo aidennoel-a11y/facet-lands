@@ -606,7 +606,11 @@ const ANIMAL_PRINTS = {
 };
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
-function placeCamera(onGround = false) {
+// (later: survival's search for green ground done a little at a time,
+// behind the loading screen, see loadingFrame: it can take a while, laying
+// out the rivers as it goes, and the page mustn't freeze meanwhile.)
+let spawnSearch = null; // { steps, done(at) }
+function placeCamera(onGround = false, later = false) {
   let best = { x: 0, z: 0, h: -Infinity };
   for (let i = 0; i < 400; i++) {
     const x = (i % 20) * 160 - 1600;
@@ -618,17 +622,33 @@ function placeCamera(onGround = false) {
   const x = best.x + 300;
   const z = best.z + 360;
   // (Survival: standing on the ground, somewhere green: out of the desert, on dry land. Otherwise high above it, flying: the rivers needn't be worked out for this.)
-  if (onGround) {
-    const at = greenGround(x, z);
+  const look = () => controls.lookAt(new THREE.Vector3(best.x, best.h * 0.5, best.z));
+  const stand = (at) => {
     camera.position.set(at.x, Math.max(generator.getHeight(at.x, at.z), WORLD.seaLevel) + controls.eyeHeight + 0.3, at.z);
-  } else camera.position.set(x, Math.max(generator.landHeight(x, z) + 50, 70), z);
-  controls.lookAt(new THREE.Vector3(best.x, best.h * 0.5, best.z));
+    look();
+  };
+  if (onGround && later) {
+    camera.position.set(x, Math.max(generator.landHeight(x, z) + 50, 70), z); // (meanwhile)
+    spawnSearch = { steps: greenGroundSteps(x, z), done: stand };
+    return;
+  }
+  if (onGround) stand(greenGround(x, z));
+  else camera.position.set(x, Math.max(generator.landHeight(x, z) + 50, 70), z);
+  look();
 }
 
 // The nearest spot to (x, z) that's dry land, not high on a peak, well
 // away from desert, salt flat and badlands, in woods or foothills where
 // flint and stones lie about, and by a stream or river (searched outward in rings).
 function greenGround(x, z) {
+  const steps = greenGroundSteps(x, z);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
+/** The same, a step at a time (each yield a moment to let the page breathe). */
+function* greenGroundSteps(x, z) {
   const dry = (w) => (w.desert ?? 0) + (w.saltFlat ?? 0) + (w.badlands ?? 0);
   const ok = (px, pz) => {
     const h = generator.landHeight(px, pz);
@@ -647,6 +667,7 @@ function greenGround(x, z) {
   };
   let fallback = null;
   if (ok(x, z)) {
+    yield* generator.rivers.prepare?.(x, z) ?? [];
     if (byWater(x, z)) return { x, z };
     fallback = { x, z };
   }
@@ -656,8 +677,11 @@ function greenGround(x, z) {
       const a = (i / n) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
       if (!ok(px, pz)) continue;
       fallback ??= { x: px, z: pz };
+      yield* generator.rivers.prepare?.(px, pz) ?? []; // (the rivers there laid out, a piece at a time)
       if (byWater(px, pz)) return { x: px, z: pz };
+      yield; // (the rivers there laid out: that's the slow part)
     }
+    yield;
     if (fallback && r > 4000) return fallback; // (no running water anywhere near: green ground will do)
   }
   if (fallback) return fallback;
@@ -882,7 +906,7 @@ const ui = {
 };
 ui.seed.value = WORLD.seed;
 
-function setSeed(seed, saveKey = null, place = true) {
+function setSeed(seed, saveKey = null, place = true, later = false) {
   WORLD.seed = seed;
   generator = new TerrainGenerator(seed, WORLD);
   game.trees.removed.clear(); // (the new world's felled trees are loaded below)
@@ -900,7 +924,7 @@ function setSeed(seed, saveKey = null, place = true) {
   if (place && game.mode !== 'testing') (seasons.time = 1.5), (dayNight.hour = 8); // (a new world starts on a summer's morning, midsummer)
   if (place) {
     const t = performance.now();
-    placeCamera(game.mode === 'survival'); // (not when you'll be put back where you were)
+    placeCamera(game.mode === 'survival', later); // (not when you'll be put back where you were)
     performance.measure('placeCamera', { start: t });
   }
 }
@@ -1826,6 +1850,20 @@ function startLoading(name, waiting = false) {
   chunks.budgetScale = 8; // (no need to keep it smooth: nothing's moving)
 }
 function loadingFrame(now) {
+  if (spawnSearch) {
+    // (A slice of the search for where you start, each frame, till it's found.)
+    loadScreen.querySelector('.ls-note').textContent = 'Finding a good place to start…';
+    const end = performance.now() + 30;
+    let r;
+    do r = spawnSearch.steps.next();
+    while (!r.done && performance.now() < end);
+    if (!r.done) return;
+    const { done, after } = spawnSearch;
+    spawnSearch = null;
+    done(r.value);
+    after?.();
+    loading.since = performance.now();
+  }
   if (loading.waiting) return;
   camera.getWorldDirection(dir);
   chunks.update(camera.position, mp.roomTime() ?? now / 1000, dir);
@@ -2213,10 +2251,12 @@ if (!TESTING) {
         const t = performance.now();
         useQuality();
         game.mode = world.mode;
-        setSeed(world.seed, world.mode === 'testing' ? null : world.id, !world.camera);
+        setSeed(world.seed, world.mode === 'testing' ? null : world.id, !world.camera, true);
         performance.measure('world setup', { start: t });
         ui.seed.value = world.seed;
-        applyMode(world.mode);
+        // (Survival: onto your feet once where you start is found, not before: see loadingFrame.)
+        if (spawnSearch) spawnSearch.after = () => applyMode(world.mode);
+        else applyMode(world.mode);
         // (Back where you left off.)
         // (Joined online: the room's time of day.)
         if (world.guest && joinedHour !== null) (dayNight.hour = joinedHour), (joinedHour = null);
