@@ -1,4 +1,4 @@
-import { BoxGeometry, Color, DynamicDrawUsage, Euler, Frustum, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Raycaster, Sphere, Vector3 } from 'three';
+import { AdditiveBlending, BoxGeometry, Color, DynamicDrawUsage, Euler, Frustum, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Raycaster, Sphere, Vector3 } from 'three';
 import { hash2, mulberry32 } from '../noise/random.js';
 import { chooseGait, footAt, rhythm, solveLeg, stepFeet, strideLength } from './Gait.js';
 import * as Models from './models.js';
@@ -84,6 +84,8 @@ const SPECIES = {
   crow: { bird: true, model: Models.crow, max: 40, scale: 2.3, flee: 25, radius: 0.35, health: 4 },
   gull: { bird: true, model: Models.gull, max: 12, scale: 3.0, flee: 15, radius: 0.5, health: 6 },
   hawk: { bird: true, model: Models.hawk, max: 4, scale: 4.2, flee: 30, radius: 0.7, health: 12 },
+  // An owl: out at night in the woods, sitting up in the trees, hooting; it drops on rabbits (see #owl).
+  owl: { bird: true, model: Models.hawk, max: 4, scale: 2.4, flee: 8, radius: 0.35, health: 6, coloured: true },
   // The savanna's: lions (a pride: lionesses and a maned male, lying up by
   // day, hunting at dusk and in the dark), hyenas (a clan, scavenging, bold
   // at night), elephants (a herd, peaceful till provoked), hippos (in the
@@ -190,6 +192,9 @@ const HARE_BROWN = new Color(0.62, 0.5, 0.38);
 const base = new Matrix4(), part = new Matrix4(), out = new Matrix4(), inv = new Matrix4(), lift = new Matrix4();
 const euler = new Euler(0, 0, 0, 'YXZ'), quat = new Quaternion(), pos = new Vector3(), scl = new Vector3(), v3 = new Vector3();
 const white = new Color(1, 1, 1), tint = new Color();
+// The colour each kind's eyes shine back in torchlight (most a green-gold).
+const SHINE = { deer: 0xd8f060, elk: 0xd8f060, moose: 0xe8d050, wolf: 0xc8f080, coyote: 0xc8f080, fox: 0xf0c050, cougar: 0x90f070, panther: 0x90f070, jaguar: 0x90f070, tiger: 0x90f070, lion: 0xa8f060,
+  blackBear: 0xff8040, grizzly: 0xff8040, rabbit: 0xff6a40, hare: 0xff6a40, sheep: 0xe8e080, mountainGoat: 0xe8e080, boar: 0xe0a060, bison: 0xd8c060, horse: 0x90d8f0, crocodile: 0xff5030, hyena: 0xd8f060, owl: 0xffa040 };
 const ik = { rz: 0, a1: 0, a2: 0, kx: 0, ky: 0, kz: 0 }, foot = { x: 0, y: 0, z: 0 };
 const ray = new Raycaster();
 const view = new Frustum(), viewMatrix = new Matrix4(), sphere = new Sphere();
@@ -288,7 +293,7 @@ export class Wildlife {
         make('wingL', model.wingL, sp.max, kind === 'hawk' || kind === 'gull');
         make('wingR', model.wingR, sp.max, kind === 'hawk' || kind === 'gull');
       }
-      this.rigs[kind] = { model, meshes, coloured: sp.tinted || BOSS_KINDS.has(kind) };
+      this.rigs[kind] = { model, meshes, coloured: sp.tinted || sp.coloured || BOSS_KINDS.has(kind) };
     }
     // Wounds: a dark red mark on a creature where each blow or shot went in.
     this.woundMesh = new InstancedMesh(new BoxGeometry(0.07, 0.07, 0.07), new MeshLambertMaterial({ color: 0x8a0c0c, emissive: 0x3a0404 }), 256);
@@ -297,6 +302,17 @@ export class Wildlife {
     this.woundMesh.count = 0;
     this.woundMesh.name = 'wounds';
     scene.add(this.woundMesh);
+    // Eyeshine: at night, by the light of a torch or a fire near you, the
+    // eyes of the animals looking your way shine back out of the dark
+    // (green, gold, a bear's or a bird's orange-red), a point of light seen
+    // far off; brightest looking straight at you.
+    this.shineMesh = new InstancedMesh(new OctahedronGeometry(1, 1), new MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: AdditiveBlending, depthWrite: false }), 160);
+    this.shineMesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.shineMesh.setColorAt(0, new Color());
+    this.shineMesh.frustumCulled = false;
+    this.shineMesh.count = 0;
+    this.shineMesh.name = 'eyeshine';
+    scene.add(this.shineMesh);
     this.probe = new Mesh(undefined, this.material); // (for testing a ray against a creature's shape)
     this.animals = []; // every creature: { kind, x, y, z, heading, pitch, roll, scale, alive, health, ... }
     this.herds = [];
@@ -981,6 +997,7 @@ export class Wildlife {
       if (SPECIES[a.kind].ground) this.#walker(a, step, c);
       else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES[a.kind], step, c);
       else if (a.flock) this.#flockBird(a, step, c);
+      else if (a.kind === 'owl') this.#owl(a, step, c);
       else if (a.circling) this.#circler(a, step, c);
       else if (a.kind === 'monkey') this.#monkey(a, step, c);
       else this.#songbird(a, step, c);
@@ -1123,6 +1140,7 @@ export class Wildlife {
         this.animals.push(a);
       }
       a.samples.push({ t, r });
+      if (kind === 'owl') a.coat ??= new Color(0.95, 0.9, 0.82); // (an owl's pale coat, as the host has it)
       // (A great beast: who it is, and how much is left of it.)
       if (r[24] && BOSSES[r[24]]) (a.boss = BOSSES[r[24]]), (a.bossHealth = r[25]), (a.coat ??= new Color().setRGB(...a.boss.coat)), (a.antlers = !!a.boss.antlers);
       if (a.samples.length > 12) a.samples.shift();
@@ -1337,6 +1355,14 @@ export class Wildlife {
     if (day > 0.2 && count('gull') < 3) {
       const s = spot(120, 350, (x, z) => g.getOceanness(x, z) > 0.5, 10) ?? this.#coastSpot(ctx);
       if (s) this.#spawnCircler('gull', s);
+    }
+    // At night in the woods, an owl or two up in the trees round you.
+    if ((ctx.night ?? 0) > 0.5 && count('owl') < 2) {
+      const s = spot(40, 90, (x, z) => g.getForestDensity(x, z) > 0.3, 8);
+      if (s) {
+        const perch = { x: s.x, z: s.z, y: s.y + rnd(5, 9) };
+        this.animals.push({ kind: 'owl', x: perch.x, y: perch.y, z: perch.z, perch, heading: rnd(0, TAU), pitch: 0, roll: 0, scale: SPECIES.owl.scale * rnd(0.9, 1.1), alive: true, health: SPECIES.owl.health, flap: 0, state: 'perch', timer: rnd(4, 10), coat: new Color(0.95, 0.9, 0.82) });
+      }
     }
     // A hawk or an eagle, high over the mountains.
     if (day > 0.3 && count('hawk') < 1) {
@@ -2185,6 +2211,68 @@ export class Wildlife {
   }
 
   // --- Behaviour ------------------------------------------------------------
+
+  /**
+   * An owl: it sits up in a tree, hooting now and then, watching the
+   * ground; a rabbit or a hare out within reach, it drops on it without a
+   * sound, and carries it off to another tree. Come the day, it goes.
+   */
+  #owl(a, dt, ctx) {
+    const cam = ctx.camera.position, g = ctx.generator;
+    const toward = (x, y, z, speed) => {
+      const dx = x - a.x, dy = y - a.y, dz = z - a.z, d = Math.hypot(dx, dy, dz) || 1, k = Math.min(1, (speed * dt) / d);
+      a.x += dx * k;
+      a.y += dy * k;
+      a.z += dz * k;
+      a.heading = Math.atan2(dx, dz);
+      a.pitch = -Math.atan2(dy, Math.hypot(dx, dz)) * 0.5;
+      return d;
+    };
+    a.timer -= dt;
+    // (Day: away it goes, and out of sight.)
+    if ((ctx.night ?? 0) < 0.3 && a.state !== 'leave') (a.state = 'leave'), (a.away = { x: a.x + rnd(-200, 200), z: a.z + rnd(-200, 200) });
+    if (a.state === 'leave') {
+      toward(a.away.x, a.y + 10, a.away.z, 9);
+      if (Math.hypot(a.x - cam.x, a.z - cam.z) > 150) a.gone = true;
+      return;
+    }
+    if (a.state === 'perch') {
+      a.pitch = 0;
+      if (a.timer <= 0) {
+        a.timer = rnd(6, 14);
+        const d = Math.hypot(a.x - cam.x, a.z - cam.z);
+        if (d < 140 && Math.random() < 0.7) ctx.sound?.call('owl', ctx.pan(a.x, a.z), Math.max(0.1, 1 - d / 140));
+        // (Something small out on the ground below?)
+        const prey = this.animals.find((p) => (p.kind === 'rabbit' || p.kind === 'hare') && p.alive && !p.gone && !p.owl && Math.hypot(p.x - a.x, p.z - a.z) < 45);
+        if (prey) (a.state = 'swoop'), (a.prey = prey), (prey.owl = a);
+        else if (Math.random() < 0.15) {
+          // (Or off to another tree, a little way on.)
+          const t = rnd(0, TAU), x = a.x + Math.sin(t) * rnd(20, 50), z = a.z + Math.cos(t) * rnd(20, 50);
+          if (g.getForestDensity(x, z) > 0.25) (a.perch = { x, z, y: g.getHeight(x, z) + rnd(5, 9) }), (a.state = 'fly');
+        }
+      }
+      return;
+    }
+    if (a.state === 'fly') {
+      if (toward(a.perch.x, a.perch.y, a.perch.z, 8) < 0.4) (a.state = 'perch'), (a.timer = rnd(4, 10));
+      return;
+    }
+    if (a.state === 'swoop') {
+      const p = a.prey;
+      if (!p || !p.alive || p.gone) return (a.state = 'fly'), (a.prey = null);
+      const d = toward(p.x, (p.y ?? 0) + 0.2, p.z, 12);
+      if (d < 0.7) {
+        // Taken: carried off, up to a tree a way off.
+        p.gone = true;
+        const near = Math.hypot(a.x - cam.x, a.z - cam.z);
+        if (near < 60) ctx.sound?.call('flutter', ctx.pan(a.x, a.z), Math.max(0.15, 1 - near / 60)), ctx.sound?.call('peep', ctx.pan(a.x, a.z), Math.max(0.1, 0.8 - near / 60));
+        const t = rnd(0, TAU), x = a.x + Math.sin(t) * 40, z = a.z + Math.cos(t) * 40;
+        a.perch = { x, z, y: g.getHeight(x, z) + rnd(6, 9) };
+        a.state = 'fly';
+        a.prey = null;
+      }
+    }
+  }
 
   // Tree trunks and boulders within `reach` of (x, z): [x, z, radius, ...].
   #obstacles(x, z, reach, ctx, tall = 1.2) {
@@ -3624,6 +3712,38 @@ export class Wildlife {
 
   // --- Drawing --------------------------------------------------------------
 
+  #eyeshine(ctx) {
+    const E = this.shineMesh;
+    E.count = 0;
+    const cam = ctx?.camera?.position;
+    const dark = Math.min(1, Math.max(0, ((ctx?.night ?? 0) - 0.3) / 0.4));
+    if (!cam || !ctx.eyeLight || dark <= 0 || this.hidden) return (E.visible = false);
+    for (const a of this.animals) {
+      if (!a.alive || !a.hm || E.count > 158) continue;
+      const eye = this.rigs[a.kind]?.meshes.head?.geometry.userData.eye;
+      if (!eye) continue;
+      const d = Math.hypot(a.x - cam.x, (a.y ?? 0) - cam.y, a.z - cam.z);
+      if (d > 70 || d < 1.5) continue;
+      // (Looking your way: the head's forward, against the way to you.)
+      // (Side to side only: grazing, its head down, its eyes still catch the light.)
+      const e = a.hm.elements, fl = Math.hypot(e[8], e[10]) || 1, dh = Math.hypot(cam.x - a.x, cam.z - a.z) || 1;
+      const look = (e[8] * (cam.x - a.x) + e[10] * (cam.z - a.z)) / (fl * dh);
+      if (look < 0.35) continue;
+      const k = Math.min(1, (look - 0.35) / 0.35) * dark * Math.min(1, 1.4 - d / 70);
+      const size = Math.max(0.03, d * 0.0028);
+      tint.setHex(SHINE[a.kind] ?? 0xb8e070).multiplyScalar(k);
+      for (const sx of [1, -1]) {
+        if (E.count >= 160) break;
+        pos.set(sx * eye[0], eye[1], eye[2] + 0.01).applyMatrix4(a.hm);
+        E.setMatrixAt(E.count, out.compose(pos, quat.identity(), scl.setScalar(size)));
+        E.setColorAt(E.count++, tint);
+      }
+    }
+    E.instanceMatrix.needsUpdate = true;
+    if (E.instanceColor) E.instanceColor.needsUpdate = true;
+    E.visible = E.count > 0;
+  }
+
   #draw() {
     const counts = {};
     for (const [kind, rig] of Object.entries(this.rigs)) {
@@ -3716,6 +3836,7 @@ export class Wildlife {
     }
     W.instanceMatrix.needsUpdate = true;
     W.visible = W.count > 0 && !this.hidden;
+    this.#eyeshine(ctx);
     for (const rig of Object.values(this.rigs)) {
       for (const m of Object.values(rig.meshes)) {
         m.instanceMatrix.needsUpdate = true;

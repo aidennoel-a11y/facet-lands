@@ -36,6 +36,8 @@ class Blocks {
     }
     g.setAttribute('color', new BufferAttribute(col, 3));
     this.parts.push(g);
+    // (A small dark block out to one side up front: an eye, for its shine in torchlight. See eyes.)
+    if (!this.eye && x > 0.02 && w <= 0.06 && h <= 0.07 && d <= 0.06 && color <= 0x202020) this.eye = [x, y, z + d / 2];
     return this;
   }
 
@@ -47,6 +49,7 @@ class Blocks {
    */
   eyes(w, h, d, iris, [x, y, z], pupil = 'round') {
     const front = z + d / 2;
+    this.eye = [x, y, front]; // (where its eyes catch a light at night: see Wildlife, the eyeshine)
     const [pw, ph] = pupil === 'slit' ? [w * 0.2, h * 0.85] : pupil === 'bar' ? [w * 0.7, h * 0.28] : [w * 0.5, h * 0.55];
     for (const sx of [1, -1]) {
       this.box(w, h, d, iris, [sx * x, y, z]);
@@ -60,6 +63,7 @@ class Blocks {
     const g = mergeGeometries(this.parts);
     g.computeVertexNormals();
     g.computeBoundingSphere();
+    if (this.eye) g.userData.eye = this.eye;
     return g;
   }
 }

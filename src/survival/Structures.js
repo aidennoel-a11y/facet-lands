@@ -1003,6 +1003,18 @@ export class Structures {
     return top;
   }
 
+  /** What a footstep at (x, z) lands on, if it's something built (a floor, stairs) right under your feet: 'wood' or 'rock', or null. */
+  surfaceKind(x, z, feetY) {
+    const top = this.floorTop(x, z, feetY);
+    if (top === null || Math.abs(top - feetY) > 0.35) return null;
+    for (const s of this.list) {
+      const k = KINDS[s.type];
+      if (!(k.floor || k.stairs) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
+      return k.stone ? 'rock' : 'wood';
+    }
+    return null;
+  }
+
   shelterAt(x, y, z) {
     let roof = 0;
     const lines = [];

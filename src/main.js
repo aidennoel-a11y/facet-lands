@@ -453,7 +453,7 @@ function playerTraces(dt) {
   // The sound of it: the footstep on what's underfoot, and now and then (and
   // always over a stick lying there) a branch cracking under it in the woods.
   const loud = controls.crouch ? 0.35 : controls.sprinting ? 1.1 : 0.7;
-  const surface = stepSurface(pos.x, pos.z);
+  const surface = stepSurface(pos.x, pos.z, pos.y - controls.eyeHeight);
   if (surface !== 'water') sound.step(surface, loud);
   // Pushing through tall grass, or the bushes and low leaves: their rustle round your legs.
   const cover = surface === 'grass' || surface === 'leaves' ? game.player.cover ?? 0 : 0;
@@ -534,7 +534,13 @@ function hearing(x, z) {
 }
 
 /** What's underfoot at (x, z), for the sound of a footstep (see Sound.step). */
-function stepSurface(x, z) {
+function stepSurface(x, z, feetY = null) {
+  // (On something built, a floor or stairs, or up on a ruin's stone: wood or stone underfoot.)
+  if (feetY !== null) {
+    const built = game.structures.surfaceKind(x, z, feetY);
+    if (built) return built;
+    if (Math.abs(ruins.surfaceAt(x, z, feetY) - feetY) < 0.35) return 'rock';
+  }
   const y = chunks.groundHeightAt(x, z);
   const water = waterAt(x, z, true);
   if (water && !water.frozen && water.level > y + 0.02) return 'water';
@@ -718,7 +724,7 @@ window.addEventListener('beforeunload', () => game.dirty && game.save());
 const LANDING = { rock: 1.1, dirt: 1.2, grass: 1.25, leaves: 1.3, sand: 1.4, snow: 1.6, mud: 1.6, bush: 1.75 };
 controls.onLand = (speed) => {
   const p = camera.position;
-  let surface = caveFocus.under ? 'rock' : stepSurface(p.x, p.z);
+  let surface = caveFocus.under ? 'rock' : stepSurface(p.x, p.z, p.y - controls.eyeHeight);
   if (surface === 'water') return;
   if (!caveFocus.under && (controls.speedFactor < 0.9 || (game.player.cover ?? 0) > 0.6)) surface = 'bush';
   const harm = Math.max(0, speed - 13 * Math.sqrt(LANDING[surface] ?? 1.1)) * 6.5;
@@ -1914,6 +1920,8 @@ function tick(now) {
     },
     camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, rocks, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
     worldDay: dayNight.day + dayNight.hour / 24, // (for the great beasts' coming back: see Wildlife.#bosses)
+    // (A torch in your hand, or a fire or torch close by: the animals' eyes shine back out of the dark. See Wildlife.#eyeshine.)
+    eyeLight: gameLights.some((l) => Math.hypot(l.x - camera.position.x, l.z - camera.position.z) < 12) || torches.torches.some((t) => t.lit && t.point.distanceTo(camera.position) < 10),
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
     rain: localRain, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
     sheltered, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), tame: peaceful?.checked ?? WORLD.tameWildlife,

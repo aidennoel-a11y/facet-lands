@@ -618,9 +618,11 @@ export class Game {
       case 'keepAltar':
         return this.#offer(s);
       case 'chest':
-            this.hud.openChest(s.contents, this.inventory);
+        this.sound?.call('creak', 0, 0.35);
+        this.hud.openChest(s.contents, this.inventory);
         return this.#menu(true);
       case 'cellar':
+        this.sound?.call('creak', 0, 0.4);
         this.hud.openChest(s.contents, this.inventory, 'Root cellar', 'Click to move a stack across · cool and dark: food in here never spoils · E or Esc to close');
         return this.#menu(true);
       case 'fishTrap': {
@@ -659,6 +661,7 @@ export class Game {
         if (!s.caught) return this.hotbar?.flash('Nothing yet');
         s.caught = false;
         s.catchMesh.visible = false;
+        this.sound?.call('pickup', 0, 0.5);
         this.#give('rawMeat', 1);
         this.dirty = true;
         return this.hotbar?.flash('A rabbit: raw meat');
@@ -675,6 +678,7 @@ export class Game {
     this.camera.getWorldDirection(dir);
     const p = this.camera.position;
     this.items.drop(s, p.x + dir.x * 1.2, p.y - 0.4, p.z + dir.z * 1.2);
+    this.sound?.call('thump', 0, 0.25);
     this.hotbar?.flash(`Dropped ${ITEMS[s.id].name.toLowerCase()}${s.count > 1 ? ` ×${s.count}` : ''}`);
   }
 
@@ -1113,10 +1117,14 @@ export class Game {
     };
     this.climbing = s;
     this.climbH = Math.max(bottom + 0.2, Math.min(s.y - 0.6, p.y - eye));
+    this.sound?.call('creak', 0, 0.3);
+    let creakAt = this.climbH;
     this.controls.velocityY = 0;
     this.controls.vehicle = (dt, input) => {
       const speed = 1.5 * (this.controls.burden ?? 1) * (this.survival.energy < 20 ? 0.6 : 1);
       this.climbH += input.forward * speed * dt;
+      // (Hand over hand: the rope creaking under you as you go.)
+      if (Math.abs(this.climbH - creakAt) > 0.6) (creakAt = this.climbH), this.sound?.call('creak', (Math.random() - 0.5) * 0.3, 0.22);
       if (this.climbH >= s.y - 0.1) {
         // Over the top, onto the ledge.
         this.#letGo();
@@ -1140,6 +1148,7 @@ export class Game {
     if (!this.climbing) return;
     this.climbing = null;
     this.controls.vehicle = null;
+    this.sound?.call('thump', 0, 0.3);
     if (say) this.hotbar?.flash('You let go');
   }
 
@@ -1348,6 +1357,8 @@ export class Game {
   #hitSpider(hit, sharp, from) {
     const out = this.spiders.wound(hit.animal, sharp);
     this.#wounded(hit, from);
+    this.sound?.call('stab', 0, 0.5);
+    this.sound?.call(out === 'dead' ? 'thump' : 'hiss', 0, hit.animal.boss ? 0.9 : 0.5);
     if (hit.animal.boss) {
       this.#bossFight(hit.animal);
       return this.hotbar?.flash(out === 'dead' ? `${hit.animal.boss.name} is dead` : 'A hit: she shrieks');
@@ -1738,6 +1749,7 @@ export class Game {
     const x = a.x + Math.sin(side) * 1.4, z = a.z + Math.cos(side) * 1.4;
     p.set(x, this.groundAt(x, z) + this.controls.eyeHeight + 0.1, z);
     this.dirty = true;
+    this.sound?.call('thump', 0, 0.35);
     if (say) this.hotbar?.flash(a.alive ? 'Down from the saddle' : 'Your horse is dead');
   }
 
@@ -1745,6 +1757,7 @@ export class Game {
 
   #board(s) {
     this.riding = s;
+    this.sound?.call('splash', 0, 0.35);
     const p = this.camera.position;
     p.set(s.x, s.y + 0.45 + this.controls.eyeHeight, s.z);
     this.controls.velocityY = 0;
@@ -1781,6 +1794,7 @@ export class Game {
         const w = this.waterAt(x, z), g = this.groundAt(x, z);
         if (!w || g > w.level - 0.1) {
           p.set(x, g + this.controls.eyeHeight + 0.1, z);
+          this.sound?.call('splash', 0, 0.3);
           if (say) this.hotbar?.flash('Ashore');
           return;
         }
@@ -1796,6 +1810,7 @@ export class Game {
     if (this.night < 0.5 && this.survival.energy > 50) return this.hotbar?.flash('You can only sleep at night, or when worn out');
     this.spawn = { x: bed.x, y: bed.y + 0.5 + this.controls.standingEye, z: bed.z };
     this.sleeping = { t: 0, bed, woke: false };
+    this.sound?.call('rustle', 0, 0.4);
     this.#menu(true);
     this.dirty = true;
   }
@@ -2409,7 +2424,10 @@ export class Game {
     } else if (s.jobs?.length) (s.jobs.length = 0), (took = true), this.structures.onChange?.();
     if (took) {
       this.dirty = true;
-      if (Math.hypot(s.x - this.camera.position.x, s.z - this.camera.position.z) < 60) this.hotbar?.flash('A bear is into your stores!');
+      if (Math.hypot(s.x - this.camera.position.x, s.z - this.camera.position.z) < 60) {
+        this.sound?.call('crash', 0, 0.6);
+        this.hotbar?.flash('A bear is into your stores!');
+      }
     }
     return took;
   }
