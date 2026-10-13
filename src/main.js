@@ -6,6 +6,8 @@ import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
+import { Geese } from './render/Geese.js';
+import { createWreckLayer } from './world/layers/WreckLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
@@ -292,6 +294,9 @@ caves.onFinds = (cx, cz, features, group) => game.items.addCave(cx, cz, features
 caves.onGone = (cx, cz) => game.items.removeCave(cx, cz);
 chunks.addLayer(createEntranceLayer(WORLD, caves.material));
 chunks.addLayer(rocks);
+// Ships wrecked on the beaches (see WreckLayer): their sea chests set out by the Game.
+const wrecks = createWreckLayer(WORLD);
+chunks.addLayer(wrecks);
 // The ruins of old strongholds, here and there (see RuinLayer): their chests set out by the Game.
 const ruins = createRuinLayer(WORLD);
 chunks.addLayer(ruins);
@@ -406,6 +411,42 @@ function footfall(x, z, heading, shape, size, loud = 0.5, track = false) {
     kind = 'grass';
   }
   if (kind) traces.print(x, y, z, heading, shape, size, kind, printColour, groundNormal(x, z));
+}
+// Tracks to follow: where the animals have gone lately (a mark every few
+// metres of each one's way), with now and then its droppings, and a twig
+// snapped where a big one's pushed through the woods. Read when you crouch
+// and look at the ground (see Game: readTracks).
+const trackLog = [];
+const DUNG = new THREE.Color(0x3a2a1a), TWIG = new THREE.Color(0xb89868);
+function logTrack(a, x, z, size) {
+  const last = a.lastTrack;
+  if (last && Math.hypot(x - last.x, z - last.z) < 2.5) return;
+  a.lastTrack = { x, z };
+  trackLog.push({ x, z, kind: a.kind, heading: a.heading, t: performance.now() / 1000 });
+  if (trackLog.length > 2400) trackLog.splice(0, 400);
+  const y = chunks.groundHeightAt(x, z);
+  if (!Number.isFinite(y) || waterAt(x, z)) return;
+  if (Math.random() < 0.035) {
+    // (Droppings: a little heap of them.)
+    for (let k = 0; k < 4; k++) traces.print(x + (Math.random() - 0.5) * 0.18, y, z + (Math.random() - 0.5) * 0.18, Math.random() * 6.28, PRINT.rabbit, 0.05 + size * 0.15, 'dung', printColour.copy(DUNG).multiplyScalar(0.8 + Math.random() * 0.4), groundNormal(x, z));
+  }
+  if (size * a.scale > 0.1 && Math.random() < 0.06 && stepSurface(x, z) === 'leaves') {
+    // (A twig snapped under a big one's weight, its pale broken wood showing.)
+    traces.print(x, y, z, Math.random() * 6.28, PRINT.rabbit, 0.35, 'twig', printColour.copy(TWIG), groundNormal(x, z));
+  }
+}
+/** The freshest tracks near (x, z) (within r): { kind, heading, age (s) }, or null. */
+function readTracks(x, z, r) {
+  let best = null;
+  const now = performance.now() / 1000;
+  for (let k = trackLog.length - 1; k >= 0; k--) {
+    const t = trackLog[k];
+    if (now - t.t > 600) break;
+    if (Math.abs(t.x - x) > r || Math.abs(t.z - z) > r || Math.hypot(t.x - x, t.z - z) > r) continue;
+    best = { kind: t.kind, heading: t.heading, age: now - t.t };
+    break;
+  }
+  return best;
 }
 // Blood, where a wounded animal's been.
 const BLOOD = new THREE.Color(0x6a0a0a);
@@ -696,9 +737,12 @@ torches.loadWorld(WORLD.seed);
 // --- Staying alive -----------------------------------------------------------------
 // (See Game: your pack, health, hunger, thirst, warmth; crafting, building,
 // felling and hunting; and the world remembering what you've done.)
+const geese = new Geese(scene); // (skeins of geese passing over, spring and autumn)
 const game = new Game({
   scene, camera, controls, chunks, trees, rocks, logs, mushrooms, fish, traces, torches, wildlife, sound, config: WORLD,
   solidHit: (origin, direction, reach) => solidHit(origin, direction, reach),
+  readTracks: (x, z, r) => readTracks(x, z, r),
+  panAt: (x, z) => (sound.from(x, z), panTowards(camera, x, z)),
   wind: () => clouds.wind,
   // (A campfire left burning in the dry sets the grass alight.)
   ignite: (x, y, z) => fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
@@ -735,6 +779,7 @@ const game = new Game({
 });
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 ruins.onChest = (c) => game.ruinChest(c);
+wrecks.onChest = (c) => game.ruinChest(c); // (a wreck's sea chest)
 game.onKeep = (open) => ruins.openKeep(open);
 game.keepAt = () => ruins.keep(generator);
 game.ruinsNear = (x, z, r) => ruins.sitesNear(x, z, r, generator);
@@ -1917,6 +1962,7 @@ function tick(now) {
   const turning = smoothstep(0.3, 0.6, cold.value);
   fallingLeaves.update(dt, camera, trees.crowns, WORLD.chunkSize, (x, z) => chunks.groundHeightAt(x, z), { autumn: autumn * turning, spring, winter: winter * turning, summer: Math.max(0, 1 - (autumn + winter) * turning - spring) }, wind, windDirection.value, sheltered);
   body.update(controls, dt);
+  geese.update(dt, camera, { spring, autumn: autumn * turning }, sound, (x, z) => (sound.from(x, z), panTowards(camera, x, z)));
   const gameLights = game.update(dt, {
     time: now / 1000, wind: clouds.wind, light: ambientLight, day: around.env.day, night: 1 - around.env.day, rain: localRain,
     snowing: weather.rain > 0.2 && seasonUniforms.uWinter.value > 0.5 && cold.value > 0.3,
@@ -1957,6 +2003,7 @@ function tick(now) {
     step: (a, x, z, running) => {
       const [shape, size] = ANIMAL_PRINTS[a.kind] ?? [PRINT.hoof, 0.12];
       footfall(x, z, a.heading, shape, size * a.scale, running ? 1 : 0.35, true);
+      logTrack(a, x, z, size);
       // (Close by, you hear them: hooves and paws on the ground, a branch
       // cracking as a big one comes through the woods.)
       const d = Math.hypot(x - camera.position.x, z - camera.position.z);

@@ -1,5 +1,6 @@
 import { iconSvg, slotHtml } from '../ui/Hotbar.js';
 import { ITEMS, RECIPES, TIERS, usesText } from './items.js';
+import { ACHIEVEMENTS, MAX_LEVEL, SKILLS } from './Progress.js';
 
 const BARS = [
   ['health', 'Health', '#e0413a', `<path d="M16 28S4 20 4 11a6 6 0 0 1 12-2 6 6 0 0 1 12 2c0 9-12 17-12 17z"/>`],
@@ -40,6 +41,13 @@ export class Hud {
       <div class="hurt-vignette"></div>
       <div class="cold-vignette"></div>
       <div class="sleep-fade"></div>
+      <button type="button" class="skills-button" hidden title="Skills and achievements (K)" aria-label="Skills and achievements"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.6 8 8.4.8-6.4 5.6 1.9 8.4L16 21.4 8.5 25.8l1.9-8.4L4 11.8l8.4-.8z" fill="#f2d880"/></svg><b></b></button>
+      <section class="skills-ui" hidden aria-label="Skills and achievements">
+        <header><h2>Skills</h2><p>Better the more you do them · K or Esc to close</p></header>
+        <ol class="skill-list"></ol>
+        <h2 class="ach-head">Achievements</h2>
+        <ol class="ach-list"></ol>
+      </section>
       <section class="craft" hidden aria-label="Crafting">
         <header><h2>Crafting</h2><p>Click to make · Tab or Esc to close · Z for every item</p></header>
         <div class="tree"></div>
@@ -76,12 +84,13 @@ export class Hud {
     this.onRespawn = null;
     this.onLeave = null;
     this.el('.respawn').addEventListener('click', () => (this.deathButton === 'leave' ? this.onLeave?.() : this.onRespawn?.()));
+    this.el('.skills-button').addEventListener('click', () => this.onSkills?.());
     this.el('.won-on').addEventListener('click', () => ((this.el('.won').hidden = true), this.onWonClose?.()));
     this.sleepAmount = 0;
   }
 
   get busy() {
-    return ['.craft', '.creative', '.chest-ui', '.death', '.won'].some((sel) => !this.el(sel).hidden);
+    return ['.craft', '.creative', '.chest-ui', '.death', '.won', '.skills-ui'].some((sel) => !this.el(sel).hidden);
   }
 
   /**
@@ -172,6 +181,41 @@ export class Hud {
       p.dataset.text = text;
       p.innerHTML = text;
     }
+  }
+
+  // --- Skills and achievements ----------------------------------------------------
+
+  /** The skills button (top right): shown in survival, with your skills' levels added up. */
+  skillsButton(record) {
+    const b = this.el('.skills-button');
+    b.hidden = !record;
+    if (!record) return;
+    const total = SKILLS.reduce((n, s) => n + record.level(s.id), 0);
+    const t = `${total}`;
+    if (b.querySelector('b').textContent !== t) b.querySelector('b').textContent = t;
+  }
+
+  toggleSkills(record) {
+    const panel = this.el('.skills-ui');
+    if (!panel.hidden) return this.closeAll();
+    this.closeAll();
+    panel.hidden = false;
+    this.renderSkills(record);
+    return true;
+  }
+
+  renderSkills(record) {
+    if (this.el('.skills-ui').hidden || !record) return;
+    this.el('.skill-list').innerHTML = SKILLS.map((s) => {
+      const l = record.level(s.id), next = Math.round(record.toNext(s.id) * 100);
+      return `<li><div class="sk-top"><b>${s.name}</b><span>Level ${l}${l >= MAX_LEVEL ? ' (master)' : ''}</span></div><span class="sk-bar"><i style="width:${l >= MAX_LEVEL ? 100 : next}%"></i></span><p>${s.what}. <em>${s.how}.</em></p></li>`;
+    }).join('');
+    const done = ACHIEVEMENTS.filter((a) => record.done.has(a.id)).length;
+    this.el('.ach-head').textContent = `Achievements · ${done} of ${ACHIEVEMENTS.length}`;
+    this.el('.ach-list').innerHTML = ACHIEVEMENTS.map((a) => {
+      const day = record.done.get(a.id);
+      return `<li class="${day ? 'got' : ''}"><b>${day ? '★' : '☆'} ${a.name}</b><p>${a.what}${day ? ` · day ${day}` : ''}</p></li>`;
+    }).join('');
   }
 
   // --- Crafting ------------------------------------------------------------------
@@ -277,7 +321,7 @@ export class Hud {
   }
 
   closeAll() {
-    for (const sel of ['.craft', '.creative', '.chest-ui']) this.el(sel).hidden = true;
+    for (const sel of ['.craft', '.creative', '.chest-ui', '.skills-ui']) this.el(sel).hidden = true;
     this.chest = null;
     return false;
   }

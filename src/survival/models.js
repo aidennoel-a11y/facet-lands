@@ -552,6 +552,33 @@ export function bridgeModel(style, len, rise) {
 
 /** A chair: a seat, four legs, a slatted back. */
 /** An egg (or a cooked one, cut open). */
+/** A bird's nest: a bowl of woven twigs. (Its eggs: nestEggsModel, drawn while there are some.) */
+export function nestModel() {
+  const b = new Parts(171);
+  const rand = mulberry32(171);
+  b.add(new CylinderGeometry(0.2, 0.12, 0.1, 9, 1, true), 0x7a5a38, [0, 0.05, 0]);
+  b.add(new CylinderGeometry(0.12, 0.12, 0.02, 9), 0x6a4a2c, [0, 0.01, 0]);
+  for (let k = 0; k < 10; k++) {
+    const a = rand() * 6.28;
+    b.add(new BoxGeometry(0.22, 0.015, 0.015), [0x8a6a44, 0x6a4a2c, 0x9a7a50][k % 3], [Math.cos(a) * 0.16, 0.06 + rand() * 0.04, Math.sin(a) * 0.16], [0, -a + 1.57, rand() * 0.3]);
+  }
+  return b.build();
+}
+export function nestEggsModel() {
+  const b = new Parts(172);
+  for (const [x, z] of [[-0.04, 0.02], [0.04, 0.03], [0, -0.05]]) b.add(new DodecahedronGeometry(0.035, 1), 0xb8d4e0, [x, 0.06, z], [0, 0, 0], [0.85, 1.1, 0.85], 0.04);
+  return b.build();
+}
+
+/** A wild bees' nest: a grey papery comb hanging in tiers under a bough. */
+export function beehiveModel() {
+  const b = new Parts(173);
+  b.add(new BoxGeometry(0.06, 0.12, 0.06), 0x6e4c32, [0, 0.3, 0]);
+  for (const [y, r] of [[0.15, 0.2], [0, 0.26], [-0.16, 0.24], [-0.3, 0.17], [-0.4, 0.08]]) b.add(new DodecahedronGeometry(r, 0), [0x9a8a70, 0x8a7a62, 0xa89878][Math.round(r * 100) % 3], [0, y, 0], [0, y * 3, 0], [1, 0.7, 1], 0.12);
+  b.add(new CylinderGeometry(0.04, 0.04, 0.02, 6), 0x2a2018, [0.2, -0.05, 0.12], [0, 0, 1.2]);
+  return b.build();
+}
+
 export function eggModel(cooked) {
   const b = new Parts(166);
   b.add(new DodecahedronGeometry(0.05, 1), cooked ? 0xfafaf4 : 0xf0e6d2, [0, 0.05, 0], [0, 0, 0], [0.85, 1.15, 0.85], 0.03);

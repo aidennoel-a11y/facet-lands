@@ -8,6 +8,8 @@ import { BLADES, GRINDS, ITEMS, RECIPES, RELICS, TIERS, stackOf, weightOf, tierO
 import { bobberModel, bowModel } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
+import { TreeFinds } from './TreeFinds.js';
+import { Progress, SKILLS } from './Progress.js';
 import { Wildlife } from '../wildlife/Wildlife.js';
 
 /** Your longest survival life yet, in days (kept in this browser): records `days`, returns the longest. */
@@ -115,6 +117,8 @@ export class Game {
     this.wildlife.makeBags = () => new Inventory(8); // (a horse's saddlebags, brought back from a save)
     this.inventory.stackBonus = (id) => (QUIVERED.has(id) && this.inventory.slots.some((s) => s?.id === 'quiver') ? 3 : 1);
     this.progress = new Set(); // what's opened tiers of the crafting tree (see unlocked)
+    this.treeFinds = new TreeFinds(this.scene, this.trees); // (birds' nests and wild bees' nests up in the trees)
+    this.record = new Progress(); // (your skills, and what you've achieved, this life)
     this.survival = new Survival();
     this.hud = new Hud(o.hudRoot);
     Object.defineProperty(this.hud, 'spawners', { get: () => this.mode === 'testing' }); // (the animal spawners: for testing only)
@@ -169,6 +173,7 @@ export class Game {
   /** Starts you afresh: full health, and (but in survival) the test kit. */
   newLife() {
     this.age = 0;
+    this.record.reset();
     this.dead = false;
     this.survival.reset();
     this.inventory.clear();
@@ -202,6 +207,8 @@ export class Game {
     for (const k of saved?.taken ?? []) this.items.taken.add(k);
     for (const k of saved?.felled ?? []) this.trees.removed.add(k);
     for (const k of saved?.broken ?? []) this.rocks?.removed.add(k);
+    this.treeFinds.load(saved?.finds);
+    this.worldDays = saved?.worldDays ?? 0;
     for (const k of saved?.mushrooms ?? []) this.mushrooms?.taken.add(k);
     this.felling.loadStumps(saved?.stumps);
     this.loadBurns?.(saved?.burns ?? []);
@@ -237,6 +244,7 @@ export class Game {
       this.dead = false;
       this.spawn = saved.player.spawn ?? null;
       this.age = saved.player.age ?? 0;
+      this.record.load(saved.player.record);
       this.hud.alive();
       this.controls.frozen = false;
     } else {
@@ -249,7 +257,7 @@ export class Game {
   save() {
     if (this.seed === null || !this.saveKey) return; // (a testing world is never saved)
     const data = {
-      structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], broken: [...(this.rocks?.removed ?? [])], stumps: this.felling.stumpsJSON(),
+      structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], broken: [...(this.rocks?.removed ?? [])], finds: this.treeFinds.toJSON(), worldDays: +(this.worldDays ?? 0).toFixed(3), stumps: this.felling.stumpsJSON(),
       mushrooms: [...(this.mushrooms?.taken ?? [])],
       tame: this.wildlife.tameJSON(),
       bosses: this.wildlife.bossJSON(),
@@ -261,7 +269,7 @@ export class Game {
       ruins: { chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
       explored: [...this.explored],
       keep: this.keep,
-      player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
+      player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), record: this.record.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
     try {
       localStorage.setItem(`facet-lands:survival:${this.saveKey}`, JSON.stringify(data));
@@ -280,6 +288,10 @@ export class Game {
         e.preventDefault();
         if (!this.survival.alive) return;
         this.#menu(this.hud.toggleCraft(this.inventory));
+        return;
+      }
+      if (e.code === 'KeyK' && this.survival.alive && this.mode === 'survival') {
+        this.#menu(this.hud.toggleSkills(this.record));
         return;
       }
       if (e.code === 'KeyZ' && this.survival.alive) {
@@ -305,6 +317,7 @@ export class Game {
       }
     });
     this.hud.onCraft = (id) => this.craft(id);
+    this.hud.onSkills = () => this.survival.alive && this.mode === 'survival' && this.#menu(this.hud.toggleSkills(this.record));
     this.hud.onTake = (id) => {
       const left = this.inventory.add(Inventory.stack(id, stackOf(id)), this.hotbar?.index);
       this.hotbar?.flash(left ? 'No room' : `Took ${ITEMS[id].name}`);
@@ -425,6 +438,15 @@ export class Game {
       // (Any bush: pull a plant vine or two from it, then leave it be a while.)
       const pulled = this.vined?.has(tree.key) && this.time - this.vined.get(tree.key) < 600;
       found.push({ kind: 'vine', distance: tree.distance, tree, pulled, text: pulled ? 'No good vines left on it' : 'Pull plant vines' });
+    }
+    const tf = this.treeFinds.pick(origin, direction, reach + 2.5);
+    if (tf) {
+      const f = tf.find, empty = this.treeFinds.empty(f, this.worldDays ?? 0), season = seasonUniforms.uSeasonTime.value;
+      const torch = held?.id === 'torch' || held?.id === 'coalTorch';
+      const text = f.kind === 'nest'
+        ? (empty || season <= 0.25 || season >= 1.6 ? 'A bird\'s nest: empty' : 'A bird\'s nest: take the eggs')
+        : empty ? 'A wild bees\' nest: no honey left in it yet' : torch ? 'A wild bees\' nest: smoke them quiet and take the honey' : 'A wild bees\' nest: take the honey (they\'ll sting: a lit torch in hand smokes them quiet)';
+      found.push({ kind: 'treeFind', distance: tf.distance, find: f, empty, text });
     }
     const mushroom = this.mushrooms?.pick(origin, direction, reach);
     if (mushroom) found.push({ kind: 'mushroom', distance: mushroom.distance, mushroom, text: 'Pick the mushroom' });
@@ -655,6 +677,28 @@ export class Game {
       return this.hotbar?.flash('Mushroom');
     }
     if (t.kind === 'structure') return this.#useStructure(t.structure, down);
+    if (t.kind === 'treeFind') {
+      const f = t.find, season = seasonUniforms.uSeasonTime.value;
+      if (t.empty || (f.kind === 'nest' && (season <= 0.25 || season >= 1.6))) return this.hotbar?.flash(t.text);
+      this.treeFinds.take(f, this.worldDays ?? 0);
+      this.dirty = true;
+      if (f.kind === 'nest') {
+        const n = 2 + Math.floor(Math.random() * 3);
+        this.#give('rawEgg', n);
+        this.sound?.call('pickup', 0, 0.4);
+        return this.hotbar?.flash(`Eggs ×${n}`);
+      }
+      const held = this.inventory.slots[this.hotbar.index], torch = (held?.id === 'torch' || held?.id === 'coalTorch');
+      const n = 2 + Math.floor(Math.random() * 3);
+      this.#give('honey', n);
+      this.sound?.call('flybuzz', 0, 0.8);
+      if (!torch) {
+        this.survival.hurt(6 + Math.random() * 6, 'bee stings');
+        this.survival.hurtFlash = 1;
+        return this.hotbar?.flash(`Honey ×${n}, and stung all over`);
+      }
+      return this.hotbar?.flash(`Honey ×${n}: the smoke kept them quiet`);
+    }
     if (t.kind === 'scoop') {
       if (this.cooldown > 0) return;
       // (The salt flats: a crust of it, thick: far more than a pot of sea water gives.)
@@ -717,6 +761,7 @@ export class Game {
       case 'keepAltar':
         return this.#offer(s);
       case 'chest':
+        if (s.ruinKey?.startsWith('wreck:')) this.#achieve('wreck');
         this.sound?.call('creak', 0, 0.35);
         this.hud.openChest(s.contents, this.inventory);
         return this.#menu(true);
@@ -741,6 +786,7 @@ export class Game {
       case 'plot': {
         const crop = this.structures.harvest(s);
         if (!crop) return this.hotbar?.flash(this.#structureText(s));
+        this.#achieve('harvest');
         const got = HARVEST[crop].map(([id, n]) => (this.#give(id, n, s), `${ITEMS[id].name} ×${n}`));
         this.sound?.call('pickup', 0, 0.5);
         this.dirty = true;
@@ -809,6 +855,70 @@ export class Game {
     }
   }
 
+  // --- Skills and achievements ------------------------------------------------------
+
+  /** Points in a skill (see Progress): a word when it goes up a level. */
+  skill(id, n) {
+    if (this.mode !== 'survival' || !this.survival.alive) return;
+    const up = this.record.add(id, n);
+    if (!up) return;
+    const sk = SKILLS.find((s) => s.id === id);
+    this.hud.toast(`${sk.name}: level ${up}. ${sk.what}`);
+    if (up >= 5) this.#achieve('skill5');
+    if (up >= 10) this.#achieve('skill10');
+    this.hud.renderSkills(this.record);
+    this.dirty = true;
+  }
+
+  skillLevel(id) {
+    return this.record.level(id);
+  }
+
+  #achieve(id) {
+    if (this.mode !== 'survival') return;
+    const a = this.record.achieve(id, this.age);
+    if (!a) return;
+    this.hud.toast(`★ Achievement: ${a.name}. ${a.what}`);
+    this.sound?.call('craft', 0, 0.6);
+    this.hud.renderSkills(this.record);
+    this.dirty = true;
+  }
+
+  // Now and then: the achievements that come of how things stand (and points for creeping up on animals).
+  #progressStep(dt, e) {
+    if (this.mode !== 'survival' || !this.survival.alive) return;
+    const c = this.controls, cam = this.camera.position;
+    if (c.crouch && c.moving && this.walking) {
+      const near = this.wildlife.animals.some((a) => a.alive && !a.tame && !a.boss && Math.abs(a.x - cam.x) < 30 && Math.abs(a.z - cam.z) < 30 && (a.fear ?? 0) < 0.5 && !(a.herd?.fleeTime > 0));
+      if (near) this.skill('sneaking', dt * 0.6);
+    }
+    if (e.hotSpring) this.#achieve('hotspring');
+    if (e.cave !== null && e.cave !== undefined && cam.y < this.generator().getHeight(cam.x, cam.z) - 12) this.#achieve('cave');
+    this.progressWait = (this.progressWait ?? 0) - dt;
+    if (this.progressWait > 0) return;
+    this.progressWait = 2;
+    const has = (id) => this.inventory.count(id) > 0;
+    if (this.age >= 7) this.#achieve('week');
+    if (this.age >= 30) this.#achieve('month');
+    if (this.age >= 4 * (this.config.daysPerSeason ?? 12)) this.#achieve('year');
+    if (this.progress.has('ironBar') || has('ironBar')) this.#achieve('iron');
+    if (this.progress.has('steelBar') || has('steelBar')) this.#achieve('steel');
+    if (has('salt')) this.#achieve('salt');
+    if (has('honey')) this.#achieve('honey');
+    if (has('rawEgg')) this.#achieve('eggs');
+    const built = this.structures.list;
+    if (built.some((s) => s.type === 'campfire' && s.lit)) this.#achieve('fire');
+    if (built.some((s) => s.type === 'leanTo' || /[rR]oof$/.test(s.type))) this.#achieve('shelter');
+    if (built.some((s) => s.type === 'logBridge' || s.type === 'ropeBridge')) this.#achieve('bridge');
+    if (built.filter((s) => /^(stone|cut)(StoneWall|Wall|Window|Door)$/.test(s.type) || s.type === 'cutStoneWall').length >= 8) this.#achieve('stonehouse');
+    const tame = this.wildlife.animals.filter((a) => a.tame && a.alive);
+    if (tame.some((a) => a.kind === 'horse')) this.#achieve('horse');
+    if (tame.some((a) => a.kind === 'sheep' || a.kind === 'turkey' || a.kind === 'duck')) this.#achieve('flock');
+    if ((this.ruinsSeen?.size ?? 0) > 0) this.#achieve('ruin');
+    if (this.keep?.open) this.#achieve('keep');
+    this.hud.skillsButton(this.record);
+  }
+
   // B: your horse's saddlebags (riding it, or close by it).
   #openBags() {
     const p = this.camera.position;
@@ -828,7 +938,7 @@ export class Game {
     if (s.dur >= item.durability) return this.hotbar?.flash('It needs no mending');
     const r = RECIPES.find((x) => x.id === s.id);
     const worn = 1 - s.dur / item.durability;
-    const cost = Object.entries(r?.needs ?? { stick: 1 }).map(([k, n]) => [k, Math.max(1, Math.round(n * 0.45 * worn))]);
+    const cost = Object.entries(r?.needs ?? { stick: 1 }).map(([k, n]) => [k, Math.max(1, Math.round(n * 0.45 * worn * (1 - 0.05 * this.skillLevel('crafting'))))]);
     const short = cost.filter(([k, n]) => this.inventory.count(k) < n);
     if (short.length) return this.hotbar?.flash(`To mend it: ${cost.map(([k, n]) => `${ITEMS[k].name.toLowerCase()} ×${n}`).join(', ')}`);
     for (const [k, n] of cost) this.inventory.remove(k, n);
@@ -863,6 +973,7 @@ export class Game {
     for (const [k, n] of Object.entries(r.needs)) this.inventory.remove(k, n);
     const n = r.makes ?? 1;
     const got = this.#give(id, n);
+    this.skill('crafting', 1);
     this.sound?.call('craft', 0, 0.5);
     this.hotbar?.flash(`Made: ${ITEMS[id].name}${n > 1 ? ` ×${n}` : ''}${got < n ? ' (some on the ground: no room)' : ''}`);
   }
@@ -942,8 +1053,8 @@ export class Game {
       if (plotAt?.type === 'plot') return this.hotbar?.flash(this.#structureText(plotAt));
       return this.#dig(i);
     }
-    if (AXES[s.id]) return this.#axe(i, origin, direction, AXES[s.id]);
-    if (PICKS[s.id]) return this.#mine(i, origin, direction, PICKS[s.id]);
+    if (AXES[s.id]) return this.#axe(i, origin, direction, AXES[s.id] * (1 + 0.06 * this.skillLevel('woodcutting')));
+    if (PICKS[s.id]) return this.#mine(i, origin, direction, PICKS[s.id] * (1 + 0.06 * this.skillLevel('mining')));
     if (SPEARS.has(s.id)) return this.#stab(i, origin, direction);
     if (SWORDS.has(s.id)) return this.#stab(i, origin, direction, true);
     const built = this.structures.pick(origin, direction, REACH);
@@ -1479,6 +1590,7 @@ export class Game {
       this.inventory.wear(i, 1);
       if (this.anim?.kind === 'chop') this.anim.bite = true; // (the blade sticks a moment: see drawHeld)
       this.sound?.call('chop', 0, 0.7);
+      this.skill('woodcutting', 1);
       const ground = (x, z) => this.groundAt(x, z);
       this.dirty = true;
       if (near.k === 'fallen') {
@@ -1525,6 +1637,7 @@ export class Game {
       }
       this.inventory.wear(i, 1);
       this.sound?.call('strike', 0, 0.7);
+      this.skill('mining', 1);
       this.sound?.call('thunk', 0, 0.5);
       const id = target ? target.id : 'rock';
       this.felling.spray(where, origin, { iron: 0xa0502c, coal: 0x24201e, goldOre: 0xf0c030, mountainOre: 0x9ab0c8 }[id] ?? 0x8e8a84);
@@ -1696,6 +1809,14 @@ export class Game {
   }
 
   #report(a, outcome, head) {
+    // (Points for a hit: archery, if it was a bow or crossbow in your hand. And a kill, achieved.)
+    const held = this.inventory.slots[this.hotbar?.index ?? 0]?.id;
+    if (held === 'bow' || held === 'antlerBow' || held === 'crossbow') this.skill('archery', outcome === 'dead' ? 5 : 3);
+    if (outcome === 'dead') {
+      this.#achieve('hunt');
+      if (['grizzly', 'blackBear', 'moose', 'bison'].includes(a.kind)) this.#achieve('biggame');
+      if (a.boss) this.#achieve('boss');
+    }
     if (a.boss) {
       if (outcome === 'dead') this.hotbar?.flash(`${a.boss.name} is dead`);
       return;
@@ -1783,7 +1904,8 @@ export class Game {
     const power = ITEMS[this.inventory.slots[i]?.id]?.power ?? 1;
     this.inventory.wear(i, 1);
     this.#animate('loose', 0.25);
-    this.#launch('arrow', Inventory.stack(ammo, 1), origin, this.#sway(direction), (16 + 34 * draw) * power, power);
+    this.#launch('arrow', Inventory.stack(ammo, 1), origin, this.#sway(direction), (16 + 34 * draw) * power * (1 + 0.03 * this.skillLevel('archery')), power);
+    this.skill('archery', 0.5);
     this.cooldown = 0.35;
     this.sound?.call('whoosh', 0, 0.35 + 0.3 * draw);
   }
@@ -1792,7 +1914,7 @@ export class Game {
   // any way); walking, a little off; standing still (or crouched), true.
   #sway(direction) {
     const c = this.controls, moving = c.moving ?? (c.currentSpeed ?? 0) > 0.5;
-    const spread = c.sprinting ? 0.14 : moving && !c.crouch ? 0.025 : 0;
+    const spread = (c.sprinting ? 0.14 : moving && !c.crouch ? 0.025 : 0) * (1 - 0.06 * this.skillLevel('archery'));
     if (!spread) return direction;
     const d = direction.clone();
     d.x += (Math.random() - 0.5) * 2 * spread;
@@ -1935,6 +2057,8 @@ export class Game {
       // (Down in the dark water, the fish are pale and blind.)
       const blind = !!this.waterAt(this.line?.x ?? this.camera.position.x, this.line?.z ?? this.camera.position.z)?.cave;
       this.#give(blind ? 'blindFish' : 'rawFish', 1);
+      this.skill('fishing', 4);
+      if (this.record.count('fish') >= 10) this.#achieve('fish10');
       this.sound?.call('splash', 0, 0.6);
       return this.hotbar?.flash(blind ? 'A blind cave fish!' : 'A fish!');
     }
@@ -1959,7 +2083,7 @@ export class Game {
     this.scene.add(line);
     // (Sooner where there are fish about.)
     const near = (this.fish?.fish ?? []).some((f) => Math.hypot(f.x - at.x, f.z - at.z) < 10);
-    this.line = { ...at, bobber, line, wait: rnd(4, 14) * (near ? 0.5 : 1), bite: 0 };
+    this.line = { ...at, bobber, line, wait: rnd(4, 14) * (near ? 0.5 : 1) * (1 - 0.06 * this.skillLevel('fishing')), bite: 0 };
     this.sound?.call('whoosh', 0, 0.3);
     this.traces?.splash(at.x, at.level, at.z, 4, 1, 0.4);
   }
@@ -2242,6 +2366,7 @@ export class Game {
     const held = this.inventory.slots[i];
     if (this.sleeping) this.#sleepStep(dt);
     this.#coops(dt);
+    this.treeFinds.update(dt, this.camera, this.config.chunkSize, this.worldDays ?? 0, seasonUniforms.uSeasonTime.value, this.sound, (x, z) => this.panAt?.(x, z) ?? 0);
     this.#fishing(dt, held);
     this.#wind(dt, held);
     this.#snares(dt);
@@ -2311,6 +2436,8 @@ export class Game {
     }
     // (In creative there's no hunger, thirst or cold: you stay as you are.)
     if (this.mode !== 'creative') this.survival.update(dt, e);
+    this.#progressStep(dt, e);
+    if (this.mode !== 'survival') this.hud.skillsButton(null);
     if (this.survival.retched) {
       this.survival.retched = false;
       this.sound?.call('hurt', 0, 0.4);
@@ -2361,6 +2488,19 @@ export class Game {
         if (!onPlot) prompt = this.plan.ok ? `<kbd>Click</kbd> ${placing === 'plot' ? 'Dig a plot' : `Build ${item.name.toLowerCase()}`}` : this.plan.why;
       } else this.structures.preview(null);
       if (!prompt && t) prompt = `<kbd>E</kbd> ${t.text}`;
+      // Crouched, looking at the ground: the tracks there, read (the better your tracking, the older the tracks you can make out).
+      if (!prompt && this.controls.crouch && this.readTracks) {
+        const hit = this.solidHit?.(origin, direction, 8);
+        const lvl = this.skillLevel?.('tracking') ?? 0;
+        const tr = hit && this.readTracks(hit.point.x, hit.point.z, 1.5 + lvl * 0.4);
+        if (tr && tr.age < 120 + lvl * 90) {
+          const view = this.controls.euler.y, way = Math.atan2(Math.sin(tr.heading - (view + Math.PI)), Math.cos(tr.heading - (view + Math.PI)));
+          const where = Math.abs(way) < 0.6 ? 'on ahead of you' : Math.abs(way) > 2.5 ? 'back the way you came' : way > 0 ? 'off to your left' : 'off to your right';
+          const age = tr.age < 40 ? 'fresh' : tr.age < 150 ? 'a few minutes old' : 'old';
+          prompt = `Tracks: ${NAMES[tr.kind] ?? tr.kind}, ${age}, going ${where}`;
+          if (this.time > (this.trackedAt ?? 0) + 6) (this.trackedAt = this.time), this.skill?.('tracking', 1);
+        }
+      }
       if (!prompt && held) {
         if (AXES[held.id] && (this.felling.pickFallen(origin, direction, REACH) || this.trees.pick(origin, direction, REACH) || this.shrooms?.pick(origin, direction, REACH))) prompt = '<kbd>Click</kbd> Chop';
         if (PICKS[held.id] && this.#boulderAlong(origin, direction, REACH)) prompt = '<kbd>Click</kbd> Break rock';
@@ -2436,7 +2576,7 @@ export class Game {
   get player() {
     const p = this.camera.position, c = this.controls;
     return {
-      x: p.x, y: p.y, z: p.z, mode: c.mode, crouch: c.crouch, moving: c.moving, sprint: c.sprinting, alive: this.survival.alive && !this.riding && !this.climbing,
+      x: p.x, y: p.y, z: p.z, mode: c.mode, crouch: c.crouch, moving: c.moving, sprint: c.sprinting, sneak: this.skillLevel('sneaking'), alive: this.survival.alive && !this.riding && !this.climbing,
       cover: Math.min(1, this.#grassCover(p.x, p.z) + (ITEMS[this.inventory.worn?.id]?.hush ? 0.35 : 0)),
       lure: ['wheat', 'seedWheat', 'seedCorn', 'corn'].includes(this.inventory.slots[this.hotbar?.index ?? 0]?.id),
       torch: TORCHES.has(this.inventory.slots[this.hotbar?.index ?? 0]?.id),
@@ -2495,6 +2635,7 @@ export class Game {
 
   /** Time going by (game days), for how long this life has lasted. */
   passDays(days) {
+    this.worldDays = (this.worldDays ?? 0) + days; // (the world's own days, for what grows back)
     if (!this.survival.alive || this.mode !== 'survival') return;
     const before = this.age;
     this.age += days;
@@ -2757,6 +2898,26 @@ export class Game {
     if (c.altar) {
       // The Lost Keep's altar (see #offer).
       const s = this.structures.build({ type: 'keepAltar', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { ruinKey: c.key, offered: [] });
+      s.ruinKey = c.key;
+      this.dirty = true;
+      return;
+    }
+    if (c.wreck) {
+      // A wrecked ship's sea chest: rope, iron, a cutlass, salted stores, a little gold.
+      const contents = [];
+      const roll = (id, lo, hi, chance) => Math.random() < chance && contents.push(Inventory.stack(id, lo + Math.floor(Math.random() * (hi - lo + 1))));
+      roll('rope', 2, 5, 0.9);
+      roll('ironBar', 1, 3, 0.7);
+      roll('saltedFish', 2, 4, 0.6);
+      roll('salt', 2, 5, 0.6);
+      roll('goldBar', 1, 2, 0.35);
+      roll('oldSword', 1, 1, 0.3);
+      roll('oldMap', 1, 1, 0.4);
+      roll('deerSkin', 1, 3, 0.4);
+      roll('pot', 1, 1, 0.3);
+      roll('coalTorch', 2, 4, 0.4);
+      if (!contents.length) contents.push(Inventory.stack('rope', 3));
+      const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents: contents.slice(0, 10), ruinKey: c.key });
       s.ruinKey = c.key;
       this.dirty = true;
       return;

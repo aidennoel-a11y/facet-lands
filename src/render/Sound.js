@@ -846,6 +846,14 @@ export class Sound {
         const shape = young ? [[0, 0.85], [0.2, 1.05], [0.45, 0.95], [0.55, 1.08], [1, 0.82]] : [[0, 0.8], [0.18, 1], [0.6, 1.03], [0.82, 0.98], [1, 0.74]];
         voice(start, len, f, (v ? 0.06 : 0.09) * (young ? 0.7 : 1), shape, 5 + Math.random() * 1.5, 0.012);
       }
+    } else if (kind === 'honk') {
+      // A goose: a nasal two-note honk, now and then another's answering.
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) {
+        const at = t + k * (0.25 + Math.random() * 0.3), f = 330 + Math.random() * 80;
+        tone(at, 0.16, 'sawtooth', f * 1.15, f, 900, 2.5, 0.05);
+        tone(at + 0.17, 0.13, 'sawtooth', f, f * 0.9, 800, 2.5, 0.035);
+      }
     } else if (kind === 'yip') {
       // Coyotes: a tumbling chorus of yips and barks breaking into short,
       // high, wavering howls, two or three of them at once, all over each other.

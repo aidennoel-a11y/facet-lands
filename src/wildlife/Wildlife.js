@@ -133,8 +133,8 @@ SPECIES.hyena.predator = { sight: 45, close: 10, bite: 15, every: 1.1, reach: 1.
 // by her calf or piglets in spring), or when hurt (`hurt`), and then make off.
 SPECIES.moose.charger = { close: 6, rut: 16, young: 18, hit: 30, reach: 2.2, hurt: true };
 SPECIES.boar.charger = { close: 5, young: 10, hit: 18, reach: 1.2, hurt: true };
-SPECIES.elk.charger = { close: 0, rut: 10, hit: 22, reach: 2.0 };
-SPECIES.deer.charger = { close: 0, rut: 5, hit: 12, reach: 1.5 };
+SPECIES.elk.charger = { close: 0, rut: 10, young: 12, hit: 22, reach: 2.0, warn: 1.2, cry: 'bleat' }; // (a cow elk with her calf: she stamps, then comes at you)
+SPECIES.deer.charger = { close: 0, rut: 5, young: 7, hit: 12, reach: 1.5, warn: 1.2, cry: 'snort' }; // (a doe by her fawn: a warning stamp and snort, then a rush)
 SPECIES.bison.charger = { close: 7, young: 10, hit: 35, reach: 2.2 };
 // (An elephant: only if you crowd it, or its calves, or hurt it; a hippo:
 // anywhere near it, near the water; a scorpion stings what steps on it.
@@ -794,7 +794,7 @@ export class Wildlife {
     const den = a.herd?.den ?? a.den;
     const atDen = den && Math.hypot(p.x - den.x, p.z - den.z) < 30;
     // (A mother bear with her cubs is quick to come at you.)
-    const cubs = a.herd && a.kind === 'blackBear' && !a.young && a.herd.members.some((m) => m.young && m.alive);
+    const cubs = a.herd && (a.kind === 'blackBear' || a.kind === 'grizzly') && !a.young && a.herd.members.some((m) => m.young && m.alive);
     // (Lions by day, hyenas but in the dark: lying up, seldom troubled unless you come right up.)
     const idle = (pr.dusk && (ctx.dusk ?? 0) < 0.15 && ctx.day > 0.35) || (pr.night && ctx.day > 0.3);
     const sight = pr.sight * (p.crouch ? 0.55 : 1) * (0.7 + 0.3 * ctx.day) * (1 - 0.55 * (a.forest ?? 0)) * this.#scent(a, ctx) * (idle ? 0.3 : 1);
@@ -1544,7 +1544,7 @@ export class Wildlife {
           const from = this.animals.length;
           const kind = rand() < 0.35 + 0.5 * (m - 0.18) ? 'grizzly' : 'blackBear';
           this.#spawnWalker(kind, p.x, p.z, null);
-          if (kind === 'blackBear' && rand() < 0.35) {
+          if (rand() < 0.3 + 0.4 * (ctx.spring ?? 0)) {
             // (Cubs: small, and never far from her.)
             const mother = this.animals[this.animals.length - 1];
             if (mother?.kind === kind) {
@@ -1555,7 +1555,7 @@ export class Wildlife {
               for (let c = 0; c < cubs; c++) {
                 this.#spawnWalker(kind, p.x + rnd(-2, 2), p.z + rnd(-2, 2), herd);
                 const cub = this.animals[this.animals.length - 1];
-                if (cub?.herd === herd) (cub.scale *= 0.45), (cub.offset = { x: rnd(-2, 2), z: rnd(-2, 2) });
+                if (cub?.herd === herd) (cub.scale *= 0.45), (cub.young = true), (cub.mother = mother), (cub.offset = { x: rnd(-2, 2), z: rnd(-2, 2) });
               }
               this.herds.push(herd);
               home.herds.push(herd);
@@ -2161,6 +2161,8 @@ export class Wildlife {
 
   // The young of a herd (fawns, calves, piglets): each by a grown one.
   #addYoung(herd, n, size) {
+    // (Spring: the time of the young, twice as many of them about.)
+    n = Math.round(n * (1 + (this.ctx?.spring ?? 0)));
     const mothers = herd.members.filter((m) => !m.young && !m.antlers);
     for (let k = 0; k < n && mothers.length; k++) {
       const mother = mothers[k % mothers.length];
@@ -2631,7 +2633,7 @@ export class Wildlife {
     // crouched). Too close for that (on the ground, or flying low over
     // them): they bolt.
     const p = ctx.player, onFoot = p && p.mode === 'walk' && p.alive;
-    const stance = !onFoot ? 1 : p.crouch ? (p.moving ? 0.45 : 0.3) : p.sprint ? 1.5 : p.moving ? 1 : 0.6;
+    const stance = !onFoot ? 1 : p.crouch ? (p.moving ? 0.45 : 0.3) * (1 - 0.05 * (p.sneak ?? 0)) : p.sprint ? 1.5 : p.moving ? 1 : 0.6;
     // (In tall grass you're half hidden: crouched in it, nearly.)
     const cover = onFoot ? (p.cover ?? 0) * (p.crouch ? 1 : 0.6) : 0;
     const reach = sp.flee * stance * (1 - 0.55 * cover) * (t.above > 25 ? 0.5 : 1) * (onFoot ? this.#scent(a, ctx) : 1);

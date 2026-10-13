@@ -76,6 +76,7 @@ export const ITEMS = {
   cookedMeat: { name: 'Cooked meat', food: { hunger: 35, health: 4, full: 600 }, spoils: 2400, weight: 0.8, group: 'Food' },
   rawEgg: { name: 'Egg', food: { hunger: 6, health: -1, sick: 0.08, full: 60 }, spoils: 4000, cooks: 'cookedEgg', weight: 0.06, group: 'Food' },
   cookedEgg: { name: 'Cooked egg', food: { hunger: 14, full: 200 }, spoils: 2000, weight: 0.06, group: 'Food' },
+  honey: { name: 'Wild honey', food: { hunger: 12, health: 4, full: 240 }, weight: 0.3, group: 'Food' }, // (it never spoils)
   saltedMeat: { name: 'Salted meat', food: { hunger: 16, thirst: -6, full: 360 }, spoils: 40000, weight: 0.8, group: 'Food' }, // (cured in salt: keeps for weeks)
   saltedFish: { name: 'Salted fish', food: { hunger: 13, thirst: -6, full: 300 }, spoils: 40000, weight: 0.6, group: 'Food' },
   rawFowl: { name: 'Raw bird', food: { hunger: 8, health: -4, sick: 0.75, full: 150 }, spoils: 700, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 0.8, group: 'Food' }, // (turkey, duck, grouse: raw, it'll very likely make you ill)
@@ -410,6 +411,7 @@ export const ICONS = {
   coop: `<path d="M4 14l12-9 12 9z" fill="#6a4a30"/><path d="M6 14h20v10H6z" fill="#9a7048"/><path d="M14 18h5v6h-5z" fill="#2a2018"/><path d="M6 24v5M26 24v5" stroke="#6e4c32" stroke-width="2"/>`,
   rawEgg: `<ellipse cx="16" cy="17" rx="8" ry="10" fill="#f0e6d2"/><ellipse cx="13" cy="13" rx="2.5" ry="3.5" fill="#fffaf0"/>`,
   cookedEgg: `<ellipse cx="16" cy="17" rx="12" ry="9" fill="#fafaf4"/><circle cx="16" cy="16" r="5" fill="#f0b830"/>`,
+  honey: `<path d="M9 8h14l2 18c0 3-18 3-18 0z" fill="#e8a020"/><path d="M8 6h16v4H8z" fill="#c8a070"/><path d="M12 15c2 2 6 2 8 0" stroke="#f8c850" stroke-width="2" fill="none"/>`,
   salt: `<path d="M6 24c2-8 6-12 10-12s8 4 10 12z" fill="#f4f2ee"/><path d="M10 22l3-4 3 3 3-5 4 6" stroke="#d8d4cc" fill="none"/><circle cx="12" cy="25" r="1" fill="#e4e0d8"/><circle cx="21" cy="24" r="1" fill="#e4e0d8"/>`,
   sand: `<path d="M5 25c3-9 7-13 11-13s8 4 11 13z" fill="#e2c88a"/><path d="M9 22c3-1 5-1 7 0M15 18c2 0 4 1 5 2" stroke="#c8ac6a" fill="none"/>`,
   saltedMeat: `<path d="M6 15c1-6 12-9 18-5s3 12-3 14-15 0-15-9z" fill="#a84a3a"/><circle cx="11" cy="14" r="1" fill="#fff"/><circle cx="16" cy="12" r="1" fill="#fff"/><circle cx="19" cy="17" r="1" fill="#fff"/><circle cx="13" cy="19" r="1" fill="#fff"/>`,

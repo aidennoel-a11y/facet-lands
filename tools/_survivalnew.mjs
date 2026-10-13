@@ -1,0 +1,37 @@
+// A new survival world through the menu: the skills panel (K), achievements, nests and hives about, a skein of geese; no errors.   node tools/_survivalnew.mjs out
+import { createRequire } from 'module';
+import { execSync } from 'child_process';
+const require = createRequire(import.meta.url);
+const { chromium } = require(execSync('npm root -g').toString().trim() + '/playwright');
+const out = process.argv[2] ?? 'survnew';
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1000, height: 620 } });
+const errs = [];
+page.on('pageerror', (e) => errs.push(e.message + ' | ' + (e.stack ?? '').split('\n').slice(1, 3).join(' ')));
+await page.goto('http://localhost:4173/', { timeout: 180000 });
+await page.evaluate(() => localStorage.setItem('facet-lands:quality', 'low'));
+await page.click('[data-go="start"]');
+await page.click('[data-go="new"]');
+await page.fill('#sm-seed', 'polaris');
+await page.fill('#sm-name', 'New');
+await page.click('[data-go="play"]');
+await page.waitForTimeout(500);
+if (await page.$('[data-go="play"]')) await page.click('[data-go="play"]').catch(() => {});
+await page.waitForFunction(() => document.querySelector('.load-screen')?.classList.contains('ls-done'), null, { timeout: 600000, polling: 500 });
+await page.waitForTimeout(20000);
+const r = await page.evaluate(() => {
+  const { game } = window.world;
+  game.skill('woodcutting', 35);
+  game.skill('archery', 12);
+  game.inventory.add({ id: 'salt', count: 2 });
+  return { button: !document.querySelector('.skills-button').hidden, finds: game.treeFinds.near.map((f) => f.kind), wood: game.skillLevel('woodcutting') };
+});
+console.log(JSON.stringify(r));
+await page.waitForTimeout(3000);
+await page.keyboard.press('KeyK');
+await page.waitForTimeout(1500);
+console.log('panel open', await page.evaluate(() => !document.querySelector('.skills-ui').hidden), await page.evaluate(() => document.querySelector('.ach-head').textContent));
+await page.screenshot({ path: `${out}-panel.png` });
+await page.keyboard.press('KeyK');
+console.log('errors', errs);
+await browser.close();
