@@ -564,7 +564,7 @@ const ANIMAL_PRINTS = {
 };
 
 // Start somewhere with mountains in view: scan a few spots for a tall one.
-function placeCamera() {
+function placeCamera(onGround = false) {
   let best = { x: 0, z: 0, h: -Infinity };
   for (let i = 0; i < 400; i++) {
     const x = (i % 20) * 160 - 1600;
@@ -575,8 +575,31 @@ function placeCamera() {
   // Stand off to the south-east of the peak, looking at it.
   const x = best.x + 300;
   const z = best.z + 360;
-  camera.position.set(x, Math.max(generator.landHeight(x, z) + 50, 70), z); // (high above it: the rivers needn't be worked out for this)
+  // (Survival: standing on the ground, somewhere green: out of the desert, on dry land. Otherwise high above it, flying: the rivers needn't be worked out for this.)
+  if (onGround) {
+    const at = greenGround(x, z);
+    camera.position.set(at.x, Math.max(generator.getHeight(at.x, at.z), WORLD.seaLevel) + controls.eyeHeight + 0.3, at.z);
+  } else camera.position.set(x, Math.max(generator.landHeight(x, z) + 50, 70), z);
   controls.lookAt(new THREE.Vector3(best.x, best.h * 0.5, best.z));
+}
+
+// The nearest spot to (x, z) that's dry land, not high on a peak, and well
+// away from desert, salt flat and badlands (searched outward in rings).
+function greenGround(x, z) {
+  const dry = (w) => (w.desert ?? 0) + (w.saltFlat ?? 0) + (w.badlands ?? 0);
+  const ok = (px, pz) => {
+    const h = generator.landHeight(px, pz);
+    return h > WORLD.seaLevel + 2 && h < WORLD.seaLevel + 260 && dry(generator.getBiomeWeights(px, pz, {})) < 0.02;
+  };
+  if (ok(x, z)) return { x, z };
+  for (let r = 150; r <= 9000; r += 150) {
+    const n = Math.max(8, Math.round(r / 60));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      if (ok(px, pz)) return { x: px, z: pz };
+    }
+  }
+  return { x, z };
 }
 
 // Walking into a tree: a knock on the trunk and its leaves shaking, once
@@ -808,7 +831,8 @@ function setSeed(seed, saveKey = null, place = true) {
   fires.clear();
   volcanoes.clear();
   insects.clear();
-  if (place) placeCamera(); // (not when you'll be put back where you were)
+  if (place && game.mode !== 'testing') seasons.time = 1.5; // (a new world starts in the middle of summer)
+  if (place) placeCamera(game.mode === 'survival'); // (not when you'll be put back where you were)
 }
 
 ui.seedForm.addEventListener('submit', (e) => {
@@ -2145,7 +2169,7 @@ if (!TESTING) {
   };
   game.onLeave = () => menu.leaveDead();
   // (Online, a new life starts where the world began.)
-  game.onNewLife = () => placeCamera();
+  game.onNewLife = () => placeCamera(true);
   startMenu = menu;
   window.addEventListener('beforeunload', () => saveWorld(menu.world));
   // (Every couple of minutes, quietly, too.)
