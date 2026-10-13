@@ -2116,6 +2116,7 @@ if (!TESTING) {
           camera.rotation.set(c.pitch ?? 0, c.yaw ?? 0, 0);
           controls.euler.set(c.pitch ?? 0, c.yaw ?? 0, 0, 'YXZ'); // (the controls look on from there)
         }
+        controls.softLanding = true; // (however high you start, coming down to the ground doesn't hurt)
         loading.since = performance.now();
         loading.waiting = false;
       }));

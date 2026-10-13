@@ -170,6 +170,7 @@ export class PlayerControls {
     this.mode = mode;
     this.velocityY = 0;
     this.grounded = false; // switching to walk from the sky means a fall
+    this.softLanding = mode === 'walk'; // (…but that first drop to the ground never hurts: starting a game, arriving)
   }
 
   lookAt(target) {
@@ -328,7 +329,8 @@ export class PlayerControls {
     let feet = feetNow + this.velocityY * dt;
 
     if (feet <= floor || (wasGrounded && this.velocityY <= 0 && feet - floor < 0.6)) {
-      if (!wasGrounded && this.velocityY < -8) this.onLand?.(-this.velocityY);
+      if (!wasGrounded && this.velocityY < -8 && !this.softLanding) this.onLand?.(-this.velocityY);
+      this.softLanding = false;
       feet = floor;
       this.velocityY = 0;
       this.grounded = true;

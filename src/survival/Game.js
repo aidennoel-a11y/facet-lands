@@ -2173,6 +2173,7 @@ export class Game {
     if (fresh) this.spawn = null;
     if (this.spawn) this.camera.position.set(this.spawn.x, this.spawn.y, this.spawn.z);
     this.controls.velocityY = 0;
+    this.controls.softLanding = true;
     this.newLife();
     if (fresh) this.onNewLife?.();
     this.#menu(false);
