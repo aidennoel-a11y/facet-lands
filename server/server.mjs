@@ -68,7 +68,7 @@ function hourOf(room) {
 // built, torches, things dropped). An edit: { add: { felled: [...], ... },
 // put: { stumps: [rec], ... }, del: { stumps: [key], ... } } (each record
 // carries its own key, `k`).
-const SETS = ['felled', 'taken', 'mushrooms'];
+const SETS = ['felled', 'taken', 'mushrooms', 'broken'];
 const MAPS = ['stumps', 'structures', 'torches', 'drops'];
 const newEdits = () => ({ ...Object.fromEntries(SETS.map((k) => [k, new Set()])), ...Object.fromEntries(MAPS.map((k) => [k, new Map()])) });
 function mergeEdit(edits, e) {

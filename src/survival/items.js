@@ -211,9 +211,9 @@ export const weightOf = (s) => (s ? (ITEMS[s.id]?.weight ?? 0.5) * s.count : 0);
 
 export const RECIPES = [
   { id: 'axe', needs: { stick: 2, rock: 2 }, note: 'Chops trees; a weapon at a pinch' },
-  { id: 'pickaxe', needs: { stick: 2, rock: 3 }, note: 'Breaks rock: boulders and rock faces give stone, flint and iron ore' },
+  { id: 'pickaxe', needs: { stick: 2, rock: 3 }, note: 'Breaks rock: boulders (which break up and are gone) and rock faces give stone and flint; ore veins give their ore' },
   { id: 'spear', needs: { log: 1, rock: 1, vine: 1 }, note: 'Click to stab, right-click to throw' },
-  { id: 'flintSteel', needs: { flint: 1, iron: 1 }, note: 'Lights campfires and furnaces' },
+  { id: 'flintSteel', needs: { flint: 1, rock: 1 }, note: 'Flint struck on a hard rock: lights campfires and furnaces' },
   { id: 'torch', needs: { stick: 1, vine: 1 }, note: 'Light to carry or set down' },
   { id: 'coalTorch', needs: { stick: 1, coal: 1, vine: 1 }, makes: 2, note: 'Coal-headed: burns bright and white, lighting twice as far. For the caves' },
   { id: 'bow', needs: { stick: 2, vine: 2 }, note: 'Hold the mouse to draw, let go to shoot' },
@@ -261,7 +261,7 @@ export const RECIPES = [
   { id: 'steelAxe', needs: { ironBar: 2, stick: 1, vine: 1 }, note: 'Twice the life, fells trees twice as fast' },
   { id: 'steelPickaxe', needs: { ironBar: 2, stick: 2 }, note: 'Twice the life of a stone one' },
   { id: 'steelSpear', needs: { ironBar: 1, log: 1, vine: 1 }, note: 'Twice the life of a stone spear' },
-  { id: 'fineFlintSteel', needs: { flint: 1, ironBar: 1 }, note: 'Forged steel: twice the life' },
+  { id: 'fineFlintSteel', needs: { flint: 1, iron: 1 }, note: 'Flint struck on iron: twice the life' },
   { id: 'pot', needs: { ironBar: 1 }, note: 'On a burning fire with meat and berries or mushrooms: stew' },
   { id: 'sickle', needs: { stick: 1, flint: 2 }, note: 'Click to cut the long grass round where you look down to stubble (it grows back); now and then you find seeds in it' },
   { id: 'hoe', needs: { stick: 2, rock: 1 }, note: 'Click the ground to dig a plot to sow seeds in' },
@@ -313,9 +313,9 @@ export const RECIPES = [
  * in RECIPES is in one of them.
  */
 export const TIERS = [
-  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare'] },
+  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel'] },
   { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
-  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'fineFlintSteel', 'pot', 'shears', 'saddle', 'anvil'] },
+  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];

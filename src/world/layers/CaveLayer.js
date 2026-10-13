@@ -468,18 +468,28 @@ export function createCaveLayer(config) {
     // surface, no cave work at all.
     update() {
       if (!waiting.size) return;
+      const size = config.chunkSize, f = caveFocus;
+      // (Coming up to a cave mouth: the caves all round you get built too,
+      // ahead of time, so the way in isn't a black void when you get there.)
+      const any = waiting.values().next().value;
+      const approaching = !f.under && any.userData.caves.mouthsNear(f.x - 120, f.z - 120, f.x + 120, f.z + 120).length > 0;
+      const wanted = [];
       for (const group of waiting) {
         const [cx, cz] = group.userData.chunk;
-        const size = config.chunkSize, f = caveFocus;
-        let wanted = f.under;
-        if (!wanted) {
+        const d = Math.hypot((cx + 0.5) * size - f.x, (cz + 0.5) * size - f.z);
+        let want = f.under || (approaching && d < size * 3);
+        if (!want) {
           // (A mouth within reach of you, in this chunk or the next.)
           const near = group.userData.near ??= group.userData.caves
             .mouthsNear((cx - 1) * size, (cz - 1) * size, (cx + 2) * size, (cz + 2) * size)
             .map((e) => e.mouth);
-          wanted = near.some((m) => Math.hypot(m.x - f.x, m.z - f.z) < 150);
+          want = near.some((m) => Math.hypot(m.x - f.x, m.z - f.z) < 220);
         }
-        if (!wanted) continue;
+        if (want) wanted.push([d, group]);
+      }
+      // (The nearest first: they're built in the order asked for.)
+      wanted.sort((a, b) => a[0] - b[0]);
+      for (const [, group] of wanted) {
         waiting.delete(group);
         populate(group);
       }

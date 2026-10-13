@@ -29,36 +29,36 @@ const DOG = ['walk', 'trot', 'rotary'], HOOF = ['walk', 'trot', 'transverse'], B
  * come (`flee`).
  */
 const SPECIES = {
-  deer: { ground: true, grade: 0.72, model: Models.deer, max: 60, walk: 1.3, run: 12, flee: 45, calm: 130, radius: 0.5, height: 1.4, health: 60, stride: 1.6, turn: 2.5, size: 1.3, gaits: ['walk', 'trot', 'deerGallop'], trotBand: 0.08, swims: true },
+  deer: { ground: true, grade: 0.54, model: Models.deer, max: 60, walk: 1.3, run: 12, flee: 45, calm: 130, radius: 0.5, height: 1.4, health: 60, stride: 1.6, turn: 2.5, size: 1.3, gaits: ['walk', 'trot', 'deerGallop'], trotBand: 0.08, swims: true },
   // Elk: herds in the high meadows and the pine woods (in the autumn the
   // bulls bugle, and one in the rut will come at you).
-  elk: { ground: true, grade: 0.75, model: Models.elk, max: 30, walk: 1.3, run: 12, flee: 55, calm: 140, radius: 0.55, height: 1.8, health: 90, stride: 2.1, turn: 2.2, size: 1.55, gaits: HOOF, trotBand: 0.3, swims: true, call: 'bugle' },
+  elk: { ground: true, grade: 0.56, model: Models.elk, max: 30, walk: 1.3, run: 12, flee: 55, calm: 140, radius: 0.55, height: 1.8, health: 90, stride: 2.1, turn: 2.2, size: 1.55, gaits: HOOF, trotBand: 0.3, swims: true, call: 'bugle' },
   // A moose: alone in the cold woods by the water; slow to run, but
   // don't come close (a bull in the rut, a cow with her calf).
-  moose: { ground: true, grade: 0.7, model: Models.moose, max: 8, walk: 1.2, run: 9, flee: 18, calm: 60, radius: 0.7, height: 2.1, health: 250, stride: 2.0, turn: 1.6, size: 1.0, gaits: HOOF, trotBand: 0.85, swims: true },
-  bison: { ground: true, grade: 0.4, model: Models.bison, max: 70, walk: 1.0, run: 8.5, flee: 30, calm: 85, radius: 1.0, height: 2.0, health: 200, stride: 2.2, turn: 1.4, size: 1.5, gaits: HOOF, trotBand: 0.3 },
+  moose: { ground: true, grade: 0.52, model: Models.moose, max: 8, walk: 1.2, run: 9, flee: 18, calm: 60, radius: 0.7, height: 2.1, health: 250, stride: 2.0, turn: 1.6, size: 1.0, gaits: HOOF, trotBand: 0.85, swims: true },
+  bison: { ground: true, grade: 0.3, model: Models.bison, max: 70, walk: 1.0, run: 8.5, flee: 30, calm: 85, radius: 1.0, height: 2.0, health: 200, stride: 2.2, turn: 1.4, size: 1.5, gaits: HOOF, trotBand: 0.3 },
   // Bears (in the mountain foothills): a black bear shies away; a grizzly
   // stands its ground (`aggressive`: one day it will come for you).
-  blackBear: { ground: true, grade: 0.78, model: Models.blackBear, max: 16, walk: 0.9, run: 9, flee: 35, calm: 100, radius: 0.7, height: 1.3, health: 150, stride: 1.4, turn: 1.8, size: 1.3, forager: true, gaits: BEAR, swims: true },
-  grizzly: { ground: true, grade: 0.78, model: Models.grizzly, max: 10, walk: 0.9, run: 10, flee: 10, calm: 40, radius: 0.8, height: 1.5, health: 260, stride: 1.6, turn: 1.6, size: 1.6, forager: true, aggressive: true, gaits: BEAR, swims: true },
+  blackBear: { ground: true, grade: 0.58, model: Models.blackBear, max: 16, walk: 0.9, run: 9, flee: 35, calm: 100, radius: 0.7, height: 1.3, health: 150, stride: 1.4, turn: 1.8, size: 1.3, forager: true, gaits: BEAR, swims: true },
+  grizzly: { ground: true, grade: 0.58, model: Models.grizzly, max: 10, walk: 0.9, run: 10, flee: 10, calm: 40, radius: 0.8, height: 1.5, health: 260, stride: 1.6, turn: 1.6, size: 1.6, forager: true, aggressive: true, gaits: BEAR, swims: true },
   // Wild dogs: wolves in packs in the pine woods and the cold north (they
   // howl at night), coyotes on the savanna and the plains (yipping at dusk),
   // foxes alone at the woods' edges where the winters are cold.
-  wolf: { ground: true, grade: 0.8, model: Models.wolf, max: 24, walk: 1.4, run: 12, flee: 40, calm: 110, radius: 0.35, height: 0.9, health: 70, stride: 1.3, turn: 3, size: 1.25, forager: true, call: 'howl', gaits: DOG, trotBand: 0.5, swims: true, scavenger: true },
-  coyote: { ground: true, grade: 0.8, model: Models.coyote, max: 16, walk: 1.3, run: 11, flee: 35, calm: 100, radius: 0.28, height: 0.7, health: 40, stride: 1.1, turn: 3.5, size: 0.95, forager: true, call: 'yip', gaits: DOG, trotBand: 0.45, scavenger: true },
-  fox: { ground: true, grade: 0.85, model: Models.fox, max: 14, walk: 1.1, run: 10, flee: 25, calm: 70, radius: 0.2, height: 0.5, health: 20, stride: 0.8, turn: 4, size: 0.744, forager: true, gaits: DOG, trotBand: 0.45, scavenger: true },
+  wolf: { ground: true, grade: 0.6, model: Models.wolf, max: 24, walk: 1.4, run: 12, flee: 40, calm: 110, radius: 0.35, height: 0.9, health: 70, stride: 1.3, turn: 3, size: 1.25, forager: true, call: 'howl', gaits: DOG, trotBand: 0.5, swims: true, scavenger: true },
+  coyote: { ground: true, grade: 0.6, model: Models.coyote, max: 16, walk: 1.3, run: 11, flee: 35, calm: 100, radius: 0.28, height: 0.7, health: 40, stride: 1.1, turn: 3.5, size: 0.95, forager: true, call: 'yip', gaits: DOG, trotBand: 0.45, scavenger: true },
+  fox: { ground: true, grade: 0.64, model: Models.fox, max: 14, walk: 1.1, run: 10, flee: 25, calm: 70, radius: 0.2, height: 0.5, health: 20, stride: 0.8, turn: 4, size: 0.744, forager: true, gaits: DOG, trotBand: 0.45, scavenger: true },
   // A cougar: alone in the mountains, seldom seen: it stalks you from
   // behind, freezing when you look its way, and springs.
-  cougar: { ground: true, grade: 0.95, model: Models.cougar, max: 6, walk: 1.2, run: 14, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 70, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
+  cougar: { ground: true, grade: 0.71, model: Models.cougar, max: 6, walk: 1.2, run: 14, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 70, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
   // Wild boar: a sounder of them rooting in the woods; one will charge.
-  boar: { ground: true, grade: 0.72, model: Models.boar, max: 24, walk: 1.0, run: 9, flee: 24, calm: 70, radius: 0.4, height: 1.0, health: 90, stride: 0.95, turn: 3, size: 1.0, forager: true, gaits: HOOF, trotBand: 0.4, call: 'oink' },
+  boar: { ground: true, grade: 0.54, model: Models.boar, max: 24, walk: 1.0, run: 9, flee: 24, calm: 70, radius: 0.4, height: 1.0, health: 90, stride: 0.95, turn: 3, size: 1.0, forager: true, gaits: HOOF, trotBand: 0.4, call: 'oink' },
   // Sheep in flocks on the open plains (a black face, a woolly fleece);
   // wolf pups by their den.
-  sheep: { ground: true, grade: 0.7, model: Models.sheep, max: 60, walk: 1.0, run: 7.5, flee: 22, calm: 70, radius: 0.45, height: 1.0, health: 60, stride: 1.1, turn: 2.5, size: 1.21, call: 'baa', gaits: HOOF, trotBand: 0.3 },
-  wolfPup: { ground: true, grade: 0.8, model: Models.wolf, max: 12, walk: 1.2, run: 8, flee: 12, calm: 40, radius: 0.2, height: 0.5, health: 20, stride: 0.7, turn: 4, size: 0.55, forager: true, gaits: DOG, trotBand: 0.5 },
-  rabbit: { ground: true, grade: 0.58, model: Models.rabbit, max: 40, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.3, height: 0.55, health: 10, stride: 1.0, turn: 5, size: 1.8, gaits: HOP },
+  sheep: { ground: true, grade: 0.52, model: Models.sheep, max: 60, walk: 1.0, run: 7.5, flee: 22, calm: 70, radius: 0.45, height: 1.0, health: 60, stride: 1.1, turn: 2.5, size: 1.21, call: 'baa', gaits: HOOF, trotBand: 0.3 },
+  wolfPup: { ground: true, grade: 0.6, model: Models.wolf, max: 12, walk: 1.2, run: 8, flee: 12, calm: 40, radius: 0.2, height: 0.5, health: 20, stride: 0.7, turn: 4, size: 0.55, forager: true, gaits: DOG, trotBand: 0.5 },
+  rabbit: { ground: true, grade: 0.43, model: Models.rabbit, max: 40, walk: 1.0, run: 7.5, flee: 14, calm: 40, radius: 0.3, height: 0.55, health: 10, stride: 1.0, turn: 5, size: 1.8, gaits: HOP },
   // Hares, out in the open and the cold woods: bigger, faster, white in the winter.
-  hare: { ground: true, grade: 0.62, model: Models.hare, max: 20, walk: 1.2, run: 13, flee: 22, calm: 55, radius: 0.3, height: 0.65, health: 12, stride: 1.3, turn: 6, size: 2.0, gaits: HOP, tinted: true },
+  hare: { ground: true, grade: 0.46, model: Models.hare, max: 20, walk: 1.2, run: 13, flee: 22, calm: 55, radius: 0.3, height: 0.65, health: 12, stride: 1.3, turn: 6, size: 2.0, gaits: HOP, tinted: true },
   // Wild turkeys: flocks in the woods (the toms gobbling and showing off
   // their fans in the spring).
   turkey: { ground: true, biped: true, grade: 0.8, model: Models.turkey, max: 30, walk: 0.9, run: 6.5, flee: 24, calm: 70, radius: 0.25, height: 1.0, health: 10, stride: 0.55, turn: 4, size: 1.0, gaits: FOWL, call: 'gobble' },
@@ -69,12 +69,12 @@ const SPECIES = {
   // panthers (smaller, ambushing from cover); giant pandas, placid, munching
   // in the bamboo; crocodiles lying at the water's edge in the mangroves
   // and the jungle lakes; mountain goats on the crags and in the badlands.
-  tiger: { ground: true, grade: 0.85, model: Models.tiger, max: 8, walk: 1.1, run: 15, flee: 20, calm: 90, radius: 0.4, height: 1.0, health: 180, stride: 1.5, turn: 3.2, size: 1.2, gaits: DOG, trotBand: 0.15, swims: true, call: 'growl' },
-  panther: { ground: true, grade: 0.95, model: Models.panther, max: 8, walk: 1.2, run: 15, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 80, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
-  panda: { ground: true, grade: 0.7, model: Models.panda, max: 8, walk: 0.7, run: 5, flee: 12, calm: 40, radius: 0.6, height: 1.2, health: 160, stride: 1.2, turn: 1.6, size: 1.05, forager: true, gaits: BEAR },
-  crocodile: { ground: true, grade: 0.5, model: Models.crocodile, max: 80, fearless: true, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
-  mountainGoat: { ground: true, grade: 1.3, model: Models.mountainGoat, max: 24, walk: 1.0, run: 9, flee: 30, calm: 80, radius: 0.35, height: 1.0, health: 70, stride: 1.0, turn: 3, size: 1.15, gaits: HOOF, trotBand: 0.35, call: 'baa' },
-  jaguar: { ground: true, grade: 0.95, model: Models.jaguar, max: 6, walk: 1.1, run: 14, flee: 20, calm: 90, radius: 0.35, height: 0.9, health: 130, stride: 1.3, turn: 3.6, size: 1.1, gaits: DOG, trotBand: 0.15, swims: true, call: 'jaguar' },
+  tiger: { ground: true, grade: 0.64, model: Models.tiger, max: 8, walk: 1.1, run: 15, flee: 20, calm: 90, radius: 0.4, height: 1.0, health: 180, stride: 1.5, turn: 3.2, size: 1.2, gaits: DOG, trotBand: 0.15, swims: true, call: 'growl' },
+  panther: { ground: true, grade: 0.71, model: Models.panther, max: 8, walk: 1.2, run: 15, flee: 25, calm: 90, radius: 0.3, height: 0.8, health: 80, stride: 1.25, turn: 4, size: 1.05, gaits: DOG, trotBand: 0.15, call: 'scream' },
+  panda: { ground: true, grade: 0.52, model: Models.panda, max: 8, walk: 0.7, run: 5, flee: 12, calm: 40, radius: 0.6, height: 1.2, health: 160, stride: 1.2, turn: 1.6, size: 1.05, forager: true, gaits: BEAR },
+  crocodile: { ground: true, grade: 0.38, model: Models.crocodile, max: 80, fearless: true, walk: 0.5, run: 6, flee: 6, calm: 30, radius: 0.6, height: 0.5, health: 200, stride: 0.7, turn: 1.5, size: 1.6, gaits: DOG, trotBand: 0.6, swims: true },
+  mountainGoat: { ground: true, grade: 1.0, model: Models.mountainGoat, max: 24, walk: 1.0, run: 9, flee: 30, calm: 80, radius: 0.35, height: 1.0, health: 70, stride: 1.0, turn: 3, size: 1.15, gaits: HOOF, trotBand: 0.35, call: 'baa' },
+  jaguar: { ground: true, grade: 0.71, model: Models.jaguar, max: 6, walk: 1.1, run: 14, flee: 20, calm: 90, radius: 0.35, height: 0.9, health: 130, stride: 1.3, turn: 3.6, size: 1.1, gaits: DOG, trotBand: 0.15, swims: true, call: 'jaguar' },
   // Monkeys: troops up in the jungle's crowns, leaping from tree to tree,
   // climbing down the trunks now and then (see #monkey).
   monkey: { bird: true, climber: true, model: Models.monkey, max: 40, scale: 1.0, flee: 14, radius: 0.25, health: 15 },
@@ -90,14 +90,14 @@ const SPECIES = {
   // day, hunting at dusk and in the dark), hyenas (a clan, scavenging, bold
   // at night), elephants (a herd, peaceful till provoked), hippos (in the
   // water, and not to be gone near).
-  lion: { ground: true, grade: 0.85, model: Models.lion, max: 14, walk: 1.1, run: 15, flee: 20, calm: 80, radius: 0.4, height: 1.0, health: 170, stride: 1.5, turn: 3, size: 1.12, gaits: DOG, trotBand: 0.15, swims: true, call: 'roar' },
-  hyena: { ground: true, grade: 0.85, model: Models.hyena, max: 14, walk: 1.3, run: 12, flee: 26, calm: 80, radius: 0.32, height: 0.85, health: 70, stride: 1.2, turn: 3.5, size: 1.05, forager: true, gaits: DOG, trotBand: 0.5, scavenger: true, call: 'hyena' },
-  elephant: { ground: true, grade: 0.5, model: Models.elephant, max: 14, walk: 1.1, run: 7, flee: 16, calm: 45, radius: 1.5, height: 3.3, health: 600, stride: 2.6, turn: 1.0, size: 1.3, gaits: HOOF, trotBand: 0.6, swims: true, call: 'trumpet' },
-  hippo: { ground: true, grade: 0.5, model: Models.hippo, max: 10, fearless: true, walk: 0.7, run: 8, flee: 0, calm: 20, radius: 1.0, height: 1.6, health: 420, stride: 1.2, turn: 1.4, size: 1.0, gaits: HOOF, trotBand: 0.7, swims: true, call: 'hippo' },
+  lion: { ground: true, grade: 0.64, model: Models.lion, max: 14, walk: 1.1, run: 15, flee: 20, calm: 80, radius: 0.4, height: 1.0, health: 170, stride: 1.5, turn: 3, size: 1.12, gaits: DOG, trotBand: 0.15, swims: true, call: 'roar' },
+  hyena: { ground: true, grade: 0.64, model: Models.hyena, max: 14, walk: 1.3, run: 12, flee: 26, calm: 80, radius: 0.32, height: 0.85, health: 70, stride: 1.2, turn: 3.5, size: 1.05, forager: true, gaits: DOG, trotBand: 0.5, scavenger: true, call: 'hyena' },
+  elephant: { ground: true, grade: 0.38, model: Models.elephant, max: 14, walk: 1.1, run: 7, flee: 16, calm: 45, radius: 1.5, height: 3.3, health: 600, stride: 2.6, turn: 1.0, size: 1.3, gaits: HOOF, trotBand: 0.6, swims: true, call: 'trumpet' },
+  hippo: { ground: true, grade: 0.38, model: Models.hippo, max: 10, fearless: true, walk: 0.7, run: 8, flee: 0, calm: 20, radius: 1.0, height: 1.6, health: 420, stride: 1.2, turn: 1.4, size: 1.0, gaits: HOOF, trotBand: 0.7, swims: true, call: 'hippo' },
   // The desert's camels (a string of them, unbothered), and scorpions
   // there and in the badlands (small, and their sting poisons).
-  camel: { ground: true, grade: 0.55, model: Models.camel, max: 16, walk: 1.2, run: 10, flee: 22, calm: 60, radius: 0.6, height: 2.2, health: 180, stride: 2.0, turn: 1.8, size: 1.0, gaits: HOOF, trotBand: 0.4, call: 'camel' },
-  scorpion: { ground: true, grade: 1.2, model: Models.scorpion, max: 10, fearless: true, walk: 0.25, run: 1.4, flee: 0, calm: 3, radius: 0.12, height: 0.12, health: 3, stride: 0.06, turn: 4, size: 1.6, gaits: DOG, trotBand: 0.5 },
+  camel: { ground: true, grade: 0.41, model: Models.camel, max: 16, walk: 1.2, run: 10, flee: 22, calm: 60, radius: 0.6, height: 2.2, health: 180, stride: 2.0, turn: 1.8, size: 1.0, gaits: HOOF, trotBand: 0.4, call: 'camel' },
+  scorpion: { ground: true, grade: 0.9, model: Models.scorpion, max: 10, fearless: true, walk: 0.25, run: 1.4, flee: 0, calm: 3, radius: 0.12, height: 0.12, health: 3, stride: 0.06, turn: 4, size: 1.6, gaits: DOG, trotBand: 0.5 },
   // A python, by the jungle's water and in its trees' roots (see #snake).
   python: { serpent: true, model: Models.python, max: 6, walk: 0.3, run: 1.0, flee: 3, calm: 10, radius: 0.15, height: 0.2, health: 60, size: 1.0 },
   // Bats from the caves (at dusk, or startled by a torch), and eagles high
@@ -109,7 +109,7 @@ const SPECIES = {
   // they run from anything hunting and from you coming at them fast. Come
   // slowly with food in your hand and they settle (see #horse): a tame one
   // can be led, fed, saddled and ridden (see Game).
-  horse: { ground: true, grade: 0.75, model: Models.horse, max: 30, walk: 1.5, run: 15, flee: 32, calm: 100, radius: 0.6, height: 1.8, health: 160, stride: 2.2, turn: 2.4, size: 1.08, gaits: HOOF, trotBand: 0.35, swims: true, call: 'neigh' },
+  horse: { ground: true, grade: 0.56, model: Models.horse, max: 30, walk: 1.5, run: 15, flee: 32, calm: 100, radius: 0.6, height: 1.8, health: 160, stride: 2.2, turn: 2.4, size: 1.08, gaits: HOOF, trotBand: 0.35, swims: true, call: 'neigh' },
 };
 // Hunting: how big a quarry each is (see wound), and the ones that will
 // come for you (`predator`: how far off they see you, how near you can come

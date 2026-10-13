@@ -116,11 +116,38 @@ export function createRockLayer(config) {
   const material = seasonalRocks(new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
 
   const cache = { generator: null, map: new Map() }; // chunk -> rock candidates
+  const groups = new Map(); // "cx,cz" -> the chunk's rocks drawn now
 
   const layer = {
     name: 'rocks',
     material,
     boulders: new Map(), // "cx,cz" -> [x, z, centre y, half-widths x, y, z, turn, ...] (world space)
+    removed: new Set(), // boulders broken up with a pickaxe: their keys (see keyOf)
+
+    /** A boulder's key, from where it stands. */
+    keyOf(x, z) {
+      return `${Math.round(x * 10)},${Math.round(z * 10)}`;
+    },
+
+    /** Breaks up the boulder `key` (see keyOf): gone from the world, and from where it's drawn now. */
+    removeKey(key) {
+      layer.removed.add(key);
+      for (const [ck, list] of layer.boulders) {
+        for (let k = 0; k < list.length; k += 7) {
+          if (layer.keyOf(list[k], list[k + 1]) !== key) continue;
+          list.splice(k, 7);
+          const group = groups.get(ck), range = group?.userData.ranges?.get(key);
+          if (range) {
+            // (Its vertices all pulled to one point: nothing left to draw.)
+            const pos = group.children[0].geometry.attributes.position;
+            for (let i = range[0] + 1; i < range[0] + range[1]; i++) pos.setXYZ(i, pos.getX(range[0]), pos.getY(range[0]), pos.getZ(range[0]));
+            pos.needsUpdate = true;
+          }
+          return true;
+        }
+      }
+      return false;
+    },
 
     /**
      * The top of any boulder at (x, z) (world), or -Infinity: each boulder
@@ -230,6 +257,7 @@ export function createRockLayer(config) {
         if (!(ground > seaLevel - (c.surf ? 9.5 : 0.6))) continue; // off-chunk, deep water or a cave mouth
         if (ground + c.jitter > snowLine - 15) continue; // snow
         if (!c.boulder && !smallStones) continue;
+        if (c.boulder && layer.removed.has(layer.keyOf(c.wx, c.wz))) continue; // (broken up)
         // Sunk deeper on a slope, so the uphill side doesn't float.
         // (Boulders in the water at a cliff's foot stand out of it.)
         const sunk = ground - c.sy * (0.3 + 0.5 * c.slope) - c.slope * Math.max(c.sx, c.sz) * 0.4;
@@ -237,7 +265,9 @@ export function createRockLayer(config) {
         euler.set(c.rx, c.ry, c.rz);
         rotation.setFromEuler(euler);
         scale.set(c.sx, c.sy, c.sz);
-        placed[c.shape].push(matrix.compose(position, rotation, scale).clone());
+        const m = matrix.compose(position, rotation, scale).clone();
+        if (c.boulder) m.boulderKey = layer.keyOf(c.wx, c.wz);
+        placed[c.shape].push(m);
         // (Rocks average about their unit size: 0.93 of it.)
         if (c.boulder) boulders.push(c.wx, c.wz, position.y, c.sx * 0.93, c.sy * 0.93, c.sz * 0.93, c.ry);
       }
@@ -256,9 +286,11 @@ export function createRockLayer(config) {
       const dry = Math.min(1, 0.8 * high + 0.35 * ((cw.savanna ?? 0) + (cw.volcanic ?? 0)));
       let rockIndex = 0;
       let o = 0;
+      const ranges = new Map(); // boulder key -> [first vertex, vertex count]
       placed.forEach((list, s) => {
         const shape = ALL_SHAPES[s].attributes;
         for (const m of list) {
+          if (m.boulderKey) ranges.set(m.boulderKey, [o / 3, shape.position.count]);
           normalMatrix.getNormalMatrix(m);
           locals.set(shape.position.array, o);
           colors.set(shape.color.array, o);
@@ -292,12 +324,15 @@ export function createRockLayer(config) {
       group.add(mesh);
       group.userData.key = `${cx},${cz}`;
       group.userData.boulders = boulders;
+      group.userData.ranges = ranges;
       layer.boulders.set(group.userData.key, boulders);
+      groups.set(group.userData.key, group);
       return group;
     },
 
     dispose(group) {
       if (layer.boulders.get(group.userData.key) === group.userData.boulders) layer.boulders.delete(group.userData.key);
+      if (groups.get(group.userData.key) === group) groups.delete(group.userData.key);
       for (const mesh of group.children) mesh.geometry.dispose();
     },
   };

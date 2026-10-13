@@ -360,7 +360,7 @@ export class CaveSystem {
    * faceted rock itself. (Each chunk's rock indexed by 2 m squares, once,
    * so only the few triangles over the spot are looked at.)
    */
-  meshFloor(x, z, fromY) {
+  meshFloor(x, z, fromY, floorsOnly = false) {
     const entry = this.cache.get(`${Math.floor(x / this.chunkSize)},${Math.floor(z / this.chunkSize)}`);
     const g = entry?.ready ? entry.rock : null;
     if (!g || !entry.grid) return null;
@@ -385,6 +385,12 @@ export class CaveSystem {
       if (Math.abs(d) < 1e-9) continue;
       const u = ((bz - cz) * (lx - cx) + (cx - bx) * (lz - cz)) / d, v = ((cz - az) * (lx - cx) + (ax - cx) * (lz - cz)) / d, w = 1 - u - v;
       if (u < -1e-6 || v < -1e-6 || w < -1e-6) continue;
+      if (floorsOnly) {
+        // (Only the floor's facets, not the walls': lying flat enough to stand on.)
+        const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
+        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        if (Math.abs(ny) < 0.55 * Math.hypot(nx, ny, nz)) continue;
+      }
       const y = u * ay + v * by + w * cy;
       if (y < fromY && (best === null || y > best)) best = y;
     }
@@ -431,6 +437,13 @@ export class CaveSystem {
     if (height === null) height = above; // a deep drop: keep falling
 
     const inCave = height < H - 1.5;
+    // (Underground, the floor as it's drawn: the faceted rock itself, where
+    // the field's smooth surface would sink your feet into a facet or float
+    // them over one.)
+    if (inCave) {
+      const drawn = this.meshFloor(x, z, top, true);
+      if (drawn !== null && Math.abs(drawn - height) < 0.9) height = drawn;
+    }
     let ceiling = Infinity;
     if (inCave) {
       for (let y = feetY + 0.5; y < feetY + 4; y += 0.35) {

@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, Group, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, TorusGeometry, Vector3 } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, Group, IcosahedronGeometry, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, TorusGeometry, Vector3 } from 'three';
 import { LEAF_GEOMETRIES, treeGeometry } from '../world/trees.js';
 import { Inventory } from './Inventory.js';
 
@@ -495,10 +495,44 @@ export class Felling {
     this.#chips(point.x, point.y, point.z, from, color);
   }
 
+  /**
+   * A boulder bursting apart at `point` (its size `size`, m): stone chunks
+   * flung out all round, tumbling down, and a cloud of rock dust drifting
+   * up and fading.
+   */
+  burst(point, size, color = 0x8e8a84) {
+    const mat = this.#chipMaterial(color);
+    for (let k = 0; k < 26; k++) {
+      const mesh = new Mesh(this.chipGeometry, mat);
+      const a = rnd(0, Math.PI * 2), r = rnd(0.2, 0.8) * size;
+      mesh.position.set(point.x + Math.cos(a) * r, point.y + rnd(0, 0.7) * size, point.z + Math.sin(a) * r);
+      mesh.scale.setScalar(rnd(2, 5));
+      this.scene.add(mesh);
+      const out = rnd(1.5, 4.5);
+      this.chips.push({ mesh, vx: Math.cos(a) * out, vy: rnd(2, 5), vz: Math.sin(a) * out, life: rnd(1.2, 2), spin: rnd(4, 12) });
+    }
+    this.dustMaterial ??= new MeshLambertMaterial({ color: 0xb8b0a4, transparent: true, opacity: 0.45, depthWrite: false });
+    for (let k = 0; k < 14; k++) {
+      const mesh = new Mesh(this.dustGeometry ??= new IcosahedronGeometry(0.5, 0), this.dustMaterial.clone());
+      const a = rnd(0, Math.PI * 2), r = rnd(0, 0.6) * size;
+      mesh.position.set(point.x + Math.cos(a) * r, point.y + rnd(0, 0.5) * size, point.z + Math.sin(a) * r);
+      mesh.scale.setScalar(rnd(0.4, 0.9) * Math.max(1, size));
+      this.scene.add(mesh);
+      this.chips.push({ mesh, dust: true, grow: rnd(0.8, 1.6), vx: Math.cos(a) * rnd(0.3, 1.2), vy: rnd(0.3, 1), vz: Math.sin(a) * rnd(0.3, 1.2), life: rnd(1.5, 2.6), full: 2.6, spin: rnd(0.5, 2) });
+    }
+  }
+
+  #chipMaterial(color) {
+    if (!color) return this.chipMaterial;
+    this.rockChips ??= new Map();
+    if (!this.rockChips.has(color)) this.rockChips.set(color, new MeshLambertMaterial({ color, flatShading: true }));
+    return this.rockChips.get(color);
+  }
+
   #chips(x, y, z, from, color = null) {
     const dx = from.x - x, dz = from.z - z, d = Math.hypot(dx, dz) || 1;
     for (let k = 0; k < 7; k++) {
-      const mesh = new Mesh(this.chipGeometry, color ? (this.rockChips ??= new MeshLambertMaterial({ color, flatShading: true })) : this.chipMaterial);
+      const mesh = new Mesh(this.chipGeometry, this.#chipMaterial(color));
       mesh.position.set(x + (dx / d) * 0.3, y + rnd(-0.3, 0.3), z + (dz / d) * 0.3);
       this.scene.add(mesh);
       this.chips.push({ mesh, vx: (dx / d) * rnd(1, 3) + rnd(-1.5, 1.5), vy: rnd(1.5, 4), vz: (dz / d) * rnd(1, 3) + rnd(-1.5, 1.5), life: rnd(0.6, 1.1), spin: rnd(5, 15) });
@@ -566,6 +600,17 @@ export class Felling {
     }
     for (const c of this.chips) {
       c.life -= dt;
+      if (c.dust) {
+        // (Dust: drifting up and out, swelling, fading away.)
+        c.mesh.position.x += c.vx * dt;
+        c.mesh.position.y += c.vy * dt;
+        c.mesh.position.z += c.vz * dt;
+        c.mesh.scale.multiplyScalar(1 + c.grow * dt * 0.6);
+        c.mesh.material.opacity = 0.45 * Math.max(0, c.life / c.full);
+        c.mesh.rotation.y += c.spin * dt;
+        if (c.life <= 0) (this.scene.remove(c.mesh), c.mesh.material.dispose());
+        continue;
+      }
       c.vy -= 12 * dt;
       c.mesh.position.x += c.vx * dt;
       c.mesh.position.y += c.vy * dt;

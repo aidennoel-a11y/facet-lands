@@ -36,6 +36,7 @@ export class Survival {
     this.hunger = 100;
     this.full = 0; // (seconds a good meal keeps you full yet: hunger drains slower)
     this.thirst = 100;
+    this.fresh = 1500; // (seconds of a new life's start left: hunger and thirst run down a quarter as fast, time to gather things)
     this.warmth = 100;
     this.wet = 0; // how soaked you are (swimming, rain), 0..1
     this.cold = 0; // how cold it is where you are, 0..1+
@@ -147,12 +148,14 @@ export class Survival {
     const work = e.sprinting ? 4 : e.swimming ? 2.2 : e.moving ? 1.3 : 1;
     const fever = this.sick > 0 ? 1.5 : 1;
     this.full = Math.max(0, this.full - dt * work);
-    this.hunger = Math.max(0, this.hunger - dt * 0.042 * work * fever * (this.full > 0 ? 0.35 : 1) - (e.jumped ?? 0) * 0.5);
+    this.fresh = Math.max(0, (this.fresh ?? 0) - dt);
+    const start = this.fresh > 0 ? 0.25 : 1;
+    this.hunger = Math.max(0, this.hunger - dt * 0.042 * work * fever * start * (this.full > 0 ? 0.35 : 1) - (e.jumped ?? 0) * 0.5);
     // Energy: a day's worth (about 45 minutes awake), faster running, carrying a load.
     this.energy = Math.max(0, this.energy - dt * 0.037 * (e.sprinting ? 2 : 1) * (1 + (e.load ?? 0)));
     // Thirst: faster (half an hour or so), and far faster in the heat.
     const heat = 1 + (e.heat ?? 0) * (0.6 + 0.4 * (e.day ?? 1));
-    this.thirst = Math.max(0, this.thirst - dt * 0.055 * heat * fever * (e.sprinting ? 2.2 : e.moving ? 1.15 : 1) - (e.jumped ?? 0) * 0.25);
+    this.thirst = Math.max(0, this.thirst - dt * 0.055 * heat * fever * start * (e.sprinting ? 2.2 : e.moving ? 1.15 : 1) - (e.jumped ?? 0) * 0.25);
     // Fever passes; bleeding clots in the end.
     if (this.sick > 0) {
       this.sick = Math.max(0, this.sick - dt);
@@ -202,12 +205,12 @@ export class Survival {
 
   toJSON() {
     const r = (v) => Math.round(v * 10) / 10;
-    return { health: r(this.health), hunger: r(this.hunger), thirst: r(this.thirst), warmth: r(this.warmth), energy: r(this.energy), sick: Math.round(this.sick), bleeding: Math.round(this.bleeding), venom: Math.round(this.venom), full: Math.round(this.full) };
+    return { health: r(this.health), hunger: r(this.hunger), thirst: r(this.thirst), warmth: r(this.warmth), energy: r(this.energy), sick: Math.round(this.sick), bleeding: Math.round(this.bleeding), venom: Math.round(this.venom), full: Math.round(this.full), fresh: Math.round(this.fresh ?? 0) };
   }
 
   load(data) {
     if (!data) return;
-    for (const k of ['health', 'hunger', 'thirst', 'warmth', 'energy', 'sick', 'bleeding', 'venom', 'full']) if (Number.isFinite(data[k])) this[k] = data[k];
+    for (const k of ['health', 'hunger', 'thirst', 'warmth', 'energy', 'sick', 'bleeding', 'venom', 'full', 'fresh']) if (Number.isFinite(data[k])) this[k] = data[k];
     if (this.health <= 0) this.reset();
   }
 }

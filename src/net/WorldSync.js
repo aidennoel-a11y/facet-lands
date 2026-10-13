@@ -21,7 +21,7 @@ import { Torches } from '../items/Torches.js';
 const EDIT_EVERY = 0.5;
 const SKY_EVERY = 2;
 const WILD_EVERY = 1 / 5;
-const SETS = ['felled', 'taken', 'mushrooms'];
+const SETS = ['felled', 'taken', 'mushrooms', 'broken'];
 const MAPS = ['stumps', 'structures', 'torches', 'drops'];
 
 // A structure's record, without what changes by the second (a fire's fuel
@@ -75,7 +75,7 @@ export class WorldSync {
   #now() {
     const g = this.game;
     const now = {
-      felled: this.trees.removed, taken: g.items.taken, mushrooms: this.mushrooms?.taken ?? new Set(),
+      felled: this.trees.removed, taken: g.items.taken, mushrooms: this.mushrooms?.taken ?? new Set(), broken: g.rocks?.removed ?? new Set(),
       stumps: new Map(), structures: new Map(), torches: new Map(), drops: new Map(),
     };
     for (const st of g.felling.stumpsJSON()) now.stumps.set(st.key, [{ k: st.key, ...st }, st.key]);
@@ -120,6 +120,7 @@ export class WorldSync {
     for (const key of e.add?.felled ?? []) (this.sent.felled.add(key), this.trees.removeKey(key));
     for (const key of e.add?.taken ?? []) (this.sent.taken.add(key), g.items.takeKey(key));
     for (const key of e.add?.mushrooms ?? []) (this.sent.mushrooms.add(key), this.mushrooms?.takeKey(key));
+    for (const key of e.add?.broken ?? []) (this.sent.broken.add(key), g.rocks?.removeKey(key));
     for (const st of e.put?.stumps ?? []) (this.sent.stumps.set(st.k, st.k), g.felling.addStump(st));
     for (const rec of e.put?.structures ?? []) (this.sent.structures.set(rec.k, structureSign(rec)), g.structures.apply(rec));
     for (const key of e.del?.structures ?? []) (this.sent.structures.delete(key), g.structures.removeKey(key));

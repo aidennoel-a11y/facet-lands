@@ -583,13 +583,20 @@ function placeCamera(onGround = false) {
   controls.lookAt(new THREE.Vector3(best.x, best.h * 0.5, best.z));
 }
 
-// The nearest spot to (x, z) that's dry land, not high on a peak, and well
-// away from desert, salt flat and badlands (searched outward in rings).
+// The nearest spot to (x, z) that's dry land, not high on a peak, well
+// away from desert, salt flat and badlands, in woods or foothills where
+// flint and stones lie about (searched outward in rings).
 function greenGround(x, z) {
   const dry = (w) => (w.desert ?? 0) + (w.saltFlat ?? 0) + (w.badlands ?? 0);
   const ok = (px, pz) => {
     const h = generator.landHeight(px, pz);
-    return h > WORLD.seaLevel + 2 && h < WORLD.seaLevel + 260 && dry(generator.getBiomeWeights(px, pz, {})) < 0.02;
+    if (!(h > WORLD.seaLevel + 2 && h < WORLD.seaLevel + 260)) return false;
+    const w = generator.getBiomeWeights(px, pz, {});
+    if (dry(w) >= 0.02) return false;
+    // (And where flint and stones lie about to be picked up: woods, or the foothills. See GroundItems.)
+    const wooded = Math.max(generator.getForestDensity(px, pz) * ((w.temperate ?? 0) + (w.smoky ?? 0) + (w.pine ?? 0) + (w.blackHills ?? 0) + (w.wetland ?? 0)), w.jungle ?? 0, 0.6 * (w.pine ?? 0), 0.6 * (w.smoky ?? 0));
+    const mount = generator.getMountainness(px, pz);
+    return wooded > 0.45 || (mount > 0.35 && mount < 0.75);
   };
   if (ok(x, z)) return { x, z };
   for (let r = 150; r <= 9000; r += 150) {

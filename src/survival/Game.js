@@ -36,6 +36,7 @@ const v = new Vector3(), dir = new Vector3(), q = new Quaternion(), FORWARD = ne
 
 // How far you can reach, on foot.
 const REACH = 3;
+const CACTI = new Set(['smallCactus', 'ocotillo']); // (bushes, but no vines on them)
 const FRUIT = { raspberryBush: 'berries', blueberryBush: 'berries', appleTree: 'apple' };
 const NAMES = {
   deer: 'deer', elk: 'elk', moose: 'moose', bison: 'bison', blackBear: 'black bear', grizzly: 'grizzly bear', wolf: 'wolf', wolfPup: 'wolf pup', coyote: 'coyote', fox: 'fox',
@@ -184,6 +185,7 @@ export class Game {
     this.items.clear();
     this.felling.clear();
     this.trees.removed.clear();
+    this.rocks?.removed.clear();
     this.mushrooms?.taken.clear();
     this.harvested.clear();
     this.#getOff();
@@ -195,6 +197,7 @@ export class Game {
     }
     for (const k of saved?.taken ?? []) this.items.taken.add(k);
     for (const k of saved?.felled ?? []) this.trees.removed.add(k);
+    for (const k of saved?.broken ?? []) this.rocks?.removed.add(k);
     for (const k of saved?.mushrooms ?? []) this.mushrooms?.taken.add(k);
     this.felling.loadStumps(saved?.stumps);
     this.loadBurns?.(saved?.burns ?? []);
@@ -242,7 +245,7 @@ export class Game {
   save() {
     if (this.seed === null || !this.saveKey) return; // (a testing world is never saved)
     const data = {
-      structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], stumps: this.felling.stumpsJSON(),
+      structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], broken: [...(this.rocks?.removed ?? [])], stumps: this.felling.stumpsJSON(),
       mushrooms: [...(this.mushrooms?.taken ?? [])],
       tame: this.wildlife.tameJSON(),
       bosses: this.wildlife.bossJSON(),
@@ -387,10 +390,14 @@ export class Game {
       found.push({ kind: 'horse', distance: carcass.distance, animal: beast, text: needs ? `${text} · ${needs}` : text });
     }
     const tree = this.trees.pick(origin, direction, reach);
-    if (tree && FRUIT[tree.type]) {
-      const ripe = seasonUniforms.uFruit.value > 0.6 && seasonUniforms.uRipe.value > 0.7;
-      const picked = this.harvested.has(tree.key) && this.time - this.harvested.get(tree.key) < 900;
+    const ripe = tree && FRUIT[tree.type] && seasonUniforms.uFruit.value > 0.6 && seasonUniforms.uRipe.value > 0.7;
+    const picked = tree && this.harvested.has(tree.key) && this.time - this.harvested.get(tree.key) < 900;
+    if (tree && FRUIT[tree.type] && (ripe || !tree.bush)) {
       found.push({ kind: 'fruit', distance: tree.distance, tree, ripe, picked, text: picked ? 'Picked clean' : ripe ? `Pick ${FRUIT[tree.type] === 'apple' ? 'apples' : 'berries'}` : seasonUniforms.uFruit.value > 0.3 ? 'Not ripe yet' : 'No fruit this time of year' });
+    } else if (tree?.bush && !CACTI.has(tree.type)) {
+      // (Any bush: pull a plant vine or two from it, then leave it be a while.)
+      const pulled = this.vined?.has(tree.key) && this.time - this.vined.get(tree.key) < 600;
+      found.push({ kind: 'vine', distance: tree.distance, tree, pulled, text: pulled ? 'No good vines left on it' : 'Pull plant vines' });
     }
     const mushroom = this.mushrooms?.pick(origin, direction, reach);
     if (mushroom) found.push({ kind: 'mushroom', distance: mushroom.distance, mushroom, text: 'Pick the mushroom' });
@@ -563,6 +570,14 @@ export class Game {
       this.harvested.set(t.tree.key, this.time);
       this.sound?.call('pickup', 0, 0.5);
       return this.hotbar?.flash(`${ITEMS[id].name} ×${n}`);
+    }
+    if (t.kind === 'vine') {
+      if (t.pulled) return this.hotbar?.flash(t.text);
+      const n = 1 + (Math.random() < 0.5 ? 1 : 0);
+      this.#give('vine', n);
+      (this.vined ??= new Map()).set(t.tree.key, this.time);
+      this.sound?.call('rustle', 0, 0.5);
+      return this.hotbar?.flash(`${ITEMS.vine.name} ×${n}`);
     }
     if (t.kind === 'mushroom') {
       this.mushrooms.take(t.mushroom);
@@ -1220,7 +1235,10 @@ export class Game {
       if (result === 'fell') {
         this.sound?.call('creak', 0, 0.7);
         this.hotbar?.flash('Timber!');
-      } else if (result === 'bush') this.items.drop(Inventory.stack('stick', 1 + Math.floor(Math.random() * 2)), tree.x, tree.y + 0.8, tree.z);
+      } else if (result === 'bush') {
+        this.items.drop(Inventory.stack('stick', 1 + Math.floor(Math.random() * 2)), tree.x, tree.y + 0.8, tree.z);
+        if (!CACTI.has(tree.type)) this.items.drop(Inventory.stack('vine', 1 + Math.floor(Math.random() * 2)), tree.x + 0.3, tree.y + 0.8, tree.z + 0.2); // (and its vines)
+      }
     });
   }
 
@@ -1239,11 +1257,11 @@ export class Game {
       const boulder = this.#boulderAlong(origin, direction, REACH + 0.3);
       const face = this.solidHit(origin, direction, REACH + 0.3);
       const faceD = face ? face.point.distanceTo(origin) : Infinity;
-      let where = null, target = null;
+      let where = null, target = null, stone = null;
       if (vein?.item.node && vein.distance <= Math.min(faceD, boulder?.distance ?? Infinity) + 0.4) {
         target = vein;
         where = new Vector3(vein.item.x, vein.item.y + 0.2, vein.item.z);
-      } else if (boulder && boulder.distance <= faceD + 0.3) where = boulder.point;
+      } else if (boulder && boulder.distance <= faceD + 0.3) (where = boulder.point), (stone = boulder);
       else if (face && (face.cave || face.normal.y < 0.6 || this.#mesaTop(face.point))) where = face.point; // (a mesa's top is bare caprock: you can break it, flat as it is)
       if (!where) {
         if (face) this.hotbar?.flash('Only soil here: find bare rock, a boulder or a vein of ore');
@@ -1256,9 +1274,9 @@ export class Game {
       this.felling.spray(where, origin, { iron: 0xa0502c, coal: 0x24201e, goldOre: 0xf0c030, mountainOre: 0x9ab0c8 }[id] ?? 0x8e8a84);
       // How many blows it wants, and how many it's had (a crack in the rock
       // here keeps for half a minute).
-      const needs = Math.max(1, Math.ceil(({ rock: 4, coal: 5, iron: 6, mountainOre: 8, goldOre: 8 }[id] ?? 4) / power));
+      const needs = Math.max(1, Math.ceil(({ rock: stone ? Math.min(8, 3 + Math.round(stone.size)) : 4, coal: 5, iron: 6, mountainOre: 8, goldOre: 8 }[id] ?? 4) / power));
       this.cracks ??= new Map();
-      const key = target ? target.item.key : `${Math.round(where.x / 1.5)},${Math.round(where.y / 1.5)},${Math.round(where.z / 1.5)}`;
+      const key = target ? target.item.key : stone?.key ? `boulder:${stone.key}` : `${Math.round(where.x / 1.5)},${Math.round(where.y / 1.5)},${Math.round(where.z / 1.5)}`;
       for (const [k, c] of this.cracks) if (this.time - c.at > 30) this.cracks.delete(k);
       const crack = this.cracks.get(key) ?? { hits: 0 };
       crack.hits++;
@@ -1281,8 +1299,15 @@ export class Game {
         this.#give('rock', 1, at);
         this.hotbar?.flash(`${ITEMS[id].name}${n > 1 ? ` ×${n}` : ''}, and a stone`);
       } else {
-        const flint = Math.random() < 0.14;
-        const n = 1 + (Math.random() < 0.4 ? 1 : 0);
+        // (A boulder broken up: it falls apart into stone and is gone, in a burst of chips and dust.)
+        if (stone?.key && this.rocks.removeKey?.(stone.key)) {
+          const c = { x: where.x, y: where.y, z: where.z };
+          this.felling.burst(c, stone.size);
+          this.sound?.call('thump', 0, 0.8);
+          this.dirty = true;
+        }
+        const flint = Math.random() < (stone ? 0.3 : 0.14);
+        const n = 1 + (Math.random() < 0.4 ? 1 : 0) + (stone ? Math.min(2, Math.floor(stone.size)) : 0);
         this.#give('rock', n, at);
         if (flint) this.#give('flint', 1, at);
         this.hotbar?.flash(`${ITEMS.rock.name}${n > 1 ? ` ×${n}` : ''}${flint ? ', and flint' : ''}`);
@@ -1313,7 +1338,7 @@ export class Game {
         if (t < 0 || off2 > r * r) continue;
         const d = t - Math.sqrt(r * r - off2);
         if (d > reach) continue;
-        if (!best || d < best.distance) best = { distance: d, point: origin.clone().addScaledVector(direction, Math.max(0, d)) };
+        if (!best || d < best.distance) best = { distance: d, point: origin.clone().addScaledVector(direction, Math.max(0, d)), key: this.rocks.keyOf?.(bx, bz), size: Math.max(hx, hy, hz) };
       }
     }
     return best;
