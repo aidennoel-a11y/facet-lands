@@ -1141,6 +1141,7 @@ const bigMap = new BiomeMap({
   // (Testing: the ruins marked on it too.)
   // (A few new places worked out each time it's drawn: it fills in over a moment, never freezing. In survival, only those you've been to.)
   landmarks: (x, z, r) => game.landmarksForMap(x, z, r),
+  more: () => game.mode === 'testing' && !!game.landmarkMore, // (testing: the landmarks still being found, drawn again in a moment)
   ruins: (x, z, r, labelAt) => (game.mode === 'testing' ? ruins.sitesRoughly(x, z, Math.min(r, 20000), generator, labelAt) : ruins.sitesOf(game.ruinsSeen, generator)),
   teleport: (x, z) => {
     if (!ui.fly.checked) ui.fly.click();

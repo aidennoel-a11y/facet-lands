@@ -3419,7 +3419,12 @@ export class Game {
 
   /** The landmarks for the map: those found, and those the stones showed (or, testing, all near). */
   landmarksForMap(x, z, r) {
-    if (this.mode === 'testing') return this.generator().landmarks.near(x, z, Math.min(r, 2500)).map((s) => ({ ...s, name: LANDMARKS[s.kind].name, found: true }));
+    if (this.mode === 'testing') {
+      // (Testing: every one on the map, worked out a few squares of land each time it's drawn, nearest first.)
+      const { sites, more } = this.generator().landmarks.survey(x, z, Math.min(r, 16000), 3);
+      this.landmarkMore = more;
+      return sites.map((s) => ({ ...s, name: LANDMARKS[s.kind].name, found: true }));
+    }
     const out = [];
     for (const key of this.landmarksFound) {
       const s = this.#landmarkSite(key);
