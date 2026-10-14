@@ -190,14 +190,16 @@ export class Insects {
     if (this.wait <= 0) {
       this.wait = 2;
       const found = this.hivesNear(ctx);
-      for (const key of this.hives.keys()) if (!found.has(key)) this.hives.delete(key);
+      // (And your bee boxes, the ones with a swarm in them: their bees out about them too.)
+      for (const b of ctx.beeBoxes ?? []) if (Math.hypot(b.x - cam.x, b.z - cam.z) < 70) found.set(`box${Math.round(b.x * 10)},${Math.round(b.z * 10)}`, { x: b.x, y: b.y + 0.75, z: b.z, tx: b.x, tz: b.z, box: true });
       for (const [key, h] of found) if (!this.hives.has(key)) this.hives.set(key, { ...h, base: ctx.ground(h.tx, h.tz), bees: [] });
     }
     // Bees: out by day in the warm and dry.
     const busy = ctx.day * (1 - ctx.rain) * (1 - ctx.winter) * (1 - 0.5 * Math.max(0, ctx.wind - 0.6));
     let n = 0, b = 0, level = 0, panSum = 0;
     for (const h of this.hives.values()) {
-      if (n < this.hiveMesh.instanceMatrix.count) {
+      if (h.box) (h.sx = h.sz = 0);
+      else if (n < this.hiveMesh.instanceMatrix.count) {
         // Swaying with its tree's bough, in the wind and the gusts (as the
         // trees' shader moves them: see addWind).
         // (The shader bends by height in the tree's own units; a tree's about 1.8 times its model's size.)

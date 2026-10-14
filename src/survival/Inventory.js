@@ -15,6 +15,7 @@ export class Inventory {
     this.worn = null; // (a coat)
     this.armour = null;
     this.back = null; // (a backpack, on your back: it opens the slots past the ninth)
+    this.head = this.hands = this.feet = null; // (a hat, gloves, boots)
     this.listeners = new Set();
   }
 
@@ -144,6 +145,7 @@ export class Inventory {
     this.worn = null;
     this.armour = null;
     this.back = null;
+    this.head = this.hands = this.feet = null;
     this.changed();
   }
 
@@ -200,7 +202,7 @@ export class Inventory {
   }
 
   toJSON() {
-    return { slots: this.slots, worn: this.worn, armour: this.armour, back: this.back };
+    return { slots: this.slots, worn: this.worn, armour: this.armour, back: this.back, head: this.head, hands: this.hands, feet: this.feet };
   }
 
   load(data) {
@@ -209,6 +211,9 @@ export class Inventory {
     this.worn = data?.worn ?? null;
     this.armour = data?.armour ?? null;
     this.back = data?.back ?? null;
+    this.head = data?.head ?? null;
+    this.hands = data?.hands ?? null;
+    this.feet = data?.feet ?? null;
     // (From before backpacks were worn: one carried in a slot goes on your back.)
     const k = this.back ? -1 : this.slots.findIndex((st) => st?.id === 'backpack');
     if (k >= 0) (this.back = this.slots[k]), (this.slots[k] = null);

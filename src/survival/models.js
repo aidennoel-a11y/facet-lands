@@ -1740,3 +1740,135 @@ export function altarSocket(k) {
 export function altarStoneModel() {
   return new Parts(243).add(new OctahedronGeometry(0.09, 0), 0xffffff, [0, 1.16, 0], [0, 0, 0], [1, 1.5, 1], 0.02).build();
 }
+
+// --- Beekeeping, the dairy, things to wear ------------------------------------------
+
+/** A bee box: a stack of plank boxes on a low stand, a sloped lid, the bees' slot at the foot. */
+export function beeBoxModel() {
+  const b = new Parts(181);
+  for (const [x, z] of [[-0.24, -0.2], [0.24, -0.2], [-0.24, 0.2], [0.24, 0.2]]) b.add(new BoxGeometry(0.06, 0.3, 0.06), 0x6e4c32, [x, 0.15, z]);
+  b.add(new BoxGeometry(0.6, 0.05, 0.5), 0x7a5638, [0, 0.32, 0]);
+  for (const [y, c] of [[0.48, 0xc8a670], [0.75, 0xd2b07a], [0.99, 0xbe9c66]]) b.add(new BoxGeometry(0.52, y === 0.99 ? 0.2 : 0.26, 0.44), c, [0, y, 0]);
+  b.add(new BoxGeometry(0.62, 0.05, 0.54), 0x8a6a48, [0, 1.12, 0], [0.08, 0, 0]);
+  b.add(new BoxGeometry(0.2, 0.03, 0.02), 0x1e1610, [0, 0.38, 0.225]);
+  return b.build();
+}
+
+/** A wooden milk pail, bound with withies (full: milk to the brim). */
+export function pailModel(full = false) {
+  const b = new Parts(183);
+  b.add(new CylinderGeometry(0.13, 0.11, 0.24, 8), 0xa8845a, [0, 0.12, 0]);
+  for (const y of [0.04, 0.2]) b.add(new TorusGeometry(0.125, 0.01, 3, 8), 0x5a4a30, [0, y, 0], [Math.PI / 2, 0, 0]);
+  b.add(new TorusGeometry(0.12, 0.008, 3, 8, Math.PI), 0x6e4c32, [0, 0.24, 0]);
+  if (full) b.add(new CylinderGeometry(0.115, 0.115, 0.01, 8), 0xf4f0e6, [0, 0.22, 0]);
+  return b.build();
+}
+
+/** A round of cheese, a wedge cut from it. */
+export const cheeseModel = () =>
+  new Parts(185)
+    .add(new CylinderGeometry(0.11, 0.11, 0.08, 9, 1, false, 0, Math.PI * 1.6), 0xf0d080, [0, 0.04, 0])
+    .add(new CylinderGeometry(0.112, 0.112, 0.02, 9, 1, false, 0, Math.PI * 1.6), 0xc89a3a, [0, 0.085, 0])
+    .build();
+
+/** A cake of beeswax. */
+export const beeswaxModel = () => new Parts(187).add(new BoxGeometry(0.12, 0.05, 0.08), 0xe8c860, [0, 0.025, 0]).build();
+
+/** A pair of boots (leather, or fur-lined). */
+export function bootsModel(leather = 0x7a5232, sole = 0x3a2a1e, cuff = null) {
+  const b = new Parts(189);
+  for (const x of [-0.07, 0.07]) {
+    b.add(new BoxGeometry(0.08, 0.18, 0.09), leather, [x, 0.11, -0.02]);
+    b.add(new BoxGeometry(0.085, 0.07, 0.17), leather, [x, 0.045, 0.03]);
+    b.add(new BoxGeometry(0.09, 0.02, 0.18), sole, [x, 0.01, 0.03]);
+    if (cuff) b.add(new BoxGeometry(0.095, 0.04, 0.1), cuff, [x, 0.2, -0.02]);
+  }
+  return b.build();
+}
+
+/** A pair of leather gloves. */
+export function glovesModel(leather = 0x9a6a3e) {
+  const b = new Parts(191);
+  for (const x of [-0.08, 0.08]) {
+    b.add(new BoxGeometry(0.1, 0.03, 0.12), leather, [x, 0.015, 0]);
+    for (let f = 0; f < 4; f++) b.add(new BoxGeometry(0.018, 0.022, 0.06), leather, [x - 0.033 + f * 0.022, 0.012, 0.085]);
+    b.add(new BoxGeometry(0.02, 0.022, 0.05), leather, [x + (x < 0 ? 0.06 : -0.06), 0.012, 0.03], [0, x < 0 ? -0.6 : 0.6, 0]);
+    b.add(new BoxGeometry(0.11, 0.035, 0.05), 0x6a4426, [x, 0.017, -0.075]);
+  }
+  return b.build();
+}
+
+/** A hat: a fur cap with ear flaps, or a broad-brimmed straw hat. */
+export function hatModel(kind = 'fur') {
+  const b = new Parts(193);
+  if (kind === 'fur') {
+    b.add(new CylinderGeometry(0.11, 0.12, 0.12, 8), 0x8a7458, [0, 0.06, 0]);
+    b.add(new CylinderGeometry(0.125, 0.125, 0.05, 8), 0xa89070, [0, 0.03, 0]);
+    for (const x of [-0.12, 0.12]) b.add(new BoxGeometry(0.03, 0.1, 0.08), 0xa89070, [x, -0.02, 0]);
+  } else {
+    b.add(new CylinderGeometry(0.24, 0.24, 0.015, 10), 0xe0c878, [0, 0.01, 0]);
+    b.add(new CylinderGeometry(0.09, 0.11, 0.11, 8), 0xd8bc6a, [0, 0.07, 0]);
+    b.add(new CylinderGeometry(0.112, 0.112, 0.025, 8), 0x8a4a2a, [0, 0.03, 0]);
+  }
+  return b.build();
+}
+
+/** A beeswax candle in an iron dish. */
+export const candleModel = () =>
+  new Parts(195)
+    .add(new CylinderGeometry(0.05, 0.04, 0.02, 7), 0x3a3a3e, [0, 0.01, 0])
+    .add(new CylinderGeometry(0.025, 0.028, 0.14, 6), 0xf0e2b0, [0, 0.09, 0])
+    .build();
+
+/** A lantern: an iron frame, horn panes, a ring to hang it by. */
+export function lanternModel() {
+  const b = new Parts(197);
+  b.add(new CylinderGeometry(0.11, 0.12, 0.05, 4), 0x3a3a3e, [0, 0.025, 0], [0, Math.PI / 4, 0]);
+  b.add(new CylinderGeometry(0.1, 0.1, 0.22, 4), 0xe8b870, [0, 0.16, 0], [0, Math.PI / 4, 0]);
+  b.add(new CylinderGeometry(0.02, 0.12, 0.1, 4), 0x3a3a3e, [0, 0.32, 0], [0, Math.PI / 4, 0]);
+  b.add(new TorusGeometry(0.035, 0.008, 3, 6), 0x3a3a3e, [0, 0.4, 0]);
+  return b.build();
+}
+
+/** A sign: a board on a post (what's written on it: see Structures.showSign). */
+export function signModel() {
+  const b = new Parts(199);
+  b.log([0, 0, -0.04], [0, 1.25, -0.04], 0.05, 0x6e4c32);
+  b.add(new BoxGeometry(0.9, 0.5, 0.05), 0x9a7048, [0, 1.25, 0]);
+  b.add(new BoxGeometry(0.94, 0.04, 0.07), 0x7a5638, [0, 1.51, 0]);
+  return b.build();
+}
+
+/**
+ * A dugout canoe: one log hollowed out, long and narrow, its ends drawn up
+ * to points; two thwarts across it, a paddle lying in it. Along +z.
+ */
+export function canoeModel() {
+  const b = new Parts(201);
+  const wood = 0x8a5a34, inside = 0x6a4428, rim = 0x7a4e2c;
+  const L = 4.2, n = 9;
+  for (let k = 0; k < n; k++) {
+    const u0 = -L / 2 + (L * k) / n, u = u0 + L / n / 2;
+    const t = Math.abs(u) / (L / 2), w = 0.36 * Math.sqrt(Math.max(0.05, 1 - t * t * t)), lift = 0.12 * t * t * t;
+    b.add(new BoxGeometry(w * 2, 0.08, L / n + 0.02), wood, [0, 0.04 + lift, u]); // (the bottom)
+    for (const sx of [-1, 1]) b.add(new BoxGeometry(0.06, 0.32, L / n + 0.02), rim, [sx * (w - 0.03), 0.2 + lift, u], [0, 0, sx * -0.12]); // (the sides)
+    b.add(new BoxGeometry(w * 2 - 0.1, 0.01, L / n), inside, [0, 0.085 + lift, u]);
+  }
+  for (const z of [-L / 2 - 0.05, L / 2 + 0.05]) b.add(new BoxGeometry(0.12, 0.3, 0.2), wood, [0, 0.3, z]); // (the ends, drawn up)
+  for (const z of [-0.9, 0.9]) b.add(new BoxGeometry(0.66, 0.04, 0.1), 0x9a6a40, [0, 0.3, z]); // (thwarts)
+  b.add(new BoxGeometry(0.04, 0.03, 1.2), 0x9a7048, [0.14, 0.12, 0.1], [0, 0.2, 0]); // (the paddle, lying in it)
+  b.add(new BoxGeometry(0.16, 0.02, 0.4), 0x9a7048, [0.22, 0.12, 0.8], [0, 0.2, 0]);
+  return b.build();
+}
+
+/**
+ * A ladder `len` m long, its feet at the origin, leaning in towards +z (on
+ * a wall or a rock face): two rails, a rung every 30 cm.
+ */
+export function ladderModel(len = 3) {
+  const b = new Parts(203);
+  const h = len * 0.965, off = len * 0.26;
+  for (const x of [-0.22, 0.22]) b.log([x, 0, 0], [x, h, off], 0.035, 0x8a6038, 0xc8a070, 5);
+  for (let y = 0.3; y < h - 0.1; y += 0.3) b.add(new CylinderGeometry(0.022, 0.022, 0.44, 5), 0x9a7048, [0, y, (y / h) * off], [0, 0, Math.PI / 2]);
+  return b.build();
+}

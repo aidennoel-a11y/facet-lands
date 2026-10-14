@@ -710,7 +710,7 @@ function playerTraces(dt) {
   footfall(pos.x + Math.cos(heading) * side, pos.z - Math.sin(heading) * side, heading, PRINT.square, 0.28, 0.6); // (square: a blocky foot)
   // The sound of it: the footstep on what's underfoot, and now and then (and
   // always over a stick lying there) a branch cracking under it in the woods.
-  const loud = controls.crouch ? 0.35 : controls.sprinting ? 1.1 : 0.7;
+  const loud = (controls.crouch ? 0.35 : controls.sprinting ? 1.1 : 0.7) * (game.inventory.feet ? 0.7 : 1); // (soft boots: quieter)
   const surface = stepSurface(pos.x, pos.z, pos.y - controls.eyeHeight);
   if (surface !== 'water') sound.step(surface, loud);
   // Pushing through tall grass, or the bushes and low leaves: their rustle round your legs.
@@ -1389,7 +1389,7 @@ function rayAt(clientX, clientY) {
 }
 
 /** Terrain and cave meshes you can put things on, near the camera. */
-function solidTargets() {
+function solidTargets(built = false) {
   const size = WORLD.chunkSize;
   const ccx = Math.floor(camera.position.x / size);
   const ccz = Math.floor(camera.position.z / size);
@@ -1402,14 +1402,17 @@ function solidTargets() {
       if (o.userData.solid && (near || o.name.startsWith('cave'))) out.push(o);
     });
   }
+  // (And what's built near you: a torch, a lantern on a wall of your house, a candle on its table.)
+  const p = camera.position;
+  if (built) for (const s of game.structures.list) if (s.mesh && Math.abs(s.x - p.x) < 12 && Math.abs(s.z - p.z) < 12) s.mesh.traverse((o) => o.isMesh && o.visible && out.push(o));
   return out;
 }
 
 /** Where a ray meets the ground (or a cave's rock) within `reach`: { point, normal }, or null. */
-function solidHit(origin, direction, reach) {
+function solidHit(origin, direction, reach, built = false) {
   raycaster.set(origin, direction);
   raycaster.far = reach;
-  const hit = raycaster.intersectObjects(solidTargets(), false)[0];
+  const hit = raycaster.intersectObjects(solidTargets(built), false)[0];
   if (!hit) return null;
   const normal = hit.face.normal.clone();
   if (hit.instanceId !== undefined) {
@@ -1425,12 +1428,12 @@ function solidHit(origin, direction, reach) {
 
 /** Sets a torch where you point: returns whether it went. */
 function placeTorch(origin, direction, lamp = false) {
-  const hit = solidHit(origin, direction, 6);
+  const hit = solidHit(origin, direction, 6, true);
   if (!hit) {
     hotbar.flash('Point at the ground or a wall nearby');
     return false;
   }
-  if (!torches.place(hit.point, hit.normal, true, false, lamp)) {
+  if (!torches.place(hit.point, hit.normal, true, lamp === 'lantern' || lamp === 'candle', lamp)) {
     hotbar.flash("Torches can't hang from a ceiling");
     return false;
   }
@@ -1514,6 +1517,7 @@ function caveSounds(dt) {
 }
 
 let sheltered = false; // underground: no rain or lightning, sounds muffled
+let indoorDim = 0; // (indoors: how much of the daylight the walls keep out, eased)
 const caveSight = { next: 0 }; // (see updateVisibility)
 let shadowTurn = 0, cloudOwed = 0; // (see the frame: the clouds moved every other frame)
 
@@ -2233,6 +2237,15 @@ function tick(now) {
   afterRain(dt);
   dayNight.viewDir = dir;
   dayNight.update(dt, camera.position, weather);
+  // Indoors, the daylight only what comes in through the windows and an
+  // open door (see Game: indoorGloom): your eyes adjusting, a moment, as
+  // you come in out of the sun or go back out into it.
+  indoorDim += ((game.indoorGloom ?? 0) - indoorDim) * Math.min(1, dt * 1.5);
+  if (indoorDim > 0.01) {
+    const daylight = 1 - (dayNight._w?.night ?? 0);
+    dayNight.hemi.intensity *= 1 - indoorDim * 0.75 * daylight;
+    dayNight.light.intensity *= 1 - indoorDim * 0.35 * daylight;
+  }
   // The ground gets wet in the rain (puddles), and dries off over a few minutes.
   seasonUniforms.uWet.value = Math.min(1, Math.max(0, seasonUniforms.uWet.value + (localRain > 0.2 ? dt / 20 : -dt / 240)));
   // Snow lies over everything after a snowfall, and stays: through the
@@ -2375,6 +2388,7 @@ function tick(now) {
   sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y, fog: scene.fog.color });
   devils.update(dt, { ...air, seed: generator.seed, hour: dayNight.hour, winter: seasonUniforms.uWinter.value, ground: (x, z) => chunks.groundHeightAt(x, z) });
   shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)), worldNow);
+  life.beeBoxes = game.structures.list.filter((st) => st.type === 'beeBox' && st.data?.bees);
   insects.update(dt, life);
   env.tornado = tornadoes.sound?.loud ?? 0;
   env.tornadoPan = tornadoes.sound?.pan ?? 0;

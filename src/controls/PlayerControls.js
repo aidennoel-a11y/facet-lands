@@ -439,6 +439,8 @@ export class PlayerControls {
       if (ahead.inCave && ahead.ceiling < feet + this.eyeHeight + 0.1) return false; // (rock at head height)
     }
     if (this.grounded && !here.swim && rise > 0 && rise / Math.hypot(dx, dz) > this.maxClimb) return false;
+    // (Up what's steeper than walking takes: with climbing picks, see Game.)
+    this.climbingSteep = rise > 0 && rise / Math.hypot(dx, dz) > 1.1;
     pos.x += dx;
     pos.z += dz;
     return true;

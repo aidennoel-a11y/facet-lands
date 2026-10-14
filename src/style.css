@@ -539,6 +539,36 @@ kbd {
 /* Crafting, and a chest. */
 .craft,
 .inv-ui,
+.ask-ui {
+  position: fixed;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100vw - 2 * var(--gutter)));
+  box-sizing: border-box;
+  padding: 16px;
+  color: #fff;
+  background: rgba(29, 39, 51, 0.92);
+  border-radius: 14px;
+  z-index: 30;
+}
+.ask-ui h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.ask-text {
+  width: 100%;
+  box-sizing: border-box;
+  font: 16px Georgia, serif;
+  padding: 8px;
+  border-radius: 8px;
+  border: 0;
+  resize: none;
+}
+.ask-hint {
+  opacity: 0.7;
+  font-size: 12px;
+}
 .chest-ui {
   position: fixed;
   left: 50%;
@@ -1839,6 +1869,9 @@ kbd {
 }
 .inv-worn {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 190px;
   gap: 6px;
 }
 .inv-worn .slot.empty {

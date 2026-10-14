@@ -113,12 +113,25 @@ const SPECIES = {
   // slowly with food in your hand and they settle (see #horse): a tame one
   // can be led, fed, saddled and ridden (see Game).
   horse: { ground: true, grade: 0.56, model: Models.horse, max: 30, walk: 1.5, run: 15, flee: 32, calm: 100, radius: 0.6, height: 1.8, health: 160, stride: 2.2, turn: 2.4, size: 1.08, gaits: HOOF, trotBand: 0.35, swims: true, call: 'neigh' },
+  // Goats, gone wild: small bands on the hills, the scrub and the badlands'
+  // edges (lower than the mountain goats). Lured with grain like sheep; a
+  // tame nanny gives milk (a pail: see Game).
+  goat: { ground: true, grade: 0.95, model: Models.goat, max: 30, walk: 1.0, run: 8, flee: 24, calm: 70, radius: 0.35, height: 0.95, health: 55, stride: 1.0, turn: 3, size: 1.0, gaits: HOOF, trotBand: 0.35, call: 'goat' },
+  // Wild donkeys: small bands on the dry plains, the desert's edge and the
+  // savanna, hardy and sure-footed. Settled like a horse; tame, it won't
+  // take a saddle but carries big packs (see Game). A horse and a donkey,
+  // both tame and fed close together: a mule, the best pack animal there is
+  // (and one that can be ridden), though it never has young of its own.
+  donkey: { ground: true, grade: 0.66, model: Models.donkey, max: 20, walk: 1.3, run: 11, flee: 26, calm: 90, radius: 0.5, height: 1.4, health: 120, stride: 1.8, turn: 2.6, size: 0.85, gaits: HOOF, trotBand: 0.35, swims: true, call: 'bray' },
+  mule: { ground: true, grade: 0.66, model: Models.mule, max: 12, walk: 1.4, run: 13, flee: 28, calm: 90, radius: 0.55, height: 1.6, health: 150, stride: 2.0, turn: 2.5, size: 1.0, gaits: HOOF, trotBand: 0.35, swims: true, call: 'bray' },
 };
+// (Horses, donkeys, mules: settled, kept, fed and led alike.)
+export const EQUINE = new Set(['horse', 'donkey', 'mule']);
 // Hunting: how big a quarry each is (see wound), and the ones that will
 // come for you (`predator`: how far off they see you, how near you can come
 // before they come for you anyway, how hard they bite or swipe, how often,
 // and from how far; a cougar ambushes).
-const BULK = { horse: 'large', lion: 'large', hyena: 'medium', elephant: 'huge', hippo: 'huge', camel: 'large', scorpion: 'small', python: 'medium', deer: 'large', elk: 'large', moose: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', boar: 'large', wolf: 'medium', coyote: 'medium', sheep: 'medium', cougar: 'medium', fox: 'small', rabbit: 'small', hare: 'small', wolfPup: 'small', turkey: 'small', duck: 'small', snake: 'small' };
+const BULK = { horse: 'large', donkey: 'large', mule: 'large', lion: 'large', hyena: 'medium', elephant: 'huge', hippo: 'huge', camel: 'large', scorpion: 'small', python: 'medium', deer: 'large', elk: 'large', moose: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', boar: 'large', wolf: 'medium', coyote: 'medium', sheep: 'medium', goat: 'medium', cougar: 'medium', fox: 'small', rabbit: 'small', hare: 'small', wolfPup: 'small', turkey: 'small', duck: 'small', snake: 'small' };
 for (const [kind, sp] of Object.entries(SPECIES)) sp.bulk = BULK[kind] ?? 'small';
 SPECIES.wolf.predator = { sight: 70, close: 22, bite: 11, every: 1.3, reach: 1.4 };
 SPECIES.grizzly.predator = { sight: 55, close: 25, bite: 30, every: 1.7, reach: 2.0 };
@@ -137,10 +150,10 @@ SPECIES.crocodile.predator = { sight: 18, close: 0, bite: 40, every: 1.8, reach:
 // then a calf. (A tame one, left out unguarded in the night, too: see
 // #livestockOpen.)
 const PREY = {
-  wolf: { deer: 1, elk: 0.8, sheep: 1, mountainGoat: 0.7, rabbit: 0.4, hare: 0.4, boar: 0.45, moose: 0.3, bison: 0.25, horse: 0.35, donkey: 0.8, mule: 0.5, turkey: 0.3 },
-  coyote: { rabbit: 1, hare: 1, turkey: 0.8, duck: 0.6, sheep: 0.45, deer: 0.15, mountainGoat: 0.3 },
+  wolf: { deer: 1, elk: 0.8, sheep: 1, goat: 1, mountainGoat: 0.7, rabbit: 0.4, hare: 0.4, boar: 0.45, moose: 0.3, bison: 0.25, horse: 0.35, donkey: 0.8, mule: 0.5, turkey: 0.3 },
+  coyote: { rabbit: 1, hare: 1, turkey: 0.8, duck: 0.6, sheep: 0.45, goat: 0.4, deer: 0.15, mountainGoat: 0.3 },
   fox: { rabbit: 1, hare: 0.8, turkey: 0.5, duck: 0.7 },
-  cougar: { deer: 1, sheep: 0.8, mountainGoat: 1, boar: 0.6, elk: 0.45, horse: 0.25, donkey: 0.5, rabbit: 0.3, turkey: 0.3 },
+  cougar: { deer: 1, sheep: 0.8, goat: 0.9, mountainGoat: 1, boar: 0.6, elk: 0.45, horse: 0.25, donkey: 0.5, rabbit: 0.3, turkey: 0.3 },
   panther: { deer: 1, boar: 0.8, turkey: 0.5, monkey: 0.4, sheep: 0.6 },
   jaguar: { boar: 1, deer: 0.8, monkey: 0.4, sheep: 0.6, crocodile: 0.15 },
   tiger: { deer: 1, boar: 1, elk: 0.7, bison: 0.3, horse: 0.4, sheep: 0.5 },
@@ -222,10 +235,10 @@ const YIELD = {
   sheep: { rawMeat: 3, wool: 3 }, wolfPup: { rawMeat: 1 }, deer: { rawMeat: 4, hide: 1 }, elk: { rawMeat: 6, hide: 2 }, moose: { rawMeat: 9, hide: 2 },
   bison: { rawMeat: 6, hide: 2 }, blackBear: { rawMeat: 5, fur: 2 }, grizzly: { rawMeat: 6, fur: 2 }, wolf: { rawMeat: 2, fur: 1 }, coyote: { rawMeat: 2, fur: 1 },
   fox: { rawMeat: 1, fur: 1 }, rabbit: { rawMeat: 1 }, hare: { rawMeat: 1, fur: 1 }, boar: { rawMeat: 5, hide: 1 }, cougar: { rawMeat: 3, fur: 1 },
-  tiger: { rawMeat: 6, fur: 2 }, jaguar: { rawMeat: 4, fur: 1 }, monkey: { rawMeat: 1 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 },
+  tiger: { rawMeat: 6, fur: 2 }, jaguar: { rawMeat: 4, fur: 1 }, monkey: { rawMeat: 1 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 }, goat: { rawMeat: 3, hide: 1 },
   turkey: { rawFowl: 2, feather: 3 }, duck: { rawFowl: 1, feather: 2 }, owl: { rawFowl: 1, feather: 2 }, snake: { rawMeat: 1 },
   lion: { rawMeat: 5, fur: 2 }, hyena: { rawMeat: 2, fur: 1 }, elephant: { rawMeat: 20, hide: 4 }, hippo: { rawMeat: 14, hide: 3 }, camel: { rawMeat: 7, hide: 2 },
-  python: { rawMeat: 3, hide: 1 }, eagle: { feather: 4 }, bat: {}, scorpion: {}, horse: { rawMeat: 8, hide: 2 },
+  python: { rawMeat: 3, hide: 1 }, eagle: { feather: 4 }, bat: {}, scorpion: {}, horse: { rawMeat: 8, hide: 2 }, donkey: { rawMeat: 6, hide: 2 }, mule: { rawMeat: 7, hide: 2 },
 };
 // Those that are small enough to be fed on by the scavengers (and those
 // too big to be dragged off whole).
@@ -404,7 +417,7 @@ export class Wildlife {
    * galloping (`stamina`). Starved or parched too long, it dies.
    */
   #horseNeeds(a, dt, ctx) {
-    const sp = SPECIES.horse;
+    const sp = SPECIES[a.kind];
     a.hunger = Math.max(0, (a.hunger ?? 80) - dt * (100 / 2880));
     a.thirst = Math.max(0, (a.thirst ?? 80) - dt * (100 / 1800));
     if (!a.ridden && !a.led && a.state === 'graze') a.hunger = Math.min(100, a.hunger + dt * 0.7);
@@ -437,12 +450,35 @@ export class Wildlife {
   feed(a) {
     if (a.mirrored) return this.onAct?.('feed', a), null;
     a.fed = this.time;
-    const mate = this.animals.find((m) => m !== a && m.tame && m.alive && !m.young && m.kind === a.kind && this.time - (m.fed ?? -1e9) < 90 && Math.hypot(m.x - a.x, m.z - a.z) < 10);
-    if (!mate || a.young) return null;
+    // (A mule never has young; a horse with a donkey has a mule. Once a
+    // mother's had one, a while (two days) before she has another.)
+    if (a.young || a.kind === 'mule' || this.time < (a.bred ?? -1e9) + 1440) return null;
+    const cross = (k) => (k === a.kind ? a.kind : (k === 'horse' && a.kind === 'donkey') || (k === 'donkey' && a.kind === 'horse') ? 'mule' : null);
+    const mate = this.animals.find((m) => m !== a && m.tame && m.alive && !m.young && cross(m.kind) && this.time - (m.fed ?? -1e9) < 90 && this.time >= (m.bred ?? -1e9) + 1440 && Math.hypot(m.x - a.x, m.z - a.z) < 10);
+    if (!mate) return null;
+    const kind = cross(mate.kind);
     a.fed = mate.fed = -1e9;
-    const lamb = this.#spawnWalker(a.kind, (a.x + mate.x) / 2, (a.z + mate.z) / 2, null, { young: 0.5, mother: a });
-    if (lamb) this.#tame(lamb);
+    if (EQUINE.has(a.kind)) a.bred = mate.bred = this.time;
+    const lamb = this.#spawnWalker(kind, (a.x + mate.x) / 2, (a.z + mate.z) / 2, null, { young: 0.5, mother: a });
+    if (lamb) {
+      this.#tame(lamb);
+      lamb.growth = 0;
+      if (EQUINE.has(kind)) Object.assign(lamb, { hunger: 90, thirst: 90, stamina: 100 });
+      if (kind === 'goat') lamb.billy = Math.random() < 0.5;
+    }
     return lamb;
+  }
+
+  /**
+   * The young growing up (a tame one, over two days): bigger by the day,
+   * till it's grown.
+   */
+  #growUp(a, dt) {
+    if (!a.young || !a.tame || a.growth === undefined) return;
+    a.adultScale ??= a.scale / (typeof a.young === 'number' ? a.young : 0.5);
+    a.growth = Math.min(1, a.growth + dt / 2880);
+    a.scale = a.adultScale * (0.5 + 0.5 * a.growth);
+    if (a.growth >= 1) (a.young = false), (a.growth = undefined), (a.mother = null);
   }
 
   /** The great beasts brought down, and when (world day): { lair key: day }, to save. */
@@ -467,8 +503,9 @@ export class Wildlife {
   /** Your tame animals, to save: [{ kind, x, z, young, sheared }]. */
   tameJSON() {
     return this.animals.filter((a) => a.tame && a.alive && !a.gone).map((a) => ({
-      kind: a.kind, x: +a.x.toFixed(1), z: +a.z.toFixed(1), young: a.young ? 0.5 : 0, sheared: a.sheared ? Math.max(0, Math.round(this.time - a.sheared)) : null,
-      ...(a.kind === 'horse' ? { saddled: a.saddled === 'great' ? 'great' : !!a.saddled, hunger: Math.round(a.hunger ?? 80), thirst: Math.round(a.thirst ?? 80), stallion: !!a.stallion, bags: a.bags ? a.bags.slots : null } : {}),
+      kind: a.kind, x: +a.x.toFixed(1), z: +a.z.toFixed(1), young: a.young ? +(0.5 + 0.5 * (a.growth ?? 0)).toFixed(3) : 0, sheared: a.sheared ? Math.max(0, Math.round(this.time - a.sheared)) : null,
+      ...(EQUINE.has(a.kind) ? { saddled: a.saddled === 'great' ? 'great' : !!a.saddled, hunger: Math.round(a.hunger ?? 80), thirst: Math.round(a.thirst ?? 80), stallion: !!a.stallion, bags: a.bags ? a.bags.slots : null, bred: a.bred ? Math.round(this.time - a.bred) : null } : {}),
+      ...(a.kind === 'goat' ? { billy: !!a.billy, milked: a.milked ? Math.round(this.time - a.milked) : null } : {}),
     }));
   }
 
@@ -1183,8 +1220,12 @@ export class Wildlife {
         if (!a) continue;
         this.#tame(a);
         if (t.sheared !== null && t.sheared !== undefined) a.sheared = this.time - t.sheared;
-        if (t.kind === 'horse') Object.assign(a, { saddled: t.saddled === 'great' ? 'great' : !!t.saddled, hunger: t.hunger ?? 80, thirst: t.thirst ?? 80, stallion: !!t.stallion, stamina: 100 });
-        if (t.bags) (a.bags = this.makeBags?.() ?? null) && a.bags.load({ slots: t.bags });
+        if (EQUINE.has(t.kind)) Object.assign(a, { saddled: t.saddled === 'great' ? 'great' : !!t.saddled, hunger: t.hunger ?? 80, thirst: t.thirst ?? 80, stallion: !!t.stallion, stamina: 100 });
+        if (t.bred !== null && t.bred !== undefined) a.bred = this.time - t.bred;
+        if (t.kind === 'goat') (a.billy = !!t.billy), t.milked !== null && t.milked !== undefined && (a.milked = this.time - t.milked);
+        // (The young: as grown as it was.)
+        if (t.young) (a.adultScale = a.scale / t.young), (a.growth = Math.max(0, (t.young - 0.5) * 2));
+        if (t.bags) (a.bags = this.makeBags?.(t.bags.length) ?? null) && a.bags.load({ slots: t.bags });
       }
       this.pendingTame = left;
     }
@@ -1518,7 +1559,7 @@ export class Wildlife {
     // A herd keeps clear of a hunter on the prowl near it (one lying up, or
     // at its kill, they watch and let be); horses are the jumpiest of all.
     for (const h of this.herds) {
-      if (h.fleeTime > 0 || h.kind === 'horse' || SPECIES[h.kind]?.predator) continue;
+      if (h.fleeTime > 0 || EQUINE.has(h.kind) || SPECIES[h.kind]?.predator) continue;
       const lead = h.members.find((m) => m.alive);
       if (!lead || lead.tame) continue;
       const wary = (SPECIES[h.kind].flee ?? 30) * 0.45;
@@ -1529,9 +1570,9 @@ export class Wildlife {
         break;
       }
     }
-    // Horses (wild ones) run from anything that's hunting near them.
+    // Horses and donkeys (wild ones) run from anything that's hunting near them.
     for (const h of this.herds) {
-      if (h.kind !== 'horse' || h.fleeTime > 0) continue;
+      if (!EQUINE.has(h.kind) || h.fleeTime > 0) continue;
       const lead = h.members[0];
       if (!lead) continue;
       for (const a of this.animals) {
@@ -1539,7 +1580,7 @@ export class Wildlife {
         if (!a.alive || !sp.predator || Math.abs(a.x - lead.x) > 45 || Math.abs(a.z - lead.z) > 45) continue;
         if (Math.hypot(a.x - lead.x, a.z - lead.z) < 45) {
           this.#alarm(h, a.x, a.z);
-          this.ctx?.sound?.call('neigh', this.ctx.pan(lead.x, lead.z), 0.5);
+          this.ctx?.sound?.call(h.kind === 'horse' ? 'neigh' : 'bray', this.ctx.pan(lead.x, lead.z), 0.5);
           break;
         }
       }
@@ -2068,6 +2109,23 @@ export class Wildlife {
         own(from);
       }
     }
+    // Goats, gone wild: a band on the hills and the scrub (a billy and his nannies).
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
+      const hills = (m > 0.18 && m < 0.5) || (w.badlands > 0.3 && w.badlands < 0.8) || (w.blackHills ?? 0) > 0.5 || (w.volcanic > 0.4 && m < 0.5);
+      if (p.y > ctx.seaLevel + 2 && hills && w.desert < 0.4 && g.getForestDensity(p.x, p.z) < 0.5 && rand() < 0.05) {
+        const from = this.animals.length;
+        const herd = this.#group('goat', p, 3 + Math.floor(rand() * 5), false);
+        if (herd) {
+          herd.members[0].billy = true;
+          herd.members[0].scale *= 1.1;
+          if ((ctx.spring ?? 0) > 0.4) this.#addYoung(herd, 1 + Math.floor(rand() * 2), 0.5);
+          home.herds.push(herd);
+        }
+        own(from);
+      }
+    }
     // Crocodiles: lying at the water's edge in the mangroves and round the
     // jungle's lakes and rivers.
     // (And in the marshes and wetlands, lots of them.)
@@ -2117,6 +2175,23 @@ export class Wildlife {
           stallion.stallion = true;
           stallion.scale *= 1.08;
           if ((ctx.spring ?? 0) + (ctx.summer ?? 0) > 0.5) this.#addYoung(herd, 1 + Math.floor(rand() * 2), 0.55);
+          home.herds.push(herd);
+        }
+        own(from);
+      }
+    }
+    // Wild donkeys: a small band, on the dry, open country (the desert's
+    // edge, the badlands' flats, the savanna's dry grass).
+    {
+      const p = at();
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      const dry = (w.desert > 0.15 && w.desert < 0.75) || w.badlands > 0.4 || w.savanna > 0.5;
+      if (p.y > ctx.seaLevel + 1 && dry && g.getForestDensity(p.x, p.z) < 0.35 && g.getMountainness(p.x, p.z) < 0.5 && rand() < 0.05) {
+        const from = this.animals.length;
+        const herd = this.#spawnHerd('donkey', p, 3 + Math.floor(rand() * 5));
+        if (herd) {
+          herd.members[0].stallion = true;
+          if ((ctx.spring ?? 0) + (ctx.summer ?? 0) > 0.5) this.#addYoung(herd, 1, 0.55);
           home.herds.push(herd);
         }
         own(from);
@@ -2665,6 +2740,7 @@ export class Wildlife {
         case 'boar': call = 'oink'; break;
         case 'sheep': call = 'baa'; break;
         case 'mountainGoat': call = Math.random() < 0.35 ? 'goat' : null; break; // (mostly quiet)
+        case 'goat': call = Math.random() < 0.5 ? 'goat' : null; break;
         case 'turkey': call = 'gobble'; break;
         case 'duck': call = 'quack'; break;
         case 'tiger': call = Math.random() < 0.35 ? 'roar' : 'chuff'; break;
@@ -2678,6 +2754,7 @@ export class Wildlife {
         case 'hippo': call = 'hippo'; break;
         case 'camel': call = Math.random() < 0.4 ? 'camel' : null; break;
         case 'horse': call = Math.random() < 0.4 ? 'neigh' : 'snort'; break;
+        case 'donkey': case 'mule': call = Math.random() < 0.35 ? 'bray' : Math.random() < 0.3 ? 'snort' : null; break;
         case 'rabbit': case 'hare': call = Math.random() < 0.2 ? 'thump' : null; break;
         case 'songbird':
           a.voice ??= Math.floor(Math.random() * 7);
@@ -2883,7 +2960,8 @@ export class Wildlife {
       return;
     }
     if (sp.water) return this.#duck(a, sp, dt, ctx);
-    if (a.kind === 'horse' && a.tame) this.#horseNeeds(a, dt, ctx);
+    if (EQUINE.has(a.kind) && a.tame) this.#horseNeeds(a, dt, ctx);
+    this.#growUp(a, dt);
     const herd = a.herd;
     const t = this.#threat(a, ctx);
     // How much of a threat you are: running at them, much; walking, some;
@@ -2891,7 +2969,7 @@ export class Wildlife {
     // crouched). Too close for that (on the ground, or flying low over
     // them): they bolt.
     const p = ctx.player, onFoot = p && p.mode === 'walk' && p.alive;
-    const stance = !onFoot ? 1 : p.crouch ? (p.moving ? 0.45 : 0.3) * (1 - 0.05 * (p.sneak ?? 0)) : p.sprint ? 1.5 : p.moving ? 1 : 0.6;
+    const stance = (!onFoot ? 1 : p.crouch ? (p.moving ? 0.45 : 0.3) * (1 - 0.05 * (p.sneak ?? 0)) : p.sprint ? 1.5 : p.moving ? 1 : 0.6) * (onFoot && p.quiet && p.moving ? 0.85 : 1); // (soft boots: your steps quieter)
     // (In tall grass you're half hidden: crouched in it, nearly.)
     const cover = onFoot ? (p.cover ?? 0) * (p.crouch ? 1 : 0.6) : 0;
     const reach = sp.flee * stance * (1 - 0.55 * cover) * (t.above > 25 ? 0.5 : 1) * (onFoot ? this.#scent(a, ctx) : 1);
@@ -2910,7 +2988,7 @@ export class Wildlife {
     }
     // Sheep come to you if you've wheat in your hand; follow you a while and
     // they're yours (tame: they stay where you leave them, and don't run).
-    const lured = (a.kind === 'sheep' || a.kind === 'turkey' || a.kind === 'duck') && onFoot && p.lure && t.d < 16 && !a.flying;
+    const lured = (a.kind === 'sheep' || a.kind === 'goat' || a.kind === 'turkey' || a.kind === 'duck') && onFoot && p.lure && t.d < 16 && !a.flying;
     if (lured) {
       a.fear = 0;
       a.followed = (a.followed ?? 0) + dt;
@@ -2919,8 +2997,8 @@ export class Wildlife {
     // A wild horse, settling: come up slowly with food in your hand and it
     // lets you near, its calm growing (see `calming`, for the meter); come
     // at it fast, or hurt it, and it's gone again. Calm enough: it's yours.
-    const settling = a.kind === 'horse' && !a.tame && !a.young && onFoot && p.food && !p.sprint && t.d < 24 && !(herd?.fleeTime > 0);
-    if (a.kind === 'horse' && !a.tame) {
+    const settling = EQUINE.has(a.kind) && !a.tame && !a.young && onFoot && p.food && !p.sprint && t.d < 24 && !(herd?.fleeTime > 0);
+    if (EQUINE.has(a.kind) && !a.tame) {
       if (settling) {
         a.fear = 0;
         const slow = p.crouch || !p.moving ? 1 : 0.6;
@@ -2928,7 +3006,7 @@ export class Wildlife {
         if (!this.calming || t.d < this.calming.d) this.calming = { a, calm: a.calm, d: t.d };
         if (a.calm >= 1) {
           this.#tame(a);
-          this.ctx?.sound?.call('neigh', this.ctx.pan(a.x, a.z), 0.6);
+          this.ctx?.sound?.call(a.kind === 'horse' ? 'neigh' : 'bray', this.ctx.pan(a.x, a.z), 0.6);
           a.hunger = a.thirst = 80;
           a.stamina = 100;
         }

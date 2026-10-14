@@ -1081,6 +1081,21 @@ export class Sound {
       tone(t, 1.1, 'sawtooth', 900, 420, 1600, 2.2, 0.12, 14);
       tone(t, 1.1, 'triangle', 1800, 840, 2400, 2, 0.04, 14);
       noise(t + 1.1, 0.2, 700, 1.4, 0.12);
+    } else if (kind === 'paddle') {
+      // A paddle dipped and drawn back through the water: a soft swirl and drip.
+      noise(t, 0.4, 700, 0.9, 0.09, 6);
+      noise(t + 0.06, 0.22, 2200, 1.4, 0.035);
+      for (let k = 0; k < 3; k++) tone(t + 0.42 + k * 0.07 + Math.random() * 0.05, 0.05, 'sine', 1500 + Math.random() * 700, 900, 1400, 1.2, 0.02);
+    } else if (kind === 'bray') {
+      // A donkey's (or a mule's) bray: a wheezing in-breath, a honking
+      // out-breath, again and again (hee-haw), dying away.
+      for (let k = 0; k < 4; k++) {
+        const at = t + k * 0.62, fall = 1 - k * 0.08;
+        tone(at, 0.22, 'sawtooth', 820 * fall, 980 * fall, 2200, 2, 0.07, 12); // (hee: the in-breath)
+        noise(at, 0.22, 1600, 1.5, 0.05);
+        tone(at + 0.24, 0.34, 'sawtooth', 260 * fall, 190 * fall, 900, 1.6, 0.2 * fall, 22); // (haw: the honk)
+        tone(at + 0.24, 0.34, 'square', 520 * fall, 380 * fall, 1500, 2, 0.05 * fall, 22);
+      }
     } else if (kind === 'trumpet') {
       // An elephant: a brassy, blaring trumpet, rising and breaking.
       tone(t, 1.1, 'sawtooth', 420, 620, 1400, 1.4, 0.28, 9);

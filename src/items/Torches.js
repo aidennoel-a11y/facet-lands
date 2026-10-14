@@ -127,6 +127,7 @@ export class Torches {
   place(point, normal, save = true, lit = false, lamp = false) {
     if (normal.y < -0.3) return null;
     if (lamp === true || lamp === 'lamp') return this.#placeLamp(point, normal, save);
+    if (lamp === 'lantern' || lamp === 'candle') return this.#placeLight(lamp, point, normal, save, lit);
     const coal = lamp === 'coal'; // (a coal torch: a white-hot flame, lighting twice as far)
     const lean = normal.y > 0.7 ? UP.clone() : normal.clone().multiplyScalar(0.55).add(UP).normalize();
 
@@ -145,6 +146,13 @@ export class Torches {
     glow.position.y = FLAME_HEIGHT + 0.1;
     glow.scale.setScalar(1.6);
     group.add(stick, head, outer, inner, glow);
+    // (On a wall: held out from it in an iron bracket.)
+    if (normal.y <= 0.7) {
+      this.bracket ??= new CylinderGeometry(0.075, 0.06, 0.08, 6).translate(0, 0.42, 0);
+      this.bracketArm ??= new CylinderGeometry(0.018, 0.018, 0.3, 4).rotateX(Math.PI / 2).translate(0, 0.32, -0.14);
+      this.ironMaterial ??= new MeshLambertMaterial({ color: 0x3a3a3e, flatShading: true });
+      group.add(new Mesh(this.bracket, this.ironMaterial), new Mesh(this.bracketArm, this.ironMaterial));
+    }
     this.scene.add(group);
     group.updateMatrixWorld(true);
 
@@ -159,6 +167,75 @@ export class Torches {
     this.torches.push(torch);
     if (save) this.#save();
     return torch;
+  }
+
+  /**
+   * A lantern (a candle in an iron frame behind horn panes: a steady light,
+   * one the rain and the wind don't put out) or a candle (beeswax: a small
+   * soft light, for a table or a shelf). On a wall, a lantern hangs from a
+   * bracket; a candle stands in a little iron holder.
+   */
+  #placeLight(kind, point, normal, save, lit) {
+    const group = new Group();
+    group.name = kind;
+    const wall = normal.y <= 0.7;
+    this.ironMaterial ??= new MeshLambertMaterial({ color: 0x3a3a3e, flatShading: true });
+    this.waxMaterial ??= new MeshLambertMaterial({ color: 0xf0e2b0, flatShading: true });
+    this.paneMaterial ??= new MeshBasicMaterial({ color: 0xffc070, transparent: true, opacity: 0.55, depthWrite: false });
+    this.smallFlame ??= new OctahedronGeometry(0.035, 0).scale(1, 1.8, 1);
+    const out = wall ? normal.clone().setY(0).normalize() : null;
+    group.position.copy(point).addScaledVector(normal, wall ? 0.02 : -0.01);
+    if (wall) group.rotation.y = Math.atan2(out.x, out.z);
+    let flameY;
+    if (kind === 'lantern') {
+      const y0 = wall ? -0.2 : 0, z0 = wall ? 0.22 : 0;
+      this.lanternFrame ??= new CylinderGeometry(0.11, 0.12, 0.05, 4).rotateY(Math.PI / 4);
+      this.lanternCap ??= new CylinderGeometry(0.02, 0.12, 0.1, 4).rotateY(Math.PI / 4);
+      this.lanternPane ??= new CylinderGeometry(0.1, 0.1, 0.22, 4, 1, true).rotateY(Math.PI / 4);
+      this.lanternPost ??= new CylinderGeometry(0.012, 0.012, 0.24, 3);
+      const base = new Mesh(this.lanternFrame, this.ironMaterial), cap = new Mesh(this.lanternCap, this.ironMaterial), pane = new Mesh(this.lanternPane, this.paneMaterial);
+      base.position.set(0, y0 + 0.025, z0);
+      pane.position.set(0, y0 + 0.16, z0);
+      cap.position.set(0, y0 + 0.32, z0);
+      group.add(base, pane, cap);
+      for (const [dx, dz] of [[0.075, 0.075], [-0.075, 0.075], [0.075, -0.075], [-0.075, -0.075]]) {
+        const p = new Mesh(this.lanternPost, this.ironMaterial);
+        p.position.set(dx, y0 + 0.16, z0 + dz);
+        group.add(p);
+      }
+      if (wall) {
+        this.lanternArm ??= new CylinderGeometry(0.015, 0.015, 0.26, 4).rotateX(Math.PI / 2);
+        const arm = new Mesh(this.lanternArm, this.ironMaterial);
+        arm.position.set(0, 0.17, 0.12);
+        group.add(arm);
+      }
+      flameY = y0 + 0.15;
+    } else {
+      this.candleGeo ??= new CylinderGeometry(0.025, 0.028, 0.14, 6).translate(0, 0.07, 0);
+      this.candleDish ??= new CylinderGeometry(0.06, 0.05, 0.02, 7).translate(0, 0.01, 0);
+      const y0 = wall ? -0.05 : 0, z0 = wall ? 0.08 : 0;
+      const c = new Mesh(this.candleGeo, this.waxMaterial), d = new Mesh(this.candleDish, this.ironMaterial);
+      c.position.set(0, y0 + 0.02, z0);
+      d.position.set(0, y0, z0);
+      group.add(c, d);
+      flameY = y0 + 0.2;
+    }
+    const z0 = wall ? (kind === 'lantern' ? 0.22 : 0.08) : 0;
+    const outer = new Mesh(this.smallFlame, this.outerMaterial), inner = new Mesh(this.smallFlame, this.innerMaterial);
+    outer.position.set(0, flameY, z0);
+    inner.position.set(0, flameY - 0.005, z0);
+    inner.scale.setScalar(0.55);
+    const glow = new Sprite(this.glowMaterial);
+    glow.position.set(0, flameY + 0.02, z0);
+    glow.scale.setScalar(kind === 'lantern' ? 1.1 : 0.6);
+    group.add(outer, inner, glow);
+    this.scene.add(group);
+    group.updateMatrixWorld(true);
+    const t = { group, outer, inner, glow, kind, flameAt: new Vector3(0, flameY, z0), phase: Math.random() * 100, point: point.clone(), normal: normal.clone(), lit };
+    outer.visible = inner.visible = glow.visible = lit;
+    this.torches.push(t);
+    if (save) this.#save();
+    return t;
   }
 
   #placeLamp(point, normal, save) {
@@ -185,7 +262,7 @@ export class Torches {
     let best = null, bestD = tolerance;
     const c = new Vector3();
     for (const t of this.torches) {
-      t.group.localToWorld(c.set(0, 0.6, 0));
+      t.group.localToWorld(t.flameAt ? c.copy(t.flameAt) : c.set(0, 0.6, 0));
       const ox = c.x - origin.x, oy = c.y - origin.y, oz = c.z - origin.z;
       const along = ox * direction.x + oy * direction.y + oz * direction.z;
       if (along < 0 || along > reach) continue;
@@ -227,7 +304,7 @@ export class Torches {
     let bestD = tolerance * tolerance;
     const centre = new Vector3();
     for (const t of this.torches) {
-      t.group.localToWorld(centre.set(0, 0.5, 0));
+      t.group.localToWorld(t.flameAt ? centre.copy(t.flameAt) : centre.set(0, 0.5, 0));
       if (centre.distanceTo(ray.origin) > reach) continue;
       const d = ray.distanceSqToPoint(centre);
       if (d < bestD) {
@@ -246,7 +323,7 @@ export class Torches {
 
   /** The torches as records: [{ k, p: [x, y, z, nx, ny, nz], lit }] (online: see WorldSync). */
   records() {
-    return this.torches.map((t) => ({ k: Torches.key(t), p: [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)), lit: !!t.lit, lamp: t.lamp ? true : t.coal ? 'coal' : false }));
+    return this.torches.map((t) => ({ k: Torches.key(t), p: [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)), lit: !!t.lit, lamp: t.lamp ? true : t.coal ? 'coal' : t.kind ?? false }));
   }
 
   /** A torch as someone else has it (online): put up, or lit or put out. */
@@ -256,7 +333,7 @@ export class Torches {
     const t = this.torches.find((t) => t.point.distanceTo(point) < 0.02);
     if (t) {
       if (!!t.lit !== !!rec.lit) this.light(t, !!rec.lit);
-    } else this.place(point, new Vector3(nx, ny, nz), true, !!rec.lit, rec.lamp === 'coal' ? 'coal' : !!rec.lamp);
+    } else this.place(point, new Vector3(nx, ny, nz), true, !!rec.lit, rec.lamp === 'coal' || rec.lamp === 'lantern' || rec.lamp === 'candle' ? rec.lamp : !!rec.lamp);
   }
 
   /** Takes a torch down by its key (someone else did, online). */
@@ -276,7 +353,7 @@ export class Torches {
     } catch {
       saved = [];
     }
-    for (const [x, y, z, nx, ny, nz, lit = 1, lamp = 0] of saved) this.place(new Vector3(x, y, z), new Vector3(nx, ny, nz), false, !!lit, lamp === 2 ? 'coal' : !!lamp);
+    for (const [x, y, z, nx, ny, nz, lit = 1, lamp = 0] of saved) this.place(new Vector3(x, y, z), new Vector3(nx, ny, nz), false, !!lit, [false, true, 'coal', 'lantern', 'candle'][lamp] ?? false);
   }
 
   /** Forgets this world's torches (a survival life that's over: see Game.#die). */
@@ -290,7 +367,7 @@ export class Torches {
 
   #save() {
     if (this.seed === null) return;
-    const data = this.torches.map((t) => [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)).concat(t.lit ? 1 : 0, t.lamp ? 1 : t.coal ? 2 : 0));
+    const data = this.torches.map((t) => [t.point.x, t.point.y, t.point.z, t.normal.x, t.normal.y, t.normal.z].map((v) => +v.toFixed(3)).concat(t.lit ? 1 : 0, t.lamp ? 1 : t.coal ? 2 : t.kind === 'lantern' ? 3 : t.kind === 'candle' ? 4 : 0));
     try {
       localStorage.setItem(`facet-lands:torches:${this.seed}`, JSON.stringify(data));
     } catch {
@@ -310,6 +387,14 @@ export class Torches {
         // (No flicker: a slow, faint breathing of the light.)
         t.flicker = 0.92 + 0.08 * Math.sin(time * 0.7 + t.phase);
         t.distance = t.group.position.distanceToSquared(cameraPosition);
+        continue;
+      }
+      if (t.kind) {
+        // (A candle flame: small, steady but for a slow waver; behind a lantern's panes, steadier still.)
+        const f = t.kind === 'lantern' ? 0.95 + 0.05 * Math.sin(time * 5 + t.phase) : 0.9 + 0.1 * Math.sin(time * 6 + t.phase) * Math.sin(time * 2.3 + t.phase);
+        t.outer.scale.set(f, 0.9 + 0.2 * f, f);
+        t.distance = t.group.position.distanceToSquared(cameraPosition);
+        t.flicker = f;
         continue;
       }
       const f = 0.85 + 0.15 * Math.sin(time * 13 + t.phase) * Math.sin(time * 7.3 + t.phase * 1.7);
@@ -349,6 +434,11 @@ export class Torches {
         light.color.setHex(0x8ad4ff);
         light.intensity = 22 * t.flicker;
         light.distance = 22;
+      } else if (t.kind) {
+        light.color.setHex(t.kind === 'lantern' ? 0xffb860 : 0xffb070);
+        light.position.copy(t.group.localToWorld(this._flame.copy(t.flameAt)));
+        light.intensity = (t.kind === 'lantern' ? 18 : 6) * t.flicker;
+        light.distance = t.kind === 'lantern' ? 20 : 9;
       } else if (t.group) {
         light.color.setHex(t.coal ? 0xffe2b8 : 0xffa24a);
         light.position.copy(t.group.localToWorld(this._flame.set(0, FLAME_HEIGHT + 0.1, 0)));

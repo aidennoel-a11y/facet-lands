@@ -990,6 +990,45 @@ export function mountainGoat() {
 }
 
 /**
+ * A goat (gone wild in the hills; tamed, kept for its milk): short-haired,
+ * brown with a dark stripe down its back and dark legs, a pale belly and
+ * muzzle, ridged horns sweeping up and back, a short tail held up, a
+ * beard, ears out sideways.
+ */
+export function goat() {
+  const coat = 0x8a6038, dark = 0x3a2a1e, pale = 0xd8c8a8, horn = 0x9a8a70, black = 0x18161a;
+  return {
+    body: new Blocks()
+      .box(0.3, 0.34, 0.36, coat, [0, 0.8, 0.24], [0, 0, 0], [0.82, 0.9]) // chest
+      .box(0.28, 0.3, 0.56, coat, [0, 0.8, -0.16], [0, 0, 0], [0.9, 0.95]) // barrel
+      .box(0.28, 0.28, 0.24, coat, [0, 0.82, -0.46], [0, 0, 0], [0.85, 0.9]) // hindquarters
+      .box(0.06, 0.03, 0.9, dark, [0, 0.97, -0.08]) // the dark stripe down its back
+      .box(0.22, 0.06, 0.6, pale, [0, 0.64, -0.06]) // pale belly
+      .box(0.05, 0.12, 0.05, dark, [0, 0.98, -0.6], [-0.7, 0, 0]) // short tail, up
+      .build(),
+    headPivot: [0, 0.98, 0.42],
+    head: new Blocks()
+      .box(0.14, 0.22, 0.16, coat, [0, -0.04, 0.02], [0.4, 0, 0], [0.85, 0.9]) // neck
+      .box(0.15, 0.16, 0.28, coat, [0, 0.04, 0.2], [0.35, 0, 0], [0.8, 0.85]) // face
+      .box(0.1, 0.1, 0.1, pale, [0, -0.02, 0.33], [0.35, 0, 0]) // pale muzzle
+      .box(0.05, 0.12, 0.05, dark, [0, -0.12, 0.24], [0.2, 0, 0]) // beard
+      .box(0.05, 0.03, 0.03, black, [0, 0.0, 0.39]) // nose
+      .eyes(0.03, 0.03, 0.02, 0xc8a040, [0.065, 0.1, 0.22], 'bar') // eyes (a goat's: barred)
+      .box(0.035, 0.24, 0.04, horn, [0.045, 0.24, 0.06], [-0.75, 0, 0.1], [0.45, 0.4]) // ridged horns, up and back
+      .box(0.035, 0.24, 0.04, horn, [-0.045, 0.24, 0.06], [-0.75, 0, -0.1], [0.45, 0.4])
+      .box(0.11, 0.035, 0.05, coat, [0.11, 0.12, 0.06], [0, 0, -0.15]) // ears, out to the sides
+      .box(0.11, 0.035, 0.05, coat, [-0.11, 0.12, 0.06], [0, 0, 0.15])
+      .build(),
+    antlers: null,
+    fore: limb(0.26, 0.26, { top: [0.1, 0.12], knee: [0.065, 0.065], ankle: [0.055, 0.055], color: coat, low: dark, foot: [0.07, 0.05, 0.08, black, 0.01] }),
+    hind: limb(0.27, 0.25, { top: [0.12, 0.15], knee: [0.065, 0.07], ankle: [0.055, 0.055], color: coat, low: dark, foot: [0.07, 0.05, 0.08, black, 0.01] }),
+    legs: [[0.1, 0.53, 0.28], [-0.1, 0.53, 0.28], [0.1, 0.53, -0.46], [-0.1, 0.53, -0.46]],
+    torso: [[0, 0.8, -0.08, 0.15, 0.18, 0.56]],
+    skull: [0, 0.04, 0.2, 0.09, 0.11, 0.17],
+  };
+}
+
+/**
  * A crocodile: long and low, armoured in rows of raised dark scutes down
  * its back and tail, olive-grey with a pale belly, a long flat snout with
  * a ragged row of teeth showing, eyes and nostrils raised on top of the
@@ -1404,7 +1443,16 @@ export const eagle = () => bird({ body: 0x3a2a1e, belly: 0x342618, head: 0xf2f0e
  * body... see horseSaddle) carries a leather saddle and blanket.
  */
 export function horse() {
-  const coat = 0x7a4a2a, dark = 0x1e1612, pale = 0x8a5a36, hoof = 0x2a2420;
+  return equine();
+}
+
+/**
+ * A horse, a donkey or a mule (they're built alike): `coat`, `dark` (mane,
+ * tail, lower legs), `pale` (belly), `muzzle` (and round the eyes), how long
+ * the ears (`ear`), whether the mane stands up short (`brush`) and the tail
+ * is a cord with a tuft (`tuft`), as a donkey's.
+ */
+export function equine({ coat = 0x7a4a2a, dark = 0x1e1612, pale = 0x8a5a36, hoof = 0x2a2420, muzzle = pale, ear = 0.15, brush = false, tuft = false } = {}) {
   return {
     body: new Blocks()
       .box(0.56, 0.66, 0.64, coat, [0, 1.36, 0.5], [0, 0, 0], [0.85, 0.9]) // deep chest
@@ -1413,9 +1461,9 @@ export function horse() {
       .box(0.52, 0.58, 0.82, coat, [0, 1.38, -0.08], [0, 0, 0], [0.92, 1]) // the long back
       .box(0.56, 0.62, 0.52, coat, [0, 1.4, -0.62], [0, 0, 0], [0.85, 0.9]) // round quarters
       .box(0.4, 0.08, 1.2, pale, [0, 1.06, 0.0]) // belly
-      .box(0.14, 0.14, 0.3, dark, [0, 1.5, -0.96], [-0.7, 0, 0]) // the tail: from the dock...
-      .box(0.17, 0.5, 0.15, dark, [0, 1.12, -1.06], [-0.15, 0, 0], [0.7, 0.8]) // ...flowing down
-      .box(0.13, 0.3, 0.11, dark, [0, 0.76, -1.1], [-0.05, 0, 0])
+      .box(0.14, 0.14, 0.3, tuft ? coat : dark, [0, 1.5, -0.96], [-0.7, 0, 0]) // the tail: from the dock...
+      .box(tuft ? 0.06 : 0.17, 0.5, tuft ? 0.06 : 0.15, tuft ? coat : dark, [0, 1.12, -1.06], [-0.15, 0, 0], [0.7, 0.8]) // ...flowing down (or a cord, a donkey's)
+      .box(tuft ? 0.1 : 0.13, tuft ? 0.18 : 0.3, tuft ? 0.1 : 0.11, dark, [0, tuft ? 0.82 : 0.76, -1.1], [-0.05, 0, 0]) // (and its tuft)
       .build(),
     headPivot: [0, 1.64, 0.74],
     head: new Blocks()
@@ -1423,18 +1471,18 @@ export function horse() {
       .box(0.3, 0.36, 0.44, coat, [0, 0.0, 0.02], [0.53, 0, 0], [0.9, 0.85]) // its root, in the shoulders
       .box(0.26, 0.78, 0.36, coat, [0, 0.3, 0.2], [0.53, 0, 0], [0.75, 0.62]) // the neck
       .box(0.16, 0.5, 0.14, coat, [0, 0.12, 0.38], [0.75, 0, 0], [0.8, 0.8]) // the throat
-      .box(0.07, 0.82, 0.13, dark, [0, 0.38, 0.07], [0.53, 0, 0], [0.8, 0.6]) // the mane, along its crest
-      .box(0.12, 0.12, 0.1, dark, [0, 0.72, 0.38]) // forelock
+      .box(brush ? 0.05 : 0.07, 0.82, brush ? 0.09 : 0.13, dark, [0, brush ? 0.42 : 0.38, brush ? 0.03 : 0.07], [0.53, 0, 0], [0.8, 0.6]) // the mane, along its crest (short and upright, a donkey's)
+      .box(0.12, brush ? 0.06 : 0.12, 0.1, dark, [0, 0.72, 0.38]) // forelock
       // The head, long, angled down from the poll to the muzzle.
       .box(0.24, 0.24, 0.24, coat, [0, 0.55, 0.47]) // the jowl
       .box(0.21, 0.22, 0.54, coat, [0, 0.47, 0.62], [0.7, 0, 0], [0.9, 0.85]) // the long face
-      .box(0.17, 0.18, 0.18, pale, [0, 0.29, 0.82], [0.7, 0, 0]) // muzzle
+      .box(0.17, 0.18, 0.18, muzzle, [0, 0.29, 0.82], [0.7, 0, 0]) // muzzle
       .box(0.05, 0.03, 0.02, 0x1a1210, [0.05, 0.27, 0.9]) // nostrils
       .box(0.05, 0.03, 0.02, 0x1a1210, [-0.05, 0.27, 0.9])
       .box(0.25, 0.04, 0.06, coat, [0, 0.62, 0.55]) // brow
       .eyes(0.04, 0.035, 0.03, 0x2a1a10, [0.115, 0.58, 0.55], 'round')
-      .box(0.05, 0.15, 0.04, coat, [0.07, 0.76, 0.44], [0.1, 0, 0.15], [0.5, 0.5]) // upright ears
-      .box(0.05, 0.15, 0.04, coat, [-0.07, 0.76, 0.44], [0.1, 0, -0.15], [0.5, 0.5])
+      .box(ear > 0.2 ? 0.07 : 0.05, ear, 0.04, coat, [0.07, 0.69 + ear / 2, 0.44], [0.1, 0, ear > 0.2 ? 0.3 : 0.15], [0.5, 0.5]) // upright ears (long, a donkey's)
+      .box(ear > 0.2 ? 0.07 : 0.05, ear, 0.04, coat, [-0.07, 0.69 + ear / 2, 0.44], [0.1, 0, ear > 0.2 ? -0.3 : -0.15], [0.5, 0.5])
       .build(),
     antlers: null,
     saddle: horseSaddle(), // (drawn on a saddled horse: see Wildlife)
@@ -1446,6 +1494,12 @@ export function horse() {
     skull: [0, 0.46, 0.64, 0.11, 0.14, 0.28],
   };
 }
+
+/** A donkey: grey-brown, a pale muzzle and belly, long ears, a short upright mane, its tail a cord with a dark tuft. */
+export const donkey = () => equine({ coat: 0x7e7466, dark: 0x3a3430, pale: 0xcfc6b6, muzzle: 0xdcd4c4, hoof: 0x2a2420, ear: 0.34, brush: true, tuft: true });
+
+/** A mule: a horse's build and coat, a donkey's long ears and its tail's tuft. */
+export const mule = () => equine({ coat: 0x5e3e26, dark: 0x241a14, pale: 0x8a6a4a, muzzle: 0xa48a6a, ear: 0.27, brush: true, tuft: false });
 
 /** A saddle and blanket, in a horse's body frame (see horse). */
 export function horseSaddle() {

@@ -27,11 +27,13 @@ const GROUPS = ['Tools', 'Materials', 'Trophies', 'Food', 'Farming', 'Worn', 'Bu
  */
 const WEAR_COLOUR = {
   coat: '#a8743e', furCloak: '#8a7458', paleCloak: '#e8e4dc', caveCloak: '#3a3634',
+  boots: '#6a4428', furBoots: '#5a3e28', gloves: '#9a6a3e', furHat: '#8a7458', strawHat: '#e0c878',
   armour: '#7a5230', steelArmour: '#8a96a0', scarArmour: '#4a3426', lionArmour: '#c89a5a', tigerArmour: '#d07a2a', crocArmour: '#4a6a3a',
 };
 function personSvg(inv) {
   const coat = inv.worn ? WEAR_COLOUR[inv.worn.id] ?? '#8a6a4a' : null, armour = inv.armour ? WEAR_COLOUR[inv.armour.id] ?? '#7a5230' : null, pack = inv.back?.id === 'backpack';
   const skin = '#e2b48c', shirt = '#9a8a6a', legs = '#5a4a3a';
+  const feet = inv.feet ? WEAR_COLOUR[inv.feet.id] : null, hands = inv.hands ? WEAR_COLOUR[inv.hands.id] : null, hat = inv.head?.id;
   return `
     ${pack ? '<rect x="22" y="62" width="76" height="70" rx="12" fill="#6a4426"/><rect x="30" y="68" width="60" height="22" rx="6" fill="#8a5a34"/>' : ''}
     <circle cx="60" cy="34" r="17" fill="${skin}"/>
@@ -40,9 +42,12 @@ function personSvg(inv) {
     <path d="M36 60h48l8 64H28z" fill="${coat ?? shirt}"/>
     ${armour ? `<path d="M40 64h40l5 46H35z" fill="${armour}"/><path d="M40 78h40M39 92h42" stroke="rgba(0,0,0,.25)" stroke-width="3"/>` : ''}
     <path d="M36 62l-14 54h10l12-40z" fill="${coat ?? shirt}"/><path d="M84 62l14 54H88L76 76z" fill="${coat ?? shirt}"/>
-    <circle cx="27" cy="120" r="6" fill="${skin}"/><circle cx="93" cy="120" r="6" fill="${skin}"/>
+    <circle cx="27" cy="120" r="${hands ? 7 : 6}" fill="${hands ?? skin}"/><circle cx="93" cy="120" r="${hands ? 7 : 6}" fill="${hands ?? skin}"/>
     <path d="M38 124h20l-2 76H42zM62 124h20l-4 76H64z" fill="${legs}"/>
-    <path d="M40 200h18v8H36zM64 200h18l4 8H64z" fill="#3a2a1c"/>
+    ${feet ? `<path d="M41 178h16l-1 22H42zM63 178h16l-1 22H64z" fill="${feet}"/>${inv.feet.id === 'furBoots' ? '<path d="M40 176h18v6H40zM62 176h18v6H62z" fill="#a89070"/>' : ''}` : ''}
+    <path d="M40 200h18v8H36zM64 200h18l4 8H64z" fill="${feet ? '#2a1e14' : '#3a2a1c'}"/>
+    ${hat === 'strawHat' ? '<ellipse cx="60" cy="24" rx="30" ry="5" fill="#e0c878"/><path d="M47 24q0-16 13-16t13 16z" fill="#d8bc6a"/><path d="M47 21h26v3H47z" fill="#8a4a2a"/>' : ''}
+    ${hat === 'furHat' ? '<path d="M42 30q0-22 18-22t18 22z" fill="#8a7458"/><path d="M41 26h38v6H41z" fill="#a89070"/><path d="M41 30h6v14h-6zM73 30h6v14h-6z" fill="#a89070"/>' : ''}
     ${pack ? '<path d="M44 60l4 50M76 60l-4 50" stroke="#4a2e18" stroke-width="5"/>' : ''}`;
 }
 
@@ -93,6 +98,9 @@ export class Hud {
               <button type="button" class="slot" data-worn="worn" title="Coat"></button>
               <button type="button" class="slot" data-worn="armour" title="Armour"></button>
               <button type="button" class="slot" data-worn="back" title="Back"></button>
+              <button type="button" class="slot" data-worn="head" title="Hat"></button>
+              <button type="button" class="slot" data-worn="hands" title="Gloves"></button>
+              <button type="button" class="slot" data-worn="feet" title="Boots"></button>
             </div>
           </div>
           <div class="inv-grid">
@@ -102,7 +110,12 @@ export class Hud {
             <ol class="inv-pack"></ol>
           </div>
         </div>
-        <p class="inv-note">Coats, armour and a backpack go on you: click one, then its place on the figure (or click it in your hand).</p>
+        <p class="inv-note">Coats, armour, a backpack, hats, gloves and boots go on you: click one, then its place on the figure (or click it in your hand).</p>
+      </section>
+      <section class="ask-ui" hidden aria-label="Write">
+        <h2 class="ask-title"></h2>
+        <textarea class="ask-text" rows="3" maxlength="120"></textarea>
+        <p><button type="button" class="ask-ok">Done</button> <span class="ask-hint">Enter to finish · Esc to leave it</span></p>
       </section>
       <section class="chest-ui" hidden aria-label="Chest">
         <header><h2>Chest</h2><p>Click to move a stack across · food in here keeps · E or Esc to close</p></header>
@@ -137,7 +150,7 @@ export class Hud {
   }
 
   get busy() {
-    return ['.craft', '.creative', '.chest-ui', '.inv-ui', '.death', '.won', '.skills-ui'].some((sel) => !this.el(sel).hidden);
+    return ['.craft', '.creative', '.chest-ui', '.inv-ui', '.death', '.won', '.skills-ui', '.ask-ui'].some((sel) => !this.el(sel).hidden);
   }
 
   /**
@@ -169,6 +182,7 @@ export class Hud {
     if (info.hotSpring) chips.push(['load', 'Hot spring: warming']);
     if (info.heatstroke) chips.push(['bleed', 'Heatstroke']);
     if (info.blizzard) chips.push(['wet', 'Blizzard']);
+    if (info.coldWater > 0.25) chips.push(['wet', info.coldWater > 0.8 ? 'Icy water' : 'Cold water']);
     if (survival.energy < 20) chips.push(['tired', survival.energy <= 0 ? 'Exhausted' : 'Worn out']);
     if (survival.wet > 0.3) chips.push(['wet', 'Soaked']);
     if (survival.full > 0) chips.push(['load', 'Full']);
@@ -297,11 +311,12 @@ export class Hud {
         const needs = Object.entries(r.needs)
           .map(([n, c]) => `<span class="need${inventory.count(n) >= c ? '' : ' short'}" title="${ITEMS[n].name}">${iconSvg(n)}${c}</span>`)
           .join('');
-        const note = `${r.note}${r.at ? ` (at an ${r.at})` : ''}`;
+        const atText = { anvil: 'at an anvil', fire: 'by a lit fire' }[r.at] ?? `at a ${r.at}`;
+        const note = `${r.note}${r.at ? ` (${atText})` : ''}`;
         const tool = r.uses ? `<em class="${r.uses.some((t) => inventory.count(t) > 0) ? '' : 'short'}">with ${usesText(r)}</em>` : '';
         return `<button type="button" class="card${can ? ' can' : ''}${open ? '' : ' locked'}" data-craft="${id}" data-note="${ITEMS[id].name}: ${note.replaceAll('"', '&quot;')}" ${can ? '' : 'aria-disabled="true"'}>
           <span class="made">${iconSvg(id)}${r.makes ? `<b>×${r.makes}</b>` : ''}</span>
-          <span class="what"><b>${ITEMS[id].name}</b>${r.at ? `<em class="${station ? '' : 'short'}">at an ${r.at}</em>` : ''}${tool}<span class="needs">${needs}</span></span>
+          <span class="what"><b>${ITEMS[id].name}</b>${r.at ? `<em class="${station ? '' : 'short'}">${atText}</em>` : ''}${tool}<span class="needs">${needs}</span></span>
         </button>`;
       }).join('');
       return `<section class="tier${open ? ' open' : ''}${next ? ' next' : ''}">
@@ -398,7 +413,7 @@ export class Hud {
       const want = b.dataset.worn;
       if (this.invSel !== null) {
         const s = inv.slots[this.invSel], kind = ITEMS[s?.id]?.wear;
-        const fits = { coat: 'worn', armour: 'armour', back: 'back' }[kind] === want;
+        const fits = { coat: 'worn', armour: 'armour', back: 'back', head: 'head', hands: 'hands', feet: 'feet' }[kind] === want;
         const i = this.invSel;
         this.invSel = null;
         if (fits) return this.onInvWear?.(i);
@@ -439,8 +454,33 @@ export class Hud {
     fill('.pack-slots', pack, 'pack');
   }
 
+  /**
+   * A line or two to write (a sign's words): `done(text)` when finished
+   * (Enter, or the button); Esc leaves it as it was. Returns true (open).
+   */
+  ask(title, value, done) {
+    this.closeAll();
+    const panel = this.el('.ask-ui'), box = this.el('.ask-text');
+    this.el('.ask-title').textContent = title;
+    box.value = value ?? '';
+    panel.hidden = false;
+    const finish = () => {
+      if (panel.hidden) return;
+      panel.hidden = true;
+      done(box.value.slice(0, 120));
+    };
+    this.el('.ask-ok').onclick = finish;
+    box.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter' && !e.shiftKey) (e.preventDefault(), finish());
+      if (e.key === 'Escape') (e.preventDefault(), (panel.hidden = true), done(null));
+    };
+    setTimeout(() => box.focus(), 0);
+    return true;
+  }
+
   closeAll() {
-    for (const sel of ['.craft', '.creative', '.chest-ui', '.skills-ui', '.inv-ui']) this.el(sel).hidden = true;
+    for (const sel of ['.craft', '.creative', '.chest-ui', '.skills-ui', '.inv-ui', '.ask-ui']) this.el(sel).hidden = true;
     this.chest = null;
     this.invSel = null;
     return false;

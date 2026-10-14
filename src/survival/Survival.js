@@ -127,6 +127,9 @@ export class Survival {
     const high = smoothstep(140, 200, e.altitude) * (e.spring + e.autumn + e.winter) + smoothstep(200, 250, e.altitude) * e.summer;
     const winter = e.winter * smoothstep(0.25, 0.6, e.seasonality) * (0.7 + 0.3 * smoothstep(60, 180, e.altitude));
     let cold = Math.max(high, winter);
+    // (Soaked through, out in the wind with no sun on you: a chill even on a
+    // mild day; in the heat you dry too fast for it.)
+    if (this.wet > 0.3 && !(e.heat > 0.8)) cold = Math.max(cold, 0.18 * (this.wet - 0.3) * (1 - 0.6 * (e.day ?? 1) * (e.sun ?? 1)) * (1 + 0.6 * (e.wind ?? 0)) * (1 - (e.summer ?? 0) * 0.6));
     if (cold > 0.02) cold += 0.25 * e.night * cold + 0.2 * e.rain * cold + 0.3 * this.wet * cold + 0.2 * (e.snowing ? 1 : 0) * cold + 0.6 * (e.storm ?? 0) * cold;
     // (Out of the wind and the weather, in a shelter.)
     cold *= 1 - 0.6 * (e.shelter ?? 0);
@@ -185,13 +188,22 @@ export class Survival {
       if (this.hurt(dt * 0.35, 'heatstroke')) return;
     }
     // Wet from swimming and the rain; drying off slowly (fast by a fire).
-    this.wet = Math.min(1, Math.max(0, this.wet + (e.swimming ? dt * 0.5 : e.rain > 0.2 ? dt * 0.01 * e.rain : -dt * (0.004 + 0.05 * (e.fire ?? 0)))));
+    // (Drying faster in the sun and the heat.)
+    this.wet = Math.min(1, Math.max(0, this.wet + (e.swimming ? dt * 0.5 : e.rain > 0.2 ? dt * 0.01 * e.rain : -dt * (0.004 + 0.004 * (e.sun ?? 0) * (e.day ?? 1) + 0.004 * (e.heat ?? 0) + 0.05 * (e.fire ?? 0)))));
+    // (A swim cools you off, out in the desert sun.)
+    if (e.swimming) this.hot = Math.max(0, this.hot - dt * 8);
     // Warmth.
     this.cold = this.coldness(e);
     // (In a hot spring: warm through, however cold it is out of it.)
     if (e.hotSpring) (this.cold = 0), (this.warmth = Math.min(100, this.warmth + dt * 7)), (this.energy = Math.min(100, this.energy + dt * 0.15));
     else if (e.fire > 0) this.warmth = Math.min(100, this.warmth + dt * 9 * e.fire);
-    else if (this.cold > 0.03) this.warmth = Math.max(0, this.warmth - dt * this.cold * 0.55 * (e.coat || 1));
+    else if (e.swimming && (e.waterCold ?? 0) > 0.03) {
+      // In cold water: your warmth goes fast (a coat's no help in it), and
+      // the cold saps your strength to swim on.
+      this.cold = Math.max(this.cold, e.waterCold);
+      this.warmth = Math.max(0, this.warmth - dt * (e.waterCold * 2.6 + this.coldness(e) * 0.3));
+      this.energy = Math.max(0, this.energy - dt * 0.08 * e.waterCold);
+    } else if (this.cold > 0.03) this.warmth = Math.max(0, this.warmth - dt * this.cold * 0.55 * (e.coat || 1));
     else this.warmth = Math.min(100, this.warmth + dt * 1.2);
     // What hurts: starving, parched, freezing, standing in the fire.
     if (this.hunger <= 0 && this.hurt(dt * 0.6, 'starvation')) return;

@@ -1,0 +1,50 @@
+// Donkeys and mules: a tame horse and donkey fed close together have a
+// mule foal; it grows; a shot of the three side by side.
+//   node tools/_donkey.mjs out
+import { createRequire } from 'module';
+import { execSync } from 'child_process';
+const require = createRequire(import.meta.url);
+const { chromium } = require(execSync('npm root -g').toString().trim() + '/playwright');
+const out = process.argv[2] ?? 'donkey';
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 900, height: 520 } });
+const errs = [];
+page.on('pageerror', (e) => errs.push(e.message + ' ' + (e.stack ?? '').split('\n').slice(1, 3).join(' ')));
+await page.addInitScript(() => localStorage.setItem('facet-lands:quality', 'low'));
+await page.goto('http://localhost:4173/?seed=polaris&x=399&z=1025&hide&hour=11&weather=clear&vd=3', { timeout: 180000 });
+await page.waitForFunction(() => window.world?.chunks && window.world.chunks.pendingCount === 0, null, { timeout: 600000, polling: 1000 });
+await page.waitForTimeout(3000);
+const r = await page.evaluate(async () => {
+  const { wildlife, camera, controls } = window.world;
+  controls.setMode('walk');
+  const p = camera.position;
+  for (const a of wildlife.animals) a.gone = true;
+  wildlife.update(0.05, wildlife.ctx);
+  const yaw = controls.euler.y, fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  const put = (k, side, fwd) => wildlife.spawn(k, p.x + fx * fwd + rx * side, p.z + fz * fwd + rz * side);
+  const horse = put('horse', -4, 12), donkey = put('donkey', 0, 12), mule = put('mule', 4, 12);
+  for (const a of [horse, donkey, mule]) if (a) Object.assign(a, { tame: true, herd: null, hunger: 80, thirst: 80, state: 'look', timer: 99 });
+  const out = { spawned: [!!horse, !!donkey, !!mule] };
+  out.first = wildlife.feed(horse)?.kind ?? null;
+  const foal = wildlife.feed(donkey);
+  out.foal = foal ? { kind: foal.kind, young: foal.young, scale: +foal.scale.toFixed(2), growth: foal.growth } : null;
+  out.again = wildlife.feed(horse) && wildlife.feed(donkey) ? 'bred again (wrong)' : 'resting (right)';
+  out.muleFeeds = wildlife.feed(mule) ?? 'no foal (right)';
+  for (let k = 0; k < 40; k++) wildlife.update(0.25, wildlife.ctx);
+  if (foal) out.grown = { growth: +foal.growth.toFixed(4), scale: +foal.scale.toFixed(3) };
+  out.save = wildlife.tameJSON().map((t) => `${t.kind}:${t.young}`);
+  out.donkeys = wildlife.animals.filter((a) => a.kind === 'donkey' && !a.gone).length;
+  const d = donkey;
+  out.where = [d.x - p.x, d.z - p.z].map((v) => +v.toFixed(1));
+  p.set(d.x - Math.sin(d.heading) * 0 + 6, d.y + 2.2, d.z + 6);
+  const yaw2 = Math.atan2(-(d.x - p.x), -(d.z - p.z));
+  controls.euler.set(-0.2, yaw2, 0, 'YXZ');
+  camera.quaternion.setFromEuler(controls.euler);
+  controls.setMode('fly');
+  return out;
+});
+console.log(JSON.stringify(r, null, 1));
+await page.waitForTimeout(2000);
+await page.screenshot({ path: `${out}.png` });
+console.log('errors', errs);
+await browser.close();

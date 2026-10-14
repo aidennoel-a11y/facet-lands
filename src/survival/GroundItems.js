@@ -29,6 +29,7 @@ const BUILT = {
   logWindow: () => M.openWallModel('log', 'window'), logDoor: () => M.openWallModel('log', 'door'), plankWindow: () => M.openWallModel('plank', 'window'), plankDoor: () => M.openWallModel('plank', 'door'),
   stoneDoor: () => M.openWallModel('stone', 'door'), cutWindow: () => M.openWallModel('cut', 'window'), cutDoor: () => M.openWallModel('cut', 'door'),
   chair: M.chairModel, table: M.tableModel, shelf: M.shelfModel, trophyRack: M.trophyRackModel, coop: M.coopModel, logBridge: () => M.bridgeModel('log', 2.5, 0), ropeBridge: () => M.bridgeModel('rope', 2.5, 0),
+  beeBox: M.beeBoxModel, sign: M.signModel, canoe: M.canoeModel,
   leanTo: M.leanToModel, waterFilter: M.waterFilterModel, repairBench: M.repairBenchModel,
   logRoof: M.logRoofModel, shingleRoof: M.shingleRoofModel, tileRoof: M.tileRoofModel, bedroll: M.bedrollModel, strawBed: M.strawBedModel, fancyBed: M.fancyBedModel,
 };
@@ -106,12 +107,15 @@ export class GroundItems {
         oldSword: () => swordModel(0xa8aca4, 0xc8ccc4, 0xb08a3a), oldMap: () => M.hideModel(),
         fangSword: () => swordModel(0xf0e8d4, 0xfaf4e4, 0x5a4a3a), antlerBow: () => bowModel(true, 0xcbb690), tuskPickaxe: () => pickaxeModel(0xe8dcc0, 0xf4ecd8),
         poisonArrow: () => arrowModel(0x6a9a3a), poisonBolt: () => boltModel(0x6a9a3a),
-        saddle: () => M.saddleModel(false), greatSaddle: () => M.saddleModel(true), bandage: M.bandageModel, torch: M.torchModel, coalTorch: M.torchModel,
+        saddle: () => M.saddleModel(false), greatSaddle: () => M.saddleModel(true), bandage: M.bandageModel, torch: M.torchModel, coalTorch: M.torchModel, candle: M.candleModel, lantern: M.lanternModel,
         coat: () => M.coatModel(0xa8743e, 0x8a5a2e), furCloak: () => M.coatModel(0x8a7458, 0xa89070), paleCloak: () => M.coatModel(0xe8e4dc, 0xf4f0ea), caveCloak: () => M.coatModel(0x3a3634, 0x4a4644),
         armour: () => M.coatModel(0x7a5230, 0x5a3a20, 0x8a6038), steelArmour: () => M.coatModel(0x5a4a3a, 0x4a3a2a, 0xb8c0c8),
         scarArmour: () => M.coatModel(0x4a3426, 0x3a281c, 0xb8c0c8), lionArmour: () => M.coatModel(0xc89a5a, 0x6a4026, 0xb8c0c8),
         tigerArmour: () => M.coatModel(0xd8823a, 0x1e1612, 0xb8c0c8), crocArmour: () => M.coatModel(0x5a6a44, 0x3a4a2e, 0xb8c0c8),
         crystal: M.crystalItemModel, silk: M.woolModel, silkRope: M.ropeModel, glowcap: () => M.mushroomModel(0x7affc8, 0xd8f0e8), caveLamp: M.caveLampModel, guano: M.guanoModel,
+        beeswax: M.beeswaxModel, pail: () => M.pailModel(false), milk: () => M.pailModel(true), cheese: M.cheeseModel,
+        boots: () => M.bootsModel(), furBoots: () => M.bootsModel(0x6a4a30, 0x2a2018, 0xa89070), gloves: () => M.glovesModel(), furHat: () => M.hatModel('fur'), strawHat: () => M.hatModel('straw'),
+        longbow: () => bowModel(true, 0xb8885a), fireArrow: () => arrowModel(0xd85a20),
         caveMushroom: () => M.mushroomModel(0xd8ccb8, 0xece4d0), deathcap: () => M.mushroomModel(0xe8e4c8, 0xf4f0e0, 0), blindFish: () => fishModel(false),
       }[id];
       const built = BUILT[id];

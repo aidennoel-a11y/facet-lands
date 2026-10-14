@@ -1,4 +1,4 @@
-import { Color, Group, Mesh, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
+import { CanvasTexture, Color, Group, Mesh, MeshLambertMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { Puffs } from '../render/Puffs.js';
 import { Inventory } from './Inventory.js';
 import {
@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, coopModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -86,6 +86,8 @@ const KINDS = {
   shelf: { make: shelfModel, box: [0.65, 0.2], tall: 1.6 },
   trophyRack: { make: trophyRackModel, circle: 0.2, tall: 1.9 },
   coop: { make: coopModel, box: [0.85, 0.7], tall: 1.6 },
+  beeBox: { make: beeBoxModel, box: [0.3, 0.25], tall: 1.15 },
+  sign: { make: signModel, box: [0.45, 0.06], tall: 1.55 },
   repairBench: { make: repairBenchModel, box: [0.8, 0.3], tall: 0.95 },
   waterFilter: { make: waterFilterModel, circle: 0.35, tall: 1.3, jobs: 2 },
   plot: { make: plotModel, circle: 0, tilt: true, reach: 1 },
@@ -99,7 +101,9 @@ const KINDS = {
   fishTrap: { make: fishTrapModel, circle: 0, water: true },
   cellar: { make: cellarModel, box: [1.3, 1.3], tall: 1.6 },
   snare: { make: snareModel, circle: 0 },
-  raft: { make: raftModel, circle: 0 },
+  raft: { make: raftModel, circle: 0, boat: true },
+  canoe: { make: canoeModel, circle: 0, boat: true },
+  ladder: { make: () => ladderModel(3), circle: 0 },
 };
 
 /**
@@ -256,7 +260,7 @@ export class Structures {
         roofY = KINDS[near.type].roof ? near.y : near.y + FLOOR_TOP + 3.2;
       }
     }
-    const half = kind.box ? kind.box : type === 'raft' ? [1.2, 1.3] : [kind.circle || kind.reach || 0.5, kind.circle || kind.reach || 0.5];
+    const half = kind.box ? kind.box : type === 'raft' ? [1.2, 1.3] : type === 'canoe' ? [0.4, 2.1] : [kind.circle || kind.reach || 0.5, kind.circle || kind.reach || 0.5];
     const ax = Math.cos(rot), az = -Math.sin(rot), bx = Math.sin(rot), bz = Math.cos(rot);
     let lo = Infinity, hi = -Infinity, wet = 0, wetLevel = -Infinity, deep = Infinity;
     const corners = [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0]];
@@ -297,8 +301,8 @@ export class Structures {
       }
     }
     let ok = true, why = '';
-    if (type === 'raft') {
-      if (wet < corners.length || deep < 0.4) (ok = false), (why = 'A raft needs open water');
+    if (kind.boat) {
+      if (wet < corners.length || deep < 0.4) (ok = false), (why = `A ${type} needs open water`);
       y = wetLevel - 0.12;
     } else if (kind.water) {
       // (Set in the shallows, half under: at the water's edge or out in it.)
@@ -309,7 +313,7 @@ export class Structures {
     // Nothing in the way: across its whole footprint (a wall along its
     // length; a roof just where its posts stand, as it goes over things),
     // no tree, bush, boulder, log or other thing built.
-    if (ok && type !== 'raft' && !kind.water) {
+    if (ok && !kind.boat && !kind.water) {
       const spots = [];
       if (kind.roof) spots.length = 0;
       else if (kind.posts) for (const [u, v] of kind.posts) spots.push([u, v, 0.2]);
@@ -409,7 +413,7 @@ export class Structures {
     const mesh = new Group();
     // (A bridge: its own length and rise, from here to the far side.)
     const bk = KINDS[s.type].bridge;
-    const body = new Mesh(bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : this.model(s.type, !!s.upper), this.material);
+    const body = new Mesh(bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : this.model(s.type, !!s.upper), this.material);
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);
@@ -481,6 +485,7 @@ export class Structures {
     mesh.userData.structure = s;
     this.group.add(mesh);
     s.mesh = mesh;
+    if (s.type === 'sign') this.showSign(s);
     this.list.push(s);
     if (KINDS[s.type].fire && s.lit) this.#kindle(s);
     this.#showJobs(s);
@@ -841,12 +846,25 @@ export class Structures {
     if (d < min && d > 0) (position.x += (ox / d) * (min - d)), (position.z += (oz / d) * (min - d));
   }
 
+  /** The top of a wall at (x, z) (within `r`), for a ladder to lean on: its height, or -Infinity. */
+  wallTopAt(x, z, r = 0.4) {
+    let top = -Infinity;
+    for (const s of this.list) {
+      const k = KINDS[s.type];
+      if (!k.line || Math.abs(s.x - x) > 4 || Math.abs(s.z - z) > 4) continue;
+      const ax = Math.cos(s.rot), az = -Math.sin(s.rot);
+      const u = (x - s.x) * ax + (z - s.z) * az, v = Math.abs((x - s.x) * -az + (z - s.z) * ax);
+      if (Math.abs(u) <= k.len / 2 && v < r + (k.box?.[1] ?? 0.25)) top = Math.max(top, s.y + (k.tall ?? 2));
+    }
+    return top;
+  }
+
   /** What's built near (x, z), as circles for the animals to steer round: [x, z, radius, ...]. */
   obstacles(x, z, reach) {
     const out = [];
     for (const s of this.list) {
       if (Math.abs(s.x - x) > reach + 3 || Math.abs(s.z - z) > reach + 3) continue;
-      if (s.type === 'snare' || s.type === 'raft' || s.type === 'rope' || s.type === 'plot') continue;
+      if (s.type === 'snare' || KINDS[s.type].boat || s.type === 'rope' || s.type === 'ladder' || s.type === 'plot') continue;
       const kind = KINDS[s.type];
       if (kind.line) {
         // (Close-set, so nothing slips through: a fence pens sheep in.)
@@ -901,6 +919,7 @@ export class Structures {
       else if (KINDS[s.type].bed) for (const v of [-0.7, 0, 0.7]) points.push([s.x + bx * v, s.y + (s.type === 'bedroll' ? 0.15 : s.type === 'strawBed' ? 0.25 : 0.35), s.z + bz * v, 0.55]);
       else if (KINDS[s.type].stairs) for (const v of [-1.5, -0.5, 0.5, 1.5]) points.push([s.x + bx * v, s.y + (STAIRS_RISE * (v + 2)) / 4, s.z + bz * v, 0.8]);
       else if (s.type === 'raft') for (const v of [-0.8, 0, 0.8]) points.push([s.x + bx * v, s.y + 0.3, s.z + bz * v, 1]);
+      else if (s.type === 'canoe') for (const v of [-1.5, -0.5, 0.5, 1.5]) points.push([s.x + bx * v, s.y + 0.25, s.z + bz * v, 0.45]);
       else if (s.type === 'furnace') for (const h of [0.4, 1]) points.push([s.x, s.y + h, s.z, 0.75]);
       else if (s.type === 'dryingRack') for (const h of [0.5, 1.1]) points.push([s.x, s.y + h, s.z, 0.6]);
       else points.push([s.x, s.y + (s.type === 'chest' ? 0.35 : 0.25), s.z, s.type === 'campfire' ? 0.75 : 0.6]);
@@ -934,9 +953,59 @@ export class Structures {
     const r = (v) => +v.toFixed(2);
     return this.list.map((s) => ({
       type: s.type, x: r(s.x), y: r(s.y), z: r(s.z), rot: +s.rot.toFixed(3), lit: s.lit, fuel: Math.round(s.fuel), burnt: !!s.burnt,
-      contents: s.contents?.slots, open: !!s.open, rise: s.rise, trophy: s.trophy, eggs: s.eggs, feathers: s.feathers, caught: s.type === 'fishTrap' ? s.caught || 0 : !!s.caught, jobs: s.jobs.map(({ stack, out, left, total, done }) => ({ stack, out, left, total, done })),
+      contents: s.contents?.slots, open: !!s.open, rise: s.rise, trophy: s.trophy, eggs: s.eggs, feathers: s.feathers, data: s.data, caught: s.type === 'fishTrap' ? s.caught || 0 : !!s.caught, jobs: s.jobs.map(({ stack, out, left, total, done }) => ({ stack, out, left, total, done })),
       tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0, upper: s.upper || undefined, offered: s.offered,
     }));
+  }
+
+  /**
+   * A sign's words, painted on both faces of its board (dark letters on
+   * the planks, as burnt in with a hot iron), wrapped to fit.
+   */
+  showSign(s) {
+    const text = (s.data?.text ?? '').trim();
+    if (s.signText === text) return;
+    s.signText = text;
+    for (const m of s.signFaces ?? []) (s.mesh.remove(m), m.material.map?.dispose(), m.material.dispose());
+    s.signFaces = [];
+    if (!text) return;
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 284;
+    const g = c.getContext('2d');
+    g.fillStyle = '#9a7048';
+    g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = 'rgba(0,0,0,0.08)';
+    for (let y = 0; y < c.height; y += 36) g.fillRect(0, y, c.width, 2);
+    g.fillStyle = '#2a1a10';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    // (Wrapped to the board, the type as big as will fit.)
+    let size = 64, lines;
+    for (; size >= 22; size -= 4) {
+      g.font = `bold ${size}px Georgia, serif`;
+      lines = [];
+      for (const para of text.split(/\n/)) {
+        let line = '';
+        for (const w of para.split(/\s+/)) {
+          const t = line ? `${line} ${w}` : w;
+          if (g.measureText(t).width > c.width - 40 && line) (lines.push(line), (line = w));
+          else line = t;
+        }
+        lines.push(line);
+      }
+      if (lines.length * size * 1.15 < c.height - 30) break;
+    }
+    lines.forEach((l, k) => g.fillText(l, c.width / 2, c.height / 2 + (k - (lines.length - 1) / 2) * size * 1.15));
+    const tex = new CanvasTexture(c);
+    tex.colorSpace = SRGBColorSpace;
+    for (const side of [1, -1]) {
+      const m = new Mesh((this.signPlane ??= new PlaneGeometry(0.86, 0.46)), new MeshLambertMaterial({ map: tex }));
+      m.position.set(0, 1.25, 0.027 * side);
+      if (side < 0) m.rotation.y = Math.PI;
+      s.mesh.add(m);
+      s.signFaces.push(m);
+    }
   }
 
   /** A trophy rack: what's hung on it (s.trophy, an item id), shown. */
@@ -965,7 +1034,7 @@ export class Structures {
     this.onChange = null;
     try {
       if (!s) {
-        this.build({ type: rec.type, x: rec.x, y: rec.y, z: rec.z, rot: rec.rot, tilt: rec.tilt }, { lit: rec.lit, fuel: rec.fuel, burnt: rec.burnt, contents: rec.contents, open: rec.open, caught: rec.caught, jobs: rec.jobs ?? [], len: rec.len, path: rec.path, ruinKey: rec.ruinKey, crop: rec.crop ?? null, growth: rec.growth ?? 0, watered: rec.watered ?? 0, fed: rec.fed ?? 0, rise: rec.rise, trophy: rec.trophy, eggs: rec.eggs ?? 0, feathers: rec.feathers ?? 0 });
+        this.build({ type: rec.type, x: rec.x, y: rec.y, z: rec.z, rot: rec.rot, tilt: rec.tilt }, { lit: rec.lit, fuel: rec.fuel, burnt: rec.burnt, contents: rec.contents, open: rec.open, caught: rec.caught, jobs: rec.jobs ?? [], len: rec.len, path: rec.path, ruinKey: rec.ruinKey, crop: rec.crop ?? null, growth: rec.growth ?? 0, watered: rec.watered ?? 0, fed: rec.fed ?? 0, rise: rec.rise, trophy: rec.trophy, eggs: rec.eggs ?? 0, feathers: rec.feathers ?? 0, data: rec.data ? { ...rec.data } : undefined });
         return;
       }
       s.fuel = rec.fuel;
@@ -982,6 +1051,8 @@ export class Structures {
       this.#showJobs(s);
       s.caught = s.type === 'fishTrap' ? rec.caught || 0 : !!rec.caught;
       if (s.catchMesh) s.catchMesh.visible = !!s.caught;
+      if (rec.data) s.data = { ...rec.data };
+      if (s.type === 'sign') this.showSign(s);
       if (s.type === 'plot') {
         s.crop = rec.crop ?? null;
         s.growth = rec.growth ?? 0;
@@ -1010,7 +1081,7 @@ export class Structures {
     this.onChange = null;
     for (const s of list ?? []) {
       if (!KINDS[s.type]) continue;
-      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0, upper: !!s.upper, offered: s.offered, rise: s.rise, trophy: s.trophy, eggs: s.eggs ?? 0, feathers: s.feathers ?? 0 });
+      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0, upper: !!s.upper, offered: s.offered, rise: s.rise, trophy: s.trophy, eggs: s.eggs ?? 0, feathers: s.feathers ?? 0, data: s.data ? { ...s.data } : undefined });
     }
     this.onChange = quiet;
   }

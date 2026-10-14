@@ -26,6 +26,7 @@ export const ITEMS = {
   deerSkin: { name: 'Leather', weight: 2, group: 'Materials' },
   pelt: { name: 'Tanned fur', weight: 1.2, group: 'Materials' },
   wool: { name: 'Wool', weight: 0.5, group: 'Materials' },
+  beeswax: { name: 'Beeswax', weight: 0.1, group: 'Materials' }, // (from a hive: candles, fire arrows, waxed things)
   feather: { name: 'Feather', weight: 0.01, group: 'Materials' },
   rope: { name: 'Rope', weight: 0.6, place: 'rope', group: 'Materials' }, // (thrown down a cliff from its top, to climb)
   charcoal: { name: 'Charcoal', weight: 0.3, group: 'Materials' },
@@ -79,6 +80,8 @@ export const ITEMS = {
   cookedMeat: { name: 'Cooked meat', food: { hunger: 35, health: 4, full: 600 }, spoils: 4 * DAY, dries: 'jerky', weight: 0.8, group: 'Food' },
   rawEgg: { name: 'Egg', food: { hunger: 6, health: -1, sick: 0.08, full: 60 }, spoils: 4000, cooks: 'cookedEgg', weight: 0.06, group: 'Food' },
   cookedEgg: { name: 'Cooked egg', food: { hunger: 14, full: 200 }, spoils: 2000, weight: 0.06, group: 'Food' },
+  milk: { name: 'Goat\'s milk', food: { hunger: 8, thirst: 14, health: 1, full: 150 }, spoils: DAY, weight: 1, group: 'Food' }, // (fresh: a day, then it sours)
+  cheese: { name: 'Cheese', food: { hunger: 24, health: 3, full: 480 }, spoils: 90 * DAY, weight: 0.4, group: 'Food' }, // (salted and pressed: keeps through a season and more)
   honey: { name: 'Wild honey', food: { hunger: 12, health: 4, full: 240 }, weight: 0.3, group: 'Food' }, // (it never spoils)
   saltedMeat: { name: 'Salted meat', food: { hunger: 16, thirst: -6, full: 360 }, spoils: YEAR, weight: 0.8, group: 'Food' }, // (cured in salt: keeps a year)
   saltedFish: { name: 'Salted fish', food: { hunger: 13, thirst: -6, full: 300 }, spoils: YEAR, weight: 0.6, group: 'Food' },
@@ -126,7 +129,12 @@ export const ITEMS = {
   shears: { name: 'Shears', tool: true, durability: 60, weight: 0.4, group: 'Tools' },
   fineFlintSteel: { name: 'Flint and forged steel', tool: true, durability: 50, weight: 0.3, group: 'Tools' },
   bow: { name: 'Bow', tool: true, durability: 120, weight: 1, group: 'Tools' },
+  // (Taller and stiffer: slower to draw full, but its arrows fly much further and strike harder.)
+  longbow: { name: 'Longbow', tool: true, durability: 220, weight: 1.3, power: 1.32, draw: 1.3, group: 'Tools' },
   arrow: { name: 'Arrow', weight: 0.05, group: 'Tools' },
+  fireArrow: { name: 'Fire arrow', weight: 0.06, fire: true, group: 'Tools' }, // (a waxed rag at its head, lit as you loose it: it sets what it hits burning)
+  climbingPicks: { name: 'Climbing picks', tool: true, durability: 300, weight: 1.6, group: 'Tools' }, // (carried: rock too steep to walk, scrambled up)
+  pail: { name: 'Milk pail', tool: true, durability: 150, weight: 1, group: 'Tools' }, // (Q on a tame nanny goat with it)
   fishingRod: { name: 'Fishing rod', tool: true, durability: 60, weight: 0.8, group: 'Tools' },
   waterskin: { name: 'Waterskin', tool: true, weight: 0.4, holds: 5, group: 'Tools' }, // (water: 0..5 drinks; clean or not)
   pot: { name: 'Iron pot', tool: true, durability: 60, weight: 2, group: 'Tools' },
@@ -134,6 +142,8 @@ export const ITEMS = {
   saddle: { name: 'Saddle', weight: 6, group: 'Tools' }, // (on a tame horse: see Game)
   torch: { name: 'Torch', place: 'torch', weight: 0.4, group: 'Tools' },
   coalTorch: { name: 'Coal torch', place: 'torch', weight: 0.5, group: 'Tools' }, // (burns hot and white: lights twice as far, the one for the caves)
+  candle: { name: 'Beeswax candle', place: 'candle', weight: 0.1, group: 'Tools' }, // (a small soft light: on a table, a shelf, a wall)
+  lantern: { name: 'Lantern', place: 'lantern', weight: 1.2, group: 'Tools' }, // (a candle behind horn panes in iron: the rain doesn't put it out)
   caveLamp: { name: 'Crystal lamp', place: 'caveLamp', weight: 1.2, group: 'Tools' }, // (glows of itself: never goes out)
   // Worn.
   coat: { name: 'Leather coat', tool: true, wear: 'coat', warmth: 0.3, weight: 2, group: 'Worn' },
@@ -147,6 +157,12 @@ export const ITEMS = {
   tigerArmour: { name: 'Tiger-stripe armour', tool: true, wear: 'armour', durability: 240, protect: 0.22, weight: 9, group: 'Worn' },
   crocArmour: { name: 'Croc-scale armour', tool: true, wear: 'armour', durability: 340, protect: 0.16, weight: 11, group: 'Worn' },
   paleCloak: { name: 'Ghost cloak', tool: true, wear: 'coat', warmth: 0.12, hush: true, weight: 2, group: 'Worn' }, // (pale and soft: the wild notice you less)
+  // (Feet, hands, head.)
+  boots: { name: 'Leather boots', tool: true, wear: 'feet', warmth: 0.9, quiet: true, weight: 1, group: 'Worn' }, // (soft-soled: quieter going; a snake's fangs mostly in the leather)
+  furBoots: { name: 'Fur-lined boots', tool: true, wear: 'feet', warmth: 0.75, quiet: true, weight: 1.3, group: 'Worn' },
+  gloves: { name: 'Leather gloves', tool: true, wear: 'hands', warmth: 0.92, weight: 0.3, group: 'Worn' }, // (thorns and stings and the heat of the fire)
+  furHat: { name: 'Fur hat', tool: true, wear: 'head', warmth: 0.75, weight: 0.4, group: 'Worn' },
+  strawHat: { name: 'Straw hat', tool: true, wear: 'head', shade: true, weight: 0.2, group: 'Worn' }, // (broad-brimmed: the sun off you)
   caveCloak: { name: 'Cave bear cloak', tool: true, wear: 'coat', warmth: 0.05, weight: 4, group: 'Worn' }, // (the warmest thing there is)
   // Built.
   campfire: { name: 'Campfire', place: 'campfire', weight: 12, group: 'Building' },
@@ -176,7 +192,11 @@ export const ITEMS = {
   table: { name: 'Table', place: 'table', weight: 9, group: 'Building' },
   shelf: { name: 'Shelves', place: 'shelf', weight: 8, group: 'Building' }, // (six slots of storage)
   trophyRack: { name: 'Trophy rack', place: 'trophyRack', weight: 5, group: 'Building' }, // (hang a great beast's trophy on it)
-  coop: { name: 'Hen-house', place: 'coop', weight: 14, group: 'Building' }, // (tame turkeys and ducks lay in it)
+  coop: { name: 'Hen-house', place: 'coop', weight: 14, group: 'Building' },
+  ladder: { name: 'Ladder', place: 'ladder', weight: 6, group: 'Building' },
+  canoe: { name: 'Dugout canoe', place: 'canoe', weight: 28, group: 'Building' }, // (quick on the water; carried on your back, heavy)
+  sign: { name: 'Sign', place: 'sign', weight: 3, group: 'Building' }, // (Q to write on it)
+  beeBox: { name: 'Bee box', place: 'beeBox', weight: 8, group: 'Building' }, // (wild bees move in; honey and wax build up in it) // (tame turkeys and ducks lay in it)
   leanTo: { name: 'Lean-to', place: 'leanTo', weight: 6, group: 'Building' }, // (a quick shelter of poles and leafy boughs: out of the rain)
   waterFilter: { name: 'Water filter', place: 'waterFilter', weight: 6, group: 'Building' }, // (sand and charcoal in a bark cone: still water through it comes out clean)
   woodFloor: { name: 'Plank floor', place: 'woodFloor', weight: 16, group: 'Building' },
@@ -249,6 +269,7 @@ export const RECIPES = [
   { id: 'coalTorch', needs: { stick: 1, coal: 1, vine: 1 }, makes: 2, note: 'Coal-headed: burns bright and white, lighting twice as far. For the caves' },
   { id: 'bow', needs: { stick: 2, vine: 2 }, note: 'Hold the mouse to draw, let go to shoot' },
   { id: 'arrow', needs: { stick: 1, flint: 1 }, makes: 4, note: 'Four arrows (fletched with a feather they fly truer)' },
+  { id: 'strawHat', needs: { straw: 3 }, note: 'Broad-brimmed: keeps the sun off you (far slower to get heatstroke)' },
   { id: 'fishingRod', needs: { stick: 2, vine: 2 }, note: 'Cast into water, click again when it bites' },
   { id: 'waterskin', needs: { deerSkin: 1, vine: 1 }, note: 'Fill it at water (Q); boil it on a fire to make it safe' },
   { id: 'bandage', needs: { vine: 2 }, makes: 2, note: 'Stops bleeding' },
@@ -303,6 +324,21 @@ export const RECIPES = [
   { id: 'saltedFish', needs: { rawFish: 2, salt: 1 }, makes: 2, note: 'Fish cured in salt: keeps a year' },
   { id: 'tanningRack', needs: { stick: 4, vine: 2 }, note: 'Stretch raw hides and furs on it: leather and tanned fur' },
   { id: 'coat', needs: { deerSkin: 2, vine: 1 }, note: 'Wear it to keep the cold out far longer' },
+  { id: 'boots', needs: { deerSkin: 2, vine: 1 }, note: 'Soft-soled: your steps are quieter (the wild hear you less), a snake or a scorpion mostly bites leather, and your feet keep a little warmer' },
+  { id: 'furBoots', needs: { deerSkin: 1, pelt: 1, vine: 1 }, note: 'Boots lined with fur: quiet, and warm in the snow' },
+  { id: 'gloves', needs: { deerSkin: 1, vine: 1 }, note: 'No more thorns: pick berries, pull vines and handle cactus without a scratch; fewer bee stings' },
+  { id: 'furHat', needs: { pelt: 1, vine: 1 }, note: 'Ear flaps and all: a good deal warmer in the cold' },
+  { id: 'climbingPicks', needs: { ironBar: 2, stick: 2, deerSkin: 1 }, note: 'A pair of iron picks: carry them and you can scramble up rock far too steep to walk (hard going: it tires you, and wears them). A ladder, or a rope from the top, for sheer walls' },
+  { id: 'ladder', needs: { log: 1, stick: 8 }, note: 'Face a rock wall or the wall of your house, close to it, and set it up (up to 7 m): Q to climb. Shift+Q takes it down' },
+  { id: 'canoe', needs: { log: 2, stick: 2 }, uses: ['steelAxe', 'forgedAxe'], note: 'A log hollowed out with a steel axe: set it on the water and Q to climb in. Twice as quick as a raft, it glides between strokes and rides a river\'s current. Shift+Q to carry it (heavy)' },
+  { id: 'sign', needs: { log: 1, stick: 2 }, note: 'A board on a post: Q at it to write on it (a name for your camp, a warning, the way home)' },
+  { id: 'candle', needs: { beeswax: 1, vine: 1 }, makes: 2, note: 'Two beeswax candles: a small soft light to set on a table or a shelf, or on a wall (lit as you set it)' },
+  { id: 'lantern', needs: { ironBar: 1, candle: 1, deerSkin: 1 }, note: 'A candle behind panes of scraped hide in an iron frame: a steady light the rain and wind don\'t put out. Hang it on a wall or set it down' },
+  { id: 'pail', needs: { log: 1, vine: 2 }, note: 'Q on a tame nanny goat with it in hand: milk (twice a day)' },
+  { id: 'cheese', needs: { milk: 4, salt: 1 }, at: 'fire', note: 'Milk warmed by a fire, curdled with salt, pressed: cheese that keeps a season and more' },
+  { id: 'beeBox', needs: { log: 2, stick: 4, honey: 1 }, note: 'Set it down among flowers (not in the desert or the snow), honey in it for bait: a wild swarm moves in within a day or so (not in winter). Q for honey and beeswax: a lit torch in hand smokes the bees quiet' },
+  { id: 'longbow', needs: { log: 1, rope: 1, deerSkin: 1 }, note: 'A tall bow from one stave: slower to draw full, but arrows fly far further and strike harder' },
+  { id: 'fireArrow', needs: { arrow: 4, beeswax: 1, vine: 1 }, makes: 4, note: 'A waxed rag bound at each head, lit as you loose: sets grass, trees, wood burning; a beast it hits panics. (Wild nests give a little beeswax too)' },
   { id: 'furCloak', needs: { pelt: 3, rope: 1 }, note: 'The warmest thing to wear in the winter' },
   { id: 'armour', needs: { deerSkin: 3, vine: 2 }, note: 'Wear it: bites and blows hurt less' },
   { id: 'steelAxe', needs: { ironBar: 2, stick: 1, vine: 1 }, note: 'Twice the life, fells trees twice as fast' },
@@ -360,9 +396,9 @@ export const RECIPES = [
  * in RECIPES is in one of them.
  */
 export const TIERS = [
-  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
-  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil'] },
+  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
+  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'climbingPicks'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];
@@ -436,6 +472,24 @@ export const ICONS = {
   steelSpear: STEEL(SPEAR),
   flintSteel: FLINTSTEEL,
   fineFlintSteel: FLINTSTEEL.replace('#9aa0a8', '#e4e8ee'),
+  beeswax: `<path d="M6 14l10-5 10 5-10 5z" fill="#f4d870"/><path d="M6 14v6l10 5v-6z" fill="#d8b040"/><path d="M26 14v6l-10 5v-6z" fill="#c09830"/>`,
+  milk: `<path d="M9 9h14l-2 18H11z" fill="#a8845a"/><path d="M9 9h14v3H9z" fill="#f4f0e6"/><path d="M9 14h14M10 22h12" stroke="#5a4a30" stroke-width="1.4"/>`,
+  pail: `<path d="M9 11h14l-2 16H11z" fill="#a8845a"/><path d="M9 14h14M10 22h12" stroke="#5a4a30" stroke-width="1.4"/><path d="M9 11c0-7 14-7 14 0" fill="none" stroke="#6e4c32" stroke-width="1.4"/>`,
+  cheese: `<path d="M5 20l11-11 11 6v7L16 27 5 22z" fill="#f0d080"/><path d="M5 20l11 2 11-7-11-6z" fill="#f8e0a0"/><circle cx="12" cy="23" r="1.4" fill="#d8b050"/><circle cx="20" cy="22" r="1" fill="#d8b050"/>`,
+  boots: `<path d="M7 6h7v14h5v6H7z" fill="#7a5232"/><path d="M7 24h12v3H7z" fill="#3a2a1e"/><path d="M17 8h6v12h5v6H17z" fill="#8a6038"/><path d="M17 24h11v3H17z" fill="#3a2a1e"/>`,
+  furBoots: `<path d="M7 6h7v14h5v6H7z" fill="#6a4a30"/><path d="M7 24h12v3H7z" fill="#2a2018"/><path d="M6 5h9v4H6z" fill="#a89070"/><path d="M17 8h6v12h5v6H17z" fill="#7a5638"/><path d="M17 24h11v3H17z" fill="#2a2018"/><path d="M16 7h8v4h-8z" fill="#a89070"/>`,
+  gloves: `<path d="M5 16l2-8h2l1 5 1-6h2l0 7 1-6h2l-1 8 2-3 2 1-4 8H8z" fill="#9a6a3e"/><path d="M8 22h7v5H8z" fill="#6a4426"/><path d="M18 18l2-8h2l1 5 1-6h2l0 7 1-6h2l-1 8-3 6h-5z" fill="#8a5c34"/>`,
+  furHat: `<path d="M7 18c0-9 18-9 18 0z" fill="#8a7458"/><path d="M6 17h20v4H6z" fill="#a89070"/><path d="M6 20h4v6H6zM22 20h4v6h-4z" fill="#a89070"/>`,
+  strawHat: `<path d="M2 20c4-3 24-3 28 0-4 3-24 3-28 0z" fill="#e0c878"/><path d="M10 19c0-7 12-7 12 0z" fill="#d8bc6a"/><path d="M10 17h12v2H10z" fill="#8a4a2a"/>`,
+  longbow: `<path d="M9 1c14 5 16 20 10 30" fill="none" stroke="#b8885a" stroke-width="2.4" stroke-linecap="round"/><path d="M9 1l10 30" stroke="#e8e0cc" stroke-width="0.8"/><path d="M15 14h4v4h-4z" fill="#5a3c24"/>`,
+  fireArrow: `<path d="M6 26L24 8" stroke="#9a6e44" stroke-width="1.8"/><path d="M22 6l6-2-2 6z" fill="#3e4250"/><path d="M21 9c-1-4 2-6 3-8 1 3 4 4 2 8z" fill="#ff8a20"/><path d="M22 9c0-2 1-3 2-4 0 2 2 2 1 4z" fill="#ffd040"/><path d="M6 26l-1-5 3 2zM6 26l5 1-2-3z" fill="#e8e0d0"/>`,
+  ladder: `<path d="M9 3l-3 26M23 3l3 26" stroke="#8a6038" stroke-width="2.4"/><path d="M8 8h16M7.5 13h17M7 18h18M6.5 23h19" stroke="#9a7048" stroke-width="2"/>`,
+  climbingPicks: `<path d="M8 28L14 6" stroke="#7a5232" stroke-width="2.4"/><path d="M9 6c3-3 8-2 10 1l-5 1z" fill="#8a949e"/><path d="M18 29l5-20" stroke="#7a5232" stroke-width="2.4"/><path d="M18 9c3-3 8-2 10 1l-5 1z" fill="#8a949e"/>`,
+  canoe: `<path d="M2 16c6 6 22 6 28 0-6 2-22 2-28 0z" fill="#8a5a34"/><path d="M4 16c6 3 18 3 24 0" stroke="#5a3a20" stroke-width="1.2" fill="none"/><path d="M18 6l-4 14" stroke="#9a7048" stroke-width="1.6"/><path d="M12 19l3 2 1-4z" fill="#9a7048"/>`,
+  sign: `<path d="M15 16h3v14h-3z" fill="#6e4c32"/><path d="M4 5h24v12H4z" fill="#9a7048"/><path d="M8 9h12M8 13h16" stroke="#2a1a10" stroke-width="1.6"/>`,
+  candle: `<path d="M13 12h6v15h-6z" fill="#f0e2b0"/><path d="M10 27h12v2H10z" fill="#3a3a3e"/><path d="M16 4c-2 3-2 5 0 7 2-2 2-4 0-7z" fill="#ffa030"/><path d="M16 7c-1 1-1 2 0 3 1-1 1-2 0-3z" fill="#ffe080"/>`,
+  lantern: `<path d="M10 9h12v16H10z" fill="#ffc070" opacity=".8"/><path d="M9 7h14v3H9zM9 24h14v3H9z" fill="#3a3a3e"/><path d="M10 9v16M22 9v16" stroke="#3a3a3e" stroke-width="1.6"/><path d="M13 7c0-4 6-4 6 0" fill="none" stroke="#3a3a3e" stroke-width="1.4"/><path d="M16 13c-2 3-2 5 0 7 2-2 2-4 0-7z" fill="#ffa030"/>`,
+  beeBox: `<path d="M7 9h18v18H7z" fill="#c8a670"/><path d="M7 15h18M7 21h18" stroke="#8a6a48" stroke-width="1.2"/><path d="M5 7h22v3H5z" fill="#8a6a48"/><path d="M13 25h6v2h-6z" fill="#1e1610"/><circle cx="24" cy="6" r="1.4" fill="#e8b020"/><circle cx="27" cy="9" r="1.2" fill="#e8b020"/>`,
   bow: `<path d="M8 3c12 4 16 16 12 26" fill="none" stroke="#8a5d38" stroke-width="2.6" stroke-linecap="round"/><path d="M8 3l12 26" stroke="#e8e0cc" stroke-width="0.8"/>`,
   arrow: `<path d="M5 27L25 7" stroke="#8a5d38" stroke-width="1.8"/><path d="M25 7l-6 1 5 5z" fill="#3e4250"/><path d="M5 27l1-5 3 3zM5 27l5-1-3-3z" fill="#e0d8c8"/>`,
   fishingRod: `<path d="M5 28L26 4" stroke="#8a5d38" stroke-width="2"/><path d="M26 4c2 8 1 14-3 18" fill="none" stroke="#e8e0cc" stroke-width="0.8"/><circle cx="23" cy="23" r="2.2" fill="#d83a2a"/>`,
