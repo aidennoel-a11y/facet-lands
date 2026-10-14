@@ -827,6 +827,8 @@ export class Wildlife {
   // at once. It gives up once you're well away.
   #stalk(a, sp, t, dt, ctx) {
     const p = ctx.player, pr = sp.predator;
+    // (Intent on other quarry: it pays you no mind unless you come right up.)
+    if (a.chase && t.d > 15 && !a.hunting) return void (a.notice = 0), (a.stalking = false);
     const able = p && p.mode === 'walk' && p.alive && !ctx.tame && !a.lame && !a.down;
     if (!able) {
       a.hunting = false;
@@ -898,7 +900,7 @@ export class Wildlife {
   #preyMind(a, sp, dt, ctx) {
     const h = HUNTS[a.kind];
     a.hunger = Math.min(1, (a.hunger ?? Math.random() * 0.9) + dt / (a.kind === 'crocodile' ? 1200 : 520));
-    if (a.hunting || a.stalking || a.scavenge || a.raid || a.hibernating) return void (a.chase = null);
+    if (a.hunting || a.stalking || a.scavenge || a.raid || a.hibernating) return void (a.chase && (a.chaseEnded = 'busy'), (a.chase = null));
     if (a.chase) return;
     const pack = a.herd?.members.filter((m) => m.alive && m !== a && SPECIES[m.kind].predator) ?? [];
     // (A packmate's already onto something: in with it.)
@@ -946,18 +948,19 @@ export class Wildlife {
     const C = a.chase, h = HUNTS[a.kind], b = C.prey;
     C.t += dt;
     const c = ctx.camera.position, youAt = Math.hypot(a.x - c.x, a.z - c.z);
-    const end = (rest = 0) => {
+    const end = (rest = 0, why = '') => {
       if (b) b.claimed = b.claimed === a ? null : b.claimed;
       a.chase = null;
+      a.chaseEnded = why; // (for testing: why it gave up)
       a.preyWait = rest || rnd(20, 60);
       return null;
     };
-    if (!b || b.gone) return end();
+    if (!b || b.gone) return end(0, 'gone');
     const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) || 0.01;
     const reach = (SPECIES[a.kind].predator?.reach ?? 1.4) + (SPECIES[b.kind].radius ?? 0.4) * b.scale + sp.radius * a.scale;
     if (C.phase === 'feed') {
       // At the kill: tearing at it, head down; the pack round it.
-      if (b.alive) return end();
+      if (b.alive) return end(0, 'alive');
       b.deadTime = Math.min(b.deadTime ?? 0, 60); // (it isn't left to rot while it's being eaten)
       b.picked = (b.picked ?? 0) + dt / 40;
       a.hunger = Math.max(0, a.hunger - dt / 90);
@@ -976,7 +979,7 @@ export class Wildlife {
     }
     if (!b.alive) {
       // Down and dead: to the kill (and the pack with it).
-      if (b.claimed && b.claimed !== a && !(b.claimed.herd && b.claimed.herd === a.herd)) return end();
+      if (b.claimed && b.claimed !== a && !(b.claimed.herd && b.claimed.herd === a.herd)) return end(0, 'claimed');
       b.claimed = b.claimed ?? a;
       C.phase = 'feed';
       C.left = rnd(70, 150) * (SIZE_RANK[SPECIES[b.kind].bulk] + 1) / 2;
@@ -984,9 +987,9 @@ export class Wildlife {
       return { want: Math.atan2(dx, dz), speed: sp.walk };
     }
     // (Lost it: too far, or too long at it.)
-    if (d > (h.stalk ? 150 : 220) || (C.phase === 'rush' && C.t > h.chase) || C.t > 240) return end(rnd(30, 90));
+    if (d > (h.stalk ? 150 : 220) || (C.phase === 'rush' && C.t > h.chase) || C.t > 240) return end(rnd(30, 90), 'lost');
     // (You coming close in the middle of it: a cat gives it up; the dogs mostly keep on.)
-    if (youAt < 18 && ctx.player?.mode === 'walk' && (h.stalk || Math.random() < dt * 0.3)) return end(rnd(40, 90));
+    if (youAt < 18 && ctx.player?.mode === 'walk' && (h.stalk || Math.random() < dt * 0.3)) return end(rnd(40, 90), 'you');
     const chased = b.herd ? b.herd.fleeTime > 0 : b.fear > 0;
     if (C.phase === 'stalk' || C.phase === 'approach') {
       // (Coming in, the quarry may see it: then it's now or never.)
@@ -999,11 +1002,11 @@ export class Wildlife {
         ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : a.kind === 'coyote' || a.kind === 'fox' ? 'yip' : a.kind === 'crocodile' ? 'hiss' : 'growl', ctx.pan(a.x, a.z), 0.35);
       } else {
         // Coming on: the cat low and slow, stock-still when its quarry lifts its head; the dogs at a trot, spreading round it.
-        const looking = C.phase === 'stalk' && (b.state === 'alert' || b.state === 'look');
+        const looking = C.phase === 'stalk' && d < 50 && (b.state === 'alert' || b.state === 'look');
         a.state = C.phase === 'stalk' ? (looking ? 'freeze' : 'stalk') : 'walk';
         const off = C.phase === 'approach' && a.herd ? C.side * Math.min(1, d / 40) * C.wide : 0;
         const want = Math.atan2(dx + (-dz / d) * off, dz + (dx / d) * off);
-        return { want, speed: looking ? 0 : C.phase === 'stalk' ? sp.walk * 0.75 : sp.walk * (d > 60 ? 3 : 2) };
+        return { want, speed: looking ? 0 : C.phase === 'stalk' ? sp.walk * (d > 50 ? 1.6 : 0.9) : sp.walk * (d > 60 ? 3 : 2) };
       }
     }
     // The rush and the chase: flat out at it (cut across to where it's
@@ -1036,6 +1039,7 @@ export class Wildlife {
   // a while, and it thinks better of it and slinks off.
   #ambush(a, sp, t, dt, ctx) {
     const p = ctx.player, pr = sp.predator;
+    if (a.chase && t.d > 15 && !a.hunting) return void (a.notice = 0), (a.stalking = false);
     const able = p && p.mode === 'walk' && p.alive && !ctx.tame && !a.lame && !a.down;
     a.cool = Math.max(0, (a.cool ?? 0) - dt);
     if (!able || a.cool > 0) {
