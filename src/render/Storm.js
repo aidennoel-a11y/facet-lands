@@ -127,6 +127,8 @@ export class Rain {
     // Snowflakes are white, and show brighter.
     u.colour.value.set(0xb8c4d2).lerp(light, 0.35).lerp(WHITE, snow * 0.8);
     this.material.uniforms.colour.value.multiplyScalar(1 + snow * 0.6);
+    // (Hail ahead of a tornado: white stones among the rain.)
+    if (this.hail > 0) u.colour.value.lerp(WHITE, this.hail * 0.65);
   }
 }
 

@@ -268,7 +268,7 @@ export class GroundItems {
   }
 
   /** Drops a stack at (x, y, z): it falls and settles on the ground. `stuck`: a spear standing where it landed. */
-  drop(stack, x, y, z, { vy = 0, turn = Math.random() * Math.PI * 2, tilt = null, uid = null } = {}) {
+  drop(stack, x, y, z, { vy = 0, vx = 0, vz = 0, turn = Math.random() * Math.PI * 2, tilt = null, uid = null } = {}) {
     const mesh = new Mesh(this.model(stack.id), this.material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -277,7 +277,7 @@ export class GroundItems {
     if (tilt) mesh.quaternion.copy(tilt);
     this.dropGroup.add(mesh);
     // (Each with its own name, to be known by online: see WorldSync.)
-    const d = { stack, x, y, z, vy, mesh, turn, settled: false, stuck: !!tilt, age: 0, uid: uid ?? `${this.uidPrefix ?? 'me'}.${(this.nextUid = (this.nextUid ?? 0) + 1)}` };
+    const d = { stack, x, y, z, vy, vx, vz, mesh, turn, settled: false, stuck: !!tilt, age: 0, uid: uid ?? `${this.uidPrefix ?? 'me'}.${(this.nextUid = (this.nextUid ?? 0) + 1)}` };
     this.drops.push(d);
     return d;
   }
@@ -312,6 +312,15 @@ export class GroundItems {
       const g = ground(d.x, d.z, d.y + 0.3);
       d.vy -= 18 * dt;
       d.y += d.vy * dt;
+      // (Thrown: carried along through the air, slowed by it.)
+      if (d.vx || d.vz) {
+        d.x += d.vx * dt;
+        d.z += d.vz * dt;
+        const drag = Math.exp(-dt * 0.6);
+        d.vx *= drag;
+        d.vz *= drag;
+        d.mesh.rotation.x += dt * 6;
+      }
       if (!Number.isFinite(g) || d.y <= g) {
         if (Number.isFinite(g)) d.y = g;
         d.settled = true;

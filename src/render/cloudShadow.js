@@ -135,6 +135,12 @@ export function addCloudShadow(material) {
           reflectedLight.directDiffuse *= char;
           reflectedLight.indirectDiffuse *= char;
           reflectedLight.indirectDiffuse += vec3(0.9, 0.3, 0.08) * smoothstep(0.3, 0.9, b.g) * (0.4 + 0.6 * rag) * 0.45;
+          // Torn up by a tornado: the grass and turf stripped off, raw brown
+          // earth in streaks swept round the way the wind went.
+          float scour = smoothstep(0.1 + 0.25 * rag, 0.55 + 0.25 * rag, b.b);
+          vec3 earth = mix(vec3(1.0), vec3(0.78, 0.6, 0.42) * (0.75 + 0.35 * rag), scour);
+          reflectedLight.directDiffuse *= earth;
+          reflectedLight.indirectDiffuse *= earth;
         }`,
       )
       .replace(

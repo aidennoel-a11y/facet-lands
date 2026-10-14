@@ -221,7 +221,22 @@ export class Sound {
       stormLow: this.#bed(this.brownNoise, 'lowpass', 280, 0.7),
       // The jungle's hum: cicadas, their shrill drone swelling and fading.
       cicada: this.#bed(this.noise, 'bandpass', 4700, 9),
+      // A tornado: the deep, steady roar (like a train that doesn't pass),
+      // and over it the howl of the wind round it, rising and falling.
+      tornado: this.#bed(this.brownNoise, 'lowpass', 140, 0.9, true),
+      tornadoHowl: this.#bed(this.noise, 'bandpass', 420, 2.2, true),
+      // Hail: hard little stones rattling down on everything.
+      hail: this.#bed(this.noise, 'highpass', 2600, 0.7),
     };
+    // (The hail's rattle: its loudness jumping about, many times a second.)
+    const patter = ctx.createBufferSource();
+    patter.buffer = this.noise;
+    patter.loop = true;
+    patter.playbackRate.value = 0.004;
+    this.hailDepth = ctx.createGain();
+    this.hailDepth.gain.value = 0;
+    patter.connect(this.hailDepth).connect(this.beds.hail.gain.gain);
+    patter.start();
     // (The cicadas' drone throbs, forty-odd times a second.)
     const throb = ctx.createOscillator();
     throb.frequency.value = 43;
@@ -382,6 +397,15 @@ export class Sound {
     this.beds.sand.filter.frequency.setTargetAtTime(3800 + 1600 * gust, t, 0.4);
     // A winter storm: the wind howling, its note rising and falling with the gusts.
     const storm = e.storm ?? 0;
+    // A tornado near: its roar, loudest close by; and the hail ahead of it.
+    const twister = e.tornado ?? 0;
+    set(this.beds.tornado, 0.5 * twister, 0.5);
+    set(this.beds.tornadoHowl, 0.09 * twister * (0.7 + 0.3 * Math.sin(t * 0.9) * Math.sin(t * 0.37)), 0.3);
+    this.beds.tornadoHowl.filter.frequency.setTargetAtTime(380 + 260 * twister + 90 * Math.sin(t * 0.7), t, 0.4);
+    pan(this.beds.tornado, e.tornadoPan);
+    pan(this.beds.tornadoHowl, e.tornadoPan);
+    set(this.beds.hail, 0.06 * (e.hail ?? 0), 0.4);
+    this.hailDepth.gain.setTargetAtTime(0.09 * (e.hail ?? 0), t, 0.4);
     set(this.beds.storm, 0.07 * storm * (0.5 + 0.8 * gust) * (1 - 0.5 * (e.hollow ?? 0)), 0.6);
     set(this.beds.stormLow, 0.12 * storm * (0.6 + 0.5 * gust), 0.8);
     this.beds.storm.filter.frequency.setTargetAtTime(420 + 650 * gust + 160 * Math.sin(t * 0.37), t, 0.5);

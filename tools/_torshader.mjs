@@ -1,0 +1,16 @@
+import { createRequire } from 'module';
+import { execSync } from 'child_process';
+const require = createRequire(import.meta.url);
+const { chromium } = require(execSync('npm root -g').toString().trim() + '/playwright');
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+const logs = [];
+page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && logs.push(m.text().slice(0, 1500)));
+await page.addInitScript(() => localStorage.setItem('facet-lands:quality', 'low'));
+await page.goto('http://localhost:4173/?seed=polaris&x=399&z=1025&hide&hour=16&weather=storm&vd=3', { timeout: 180000 });
+await page.waitForFunction(() => window.world?.chunks && window.world.chunks.pendingCount === 0, null, { timeout: 600000, polling: 1000 });
+await page.evaluate(() => { const w = window.world; w.controls.setMode('walk'); w.spawnTornado({ near: 200, delay: 1, back: 200 }); w.tornadoes.timeScale = 6; });
+await page.waitForTimeout(15000);
+console.log(JSON.stringify(await page.evaluate(() => { const t = window.world.tornadoes; const u = t.funnel.material.uniforms; return { vis: t.group.visible, form: u.uForm.value, fade: u.uFade.value, foot: u.uFoot.value, h: u.uHeight.value, base: u.uBase.value, light: u.uLight.value }; })));
+console.log(logs.filter((l) => /THREE/.test(l)).slice(0, 2).join('\n---\n').slice(0, 5000));
+await browser.close();

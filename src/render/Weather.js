@@ -60,6 +60,9 @@ export class Weather {
     this._lastHour = null;
     this.hurry = 0; // seconds left of a quick change
     this.spring = 0; // how much it's spring (0..1): showery weather comes more often
+    this.summer = 0; // how much it's summer (0..1): the thunderstorms of hot afternoons
+    this.winter = 0; // how much it's winter (0..1): grey, steady weather; hardly a thunderstorm
+    this.hour = 12;
     this.upcoming = null; // the kind of weather that comes next, once it's decided
     // What the weather has been over the last few minutes (cover, rain,
     // storm every half second, newest at `head`): the clouds that have
@@ -84,7 +87,7 @@ export class Weather {
   /** The weather as it is, for the others online to follow (see follow). */
   toSky() {
     const r = (v) => +v.toFixed(3);
-    return { kind: this.kind, upcoming: this.upcoming, auto: this.auto, nextChange: r(this.nextChange), sunset: r(this.sunsetQuality), cover: r(this.cover), rain: r(this.rain), storm: r(this.storm), hurry: r(this.hurry) };
+    return { kind: this.kind, upcoming: this.upcoming, auto: this.auto, nextChange: r(this.nextChange), sunset: r(this.sunsetQuality), cover: r(this.cover), rain: r(this.rain), storm: r(this.storm), hurry: r(this.hurry), tornado: this.tornado?.() ?? null };
   }
 
   /**
@@ -94,6 +97,7 @@ export class Weather {
    */
   follow(sky) {
     if (!sky || !WEATHER[sky.kind]) return;
+    this.onTornado?.(sky.tornado ?? null); // (the host's tornado, if there's one: see main)
     const first = !this.following;
     this.following = true;
     this.kind = sky.kind;
@@ -189,13 +193,15 @@ export class Weather {
       // (see `coming`): showers and far-off lightning out on the horizon.
       // (Decided a change ahead, so the clouds bringing it can be seen
       // coming from far upwind: see at.)
-      if (!this.upcoming && !this.following) this.upcoming = Weather.#pick(NEXT[this.kind], this.spring);
+      if (!this.upcoming && !this.following) this.upcoming = this.#next();
       // (Following the host's weather online: it changes when theirs does.)
       if (this.nextChange <= 0 && this.following) this.nextChange = 0;
       else if (this.nextChange <= 0) {
         this.kind = this.upcoming;
-        this.upcoming = Weather.#pick(NEXT[this.kind], this.spring);
-        this.nextChange = 100 + Math.random() * 140;
+        this.upcoming = this.#next();
+        // (Fine weather and grey winter days settle in for a while; a
+        // thunderstorm blows through in an hour or two of the day's.)
+        this.nextChange = this.kind === 'storm' ? 70 + Math.random() * 90 : this.kind === 'clear' || this.kind === 'overcast' ? 130 + Math.random() * 200 : 100 + Math.random() * 140;
       }
     } else if (!this.following) {
       this.upcoming = null;
@@ -203,6 +209,7 @@ export class Weather {
     // Roll the evening's sunset as the afternoon begins.
     if (this._lastHour !== null && this._lastHour < 14 && hour >= 14 && !this.following) this.sunsetQuality = Math.random();
     this._lastHour = hour;
+    this.hour = hour;
 
     const target = WEATHER[this.kind];
     // Clouds build up (or break) over tens of seconds; rain only falls from
@@ -244,6 +251,23 @@ export class Weather {
     const clouds = 0.45 + 0.55 * smoothstep(0.08, 0.3, c); // something to light up
     const overcast = 1 - 0.85 * smoothstep(0.7, 0.95, c); // but not a lid of cloud
     return q * clouds * overcast * (1 - this.rain);
+  }
+
+  /**
+   * What comes next after this weather, as the year and the day have it:
+   * showery in spring; in summer, thunderstorms building out of the
+   * afternoon's cumulus (and hardly ever in the small hours); in winter,
+   * grey and steady, overcast and rain (or snow), and storms rare.
+   */
+  #next() {
+    const w = { ...NEXT[this.kind] };
+    const h = this.hour, afternoon = h >= 13 && h < 21 ? 1 : 0, night = h >= 23 || h < 8 ? 1 : 0;
+    // (Pop-up storms: a cloudy summer afternoon can boil up into thunder.)
+    if (this.kind === 'cloudy') w.storm = (w.storm ?? 0) + 0.45 * this.summer * afternoon;
+    if (w.storm) w.storm *= (0.45 + 1.3 * this.summer) * (1 - 0.8 * this.winter) * (afternoon ? 1.8 : night ? 0.45 : 1);
+    if (w.overcast) w.overcast *= 1 + 0.8 * this.winter;
+    if (w.clear) w.clear *= 1 + 0.4 * this.summer * (1 - afternoon);
+    return Weather.#pick(w, this.spring);
   }
 
   /** A weighted pick of what comes next; in spring, cloud and rain are twice as likely (clear skies less so). */

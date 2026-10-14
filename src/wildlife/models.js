@@ -1391,6 +1391,9 @@ export function python() {
 /** A bat: small, dark, all wing. */
 export const bat = () => bird({ body: 0x2a2220, belly: 0x3a302a, head: 0x2a2220, beak: 0x1a1412, wing: 0x342a26, tip: 0x241c1a, tail: 0x2a2220, legs: 0x1a1412 });
 
+/** A vulture: sooty brown-black, broad-winged, its bare head a dull red, its beak pale. */
+export const vulture = () => bird({ body: 0x2a221c, belly: 0x261e18, head: 0xa86a5a, beak: 0xe2d8c4, wing: 0x2e241c, tip: 0x161210, tail: 0x241c16, legs: 0x9a8a7a });
+
 /** A bald eagle: dark brown, the white head and tail, the yellow hooked beak. */
 export const eagle = () => bird({ body: 0x3a2a1e, belly: 0x342618, head: 0xf2f0ea, beak: 0xe8c040, wing: 0x3e2c1e, tip: 0x241a12, tail: 0xf0eee8, legs: 0xe8c040 });
 

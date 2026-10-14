@@ -69,6 +69,7 @@ export class PlayerControls {
     this.swimDepth = 1.3; // water deeper than this and you float
 
     this.velocityY = 0;
+    this.push = { x: 0, z: 0 }; // (a shove from outside, m/s: a tornado's wind, being thrown: see launch)
     this.grounded = false;
     this.swimming = false;
     this.locked = false; // the mouse held in the middle of the screen (pointer lock)
@@ -279,6 +280,22 @@ export class PlayerControls {
     return { level: this.world.seaLevel, fx: 0, fz: 0, speed: 0 };
   }
 
+  /** Thrown: up at `vy`, along (vx, vz) (m/s); landing hard hurts (see onLand). */
+  launch(vx, vy, vz) {
+    if (this.mode !== 'walk' || this.vehicle) return;
+    this.velocityY = Math.max(this.velocityY, vy);
+    this.push.x = vx;
+    this.push.z = vz;
+    this.grounded = false;
+    this.softLanding = false;
+  }
+
+  /** Blown on (m/s, horizontal): adds to the shove, which the ground's friction takes away. */
+  blow(vx, vz, dt) {
+    this.push.x += vx * dt;
+    this.push.z += vz * dt;
+  }
+
   #updateWalk(dt) {
     const pos = this.camera.position;
     const input = this.#input();
@@ -316,6 +333,14 @@ export class PlayerControls {
       mz *= step;
       // Try the full move, then slide along each axis if it's blocked.
       if (!this.#tryMove(mx, mz) && !this.#tryMove(mx, 0)) this.#tryMove(0, mz);
+    }
+    // (Shoved by something: blown along, or thrown through the air.)
+    if (Math.abs(this.push.x) + Math.abs(this.push.z) > 0.05) {
+      const px = this.push.x * dt, pz = this.push.z * dt;
+      if (!this.#tryMove(px, pz) && !this.#tryMove(px, 0)) this.#tryMove(0, pz);
+      const drag = Math.exp(-dt * (this.grounded ? 6 : 0.4));
+      this.push.x *= drag;
+      this.push.z *= drag;
     }
     this.world.collide?.(pos, this.radius);
 

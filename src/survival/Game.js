@@ -212,6 +212,7 @@ export class Game {
     for (const k of saved?.broken ?? []) this.rocks?.removed.add(k);
     this.treeFinds.load(saved?.finds);
     this.worldDays = saved?.worldDays ?? 0;
+    this.stormPaths = Array.isArray(saved?.stormPaths) ? saved.stormPaths : []; // (tornadoes' tracks: [x, z, r, day], see main's wreck)
     for (const k of saved?.mushrooms ?? []) this.mushrooms?.taken.add(k);
     this.felling.loadStumps(saved?.stumps);
     this.loadBurns?.(saved?.burns ?? []);
@@ -260,7 +261,7 @@ export class Game {
   save() {
     if (this.seed === null || !this.saveKey) return; // (a testing world is never saved)
     const data = {
-      structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], broken: [...(this.rocks?.removed ?? [])], finds: this.treeFinds.toJSON(), worldDays: +(this.worldDays ?? 0).toFixed(3), stumps: this.felling.stumpsJSON(),
+      structures: this.structures.toJSON(), taken: [...this.items.taken], felled: [...this.trees.removed], broken: [...(this.rocks?.removed ?? [])], finds: this.treeFinds.toJSON(), worldDays: +(this.worldDays ?? 0).toFixed(3), stormPaths: this.stormPaths ?? [], stumps: this.felling.stumpsJSON(),
       mushrooms: [...(this.mushrooms?.taken ?? [])],
       tame: this.wildlife.tameJSON(),
       bosses: this.wildlife.bossJSON(),

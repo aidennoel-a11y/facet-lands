@@ -326,6 +326,27 @@ export class Felling {
   }
 
   /**
+   * A tree in a tornado's path, near you: snapped off low down (or torn up
+   * by the roots) and thrown down along `away`, hard. It grows back like the
+   * burnt woods (see regrow).
+   */
+  blowDown(hit, away) {
+    if (hit.t.removed) return;
+    if (hit.bush) return this.uproot(hit);
+    this.#fell(hit, 0.3 + Math.random() * 1.4, { away, angle: 0.08, speed: 0.5 + Math.random() * 0.4, heft: 1.3, hold: 0 });
+    const st = this.stumps[this.stumps.length - 1];
+    if (st) (st.at = this.day ?? 0), (st.storm = true);
+  }
+
+  /** A tree or bush (far off, or a bush) torn out by a tornado: gone, roots and all; it grows back in time. */
+  uproot(hit) {
+    if (hit.t.removed) return;
+    const world = this.trees.matrixOf(hit).clone();
+    this.trees.remove(hit);
+    this.stumps.push({ key: hit.key, type: hit.type, m: world.elements.map((v) => +v.toFixed(4)), cut: 0, bush: true, storm: true, mesh: null, at: this.day ?? 0 });
+  }
+
+  /**
    * The burnt woods growing back (call now and then with the world's day):
    * two days and a half after a fire, a snag gives way to a sapling, which
    * grows to the tree it was over the next five.
@@ -334,7 +355,7 @@ export class Felling {
     this.day = day;
     let changed = false;
     for (const st of [...this.stumps]) {
-      if (!st.burnt || st.at === undefined) continue;
+      if ((!st.burnt && !st.storm) || st.at === undefined) continue;
       const age = day - st.at;
       if (age < 2.5) continue;
       if (st.mesh) {
@@ -371,7 +392,7 @@ export class Felling {
 
   /** The stumps, for saving; and back from a save. */
   stumpsJSON() {
-    return this.stumps.map(({ key, type, m, cut, burnt, bush, at }) => ({ key, type, m, cut, burnt, bush, at }));
+    return this.stumps.map(({ key, type, m, cut, burnt, bush, at, storm }) => ({ key, type, m, cut, burnt, bush, at, storm }));
   }
 
   /** One stump more (someone else's felling, online), unless it's there already. */
@@ -391,6 +412,7 @@ export class Felling {
       }
       this.#stump(st.key, st.type, new Matrix4().fromArray(st.m), st.cut, !!st.burnt);
       if (st.at !== undefined) this.stumps[this.stumps.length - 1].at = st.at;
+      if (st.storm) this.stumps[this.stumps.length - 1].storm = true;
     }
   }
 

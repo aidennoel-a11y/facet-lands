@@ -71,6 +71,7 @@ export class Wildfires {
     this.spreadWait = 0;
     this.crackle = 0;
     this.day = 0;
+    this.scours = new Map(); // key -> { i, k, day, s }: ground torn up by a tornado (see scour)
   }
 
   // (How much there is to burn in a cell: worked out once.)
@@ -182,6 +183,40 @@ export class Wildfires {
     this.map[p] = cell.state === 1 ? 200 : Math.round(255 * (age < 1 ? 1 : Math.max(0, 1 - (age - 1) / 2)));
     this.map[p + 1] = cell.state === 1 ? 255 : 0;
     this.mapDirty = true;
+  }
+
+  // A cell of ground scoured by a tornado, on the map's blue: torn earth,
+  // fading back to green over four days.
+  #scourTexel(c) {
+    const o = this.mapOrigin;
+    if (o.i === null) return;
+    const u = c.i - o.i, v = c.k - o.k;
+    if (u < 0 || v < 0 || u >= MAP || v >= MAP) return;
+    const p = (v * MAP + u) * 4, age = this.day - c.day;
+    this.map[p + 2] = Math.max(this.map[p + 2], Math.round(255 * c.s * (age < 1.5 ? 1 : Math.max(0, 1 - (age - 1.5) / 2.5))));
+    this.mapDirty = true;
+  }
+
+  /**
+   * The ground torn up round (x, z) within `r` (by a tornado's passing):
+   * the grass and topsoil stripped away, `s` how badly (0..1), most in the middle.
+   */
+  scour(x, z, r, s = 1) {
+    const i0 = Math.floor((x - r) / CELL), i1 = Math.floor((x + r) / CELL), k0 = Math.floor((z - r) / CELL), k1 = Math.floor((z + r) / CELL);
+    for (let k = k0; k <= k1; k++) {
+      for (let i = i0; i <= i1; i++) {
+        const d = Math.hypot((i + 0.5) * CELL - x, (k + 0.5) * CELL - z);
+        if (d > r) continue;
+        // (Ragged: torn in streaks and patches, not evenly.)
+        const rag = (((Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % 1) + 1) % 1;
+        const v = s * (1 - (d / r) ** 2) * (0.55 + 0.45 * rag);
+        const key = ck(i, k), was = this.scours.get(key);
+        if (was && was.s >= v && this.day - was.day < 1) continue;
+        const c = { i, k, day: this.day, s: Math.min(1, Math.max(v, was && this.day - was.day < 1 ? was.s : 0)) };
+        this.scours.set(key, c);
+        this.#scourTexel(c);
+      }
+    }
   }
 
   /** Where fires are burning just now, for the animals to keep away: [{ x, z, r }]. */
@@ -308,6 +343,13 @@ export class Wildfires {
           }
           this.#texel(c);
         }
+        for (const [key, c] of this.scours) {
+          if (this.day - c.day > 4) {
+            this.scours.delete(key);
+            continue;
+          }
+          this.#scourTexel(c);
+        }
         this.mapDirty = true;
       }
       if (this.mapDirty) {
@@ -324,6 +366,8 @@ export class Wildfires {
   toJSON() {
     const out = [];
     for (const c of this.cells.values()) if (this.day - c.day <= 3) out.push(c.i, c.k, c.state, +c.day.toFixed(3));
+    // (And the ground a tornado tore up: state 3 + how badly, in tenths.)
+    for (const c of this.scours.values()) if (this.day - c.day <= 4) out.push(c.i, c.k, 3 + Math.round(c.s * 10) / 100, +c.day.toFixed(3));
     return out;
   }
 
@@ -331,6 +375,10 @@ export class Wildfires {
     this.clear();
     for (let n = 0; n + 3 < (list?.length ?? 0); n += 4) {
       const [i, k, state, day] = list.slice(n, n + 4);
+      if (state >= 3) {
+        this.scours.set(ck(i, k), { i, k, day, s: Math.min(1, (state - 3) * 10) });
+        continue;
+      }
       // (A fire that was burning when the world was left: it's burnt out since.)
       this.cells.set(ck(i, k), { i, k, state: 2, t: 0, dur: 0, fuel: 0, day: state === 1 ? day + 0.01 : day, flames: [], smoke: [], trees: null });
     }
@@ -340,6 +388,7 @@ export class Wildfires {
   clear() {
     for (const c of [...this.burning]) this.#out(c);
     this.cells.clear();
+    this.scours.clear();
     this.burning.clear();
     this.fuelCache.clear();
     this.heightCache.clear();

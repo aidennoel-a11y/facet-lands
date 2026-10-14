@@ -36,13 +36,14 @@ import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
 import { Game } from './survival/Game.js';
-import { ITEMS } from './survival/items.js';
+import { ITEMS, RECIPES } from './survival/items.js';
 import { PlayerControls } from './controls/PlayerControls.js';
 import { PlayerBody } from './player/PlayerBody.js';
 import { DayNight } from './render/DayNight.js';
 import { RayEffects } from './render/RayEffects.js';
 import { Clouds } from './world/Clouds.js';
 import { Weather, WEATHER } from './render/Weather.js';
+import { Tornadoes } from './render/Tornado.js';
 import { Lightning, panTowards, Rain } from './render/Storm.js';
 import { Sound } from './render/Sound.js';
 import { Showers } from './render/Showers.js';
@@ -134,6 +135,10 @@ windDirection.value.set(clouds.wind.x, clouds.wind.z).normalize(); // (the gusts
 const weather = new Weather('fair');
 const rain = new Rain(scene);
 const lightning = new Lightning(scene);
+const tornadoes = new Tornadoes(scene);
+// (Online: the host's tornado goes out with the weather; the others draw it where it is: see Weather.toSky.)
+weather.tornado = () => tornadoes.toJSON();
+weather.onTornado = (j) => tornadoes.follow(j);
 const sound = new Sound();
 sound.hearing = (x, z) => hearing(x, z); // (the land between you and a sound: see hearing)
 
@@ -171,6 +176,12 @@ const rivers = createRiverLayer(dayNight.horizon, dayNight.top);
 const fallingLeaves = new FallingLeaves(scene);
 // The animals (deer, bison, rabbits, birds), and the bees, their nests and the fireflies.
 const wildlife = new Wildlife(scene, addCloudShadow);
+// (One of yours taken by a hunter: you're told, wherever you are.)
+wildlife.onLivestock = (b, a) => {
+  const names = { sheep: 'sheep', turkey: 'turkey', duck: 'duck', horse: 'horse', donkey: 'donkey', mule: 'mule' };
+  const by = { wolf: 'wolves', coyote: 'a coyote', fox: 'a fox', cougar: 'a cougar', grizzly: 'a bear', blackBear: 'a bear', lion: 'lions', hyena: 'hyenas', tiger: 'a tiger', panther: 'a panther', jaguar: 'a jaguar', crocodile: 'a crocodile' };
+  game.hud?.toast?.(`Something has killed one of your ${names[b.kind] ?? b.kind}s: ${by[a.kind] ?? 'a hunter'}. Pen them in, or keep a fire burning by them at night.`);
+};
 
 // The animals-only view (testing): a label over each animal's head.
 const animalsOnlyBox = document.getElementById('animals-only');
@@ -222,6 +233,207 @@ lightning.onStrike = (x, y, z, distance) => {
   if (chance < 0.18 + 0.2 * summer + 0.15 * w.savanna) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
 };
 const grassCut = new GrassCut();
+
+// --- The climate, and the tornadoes ---------------------------------------------------------
+//
+// How much of the weather's rain falls here (`climate.wet`): the desert
+// hardly gets any (a storm there is mostly wind and lightning, dry
+// lightning that sets the grass alight), the savanna some, more in its
+// summer rains, the woods and plains their share, the jungle and the
+// swamps more than any.
+const climate = { wet: 1, target: 1, wait: 0 };
+function climateHere(dt) {
+  climate.wait -= dt;
+  if (climate.wait <= 0) {
+    climate.wait = 2;
+    const p = camera.position, w = generator.getBiomeWeights(p.x, p.z, {});
+    const summer = Math.max(0, 1 - seasonUniforms.uSpring.value - seasonUniforms.uAutumn.value - seasonUniforms.uWinter.value);
+    const v = (w.desert ?? 0) * 0.12 + (w.saltFlat ?? 0) * 0.08 + (w.badlands ?? 0) * 0.35 + (w.savanna ?? 0) * (0.35 + 0.45 * summer)
+      + ((w.jungle ?? 0) + (w.mangrove ?? 0) + (w.wetland ?? 0) + (w.redwood ?? 0)) * 1.25;
+    const known = (w.desert ?? 0) + (w.saltFlat ?? 0) + (w.badlands ?? 0) + (w.savanna ?? 0) + (w.jungle ?? 0) + (w.mangrove ?? 0) + (w.wetland ?? 0) + (w.redwood ?? 0);
+    climate.target = Math.min(1.3, v + Math.max(0, 1 - known)); // (everywhere else: its full share)
+  }
+  climate.wet += (climate.target - climate.wet) * Math.min(1, dt / 8);
+}
+
+// A tornado's track: where it's torn the woods out (kept, so trees far
+// off, not yet built when it passed, are gone too when you get there; and
+// none grows on it till the woods come back, a week on).
+function stormTrack(x0, z0, x1, z1) {
+  const out = [], day = game.worldDay?.() ?? 0;
+  for (const [x, z, r, d] of game.stormPaths ?? []) {
+    if (day - d > 7.5) continue;
+    if (x + r < x0 || x - r > x1 || z + r < z0 || z - r > z1) continue;
+    out.push([x, z, r]);
+  }
+  return out;
+}
+
+// What the tornado tears up as it goes: every few metres of its track,
+// round (x, z) within about `r` (its core: in it everything is taken; at its
+// edge, some), `strength` 0..1, going along `dir`.
+const BUILT_TOUGH = { stoneWall: 0.75, stoneFloor: 0.95, cutStoneWall: 0.8, cutStoneFloor: 0.95, stoneStairs: 0.9, cutStairs: 0.9, chimney: 0.6, stoneFence: 0.6, stoneWindow: 0.7, stoneDoor: 0.7, cutWindow: 0.75, cutDoor: 0.75, cellar: 1, anvil: 0.85, furnace: 0.6, logWall: 0.4, logFloor: 0.5, plankWall: 0.35 };
+const unitHash = (x, z) => (((Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1) + 1) % 1;
+function wreck(x, z, r, strength, dir) {
+  const day = game.worldDay?.() ?? 0, cam = camera.position;
+  const reach = r * 1.35;
+  // (The track, kept: a mark every 30 m or so.)
+  const paths = (game.stormPaths ??= []);
+  const last = paths[paths.length - 1];
+  if (!last || Math.hypot(last[0] - x, last[1] - z) > 25) {
+    paths.push([Math.round(x), Math.round(z), Math.round(reach), +day.toFixed(3)]);
+    if (paths.length > 600) paths.splice(0, paths.length - 600);
+    game.dirty = true;
+  }
+  // The grass and turf stripped off it.
+  grassCut.cut(x, z, reach, dayNight.day + dayNight.hour / 24);
+  fires.scour(x, z, reach, 0.55 + 0.45 * strength);
+  // The trees: snapped off or torn up and thrown down, the way the wind
+  // goes round it (and on with it). Near you, each one comes crashing down;
+  // further off, they're simply gone (its track keeps them so).
+  let falls = 0;
+  for (const hit of trees.within(x, z, reach)) {
+    if (hit.t.removed) continue;
+    const dx = hit.x - x, dz = hit.z - z, d = Math.hypot(dx, dz) || 0.01;
+    const take = strength * (d < r ? 1.2 : 1 - (d - r) / (reach - r));
+    if (unitHash(hit.x, hit.z) > take) continue;
+    // (Thrown round with the winds: anticlockwise round it, and on with it.)
+    const tx = -dz / d + dir.x * 0.8, tz = dx / d + dir.z * 0.8;
+    const away = Math.atan2(tx, tz);
+    if (!hit.bush && falls < 4 && Math.hypot(hit.x - cam.x, hit.z - cam.z) < 170) {
+      game.felling.blowDown(hit, away);
+      falls++;
+    } else game.felling.uproot(hit);
+    game.dirty = true;
+  }
+  // What's built: ripped apart, the bits flung away round it. (A
+  // stone house may stand through the edge of one; nothing of wood does
+  // through its heart. The host's work, online: theirs is shared.)
+  if (!weather.following) {
+    for (const st of [...game.structures.list]) {
+      const d = Math.hypot(st.x - x, st.z - z);
+      if (d > reach) continue;
+      const force = strength * (d < r ? 1 : 1 - (d - r) / (reach - r));
+      const tough = BUILT_TOUGH[st.type] ?? 0;
+      if (unitHash(st.x * 1.7 + st.id, st.z) > force * 1.25 - tough) continue;
+      blowApart(st, x, z, strength, dir);
+    }
+  }
+  // The animals caught in it: lifted and flung, and killed.
+  for (const a of wildlife.animals) {
+    if (!a.alive || Math.hypot(a.x - x, a.z - z) > r * 0.9 || (a.y ?? 0) > (chunks.groundHeightAt(a.x, a.z) || 0) + 6) continue;
+    wildlife.hit(a, 999, { x, z });
+  }
+  // And anything lying about: swept up and flung.
+  for (const dr of game.items.drops) {
+    const d = Math.hypot(dr.x - x, dr.z - z);
+    if (d > r || dr.stuck) continue;
+    const vt = 24 * strength;
+    dr.settled = false;
+    dr.vy = 8 + 10 * Math.random() * strength;
+    dr.vx = (-(dr.z - z) / (d || 1)) * vt + dir.x * 6;
+    dr.vz = ((dr.x - x) / (d || 1)) * vt + dir.z * 6;
+  }
+}
+
+// Something built, torn apart by a tornado: gone, and what it was made of
+// (some of it), and whatever was in it, flung about in pieces.
+function blowApart(st, x, z, strength, dir) {
+  const pieces = [];
+  const recipe = RECIPES.find((rc) => rc.id === st.type);
+  for (const [id, n] of Object.entries(recipe?.needs ?? { stick: 2 })) {
+    if (!ITEMS[id]?.weight || ITEMS[id].group === 'Trophies') continue;
+    const keep = Math.floor(n * (0.25 + 0.3 * Math.random()));
+    if (keep > 0) pieces.push({ id, count: keep });
+  }
+  for (const s of st.contents?.slots ?? []) if (s) pieces.push(s);
+  game.structures.remove(st);
+  const d = Math.hypot(st.x - x, st.z - z) || 1;
+  for (const s of pieces) {
+    const k = (0.6 + Math.random() * 0.8) * (14 + 16 * strength);
+    game.items.drop({ ...s }, st.x, st.y + 1.5, st.z, {
+      vy: 6 + Math.random() * 10 * strength,
+      vx: (-(st.z - z) / d) * k + dir.x * 8 + (Math.random() - 0.5) * 6,
+      vz: ((st.x - x) / d) * k + dir.z * 8 + (Math.random() - 0.5) * 6,
+    });
+  }
+  if (Math.hypot(st.x - camera.position.x, st.z - camera.position.z) < 120) sound.call('crack', panTowards(camera, st.x, st.z), 1);
+}
+
+// Whether a tornado is in the offing: once a strong thunderstorm's built,
+// in its season (late spring into early summer), over open country (the
+// plains, the parkland, the savanna: not the woods, the mountains, the
+// desert), in the afternoon or evening. Then one may drop out of it (about
+// one storm in three like that), touching down a kilometre or so off,
+// upwind, and coming on with the storm (from the south-west, mostly);
+// passing by, or right over you.
+function tornadoWatch(dt) {
+  if (weather.following || game.mode === 'testing' && !weather.auto) return;
+  if (weather.storm < 0.3) tornadoes.rolled = false;
+  if (tornadoes.active || tornadoes.rolled || weather.storm < 0.75 || controls.mode !== 'walk' && game.mode !== 'creative') return;
+  tornadoes.rolled = true;
+  const t = seasons.time % 4, season = smoothstep(0.35, 0.65, t) * (1 - smoothstep(1.2, 1.45, t));
+  const h = dayNight.hour, hours = h >= 12 && h < 22 ? 1 : h >= 22 || h < 2 ? 0.35 : 0.1;
+  const p = camera.position, w = generator.getBiomeWeights(p.x, p.z, {});
+  const open = Math.min(1, (w.temperate ?? 0) + (w.parkland ?? 0) + 0.8 * (w.savanna ?? 0) + 0.6 * (w.blackHills ?? 0)) * (1 - 0.7 * generator.getForestDensity(p.x, p.z)) * (1 - smoothstep(0.3, 0.6, generator.getMountainness(p.x, p.z)));
+  if (Math.random() > 0.38 * season * hours * smoothstep(0.25, 0.6, open)) return;
+  spawnTornado();
+}
+function spawnTornado({ near = null, delay = 50, back = null } = {}) {
+  const p = camera.position;
+  // (Coming from the south-west, give or take; a kilometre off, so it can be seen coming.)
+  const heading = Math.PI * 0.25 + (Math.random() - 0.5) * 0.9; // (towards the north-east: +x, +z)
+  const miss = near ?? (Math.random() < 0.45 ? (Math.random() - 0.5) * 120 : (Math.random() - 0.5) * 900);
+  back ??= 700 + Math.random() * 500;
+  const x = p.x - Math.sin(heading) * back + Math.cos(heading) * miss, z = p.z - Math.cos(heading) * back - Math.sin(heading) * miss;
+  return tornadoes.spawn(x, z, heading, { speed: 10 + Math.random() * 7, life: 170 + Math.random() * 170, R: 50 + Math.random() * 70, delay });
+}
+
+const tornadoWind = {};
+function tornadoUpdate(dt) {
+  tornadoWatch(dt);
+  tornadoes.update(dt, {
+    camera, light: ambientLight, wind: clouds.wind,
+    ground: (x, z) => {
+      const g = chunks.groundHeightAt(x, z);
+      return Number.isFinite(g) ? g : generator.getBaseHeight(x, z);
+    },
+    wreck,
+  });
+  const p = camera.position;
+  // The warning signs: hail, the sky going green-black. Said once.
+  const threat = tornadoes.threat * smoothstep(0.4, 0.9, weather.storm + (tornadoes.active ? 1 : 0));
+  if (tornadoes.active && !tornadoes.warned && threat > 0.3 && !sheltered) {
+    tornadoes.warned = true;
+    game.hud?.toast?.('The sky has gone a sickly green-black, and it is hailing: a tornado is coming. Get underground, into a cave, or get out of its way.');
+  }
+  rain.hail = threat * (tornadoes.now?.strength > 0 ? 0.5 : 1) * 0.8;
+  // Its wind, where you are: blown about; in its core, lifted and thrown, battered by what's flying in it.
+  const w = tornadoes.windAt(p.x, p.z, tornadoWind);
+  let loud = 0, pan = 0;
+  if (w) {
+    loud = Math.min(1, 2.2 * Math.exp(-Math.max(0, w.d - w.R) / 450)) * (tornadoes.now?.strength ?? 0);
+    pan = panTowards(camera, tornadoes.now.x, tornadoes.now.z);
+    const outside = controls.mode === 'walk' && !sheltered && !game.sleeping; // (underground, in a cave: safe)
+    if (outside && w.d < w.R * 4) {
+      const k = w.d < w.R ? 0.6 : 0.35 * (w.R * 4 - w.d) / (w.R * 3);
+      controls.blow(w.x * k, w.z * k, dt);
+      if (w.core > 0.15 && controls.grounded) {
+        // (Caught: up and away. The landing does the rest: see onLand.)
+        controls.launch(w.x * 0.45, 10 + 14 * w.core, w.z * 0.45);
+        game.hurt(8 + 14 * w.core, 'tornado');
+      } else if (w.d < w.R * 1.6 && Math.random() < dt * 1.5) game.hurt(3 + Math.random() * 6, 'tornado'); // (struck by what's flying)
+    }
+  }
+  tornadoes.sound = { loud, pan, hail: rain.hail * (sheltered ? 0.2 : 1) * Math.min(1, weather.rain + 0.3) };
+}
+
+// The sky under a tornadic storm: a sick green-black light.
+const STORM_GREEN = new THREE.Color(0.32, 0.4, 0.32);
+function stormTint() {
+  const g = tornadoes.threat * smoothstep(0.4, 0.9, weather.storm) * (sheltered ? 0 : 1);
+  if (g > 0.01) scene.fog.color.lerp(STORM_GREEN.clone().multiplyScalar(0.5 + 0.5 * Math.min(1, dayNight.light.intensity / 2)), 0.5 * g);
+}
 const fires = new Wildfires(scene);
 // (Big spiders in the dark of the caves: see CaveSpiders. Killed, one leaves its silk.)
 const spiders = new CaveSpiders(scene);
@@ -302,7 +514,11 @@ chunks.addLayer(wrecks);
 const ruins = createRuinLayer(WORLD);
 chunks.addLayer(ruins);
 // (No trees growing up through them: each stands in its own clearing.)
-trees.keepOut = (x0, z0, x1, z1) => ruins.sitesNear((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 30, generator).map((s) => [s.x, s.z, s.size + 3]);
+trees.keepOut = (x0, z0, x1, z1) => [
+  ...ruins.sitesNear((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 30, generator).map((s) => [s.x, s.z, s.size + 3]),
+  // (And none along a tornado's track, till the woods grow back over it: see wreck.)
+  ...stormTrack(x0, z0, x1, z1),
+];
 chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
 // The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).
 for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.material, farGrass.material, rocks.material, farTrees.material, farTrees.cardMaterial, logs.material, water.material, rivers.material]) if (m) addCloudShadow(m);
@@ -2003,7 +2219,10 @@ function tick(now) {
   const worldNow = mp.roomTime() ?? now / 1000; // (online, the room's clock: the same for everyone)
   chunks.update(camera.position, worldNow, dir); // (online, by the room's clock: the lava creeping, the water rippling, the same for all)
   weather.spring = seasonUniforms.uSpring.value;
+  weather.winter = seasonUniforms.uWinter.value;
+  weather.summer = Math.max(0, 1 - seasonUniforms.uSpring.value - seasonUniforms.uAutumn.value - seasonUniforms.uWinter.value);
   weather.update(dt, dayNight.hour);
+  climateHere(dt);
   // (Online, by the room's clock: the same gusts for everyone.)
   const wind = updateWind(worldNow, 0.95 * weather.storm + 0.35 * weather.rain);
   // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)
@@ -2035,6 +2254,7 @@ function tick(now) {
   scene.fog.near = openFog.near * (1 - 0.75 * localRain) * (1 - 0.85 * mist);
   scene.fog.far = openFog.far * (1 - 0.5 * localRain) * (1 - 0.75 * mist);
   if (mist > 0) scene.fog.color.lerp(MIST, 0.45 * mist);
+  stormTint();
   smokyHaze(dt);
   nightSight(dt);
   dayNight.sky.visible = true;
@@ -2053,7 +2273,8 @@ function tick(now) {
   }
   showers.update(dt, camera, clouds.wind, wind, dayNight.horizon, scene.fog);
   // (Under one of the showers you can see, it's raining on you too.)
-  localRain = Math.max(weather.rain, showers.rainAt(camera.position));
+  localRain = Math.max(weather.rain * Math.min(1, climate.wet), showers.rainAt(camera.position)); // (the desert hardly gets any: see climateHere)
+  tornadoUpdate(dt);
   seasons.update(dayNight.playing ? dt / (WORLD.dayLengthMinutes * 60) : 0, dt);
   if (dayNight.playing) game.passDays(dt / (WORLD.dayLengthMinutes * 60));
   // In a cold winter, it snows (over the lands that have one).
@@ -2107,7 +2328,7 @@ function tick(now) {
     waterAt: (x, z) => waterAt(x, z),
     splash: (x, y, z, size = 1) => traces.splash(x, y, z, 6, 1.2 * size, 0.6 * size),
     bleed,
-    fires: game.fearLights(), wildfires: fires.zones(), caches: () => game.caches(), raid: (c) => game.raid(c),
+    fires: game.fearLights(), wildfires: tornadoes.now?.strength > 0 ? [...fires.zones(), { x: tornadoes.now.x, z: tornadoes.now.z, r: tornadoes.now.r * 6 + 150 }] : fires.zones(), caches: () => game.caches(), raid: (c) => game.raid(c),
     autumn: seasonUniforms.uAutumn.value,
     step: (a, x, z, running) => {
       const [shape, size] = ANIMAL_PRINTS[a.kind] ?? [PRINT.hoof, 0.12];
@@ -2155,6 +2376,9 @@ function tick(now) {
   devils.update(dt, { ...air, seed: generator.seed, hour: dayNight.hour, winter: seasonUniforms.uWinter.value, ground: (x, z) => chunks.groundHeightAt(x, z) });
   shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)), worldNow);
   insects.update(dt, life);
+  env.tornado = tornadoes.sound?.loud ?? 0;
+  env.tornadoPan = tornadoes.sound?.pan ?? 0;
+  env.hail = tornadoes.sound?.hail ?? 0;
   env.buzz = insects.buzz.level;
   env.buzzPan = insects.buzz.pan;
   // (The calls round about by the room's clock and where you are: see Sound's ambience.)
@@ -2249,7 +2473,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, geese, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

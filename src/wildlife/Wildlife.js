@@ -104,6 +104,9 @@ const SPECIES = {
   // over the Smoky Mountains and the Black Hills.
   bat: { bird: true, model: Models.bat, max: 40, scale: 0.9, flee: 4, radius: 0.15, health: 1 },
   eagle: { bird: true, model: Models.eagle, max: 3, scale: 5.6, flee: 35, radius: 0.9, health: 16 },
+  // Vultures: over the open, dry country, gathering in the sky over
+  // anything dead (see #carrion); crows do the same in the woods.
+  vulture: { bird: true, model: Models.vulture, max: 18, scale: 4.8, flee: 22, radius: 0.8, health: 10 },
   // Wild horses: a herd led by a stallion, on the open grassland (the
   // temperate highlands, the parkland, the savanna, the Black Hills). Shy:
   // they run from anything hunting and from you coming at them fast. Come
@@ -125,6 +128,49 @@ SPECIES.tiger.predator = { sight: 70, close: 20, bite: 38, every: 1.4, reach: 1.
 SPECIES.panther.predator = { sight: 60, close: 0, bite: 26, every: 1.2, reach: 1.4, ambush: true };
 SPECIES.jaguar.predator = { sight: 60, close: 0, bite: 32, every: 1.3, reach: 1.5, ambush: true };
 SPECIES.crocodile.predator = { sight: 18, close: 0, bite: 40, every: 1.8, reach: 2.2, ambush: true };
+// What each hunter hunts, besides you, and how keen it is on each (see
+// #preyMind): the wolf pack runs down deer, elk, sheep (a moose or a bison
+// only if young, old or hurt: they're too much for it otherwise); the
+// coyote and the fox, rabbits and birds and lambs; the big cats, deer and
+// pig and goat, stalked and rushed; lions the big game of the savanna; the
+// crocodile whatever comes down to its water to drink; the bears now and
+// then a calf. (A tame one, left out unguarded in the night, too: see
+// #livestockOpen.)
+const PREY = {
+  wolf: { deer: 1, elk: 0.8, sheep: 1, mountainGoat: 0.7, rabbit: 0.4, hare: 0.4, boar: 0.45, moose: 0.3, bison: 0.25, horse: 0.35, donkey: 0.8, mule: 0.5, turkey: 0.3 },
+  coyote: { rabbit: 1, hare: 1, turkey: 0.8, duck: 0.6, sheep: 0.45, deer: 0.15, mountainGoat: 0.3 },
+  fox: { rabbit: 1, hare: 0.8, turkey: 0.5, duck: 0.7 },
+  cougar: { deer: 1, sheep: 0.8, mountainGoat: 1, boar: 0.6, elk: 0.45, horse: 0.25, donkey: 0.5, rabbit: 0.3, turkey: 0.3 },
+  panther: { deer: 1, boar: 0.8, turkey: 0.5, monkey: 0.4, sheep: 0.6 },
+  jaguar: { boar: 1, deer: 0.8, monkey: 0.4, sheep: 0.6, crocodile: 0.15 },
+  tiger: { deer: 1, boar: 1, elk: 0.7, bison: 0.3, horse: 0.4, sheep: 0.5 },
+  lion: { bison: 0.8, horse: 0.9, camel: 0.6, deer: 0.8, donkey: 1, boar: 0.6, elephant: 0.05, hippo: 0.04 },
+  hyena: { deer: 0.6, horse: 0.35, camel: 0.3, rabbit: 0.5, boar: 0.4, sheep: 0.6, donkey: 0.6 },
+  crocodile: { deer: 1, horse: 0.8, bison: 0.6, boar: 0.8, sheep: 1, elk: 0.6, camel: 0.5, donkey: 0.8 },
+  grizzly: { elk: 0.45, deer: 0.5, moose: 0.35, bison: 0.15, sheep: 0.6 },
+  blackBear: { deer: 0.35, elk: 0.2, sheep: 0.5 },
+};
+// How a hunter goes about it: `stalk` (creep up close, unseen, before the
+// rush: the cats) or not (the dogs trot up openly and run their quarry
+// down, wearing it out); from how far it rushes; how long it keeps up the
+// chase (the cats a few seconds; the wolf for a minute and more); when
+// it's out hunting (dusk, night, day); how big a quarry it'll take on its
+// own (bigger only if young, hurt, or for a pack).
+const HUNTS = {
+  wolf: { rush: 70, chase: 75, when: 'dark', takes: 'large' },
+  coyote: { rush: 30, chase: 25, when: 'dark', takes: 'medium' },
+  fox: { rush: 14, chase: 12, when: 'dark', takes: 'small', pounce: true },
+  cougar: { stalk: true, rush: 18, chase: 9, when: 'dusk', takes: 'large', pounce: true },
+  panther: { stalk: true, rush: 16, chase: 9, when: 'dusk', takes: 'large', pounce: true },
+  jaguar: { stalk: true, rush: 15, chase: 8, when: 'dusk', takes: 'large', pounce: true },
+  tiger: { stalk: true, rush: 22, chase: 10, when: 'dusk', takes: 'large', pounce: true },
+  lion: { stalk: true, rush: 30, chase: 14, when: 'dusk', takes: 'large' },
+  hyena: { rush: 50, chase: 45, when: 'night', takes: 'large' },
+  crocodile: { stalk: true, rush: 7, chase: 2.5, when: 'any', takes: 'large', water: true },
+  grizzly: { rush: 35, chase: 16, when: 'day', takes: 'medium' },
+  blackBear: { rush: 25, chase: 12, when: 'day', takes: 'medium' },
+};
+const SIZE_RANK = { small: 0, medium: 1, large: 2, huge: 3 };
 // (Lions hunt at dusk and in the dark, lying up by day; hyenas are bold only at night.)
 SPECIES.lion.predator = { sight: 60, close: 16, bite: 34, every: 1.4, reach: 1.7, dusk: true };
 SPECIES.hyena.predator = { sight: 45, close: 10, bite: 15, every: 1.1, reach: 1.3, night: true };
@@ -289,9 +335,9 @@ export class Wildlife {
         make('rattle', model.rattle, sp.max, false);
         if (BOSS_KINDS.has(kind)) for (const m of Object.values(meshes)) m.setColorAt(0, white);
       } else {
-        make('body', model.body, sp.max, kind === 'hawk' || kind === 'gull');
-        make('wingL', model.wingL, sp.max, kind === 'hawk' || kind === 'gull');
-        make('wingR', model.wingR, sp.max, kind === 'hawk' || kind === 'gull');
+        make('body', model.body, sp.max, kind === 'hawk' || kind === 'gull' || kind === 'vulture');
+        make('wingL', model.wingL, sp.max, kind === 'hawk' || kind === 'gull' || kind === 'vulture');
+        make('wingR', model.wingR, sp.max, kind === 'hawk' || kind === 'gull' || kind === 'vulture');
       }
       this.rigs[kind] = { model, meshes, coloured: sp.tinted || sp.coloured || BOSS_KINDS.has(kind) };
     }
@@ -817,6 +863,173 @@ export class Wildlife {
     if (a.herd?.hunting && !a.hunting) (a.hunting = true), (a.notice = 9);
   }
 
+  // --- Hunting the other animals -------------------------------------------------
+
+  /**
+   * Whether a tame animal (yours) is there for the taking: in the night, or
+   * with no one about; not by a fire, not shut in (four or more lengths of
+   * fence, wall or gate round about it: a pen).
+   */
+  #livestockOpen(b, ctx) {
+    const c = ctx.camera.position;
+    if (ctx.night < 0.45 && Math.hypot(b.x - c.x, b.z - c.z) < 90) return false;
+    if (this.#fireAt(b.x, b.z, ctx, 4)) return false;
+    let fence = 0;
+    for (const st of ctx.structures?.list ?? []) {
+      if (!/fence|Fence|wall|Wall|gate|Gate/.test(st.type)) continue;
+      if (Math.abs(st.x - b.x) < 12 && Math.abs(st.z - b.z) < 12 && ++fence >= 4) return false;
+    }
+    return true;
+  }
+
+  // Whether it's its time to be out hunting (the cats at dusk and in the
+  // dark, the dogs dark or dawn, the bears by day), and how keen: a little
+  // even off its hours, if hungry enough.
+  #huntHour(h, ctx) {
+    const dark = ctx.night ?? 0, edge = Math.max(ctx.dawn ?? 0, ctx.dusk ?? 0);
+    return h.when === 'any' ? 1 : h.when === 'day' ? 0.3 + 0.7 * (ctx.day ?? 1) : h.when === 'night' ? Math.max(0.15, dark) : h.when === 'dusk' ? Math.max(0.15, edge * 1.5, dark) : Math.max(0.25, dark, edge * 1.3);
+  }
+
+  // A hunter, now and then, looking about for something to hunt: when it's
+  // hungry (it's eaten well, it lets them be for a day or so), at its hour,
+  // and not with you close by. The pack hunts together (one finds, they all
+  // go). The quarry it picks: what it hunts, near enough, best the young,
+  // the hurt, the slow; on its own, nothing too big for it.
+  #preyMind(a, sp, dt, ctx) {
+    const h = HUNTS[a.kind];
+    a.hunger = Math.min(1, (a.hunger ?? Math.random() * 0.9) + dt / (a.kind === 'crocodile' ? 1200 : 520));
+    if (a.hunting || a.stalking || a.scavenge || a.raid || a.hibernating) return void (a.chase = null);
+    if (a.chase) return;
+    const pack = a.herd?.members.filter((m) => m.alive && m !== a && SPECIES[m.kind].predator) ?? [];
+    // (A packmate's already onto something: in with it.)
+    const mate = pack.find((m) => m.chase?.prey?.alive && m.chase.phase !== 'feed');
+    if (mate && Math.hypot(mate.x - a.x, mate.z - a.z) < 120) {
+      a.chase = { prey: mate.chase.prey, phase: mate.chase.phase, t: 0, side: Math.random() < 0.5 ? -1 : 1, wide: rnd(4, 12) };
+      return;
+    }
+    a.preyWait = (a.preyWait ?? rnd(0, 3)) - dt;
+    if (a.preyWait > 0 || a.hunger < 0.5) return;
+    a.preyWait = rnd(2, 4);
+    if (Math.random() > this.#huntHour(h, ctx)) return;
+    const c = ctx.camera.position;
+    if (Math.hypot(a.x - c.x, a.z - c.z) < 28 && ctx.player?.mode === 'walk') return; // (you about: it keeps off)
+    const sight = h.water ? 14 : h.stalk ? 110 : 160, ranks = SIZE_RANK[h.takes], group = pack.length > 1;
+    let best = null, score = 0;
+    for (const b of this.animals) {
+      const w = PREY[a.kind]?.[b.kind];
+      if (!w || !b.alive || b.flying || b.swimming || b.boss || b.ridden || b.gone || b.mirrored) continue;
+      const d = Math.hypot(b.x - a.x, b.z - a.z);
+      if (d > sight) continue;
+      const weak = b.young || b.lame || b.hits || b.down;
+      // (Too big for it alone: only if weak, or the pack's together.)
+      if (SIZE_RANK[SPECIES[b.kind].bulk] > ranks && !weak && !group) continue;
+      // (The crocodile: only what's come right down to the water.)
+      if (h.water && !(b.state === 'drink' || d < 6)) continue;
+      if (b.tame && !this.#livestockOpen(b, ctx)) continue;
+      const v = w * (weak ? 3 : 1) * (b.tame ? 1.3 : 1) / (1 + d / 40);
+      if (v > score) (score = v), (best = b);
+    }
+    if (!best) return;
+    a.chase = { prey: best, phase: h.stalk && !(best.herd?.fleeTime > 0) ? 'stalk' : 'approach', t: 0, side: Math.random() < 0.5 ? -1 : 1, wide: rnd(4, 12) };
+  }
+
+  // The hunt, a step at a time: { want, speed }, or null (it's over).
+  //  - approaching (the dogs, openly) or stalking (the cats, low and slow,
+  //    stopping still when its quarry looks up), till it's within its rush;
+  //  - the rush, and the chase (its quarry, and its herd, running for it);
+  //    the cats spend themselves in a few seconds, the dogs keep on and on;
+  //  - caught: bitten down (the bigger the quarry, the more it takes), the
+  //    pack at it together;
+  //  - the kill: fed on, a long while (growling off anyone coming near, or
+  //    slinking off from you; a bear or a wolf pack may come at you for it).
+  #chaseStep(a, sp, dt, ctx) {
+    const C = a.chase, h = HUNTS[a.kind], b = C.prey;
+    C.t += dt;
+    const c = ctx.camera.position, youAt = Math.hypot(a.x - c.x, a.z - c.z);
+    const end = (rest = 0) => {
+      if (b) b.claimed = b.claimed === a ? null : b.claimed;
+      a.chase = null;
+      a.preyWait = rest || rnd(20, 60);
+      return null;
+    };
+    if (!b || b.gone) return end();
+    const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) || 0.01;
+    const reach = (SPECIES[a.kind].predator?.reach ?? 1.4) + (SPECIES[b.kind].radius ?? 0.4) * b.scale + sp.radius * a.scale;
+    if (C.phase === 'feed') {
+      // At the kill: tearing at it, head down; the pack round it.
+      if (b.alive) return end();
+      b.deadTime = Math.min(b.deadTime ?? 0, 60); // (it isn't left to rot while it's being eaten)
+      b.picked = (b.picked ?? 0) + dt / 40;
+      a.hunger = Math.max(0, a.hunger - dt / 90);
+      C.left -= dt;
+      if (youAt < 14 && ctx.player?.mode === 'walk' && ctx.player.alive && !ctx.tame) {
+        // You coming up to it: a bear or the pack stands its ground for it; a cat slinks off.
+        if ((a.kind === 'grizzly' || a.kind === 'blackBear' || a.kind === 'wolf' || a.kind === 'lion' || a.kind === 'hyena') && youAt < 9) return end(), this.#enrage(a), null;
+        if (h.stalk || a.kind === 'coyote' || a.kind === 'fox') return (a.fear = 8), (a.fearFrom = null), end(rnd(60, 120));
+        if ((a.growlFeed = (a.growlFeed ?? 0) - dt) <= 0) (a.growlFeed = rnd(2, 4)), ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : 'growl', ctx.pan(a.x, a.z), Math.min(0.8, 14 / (youAt + 4)));
+      }
+      if (C.left <= 0 || b.picked > 4) return (a.hunger = 0), (a.state = 'rest'), (a.timer = rnd(40, 120)), end(rnd(300, 700));
+      if (d > reach + 0.6) return (a.state = 'walk'), { want: Math.atan2(dx, dz), speed: sp.walk };
+      a.state = 'graze';
+      a.headDown = 1;
+      return { want: Math.atan2(dx, dz), speed: 0 };
+    }
+    if (!b.alive) {
+      // Down and dead: to the kill (and the pack with it).
+      if (b.claimed && b.claimed !== a && !(b.claimed.herd && b.claimed.herd === a.herd)) return end();
+      b.claimed = b.claimed ?? a;
+      C.phase = 'feed';
+      C.left = rnd(70, 150) * (SIZE_RANK[SPECIES[b.kind].bulk] + 1) / 2;
+      if (b.tame) this.onLivestock?.(b, a);
+      return { want: Math.atan2(dx, dz), speed: sp.walk };
+    }
+    // (Lost it: too far, or too long at it.)
+    if (d > (h.stalk ? 150 : 220) || (C.phase === 'rush' && C.t > h.chase) || C.t > 240) return end(rnd(30, 90));
+    // (You coming close in the middle of it: a cat gives it up; the dogs mostly keep on.)
+    if (youAt < 18 && ctx.player?.mode === 'walk' && (h.stalk || Math.random() < dt * 0.3)) return end(rnd(40, 90));
+    const chased = b.herd ? b.herd.fleeTime > 0 : b.fear > 0;
+    if (C.phase === 'stalk' || C.phase === 'approach') {
+      // (Coming in, the quarry may see it: then it's now or never.)
+      const bsp = SPECIES[b.kind];
+      const notice = (bsp.flee ?? 30) * (C.phase === 'stalk' ? 0.32 : 0.75) * (b.state === 'graze' || b.state === 'drink' ? 0.7 : 1);
+      if (d < h.rush || chased || (d < notice && Math.random() < dt * 1.5)) {
+        C.phase = 'rush';
+        C.t = 0;
+        // (A cat's last bound: a spring at it.)
+        ctx.sound?.call(a.kind === 'wolf' ? 'snarl' : a.kind === 'coyote' || a.kind === 'fox' ? 'yip' : a.kind === 'crocodile' ? 'hiss' : 'growl', ctx.pan(a.x, a.z), 0.35);
+      } else {
+        // Coming on: the cat low and slow, stock-still when its quarry lifts its head; the dogs at a trot, spreading round it.
+        const looking = C.phase === 'stalk' && (b.state === 'alert' || b.state === 'look');
+        a.state = C.phase === 'stalk' ? (looking ? 'freeze' : 'stalk') : 'walk';
+        const off = C.phase === 'approach' && a.herd ? C.side * Math.min(1, d / 40) * C.wide : 0;
+        const want = Math.atan2(dx + (-dz / d) * off, dz + (dx / d) * off);
+        return { want, speed: looking ? 0 : C.phase === 'stalk' ? sp.walk * 0.75 : sp.walk * (d > 60 ? 3 : 2) };
+      }
+    }
+    // The rush and the chase: flat out at it (cut across to where it's
+    // going), its herd running from this one now.
+    if (b.herd) {
+      b.herd.fear = { x: a.x, z: a.z };
+      b.herd.fleeTime = Math.max(b.herd.fleeTime, 8);
+    } else (b.fear = Math.max(b.fear ?? 0, 8)), (b.fearFrom = { x: a.x, z: a.z });
+    const lead = Math.min(1.2, d / 15), bh = b.heading ?? 0, bv = b.speed ?? 0;
+    const tx = b.x + Math.sin(bh) * bv * lead, tz = b.z + Math.cos(bh) * bv * lead;
+    // (The cats: a burst, all-out, soon spent. The dogs: a long hard run.)
+    const burst = h.stalk ? (C.t < h.chase * 0.6 ? 1.12 : 0.8) : C.t > 20 ? 0.85 : 0.95;
+    a.state = 'hunt';
+    // Caught up: bitten, pulled down; the next bite and the next.
+    a.attackCd = (a.attackCd ?? 0) - dt;
+    if (d < reach && a.attackCd <= 0) {
+      a.attackCd = rnd(0.7, 1.1);
+      a.lunge = 0.35;
+      const was = b.hits ?? 0;
+      this.wound(b, { from: { x: a.x, y: a.y, z: a.z }, sharp: h.stalk ? 1.5 : 1 });
+      if (b.alive && h.water) this.wound(b, { from: { x: a.x, y: a.y, z: a.z }, sharp: 2 }); // (dragged under: it hasn't a chance)
+      if (b.alive && was === 0 && !b.down && SIZE_RANK[SPECIES[b.kind].bulk] <= 1) b.lame = true;
+    }
+    return { want: Math.atan2(tx - a.x, tz - a.z), speed: d < reach * 0.8 ? b.speed ?? 0 : sp.run * burst };
+  }
+
   // A cougar, hunting you: it notices you (less soon if you keep low), then
   // creeps up from behind, keeping low, freezing whenever you look its way;
   // close enough, and you not looking, it springs. Face it, standing tall,
@@ -1001,6 +1214,7 @@ export class Wildlife {
       else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES[a.kind], step, c);
       else if (a.flock) this.#flockBird(a, step, c);
       else if (a.kind === 'owl') this.#owl(a, step, c);
+      else if (a.carrion) this.#carrionBird(a, step, c);
       else if (a.circling) this.#circler(a, step, c);
       else if (a.kind === 'monkey') this.#monkey(a, step, c);
       else this.#songbird(a, step, c);
@@ -1295,7 +1509,22 @@ export class Wildlife {
       }
       if (best) (best.scavenge = c), (c.claimed = best);
     }
+    this.#carrion(ctx);
     this.#bosses(ctx);
+    // A herd keeps clear of a hunter on the prowl near it (one lying up, or
+    // at its kill, they watch and let be); horses are the jumpiest of all.
+    for (const h of this.herds) {
+      if (h.fleeTime > 0 || h.kind === 'horse' || SPECIES[h.kind]?.predator) continue;
+      const lead = h.members.find((m) => m.alive);
+      if (!lead || lead.tame) continue;
+      const wary = (SPECIES[h.kind].flee ?? 30) * 0.45;
+      for (const a of this.animals) {
+        if (!a.alive || !PREY[a.kind]?.[h.kind] || a.state === 'rest' || a.chase?.phase === 'feed' || a.chase?.phase === 'stalk') continue;
+        if (Math.abs(a.x - lead.x) > wary || Math.abs(a.z - lead.z) > wary || Math.hypot(a.x - lead.x, a.z - lead.z) > wary) continue;
+        this.#alarm(h, a.x, a.z);
+        break;
+      }
+    }
     // Horses (wild ones) run from anything that's hunting near them.
     for (const h of this.herds) {
       if (h.kind !== 'horse' || h.fleeTime > 0) continue;
@@ -2665,6 +2894,8 @@ export class Wildlife {
     if (a.boss) this.#bossMind(a, sp, t, ctx);
     if (sp.predator?.ambush) this.#ambush(a, sp, t, dt, ctx);
     else if (sp.predator && !a.young) this.#stalk(a, sp, t, dt, ctx);
+    // And the other animals: hunting them, as hunters do (when it isn't after you).
+    if (HUNTS[a.kind] && !a.young && !a.tame && !a.boss && !a.lame) this.#preyMind(a, sp, dt, ctx);
     // Too close to one that stands up for itself (nearer in the rut, or by its young): it charges.
     const ch = sp.charger;
     a.chargeCool = Math.max(0, (a.chargeCool ?? 0) - dt);
@@ -2952,7 +3183,7 @@ export class Wildlife {
     }
     // Stalking you: a wolf or a bear coming on, slowly, head low; a cougar
     // creeping in low behind you, freezing when you look.
-    a.crouch = (a.crouch ?? 0) + ((a.stalking && sp.predator?.ambush ? 1 : 0) - (a.crouch ?? 0)) * Math.min(1, dt * 3);
+    a.crouch = (a.crouch ?? 0) + (((a.stalking && sp.predator?.ambush) || a.chase?.phase === 'stalk' && HUNTS[a.kind]?.stalk ? 1 : 0) - (a.crouch ?? 0)) * Math.min(1, dt * 3);
     if (a.stalking && !a.hunting && !fleeing) {
       want = Math.atan2(p.x - a.x, p.z - a.z);
       if (sp.predator.ambush) {
@@ -2987,6 +3218,16 @@ export class Wildlife {
         }
       } else a.wary = Math.max(0, (a.wary ?? 0) - dt * 0.2);
     }
+    // Out after its quarry (see #chaseStep): stalking, rushing, running it
+    // down; then at the kill, feeding.
+    if (a.chase && !a.hunting && !a.stalking && a.state !== 'flee' && !(a.charging > 0) && !a.ridden && !a.led) {
+      const m = this.#chaseStep(a, sp, dt, ctx);
+      if (m) (want = m.want), (speed = m.speed);
+    }
+    // Run a long way, a hunted animal tires (it's how the wolves get it).
+    if (fleeing) a.fled = (a.fled ?? 0) + dt;
+    else a.fled = Math.max(0, (a.fled ?? 0) - dt * 0.5);
+    if (fleeing && a.fled > 25) speed *= Math.max(0.62, 1 - (a.fled - 25) / 90);
     // Lame: it can only hobble.
     if (a.lame) speed *= 0.45;
     // Wounded, it leaves a trail of blood.
@@ -3712,10 +3953,93 @@ export class Wildlife {
     b.pitch = -Math.atan2(vy, Math.hypot(vx, vz)) * 0.7;
   }
 
+  // Carrion birds: anything big left dead a while (a kill, something you
+  // shot and left), and they come: vultures over the open dry country,
+  // crows in the woods and the plains, a few at first and more, wheeling
+  // over it high up (seen from far off: there's something dead there), then
+  // dropping down to it to feed once nothing's about; up again the moment
+  // anyone comes near, till it's gone.
+  #carrion(ctx) {
+    const c = ctx.camera.position;
+    for (const k of this.animals) {
+      if (k.alive || k.gone || k.state !== 'dead' || k.birdsCalled || (k.deadTime ?? 0) < 25 || !SPECIES[k.kind].ground) continue;
+      if (SPECIES[k.kind].bulk === 'small' || Math.hypot(k.x - c.x, k.z - c.z) > 500) continue;
+      k.birdsCalled = true;
+      const w = ctx.generator.getBiomeWeights(k.x, k.z, {});
+      const dry = (w.savanna ?? 0) + (w.desert ?? 0) + (w.badlands ?? 0) + 0.6 * (w.temperate ?? 0) * (1 - ctx.generator.getForestDensity(k.x, k.z));
+      const kind = dry > 0.45 && Math.random() < 0.85 ? 'vulture' : 'crow';
+      const n = kind === 'vulture' ? Math.round(rnd(3, 7)) : Math.round(rnd(4, 9));
+      const gy = ctx.ground(k.x, k.z);
+      for (let i = 0; i < n; i++) {
+        if (this.animals.filter((a) => a.kind === kind).length >= SPECIES[kind].max) break;
+        const a = {
+          kind, circling: true, carrion: k, centre: { x: k.x, z: k.z }, radius: rnd(14, 38), angle: rnd(0, TAU), dir: Math.random() < 0.7 ? 1 : -1,
+          alt: kind === 'vulture' ? rnd(30, 70) : rnd(14, 28), speed: rnd(7, 10), x: k.x + rnd(-200, 200), y: (gy === gy ? gy : 30) + 90, z: k.z + rnd(-200, 200),
+          heading: 0, pitch: 0, roll: 0, scale: SPECIES[kind].scale * rnd(0.9, 1.1), alive: true, health: SPECIES[kind].health,
+          flap: 0, flapping: 0, nextFlap: rnd(2, 8), nextCall: rnd(3, 20), groundY: gy === gy ? gy : 30, state: 'fly', arrive: rnd(0, 40), landAt: rnd(35, 90),
+        };
+        this.animals.push(a);
+      }
+    }
+  }
+
+  #carrionBird(a, dt, ctx) {
+    if (this.#falling(a, dt, ctx)) return;
+    const k = a.carrion, c = ctx.camera.position;
+    a.landAt -= dt;
+    // (The dead gone: off and away.)
+    if (!k || k.gone || k.alive) {
+      a.carrion = null;
+      a.circling = true;
+      a.centre = { x: a.x + rnd(-400, 400), z: a.z + rnd(-400, 400) };
+      a.state = 'fly';
+      a.timeout = 40;
+      return;
+    }
+    const you = Math.hypot(k.x - c.x, k.z - c.z);
+    const busy = this.animals.some((o) => o.alive && o.chase?.prey === k && o.chase.phase === 'feed') || this.animals.some((o) => o.alive && o.scavenge === k);
+    const land = a.landAt <= 0 && you > 30 && !busy;
+    if (!land) {
+      // Up and wheeling over it (up from it in a clatter if it was down).
+      if (!a.circling) (a.circling = true), (a.state = 'fly'), (a.flapping = 1.5), (a.landAt = rnd(25, 60)), ctx.sound?.call('flutter', ctx.pan(a.x, a.z), 0.4);
+      a.centre.x = k.x;
+      a.centre.z = k.z;
+      return this.#circler(a, dt, ctx);
+    }
+    // Down to it, round it on the ground, tearing at it.
+    a.circling = false;
+    if (!a.spot) {
+      const ang = rnd(0, TAU), r = rnd(0.8, 2.2) * (SPECIES[k.kind].size ?? 1);
+      a.spot = { x: k.x + Math.cos(ang) * r, z: k.z + Math.sin(ang) * r };
+    }
+    const gy = ctx.ground(a.spot.x, a.spot.z);
+    const dx = a.spot.x - a.x, dz = a.spot.z - a.z, dy = (gy === gy ? gy : a.y) - a.y, d = Math.hypot(dx, dz, dy);
+    if (d > 0.3) {
+      // (Gliding down, wings out, then a few beats to land.)
+      const v = Math.min(d, 9 * dt);
+      a.x += (dx / d) * v;
+      a.y += (dy / d) * v;
+      a.z += (dz / d) * v;
+      a.heading = Math.atan2(dx, dz);
+      a.state = 'fly';
+      a.flapping = d < 6 ? 0.5 : 0;
+      a.flap += dt * (d < 6 ? 12 : 0);
+      a.roll *= 0.9;
+      return;
+    }
+    a.state = 'ground';
+    a.landed = true;
+    a.heading = Math.atan2(k.x - a.x, k.z - a.z);
+    a.pitch = 0.35 + 0.3 * Math.max(0, Math.sin(this.time * 4 + a.angle * 7)); // (head down to it, tearing, and up)
+    a.roll = 0;
+    k.picked = (k.picked ?? 0) + dt / 160;
+    k.deadTime = Math.min(k.deadTime, 150);
+  }
+
   #circler(a, dt, ctx) {
     if (this.#falling(a, dt, ctx)) return;
     // Round and round on the wind, gliding, now and then a few wingbeats.
-    const hawk = a.kind === 'hawk' || a.kind === 'eagle';
+    const hawk = a.kind === 'hawk' || a.kind === 'eagle' || a.kind === 'vulture';
     a.angle += (a.speed / a.radius) * dt * a.dir;
     const gx = a.centre.x + Math.cos(a.angle) * a.radius, gz = a.centre.z + Math.sin(a.angle) * a.radius;
     const ground = hawk ? ctx.generator.getBaseHeight(gx, gz) : ctx.seaLevel;
@@ -3733,7 +4057,7 @@ export class Wildlife {
     if (a.nextCall <= 0) {
       a.nextCall = rnd(8, 25);
       const d = Math.hypot(a.x - ctx.camera.position.x, a.y - ctx.camera.position.y, a.z - ctx.camera.position.z);
-      if (d < 250) ctx.sound?.call(hawk ? 'hawk' : 'gull', ctx.pan(a.x, a.z), Math.max(0.1, 1 - d / 250));
+      if (d < 250 && a.kind !== 'vulture') ctx.sound?.call(a.kind === 'crow' ? 'caw' : hawk ? 'hawk' : 'gull', ctx.pan(a.x, a.z), Math.max(0.1, 1 - d / 250));
     }
     // Drifting over its patch; out to sea or away if you come close.
     const t = this.#threat(a, ctx);
