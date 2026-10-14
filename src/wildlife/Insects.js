@@ -5,6 +5,10 @@ import * as Models from './models.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const TAU = Math.PI * 2;
+const smoothstep = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
 const m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s = new Vector3();
 const glow = new Color(0.78, 1, 0.3), dim = new Color(0.12, 0.16, 0.06), col = new Color();
 
@@ -493,35 +497,57 @@ export class Insects {
         if (!st && near < (home.swims ? 2.5 : 5)) this.frogState.set(key, (st = { since: T }));
         if (st && T - st.since > 90 && near > 20) this.frogState.delete(key), (st = null);
         let x, y, z, heading = home.heading, pitch = 0;
+        // (Where the ground is now: the land under it is drawn finer or
+        // coarser as you come and go, and a frog must sit on it as it is.)
+        const groundAt = (gx, gz, fallback) => {
+          const g = ctx.ground(gx, gz);
+          return Number.isFinite(g) ? g : fallback;
+        };
         if (st) {
           const u = T - st.since;
           if (home.swims || u > 0.45) {
-            // (In the water, swimming off, and under.)
-            const out = Math.min(3, Math.max(0, u - 0.45) * 0.35);
+            // In the water: off from the bank in a few kicks, then floating
+            // there, just its eyes and back above the surface, bobbing;
+            // someone close again, and it ducks under a while.
             const ax = home.wx - home.x, az = home.wz - home.z, l = Math.hypot(ax, az) || 1;
+            const kicks = Math.max(0, u - 0.45) / 0.7;
+            let out = Math.min(2.6, (Math.floor(kicks) + smoothstep(0, 0.45, kicks % 1)) * 0.35);
+            // (Only as far as the water goes.)
+            while (out > 0 && !this.#freshWater(home.wx + (ax / l) * out, home.wz + (az / l) * out, ctx)) out -= 0.3;
+            out = Math.max(0, out);
             x = home.wx + (ax / l) * out;
             z = home.wz + (az / l) * out;
-            y = home.level - 0.04 - Math.max(0, u - 4) * 0.4;
-            heading = Math.atan2(ax, az);
+            const settled = out >= 2.2 || kicks > 10;
+            heading = settled ? Math.atan2(ax, az) + Math.PI * smoothstep(0, 6, kicks - 10) * 0.8 : Math.atan2(ax, az);
+            y = home.level - 0.035 + Math.sin(T * 1.7 + home.off) * 0.008;
+            pitch = -0.25;
             if (!home.swims && u > 0.45 && u - dt <= 0.45) {
               ctx.splash?.(x, home.level, z);
               if (Math.hypot(x - cam.x, z - cam.z) < 20) ctx.sound?.call('splash', ctx.pan(x, z), 0.12);
             }
-            if (y < home.level - 0.5) continue; // (gone under)
+            let nearNow = Infinity;
+            for (const q of people) nearNow = Math.min(nearNow, Math.hypot(x - q.x, z - q.z));
+            if (u > 2.5 && nearNow < 2.2 && !(st.dive > T - 14)) st.dive = T;
+            if (st.dive > T - 14) {
+              const k = T - st.dive;
+              y = home.level - 0.035 - 0.4 * smoothstep(0, 0.4, k) * (1 - smoothstep(12, 14, k));
+              if (y < home.level - 0.3) continue; // (under, out of sight)
+            }
           } else {
-            // (The leap in.)
-            const k = u / 0.45;
+            // (The leap in, from where it sat.)
+            const k = u / 0.45, y0 = groundAt(home.x, home.z, home.y);
             x = home.x + (home.wx - home.x) * 1.1 * k;
             z = home.z + (home.wz - home.z) * 1.1 * k;
-            y = home.y + (home.level - home.y) * k + Math.sin(k * Math.PI) * 0.35;
+            y = y0 + (home.level - y0) * k + Math.sin(k * Math.PI) * 0.35;
             pitch = -0.5 + k;
           }
         } else if (home.swims) {
           // Floating out in the shallows, just its eyes and back up, drifting a little.
           x = home.wx + Math.sin(T * 0.07 + home.off) * 0.4;
           z = home.wz + Math.cos(T * 0.05 + home.off) * 0.4;
-          y = home.level - 0.04;
+          y = home.level - 0.035 + Math.sin(T * 1.7 + home.off) * 0.008;
           heading = home.heading + Math.sin(T * 0.03 + home.off) * 1.5;
+          pitch = -0.25;
         } else {
           // Sitting; every so often a hop along the bank (catching a fly), and later back.
           const m = Math.floor((T + home.off) / home.period), since = T + home.off - m * home.period;
@@ -529,7 +555,8 @@ export class Insects {
           const from = at(m + 1), to = at(m), k = Math.min(1, since / 0.3);
           x = from.x + (to.x - from.x) * k;
           z = from.z + (to.z - from.z) * k;
-          y = from.y + (to.y - from.y) * k + (from === to ? 0 : Math.sin(k * Math.PI) * 0.18);
+          // (On the ground as it is now, all the way; up in an arc as it hops.)
+          y = Math.max(groundAt(x, z, from.y + (to.y - from.y) * k), home.level - 0.02) + (from === to ? 0 : Math.sin(k * Math.PI) * 0.18);
           if (from !== to && k < 1) (heading = Math.atan2(to.x - from.x, to.z - from.z)), (pitch = -0.5 + k);
         }
         // Croaking, at dusk and through the night, each at its own times.
