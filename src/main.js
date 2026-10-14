@@ -519,10 +519,13 @@ chunks.addLayer(wrecks);
 const ruins = createRuinLayer(WORLD);
 chunks.addLayer(ruins);
 // (No trees growing up through them: each stands in its own clearing.)
+const LANDMARK_CLEAR = { elderTree: 26, stoneArch: 20, crystalLake: 40, twinFalls: 26, standingStones: 16, sunkenForest: 46, petrifiedLog: 20, boneField: 18, glacierCave: 12, hotPools: 22, eagleSpire: 12, greatSinkhole: 34 };
 trees.keepOut = (x0, z0, x1, z1) => [
   ...ruins.sitesNear((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 30, generator).map((s) => [s.x, s.z, s.size + 3]),
   // (And none along a tornado's track, till the woods grow back over it: see wreck.)
   ...stormTrack(x0, z0, x1, z1),
+  // (Nor in a landmark's hollow or about it: each stands in its own clearing.)
+  ...generator.landmarks.near((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 60).map((s) => [s.x, s.z, LANDMARK_CLEAR[s.kind] ?? 16]),
 ];
 chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
 // The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).

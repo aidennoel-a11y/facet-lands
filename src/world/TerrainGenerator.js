@@ -1038,7 +1038,8 @@ export class TerrainGenerator {
     this.footprint = 0;
     try {
       // (Let down where a landmark's a hollow: the great sinkhole, a lake's bowl.)
-      return this.rivers.carve(x, z, base, rough) - this.landmarks.basinAt(x, z);
+      const h = this.rivers.carve(x, z, base, rough);
+      return h - this.landmarks.basinAt(x, z, h);
     } finally {
       this.footprint = fp;
     }

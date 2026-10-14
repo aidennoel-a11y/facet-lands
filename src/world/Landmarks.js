@@ -77,14 +77,9 @@ export class Landmarks {
   }
 
   /** The water of a basin site: its level (lowest of its rim, a little under), and how far it reaches. */
-  #lake(site, frac = 1.02) {
+  #lake(site) {
     const b = LANDMARKS[site.kind].basin;
-    let lo = Infinity;
-    for (let k = 0; k < 24; k++) {
-      const a = (k / 24) * Math.PI * 2;
-      lo = Math.min(lo, this.#ground(site.x + Math.cos(a) * b.r * frac, site.z + Math.sin(a) * b.r * frac));
-    }
-    return { level: lo - 0.4, r: b.r * 1.05 };
+    return { level: this.generator.landmarks.levelOf(site), r: b.r * 1.02 };
   }
 
   #disc(group, r, level, mat, x = 0, z = 0) {
@@ -98,6 +93,15 @@ export class Landmarks {
   // --- Each kind ------------------------------------------------------------------
 
   #build(site) {
+    // (The falls come down the uphill side of their pool: the cliff there faces downhill.)
+    if (site.kind === 'twinFalls') {
+      let best = -Infinity, up = 0;
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2, h = this.#ground(site.x + Math.cos(a) * 24, site.z + Math.sin(a) * 24);
+        if (h > best) (best = h), (up = a);
+      }
+      site = { ...site, rot: up };
+    }
     const g = new Group(), solids = [], R = mulberry32(site.seed), r = (a, b) => a + (b - a) * R();
     const y0 = this.#ground(site.x, site.z);
     g.position.set(site.x, 0, site.z);
@@ -113,6 +117,7 @@ export class Landmarks {
       case 'elderTree': {
         // A vast old oak: a fluted trunk, roots buttressing it, great boughs out, a crown like a hill.
         const bark = 0x5a4632, moss = 0x4a6a34;
+        // (Built at two thirds its size, then grown: see the scale below.)
         k.limb([0, y0 - 1, 0], [0.4, y0 + 9, 0.2], 3.2, 2.4, bark, 9).limb([0.4, y0 + 9, 0.2], [0, y0 + 16, 0], 2.4, 1.7, bark, 8);
         for (let i = 0; i < 7; i++) {
           const a = (i / 7) * Math.PI * 2 + r(-0.2, 0.2);
@@ -124,7 +129,11 @@ export class Landmarks {
           for (let j = 0; j < 3; j++) rock(k, [0x3e6a2a, 0x4a7a30, 0x56843a][j], [Math.cos(a) * out * r(0.8, 1.2), y0 + up + r(0, 4), Math.sin(a) * out * r(0.8, 1.2)], r(5, 7.5), [r(0, 3), r(0, 3), 0], [1, 0.7, 1]);
         }
         rock(k, 0x467432, [0, y0 + 27, 0], 9, [0, 0, 0], [1.3, 0.75, 1.3]);
-        solid(0, 0, 3.4, y0 + 26);
+        // (Half again as big: a tree some 45 m high, its crown 50 m across, its trunk 10 m round.)
+        const big = new Kit(site.seed + 5);
+        for (const geo of k.list) big.list.push(geo.translate(0, -y0, 0).scale(1.5, 1.5, 1.5).translate(0, y0 - 0.5, 0));
+        k.list = big.list;
+        solid(0, 0, 5, y0 + 40);
         break;
       }
       case 'stoneArch': {
@@ -158,8 +167,8 @@ export class Landmarks {
       case 'twinFalls': {
         // A cliff on the far side of the pool, the falls pouring down it into the pool.
         const b = LANDMARKS.twinFalls.basin;
-        water = { ...this.#lake(site, 1.1), clean: true, mat: 'clear' };
-        const top = water.level + 20;
+        water = { ...this.#lake(site), clean: true, mat: 'clear' };
+        const top = Math.max(water.level + 14, this.#ground(site.x + Math.cos(site.rot) * b.r * 1.6, site.z + Math.sin(site.rot) * b.r * 1.6) + 2);
         for (let i = -4; i <= 4; i++) {
           const [dx, gy, dz] = at(b.r * 1.15 + r(0, 2), i * 4);
           const h = top - Math.min(gy, water.level) + 2;

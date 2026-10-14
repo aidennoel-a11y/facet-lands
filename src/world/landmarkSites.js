@@ -33,7 +33,7 @@ export const LANDMARKS = {
     fits: (w, m) => w.volcanic > 0.3 || (m > 0.45 && w.smoky + w.blackHills + w.pine > 0.3) || m > 0.6 },
   eagleSpire: { name: 'Eagle Spire', cell: 2800, what: 'A lone needle of rock with eagles nesting on top: feathers lie round its foot, and from by it you see far',
     fits: (w, m) => (m > 0.35 && m < 0.85) || w.blackHills > 0.5 || w.badlands > 0.6 },
-  greatSinkhole: { name: 'The Great Sinkhole', cell: 3200, basin: { r: 26, d: 28, steep: 0.82 }, what: 'The ground fallen away into a deep round pit: bats roost in it, coal shows in its walls',
+  greatSinkhole: { name: 'The Great Sinkhole', cell: 3200, basin: { r: 26, d: 28, steep: 0.82, dry: true }, what: 'The ground fallen away into a deep round pit: bats roost in it, coal shows in its walls',
     fits: (w, m) => w.temperate + w.smoky + w.parkland + w.blackHills > 0.6 && m < 0.35 },
 };
 export const LANDMARK_KINDS = Object.keys(LANDMARKS);
@@ -100,7 +100,8 @@ export class LandmarkSites {
    * sinkhole's pit, a lake's bowl): metres, 0 for none. (The sites sit in
    * the middle of their squares, so only the square it's in need be asked.)
    */
-  basinAt(x, z) {
+  basinAt(x, z, h = null) {
+    if (this.busy) return 0;
     let d = 0;
     for (const kind of BASIN_KINDS) {
       const L = LANDMARKS[kind], C = L.cell;
@@ -113,8 +114,43 @@ export class LandmarkSites {
       const r = Math.hypot(dx, dz) / (b.r * wob);
       if (r >= 1) continue;
       const t = Math.min(1, Math.max(0, (r - b.steep) / (1 - b.steep)));
-      d = Math.max(d, b.d * (1 - t * t * (3 - 2 * t)));
+      const dip = b.d * (1 - t * t * (3 - 2 * t));
+      if (b.dry || h === null) {
+        d = Math.max(d, dip);
+        continue;
+      }
+      // (A lake or a pool: dug down to below its water, level from bank to
+      // bank, the water as high as the lowest of its rim lets it stand; on a
+      // slope the uphill side is a cut bank, a cliff.)
+      const level = this.levelOf(s);
+      d = Math.max(d, h - Math.min(h, level + 0.7 - dip));
     }
     return d;
+  }
+
+  /**
+   * A lake's water level: the lowest of its rim, a little under (worked
+   * out once, from the land as it is before the hollow's dug).
+   */
+  levelOf(s) {
+    if (s.level !== undefined) return s.level;
+    const b = LANDMARKS[s.kind].basin, g = this.g;
+    // (The land's own answers asked for here, mid-way through its working
+    // out another point: what it remembers of that point put back after.)
+    const keep = { ...g._weights }, erg = g._erg;
+    this.busy = true;
+    let lo = Infinity;
+    try {
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        lo = Math.min(lo, g.getHeight(s.x + Math.cos(a) * b.r * 1.08, s.z + Math.sin(a) * b.r * 1.08));
+      }
+    } finally {
+      this.busy = false;
+      Object.assign(g._weights, keep);
+      g._erg = erg;
+    }
+    s.level = lo - 0.5;
+    return s.level;
   }
 }
