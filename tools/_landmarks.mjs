@@ -24,7 +24,7 @@ for (const spec of kinds) {
     return all[0] ?? null;
   }, [kind, cx, cz, !!kx]);
   if (!site) { console.log(kind, 'none near'); continue; }
-  const dist = { greatSinkhole: 55, crystalLake: 60, sunkenForest: 60, eagleSpire: 70, elderTree: 50, stoneArch: 50 }[kind] ?? 30;
+  const dist = { greatSinkhole: 55, crystalLake: 60, sunkenForest: 60, glacier: 170, elderTree: 50, stoneArch: 50 }[kind] ?? 30;
   await page.goto(`http://localhost:4173/?seed=polaris&x=${Math.round(site.x + dist)}&z=${Math.round(site.z + dist * 0.6)}&hide&hour=14&weather=clear&vd=3&season=1.5`, { timeout: 180000 });
   await page.waitForFunction(() => window.world?.chunks && window.world.chunks.pendingCount === 0, null, { timeout: 600000, polling: 1000 });
   await page.waitForTimeout(6000);
@@ -32,7 +32,7 @@ for (const spec of kinds) {
     const { camera, controls, landmarks, game, generator } = window.world;
     controls.setMode('fly');
     const gy = generator.getHeight(site.x, site.z);
-    const up = site.kind === 'greatSinkhole' ? 40 : site.kind === 'eagleSpire' ? 25 : 14;
+    const up = site.kind === 'greatSinkhole' ? 40 : site.kind === 'glacier' ? 70 : 14;
     camera.position.y = Math.max(camera.position.y, gy + up);
     const yaw = Math.atan2(-(site.x - camera.position.x), -(site.z - camera.position.z));
     const pitch = -Math.atan2(camera.position.y - gy - 4, Math.hypot(site.x - camera.position.x, site.z - camera.position.z));

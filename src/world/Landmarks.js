@@ -137,8 +137,8 @@ export class Landmarks {
     for (let i = 0; i < rings; i++) {
       for (let j = 0; j < segs; j++) {
         const j2 = (j + 1) % segs, a = P[i][j], b = P[i + 1][j], d = P[i + 1][j2], e2 = P[i][j2];
-        tri(a, b, d);
-        tri(a, d, e2);
+        tri(a, d, b);
+        tri(a, e2, d);
       }
     }
     const geo = new BufferGeometry();
@@ -170,8 +170,8 @@ export class Landmarks {
     for (let i = 0; i < rings; i++) {
       for (let j = 0; j < segs; j++) {
         const j2 = (j + 1) % segs;
-        tri(P[i][j], P[i + 1][j], P[i + 1][j2]);
-        tri(P[i][j], P[i + 1][j2], P[i][j2]);
+        tri(P[i][j], P[i + 1][j2], P[i + 1][j]);
+        tri(P[i][j], P[i][j2], P[i + 1][j2]);
       }
     }
     const geo = new BufferGeometry();
