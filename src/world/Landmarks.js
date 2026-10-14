@@ -1,5 +1,5 @@
 import {
-  AdditiveBlending, BoxGeometry, BufferAttribute, CanvasTexture, CircleGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, Group, IcosahedronGeometry,
+  AdditiveBlending, BoxGeometry, DoubleSide, BufferAttribute, CanvasTexture, CircleGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, Group, IcosahedronGeometry,
   Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, PlaneGeometry, Quaternion, RepeatWrapping, Sprite, SpriteMaterial, Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -344,12 +344,12 @@ export class Landmarks {
         t.wrapS = t.wrapT = RepeatWrapping;
         return t;
       })();
-      this.fallsMat ??= new MeshBasicMaterial({ map: tex, color: 0xdff4ff, transparent: true, opacity: 0.85, depthWrite: false });
+      this.fallsMat ??= new MeshBasicMaterial({ map: tex, color: 0xdff4ff, transparent: true, opacity: 0.85, depthWrite: false, side: DoubleSide });
       for (const f of falls) {
         const h = f.top - f.bottom;
         const m = new Mesh(new PlaneGeometry(3.2, h), this.fallsMat);
         m.position.set(f.x - site.x, f.bottom + h / 2, f.z - site.z);
-        m.rotation.y = -f.rot + Math.PI / 2;
+        m.rotation.y = Math.atan2(-Math.cos(f.rot), -Math.sin(f.rot)); // (facing out over the pool)
         m.material.map.repeat.set(1, h / 8);
         g.add(m);
         const spray = new Sprite((this.sprayMat ??= new SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false })));
