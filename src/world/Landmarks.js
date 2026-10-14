@@ -1,5 +1,5 @@
 import {
-  AdditiveBlending, BoxGeometry, DoubleSide, BufferAttribute, CanvasTexture, CircleGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, Group, IcosahedronGeometry,
+  AdditiveBlending, BoxGeometry, BufferGeometry, DoubleSide, Float32BufferAttribute, BufferAttribute, CanvasTexture, CircleGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, Group, IcosahedronGeometry,
   Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, PlaneGeometry, Quaternion, RepeatWrapping, Sprite, SpriteMaterial, Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -59,6 +59,10 @@ function jitter(geo, amount, seed) {
   return g;
 }
 
+// (Smooth wobble, and a colour picked by place: the same each time it's built.)
+const wob2 = (x, z) => Math.sin(x * 0.37 + z * 0.11) * Math.cos(z * 0.41 - x * 0.07) * 0.7 + 0.3 * Math.sin(x * 1.3 + z * 1.7);
+const pick2 = (list, x, z) => list[Math.abs(Math.floor(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453)) % list.length];
+
 /** A rounded lump (a rock, a clump of leaves, a mass of ice): `size` m, squashed by `scale`. */
 function blob(k, col, at, size, scale = [1, 1, 1], rough = 0.2) {
   return k.add(jitter(new IcosahedronGeometry(size, 1), rough, at[0] * 3.1 + at[2] * 1.7), col, at, [0, (at[0] * 7 + at[2] * 3) % 6.28, 0], scale, 0.1);
@@ -91,6 +95,7 @@ export class Landmarks {
       crystal: new MeshLambertMaterial({ color: 0x3aa8c0, transparent: true, opacity: 0.72, depthWrite: false }),
       dark: new MeshLambertMaterial({ color: 0x2a4a3a, transparent: true, opacity: 0.86, depthWrite: false }),
       hot: new MeshLambertMaterial({ color: 0x5ac8c0, transparent: true, opacity: 0.8, depthWrite: false }),
+      turq: new MeshLambertMaterial({ color: 0x3ab4b0, transparent: true, opacity: 0.8, depthWrite: false }),
     };
     this.wait = 0;
     this.time = 0;
@@ -104,6 +109,78 @@ export class Landmarks {
   #lake(site) {
     const b = LANDMARKS[site.kind].basin;
     return { level: this.generator.landmarks.levelOf(site), r: b.r * 1.02 };
+  }
+
+  /**
+   * The land of a hollow drawn again, finer than the land round about (a
+   * vertex every metre or so out to `R`), a little rough, coloured by
+   * `paint(x, z, y, slope, t)` (t: how far out, 0..1), laid just over the
+   * land so it shows instead.
+   */
+  #surface(site, R, paint, rough = 0.5) {
+    const rings = 46, segs = 140, pos = [], col = [], c = new Color();
+    const P = [];
+    for (let i = 0; i <= rings; i++) {
+      const row = [], rr = (i / rings) * R;
+      for (let j = 0; j < segs; j++) {
+        const a = (j / segs) * Math.PI * 2, x = Math.cos(a) * rr, z = Math.sin(a) * rr, t = i / rings;
+        row.push([x, this.#ground(site.x + x, site.z + z) + 0.06 + rough * (1 - t) * (0.5 + 0.5 * wob2(x * 2.3, z * 2.3)), z, t]);
+      }
+      P.push(row);
+    }
+    const tri = (a, b, d) => {
+      const slope = Math.hypot(b[1] - a[1], d[1] - a[1]) / Math.max(0.5, Math.hypot(b[0] - a[0], b[2] - a[2]));
+      const m = [(a[0] + b[0] + d[0]) / 3, (a[1] + b[1] + d[1]) / 3, (a[2] + b[2] + d[2]) / 3];
+      c.set(paint(m[0], m[2], m[1], slope, a[3])).multiplyScalar(0.92 + 0.16 * (0.5 + 0.5 * wob2(m[0] * 7, m[2] * 7)));
+      for (const v of [a, b, d]) (pos.push(v[0], v[1], v[2]), col.push(c.r, c.g, c.b));
+    };
+    for (let i = 0; i < rings; i++) {
+      for (let j = 0; j < segs; j++) {
+        const j2 = (j + 1) % segs, a = P[i][j], b = P[i + 1][j], d = P[i + 1][j2], e2 = P[i][j2];
+        tri(a, b, d);
+        tri(a, d, e2);
+      }
+    }
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new Float32BufferAttribute(col, 3));
+    geo.computeVertexNormals();
+    const m = new Mesh(geo, this.material);
+    m.receiveShadow = true;
+    return m;
+  }
+
+  /** A sheet of ice, its top `top(x, z)` (-Infinity where there's none), out to `R`: hidden under the land where it's thinner than nothing. */
+  #iceSheet(top, R, paint) {
+    const rings = 34, segs = 90, pos = [], col = [], c = new Color(), P = [];
+    for (let i = 0; i <= rings; i++) {
+      const row = [], rr = (i / rings) * R * 0.999;
+      for (let j = 0; j < segs; j++) {
+        const a = (j / segs) * Math.PI * 2, x = Math.cos(a) * rr, z = Math.sin(a) * rr, gr = this.#ground(this.siteX + x, this.siteZ + z);
+        const t = top(x, z), y = Number.isFinite(t) && t > gr ? t : gr - 1.5;
+        row.push([x, y, z, y - gr]);
+      }
+      P.push(row);
+    }
+    const tri = (a, b, d) => {
+      const slope = Math.hypot(b[1] - a[1], d[1] - a[1]) / Math.max(0.5, Math.hypot(b[0] - a[0], b[2] - a[2]));
+      c.set(paint((a[0] + b[0] + d[0]) / 3, (a[2] + b[2] + d[2]) / 3, a[1], slope, Math.min(a[3], b[3], d[3])));
+      for (const v of [a, b, d]) (pos.push(v[0], v[1], v[2]), col.push(c.r, c.g, c.b));
+    };
+    for (let i = 0; i < rings; i++) {
+      for (let j = 0; j < segs; j++) {
+        const j2 = (j + 1) % segs;
+        tri(P[i][j], P[i + 1][j], P[i + 1][j2]);
+        tri(P[i][j], P[i + 1][j2], P[i][j2]);
+      }
+    }
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new Float32BufferAttribute(col, 3));
+    geo.computeVertexNormals();
+    const m = new Mesh(geo, this.material);
+    m.castShadow = m.receiveShadow = true;
+    return m;
   }
 
   // (A soft round puff, for steam, mist and spray.)
@@ -133,7 +210,7 @@ export class Landmarks {
 
   #build(site) {
     // (The falls come down the uphill side of their pool: the cliff there faces downhill.)
-    if (site.kind === 'twinFalls' || site.kind === 'hotPools' || site.kind === 'glacierCave') {
+    if (site.kind === 'hotPools') {
       let best = -Infinity, up = 0;
       for (let n = 0; n < 16; n++) {
         const a = (n / 16) * Math.PI * 2, h = this.#ground(site.x + Math.cos(a) * 24, site.z + Math.sin(a) * 24);
@@ -142,6 +219,7 @@ export class Landmarks {
       site = { ...site, rot: up };
     }
     const g = new Group(), solids = [], R = mulberry32(site.seed), r = (a, b) => a + (b - a) * R();
+    (this.siteX = site.x), (this.siteZ = site.z);
     const pick = (list) => list[Math.floor(R() * list.length)];
     const y0 = this.#ground(site.x, site.z);
     g.position.set(site.x, 0, site.z);
@@ -228,140 +306,148 @@ export class Landmarks {
           const a = r(0, Math.PI * 2), d = r(5, 9) * S, x = Math.cos(a) * d, z = Math.sin(a) * d, y = gy(x, z);
           k.add(new CylinderGeometry(0.05, 0.06, 0.25, 5), 0xe8dcc0, [x, y + 0.12, z]).add(new CylinderGeometry(0.22, 0.05, 0.12, 7), pick([0xb8502a, 0xc8a060, 0x8a5a3a]), [x, y + 0.28, z]);
         }
+        // (Fallen leaves, lying flat on the ground as it slopes.)
         for (let i = 0; i < 60; i++) {
           const a = r(0, Math.PI * 2), d = r(4, 16) * S, x = Math.cos(a) * d, z = Math.sin(a) * d;
-          k.add(new BoxGeometry(0.35, 0.02, 0.25), pick([0x8a6a2a, 0x6a7a2a, 0xa07a3a]), [x, gy(x, z) + 0.04, z], [0, r(0, 3), 0], [1, 1, 1], 0.15);
+          const sx = (gy(x + 0.4, z) - gy(x - 0.4, z)) / 0.8, sz = (gy(x, z + 0.4) - gy(x, z - 0.4)) / 0.8;
+          k.add(new BoxGeometry(0.35, 0.01, 0.25), pick([0x8a6a2a, 0x6a7a2a, 0xa07a3a]), [x, gy(x, z) + 0.015, z], [Math.atan(sz), 0, -Math.atan(sx)], [1, 1, 1], 0.15);
         }
         tufts(20, 18 * S);
         solid(0, 0, 3.4 * S, y0 + 40);
         break;
       }
       case 'stoneArch': {
-        // A great arch of banded sandstone, weathered round: two massive
-        // legs on a rubble apron, the span thinning to its crown, streaked
-        // dark with desert varnish; a hoodoo standing off to one side,
-        // fallen blocks and pebbles round about, a juniper clinging on.
-        const band = [0xb4603a, 0xc87a4a, 0x9a4a30, 0xd09060, 0xa85a38], varnish = 0x5a3424;
-        const half = 13, rise = 17;
+        // A great arch of banded sandstone, weathered round, some 40 m
+        // across and 28 m high: two massive legs on aprons of rubble, the
+        // span thinning to its crown, streaked dark with desert varnish. All
+        // round it, the rock country it stands in: massive boulders, some
+        // balanced on pedestals, hoodoos with capstones, a fin of rock and a
+        // little mesa, smaller rocks and pebbles everywhere, a juniper or two.
+        const band = [0xb4603a, 0xc87a4a, 0x9a4a30, 0xd09060, 0xa85a38], varnish = 0x5a3424, S = 1.5;
+        const half = 13 * S, rise = 17 * S;
         for (const sd of [-1, 1]) {
           const [lx, ly, lz] = at(sd * half, 0);
-          // (A leg: rounded blocks, each layer its own band of colour, wider at the foot.)
           for (let i = 0; i < 9; i++) {
-            const w = 7.2 - i * 0.35;
-            for (let j = 0; j < 3; j++) blob(k, band[(i + j) % 5], [lx + local(r(-1, 1), r(-1, 1))[0], ly + i * 2.1 - 0.6, lz + local(r(-1, 1), r(-1, 1))[1]], w * 0.42, [1.25, 0.55, 1], 0.18);
-            if (i % 3 === 1) k.add(new BoxGeometry(0.4, 1.8, 0.2), varnish, [lx + local(sd * -w * 0.45, 0)[0], ly + i * 2.1, lz + local(sd * -w * 0.45, 0)[1]], [0, site.rot, 0]);
+            const w = (7.2 - i * 0.35) * S;
+            for (let j = 0; j < 3; j++) {
+              const [ox, oz] = local(r(-1.5, 1.5), r(-1.5, 1.5));
+              blob(k, band[(i + j) % 5], [lx + ox, ly + i * 2.1 * S - 0.6, lz + oz], w * 0.42, [1.25, 0.55, 1], 0.18);
+            }
+            if (i % 3 === 1) {
+              const [vx, vz] = local(sd * -w * 0.45, 0);
+              k.add(new BoxGeometry(0.6, 2.7, 0.3), varnish, [lx + vx, ly + i * 2.1 * S, lz + vz], [0, site.rot, 0]);
+            }
           }
-          solid(lx, lz, 3.6, ly + rise);
-          // (Its apron of fallen rubble.)
-          for (let i = 0; i < 10; i++) blob(k, pick(band), [lx + r(-6, 6), ly + 0.2, lz + r(-6, 6)], r(0.4, 1.4), [1, 0.7, 1], 0.3);
+          solid(lx, lz, 5.4, ly + rise);
+          for (let i = 0; i < 14; i++) blob(k, pick(band), [lx + r(-9, 9), ly + 0.2, lz + r(-9, 9)], r(0.6, 2.1), [1, 0.7, 1], 0.3);
         }
         const [, ya] = at(-half, 0), [, yb] = at(half, 0), base = Math.max(ya, yb);
-        // The span: overlapping rounded blocks along the curve, thickest at its feet, thin at the crown.
-        for (let i = 0; i <= 26; i++) {
-          const t = i / 26, a = Math.PI * t, u = -Math.cos(a) * half, thick = 2.2 + 1.8 * Math.abs(Math.cos(a));
+        for (let i = 0; i <= 34; i++) {
+          const t = i / 34, a = Math.PI * t, u = -Math.cos(a) * half, thick = (2.2 + 1.8 * Math.abs(Math.cos(a))) * S;
           const [dx, dz] = local(u, 0);
-          blob(k, band[i % 5], [dx, base + Math.sin(a) * rise + 1.5, dz], thick, [1.1, 0.8, 1.35], 0.15);
+          blob(k, band[i % 5], [dx, base + Math.sin(a) * rise + 2.2, dz], thick, [1.1, 0.8, 1.35], 0.15);
         }
-        // A hoodoo off to one side: stacked, a capstone on top.
-        const [hx, hy, hz] = at(r(-6, 6), 18);
-        for (let i = 0; i < 5; i++) blob(k, band[i % 5], [hx, hy + i * 1.6, hz], 1.6 - i * 0.12, [1, 0.7, 1], 0.2);
-        blob(k, 0x8a7a6a, [hx, hy + 8.2, hz], 2.2, [1.2, 0.5, 1.2], 0.15);
-        solid(hx, hz, 1.6, hy + 8.5);
-        // A gnarled juniper, and boulders and pebbles about.
-        const [jx, jy, jz] = at(-half - 6, -6);
-        k.limb([jx, jy, jz], [jx + 0.8, jy + 2.2, jz + 0.4], 0.25, 0.12, 0x6a5040, 5);
-        for (let j = 0; j < 4; j++) blob(k, 0x4a5a3a, [jx + r(-1, 1.6), jy + r(2, 3.2), jz + r(-1, 1.4)], r(0.7, 1.1), [1, 0.7, 1], 0.3);
+        // Massive boulders all round: some half sunk, some sitting up, a few heaped together.
+        const boulder = (x, z, size) => {
+          const y = gy(x, z);
+          blob(k, pick(band), [x, y + size * 0.35, z], size, [r(0.9, 1.3), r(0.6, 0.9), r(0.9, 1.3)], 0.22);
+          solid(x, z, size * 0.9, y + size * 1.1);
+        };
         for (let i = 0; i < 26; i++) {
-          const [x, y, z] = at(r(-24, 24), r(-16, 16));
-          blob(k, pick(band), [x, y + 0.1, z], r(0.2, 0.9), [1, 0.6, 1], 0.3);
+          const a = r(0, Math.PI * 2), d = r(24, 60);
+          boulder(Math.cos(a) * d, Math.sin(a) * d, r(2.5, 7));
+        }
+        for (let n = 0; n < 3; n++) {
+          // (A heap of them, piled.)
+          const a = r(0, Math.PI * 2), d = r(30, 55), x = Math.cos(a) * d, z = Math.sin(a) * d, y = gy(x, z);
+          for (let j = 0; j < 5; j++) blob(k, pick(band), [x + r(-4, 4), y + j * 2.2, z + r(-4, 4)], r(3, 5) - j * 0.5, [1.1, 0.8, 1.1], 0.2);
+          solid(x, z, 6, y + 10);
+        }
+        // Balanced rocks: a great boulder on a narrow pedestal.
+        for (let n = 0; n < 3; n++) {
+          const a = r(0, Math.PI * 2), d = r(28, 58), x = Math.cos(a) * d, z = Math.sin(a) * d, y = gy(x, z), ph = r(5, 9);
+          blob(k, band[2], [x, y + ph / 2, z], 1.4, [1, ph / 2.8, 1], 0.2);
+          blob(k, band[(n + 1) % 5], [x + r(-0.6, 0.6), y + ph + 2.6, z], 3.8, [1.3, 0.75, 1.1], 0.18);
+          solid(x, z, 2, y + ph + 5);
+        }
+        // Hoodoos: stacked, banded, a hard capstone on each.
+        for (let n = 0; n < 6; n++) {
+          const a = r(0, Math.PI * 2), d = r(22, 62), x = Math.cos(a) * d, z = Math.sin(a) * d, y = gy(x, z), n2 = Math.floor(r(4, 8));
+          for (let i = 0; i < n2; i++) blob(k, band[i % 5], [x, y + i * 1.9, z], 1.8 - i * 0.12, [1, 0.7, 1], 0.2);
+          blob(k, 0x8a7a6a, [x, y + n2 * 1.9 + 0.4, z], 2.4, [1.2, 0.5, 1.2], 0.15);
+          solid(x, z, 1.8, y + n2 * 1.9 + 1);
+        }
+        // A fin of rock, long and narrow, and a little flat-topped mesa.
+        {
+          const a = r(0, Math.PI * 2), d = r(40, 60), x = Math.cos(a) * d, z = Math.sin(a) * d, along = a + Math.PI / 2;
+          for (let i = -4; i <= 4; i++) {
+            const fx = x + Math.cos(along) * i * 3, fz = z + Math.sin(along) * i * 3, fy = gy(fx, fz), fh = 14 - Math.abs(i) * 2.2;
+            blob(k, band[(i + 8) % 5], [fx, fy + fh / 2, fz], 2.2, [1.4, fh / 4.4, 0.6], 0.15);
+            solid(fx, fz, 1.6, fy + fh);
+          }
+          const b = a + r(1.5, 3), md = r(45, 65), mx = Math.cos(b) * md, mz = Math.sin(b) * md, my = gy(mx, mz);
+          for (let i = 0; i < 5; i++) blob(k, band[i % 5], [mx, my + i * 2.4, mz], 9 - i * 0.4, [1, 0.3, 1], 0.12);
+          blob(k, 0x9a6a4a, [mx, my + 12, mz], 8.2, [1, 0.12, 1], 0.08);
+          solid(mx, mz, 8, my + 12.5);
+        }
+        // Junipers clinging on, and pebbles everywhere.
+        for (let n = 0; n < 4; n++) {
+          const [jx, jy, jz] = at(r(-50, 50), r(-50, 50));
+          k.limb([jx, jy, jz], [jx + 0.8, jy + 2.2, jz + 0.4], 0.25, 0.12, 0x6a5040, 5);
+          for (let j = 0; j < 4; j++) blob(k, 0x4a5a3a, [jx + r(-1, 1.6), jy + r(2, 3.2), jz + r(-1, 1.4)], r(0.7, 1.1), [1, 0.7, 1], 0.3);
+        }
+        for (let i = 0; i < 70; i++) {
+          const [x, y, z] = at(r(-60, 60), r(-60, 60));
+          blob(k, pick(band), [x, y + 0.1, z], r(0.2, 1.1), [1, 0.6, 1], 0.3);
         }
         break;
       }
       case 'crystalLake': {
         // A clear lake in a high bowl, its shore of grey boulders and
-        // clusters of great crystals, violet and ice-blue and white, some
-        // standing out in the shallows; reeds in its bays.
+        // clusters of great crystals, violet and ice-blue and white, rooted
+        // in the ground (and some out in the shallows, rising from the bed);
+        // here and there a single giant crystal, three times the rest, long
+        // as a tree, leaning out; reeds in its bays.
         const lake = this.#lake(site);
         waters.push({ ...lake, clean: true, mat: 'crystal' });
         const B = LANDMARKS.crystalLake.basin.r;
+        const cols = [[0x9ae8ff, 0xc8f4ff], [0xc8a0ff, 0xe0c8ff], [0xf0f4ff, 0xc8e0ff]];
         const cluster = (x, z, size) => {
-          const y = gy(x, z), col = pick([[0x9ae8ff, 0xc8f4ff], [0xc8a0ff, 0xe0c8ff], [0xf0f4ff, 0xc8e0ff]]);
-          for (let j = 0; j < 9; j++) crystal(glow, col[j % 2], [x + r(-0.8, 0.8) * size, Math.max(y, lake.level - 1) - 0.2, z + r(-0.8, 0.8) * size], r(1.2, 3.6) * size, r(0.18, 0.4) * size, [r(-0.5, 0.5), 0, r(-0.5, 0.5)]);
-          blob(k, 0x7a7a80, [x, Math.max(y, lake.level - 1), z], 0.9 * size, [1.3, 0.5, 1.3], 0.25);
+          const y = gy(x, z), col = pick(cols);
+          blob(k, 0x7a7a80, [x, y - 0.2, z], 0.9 * size, [1.3, 0.45, 1.3], 0.25);
+          for (let j = 0; j < 9; j++) {
+            const cx = x + r(-0.8, 0.8) * size, cz = z + r(-0.8, 0.8) * size;
+            crystal(glow, col[j % 2], [cx, gy(cx, cz) - 0.3, cz], r(1.2, 3.6) * size, r(0.18, 0.4) * size, [r(-0.5, 0.5), 0, r(-0.5, 0.5)]);
+          }
         };
         for (let i = 0; i < 16; i++) {
-          const a = (i / 16) * Math.PI * 2 + r(-0.15, 0.15), d = B * r(0.88, 1.2);
+          const a = (i / 16) * Math.PI * 2 + r(-0.15, 0.15), d = B * r(0.95, 1.25);
           cluster(Math.cos(a) * d, Math.sin(a) * d, r(0.8, 1.6));
         }
-        for (let i = 0; i < 3; i++) {
-          const a = r(0, Math.PI * 2), d = B * r(0.3, 0.6);
-          cluster(Math.cos(a) * d, Math.sin(a) * d, r(1.3, 2)); // (out in the water)
+        for (let i = 0; i < 4; i++) {
+          const a = r(0, Math.PI * 2), d = B * r(0.25, 0.7);
+          cluster(Math.cos(a) * d, Math.sin(a) * d, r(1.3, 2)); // (out in the water, rising from the lake bed)
+        }
+        // The giant crystals, alone.
+        for (let i = 0; i < 6; i++) {
+          const a = r(0, Math.PI * 2), d = B * r(0.6, 1.35), x = Math.cos(a) * d, z = Math.sin(a) * d, y = gy(x, z);
+          const out = [Math.cos(a) * r(0.3, 0.7), Math.sin(a) * r(0.3, 0.7)];
+          crystal(glow, pick(cols)[0], [x, y - 1.2, z], r(11, 20), r(1.0, 1.8), [out[1], 0, -out[0]]);
+          blob(k, 0x6a6a70, [x, y - 0.4, z], 2.2, [1.3, 0.4, 1.3], 0.25);
+          solid(x, z, 1.4, y + 3);
         }
         for (let i = 0; i < 30; i++) {
-          const a = r(0, Math.PI * 2), d = B * r(1.0, 1.35), x = Math.cos(a) * d, z = Math.sin(a) * d;
+          const a = r(0, Math.PI * 2), d = B * r(1.02, 1.35), x = Math.cos(a) * d, z = Math.sin(a) * d;
           blob(k, pick([0x7a7a78, 0x8a8a86, 0x6a6c6a]), [x, gy(x, z), z], r(0.6, 2), [1, 0.6, 1], 0.3);
         }
         for (let i = 0; i < 10; i++) {
           const a = r(0, Math.PI * 2), d = B * r(0.9, 1.0), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          for (let j = 0; j < 7; j++) k.add(new CylinderGeometry(0.03, 0.04, r(1.2, 2.2), 3), pick([0x6a8a3a, 0x8a9a4a]), [x + r(-0.8, 0.8), lake.level + 0.6, z + r(-0.8, 0.8)], [r(-0.15, 0.15), 0, r(-0.15, 0.15)]);
+          for (let j = 0; j < 7; j++) {
+            const rx = x + r(-0.8, 0.8), rz = z + r(-0.8, 0.8), rh = r(1.2, 2.2);
+            k.add(new CylinderGeometry(0.03, 0.04, rh, 3), pick([0x6a8a3a, 0x8a9a4a]), [rx, gy(rx, rz) + rh / 2 - 0.1, rz], [r(-0.15, 0.15), 0, r(-0.15, 0.15)]);
+          }
         }
         tufts(18, B * 1.4);
-        break;
-      }
-      case 'twinFalls': {
-        // A cliff of layered rock across the uphill side of a cold pool,
-        // ledges and an overhang, moss and ferns in its cracks; a stream
-        // over its lip split by a rock into two falls, white with foam where
-        // they land; mossy boulders in the pool, spray hanging over it.
-        const b = LANDMARKS.twinFalls.basin;
-        const lake = this.#lake(site);
-        waters.push({ ...lake, clean: true, mat: 'clear' });
-        const behind = this.#ground(site.x + Math.cos(site.rot) * b.r * 1.7, site.z + Math.sin(site.rot) * b.r * 1.7);
-        const top = Math.max(lake.level + 13, behind + 1);
-        const strata = [0x6a6862, 0x7a7670, 0x5e5c58, 0x84807a, 0x6e6a60];
-        // The cliff: rows of rock, each layer stepping a little in or out.
-        for (let v = -18; v <= 18; v += 2.4) {
-          const curve = (v / 18) ** 2 * 5;
-          for (let h = lake.level - 2; h < top; h += 1.6) {
-            const layer = Math.floor((h - lake.level) / 1.6), out = (layer % 3) * 0.5 + r(-0.3, 0.3) - curve;
-            const [dx, dz] = local(b.r * 1.05 - out, v);
-            blob(k, strata[(layer + 5) % 5], [dx, h, dz], 1.5, [1.6, 0.7, 1.4], 0.15);
-          }
-          const [sx, sz] = local(b.r * 1.05 - curve, v);
-          solid(sx, sz, 2.6, top);
-        }
-        // (The overhang at the top, and moss and ferns on the ledges.)
-        for (let v = -14; v <= 14; v += 3) {
-          const [dx, dz] = local(b.r * 0.9, v);
-          blob(k, strata[1], [dx, top - 0.5, dz], 2, [1.4, 0.5, 1.4], 0.15);
-          if (R() < 0.6) {
-            const [fx, fz] = local(b.r * 0.95, v + 1.2);
-            fern(fx, lake.level + r(3, 10), fz, r(0.8, 1.3));
-          }
-          if (R() < 0.7) k.add(new BoxGeometry(2, 0.3, 1.2), pick([0x4a6a34, 0x56783a]), [dx, lake.level + r(2, 11), dz], [0, -site.rot, 0]);
-        }
-        // The stream above, and the rock that splits it.
-        for (const v of [-4.5, 4.5]) {
-          const [cx, cz] = local(b.r * 1.3, v);
-          const m = new Mesh(new PlaneGeometry(3.4, 8), this.waterMats.clear);
-          m.rotation.set(-Math.PI / 2, 0, -site.rot);
-          m.position.set(cx, top + 0.05, cz);
-          g.add(m);
-        }
-        const [rx, rz] = local(b.r * 1.1, 0);
-        blob(k, strata[2], [rx, top + 0.5, rz], 2.2, [1, 0.8, 1.6], 0.2);
-        falls = [];
-        for (const v of [-4.5, 4.5]) {
-          const [fx, fz] = local(b.r * 0.92, v);
-          falls.push({ x: site.x + fx, z: site.z + fz, top: top + 0.1, bottom: lake.level, rot: site.rot });
-        }
-        // Boulders in the pool, mossy on top.
-        for (let i = 0; i < 9; i++) {
-          const a = r(0, Math.PI * 2), d = b.r * r(0.2, 0.8), x = Math.cos(a) * d, z = Math.sin(a) * d, sz = r(0.6, 1.6);
-          blob(k, strata[i % 5], [x, lake.level - 0.3, z], sz, [1, 0.7, 1], 0.25);
-          k.add(new BoxGeometry(sz * 1.1, 0.12, sz * 1.1), 0x4a6a34, [x, lake.level - 0.3 + sz * 0.6, z], [0, r(0, 3), 0]);
-        }
-        tufts(16, b.r * 1.8);
         break;
       }
       case 'standingStones': {
@@ -565,10 +651,6 @@ export class Landmarks {
         for (let i = 0; i < 9; i++) blob(k, 0x6a6662, [cx + Math.cos(i * 0.7) * 1.0, cy + 0.1, cz + Math.sin(i * 0.7) * 1.0], 0.28, [1, 0.7, 1], 0.2);
         k.add(new CircleGeometry(0.75, 8), 0x1e1a18, [cx, cy + 0.04, cz], [-Math.PI / 2, 0, 0]);
         for (let i = 0; i < 4; i++) k.limb([cx + r(-0.4, 0.4), cy + 0.05, cz + r(-0.4, 0.4)], [cx + r(-0.5, 0.5), cy + 0.15, cz + r(-0.5, 0.5)], 0.07, 0.06, 0x2a2018, 4);
-        const [tx, ty, tz] = at(-9, 15);
-        k.add(new ConeGeometry(2, 3, 7, 1, true), 0x9a7a52, [tx, ty + 1.5, tz], [0, 0, 0], [1, 1, 1], 0.1);
-        for (let i = 0; i < 5; i++) k.limb([tx + Math.cos(i * 1.25) * 1.9, ty, tz + Math.sin(i * 1.25) * 1.9], [tx, ty + 3.4, tz], 0.05, 0.04, 0x6a5038, 4);
-        solid(tx, tz, 1.9, ty + 3);
         for (let i = 0; i < 3; i++) {
           const [sx, sy, sz] = at(-3 + i * 0.8, 9.5);
           k.limb([sx, sy - 0.3, sz], [sx + 0.2, sy + 2.2, sz], 0.04, 0.03, 0x6a5038, 4).add(new ConeGeometry(0.07, 0.3, 4), 0x3e4250, [sx + 0.2, sy + 2.35, sz]);
@@ -578,57 +660,6 @@ export class Landmarks {
         k.limb([dx - 1, dy + 1.5, dz], [dx + 1, dy + 1.5, dz], 0.04, 0.04, 0x6a5038, 4);
         for (let i = 0; i < 4; i++) k.add(new BoxGeometry(0.15, 0.5, 0.04), 0x7a3a2a, [dx - 0.7 + i * 0.45, dy + 1.2, dz]);
         tufts(10, 25, [0xa89a5a, 0xb8a868, 0x8a8a4a]);
-        break;
-      }
-      case 'glacierCave': {
-        // The snout of a little glacier on a mountainside: a wall of old
-        // blue ice, cracked and seamed, snow lying on top of it, a great
-        // arched mouth in it with icicles hanging from its lip; inside, a
-        // blue grotto, crystals in its walls, a frozen pool; blocks of ice
-        // calved off in front, a meltwater pool at its foot.
-        const ice = [0xa8d8f0, 0x88c4e8, 0xc8e8f8, 0x6aa8d8, 0x5a98c8], snow = 0xf4f8fc;
-        const cx = Math.cos(site.rot), cz = Math.sin(site.rot);
-        // The ice wall: a horseshoe of great masses round the grotto, open downhill.
-        for (let i = 0; i < 26; i++) {
-          const a = (i / 26) * Math.PI * 2;
-          const off = Math.abs(Math.atan2(Math.sin(a - site.rot - Math.PI), Math.cos(a - site.rot - Math.PI)));
-          if (off < 0.42) continue; // (the mouth, facing downhill)
-          const d = r(8, 9.5), x = Math.cos(a) * d, z = Math.sin(a) * d, y = gy(x, z), h = r(7, 10);
-          blob(icy, pick(ice), [x, y + h * 0.45, z], 3, [1, h / 6, 1], 0.12);
-          blob(icy, snow, [x, y + h * 0.9, z], 2.6, [1.1, 0.35, 1.1], 0.06);
-          solid(x, z, 2.2, y + h);
-        }
-        // The roof over the grotto, its arch over the mouth, icicles along the lip.
-        blob(icy, ice[1], [cx * 2, y0 + 8.5, cz * 2], 9.5, [1, 0.32, 1], 0.1);
-        blob(icy, snow, [cx * 2, y0 + 10.2, cz * 2], 9, [1.05, 0.22, 1.05], 0.05);
-        for (let i = 0; i < 26; i++) {
-          const v = r(-4, 4), [lx, lz] = [-cx * 7.5 - Math.sin(site.rot) * v, -cz * 7.5 + Math.cos(site.rot) * v];
-          icy.add(new ConeGeometry(r(0.12, 0.3), r(0.8, 2.6), 5), ice[2], [lx, y0 + 6.2, lz], [Math.PI, 0, 0]);
-        }
-        for (let i = 0; i < 24; i++) icy.add(new ConeGeometry(r(0.1, 0.25), r(0.6, 2), 5), ice[0], [r(-6, 6), y0 + 6, r(-6, 6)], [Math.PI, 0, 0]);
-        // Seams and cracks in the ice.
-        for (let i = 0; i < 14; i++) {
-          const a = site.rot + r(-2, 2), x = Math.cos(a) * 9.6, z = Math.sin(a) * 9.6;
-          icy.add(new BoxGeometry(0.15, r(2, 5), 0.6), ice[4], [x, gy(x, z) + r(2, 5), z], [0, -a, r(-0.3, 0.3)]);
-        }
-        // Inside: crystals, and a frozen pool.
-        for (let i = 0; i < 10; i++) {
-          const a = r(0, Math.PI * 2), d = r(4, 7);
-          crystal(glow, pick([0x9ae8ff, 0xc8f4ff]), [Math.cos(a) * d, y0 + r(0.2, 3), Math.sin(a) * d], r(0.8, 1.8), r(0.15, 0.3), [r(-0.8, 0.8), 0, r(-0.8, 0.8)]);
-        }
-        icy.add(new CylinderGeometry(3, 3, 0.15, 12), 0xc8ecff, [cx * 1.5, y0 + 0.12, cz * 1.5]);
-        // Calved blocks in front, and the meltwater pool at its foot.
-        for (let i = 0; i < 8; i++) {
-          const [x, y, z] = at(-r(11, 18), r(-8, 8));
-          blob(icy, pick(ice), [x, y + 0.5, z], r(0.8, 1.8), [1, 0.8, 1], 0.15);
-        }
-        const [mx, my, mz] = at(-13, 0);
-        waters.push({ level: my + 0.25, r: 3, clean: true, mat: 'crystal', x: mx, z: mz, small: true });
-        // Snow lying round about.
-        for (let i = 0; i < 26; i++) {
-          const a = r(0, Math.PI * 2), d = r(9, 20), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          blob(k, snow, [x, gy(x, z) - 0.1, z], r(1.2, 3), [1, 0.1, 1], 0.05);
-        }
         break;
       }
       case 'hotPools': {
@@ -670,92 +701,124 @@ export class Landmarks {
         steam = { r: B * 0.85, level: lake.level };
         break;
       }
-      case 'eagleSpire': {
-        // A lone needle of weathered rock some 40 m high on a knoll: rounded
-        // blocks stacked and leaning, narrowing up it, cracked, ledges with
-        // grass and a stunted pine or two on them; the eagles' great nest of
-        // sticks on its top, two eggs in it, one eagle sat by; a scree of
-        // fallen rock round its foot.
-        const cols = [0x8a7a6a, 0x7a6a5a, 0x9a8a78, 0x6e6052];
-        let h = y0 - 2, w = 9, ox = 0, oz = 0;
-        for (let i = 0; i < 16; i++) {
-          const bh = r(2.6, 3.4);
-          ox += r(-0.35, 0.35);
-          oz += r(-0.35, 0.35);
-          blob(k, cols[i % 4], [ox, h + bh / 2, oz], w * 0.5, [1, bh / (w * 0.5) * 0.6, r(0.8, 1)], 0.16);
-          if (i % 3 === 1) {
-            // (A ledge, with grass on it; on some, a stunted pine.)
-            const a = r(0, Math.PI * 2), lx = ox + Math.cos(a) * w * 0.5, lz = oz + Math.sin(a) * w * 0.5;
-            k.add(new BoxGeometry(1.6, 0.25, 1.2), 0x5a7a3a, [lx, h + bh, lz], [0, -a, 0]);
-            if (R() < 0.5) k.limb([lx, h + bh, lz], [lx + Math.cos(a) * 0.6, h + bh + 1.4, lz + Math.sin(a) * 0.6], 0.08, 0.05, 0x5a4030, 4).add(new ConeGeometry(0.6, 1.2, 6), 0x2e5030, [lx + Math.cos(a) * 0.6, h + bh + 1.6, lz + Math.sin(a) * 0.6]);
-          }
-          if (i % 4 === 2) k.add(new BoxGeometry(0.2, bh * 0.9, 0.5), 0x3a322a, [ox + w * 0.48, h + bh / 2, oz], [0, r(0, 3), 0]); // (a crack)
-          h += bh * 0.92;
-          w *= 0.9;
-        }
-        // The nest, the eggs, the eagle.
-        for (let i = 0; i < 26; i++) {
-          const a = r(0, Math.PI * 2), rr = r(1.2, 2);
-          k.limb([ox + Math.cos(a) * rr, h + r(0, 0.4), oz + Math.sin(a) * rr], [ox + Math.cos(a + 1.4) * rr, h + r(0, 0.5), oz + Math.sin(a + 1.4) * rr], 0.07, 0.05, pick([0x6a5038, 0x5a4030, 0x7a6048]), 4);
-        }
-        k.add(new CylinderGeometry(1.3, 1.1, 0.3, 9), 0x4a3a28, [ox, h + 0.15, oz]);
-        for (const sd of [-0.3, 0.3]) k.add(new IcosahedronGeometry(0.16, 1), 0xe8e0d0, [ox + sd, h + 0.4, oz], [0, 0, 0], [0.85, 1.1, 0.85]);
-        const [ex, ez] = [ox + 1.6, oz - 0.4];
-        k.add(new IcosahedronGeometry(0.35, 1), 0x4a3424, [ex, h + 0.9, ez], [0.3, 0, 0], [0.8, 1.2, 0.9]).add(new IcosahedronGeometry(0.2, 1), 0xf4f0e8, [ex, h + 1.45, ez + 0.1]).add(new ConeGeometry(0.06, 0.18, 4), 0xe8b030, [ex, h + 1.42, ez + 0.32], [Math.PI / 2, 0, 0]);
-        solid(0, 0, 4.6, h);
-        // Scree round its foot.
+      case 'greatSinkhole': {
+        // A vast round pit where the limestone gave way, 100 m across and
+        // 80 m deep: the land itself (see landmarkSites.basinAt), its walls
+        // rough, ledged and gullied, banded grey and cream, green with moss
+        // and ferns where they lean back enough; vines hanging down them; a
+        // spring's thin fall down one side; at the bottom, trees fallen in,
+        // mossy boulders, a dark pool. (Its walls drawn here finer than the
+        // land round about, so their roughness shows.)
+        const b = LANDMARKS.greatSinkhole.basin;
+        const floor = y0;
+        g.add(this.#surface(site, b.r * 1.06, (x, z, y, slope, t) => {
+          const band = Math.floor((y - floor) / 3.2 + wob2(x, z) * 0.6);
+          if (slope < 0.55 && t < 0.97) return y - floor < 3 ? 0x5a4e3e : pick2([0x4a6a34, 0x56783a, 0x3e5e2c], x, z);
+          return [0x9a968c, 0x8a867c, 0xb0aa9a, 0x7a766e, 0xc8c0aa, 0x6e6a62][((band % 6) + 6) % 6];
+        }, 0.6));
         for (let i = 0; i < 40; i++) {
-          const a = r(0, Math.PI * 2), d = r(4.5, 13), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          blob(k, pick(cols), [x, gy(x, z) + 0.1, z], r(0.25, 1.4), [1, 0.6, 1], 0.3);
+          const a = (i / 40) * Math.PI * 2 + r(-0.05, 0.05), top = gy(Math.cos(a) * b.r * 1.02, Math.sin(a) * b.r * 1.02);
+          if (i % 2 === 0) {
+            const d = r(0.55, 0.85) * b.r, x = Math.cos(a) * d, z = Math.sin(a) * d;
+            fern(x, gy(x, z), z, r(0.8, 1.4));
+          }
+          if (i % 3 === 0) {
+            const x0 = Math.cos(a) * b.r, z0 = Math.sin(a) * b.r, len = r(10, 30);
+            k.limb([x0, top, z0], [x0 * 0.94, top - len, z0 * 0.94], 0.08, 0.04, pick([0x3e6a2a, 0x4a7a32]), 4);
+          }
         }
-        for (let i = 0; i < 16; i++) {
-          const a = r(0, Math.PI * 2), d = r(3, 10), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          k.add(new BoxGeometry(0.04, 0.01, r(0.3, 0.6)), 0x3a3028, [x, gy(x, z) + 0.03, z], [0, r(0, 3), 0]); // (feathers fallen from the nest)
+        const fa = site.rot, ftop = gy(Math.cos(fa) * b.r * 1.0, Math.sin(fa) * b.r * 1.0);
+        falls = [{ x: site.x + Math.cos(fa) * b.r * 0.62, z: site.z + Math.sin(fa) * b.r * 0.62, top: ftop, bottom: floor + 1.2, rot: fa, width: 1.6 }];
+        for (let i = 0; i < 6; i++) {
+          const a = r(0, Math.PI * 2), x = Math.cos(a) * b.r * 0.35, z = Math.sin(a) * b.r * 0.35, b2 = a + r(1, 2);
+          k.limb([x, gy(x, z) + 0.6, z], [x + Math.cos(b2) * 12, gy(x, z) + r(3, 10), z + Math.sin(b2) * 12], 0.45, 0.2, 0x5a4632, 6);
         }
+        for (let i = 0; i < 18; i++) {
+          const a = r(0, Math.PI * 2), d = r(0.1, 0.45) * b.r, x = Math.cos(a) * d, z = Math.sin(a) * d, sz = r(0.8, 3), y = gy(x, z);
+          blob(k, pick([0x9a968c, 0x8a867c, 0x7a766e]), [x, y + 0.3, z], sz, [1, 0.7, 1], 0.25);
+          k.add(new BoxGeometry(sz * 1.1, 0.14, sz * 1.1), 0x4a6a34, [x, y + 0.3 + sz * 0.62, z], [0, r(0, 3), 0]);
+        }
+        waters.push({ level: floor + 1.2, r: b.r * 0.3, clean: false, mat: 'dark' });
         break;
       }
-      case 'greatSinkhole': {
-        // A great round pit where the limestone gave way: its lip of broken
-        // rock, its walls banded in layers of grey and cream with ledges
-        // all the way down, ferns and vines hanging down them; a thin fall
-        // of water from a spring off one side; at the bottom, trees fallen
-        // in, mossy boulders, a dark pool.
-        const b = LANDMARKS.greatSinkhole.basin;
-        const lime = [0x9a968c, 0x8a867c, 0xb0aa9a, 0x7a766e, 0xc8c0aa];
-        const floor = y0;
-        // The walls: rings of rock down the inside of the pit.
-        for (let i = 0; i < 36; i++) {
-          const a = (i / 36) * Math.PI * 2, top = gy(Math.cos(a) * b.r * 1.02, Math.sin(a) * b.r * 1.02);
-          for (let hgt = floor + 1; hgt < top - 1; hgt += 2.6) {
-            const d = b.r * (0.86 + 0.06 * ((hgt - floor) / Math.max(1, top - floor))) + r(-0.4, 0.4);
-            blob(k, lime[Math.floor((hgt - floor) / 2.6) % 5], [Math.cos(a) * d, hgt, Math.sin(a) * d], 1.8, [1.2, 0.75, 1.2], 0.15);
+      case 'cascades': {
+        // A lake high on a hillside, and below it pool after pool down the
+        // fall of the land, each held in a lip of mossy, mineral-stained
+        // rock and spilling over it in curtains of white falls into the next
+        // (as Kuang Si); the lake's uphill bank a mossy cliff with falls of
+        // its own pouring in (as Kirkjufellsfoss); turquoise water; mossy
+        // boulders, ferns, spray hanging over every fall.
+        const pools = this.generator.landmarks.poolsOf(site);
+        const moss = [0x4a7a32, 0x5a8a3a, 0x6a9a3a, 0x3e6a2a], rockc = [0x5a5a56, 0x4a4a48, 0x6a6862], stain = [0xc8b890, 0xb8a878, 0xd8c8a0];
+        falls = [];
+        pools.forEach((p, n) => {
+          const px = p.x - site.x, pz = p.z - site.z;
+          waters.push({ level: p.level, r: p.r * 1.03, clean: true, mat: 'turq', x: px, z: pz });
+          // (Mossy boulders round its edge, ferns among them.)
+          for (let i = 0; i < Math.round(p.r * 0.9); i++) {
+            const a = r(0, Math.PI * 2), d = p.r * r(0.95, 1.2), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = gy(x, z), sz = r(0.5, 1.6);
+            blob(k, pick(rockc), [x, y, z], sz, [1, 0.7, 1], 0.25);
+            k.add(new BoxGeometry(sz * 1.2, 0.15, sz * 1.2), pick(moss), [x, y + sz * 0.6, z], [0, r(0, 3), 0]);
+            if (R() < 0.4) fern(x + r(-1.5, 1.5), y, z + r(-1.5, 1.5), r(0.8, 1.3));
           }
-          // (Ferns on its ledges; vines hanging down.)
-          if (i % 2 === 0) {
-            const hgt = r(floor + 3, top - 2), d = b.r * 0.82;
-            fern(Math.cos(a) * d, hgt, Math.sin(a) * d, r(0.7, 1.2));
+          if (n === 0) {
+            // The lake's uphill bank: a mossy cliff, falls coming down it.
+            const up = Math.atan2(site.z - (pools[1]?.z ?? site.z - 1), site.x - (pools[1]?.x ?? site.x)) ;
+            for (let v = -1; v <= 1; v += 0.08) {
+              const a = up + v, x = Math.cos(a) * p.r * 1.0, z = Math.sin(a) * p.r * 1.0, top = gy(Math.cos(a) * p.r * 1.25, Math.sin(a) * p.r * 1.25);
+              for (let h = p.level - 1; h < top; h += 1.7) {
+                blob(k, h > top - 2 ? pick(moss) : pick(rockc), [x, h, z], 1.6, [1.3, 0.7, 1.3], 0.2);
+                if (R() < 0.35) k.add(new BoxGeometry(1.5, 0.3, 1.2), pick(moss), [x * 0.97, h + 0.6, z * 0.97], [0, -a, 0]);
+              }
+            }
+            for (const v of [-0.45, -0.1, 0.35]) {
+              const a = up + v, top = gy(Math.cos(a) * p.r * 1.25, Math.sin(a) * p.r * 1.25);
+              if (top - p.level > 3) falls.push({ x: site.x + Math.cos(a) * p.r * 0.94, z: site.z + Math.sin(a) * p.r * 0.94, top, bottom: p.level, rot: a, width: r(2.5, 4.5) });
+            }
+          } else {
+            // The lip between this pool and the one above: a scalloped rim
+            // of stained rock, and the water spilling over it in curtains.
+            const q = pools[n - 1], dx = p.x - q.x, dz = p.z - q.z, len = Math.hypot(dx, dz), ux = dx / len, uz = dz / len;
+            const lx = q.x + ux * q.r, lz = q.z + uz * q.r, width = Math.min(q.r, p.r) * 1.1, drop = q.level - p.level;
+            for (let v = -width; v <= width; v += 1.2) {
+              const x = lx - uz * v - site.x, z = lz + ux * v - site.z;
+              blob(k, pick(stain), [x, q.level - 0.2, z], 1.1, [1.2, Math.max(0.6, drop / 2), 1], 0.15);
+              if (R() < 0.5) k.add(new BoxGeometry(1.2, 0.2, 0.8), pick(moss), [x, q.level + 0.35, z], [0, Math.atan2(ux, uz), 0]);
+            }
+            for (let c = 0; c < 4; c++) {
+              const v = (c / 3 - 0.5) * width * 1.5 + r(-1, 1);
+              falls.push({ x: lx - uz * v, z: lz + ux * v, top: q.level + 0.1, bottom: p.level, rot: Math.atan2(-uz, -ux), width: r(1.8, 3.6) });
+            }
           }
-          if (i % 3 === 0) k.limb([Math.cos(a) * b.r * 0.95, top, Math.sin(a) * b.r * 0.95], [Math.cos(a) * b.r * 0.85, top - r(6, 16), Math.sin(a) * b.r * 0.85], 0.07, 0.04, pick([0x3e6a2a, 0x4a7a32]), 4);
+        });
+        break;
+      }
+      case 'glacier': {
+        // A glacier lying in a high valley among the snowy peaks: a great
+        // tongue of ice, 20 m thick in the middle, thinning up the valley's
+        // sides, ending downhill in a wall of blue ice; snow lying on top of
+        // it, crevasses across it, seracs broken off its front.
+        const R2 = 95, T = 22, base = y0;
+        const top = (x, z) => {
+          const q = (x * x + z * z) / (R2 * R2);
+          if (q >= 1) return -Infinity;
+          return base + T * (1 - q) + 0.5 * (gy(x, z) - base) + 0.8 * wob2(x * 0.5, z * 0.5);
+        };
+        g.add(this.#iceSheet(top, R2, (x, z, y, slope, depth) => (slope > 0.9 ? pick2([0x6aa8d8, 0x5a98c8, 0x88c4e8], x, z) : depth < 1.5 ? 0xc8e0f0 : pick2([0xf4f8fc, 0xe8f0f8, 0xdce8f4], x, z))));
+        // Crevasses across its flow.
+        for (let i = 0; i < 26; i++) {
+          const a = r(0, Math.PI * 2), d = r(10, R2 * 0.8), x = Math.cos(a) * d, z = Math.sin(a) * d, y = top(x, z);
+          if (!(y > gy(x, z) + 1)) continue;
+          k.add(new BoxGeometry(r(6, 14), 0.25, 0.7), 0x3a6a98, [x, y + 0.05, z], [0, r(0, 3), 0], [1, 1, 1], 0.05);
         }
-        // The broken lip.
-        for (let i = 0; i < 28; i++) {
-          const a = (i / 28) * Math.PI * 2 + r(-0.08, 0.08), d = b.r * r(1.0, 1.12), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          blob(k, pick(lime), [x, gy(x, z), z], r(0.8, 2.2), [1, 0.6, 1], 0.25);
+        // Seracs at its front, and blocks broken off below it.
+        for (let i = 0; i < 40; i++) {
+          const a = r(0, Math.PI * 2), d = R2 * r(0.82, 1.08), x = Math.cos(a) * d, z = Math.sin(a) * d, g0 = gy(x, z);
+          const y = Math.max(top(x * 0.95, z * 0.95), g0);
+          if (y - g0 < 3 && d < R2) continue;
+          blob(icy, pick([0x88c4e8, 0xa8d8f0, 0x6aa8d8]), [x, g0 + r(0.5, 2), z], r(1.5, 4), [1, r(0.8, 1.6), 1], 0.2);
         }
-        // A spring's thin fall down one side.
-        const fa = site.rot, ftop = gy(Math.cos(fa) * b.r * 1.02, Math.sin(fa) * b.r * 1.02);
-        falls = [{ x: site.x + Math.cos(fa) * b.r * 0.84, z: site.z + Math.sin(fa) * b.r * 0.84, top: ftop, bottom: floor + 1.2, rot: fa, width: 1.4 }];
-        // At the bottom: trees fallen in, boulders, the pool.
-        for (let i = 0; i < 4; i++) {
-          const a = r(0, Math.PI * 2), x = Math.cos(a) * b.r * 0.5, z = Math.sin(a) * b.r * 0.5, b2 = a + r(1, 2);
-          k.limb([x, floor + 1, z], [x + Math.cos(b2) * 9, floor + r(3, 9), z + Math.sin(b2) * 9], 0.4, 0.2, 0x5a4632, 6);
-        }
-        for (let i = 0; i < 14; i++) {
-          const a = r(0, Math.PI * 2), d = r(0.3, 0.75) * b.r, x = Math.cos(a) * d, z = Math.sin(a) * d, sz = r(0.6, 2);
-          blob(k, pick(lime), [x, floor + 0.5, z], sz, [1, 0.7, 1], 0.25);
-          k.add(new BoxGeometry(sz * 1.1, 0.12, sz * 1.1), 0x4a6a34, [x, floor + 0.5 + sz * 0.62, z], [0, r(0, 3), 0]);
-        }
-        waters.push({ level: floor + 1.2, r: b.r * 0.55, clean: false, mat: 'dark' });
+        site.surface = (wx, wz) => top(wx - site.x, wz - site.z);
         break;
       }
     }
@@ -818,7 +881,7 @@ export class Landmarks {
       }
     }
     this.scene.add(g);
-    return { site, group: g, solids, waters, steam, falls: !!falls };
+    return { site, group: g, solids, waters, steam, falls: !!falls, surface: site.surface ?? null };
   }
 
   // --- Each frame -----------------------------------------------------------------
@@ -870,9 +933,11 @@ export class Landmarks {
     let top = -Infinity;
     for (const b of this.built.values()) {
       const s = b.site;
-      if (Math.abs(s.x - x) > 40 || Math.abs(s.z - z) > 40) continue;
+      if (Math.abs(s.x - x) > 70 || Math.abs(s.z - z) > 70) continue;
       for (const c of b.solids) if (Math.abs(c.x - x) < c.r && Math.hypot(c.x - x, c.z - z) < c.r) top = Math.max(top, c.top);
     }
+    // (On a glacier: its ice.)
+    for (const b of this.built.values()) if (b.surface && Math.abs(b.site.x - x) < 100 && Math.abs(b.site.z - z) < 100) top = Math.max(top, b.surface(x, z));
     return top;
   }
 
@@ -891,8 +956,9 @@ export class Landmarks {
   at(x, z) {
     let best = null, bd = Infinity;
     for (const b of this.built.values()) {
+      if (LANDMARKS[b.site.kind].hidden) continue;
       const d = Math.hypot(b.site.x - x, b.site.z - z);
-      const reach = LANDMARKS[b.site.kind].basin ? LANDMARKS[b.site.kind].basin.r + 20 : 40;
+      const reach = b.site.extent ? b.site.extent + 10 : LANDMARKS[b.site.kind].basin ? LANDMARKS[b.site.kind].basin.r + 20 : b.site.kind === 'stoneArch' ? 60 : 40;
       if (d < reach && d < bd) (bd = d), (best = b.site);
     }
     return best;

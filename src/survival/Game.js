@@ -11,7 +11,7 @@ import { Survival } from './Survival.js';
 import { TreeFinds } from './TreeFinds.js';
 import { Progress, SKILLS } from './Progress.js';
 import { EQUINE, Wildlife } from '../wildlife/Wildlife.js';
-import { LANDMARKS, LANDMARK_KINDS } from '../world/landmarkSites.js';
+import { LANDMARKS, FOUND_KINDS } from '../world/landmarkSites.js';
 
 /** Your longest survival life yet, in days (kept in this browser): records `days`, returns the longest. */
 export function recordRun(days) {
@@ -2424,7 +2424,7 @@ export class Game {
     this.scene.add(line);
     // (Sooner where there are fish about.)
     const near = (this.fish?.fish ?? []).some((f) => Math.hypot(f.x - at.x, f.z - at.z) < 10);
-    this.line = { ...at, bobber, line, wait: rnd(4, 14) * (near ? 0.5 : 1) * (this.landmarkHere?.kind === 'twinFalls' ? 0.5 : 1) * (1 - 0.06 * this.skillLevel('fishing')), bite: 0 };
+    this.line = { ...at, bobber, line, wait: rnd(4, 14) * (near ? 0.5 : 1) * (this.landmarkHere?.kind === 'cascades' ? 0.5 : 1) * (1 - 0.06 * this.skillLevel('fishing')), bite: 0 };
     this.sound?.call('whoosh', 0, 0.3);
     this.traces?.splash(at.x, at.level, at.z, 4, 1, 0.4);
   }
@@ -3351,7 +3351,7 @@ export class Game {
    * landmarks are).
    */
   discoverLandmark(site) {
-    if (this.landmarksFound.has(site.key)) return;
+    if (LANDMARKS[site.kind]?.hidden || this.landmarksFound.has(site.key)) return;
     this.landmarksFound.add(site.key);
     this.dirty = true;
     const L = LANDMARKS[site.kind];
@@ -3359,21 +3359,21 @@ export class Game {
     this.sound?.call('craft', 0, 0.5);
     this.#achieve(`lm_${site.kind}`);
     const kinds = new Set([...this.landmarksFound].map((k) => k.split(':')[0]));
-    if (LANDMARK_KINDS.every((k) => kinds.has(k))) this.#achieve('landmarks');
+    if (FOUND_KINDS.every((k) => kinds.has(k))) this.#achieve('landmarks');
     const GIFTS = {
-      elderTree: [['honey', 3], ['apple', 4]], stoneArch: [['flint', 4]], crystalLake: [['crystal', 4]], twinFalls: [['rawFish', 3]],
+      elderTree: [['honey', 3], ['apple', 4]], stoneArch: [['flint', 4]], crystalLake: [['crystal', 4]], cascades: [['rawFish', 3]],
       standingStones: [['oldMap', 1]], sunkenForest: [['iron', 4]], petrifiedLog: [['flint', 6], ['crystal', 1]], boneField: [['arrow', 10], ['oldMap', 1]],
-      glacierCave: [['crystal', 3]], hotPools: [['salt', 5]], eagleSpire: [['feather', 8]], greatSinkhole: [['coal', 4], ['guano', 3]],
+      hotPools: [['salt', 5]], greatSinkhole: [['coal', 4], ['guano', 3]],
     };
     const p = this.camera.position, y = p.y - this.controls.eyeHeight + 0.5;
     (GIFTS[site.kind] ?? []).forEach(([id, n], j) => this.items.drop(Inventory.stack(id, n), p.x + Math.cos(j * 2.1 + 0.5) * 1.6, y, p.z + Math.sin(j * 2.1 + 0.5) * 1.6));
     // (The view from it: the land for 1.2 km round marked out on your map.)
-    if (site.kind === 'stoneArch' || site.kind === 'eagleSpire') this.#revealAround(site.x, site.z, site.kind === 'eagleSpire' ? 1500 : 1200);
+    if (site.kind === 'stoneArch') this.#revealAround(site.x, site.z, 1200);
     if (site.kind === 'standingStones') {
       // (The nearest of every other kind within 6 km, marked as roughly
       // where: looked for a square of land at a time, a frame at a time.)
       const queue = [];
-      for (const kind of LANDMARK_KINDS) {
+      for (const kind of FOUND_KINDS) {
         const C = LANDMARKS[kind].cell, R = 6000;
         for (let k = Math.floor((site.z - R) / C); k <= Math.floor((site.z + R) / C); k++) for (let i = Math.floor((site.x - R) / C); i <= Math.floor((site.x + R) / C); i++) queue.push([kind, i, k]);
       }
@@ -3423,7 +3423,7 @@ export class Game {
       // (Testing: every one on the map, worked out a few squares of land each time it's drawn, nearest first.)
       const { sites, more } = this.generator().landmarks.survey(x, z, Math.min(r, 16000), 3);
       this.landmarkMore = more;
-      return sites.map((s) => ({ ...s, name: LANDMARKS[s.kind].name, found: true }));
+      return sites.filter((s) => !LANDMARKS[s.kind].hidden).map((s) => ({ ...s, name: LANDMARKS[s.kind].name, found: true }));
     }
     const out = [];
     for (const key of this.landmarksFound) {

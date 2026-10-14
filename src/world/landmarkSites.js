@@ -15,14 +15,16 @@ export const LANDMARKS = {
     what: 'An ancient tree, the oldest thing in the forest: rest beneath it and your wounds close fast',
     fits: (w, m, f) => w.temperate + w.parkland + w.smoky + w.redwood > 0.6 && m < 0.45 && f > 0.35 },
   stoneArch: { name: 'The Stone Arch', cell: 2600, land: (h, slope, rise) => slope < 0.4 && rise > -2, // (on open rock, not down in a wash)
-    what: 'A great arch of red rock: from under it the land round about is laid out on your map',
+    what: 'A great arch of red rock among boulders and spires: from under it the land round about is laid out on your map',
     fits: (w, m) => w.badlands + 0.8 * w.desert + w.blackHills > 0.45 && m < 0.6 },
   crystalLake: { name: 'Crystal Lake', cell: 3000, tries: 14, land: (h, slope, rise) => h > 30 && rise < -1.5 && slope < 0.4, // (in a high bowl among the peaks, where the water gathers)
-    basin: { r: 34, d: 7, steep: 0.35 }, what: 'A clear mountain lake ringed with crystals: its water is safe to drink, and crystals lie on its shore',
+    basin: { r: 34, d: 7, steep: 0.35 }, what: 'A clear mountain lake ringed with crystals, some taller than a house: its water is safe to drink, and crystals lie on its shore',
     fits: (w, m) => m > 0.22 && m < 0.65 && w.desert + w.savanna + w.badlands < 0.2 },
-  twinFalls: { name: 'Twin Falls', cell: 3000, land: (h, slope) => h > 10 && slope > 0.3 && slope < 1.1, // (on a steep wooded hillside, for the cliff)
-    basin: { r: 15, d: 4, steep: 0.45 }, what: 'Two falls side by side down a cliff into a cold pool: clean water, and the fish there bite fast',
-    fits: (w, m, f) => m > 0.28 && f > 0.25 && w.desert + w.savanna < 0.2 },
+  // (A lake high on a wooded hillside, and below it a chain of pools, each
+  // spilling over its lip in falls into the next: see cascadePools.)
+  cascades: { name: 'The Cascades', cell: 3000, tries: 12, cascade: true, land: (h, slope) => h > 25 && slope > 0.1 && slope < 0.55, // (on a hillside, for the water to step down)
+    what: 'A high lake spilling down a hillside in falls from one turquoise pool to the next: clean water, and the fish there bite fast',
+    fits: (w, m, f) => w.temperate + w.smoky + w.parkland + w.pine + w.redwood + w.wetland > 0.6 && m < 0.7 },
   standingStones: { name: 'The Standing Stones', cell: 2600, land: (h, slope, rise) => h > 6 && rise > 1.5 && slope < 0.2, // (on the crown of a low hill, seen from all round)
     what: 'A ring of old stones: stood in it, the other landmarks near are shown on your map',
     fits: (w, m, f, open) => (open > 0.25 || w.blackHills > 0.5 || w.parkland > 0.5) && m < 0.3 },
@@ -33,23 +35,29 @@ export const LANDMARKS = {
     what: 'A giant tree turned to stone long ago: flint and agate weather out of it',
     fits: (w) => w.desert + w.badlands > 0.6 },
   boneField: { name: 'The Bone Field', cell: 2600, land: (h, slope) => slope < 0.12, // (out on the open flats)
-    what: 'The bleached bones of something enormous, and the camp of the hunters who found it: arrows and an old map',
+    what: 'The bleached bones of something enormous, and the spears of the hunters who found it: arrows and an old map',
     fits: (w) => w.desert + w.savanna > 0.6 },
-  glacierCave: { name: 'The Glacier Cave', cell: 3000, tries: 14, land: (h, slope) => h > 100 && slope > 0.1 && slope < 1.2, // (high up a mountainside, under the snow)
-    what: 'A grotto of blue ice high in the mountains: crystals in its walls, and clean meltwater',
-    fits: (w, m, f, open, cold) => m > 0.5 && cold > 0.4 },
   hotPools: { name: 'The Hot Pools', cell: 3000, land: (h, slope) => h > 10 && slope > 0.06 && slope < 0.35, // (on a gentle slope, for the terraces to step down)
     basin: { r: 13, d: 2.2, steep: 0.3 }, hot: true, what: 'Steaming pools on white terraces: warm through and heal in them, and scrape up their salts',
     fits: (w, m) => w.volcanic > 0.3 || (m > 0.45 && w.smoky + w.blackHills + w.pine > 0.3) || m > 0.6 },
-  eagleSpire: { name: 'Eagle Spire', cell: 2800, tries: 12, land: (h, slope, rise) => h > 15 && rise > 2, // (on a knoll or a ridge, standing up over everything)
-    what: 'A lone needle of rock with eagles nesting on top: feathers lie round its foot, and from by it you see far',
-    fits: (w, m) => (m > 0.35 && m < 0.85) || w.blackHills > 0.5 || w.badlands > 0.6 },
-  greatSinkhole: { name: 'The Great Sinkhole', cell: 3200, land: (h, slope) => h > 8 && slope < 0.12, // (on level limestone country)
-    basin: { r: 26, d: 28, steep: 0.82, dry: true }, what: 'The ground fallen away into a deep round pit: bats roost in it, coal shows in its walls',
-    fits: (w, m) => w.temperate + w.smoky + w.parkland + w.blackHills > 0.6 && m < 0.35 },
+  // (Twice as wide and three times as deep as it was: a pit 100 m across and
+  // 80 m down, its walls rough, not sheer; only on high ground, so its floor
+  // stays above the sea's level and dry.)
+  greatSinkhole: { name: 'The Great Sinkhole', cell: 3200, tries: 10, land: (h, slope) => h > 40 && slope < 0.2, // (as deep as the land lets it be, and no deeper)
+    basin: { r: 52, d: 84, steep: 0.3, dry: true, rough: 5 }, what: 'The ground fallen away into a vast round pit: bats roost in it, coal shows in its walls',
+    fits: (w, m) => w.temperate + w.smoky + w.parkland + w.blackHills + w.pine > 0.6 && m < 0.5 },
+  // (Not a landmark to find: the great glaciers lying in the high valleys
+  // of the snowy peaks. Placed the same way; never on the map.)
+  glacier: { name: 'Glacier', cell: 1500, hidden: true, chance: 0.85, tries: 14, land: (h, slope, rise) => h > 120 && rise < -2.5 && slope < 0.7,
+    what: '', fits: (w, m, f, open, cold) => m > 0.6 && cold > 0.4 },
 };
 export const LANDMARK_KINDS = Object.keys(LANDMARKS);
-const BASIN_KINDS = LANDMARK_KINDS.filter((k) => LANDMARKS[k].basin);
+/** The ones to be found (on the map, an achievement each). */
+export const FOUND_KINDS = LANDMARK_KINDS.filter((k) => !LANDMARKS[k].hidden);
+const BASIN_KINDS = LANDMARK_KINDS.filter((k) => LANDMARKS[k].basin || LANDMARKS[k].cascade);
+
+// (A smooth wobbly noise, for a pit's rough walls.)
+const wob = (x, z, s) => Math.sin(x * 0.11 + s) * Math.cos(z * 0.13 - s) + 0.5 * Math.sin(x * 0.29 - z * 0.23 + s * 2) + 0.25 * Math.sin(x * 0.61 + z * 0.53 + s * 3);
 
 export class LandmarkSites {
   constructor(generator) {
@@ -71,7 +79,7 @@ export class LandmarkSites {
     s = null;
     const L = LANDMARKS[kind], C = L.cell, seed = (this.g.seed ^ 0x1a7d) + ki * 7919;
     // (Some squares have none: the landmarks are found, not met at every turn.)
-    if (hash2(i, k, seed) < 0.5) {
+    if (hash2(i, k, seed) < (L.chance ?? 0.375)) {
       const w = {};
       for (let t = 0; t < (L.tries ?? 6) && !s; t++) {
         const x = (i + 0.15 + 0.7 * hash2(i * 3 + t, k, seed + 1)) * C, z = (k + 0.15 + 0.7 * hash2(i, k * 3 + t, seed + 2)) * C;
@@ -81,7 +89,7 @@ export class LandmarkSites {
         if ((w.saltFlat ?? 0) > 0.3 || (w.mangrove ?? 0) > 0.3) continue;
         const m = this.g.getMountainness(x, z), f = L.needs?.forest === false ? 0 : this.g.getForestDensity(x, z);
         const open = w.temperate > 0.5 ? 1 - Math.min(1, f * 1.6) : 0;
-        const cold = kind === 'glacierCave' ? this.g.getSeasonality(x, z) : 0;
+        const cold = kind === 'glacier' ? this.g.getSeasonality(x, z) : 0;
         if (!L.fits(w, m, f, open, cold)) continue;
         if (this.g.getOceanness(x, z) > 0.05) continue;
         // (Then the lie of the land: high or low, steep or level, standing up
@@ -162,56 +170,133 @@ export class LandmarkSites {
   }
 
   /**
+   * A site's pools (its hollows): the lake or pit of a basin kind, or the
+   * cascades' chain of them. Each { x, z, r, d, steep, dry, rough, level }
+   * (`level`: its water, the lowest of its rim a little under), worked out
+   * once from the land as it is before they're dug.
+   */
+  poolsOf(s) {
+    if (s.pools) return s.pools;
+    const L = LANDMARKS[s.kind];
+    if (L.basin) {
+      s.pools = [{ x: s.x, z: s.z, ...L.basin, seed: s.seed }];
+      // (A dry pit no deeper than keeps its floor above the sea's level.)
+      if (L.basin.dry) s.pools[0].d = Math.min(L.basin.d, this.#probe((H) => H(s.x, s.z)) - (this.g.rivers?.seaLevel ?? 2) - 8);
+    } else if (L.cascade) s.pools = this.#cascadePools(s);
+    else s.pools = [];
+    for (const p of s.pools) if (!p.dry && p.level === undefined) p.level = this.#rimLevel(p);
+    // (Each pool's water below the one above it, so it spills down, never back.)
+    for (let i = 1; i < s.pools.length; i++) s.pools[i].level = Math.min(s.pools[i].level, s.pools[i - 1].level - 0.8);
+    s.extent = Math.max(...s.pools.map((p) => Math.hypot(p.x - s.x, p.z - s.z) + p.r), 0) * 1.15;
+    return s.pools;
+  }
+
+  // The cascades: a lake on the hillside, then pool after pool down the
+  // fall of the land below it, each touching the next, wandering a little.
+  #cascadePools(s) {
+    return this.#probe((H) => {
+      const gx = (H(s.x + 25, s.z) - H(s.x - 25, s.z)) / 50, gz = (H(s.x, s.z + 25) - H(s.x, s.z - 25)) / 50;
+      let dir = Math.atan2(-gz, -gx); // (downhill)
+      const R = (n) => (Math.sin(s.seed * 0.001 + n * 12.9898) * 43758.5453) % 1;
+      const rnd = (n, a, b) => a + (b - a) * Math.abs(R(n));
+      const pools = [{ x: s.x, z: s.z, r: 34, d: 5, steep: 0.35, seed: s.seed, lake: true }];
+      let prev = pools[0], prevH = H(s.x, s.z);
+      for (let i = 1; i <= 10; i++) {
+        const r = rnd(i, 10, 17);
+        dir += rnd(i + 50, -0.35, 0.35);
+        const step = (prev.r + r) * 1.08;
+        const x = prev.x + Math.cos(dir) * step, z = prev.z + Math.sin(dir) * step, h = H(x, z);
+        if (h > prevH - 0.8) {
+          // (Not falling away here: look a little to either side for where it does.)
+          let found = null;
+          for (const turn of [0.5, -0.5, 0.9, -0.9]) {
+            const tx = prev.x + Math.cos(dir + turn) * step, tz = prev.z + Math.sin(dir + turn) * step, th = H(tx, tz);
+            if (th < prevH - 0.8) (found = [tx, tz, th]), (dir += turn);
+            if (found) break;
+          }
+          if (!found) break;
+          prev = { x: found[0], z: found[1], r, d: 2.6, steep: 0.4, seed: s.seed + i };
+          prevH = found[2];
+        } else {
+          prev = { x, z, r, d: 2.6, steep: 0.4, seed: s.seed + i };
+          prevH = h;
+        }
+        pools.push(prev);
+      }
+      return pools;
+    });
+  }
+
+  #rimLevel(p) {
+    return this.#probe((H) => {
+      let low = Infinity;
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        low = Math.min(low, H(p.x + Math.cos(a) * p.r * 1.08, p.z + Math.sin(a) * p.r * 1.08));
+      }
+      return low - 0.5;
+    });
+  }
+
+  /** A single-hollow site's water level (see poolsOf). */
+  levelOf(s) {
+    return this.poolsOf(s)[0]?.level;
+  }
+
+  /** The sites with hollows whose square (x, z) is in, with their pools. */
+  *#hollowsAt(x, z) {
+    for (const kind of BASIN_KINDS) {
+      const C = LANDMARKS[kind].cell;
+      const s = this.site(kind, Math.floor(x / C), Math.floor(z / C));
+      if (!s) continue;
+      const pools = this.poolsOf(s);
+      if (Math.abs(x - s.x) > s.extent || Math.abs(z - s.z) > s.extent) continue;
+      yield [s, pools];
+    }
+  }
+
+  /**
    * How far the land is let down at (x, z) by a landmark's hollow (the
-   * sinkhole's pit, a lake's bowl): metres, 0 for none. (The sites sit in
-   * the middle of their squares, so only the square it's in need be asked.)
+   * sinkhole's pit, a lake's bowl, the cascades' pools): metres, 0 for
+   * none. (The sites sit in the middle of their squares, so only the
+   * square it's in need be asked.)
    */
   basinAt(x, z, h = null) {
     if (this.busy) return 0;
     let d = 0;
-    for (const kind of BASIN_KINDS) {
-      const L = LANDMARKS[kind], C = L.cell;
-      const s = this.site(kind, Math.floor(x / C), Math.floor(z / C));
-      if (!s) continue;
-      const b = L.basin, dx = x - s.x, dz = z - s.z;
-      if (Math.abs(dx) > b.r * 1.15 || Math.abs(dz) > b.r * 1.15) continue;
-      // (Not quite round: its edge wanders in and out a little.)
-      const a = Math.atan2(dz, dx), wob = 1 + 0.07 * Math.sin(a * 5 + s.seed) + 0.04 * Math.sin(a * 11 + s.seed * 0.7);
-      const r = Math.hypot(dx, dz) / (b.r * wob);
-      if (r >= 1) continue;
-      const t = Math.min(1, Math.max(0, (r - b.steep) / (1 - b.steep)));
-      const dip = b.d * (1 - t * t * (3 - 2 * t));
-      if (b.dry || h === null) {
-        d = Math.max(d, dip);
-        continue;
+    for (const [, pools] of this.#hollowsAt(x, z)) {
+      for (const p of pools) {
+        const dx = x - p.x, dz = z - p.z;
+        if (Math.abs(dx) > p.r * 1.15 || Math.abs(dz) > p.r * 1.15) continue;
+        // (Not quite round: its edge wanders in and out a little.)
+        const a = Math.atan2(dz, dx), w = 1 + 0.07 * Math.sin(a * 5 + p.seed) + 0.04 * Math.sin(a * 11 + p.seed * 0.7);
+        const r = Math.hypot(dx, dz) / (p.r * w);
+        if (r >= 1) continue;
+        const t = Math.min(1, Math.max(0, (r - p.steep) / (1 - p.steep)));
+        let dip = p.d * (1 - t * t * (3 - 2 * t));
+        // (A pit's walls rough: ledges and gullies, buttresses and bays.)
+        if (p.rough) dip += p.rough * wob(x, z, p.seed % 100) * Math.sin(Math.min(1, t * 1.15) * Math.PI);
+        if (p.dry || h === null) {
+          d = Math.max(d, dip);
+          continue;
+        }
+        // (A lake or a pool: dug down to below its water, level from bank to
+        // bank; on a slope the uphill side is a cut bank, a cliff.)
+        d = Math.max(d, h - Math.min(h, p.level + 0.7 - dip));
       }
-      // (A lake or a pool: dug down to below its water, level from bank to
-      // bank, the water as high as the lowest of its rim lets it stand; on a
-      // slope the uphill side is a cut bank, a cliff.)
-      const level = this.levelOf(s);
-      d = Math.max(d, h - Math.min(h, level + 0.7 - dip));
     }
     return d;
   }
 
-  /**
-   * A lake's water level: the lowest of its rim, a little under (worked
-   * out once, from the land as it is before the hollow's dug).
-   */
-  levelOf(s) {
-    if (s.level !== undefined) return s.level;
-    const b = LANDMARKS[s.kind].basin, g = this.g;
-    // (The land's own answers asked for here, mid-way through its working
-    // out another point: what it remembers of that point put back after.)
-    const lo = this.#probe((H) => {
-      let low = Infinity;
-      for (let k = 0; k < 16; k++) {
-        const a = (k / 16) * Math.PI * 2;
-        low = Math.min(low, H(s.x + Math.cos(a) * b.r * 1.08, s.z + Math.sin(a) * b.r * 1.08));
+  /** Whether (x, z), its ground at `h`, is under a landmark's water (no grass, no flowers there). */
+  underWater(x, z, h) {
+    if (this.busy) return false;
+    for (const [, pools] of this.#hollowsAt(x, z)) {
+      for (const p of pools) {
+        if (p.dry) continue;
+        if (Math.hypot(x - p.x, z - p.z) < p.r * 1.1 && h < p.level + 0.25) return true;
       }
-      return low;
-    });
-    s.level = lo - 0.5;
-    return s.level;
+    }
+    return false;
   }
 }

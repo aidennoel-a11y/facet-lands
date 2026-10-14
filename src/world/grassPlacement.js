@@ -74,6 +74,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       if (keep > density * Math.max(generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass, oasis)) continue;
       const river = generator.rivers?.at(wx, wz, 3);
       if (river && river.d < river.water + 2.5) continue; // nor on a river's muddy banks (reeds grow there)
+      if (generator.landmarks?.underWater(wx, wz, ground)) continue; // (nor under a landmark's lake or pools)
 
       generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color, jitter);
       // (Bare grey rock and snow are all but colourless; grassland isn't.)

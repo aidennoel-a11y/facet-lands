@@ -43,6 +43,7 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
       if (!(y > sea + 1.5) || surface.normalY < 0.85 || y > 150) continue;
       if (stream && generator.rivers.at(x0 + lx, z0 + lz, 1.5)) continue; // (not in a stream, nor right on its bank)
       if (generator.onLiveLava?.(x0 + lx, z0 + lz)) continue; // (nor on a lava flow)
+      if (generator.landmarks?.underWater(x0 + lx, z0 + lz, y)) continue; // (nor under a landmark's water)
       // A few colours to a patch.
       const tone = generator.meadowNoise.noise2D((x0 + lx) * 0.03, (z0 + lz) * 0.03) * 0.5 + 0.5;
       const pick = Math.floor((tone * 3 + hash2(gi, gj, seed + 3) * 1.6) % colours);
@@ -214,6 +215,7 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1) || surface.normalY < 0.7) continue;
       if (generator.rivers?.at(x0 + lx, z0 + lz, 1)) continue;
+      if (generator.landmarks?.underWater(x0 + lx, z0 + lz, y)) continue;
       list.push(kind, lx, y - 0.05, lz, 0.8 + 0.8 * hash2(gi, gj, seed + 4), hash2(gi, gj, seed + 5), hash2(gi, gj, seed + 6));
     }
   }
