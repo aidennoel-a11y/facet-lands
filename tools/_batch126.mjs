@@ -24,13 +24,27 @@ const r = await page.evaluate(async () => {
   game.unlocked = () => true;
   inv.back = { id: 'backpack', count: 1 };
   inv.changed();
-  for (const [id, n] of [['deerSkin', 8], ['vine', 8], ['pelt', 3], ['straw', 3], ['log', 6], ['stick', 6], ['honey', 2], ['rope', 2], ['arrow', 8], ['beeswax', 2], ['salt', 1], ['milk', 4], ['ironBar', 1]]) inv.add({ id, count: n });
   const made = [];
-  for (const id of ['boots', 'gloves', 'furHat', 'strawHat', 'pail', 'beeBox', 'longbow', 'fireArrow', 'sign', 'candle', 'lantern']) {
-    const before = inv.count(id);
-    game.craft(id);
-    made.push(`${id}:${inv.count(id) - before}`);
+  const groups = [
+    [[['deerSkin', 4], ['vine', 4], ['pelt', 1], ['straw', 3]], ['boots', 'gloves', 'furHat', 'strawHat']],
+    [[['log', 4], ['vine', 2], ['stick', 6], ['honey', 1]], ['pail', 'beeBox', 'sign']],
+    [[['log', 1], ['rope', 1], ['deerSkin', 1], ['arrow', 4], ['beeswax', 2], ['vine', 2], ['ironBar', 1]], ['longbow', 'fireArrow', 'candle', 'lantern']],
+  ];
+  const keep = [];
+  for (const [give, ids] of groups) {
+    inv.slots.fill(null);
+    for (const [id, n] of give) inv.add({ id, count: n });
+    for (const id of ids) {
+      const before = inv.count(id);
+      game.craft(id);
+      made.push(`${id}:${inv.count(id) - before}`);
+    }
+    for (const st of inv.slots) if (st && ids.includes(st.id)) keep.push(st);
   }
+  inv.slots.fill(null);
+  for (const st of keep) inv.add(st);
+  inv.add({ id: 'milk', count: 4 });
+  inv.add({ id: 'salt', count: 1 });
   o.made = made.join(' ');
   o.cheeseNoFire = (game.craft('cheese'), inv.count('cheese'));
   // Put the clothes on.

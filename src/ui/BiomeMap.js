@@ -34,7 +34,8 @@ const STYLE = `
  * @param teleport  (x, z) => take you there
  */
 export class BiomeMap {
-  constructor({ task, where, teleport, ruins, fog, keep, more }) {
+  constructor({ task, where, teleport, ruins, fog, keep, more, landmarks }) {
+    this.landmarks = landmarks; // ((x, z, r) => the landmarks to mark: { x, z, name, found })
     this.more = more; // (() => whether the ruins aren't all worked out yet: drawn again in a moment)
     this.keep = keep; // (() => { x, z, r } where the Lost Keep is marked, or null)
     this.fog = fog; // (() => { explored, size } in survival, or null: see mapFog)
@@ -298,6 +299,28 @@ export class BiomeMap {
       ctx.strokeRect(rx - 4, ry - 3, 8, 6);
       ctx.fillRect(rx - 4, ry - 6, 2.4, 3);
       ctx.fillRect(rx + 1.6, ry - 6, 2.4, 3);
+    }
+    // The landmarks: a gold star and its name (a hollow one, only shown you by the standing stones).
+    for (const l of this.landmarks?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? []) {
+      const lx = (l.x - x0) / scale, ly = (l.z - z0) / scale;
+      if (lx < -6 || ly < -6 || lx > w + 6 || ly > n + 6) continue;
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? 3 : 7;
+        ctx.lineTo(lx + Math.cos(a) * rr, ly + Math.sin(a) * rr);
+      }
+      ctx.closePath();
+      ctx.fillStyle = l.found ? '#f2d060' : 'rgba(242, 208, 96, 0.25)';
+      ctx.strokeStyle = '#2a2420';
+      ctx.lineWidth = 1.5;
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = 'bold 11px system-ui';
+      ctx.fillStyle = '#fff8e0';
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(l.name, lx + 9, ly + 4);
+      ctx.fillText(l.name, lx + 9, ly + 4);
     }
     if (this.more?.() && !this.moreSoon) this.moreSoon = setTimeout(() => ((this.moreSoon = null), this.draw()), 60);
     // You, as an arrow.

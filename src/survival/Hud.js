@@ -112,6 +112,13 @@ export class Hud {
         </div>
         <p class="inv-note">Coats, armour, a backpack, hats, gloves and boots go on you: click one, then its place on the figure (or click it in your hand).</p>
       </section>
+      <section class="emotes" hidden aria-label="Emotes">
+        <h2>Emotes</h2>
+        <div class="emote-row">
+          ${[['wave', 'Wave'], ['cheer', 'Cheer'], ['point', 'Point'], ['bow', 'Bow'], ['sit', 'Sit'], ['shrug', 'Shrug']].map(([k, t], i) => `<button type="button" data-emote="${k}"><b>${i + 1}</b>${t}</button>`).join('')}
+        </div>
+        <p class="ask-hint">G to wave · T or Esc to close · the others see it online (F3 to see yourself)</p>
+      </section>
       <section class="ask-ui" hidden aria-label="Write">
         <h2 class="ask-title"></h2>
         <textarea class="ask-text" rows="3" maxlength="120"></textarea>
@@ -150,7 +157,7 @@ export class Hud {
   }
 
   get busy() {
-    return ['.craft', '.creative', '.chest-ui', '.inv-ui', '.death', '.won', '.skills-ui', '.ask-ui'].some((sel) => !this.el(sel).hidden);
+    return ['.craft', '.creative', '.chest-ui', '.inv-ui', '.death', '.won', '.skills-ui', '.ask-ui', '.emotes'].some((sel) => !this.el(sel).hidden);
   }
 
   /**
@@ -454,6 +461,19 @@ export class Hud {
     fill('.pack-slots', pack, 'pack');
   }
 
+  /** The emotes to pick from (T): open (true) or shut. */
+  toggleEmotes() {
+    const panel = this.el('.emotes');
+    if (!panel.hidden) return this.closeAll();
+    this.closeAll();
+    panel.hidden = false;
+    panel.onclick = (e) => {
+      const b = e.target.closest('[data-emote]');
+      if (b) this.onEmote?.(b.dataset.emote);
+    };
+    return true;
+  }
+
   /**
    * A line or two to write (a sign's words): `done(text)` when finished
    * (Enter, or the button); Esc leaves it as it was. Returns true (open).
@@ -480,7 +500,7 @@ export class Hud {
   }
 
   closeAll() {
-    for (const sel of ['.craft', '.creative', '.chest-ui', '.skills-ui', '.inv-ui', '.ask-ui']) this.el(sel).hidden = true;
+    for (const sel of ['.craft', '.creative', '.chest-ui', '.skills-ui', '.inv-ui', '.ask-ui', '.emotes']) this.el(sel).hidden = true;
     this.chest = null;
     this.invSel = null;
     return false;

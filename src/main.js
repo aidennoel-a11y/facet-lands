@@ -44,6 +44,8 @@ import { RayEffects } from './render/RayEffects.js';
 import { Clouds } from './world/Clouds.js';
 import { Weather, WEATHER } from './render/Weather.js';
 import { Tornadoes } from './render/Tornado.js';
+import { Landmarks } from './world/Landmarks.js';
+import { MineProps } from './world/caves/MineProps.js';
 import { Lightning, panTowards, Rain } from './render/Storm.js';
 import { Sound } from './render/Sound.js';
 import { Showers } from './render/Showers.js';
@@ -437,6 +439,9 @@ function stormTint() {
 const fires = new Wildfires(scene);
 // (Big spiders in the dark of the caves: see CaveSpiders. Killed, one leaves its silk.)
 const spiders = new CaveSpiders(scene);
+const landmarks = new Landmarks(scene, generator); // (the twelve kinds of landmark: see landmarkSites)
+const mineProps = new MineProps(scene); // (the old mines' timbers, rails and carts)
+let mineWait = 0;
 spiders.onKill = (s) => {
   if (!s.boss) return game.items.drop({ id: 'silk', count: 2 }, s.x, s.y + 0.5, s.z);
   // The Broodmother: her heart (one of the great beasts' trophies) and a mass of silk; not back in her chamber for some days.
@@ -532,7 +537,7 @@ let floorTop = null; // (see the Game, below: what's laid on the ground)
 function groundAt(x, feetY, z) {
   const g = generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
   // Boulders are solid: you stand on their tops (and walk into their sides as walls).
-  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), logs.surfaceAt(x, z), ruins.surfaceAt(x, z, feetY));
+  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), logs.surfaceAt(x, z), ruins.surfaceAt(x, z, feetY), landmarks.surfaceAt(x, z));
   // (On a floor you've laid: its boards or flags.)
   const floor = floorTop?.(x, z, feetY);
   if (floor !== null && floor !== undefined) g.height = Math.max(g.height, floor);
@@ -568,6 +573,9 @@ function waterAt(x, z, ice = false) {
   let found = ground < WORLD.seaLevel ? { level: WORLD.seaLevel, fx: 0, fz: 0, speed: 0, lake: true } : null;
   const r = generator.rivers.waterAt(x, z, 0);
   if (r && (!found || r.level > found.level)) found = { level: r.level, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : 0.6 + Math.min(2.4, Math.max(0, r.drop) * 6), pond: r.pond, hot: r.tint === 2 };
+  // (A landmark's lake or pool: the crystal lake, the falls' basin, the hot pools...)
+  const lw = landmarks.waterAt(x, z, ground);
+  if (lw && (!found || lw.level > found.level)) found = lw;
   if (found && (found.lake || (found.pond && !found.hot))) {
     const winter = smooth(0.35, 0.8, seasonUniforms.uWinter.value);
     if (winter > 0.5) {
@@ -1129,6 +1137,7 @@ const bigMap = new BiomeMap({
   keep: () => (game.mode === 'testing' ? { ...ruins.keep(generator), r: 0 } : game.keep?.mark ?? null),
   // (Testing: the ruins marked on it too.)
   // (A few new places worked out each time it's drawn: it fills in over a moment, never freezing. In survival, only those you've been to.)
+  landmarks: (x, z, r) => game.landmarksForMap(x, z, r),
   ruins: (x, z, r, labelAt) => (game.mode === 'testing' ? ruins.sitesRoughly(x, z, Math.min(r, 20000), generator, labelAt) : ruins.sitesOf(game.ruinsSeen, generator)),
   teleport: (x, z) => {
     if (!ui.fly.checked) ui.fly.click();
@@ -1321,8 +1330,8 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyV' && game.mode !== 'survival') ui.fly.click(); // (no flying in survival)
   if (e.code === 'KeyJ' && game.mode !== 'survival') ui.noclip?.click();
   if (e.code === 'KeyF') ui.automove.click();
-  if (e.code === 'KeyG') ui.wireframe.click();
-  if (e.code === 'KeyT') ui.cycle.click();
+  if (e.code === 'KeyG' && game.mode === 'testing') ui.wireframe.click(); // (playing: G waves, T the emotes)
+  if (e.code === 'KeyT' && game.mode === 'testing') ui.cycle.click();
   if (e.code === 'KeyH') ui.shadows.click();
   if (e.code === 'KeyR' && game.mode === 'testing') ui.rays.click(); // (R drops things, playing)
   if (e.code === 'KeyN') ui.night.click();
@@ -2324,6 +2333,17 @@ function tick(now) {
   torches.update(worldNow, camera.position, caveGlowLights.length ? [...gameLights, ...caveGlowLights] : gameLights);
   updateCaveLife(now / 1000, sheltered ? camera.position : null);
   // The spiders in the dark, round you when you're down in the caves.
+  // The landmarks near you (found, the first time you come to one), and the old mines' timbers.
+  if (landmarks.generator !== generator) (landmarks.generator = generator), landmarks.built.forEach((b) => scene.remove(b.group)), landmarks.built.clear();
+  landmarks.update(dt, camera.position.x, camera.position.z);
+  game.landmarkHere = sheltered ? null : landmarks.at(camera.position.x, camera.position.z);
+  if (game.landmarkHere && controls.mode === 'walk' && game.mode !== 'creative') game.discoverLandmark(game.landmarkHere);
+  if ((mineWait -= dt) <= 0) {
+    mineWait = 1;
+    mineProps.update(camera.position.x, camera.position.z, generator.caves.field);
+    for (const c of mineProps.chests) if (Math.hypot(c.x - camera.position.x, c.y - camera.position.y, c.z - camera.position.z) < 30) game.ruinChest(c);
+    if (sheltered) for (const m of generator.caves.field.minesNear(camera.position.x, camera.position.z, camera.position.x, camera.position.z)) if (generator.caves.field.mineAt(m, camera.position.x, camera.position.y - 1, camera.position.z) < 0) game.inMine(m.id);
+  }
   spiders.update(Math.min(dt, 0.1), {
     eye: camera.position, under: caveFocus.under && controls.mode === 'walk', caves: generator.caves, terrain: (x, z) => chunks.groundHeightAt(x, z),
     hurt: (d) => game.hurt(d, 'a cave spider'), poison: () => game.survival.poison(25), fear: game.fearLights(),
@@ -2487,7 +2507,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

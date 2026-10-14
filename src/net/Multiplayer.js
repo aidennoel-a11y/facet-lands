@@ -18,6 +18,9 @@ const FLAG = { crouch: 1, sprint: 2, swim: 4, fly: 8 };
 // is (bits 8-15: its place in the list of items, 0 nothing) and how far a
 // bow's drawn (bits 16-19, 0..15).)
 const ACTS = [null, 'chop', 'throw', 'thrust', 'cast', 'kick', 'use', 'loose'];
+// (And, bits 24-26, an emote (one of EMOTES), bit 27 flipping with each new one.)
+export const EMOTES = [null, 'wave', 'cheer', 'point', 'bow', 'sit', 'shrug'];
+const EMOTE_TIME = { wave: 2.4, cheer: 1.8, point: 2.4, bow: 1.6, sit: Infinity, shrug: 1.3 };
 const ACT_TIME = { chop: 0.62, throw: 0.5, thrust: 0.4, cast: 0.5, kick: 0.3, use: 0.35, loose: 0.25 };
 // (A hand's frame, as Game holds things in yours: forward -z, up +y; on an
 // arm, when it's held out in front, its forward is down the arm, its up is
@@ -58,6 +61,7 @@ export function packFlags(me, items) {
     const act = Math.max(0, ACTS.indexOf(p.act));
     flags |= (act << 4) | ((p.n & 1) << 7) | ((items.ids.indexOf(p.held) + 1) << 8) | (Math.round(p.draw * 15) << 20);
   }
+  if (p?.emote) flags |= (Math.max(0, EMOTES.indexOf(p.emote.kind)) << 24) | ((p.emote.n & 1) << 27);
   return flags;
 }
 
@@ -143,6 +147,63 @@ export class Remote {
     this.head.rotation.x = Math.max(-0.8, Math.min(0.8, -pitch - this.body.rotation.x * (swim ? 0.9 : 0.5)));
     this.tag.position.y = crouch ? 1.75 : swim ? 1.0 : 2.15;
     this.#hands(dt, flags, pitch, swim, items);
+    this.#emote(dt, flags, speed, swim);
+  }
+
+  // A wave, a cheer, pointing, a bow, sitting down, a shrug (see EMOTES):
+  // played through once (sitting: till they get up and move).
+  #emote(dt, flags, speed, swim) {
+    const key = (flags >> 24) & 15, kind = EMOTES[key & 7];
+    if (key !== this.emoteKey) {
+      this.emoteKey = key;
+      this.emote = kind ? { kind, t: 0 } : null;
+    }
+    const em = this.emote;
+    if (!em) return;
+    em.t += dt;
+    if (swim || (speed > 0.6 && em.t > 0.3) || em.t > EMOTE_TIME[em.kind]) return (this.emote = null);
+    const [left, right] = this.arms, u = em.t;
+    const ease = Math.min(1, u / 0.25, (EMOTE_TIME[em.kind] - u) / 0.3);
+    switch (em.kind) {
+      case 'wave':
+        // The right arm up, the hand waving side to side.
+        right.rotation.x = -2.7 * ease;
+        right.rotation.z = (-0.35 + 0.45 * Math.sin(u * 11)) * ease;
+        break;
+      case 'cheer':
+        // Both arms flung up, a little hop.
+        left.rotation.x = right.rotation.x = -2.9 * ease;
+        left.rotation.z = -0.35 * ease;
+        right.rotation.z = 0.35 * ease;
+        this.body.position.y += Math.max(0, Math.sin(u * 9)) * 0.12 * ease;
+        break;
+      case 'point':
+        // The right arm out straight at where they're looking.
+        right.rotation.x = (-Math.PI / 2 + 0.1) * ease;
+        break;
+      case 'bow':
+        // A bow from the waist, the right hand to the chest.
+        this.body.rotation.x += 0.75 * Math.sin(Math.min(1, u / 1.6) * Math.PI);
+        right.rotation.x = -0.9 * ease;
+        right.rotation.z = 0.6 * ease;
+        break;
+      case 'sit': {
+        // Sat down on the ground, legs out in front, hands back.
+        const d = Math.min(1, u / 0.6);
+        this.body.position.y = 0.92 - 0.55 * d;
+        this.legs[0].rotation.x = this.legs[1].rotation.x = -1.5 * d;
+        left.rotation.x = right.rotation.x = 0.5 * d;
+        this.tag.position.y = 2.15 - 0.55 * d;
+        break;
+      }
+      case 'shrug':
+        // Shoulders up, hands out, palms up.
+        left.rotation.x = right.rotation.x = -0.5 * ease;
+        left.rotation.z = -0.55 * ease;
+        right.rotation.z = 0.55 * ease;
+        left.position.y = right.position.y = 0.46 + 0.06 * Math.sin(Math.min(1, u / 1.3) * Math.PI);
+        break;
+    }
   }
 
   // What's in their hand, and what they're doing with it: swinging an axe,
@@ -215,7 +276,7 @@ export class Remote {
  * VERSION): raised whenever that changes, so a game and a server, or two
  * players, that don't match say so instead of quietly not sharing things.
  */
-export const VERSION = 4;
+export const VERSION = 5;
 
 /** The game's own server, online for everyone (see server/README.md: it runs on Render). */
 export const DEFAULT_SERVER = 'wss://facet-lands-server.onrender.com';

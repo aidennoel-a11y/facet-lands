@@ -21,13 +21,13 @@ import { Torches } from '../items/Torches.js';
 const EDIT_EVERY = 0.5;
 const SKY_EVERY = 2;
 const WILD_EVERY = 1 / 5;
-const SETS = ['felled', 'taken', 'mushrooms', 'broken'];
+const SETS = ['felled', 'taken', 'mushrooms', 'broken', 'landmarks'];
 const MAPS = ['stumps', 'structures', 'torches', 'drops'];
 
 // A structure's record, without what changes by the second (a fire's fuel
 // burning down, a crop growing), to tell when it's really been changed.
 function structureSign(rec) {
-  return JSON.stringify({ ...rec, fuel: Math.round(rec.fuel / 30), growth: Math.round((rec.growth ?? 0) * 10), watered: !!rec.watered, jobs: rec.jobs?.map((j) => [j.stack?.id, j.out?.id, j.done]) });
+  return JSON.stringify({ ...rec, fuel: Math.round(rec.fuel / 30), growth: Math.round((rec.growth ?? 0) * 10), watered: !!rec.watered, jobs: rec.jobs?.map((j) => [j.stack?.id, j.out?.id, j.done]), data: rec.data && { ...rec.data, honey: Math.floor(rec.data.honey ?? 0), wax: Math.floor(rec.data.wax ?? 0), wait: Math.round((rec.data.wait ?? 0) / 300), starving: undefined } });
 }
 
 export class WorldSync {
@@ -75,7 +75,7 @@ export class WorldSync {
   #now() {
     const g = this.game;
     const now = {
-      felled: this.trees.removed, taken: g.items.taken, mushrooms: this.mushrooms?.taken ?? new Set(), broken: g.rocks?.removed ?? new Set(),
+      felled: this.trees.removed, taken: g.items.taken, mushrooms: this.mushrooms?.taken ?? new Set(), broken: g.rocks?.removed ?? new Set(), landmarks: g.landmarksFound ?? new Set(),
       stumps: new Map(), structures: new Map(), torches: new Map(), drops: new Map(),
     };
     for (const st of g.felling.stumpsJSON()) now.stumps.set(st.key, [{ k: st.key, ...st }, st.key]);
@@ -121,6 +121,7 @@ export class WorldSync {
     for (const key of e.add?.taken ?? []) (this.sent.taken.add(key), g.items.takeKey(key));
     for (const key of e.add?.mushrooms ?? []) (this.sent.mushrooms.add(key), this.mushrooms?.takeKey(key));
     for (const key of e.add?.broken ?? []) (this.sent.broken.add(key), g.rocks?.removeKey(key));
+    for (const key of e.add?.landmarks ?? []) (this.sent.landmarks.add(key), g.landmarkShared?.(key)); // (found by someone else: on your map too)
     for (const st of e.put?.stumps ?? []) (this.sent.stumps.set(st.k, st.k), g.felling.addStump(st));
     for (const rec of e.put?.structures ?? []) (this.sent.structures.set(rec.k, structureSign(rec)), g.structures.apply(rec));
     for (const key of e.del?.structures ?? []) (this.sent.structures.delete(key), g.structures.removeKey(key));

@@ -11,6 +11,7 @@ import { Survival } from './Survival.js';
 import { TreeFinds } from './TreeFinds.js';
 import { Progress, SKILLS } from './Progress.js';
 import { EQUINE, Wildlife } from '../wildlife/Wildlife.js';
+import { LANDMARKS, LANDMARK_KINDS } from '../world/landmarkSites.js';
 
 /** Your longest survival life yet, in days (kept in this browser): records `days`, returns the longest. */
 export function recordRun(days) {
@@ -233,6 +234,8 @@ export class Game {
     this.ruinChests = new Set(saved?.ruins?.chests ?? []);
     this.ruinsSeen = new Set(saved?.ruins?.seen ?? []);
     this.explored = new Set(saved?.explored ?? []);
+    this.landmarksFound = new Set(saved?.landmarks?.found ?? []); // (the landmarks' keys: found, by you or, online, another)
+    this.landmarkHints = new Set(saved?.landmarks?.hints ?? []); // (those the standing stones showed you)
     this.keep = { open: false, won: false, clues: 0, mark: null, ...(saved?.keep ?? {}) };
     this.onKeep?.(this.keep.open);
     this.waypoint = saved?.ruins?.waypoint ?? null;
@@ -281,6 +284,7 @@ export class Game {
       shrooms: this.shrooms ? [...this.shrooms.cut] : [],
       ruins: { chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
       explored: [...this.explored],
+      landmarks: { found: [...this.landmarksFound], hints: [...this.landmarkHints] },
       keep: this.keep,
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), record: this.record.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
@@ -327,12 +331,24 @@ export class Game {
       // Q: pick up, or use what you're pointing at; R: drop what's in your hand.
       if (e.code === 'KeyQ' && !this.hud.busy) this.interact(null, e.shiftKey);
       if (e.code === 'KeyR' && !this.hud.busy) this.drop(e.shiftKey);
+      // G: a wave; T: the emotes to pick from.
+      if (e.code === 'KeyG' && !this.hud.busy && this.mode !== 'testing') this.emote('wave');
+      if (e.code === 'KeyT' && this.mode !== 'testing') {
+        if (!this.hud.el('.emotes').hidden) (this.hud.closeAll(), this.#menu(false));
+        else if (!this.hud.busy) this.#menu(this.hud.toggleEmotes());
+      }
+      if (!this.hud.el('.emotes').hidden && /^Digit[1-6]$/.test(e.code)) {
+        this.emote(['wave', 'cheer', 'point', 'bow', 'sit', 'shrug'][Number(e.code.slice(5)) - 1]);
+        this.hud.closeAll();
+        this.#menu(false);
+      }
       if (e.code === 'KeyB') {
         if (this.hud.chest) (this.hud.closeAll(), this.#menu(false));
         else if (!this.hud.busy) this.#openBags();
       }
     });
     this.hud.onCraft = (id) => this.craft(id);
+    this.hud.onEmote = (kind) => (this.emote(kind), this.hud.closeAll(), this.#menu(false));
     // The inventory (E): stacks moved and sorted, things put on and taken off.
     this.hud.onInvMove = (a, b) => {
       if (this.inventory.move(a, b)) this.sound?.call('pickup', 0, 0.25);
@@ -2408,7 +2424,7 @@ export class Game {
     this.scene.add(line);
     // (Sooner where there are fish about.)
     const near = (this.fish?.fish ?? []).some((f) => Math.hypot(f.x - at.x, f.z - at.z) < 10);
-    this.line = { ...at, bobber, line, wait: rnd(4, 14) * (near ? 0.5 : 1) * (1 - 0.06 * this.skillLevel('fishing')), bite: 0 };
+    this.line = { ...at, bobber, line, wait: rnd(4, 14) * (near ? 0.5 : 1) * (this.landmarkHere?.kind === 'twinFalls' ? 0.5 : 1) * (1 - 0.06 * this.skillLevel('fishing')), bite: 0 };
     this.sound?.call('whoosh', 0, 0.3);
     this.traces?.splash(at.x, at.level, at.z, 4, 1, 0.4);
   }
@@ -2718,6 +2734,7 @@ export class Game {
     if (this.sleeping) this.#sleepStep(dt);
     this.#coops(dt);
     this.#beeBoxes(dt);
+    this.#hintStep();
     this.treeFinds.update(dt, this.camera, this.config.chunkSize, this.worldDays ?? 0, seasonUniforms.uSeasonTime.value, this.sound, (x, z) => this.panAt?.(x, z) ?? 0);
     this.#fishing(dt, held);
     this.#wind(dt, held);
@@ -2823,6 +2840,8 @@ export class Game {
       e.snowing = false;
       e.heat = cave === 2 ? 2.2 : 0;
     }
+    // (Resting under the Elder Tree's boughs: wounds close fast.)
+    if (this.landmarkHere?.kind === 'elderTree' && e.active && !this.controls.moving && this.survival.bleeding <= 0) this.survival.health = Math.min(100, this.survival.health + dt * 0.8);
     // (In creative there's no hunger, thirst or cold: you stay as you are.)
     if (this.mode !== 'creative') this.survival.update(dt, e);
     this.#progressStep(dt, e);
@@ -3119,7 +3138,14 @@ export class Game {
   pose() {
     const held = this.heldId;
     const draw = this.drawing && BOWS.has(held) ? Math.min(1, (this.time - this.drawing.since) / drawTime(held)) : 0;
-    return { held, act: this.anim?.kind ?? null, n: this.anims ?? 0, draw };
+    return { held, act: this.anim?.kind ?? null, n: this.anims ?? 0, draw, emote: this.emoting };
+  }
+
+  /** An emote (wave, cheer, point, bow, sit, shrug): for the others to see, online (and you, from behind: F3). */
+  emote(kind) {
+    this.emoting = { kind, n: (this.emoting?.n ?? 0) + 1 };
+    const say = { wave: 'You wave', cheer: 'You cheer', point: 'You point', bow: 'You bow', sit: 'You sit down (move to get up)', shrug: 'You shrug' }[kind];
+    if (say) this.hotbar?.flash(say);
   }
 
   /** Where an item sits in a hand (`mesh` of it, in the hand's frame: forward is -z, up +y). */
@@ -3309,6 +3335,113 @@ export class Game {
     return took;
   }
 
+  // --- Landmarks ---------------------------------------------------------------------
+
+  /** A landmark's site from its key ("kind:i,k"), or null. */
+  #landmarkSite(key) {
+    const [kind, cell] = key.split(':'), [i, k] = (cell ?? '').split(',').map(Number);
+    return LANDMARKS[kind] ? this.generator().landmarks.site(kind, i, k) : null;
+  }
+
+  /**
+   * At a landmark for the first time: on your map, an achievement (the
+   * first of its kind), what it holds for whoever finds it (laid out round
+   * you), and what being there does (a stone arch or a spire's view: the
+   * land round about on your map; the standing stones: where the other
+   * landmarks are).
+   */
+  discoverLandmark(site) {
+    if (this.landmarksFound.has(site.key)) return;
+    this.landmarksFound.add(site.key);
+    this.dirty = true;
+    const L = LANDMARKS[site.kind];
+    this.hud.toast(`${L.name}. ${L.what}`);
+    this.sound?.call('craft', 0, 0.5);
+    this.#achieve(`lm_${site.kind}`);
+    const kinds = new Set([...this.landmarksFound].map((k) => k.split(':')[0]));
+    if (LANDMARK_KINDS.every((k) => kinds.has(k))) this.#achieve('landmarks');
+    const GIFTS = {
+      elderTree: [['honey', 3], ['apple', 4]], stoneArch: [['flint', 4]], crystalLake: [['crystal', 4]], twinFalls: [['rawFish', 3]],
+      standingStones: [['oldMap', 1]], sunkenForest: [['iron', 4]], petrifiedLog: [['flint', 6], ['crystal', 1]], boneField: [['arrow', 10], ['oldMap', 1]],
+      glacierCave: [['crystal', 3]], hotPools: [['salt', 5]], eagleSpire: [['feather', 8]], greatSinkhole: [['coal', 4], ['guano', 3]],
+    };
+    const p = this.camera.position, y = p.y - this.controls.eyeHeight + 0.5;
+    (GIFTS[site.kind] ?? []).forEach(([id, n], j) => this.items.drop(Inventory.stack(id, n), p.x + Math.cos(j * 2.1 + 0.5) * 1.6, y, p.z + Math.sin(j * 2.1 + 0.5) * 1.6));
+    // (The view from it: the land for 1.2 km round marked out on your map.)
+    if (site.kind === 'stoneArch' || site.kind === 'eagleSpire') this.#revealAround(site.x, site.z, site.kind === 'eagleSpire' ? 1500 : 1200);
+    if (site.kind === 'standingStones') {
+      // (The nearest of every other kind within 6 km, marked as roughly
+      // where: looked for a square of land at a time, a frame at a time.)
+      const queue = [];
+      for (const kind of LANDMARK_KINDS) {
+        const C = LANDMARKS[kind].cell, R = 6000;
+        for (let k = Math.floor((site.z - R) / C); k <= Math.floor((site.z + R) / C); k++) for (let i = Math.floor((site.x - R) / C); i <= Math.floor((site.x + R) / C); i++) queue.push([kind, i, k]);
+      }
+      this.hinting = { site, queue, best: {} };
+      this.hotbar?.flash('The stones are set to the old places: they will be marked on your map (B)');
+    }
+  }
+
+  // (The standing stones' hints, worked out a square at a time.)
+  #hintStep() {
+    const h = this.hinting;
+    if (!h) return;
+    const g = this.generator().landmarks;
+    for (let n = 0; n < 2 && h.queue.length; n++) {
+      const [kind, i, k] = h.queue.pop(), s = g.site(kind, i, k);
+      if (!s || this.landmarksFound.has(s.key)) continue;
+      const d = Math.hypot(s.x - h.site.x, s.z - h.site.z);
+      if (d < 6000 && (!h.best[kind] || d < h.best[kind].d)) h.best[kind] = { key: s.key, d };
+    }
+    if (h.queue.length) return;
+    for (const b of Object.values(h.best)) this.landmarkHints.add(b.key);
+    this.hinting = null;
+    this.dirty = true;
+    this.hotbar?.flash(`The stones showed you ${Object.keys(h.best).length} places: they're on your map (B)`);
+  }
+
+  /** In an old mine's workings (see MineProps): the first time, a word and an achievement. */
+  inMine(id) {
+    if ((this.minesSeen ??= new Set()).has(id)) return;
+    this.minesSeen.add(id);
+    this.hotbar?.flash('Old mine workings: timbered galleries, rails, an ore cart. Mind the rotten props');
+    this.#achieve('mine');
+  }
+
+  /** Found by someone else, online: on your map too (what it held was theirs to take). */
+  landmarkShared(key) {
+    if (this.landmarksFound.has(key)) return;
+    this.landmarksFound.add(key);
+    this.dirty = true;
+    const site = this.#landmarkSite(key);
+    if (site) this.hotbar?.flash(`Another found ${LANDMARKS[site.kind].name}: it's on your map`);
+  }
+
+  /** The landmarks for the map: those found, and those the stones showed (or, testing, all near). */
+  landmarksForMap(x, z, r) {
+    if (this.mode === 'testing') return this.generator().landmarks.near(x, z, Math.min(r, 2500)).map((s) => ({ ...s, name: LANDMARKS[s.kind].name, found: true }));
+    const out = [];
+    for (const key of this.landmarksFound) {
+      const s = this.#landmarkSite(key);
+      if (s) out.push({ ...s, name: LANDMARKS[s.kind].name, found: true });
+    }
+    for (const key of this.landmarkHints) {
+      if (this.landmarksFound.has(key)) continue;
+      const s = this.#landmarkSite(key);
+      if (s) out.push({ ...s, name: `${LANDMARKS[s.kind].name}?`, found: false });
+    }
+    return out;
+  }
+
+  #revealAround(x, z, r) {
+    const C = this.config.chunkSize ?? 128;
+    this.exploredVersion = (this.exploredVersion ?? 0) + 1;
+    for (let cz = Math.floor((z - r) / C); cz <= Math.floor((z + r) / C); cz++) {
+      for (let cx = Math.floor((x - r) / C); cx <= Math.floor((x + r) / C); cx++) if (Math.hypot((cx + 0.5) * C - x, (cz + 0.5) * C - z) < r) this.explored.add(`${cx},${cz}`);
+    }
+    this.hotbar?.flash('From up here you see the land for a long way round: it\'s on your map (B)');
+  }
+
   /**
    * A chest in a ruin (see RuinLayer): set there, full of what was left,
    * the first time you come near it; there for good after (opened or not).
@@ -3338,6 +3471,28 @@ export class Game {
       roll('pot', 1, 1, 0.3);
       roll('coalTorch', 2, 4, 0.4);
       if (!contents.length) contents.push(Inventory.stack('rope', 3));
+      const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents: contents.slice(0, 10), ruinKey: c.key });
+      s.ruinKey = c.key;
+      this.dirty = true;
+      return;
+    }
+    if (c.mine) {
+      // An old miner's chest at the far end of the workings: his tools, his
+      // ore, his lamp oil long gone.
+      this.#achieve('mine');
+      const contents = [];
+      const roll = (id, lo, hi, chance) => Math.random() < chance && contents.push(Inventory.stack(id, lo + Math.floor(Math.random() * (hi - lo + 1))));
+      roll('steelPickaxe', 1, 1, 0.5);
+      roll('iron', 3, 6, 0.9);
+      roll('coal', 3, 8, 0.8);
+      roll('mountainOre', 2, 4, 0.5);
+      roll('goldOre', 1, 3, 0.35);
+      roll('coalTorch', 3, 6, 0.7);
+      roll('rope', 2, 4, 0.6);
+      roll('climbingPicks', 1, 1, 0.25);
+      roll('lantern', 1, 1, 0.3);
+      roll('crystal', 1, 3, 0.3);
+      if (!contents.length) contents.push(Inventory.stack('iron', 4));
       const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents: contents.slice(0, 10), ruinKey: c.key });
       s.ruinKey = c.key;
       this.dirty = true;

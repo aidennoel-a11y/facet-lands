@@ -36,6 +36,8 @@ import { hash2, mulberry32 } from '../../noise/random.js';
  *    there down into the network (see #makeEntrance and EntranceLayer).
  */
 export class CaveField {
+  static MINE_HW = 2.5; // a mine gallery's half-width (m)
+  static MINE_HT = 4.4; // ...and its height
   constructor(generator, { seaLevel, chunkSize }) {
     this.generator = generator;
     this.seaLevel = seaLevel;
@@ -79,12 +81,15 @@ export class CaveField {
    * in when evaluating many points in one column).
    */
   caves(x, y, z, H, regionRock, column = null, entrances = null) {
-    const d = this.legacy(x, y, z, H, regionRock);
+    let d = this.legacy(x, y, z, H, regionRock);
+    const ents = entrances ?? this.entrancesNear(x, z, x, z);
+    // (The old mine workings behind some of the entrances: see #layMine.)
+    for (const e of ents) if (e.mine) d = Math.min(d, this.mineAt(e.mine, x, y, z));
     if (d < -2) return d;
     const col = column ?? this.column(x, z, H);
     if (this.deepRock(col) > 10) return d;
     // (Clear of the entrances: their ways down stay as they were laid out.)
-    for (const e of entrances ?? this.entrancesNear(x, z, x, z)) {
+    for (const e of ents) {
       const b = e.bounds;
       if (x < b.minX - 8 || x > b.maxX + 8 || z < b.minZ - 8 || z > b.maxZ + 8) continue;
       if (CaveField.ramp(e, x, y, z) < 8 || CaveField.hull(e, x, y, z) < 8) return d;
@@ -374,9 +379,100 @@ export class CaveField {
     let e = this.entrances.get(key);
     if (e === undefined) {
       e = this.#makeEntrance(rx, rz);
+      if (e) {
+        e.mine = this.#layMine(e, rx, rz);
+        // (Its bounds take in the workings, so whatever looks for the
+        // entrances near a place finds the mine there too.)
+        if (e.mine) {
+          const b = e.bounds, m = e.mine.bounds;
+          e.bounds = { minX: Math.min(b.minX, m.minX), maxX: Math.max(b.maxX, m.maxX), minZ: Math.min(b.minZ, m.minZ), maxZ: Math.max(b.maxZ, m.maxZ) };
+        }
+      }
       this.entrances.set(key, e);
     }
     return e;
+  }
+
+  /**
+   * An abandoned mine behind a cave entrance in the hills: an old adit
+   * driven straight on into the rock from just inside the mouth, level, its
+   * galleries 5 m wide and 4.4 m high (timbered: see MineProps); a few side
+   * drifts off it after the ore; and at its end an incline down to a lower
+   * level and a last gallery there. Every bit of it kept under rock. Null
+   * if this entrance is no mine. { segments: [{ ax, az, ay, bx, bz, by }],
+   * bounds, end (the far end of the lowest level: its chest), cart }
+   */
+  #layMine(e, rx, rz) {
+    const g = this.generator;
+    const rand = mulberry32(hash2(rx, rz, this.seed + 777) * 4294967296);
+    const s0 = e.start, w = g.getBiomeWeights(s0.x, s0.z, {});
+    const hills = g.getMountainness(s0.x, s0.z) > 0.15 || (w.badlands ?? 0) > 0.4 || (w.blackHills ?? 0) > 0.4 || (w.smoky ?? 0) > 0.4;
+    if (rand() > (hills ? 0.4 : 0.06)) return null;
+    const HW = CaveField.MINE_HW, HT = CaveField.MINE_HT;
+    const covered = (x, z, floor) => g.getHeight(x, z) - (floor + HT) > 3.5;
+    const segments = [];
+    // A gallery: on from (x, z) at `floor` the way `yaw` faces, `len` m at
+    // most, `drop` m down by its end, stopping short where the rock over it
+    // gets thin. Returns its end, or null.
+    const drive = (x, z, floor, yaw, len, drop = 0) => {
+      const dx = Math.cos(yaw), dz = Math.sin(yaw);
+      let u = 0;
+      for (let t = 5; t <= len; t += 5) {
+        const fy = floor - (drop * t) / len;
+        if (!covered(x + dx * t, z + dz * t, fy) || fy < this.bottom + 3) break;
+        u = t;
+      }
+      if (u < 10) return null;
+      const end = { x: x + dx * u, z: z + dz * u, y: floor - (drop * u) / len };
+      segments.push({ ax: x, az: z, ay: floor, bx: end.x, bz: end.z, by: end.y });
+      return end;
+    };
+    const yaw0 = Math.atan2(e.shape.dz, e.shape.dx) + (rand() - 0.5) * 0.4;
+    const floor0 = s0.y - 2.3;
+    const main = drive(s0.x, s0.z, floor0, yaw0, 70 + rand() * 90);
+    if (!main) return null;
+    const mainLen = Math.hypot(main.x - s0.x, main.z - s0.z);
+    // Side drifts, off one side and the other, after a vein.
+    const drifts = 2 + Math.floor(rand() * 3);
+    for (let k = 0; k < drifts; k++) {
+      const t = 0.25 + (0.7 * (k + rand() * 0.6)) / drifts;
+      const side = rand() < 0.5 ? -1 : 1;
+      drive(s0.x + Math.cos(yaw0) * mainLen * t, s0.z + Math.sin(yaw0) * mainLen * t, floor0, yaw0 + side * (Math.PI / 2 + (rand() - 0.5) * 0.5), 18 + rand() * 32);
+    }
+    // The incline down from the end, and the lower level.
+    let end = main;
+    const turn = yaw0 + (rand() - 0.5) * 1.2;
+    const low = drive(main.x, main.z, main.y, turn, 28, 9);
+    if (low) {
+      const deep = drive(low.x, low.z, low.y, turn + (rand() - 0.5) * 1.6, 30 + rand() * 40);
+      end = deep ?? low;
+    }
+    const xs = segments.flatMap((q) => [q.ax, q.bx]), zs = segments.flatMap((q) => [q.az, q.bz]);
+    const pad = HW + 3;
+    const along = 0.3 + rand() * 0.5, cartSeg = segments[0];
+    return {
+      id: e.id, segments, end, yaw: yaw0,
+      cart: { x: cartSeg.ax + (cartSeg.bx - cartSeg.ax) * along, z: cartSeg.az + (cartSeg.bz - cartSeg.az) * along, y: cartSeg.ay + (cartSeg.by - cartSeg.ay) * along },
+      bounds: { minX: Math.min(...xs) - pad, maxX: Math.max(...xs) + pad, minZ: Math.min(...zs) - pad, maxZ: Math.max(...zs) + pad },
+    };
+  }
+
+  /** How far (x, y, z) is inside (negative) or out of a mine's workings. */
+  mineAt(m, x, y, z) {
+    const b = m.bounds;
+    if (x < b.minX - 4 || x > b.maxX + 4 || z < b.minZ - 4 || z > b.maxZ + 4) return 50;
+    const HW = CaveField.MINE_HW, HT = CaveField.MINE_HT;
+    let d = 50;
+    for (const q of m.segments) {
+      const ex = q.bx - q.ax, ez = q.bz - q.az, len = Math.hypot(ex, ez);
+      const px = x - q.ax, pz = z - q.az;
+      const u = (px * ex + pz * ez) / len, v = (pz * ex - px * ez) / len;
+      if (u < -HW - 4 || u > len + HW + 4 || Math.abs(v) > HW + 4) continue;
+      const fy = q.ay + (q.by - q.ay) * Math.min(1, Math.max(0, u / len));
+      d = Math.min(d, Math.max(Math.abs(v) - HW, fy - y, y - (fy + HT), -u - HW * 0.6, u - len - HW * 0.6));
+    }
+    // (Hewn by hand: the walls a little rough.)
+    return d < 3 ? d + this.chamberWall.noise3D(x / 4, y / 4, z / 4) * 0.3 : d;
   }
 
   /**
@@ -579,10 +675,15 @@ export class CaveField {
     return null;
   }
 
+  /** The mines near a box (for their timbers, rails and chests: see MineProps). */
+  minesNear(minX, minZ, maxX, maxZ) {
+    return this.entrancesNear(minX, minZ, maxX, maxZ).filter((e) => e.mine).map((e) => e.mine);
+  }
+
   /** Entrances whose built part or winding tunnel comes near a box. */
   entrancesNear(minX, minZ, maxX, maxZ) {
     const R = this.entranceRegion;
-    const reach = 100;
+    const reach = 300; // (a mine's workings reach a long way in)
     const out = [];
     for (let rz = Math.floor((minZ - reach) / R); rz <= Math.floor((maxZ + reach) / R); rz++) {
       for (let rx = Math.floor((minX - reach) / R); rx <= Math.floor((maxX + reach) / R); rx++) {

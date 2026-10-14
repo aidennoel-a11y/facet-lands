@@ -539,6 +539,46 @@ kbd {
 /* Crafting, and a chest. */
 .craft,
 .inv-ui,
+.emotes {
+  position: fixed;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 2 * var(--gutter)));
+  box-sizing: border-box;
+  padding: 12px 16px;
+  color: #fff;
+  background: rgba(29, 39, 51, 0.9);
+  border-radius: 14px;
+  z-index: 30;
+  text-align: center;
+}
+.emotes h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.emote-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.emote-row button {
+  font: inherit;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.emote-row button:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+.emote-row b {
+  margin-right: 6px;
+  opacity: 0.6;
+}
 .ask-ui {
   position: fixed;
   left: 50%;

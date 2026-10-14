@@ -4,6 +4,7 @@ import { BIOME_IDS, BIOMES, blendedFaceColor, prepareBiome } from './biomes.js';
 import { CaveSystem } from './caves/CaveSystem.js';
 import { Rivers } from './Rivers.js';
 import { BigRivers } from './BigRivers.js';
+import { LandmarkSites } from './landmarkSites.js';
 import { Color } from 'three';
 
 const RIVERBED = new Color(0x55493b);
@@ -212,6 +213,7 @@ export class TerrainGenerator {
     this.footprint = 0; // metres between the points of the mesh being built (see ChunkMesher)
     this.bigRivers = new BigRivers(this, config);
     this.rivers = new Rivers(this, config);
+    this.landmarks = new LandmarkSites(this); // (the twelve kinds of landmark, and the hollows some of them are)
     this.caves = new CaveSystem(this, config);
   }
 
@@ -1035,7 +1037,8 @@ export class TerrainGenerator {
     const fp = this.footprint;
     this.footprint = 0;
     try {
-      return this.rivers.carve(x, z, base, rough);
+      // (Let down where a landmark's a hollow: the great sinkhole, a lake's bowl.)
+      return this.rivers.carve(x, z, base, rough) - this.landmarks.basinAt(x, z);
     } finally {
       this.footprint = fp;
     }
