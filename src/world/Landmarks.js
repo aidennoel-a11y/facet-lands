@@ -106,6 +106,21 @@ export class Landmarks {
     return { level: this.generator.landmarks.levelOf(site), r: b.r * 1.02 };
   }
 
+  // (A soft round puff, for steam, mist and spray.)
+  #puff() {
+    return (this.puffTex ??= (() => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const x = c.getContext('2d'), gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(255,255,255,0.9)');
+      gr.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = gr;
+      x.fillRect(0, 0, 64, 64);
+      return new CanvasTexture(c);
+    })());
+  }
+
   #disc(group, r, level, mat, x = 0, z = 0) {
     const m = new Mesh(new CircleGeometry(r, 40).rotateX(-Math.PI / 2), mat);
     m.position.set(x, level, z);
@@ -359,7 +374,7 @@ export class Landmarks {
         const stone = (x, z, h, w, lean, spin) => {
           const y = gy(x, z);
           const geo = jitter(new CylinderGeometry(w * 0.32, w * 0.5, h, 5, 3), 0.12, site.seed + Math.round(x * 7 + z * 13));
-          k.add(geo, pick(grey), [x, y + h / 2 - 0.5, z], [lean, spin, r(-0.06, 0.06)], [1, 1, 0.65]);
+          k.add(geo, pick(grey), [x, y + h / 2 - 0.5, z], [lean, spin, r(-0.06, 0.06)], [1, 1, 0.75]);
           for (let j = 0; j < 4; j++) k.add(new CircleGeometry(r(0.15, 0.35), 6), pick(lichen), [x + Math.cos(spin) * w * 0.33, y + r(0.4, h - 1), z - Math.sin(spin) * w * 0.33], [0, spin + Math.PI / 2, 0]);
           solid(x, z, w * 0.45, y + h);
         };
@@ -373,7 +388,7 @@ export class Landmarks {
             k.add(jitter(new CylinderGeometry(0.4, 0.5, 1.8, 5, 2), 0.1, 4), grey[2], [x + Math.cos(a + 1.9) * 2.3, y + 0.25, z + Math.sin(a + 1.9) * 2.3], [Math.PI / 2, 0, a + 0.1]);
             continue;
           }
-          stone(x, z, r(3.6, 5.2), r(1.4, 1.9), r(-0.08, 0.08), -a + Math.PI / 2);
+          stone(x, z, r(3.6, 5.2), r(1.8, 2.4), r(-0.08, 0.08), -a + Math.PI / 2);
         }
         // The trilithon.
         const ta = (4.5 / 13) * Math.PI * 2, tx = Math.cos(ta) * 11, tz = Math.sin(ta) * 11;
@@ -385,11 +400,7 @@ export class Landmarks {
         for (const s2 of [-1, 1]) k.add(jitter(new BoxGeometry(0.8, 0.9, 0.8), 0.06, 11 + s2), grey[3], [s2 * 1.1, y0 + 0.35, 0]);
         k.add(jitter(new BoxGeometry(3.4, 0.4, 1.6), 0.06, 13), grey[2], [0, y0 + 0.95, 0], [0, 0.3, 0]);
         solid(0, 0, 1.6, y0 + 1.15);
-        // The worn ring of the turf, and a cairn outside it.
-        for (let i = 0; i < 40; i++) {
-          const a = (i / 40) * Math.PI * 2, x = Math.cos(a) * 13.5, z = Math.sin(a) * 13.5;
-          k.add(new CircleGeometry(1.3, 6), 0x8a7a54, [x, gy(x, z) + 0.05, z], [-Math.PI / 2, 0, 0], [1, 1, 1], 0.2);
-        }
+        // A cairn outside the ring.
         const [cx, cy, cz] = at(19, 5);
         for (let i = 0; i < 9; i++) blob(k, pick(grey), [cx + r(-0.6, 0.6), cy + 0.3 + Math.floor(i / 3) * 0.55, cz + r(-0.6, 0.6)], 0.5 - Math.floor(i / 3) * 0.1, [1, 0.6, 1], 0.2);
         tufts(30, 22, [0x6a8a3a, 0x8a9a4a, 0x7a9440]);
@@ -616,7 +627,7 @@ export class Landmarks {
         // Snow lying round about.
         for (let i = 0; i < 26; i++) {
           const a = r(0, Math.PI * 2), d = r(9, 20), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          k.add(new CircleGeometry(r(1.2, 3), 7), snow, [x, gy(x, z) + 0.06, z], [-Math.PI / 2, 0, 0], [1, 1, 1], 0.04);
+          blob(k, snow, [x, gy(x, z) - 0.1, z], r(1.2, 3), [1, 0.1, 1], 0.05);
         }
         break;
       }
@@ -651,10 +662,10 @@ export class Landmarks {
           // (Its overflow, a sheet of stain down the front of its rim.)
           k.add(new BoxGeometry(2, Math.max(0.5, level - ty + 0.4), 0.15), pick(stain), [tx + local(-rad, 0)[0], (level + ty) / 2 - 0.2, tz + local(-rad, 0)[1]], [0, -site.rot + Math.PI / 2, 0]);
         }
-        // Mineral crust all round.
+        // Mineral crust all round, lying on the ground's own slope.
         for (let i = 0; i < 40; i++) {
           const a = r(0, Math.PI * 2), d = r(B * 1.05, B * 2.2), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          k.add(new CircleGeometry(r(1, 2.6), 7), pick([...white, ...stain]), [x, gy(x, z) + 0.05, z], [-Math.PI / 2, 0, 0], [1, 1, 1], 0.1);
+          blob(k, pick([...white, ...stain]), [x, gy(x, z) - 0.1, z], r(1, 2.4), [1, 0.12, 1], 0.1);
         }
         steam = { r: B * 0.85, level: lake.level };
         break;
@@ -777,7 +788,7 @@ export class Landmarks {
         return t;
       })();
       this.fallsMat ??= new MeshBasicMaterial({ map: tex, color: 0xeef8ff, transparent: true, opacity: 0.9, depthWrite: false, side: DoubleSide });
-      this.sprayMat ??= new SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false });
+      this.sprayMat ??= new SpriteMaterial({ map: this.#puff(), color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false });
       for (const f of falls) {
         const h = f.top - f.bottom;
         const m = new Mesh(new PlaneGeometry(f.width ?? 3.4, h), this.fallsMat);
@@ -796,8 +807,8 @@ export class Landmarks {
       }
     }
     if (steam) {
-      this.steamMat ??= new SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false, blending: AdditiveBlending });
-      this.mistMat ??= new SpriteMaterial({ color: 0xd8e0e0, transparent: true, opacity: 0.14, depthWrite: false });
+      this.steamMat ??= new SpriteMaterial({ map: this.#puff(), color: 0xffffff, transparent: true, opacity: 0.3, depthWrite: false, blending: AdditiveBlending });
+      this.mistMat ??= new SpriteMaterial({ map: this.#puff(), color: 0xd8e0e0, transparent: true, opacity: 0.22, depthWrite: false });
       steam.puffs = [];
       for (let i = 0; i < (steam.mist ? 16 : 12); i++) {
         const sp = new Sprite(steam.mist ? this.mistMat : this.steamMat);
