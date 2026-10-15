@@ -323,7 +323,7 @@ function fallsSpray(generator, drops, x0, z0) {
     const t = Math.sqrt((2 * Math.min(fall, 4)) / 9.8);
     for (let k = 0; k < 12 + d.w * 3; k++) {
       const u = (rand() - 0.5) * d.w;
-      starts.push(d.x - x0 + px * u, d.top + 0.1, d.z - z0 + pz * u);
+      starts.push(d.x - x0 + px * u + d.dx * (d.ledge ?? 0), d.top + 0.1, d.z - z0 + pz * u + d.dz * (d.ledge ?? 0)); // (from the shelf's end, if it has one)
       const v = 1 + rand() * 1.4;
       velocities.push(d.dx * v, rand() * 0.3, d.dz * v);
       lives.push(t, rand(), 0.2 + rand() * 0.25);

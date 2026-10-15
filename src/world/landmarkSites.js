@@ -50,7 +50,7 @@ export const LANDMARKS = {
   // into a pool at the cliff's foot, and that pool on over the next cliff
   // into the next, and so on down; a big lake at the top spilling over
   // two edges. One to a square or so, all over the Cascades: see fallsPools.)
-  falls: { name: 'Falls', cell: 200, hidden: true, falls: true, chance: 0.9, tries: 3, needs: { forest: false },
+  falls: { name: 'Falls', cell: 170, hidden: true, falls: true, chance: 1, tries: 6, needs: { forest: false },
     what: '', fits: (w) => (w.cascades ?? 0) > 0.75 },
 };
 export const LANDMARK_KINDS = Object.keys(LANDMARKS);
@@ -212,8 +212,8 @@ export class LandmarkSites {
     const R = () => (st = (Math.imul(st, 1664525) + 1013904223) >>> 0) / 4294967296;
     const pools = this.#probe((H) => {
       // (From where it was put, or failing that a few spots round about.)
-      for (let t = 0; t < 9; t++) {
-        const ox = t ? (R() - 0.5) * 180 : 0, oz = t ? (R() - 0.5) * 180 : 0;
+      for (let t = 0; t < 24; t++) {
+        const ox = t ? (R() - 0.5) * 190 : 0, oz = t ? (R() - 0.5) * 190 : 0;
         const pools = this.#fallsFrom(H, s, s.x + ox, s.z + oz, R);
         if (pools.length) return pools;
         s.runs = [];
@@ -275,7 +275,7 @@ export class LandmarkSites {
     if (!foot) return null;
     const wide = () => 4 + R() * 8; // (how wide each fall is)
     const lips = [{ ...edge, foot, w: wide() }];
-    const offs = [8, 12, 16, 20, 25, 30, -8, -12, -16, -20, -25, -30];
+    const offs = [6, 9, 12, 15, 18, 22, 26, 30, 35, -6, -9, -12, -15, -18, -22, -26, -30, -35];
     for (let i = offs.length - 1; i > 0; i--) {
       const j = Math.floor(R() * (i + 1));
       [offs[i], offs[j]] = [offs[j], offs[i]];
@@ -316,7 +316,7 @@ export class LandmarkSites {
       }
       // (Big: some 15 to 26 m across the short way, its back reaching in
       // under the cliff's foot no further than the face goes.)
-      const b = (15 + R() * 11) * (shrink ?? 1), back = Math.min(...lips.map((l) => Math.max(0, l.foot.t - 0.4))); // (right in to the cliff's face below the lips)
+      const b = (21 + R() * 15) * (shrink ?? 1), back = Math.min(...lips.map((l) => Math.max(0, l.foot.t - 0.4))); // (right in to the cliff's face below the lips)
       const a = Math.max(b * 1.2, (hi - lo) / 2 + b * 1.1, (hi - lo) / 2 + Math.max(...lips.map((l) => l.w)) * 0.75 + 2), st = a / b, mid = (lo + hi) / 2;
       const x = fx + ux * mid + dx * (b - back), z = fz + uz * mid + dz * (b - back);
       let ok = true;
@@ -365,7 +365,7 @@ export class LandmarkSites {
       let mx = 0, mz = 0, dx = 0, dz = 0;
       for (const l of lips) (mx += l.x / lips.length), (mz += l.z / lips.length), (dx += l.dx), (dz += l.dz);
       const dl = Math.hypot(dx, dz) || 1;
-      const rl = Math.min(26, Math.max(12 + R() * 6, Math.max(...lips.map((l) => Math.hypot(l.x - mx, l.z - mz) + l.w / 2)) * 0.9));
+      const rl = Math.min(32, Math.max(15 + R() * 8, Math.max(...lips.map((l) => Math.hypot(l.x - mx, l.z - mz) + l.w / 2)) * 0.9));
       const lake = pond(mx - (dx / dl) * (rl + 6), mz - (dz / dl) * (rl + 6), rl);
       if (lake) for (const lip of lips) if (this.#pour(H, s, lake, lip, basin, R, false)) made++;
       if (made) return made;
@@ -373,7 +373,7 @@ export class LandmarkSites {
     }
     for (const lip of lips) {
       const near = pools.find((p) => p.source && Math.abs(p.level - lip.top) < 4 && Math.hypot(p.x - lip.x, p.z - lip.z) < p.r + 22);
-      const r = Math.max(9 + R() * 6, lip.w * 0.9);
+      const r = Math.max(11 + R() * 8, lip.w * 0.9);
       const p = near ?? pond(lip.x - lip.dx * (r + 4), lip.z - lip.dz * (r + 4), r);
       if (!p) continue;
       if (this.#pour(H, s, p, lip, basin, R, false)) made++;
@@ -392,51 +392,38 @@ export class LandmarkSites {
     if (level - to.level < 5) return false;
     const face = [];
     for (let t = 0; t <= 40; t += 0.5) face.push(H(edge.x + dx * t, edge.z + dz * t));
-    // The fall: from the lip, out over the rock (as far as the water's
-    // thrown, or the rock juts), down into the pool.
-    // (Out no further than the cliff's foot, where the pool is dug: the
-    // land as it was, before the pool, stands above its water there.)
-    let footQ = face.findIndex((h) => h < to.level + 2.5);
-    if (footQ < 0) footQ = face.length - 1;
-    const prof = [];
-    let out = 0;
-    for (let i = 0; i <= 16; i++) {
-      const v = i / 16, y = level - v * (level - to.level);
-      let t = 0.3 + 1.6 * Math.sqrt(v);
-      let q = 0;
-      while (q < footQ && face[q] >= y - 0.5) q++;
-      t = Math.max(t, q * 0.5 + 0.8);
-      out = Math.max(out, t);
-      prof.push([out, y]);
+    // The fall: from the lip, thrown out a little in a short arc, straight
+    // down into the pool. It must fall clear of the rock all the way (the
+    // face as it'll be, the pool dug in under it) and come down in the
+    // pool; if it can't, now and then (one fall in four or so) the lip
+    // runs out over the water on a shelf, up to 6 m, and it leaps from the
+    // end of that; otherwise there's no fall here. Never bent out or
+    // carried along a bench to meet the water.
+    for (let q = 0; q < face.length; q++) {
+      const fx = edge.x + dx * q * 0.5, fz = edge.z + dz * q * 0.5;
+      if (LandmarkSites.ell(to, fx, fz)[0] < to.r * 0.95) face[q] = Math.min(face[q], to.level - 0.5);
     }
-    // (Where the face slopes out below the lip, or the pool lies further
-    // out, the lip itself juts out over the water on a shelf of rock, and
-    // the fall leaps from its end, straight down into the pool: never
-    // bent out to meet it.)
-    // (A shelf now and then, about one fall in four; the rest pour down the
-    // face, thrown out a little at the foot at most, or aren't made.)
-    let need = 0;
-    while (need < 10 && LandmarkSites.ell(to, edge.x + dx * (out + need), edge.z + dz * (out + need))[0] > to.r * 0.7) need += 0.5;
-    const shelf = R() < 0.25;
-    const ledge = shelf && out + need > 2.5 ? out + need - 0.6 : 0;
-    if (!ledge && need > 0) {
-      const extra = Math.min(3, need);
-      prof.forEach((p, i) => (p[0] += extra * Math.pow(i / (prof.length - 1), 1.5))); // (a gentle arc, as it's thrown out)
-      out += extra;
-    }
-    if (ledge) {
-      prof.length = 0;
-      prof.push([ledge, level - 0.05]);
-      for (let i = 1; i <= 14; i++) {
-        const v = i / 14;
-        prof.push([ledge + 0.2 + 1.1 * Math.sqrt(v), level - 0.05 - v * (level - 0.05 - to.level)]);
+    const faceAt = (o) => face[Math.min(face.length - 1, Math.max(0, Math.round(o * 2)))];
+    const arc = (j) => {
+      const pts = [];
+      for (let i = 0; i <= 14; i++) {
+        const v = i / 14, y = level - 0.05 - v * (level - 0.05 - to.level);
+        const o = j + 0.4 + 2.2 * Math.sqrt(v);
+        if (v > 0.06 && faceAt(o) > y - 0.3) return null; // (into the rock)
+        pts.push([o, y]);
       }
-      out = prof[prof.length - 1][0];
+      const [o] = pts[pts.length - 1];
+      return LandmarkSites.ell(to, edge.x + dx * o, edge.z + dz * o)[0] < to.r * 0.85 ? pts : null;
+    };
+    let prof = arc(0), ledge = 0;
+    if (!prof && R() < 0.3) {
+      for (let j = 1.5; j <= 3 && !prof; j += 0.5) if ((prof = arc(j))) ledge = j;
     }
+    if (!prof) return false;
+    let out = prof[prof.length - 1][0];
     // (And it starts back in the notch, at its water: no seam at the lip.)
-    prof.unshift([ledge ? ledge - 0.6 : -0.6, level + 0.02]);
+    prof.unshift([ledge - 1.4, level + 0.03], [ledge - 0.3, level + 0.01]); // (rolling smoothly over the edge)
     const ix = edge.x + dx * out, iz = edge.z + dz * out;
-    if (LandmarkSites.ell(to, ix, iz)[0] > to.r * 0.85) return false; // (it must land in the pool) // (it must land in the pool)
     const w = Math.min(edge.w ?? 6, from.r * (from.st ?? 1) * 1.4) * (outlet ? 1.2 : 1);
     // (Never one fall over another: each with room of its own along the cliff.)
     if (s.drops.some((o) => Math.hypot(o.x - edge.x, o.z - edge.z) < (o.w + w) / 2 + 4 || Math.hypot(o.ix - ix, o.iz - iz) < (o.w + w) / 2 + 3)) return false;

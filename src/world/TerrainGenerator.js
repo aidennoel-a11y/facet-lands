@@ -428,7 +428,7 @@ export class TerrainGenerator {
     const m = N.fbm(wx * 0.0008 + 500, wz * 0.0008 - 500, 3) + ragged;
     // (Sheer in the heart of the country; out towards its edge the steps
     // soften into slopes, and the land eases down into what's round it.)
-    const sharp = 0.011 / Math.max(0.06, w * w);
+    const sharp = 0.006 / Math.max(0.035, w * w);
     let h = 0, face = 0;
     CASCADE_TIERS.forEach(([e, H], i) => {
       const t = smoothstep(e, e + sharp, m);
