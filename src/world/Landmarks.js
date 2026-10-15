@@ -781,40 +781,7 @@ export class Landmarks {
             if (R() < 0.5) fern(x + r(-1.5, 1.5), gy(x, z), z + r(-1.5, 1.5), r(0.8, 1.4), pick(moss));
           }
         });
-        for (const d of site.drops) {
-          const rot = -Math.atan2(d.dz, d.dx), px = -d.dz, pz = d.dx, lx = d.x - site.x, lz = d.z - site.z;
-          // The shelf of rock the fall leaps from, jutting out over the
-          // pool, thick where it leaves the cliff, the water running out
-          // along its top; and the cliff's edge either side of it
-          // overhanging the water too, in slabs, moss on them.
-          // (Rounded, rough lumps of the cliff's own dark rock, flat-topped,
-          // merging into it: the land itself jutting out.)
-          const lump = (x, y, z, size, along, tall, wide, col, rough = 0.12) => k.add(jitter(new IcosahedronGeometry(size, 1), rough, x * 3.1 + z * 1.7), col, [x, y, z], [0, rot, 0], [along, tall, wide], 0.06);
-          if (d.ledge) {
-            // (A flat shelf: two rows of low lumps side by side under the
-            // water's sheet, thinning towards its end; under it the rock
-            // stepping back into the face.)
-            for (let t = -1; t <= d.ledge - 0.5; t += 1.4) {
-              const f = Math.max(0, t) / Math.max(1, d.ledge), size = Math.max(1.2, d.w / 4 + 1) * (1 - 0.3 * f), tall = 0.3;
-              for (const side of [-1, 1]) lump(lx + d.dx * t + px * side * size * 0.6, d.top - 0.7 - size * tall, lz + d.dz * t + pz * side * size * 0.6, size, 1.3, tall, 1, pick(basalt));
-            }
-            for (let t = -1; t <= d.ledge * 0.6; t += 1.6) lump(lx + d.dx * t, d.top - 2.2 - t * 0.35, lz + d.dz * t, d.w / 3 + 0.8, 1.2, 0.5, 1.1, pick(basalt));
-            for (const side of [-1, 1]) for (let t = 0; t < d.ledge; t += 1.8) lump(lx + d.dx * t + px * side * (d.w / 2 + 0.9), d.top - 0.35, lz + d.dz * t + pz * side * (d.w / 2 + 0.9), 0.7, 1.3, 0.3, 0.8, pick(moss));
-            for (let t = 0; t <= d.ledge; t += 2.5) solid(lx + d.dx * t, lz + d.dz * t, d.w / 2 + 0.8, d.top - 0.2);
-            // The cliff's edge either side overhangs the water too.
-            for (const side of [-1, 1]) {
-              let off = d.w / 2 + 1.5;
-              for (let j = 0; j < 2; j++) {
-                const size = r(2, 3.2), jut = Math.max(1.2, d.ledge * r(0.4, 0.8));
-                const cx = lx + px * side * (off + size * 0.7), cz = lz + pz * side * (off + size * 0.7), top = gy(cx - d.dx * 2, cz - d.dz * 2);
-                if (top < d.bottom + 3) break;
-                for (let t = -1; t <= jut; t += 1.4) lump(cx + d.dx * t, top - size * 0.4, cz + d.dz * t, size * (1 - 0.2 * Math.max(0, t) / jut), 1.1, 0.42, 1, pick(basalt));
-                lump(cx + d.dx * (jut * 0.4), top + 0.02, cz + d.dz * (jut * 0.4), size * 0.8, 1.2, 0.08, 1, pick(moss));
-                off += size * 1.4;
-              }
-            }
-          }
-        }
+        // (A fall's shelf, where it has one, is the land itself: see landmarkSites.basinAt.)
         break;
       }
       case 'glacier': {
@@ -826,7 +793,9 @@ export class Landmarks {
         const top = (x, z) => {
           const q = (x * x + z * z) / (R2 * R2);
           if (q >= 1) return -Infinity;
-          return base + T * (1 - q) + 0.5 * (gy(x, z) - base) + 0.8 * wob2(x * 0.5, z * 0.5);
+          // (Thinning to nothing at its edges, so it lies down into the land all round.)
+          const g0 = gy(x, z), surf = base + T * (1 - q) + 0.5 * (g0 - base) + 0.8 * wob2(x * 0.5, z * 0.5);
+          return Math.max(g0 + 0.25 * (1 - q), Math.min(surf, g0 + 0.4 + 30 * Math.pow(1 - q, 1.3)));
         };
         g.add(this.#iceSheet(top, R2, (x, z, y, slope, depth) => (slope > 0.9 ? pick2([0x6aa8d8, 0x5a98c8, 0x88c4e8], x, z) : depth < 1.5 ? 0xc8e0f0 : pick2([0xf4f8fc, 0xe8f0f8, 0xdce8f4], x, z))));
         // Crevasses across its flow.
@@ -840,7 +809,15 @@ export class Landmarks {
           const a = r(0, Math.PI * 2), d = R2 * r(0.82, 1.08), x = Math.cos(a) * d, z = Math.sin(a) * d, g0 = gy(x, z);
           const y = Math.max(top(x * 0.95, z * 0.95), g0);
           if (y - g0 < 3 && d < R2) continue;
-          blob(icy, pick([0x88c4e8, 0xa8d8f0, 0x6aa8d8]), [x, g0 + r(0.5, 2), z], r(1.5, 4), [1, r(0.8, 1.6), 1], 0.2);
+          blob(icy, pick([0x88c4e8, 0xa8d8f0, 0x6aa8d8]), [x, g0 + r(1, 4), z], r(4.5, 12), [1, r(0.7, 1.3), 1], 0.2);
+        }
+        // And great blocks of ice strewn down the hollow below it and round about.
+        for (let i = 0; i < 18; i++) {
+          const a = r(0, Math.PI * 2), d = R2 * r(1.05, 1.7), x = Math.cos(a) * d, z = Math.sin(a) * d, g0 = gy(x, z);
+          if (g0 > y0 + 25) continue; // (down in the low ground, not up the peaks)
+          const size = r(4, 11);
+          blob(icy, pick([0x88c4e8, 0xa8d8f0, 0x6aa8d8, 0x9fd0ec]), [x, g0 + size * 0.25, z], size, [1, r(0.6, 1.2), 1], 0.22);
+          solid(x, z, size * 0.85, g0 + size * 0.9);
         }
         site.surface = (wx, wz) => top(wx - site.x, wz - site.z);
         break;
