@@ -58,6 +58,8 @@ const SCREE = new Color(0x4b423e); // a cinder cone's dark slopes
 const ICE = new Color(0x9fcbe0); // glacier ice
 const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
 const GRAVEL = new Color(0x8a8590);
+const CASCADE_MOSS = new Color(0x3a7a2a); // thick moss on the Cascades' ground
+const CASCADE_CLAY = new Color(0x8e5c40); // bare reddish clay
 const CASCADE_ROCK = [0x4a4d4c, 0x585b58, 0x3f4342].map((c) => new Color(c)); // their basalt, layer on layer
 // Tide pools: the water held in them, and the rock lip round them, in metres above the sea.
 export const TIDE_LEVEL = 0.62;
@@ -3807,6 +3809,17 @@ export class TerrainGenerator {
         const band = Math.floor((ground + this.detailNoise.noise2D(x * 0.01, z * 0.01) * 0.6) / 2.2);
         out.lerp(BADLANDS[((band % BADLANDS.length) + BADLANDS.length) % BADLANDS.length], 0.9 * bare * smoothstep(0.02, 0.5, w.badlands));
       }
+    }
+    // The Cascades' ground: thick moss in patches, and here and there bare
+    // reddish clay, more of it down by the water.
+    if (w.cascades > 0.2 && upness > 0.8) {
+      const lush = smoothstep(0.2, 0.6, w.cascades) * smoothstep(0.8, 0.9, upness);
+      const n1 = this.detailNoise.noise2D(x * 0.045 + 21, z * 0.045 - 13) + 0.5 * this.detailNoise.noise2D(x * 0.13 - 4, z * 0.13 + 8);
+      const n2 = this.detailNoise.noise2D(x * 0.03 - 77, z * 0.03 + 41) + 0.4 * this.detailNoise.noise2D(x * 0.11 + 9, z * 0.11 - 2);
+      const wet = this.rivers.shoreAt(x, z, 10);
+      if (n1 > 0.25) out.lerp(CASCADE_MOSS, 0.75 * lush * smoothstep(0.25, 0.55, n1));
+      const clay = n2 - (wet && wet.e > 0 ? 0.5 * (1 - wet.e / 10) : 0);
+      if (clay < -0.6) out.lerp(CASCADE_CLAY, 0.8 * lush * smoothstep(-0.6, -0.85, clay));
     }
     // The Cascades' cliffs: bare dark basalt in layers, all of every face
     // that's at all steep (no green on them).

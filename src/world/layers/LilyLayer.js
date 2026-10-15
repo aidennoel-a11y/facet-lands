@@ -68,9 +68,11 @@ export function createLilyLayer(config) {
       const sea = config.seaLevel;
       let low = Infinity;
       for (const y of heights.gridY) low = Math.min(low, y);
-      if (low > sea - 0.3) return null; // no water here
       const x0 = cx * size, z0 = cz * size;
-      if (generator.getBiomeWeights(x0 + size / 2, z0 + size / 2, {}).wetland < 0.15) return null;
+      // (The wetlands' water, or the Cascades' still pools and ponds.)
+      const falls = !!generator.landmarks?.fallsInBox(x0, z0, x0 + size, z0 + size);
+      const wet = low <= sea - 0.3 && generator.getBiomeWeights(x0 + size / 2, z0 + size / 2, {}).wetland >= 0.15;
+      if (!wet && !falls) return null;
       const seed = generator.seed ^ 0x11b7a3;
       const spacing = 1.4;
       const cells = Math.round(size / spacing);
@@ -84,10 +86,18 @@ export function createLilyLayer(config) {
           const patch = Math.sin(wx * 0.11 + Math.sin(wz * 0.08) * 2.5) * Math.sin(wz * 0.09 - Math.sin(wx * 0.06) * 2);
           if (hash2(gi, gj, seed) > patch * 1.4 - 0.35) continue;
           const ground = groundHeightAt(wx - x0, wz - z0);
-          if (!(ground > sea - 1.8 && ground < sea - 0.25)) continue; // shallow, still water
-          if (generator.getBiomeWeights(wx, wz, {}).wetland < 0.5) continue;
+          let level = sea;
+          if (falls) {
+            // (On a pool's still water, out of the ripples, in the shallows.)
+            const w = generator.landmarks.fallsWater(wx, wz);
+            if (!w || !w.pond || w.ripple || w.inset < 0.8 || !(ground > w.level - 2.4 && ground < w.level - 0.3)) continue;
+            level = w.level;
+          } else {
+            if (!(ground > sea - 1.8 && ground < sea - 0.25)) continue; // shallow, still water
+            if (generator.getBiomeWeights(wx, wz, {}).wetland < 0.5) continue;
+          }
           const s = 0.45 + hash2(gi, gj, seed + 3) * 0.5;
-          position.set(wx - x0, sea + 0.035, wz - z0);
+          position.set(wx - x0, level + 0.035, wz - z0);
           rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 4) * Math.PI * 2);
           scale.set(s, 1, s);
           const kind = hash2(gi, gj, seed + 5) < 0.08 ? 2 : hash2(gi, gj, seed + 6) < 0.5 ? 0 : 1;

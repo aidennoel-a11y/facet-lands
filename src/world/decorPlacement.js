@@ -185,7 +185,7 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
   // (A quick look first: any of the forests that have an understory?)
   const cover = (x, z) => {
     const w = generator.getBiomeWeights(x, z, {});
-    return [w.jungle, w.pine * 0.12];
+    return [w.jungle, w.pine * 0.12, (w.cascades ?? 0) * 0.55];
   };
   let any = 0;
   for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, ...cover(x0 + (i * size) / 4, z0 + (j * size) / 4));
@@ -209,14 +209,16 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
       const r = hash2(gi, gj, seed + 3);
       // Jungle: all three kinds; elsewhere, ferns.
       // (The jungle floor crowded with plants: hardly a bare patch.)
-      const jungle = here[0] * 0.92, ferns = here[1];
-      if (keep > Math.max(jungle, ferns * 0.6)) continue;
-      const kind = keep < jungle ? Math.floor(r * 3) : 2;
+      // (The Cascades: lush, ferns everywhere and small leafy plants among them.)
+      const jungle = here[0] * 0.92, ferns = here[1], lush = here[2];
+      if (keep > Math.max(jungle, ferns * 0.6, lush)) continue;
+      const kind = keep < jungle ? Math.floor(r * 3) : keep < lush && r < 0.3 ? 1 : 2;
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1) || surface.normalY < 0.7) continue;
       if (generator.rivers?.at(x0 + lx, z0 + lz, 1)) continue;
       if (generator.landmarks?.underWater(x0 + lx, z0 + lz, y)) continue;
-      list.push(kind, lx, y - 0.05, lz, 0.8 + 0.8 * hash2(gi, gj, seed + 4), hash2(gi, gj, seed + 5), hash2(gi, gj, seed + 6));
+      const small = keep >= jungle && kind === 1 ? 0.5 : 1; // (the Cascades' leafy plants knee-high)
+      list.push(kind, lx, y - 0.05, lz, (0.8 + 0.8 * hash2(gi, gj, seed + 4)) * small, hash2(gi, gj, seed + 5), hash2(gi, gj, seed + 6));
     }
   }
   return list.length ? new Float32Array(list) : null;

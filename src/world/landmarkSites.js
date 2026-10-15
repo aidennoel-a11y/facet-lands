@@ -50,8 +50,12 @@ export const LANDMARKS = {
   // into a pool at the cliff's foot, and that pool on over the next cliff
   // into the next, and so on down; a big lake at the top spilling over
   // two edges. One to a square or so, all over the Cascades: see fallsPools.)
-  falls: { name: 'Falls', cell: 170, hidden: true, falls: true, chance: 1, tries: 6, needs: { forest: false },
+  falls: { name: 'Falls', cell: 170, hidden: true, falls: true, riverWater: true, chance: 1, tries: 6, needs: { forest: false },
     what: '', fits: (w) => (w.cascades ?? 0) > 0.75 },
+  // (Nor this: small still ponds lying in the flat ground at the foot of the
+  // Cascades' cliffs, lily pads on them, reeds round them.)
+  mere: { name: 'Pond', cell: 110, hidden: true, chance: 0.65, tries: 5, riverWater: true, needs: { forest: false }, land: (h, slope, rise) => h > 3 && slope < 0.06 && Math.abs(rise) < 1.5,
+    basin: { r: 10, d: 1.8, steep: 0.35 }, what: '', fits: (w) => (w.cascades ?? 0) > 0.85 },
 };
 export const LANDMARK_KINDS = Object.keys(LANDMARKS);
 /** The ones to be found (on the map, an achievement each). */
@@ -187,6 +191,18 @@ export class LandmarkSites {
     const L = LANDMARKS[s.kind];
     if (L.basin) {
       s.pools = [{ x: s.x, z: s.z, ...L.basin, seed: s.seed }];
+      if (s.kind === 'mere') {
+        // (Of a size, some 10 to 26 m across; none where the falls' pools or a creek lie.)
+        const p = s.pools[0];
+        p.r *= 0.5 + ((s.seed % 1000) / 1000) * 0.8;
+        p.mere = true;
+        s.pools = [];
+        s.runs = [];
+        s.drops = [];
+        s.extent = 0;
+        if (!this.#fallsClear(p.x, p.z, p.r + 12) || this.#creekNear(p.x, p.z, p.r + 8)) return s.pools;
+        s.pools = [p];
+      }
       // (A dry pit no deeper than keeps its floor above the sea's level.)
       if (L.basin.dry) s.pools[0].d = Math.min(L.basin.d, this.#probe((H) => H(s.x, s.z)) - (this.g.rivers?.seaLevel ?? 2) - 8);
     } else if (L.falls) s.pools = this.#fallsPools(s);
@@ -543,6 +559,20 @@ export class LandmarkSites {
     return 1 + amp * 0.13 * Math.sin(a * 2 + k) + amp * (0.08 * Math.sin(a * 3 + k * 1.7) + 0.05 * Math.sin(a * 5 + p.seed) + 0.03 * Math.sin(a * 11 + p.seed * 0.7));
   }
 
+  // (Whether no falls' pool or notch lies within `r` of (x, z).)
+  #fallsClear(x, z, r) {
+    const C = LANDMARKS.falls.cell;
+    for (let k = Math.floor((z - r) / C) - 1; k <= Math.floor((z + r) / C) + 1; k++) {
+      for (let i = Math.floor((x - r) / C) - 1; i <= Math.floor((x + r) / C) + 1; i++) {
+        const f = this.site('falls', i, k);
+        if (!f) continue;
+        for (const p of this.poolsOf(f)) if (Math.hypot(p.x - x, p.z - z) < p.r * (p.st ?? 1) * 1.3 + r) return false;
+        for (const q of f.runs) if (LandmarkSites.#along(q, x, z) < q.w + r) return false;
+      }
+    }
+    return true;
+  }
+
   // (Whether a creek or river runs within `r` of (x, z).)
   #creekNear(x, z, r) {
     for (const c of this.g.rivers?.inBox(x - r, z - r, x + r, z + r) ?? []) {
@@ -580,7 +610,7 @@ export class LandmarkSites {
     if (this.busy) return null;
     let best = null;
     for (const [s, pools] of this.#hollowsAt(x, z)) {
-      if (s.kind !== 'falls') continue;
+      if (!LANDMARKS[s.kind].riverWater) continue;
       for (const p of pools) {
         const dx = x - p.x, dz = z - p.z;
         if (Math.abs(dx) > p.r * (p.st ?? 1) * 1.35 + margin || Math.abs(dz) > p.r * (p.st ?? 1) * 1.35 + margin) continue;
@@ -617,12 +647,14 @@ export class LandmarkSites {
 
   /** Whether any of the falls' water may lie in the box (for drawing it). */
   fallsInBox(x0, z0, x1, z1) {
-    const C = LANDMARKS.falls.cell;
-    for (let k = Math.floor(z0 / C) - 1; k <= Math.floor(z1 / C) + 1; k++) {
-      for (let i = Math.floor(x0 / C) - 1; i <= Math.floor(x1 / C) + 1; i++) {
-        const s = this.site('falls', i, k);
-        if (!s || !this.poolsOf(s).length) continue;
-        if (s.x + s.extent > x0 && s.x - s.extent < x1 && s.z + s.extent > z0 && s.z - s.extent < z1) return true;
+    for (const kind of ['falls', 'mere']) {
+      const C = LANDMARKS[kind].cell;
+      for (let k = Math.floor(z0 / C) - 1; k <= Math.floor(z1 / C) + 1; k++) {
+        for (let i = Math.floor(x0 / C) - 1; i <= Math.floor(x1 / C) + 1; i++) {
+          const s = this.site(kind, i, k);
+          if (!s || !this.poolsOf(s).length) continue;
+          if (s.x + s.extent > x0 && s.x - s.extent < x1 && s.z + s.extent > z0 && s.z - s.extent < z1) return true;
+        }
       }
     }
     return false;
@@ -645,7 +677,7 @@ export class LandmarkSites {
   nearFalls(x, z, margin = 2) {
     if (this.busy) return false;
     for (const [s, pools] of this.#hollowsAt(x, z)) {
-      if (s.kind !== 'falls') continue;
+      if (!LANDMARKS[s.kind].riverWater) continue;
       for (const p of pools) { const [d, a] = LandmarkSites.ell(p, x, z); if (d < p.r * LandmarkSites.wob(p, a) * 1.05 + margin) return true; }
       for (const q of s.runs) if (LandmarkSites.#along(q, x, z) < q.w / 2 + margin) return true;
     }
