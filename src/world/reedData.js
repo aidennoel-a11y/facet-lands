@@ -27,7 +27,7 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
   let low = Infinity;
   for (const y of heights.gridY) low = Math.min(low, y);
   const shoreline = low < sea + 0.5; // a lake or sea edge runs through
-  if (!shoreline && !generator.rivers.inBox(x0, z0, x0 + size, z0 + size).length) return null;
+  if (!shoreline && !generator.rivers.inBox(x0, z0, x0 + size, z0 + size).length && !generator.landmarks?.fallsInBox(x0, z0, x0 + size, z0 + size)) return null;
   const seed = generator.seed ^ 0x2f1b3c77;
   const spacing = 1.6;
   const cells = Math.round(size / spacing);

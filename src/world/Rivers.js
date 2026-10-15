@@ -936,6 +936,9 @@ export class Rivers {
       if (m.d > m.half + margin) continue;
       if (!best || m.d - m.half < best.d - best.half) best = { ...m, pond: false };
     }
+    // (The Cascades' falls' lakes and pools, as ponds; their notches as streams.)
+    const f = this.generator.landmarks?.fallsWater(x, z, margin);
+    if (f && (!best || -f.inset < best.d - best.half)) best = { d: f.half - f.inset, level: f.level, water: f.half, half: f.half, stream: !f.pond, pond: f.pond, falls: true, fx: f.fx, fz: f.fz, drop: f.drop };
     const big = this.big.waterAt(x, z, margin);
     if (big && (!best || big.d - big.half < best.d - best.half)) best = { ...big, stream: false, pond: false, big: true };
     return best;
@@ -967,6 +970,9 @@ export class Rivers {
       }
       if (e <= margin && (!best || e < best.e)) best = { e, stream };
     }
+    // (The Cascades' falls: their lakes, pools and notches, banks and beds as a pond's.)
+    const f = this.generator.landmarks?.fallsWater(x, z, margin);
+    if (f && (!best || -f.inset < best.e)) best = { e: -f.inset, stream: false };
     const big = this.big.waterAt(x, z, margin);
     if (big && (!best || big.d - big.half < best.e)) best = { e: big.d - big.half, stream: false };
     return best;

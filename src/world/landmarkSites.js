@@ -228,7 +228,9 @@ export class LandmarkSites {
     const pools = [];
     // (The nearest cliff from there.)
     const edge = this.#edge(H, x0, z0, H(x0, z0), 0, 80, null, 6);
-    if (!edge) return pools;
+    // (Only a cliff in its own square: never the same one as a neighbour's.)
+    const C = LANDMARKS.falls.cell;
+    if (!edge || Math.floor(edge.x / C) !== Math.floor(s.x / C) || Math.floor(edge.z / C) !== Math.floor(s.z / C)) return pools;
     // Two or three falls over it side by side, from a lake on the top or a
     // pond each, all pouring into one great pool along its foot...
     const lips = this.#lipsAlong(H, edge, R, 2 + (R() < 0.5 ? 1 : 0));
@@ -300,6 +302,7 @@ export class LandmarkSites {
    * end). Added to `pools`; or null if there's no room.
    */
   #basinFor(H, s, pools, lips, R) {
+    let shrink = 1;
     while (lips.length) {
       let dx = 0, dz = 0, fx = 0, fz = 0;
       for (const l of lips) (dx += l.dx), (dz += l.dz), (fx += l.foot.x), (fz += l.foot.z);
@@ -311,10 +314,12 @@ export class LandmarkSites {
         const u = (l.foot.x - fx) * ux + (l.foot.z - fz) * uz;
         (lo = Math.min(lo, u)), (hi = Math.max(hi, u));
       }
-      const b = Math.min(16, 9 + R() * 6, ...lips.map((l) => Math.max(8, (l.foot.t - 0.5) / 0.15)));
+      // (Big: some 15 to 26 m across the short way, its back reaching in
+      // under the cliff's foot no further than the face goes.)
+      const b = (15 + R() * 11) * (shrink ?? 1), back = Math.min(b * 0.15, ...lips.map((l) => Math.max(0, l.foot.t - 0.5)));
       const a = Math.max(b * 1.2, (hi - lo) / 2 + b * 1.1, (hi - lo) / 2 + Math.max(...lips.map((l) => l.w)) * 0.75 + 2), st = a / b, mid = (lo + hi) / 2;
-      const x = fx + ux * mid + dx * b * 0.85, z = fz + uz * mid + dz * b * 0.85;
-      let ok = b >= 5;
+      const x = fx + ux * mid + dx * (b - back), z = fz + uz * mid + dz * (b - back);
+      let ok = true;
       let low = Infinity;
       for (let q = 0; q < 24 && ok; q++) {
         const c = Math.cos(q * 0.2618) * a * 1.08, n = Math.sin(q * 0.2618) * b * 1.08;
@@ -330,7 +335,9 @@ export class LandmarkSites {
         pools.push(p);
         return p;
       }
-      lips.pop();
+      // (Smaller, if there's not room; then without the furthest fall.)
+      if ((shrink ?? 1) > 0.5) shrink = (shrink ?? 1) * 0.8;
+      else (lips.pop(), (shrink = 1));
     }
     return null;
   }
@@ -404,7 +411,7 @@ export class LandmarkSites {
     // (Thrown out a little at the foot as it fans into the pool, so it
     // always comes down well into the water, never on its bank.)
     let extra = 0;
-    while (extra < 10 && LandmarkSites.ell(to, edge.x + dx * (out + extra), edge.z + dz * (out + extra))[0] > to.r * 0.7) extra += 0.5;
+    while (extra < 16 && LandmarkSites.ell(to, edge.x + dx * (out + extra), edge.z + dz * (out + extra))[0] > to.r * 0.7) extra += 0.5;
     if (extra > 0) prof.forEach((p, i) => (p[0] += extra * smoothstep(0.5, 1, i / (prof.length - 1))));
     out += extra;
     // (And it starts back in the notch, at its water: no seam at the lip.)
@@ -522,7 +529,7 @@ export class LandmarkSites {
         // (White where a fall lands.)
         let foam = 0;
         for (const q of s.drops) if (Math.abs(q.bottom - p.level) < 0.01) foam = Math.max(foam, 1 - Math.min(1, Math.hypot(x - q.ix, z - q.iz) / (q.w * 0.9 + 1.5)));
-        const w = { level: p.level, fx: 0, fz: 0, drop: 0.25 + 0.5 * foam * foam, along: d, across: d / half, inset: half - d, pond: true, tint: 1 };
+        const w = { level: p.level, fx: 0, fz: 0, drop: 0.25 + 0.5 * foam * foam, along: d, across: d / half, inset: half - d, half, pond: true, tint: 1 };
         if (!best || w.inset > best.inset) best = w;
       }
       for (const q of s.runs) {
@@ -534,7 +541,7 @@ export class LandmarkSites {
         // (Quickening as it nears the lip.)
         const drop = 0.1 + 0.25 * Math.min(1, Math.max(0, (t * L - L + 4) / 4));
         const speed = 0.6 + drop * 6;
-        const w = { level: q.level, fx: (ux / L) * speed, fz: (uz / L) * speed, drop, along: t * L, across: d / half, inset: half - d, pond: false, tint: 0 };
+        const w = { level: q.level, fx: (ux / L) * speed, fz: (uz / L) * speed, drop, along: t * L, across: d / half, inset: half - d, half, pond: false, tint: 0 };
         if (!best || w.inset > best.inset) best = w;
       }
     }

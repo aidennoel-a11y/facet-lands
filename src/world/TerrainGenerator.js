@@ -1342,7 +1342,7 @@ export class TerrainGenerator {
     const sea = smoothstep(-0.05, -0.45, continent) * 34;
     const lakes =
       1 - smoothstep(0, 0.4, mask) !== 0 && 1 - w.desert !== 0
-        ? smoothstep(0.28, 0.72, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - smoothstep(0, 0.4, mask)) * (1 - w.desert) * (1 - 0.6 * w.savanna)
+        ? smoothstep(0.28, 0.72, this.lakeNoise.fbm(x * 0.0017, z * 0.0017, 2)) * 22 * (1 - smoothstep(0, 0.4, mask)) * (1 - w.desert) * (1 - 0.6 * w.savanna) * (1 - w.cascades) // (the Cascades' water is their falls' own lakes and pools)
         : 0;
 
     const seaLevel = this.rivers.seaLevel;
@@ -3811,7 +3811,8 @@ export class TerrainGenerator {
     // bed is one colour right out to the waterline, even where a stream runs
     // into a pond, and the mud starts only at the water's edge: no brown
     // band of bank colour under the water.)
-    const river = this.rivers.shoreAt(x, z, 4);
+    // (Not up the Cascades' cliffs, where they come down to a pool: rock to the water.)
+    const river = w.cascades > 0.3 && upness < 0.8 ? null : this.rivers.shoreAt(x, z, 4);
     if (river) {
       const e = river.e; // metres from the water's edge
       const gravel = river.stream && this.getMountainness(x, z) > 0.3;
