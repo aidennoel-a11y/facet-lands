@@ -764,7 +764,9 @@ export class Landmarks {
         waters.push({ level: floor + 1.2, r: b.r * 0.3, clean: false, mat: 'dark' });
         break;
       }
+      case 'mere':
       case 'falls': {
+        // (A pond on the flats below: only the mossy rocks and ferns round it.)
         // The Cascades' falls: the water itself (pools, notches, the falls)
         // is the rivers' (see Rivers.waterAt, riverData); here only what's
         // round it: mossy boulders on the banks of the pools, ferns among
@@ -773,12 +775,15 @@ export class Landmarks {
         const moss = [0x4a7a32, 0x5a8a3a, 0x3e6a2a, 0x66963e], rockc = [0x4a4c4a, 0x55575a, 0x3f4241, 0x5f605c], basalt = [0x4a4d4c, 0x585b58, 0x3f4342];
         pools.forEach((p) => {
           const px = p.x - site.x, pz = p.z - site.z;
-          for (let i = 0; i < Math.round(p.r * 0.7); i++) {
-            const a = r(0, Math.PI * 2), d = p.r * r(1.08, 1.35), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = gy(x, z), sz = r(0.5, 1.5);
-            if (y < p.level + 0.3 || y > p.level + 4 || L.nearFalls(site.x + x, site.z + z, 0.8)) continue;
+          for (let i = 0; i < Math.round(p.r * 1.3); i++) {
+            const a = r(0, Math.PI * 2), d = p.r * (p.st ?? 1) * r(1.02, 1.45), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = gy(x, z), sz = R() < 0.25 ? r(1.3, 2.4) : r(0.4, 1.3);
+            if (y < p.level + 0.1 || y > p.level + 4 || L.nearFalls(site.x + x, site.z + z, 0.8)) continue;
             blob(k, pick(rockc), [x, y, z], sz, [1, 0.7, 1], 0.25);
+            // (Moss over its top, thick, and often a cushion of it down one side.)
             k.add(new BoxGeometry(sz * 1.2, 0.15, sz * 1.1), pick(moss), [x, y + sz * 0.6, z], [0, r(0, 3), 0]);
-            if (R() < 0.5) fern(x + r(-1.5, 1.5), gy(x, z), z + r(-1.5, 1.5), r(0.8, 1.4), pick(moss));
+            if (R() < 0.6) blob(k, pick(moss), [x + r(-0.3, 0.3) * sz, y + sz * 0.35, z + r(-0.3, 0.3) * sz], sz * 0.75, [1.15, 0.5, 1.15], 0.3);
+            if (sz > 1.2) solid(x, z, sz * 0.8, y + sz * 0.6);
+            if (R() < 0.6) fern(x + r(-1.5, 1.5), gy(x, z), z + r(-1.5, 1.5), r(0.8, 1.4), pick(moss));
           }
         });
         // (A fall's shelf, where it has one, is the land itself: see landmarkSites.basinAt.)
@@ -977,7 +982,7 @@ export class Landmarks {
       // so those no more than one every second and a half; the falls,
       // quick, as often as asked.)
       near.sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
-      const next = near.find((s) => !this.built.has(s.key) && (s.kind === 'falls' || this.bigWait <= 0));
+      const next = near.find((s) => !this.built.has(s.key) && (s.kind === 'falls' || s.kind === 'mere' || this.bigWait <= 0));
       if (next) {
         if (next.kind !== 'falls') this.bigWait = 1.5;
         this.built.set(next.key, this.#build(next));

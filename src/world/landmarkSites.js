@@ -358,15 +358,33 @@ export class LandmarkSites {
       // (Where it would run into another pool: one at about its height, they
       // join as one sheet of water at the same level; otherwise, no.)
       let lvl = level;
+      const join = [];
       for (const p of pools) {
-        if (!ok || Math.hypot(p.x - x, p.z - z) > p.r * (p.st ?? 1) + a * 0.9) continue;
-        if (Math.abs(p.level - level) < 2.5) lvl = Math.min(lvl, p.level);
+        if (!ok || Math.hypot(p.x - x, p.z - z) > p.r * (p.st ?? 1) + a * 0.9 + 6) continue;
+        if (Math.abs(p.level - level) < 2.5) (lvl = Math.min(lvl, p.level)), join.push(p);
         else ok = false;
       }
+      // (One sheet of water: a pool it joins that stands higher comes down to
+      // the shared level too, the falls into it landing there; but not one a
+      // fall already pours out of, its lip left high and dry.)
+      if (ok && join.some((p) => p.level > lvl + 0.01 && s.drops.some((q) => Math.abs(q.top - p.level) < 0.01 && Math.hypot(q.x - p.x, q.z - p.z) < p.r * (p.st ?? 1) + 50))) ok = false;
+      const settle = () => {
+        for (const p of join) {
+          if (p.level <= lvl + 0.01) continue;
+          for (const q of s.drops) {
+            if (Math.abs(q.bottom - p.level) > 0.01 || Math.hypot(q.ix - p.x, q.iz - p.z) > p.r * (p.st ?? 1) * 1.4) continue;
+            const t = q.top - 0.05, f = (t - lvl) / Math.max(0.01, t - q.bottom);
+            for (const pt of q.prof) if (pt[1] < t) pt[1] = t - (t - pt[1]) * f;
+            q.bottom = lvl;
+          }
+          p.level = lvl;
+        }
+      };
       // (Nor any creek running through it.)
       if (ok && this.#creekNear(x, z, a + 10)) ok = false;
       if (ok && level >= deep - 4 && lips.every((l) => l.top - level >= 7)) {
         const p = { x, z, r: b, st, ux, uz, d: 3 + b * 0.06, steep: 0.5, seed: s.seed + pools.length * 7919, level: lvl, basin: true };
+        settle();
         pools.push(p);
         return p;
       }

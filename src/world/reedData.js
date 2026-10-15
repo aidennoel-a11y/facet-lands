@@ -90,7 +90,9 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
       if (e < -Math.min(1.2, river.water * 0.6)) continue;
       // In patches, thickest right at the edge.
       const patch = 0.5 + 0.5 * Math.sin(wx * 0.09 + Math.sin(wz * 0.07) * 3);
-      if (hash2(gi, gj, seed) > patch * (1 - Math.abs(e + 0.2) / 2.4)) continue;
+      // (Round the Cascades' pools and ponds: thicker, in more of the bank.)
+      const lush = river.falls ? 1 : 0;
+      if (hash2(gi, gj, seed) > Math.min(1, patch * (1 + 0.6 * lush) + 0.25 * lush) * (1 - Math.abs(e + 0.2) / (2.4 + 0.8 * lush))) continue;
       const ground = groundHeightAt(lx, lz);
       if (!Number.isFinite(ground)) continue;
       const s = 0.75 + hash2(gi, gj, seed + 3) * 0.5;

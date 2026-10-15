@@ -210,9 +210,15 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
       // Jungle: all three kinds; elsewhere, ferns.
       // (The jungle floor crowded with plants: hardly a bare patch.)
       // (The Cascades: lush, ferns everywhere and small leafy plants among them.)
-      const jungle = here[0] * 0.92, ferns = here[1], lush = here[2];
+      const jungle = here[0] * 0.92, ferns = here[1];
+      // (Thickest of all along the water: ferns crowding the banks.)
+      let lush = here[2];
+      if (lush > 0.02) {
+        const sh = generator.rivers?.shoreAt(x0 + lx, z0 + lz, 7);
+        if (sh && sh.e > 0) lush = Math.min(0.92, lush + 0.6 * (1 - sh.e / 7));
+      }
       if (keep > Math.max(jungle, ferns * 0.6, lush)) continue;
-      const kind = keep < jungle ? Math.floor(r * 3) : keep < lush && r < 0.3 ? 1 : 2;
+      const kind = keep < jungle ? Math.floor(r * 3) : keep < lush && r < (lush > here[2] + 0.1 ? 0.12 : 0.3) ? 1 : 2;
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1) || surface.normalY < 0.7) continue;
       if (generator.rivers?.at(x0 + lx, z0 + lz, 1)) continue;
