@@ -2294,8 +2294,10 @@ function tick(now) {
   clearGrass();
   pushGrass();
   const mist = marshMist(dt);
-  scene.fog.near = openFog.near * (1 - 0.75 * localRain) * (1 - 0.85 * mist);
-  scene.fog.far = openFog.far * (1 - 0.5 * localRain) * (1 - 0.75 * mist);
+  // (Under a lid of grey cloud a grey haze lies over everything, softening the distance.)
+  const lid = smooth(0.6, 0.92, weather.cover);
+  scene.fog.near = openFog.near * (1 - 0.75 * localRain) * (1 - 0.85 * mist) * (1 - 0.7 * lid);
+  scene.fog.far = openFog.far * (1 - 0.5 * localRain) * (1 - 0.75 * mist) * (1 - 0.3 * lid);
   if (mist > 0) scene.fog.color.lerp(MIST, 0.45 * mist);
   stormTint();
   smokyHaze(dt);

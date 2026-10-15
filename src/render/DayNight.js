@@ -468,8 +468,8 @@ export class DayNight {
     const sum = w.day + w.golden + w.twilight + w.night;
     for (const k in w) w[k] /= sum;
     const dull = 1 - Math.min(1, sunsetGlow * 1.6);
-    const overcast = smoothstep(0.55, 1, cover);
-    const darken = 1 - 0.35 * overcast - 0.2 * rain - 0.2 * storm;
+    const overcast = smoothstep(0.5, 0.92, cover);
+    const darken = 1 - 0.45 * overcast - 0.2 * rain - 0.2 * storm;
 
     mood('top', w, this.top, dull);
     mood('horizon', w, this.horizon, dull);
@@ -518,8 +518,9 @@ export class DayNight {
     // Sky light, greyer and flatter under cloud, and a flash for lightning.
     mood('hemiSky', w, this.hemi.color, dull);
     mood('hemiGround', w, this.hemi.groundColor, dull);
-    greyed(this.hemi.color, overcast * 0.7);
-    this.hemi.intensity = (w.day * HEMI_INTENSITY.day + w.golden * HEMI_INTENSITY.golden + w.twilight * HEMI_INTENSITY.twilight + w.night * HEMI_INTENSITY.night * (0.85 + 0.15 * this.moonlight)) * (1 - 0.25 * rain - 0.3 * storm) + 0.2 * overcast * w.day * (1 - storm); // (night: starlight alone enough, once your eyes are used to it, to make out what's near)
+    greyed(this.hemi.color, overcast * 0.9);
+    greyed(this.hemi.groundColor, overcast * 0.8);
+    this.hemi.intensity = (w.day * HEMI_INTENSITY.day + w.golden * HEMI_INTENSITY.golden + w.twilight * HEMI_INTENSITY.twilight + w.night * HEMI_INTENSITY.night * (0.85 + 0.15 * this.moonlight)) * (1 - 0.25 * rain - 0.3 * storm) + 0.05 * overcast * w.day * (1 - storm) - 0.15 * overcast * w.day; // (night: starlight alone enough, once your eyes are used to it, to make out what's near)
     if (this.flash > 0) {
       this.hemi.color.lerp(FLASH, Math.min(1, this.flash));
       this.hemi.intensity += this.flash * 3;
@@ -530,7 +531,7 @@ export class DayNight {
     const light = this.light;
     const dir = this._lightDir;
     const sunUp = smoothstep(-0.025, 0.035, e);
-    const clouded = Math.max(0.05, 1 - 0.75 * overcast - 0.1 * rain - 0.1 * storm);
+    const clouded = Math.max(0.05, 1 - 0.88 * overcast - 0.1 * rain - 0.1 * storm);
     if (e > -0.06) {
       this._moonLit = false;
       // From the sun's height above the horizon you can see (seen from up

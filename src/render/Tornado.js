@@ -46,6 +46,7 @@ function funnelMaterial({ dust = false } = {}) {
       UniformsLib.fog,
       {
         uTime: { value: 0 },
+        uPhase: { value: 0 }, // (how far it's turned: the spin added up, so a change in speed never jumps it round)
         uBase: { value: new Vector3() }, // (its foot: x, ground, z)
         uHeight: { value: 300 },
         uFoot: { value: 20 }, // radius at the foot
@@ -66,24 +67,36 @@ function funnelMaterial({ dust = false } = {}) {
     vertexShader: /* glsl */ `
       #include <common>
       #include <fog_pars_vertex>
-      uniform float uTime, uHeight, uFoot, uTop, uSpin;
+      uniform float uTime, uPhase, uHeight, uFoot, uTop, uSpin;
       uniform vec3 uBase, uLean;
       varying float vH;
       varying float vA;
       varying float vRim;
+      varying vec3 vView;
+      flat varying float vBand;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      float noise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
       void main() {
         float h = position.y; // 0 at the foot .. 1 at the top
         float a = atan(position.z, position.x);
         // Its girth: a narrow neck low down, flaring out into the cloud above.
         float r = mix(uFoot, uTop, pow(h, 2.2));
         // Lumpy, and the lumps travel round with it.
-        r *= 1.0 + 0.16 * sin(a * 3.0 - uTime * 3.1 * uSpin + h * 9.0) + 0.1 * sin(a * 5.0 + uTime * 2.3 * uSpin - h * 14.0);
+        r *= 1.0 + 0.16 * sin(a * 3.0 - uPhase * 3.1 + h * 9.0) + 0.1 * sin(a * 5.0 + uPhase * 2.3 - h * 14.0);
         // It snakes: the middle bowing out one way then another, more low down.
         vec2 bow = vec2(sin(h * 5.0 + uTime * 0.7), cos(h * 4.3 - uTime * 0.53)) * uFoot * 1.6 * (1.0 - h) * h * 4.0;
         vec3 at = uBase + vec3(cos(a) * r + uLean.x * h * h + bow.x, h * uHeight, sin(a) * r + uLean.z * h * h + bow.y);
         vH = h;
         vA = a;
+        // (Its bands of cloud and dust, one shade to each facet, as everything in the world is drawn.)
+        vec2 sp = vec2(a * 2.0 + h * 9.0 - uPhase * 2.6, h * 7.0 - uTime * 0.5);
+        vBand = 0.55 + 0.45 * noise(sp * vec2(1.3, 2.2)) * (0.6 + 0.4 * noise(sp * 3.1 + 7.0));
         vec4 mvPosition = modelViewMatrix * vec4(at, 1.0);
+        vView = mvPosition.xyz;
         // (Seen edge-on, it's thicker: more cloud to look through.)
         vec3 outward = normalize(vec3(cos(a), 0.0, sin(a)));
         vRim = abs(dot(normalize((viewMatrix * vec4(outward, 0.0)).xyz), normalize(-mvPosition.xyz)));
@@ -101,26 +114,24 @@ function funnelMaterial({ dust = false } = {}) {
       varying float vH;
       varying float vA;
       varying float vRim;
-      float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-      float noise(vec2 p) {
-        vec2 i = floor(p), f = fract(p);
-        f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
-      }
+      varying vec3 vView;
+      flat varying float vBand;
       void main() {
         // Still coming down out of the cloud: only its upper part.
         float shown = smoothstep(1.0 - uForm - 0.06, 1.0 - uForm + 0.02, vH);
         if (shown <= 0.001) discard;
-        // Spiral bands of cloud and dust, wound round it and racing upward.
-        vec2 sp = vec2(vA * 2.0 + vH * 9.0 - uTime * 2.6 * uSpin, vH * 7.0 - uTime * 0.9);
-        float bands = 0.55 + 0.45 * noise(sp * vec2(1.3, 2.2)) * (0.6 + 0.4 * noise(sp * 3.1 + 7.0));
+        // Spiral bands of cloud and dust, wound round it (flat, a shade a facet).
+        float bands = vBand;
+        // (Each facet lit as a flat face, like the rest of the world.)
+        vec3 n = normalize(cross(dFdx(vView), dFdy(vView)));
+        float facet = 0.72 + 0.4 * abs(dot(n, normalize(vec3(0.35, 0.75, 0.55))));
         float edge = mix(0.62, 1.0, smoothstep(0.0, 0.65, 1.0 - vRim)); // (thicker at its edges, as seen)
         // Into the cloud base at the top; into the debris at the foot.
         float top = 1.0 - smoothstep(0.82, 1.0, vH);
         float foot = smoothstep(0.0, 0.05, vH);
-        float alpha = min(0.96, uDense * (0.35 + 0.75 * bands) * edge * top * foot * shown * uFade);
+        float alpha = min(0.97, uDense * (0.55 + 0.6 * bands) * edge * top * foot * shown * uFade);
         // (Its edges catch what light there is: a pale outline against the dark of the storm.)
-        vec3 col = uColour * (0.7 + 0.5 * bands) * uLight * (1.0 + 0.6 * (1.0 - vRim));
+        vec3 col = uColour * (0.7 + 0.5 * bands) * uLight * facet * (1.0 + 0.3 * (1.0 - vRim));
         gl_FragColor = vec4(col, alpha);
         #include <fog_fragment>
       }`,
@@ -150,13 +161,13 @@ export class Tornadoes {
     this.group.visible = false;
     scene.add(this.group);
     // (The funnel; round its foot, the debris cloud; above, the slowly turning wall cloud it drops from.)
-    const tube = new CylinderGeometry(1, 1, 1, 40, 48, true).translate(0, 0.5, 0);
+    const tube = new CylinderGeometry(1, 1, 1, 14, 22, true).translate(0, 0.5, 0).toNonIndexed(); // (faceted, low-poly)
     this.funnel = new Mesh(tube, funnelMaterial());
     this.funnel.frustumCulled = false;
     this.dust = new Mesh(tube, funnelMaterial({ dust: true }));
     this.dust.frustumCulled = false;
     this.dust.renderOrder = 1;
-    const wall = new CylinderGeometry(1, 1.15, 1, 36, 4, false).translate(0, 0.5, 0);
+    const wall = new CylinderGeometry(1, 1.15, 1, 16, 3, false).translate(0, 0.5, 0);
     this.wallMaterial = new MeshLambertMaterial({ color: 0x3a3e40, transparent: true, opacity: 0.92, depthWrite: false });
     this.wall = new Mesh(wall, this.wallMaterial);
     this.wall.frustumCulled = false;
@@ -172,6 +183,9 @@ export class Tornadoes {
     this.warned = false;
     this.light = new Color(0.5, 0.5, 0.5);
     this.rolled = false;
+    this.phase = 0;
+    this.spins = new Float32Array(DEBRIS); // (how far round each bit of debris has gone)
+    this.wallMaterial.flatShading = true;
   }
 
   /**
@@ -281,7 +295,8 @@ export class Tornadoes {
       [this.dust, c.r * 1.0 + 4, c.r * 1.45 + 10, 10 + c.r * 0.6, 0.85 * smoothstep(0, 10, t) * (1 - rope)],
     ]) {
       const u = mesh.material.uniforms;
-      u.uTime.value = this.time;
+      u.uTime.value = this.time % 3600;
+      u.uPhase.value = this.phase;
       u.uBase.value.set(c.x, groundY - 2, c.z);
       u.uHeight.value = height;
       u.uFoot.value = foot;
@@ -293,6 +308,8 @@ export class Tornadoes {
       u.uLight.value.copy(this.light).multiplyScalar(1.3);
     }
     this.dust.visible = t > 0;
+    // (Its turning added up a frame at a time: steady, building gently as it strengthens.)
+    this.phase = (this.phase + dt * (0.35 + 0.45 * c.strength)) % 6283.19;
     // The wall cloud: a dark, slowly turning shelf hanging under the storm where the funnel comes from.
     const wallR = 220 + a.R * 2;
     this.wall.position.set(c.x + lean.x, top - 40, c.z + lean.z);
@@ -311,10 +328,12 @@ export class Tornadoes {
       }
       const u = (this.time * (0.08 + 0.1 * r1) + r0) % 1; // (its journey: lifted, whirled, flung out)
       const rad = c.r * (0.5 + 0.9 * u + 0.6 * r2) + u * u * 40 * r1;
-      const ang = r0 * 6.283 + this.time * (2.4 - 1.4 * u) * (0.8 + 0.4 * r2) * heave;
+      // (Round it at the wind's pace: quicker in close, slower flung out; added up, never jumping.)
+      this.spins[k] = (this.spins[k] + dt * (1.1 - 0.6 * u) * (0.8 + 0.4 * r2) * heave * (12 / Math.max(8, rad))) % 6.2832;
+      const ang = r0 * 6.283 + this.spins[k];
       const hgt = (u < 0.75 ? Math.pow(u / 0.75, 0.7) : 1 - (u - 0.75) * 3) * (25 + 70 * r1 * r1) * heave;
       p.set(c.x + Math.cos(ang) * rad, groundY + hgt, c.z + Math.sin(ang) * rad);
-      q.setFromAxisAngle(e3.set(r1, r2, r0).normalize(), this.time * (3 + 5 * r2) + k);
+      q.setFromAxisAngle(e3.set(r1, r2, r0).normalize(), (this.time * (0.8 + 1.4 * r2) + k) % 6.2832);
       s.set(size, size * (r2 < 0.3 ? 0.15 : 0.5), size * (r2 < 0.3 ? 2.2 : 0.8)); // (some long and thin: splinters and branches)
       this.debris.setMatrixAt(k, m4.compose(p, q, s));
     }

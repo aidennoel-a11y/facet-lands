@@ -773,15 +773,16 @@ export class Landmarks {
         // them, rocks either side of each notch at the lip.
         const L = this.generator.landmarks, pools = L.poolsOf(site);
         const moss = [0x4a7a32, 0x5a8a3a, 0x3e6a2a, 0x66963e], rockc = [0x4a4c4a, 0x55575a, 0x3f4241, 0x5f605c], basalt = [0x4a4d4c, 0x585b58, 0x3f4342];
+        const mossOver = (x, y, z, sz, sc) => blob(k, pick(moss), [x, y + sz * sc[1] * r(0.14, 0.24), z], sz * 1.04, sc, 0.25);
         pools.forEach((p) => {
           const px = p.x - site.x, pz = p.z - site.z;
           for (let i = 0; i < Math.round(p.r * 1.3); i++) {
             const a = r(0, Math.PI * 2), d = p.r * (p.st ?? 1) * r(1.02, 1.45), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = gy(x, z), sz = R() < 0.25 ? r(1.3, 2.4) : r(0.4, 1.3);
             if (y < p.level + 0.1 || y > p.level + 4 || L.nearFalls(site.x + x, site.z + z, 0.8)) continue;
             blob(k, pick(rockc), [x, y, z], sz, [1, 0.7, 1], 0.25);
-            // (Moss over its top, thick, and often a cushion of it down one side.)
-            k.add(new BoxGeometry(sz * 1.2, 0.15, sz * 1.1), pick(moss), [x, y + sz * 0.6, z], [0, r(0, 3), 0]);
-            if (R() < 0.6) blob(k, pick(moss), [x + r(-0.3, 0.3) * sz, y + sz * 0.35, z + r(-0.3, 0.3) * sz], sz * 0.75, [1.15, 0.5, 1.15], 0.3);
+            // (Moss grown over it: the same stone's shape a touch larger and
+            // lifted, so it wraps its top and shoulders, the rock showing below.)
+            mossOver(x, y, z, sz, [1, 0.7, 1]);
             if (sz > 1.2) solid(x, z, sz * 0.8, y + sz * 0.6);
             if (R() < 0.6) fern(x + r(-1.5, 1.5), gy(x, z), z + r(-1.5, 1.5), r(0.8, 1.4), pick(moss));
           }
@@ -795,7 +796,7 @@ export class Landmarks {
             const side = R() < 0.5 ? -1 : 1, u = side * (d.w / 2 + r(0.8, 3.5)), out = r(0.5, 4), size = r(1.4, 3.2);
             const x = d.ix - site.x + px * u + d.dx * out, z = d.iz - site.z + pz * u + d.dz * out, y = d.bottom - size * 0.45;
             blob(k, pick(rockc), [x, y, z], size, [1.1, 0.8, 1], 0.22);
-            if (R() < 0.6) k.add(new BoxGeometry(size * 1.1, 0.12, size), pick(moss), [x, y + size * 0.78, z], [0, r(0, 3), 0]);
+            if (R() < 0.6) mossOver(x, y, z, size, [1.1, 0.8, 1]);
             solid(x, z, size * 0.9, y + size * 0.8);
           }
         }
