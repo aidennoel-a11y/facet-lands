@@ -408,12 +408,22 @@ export class LandmarkSites {
       out = Math.max(out, t);
       prof.push([out, y]);
     }
-    // (Thrown out a little at the foot as it fans into the pool, so it
-    // always comes down well into the water, never on its bank.)
-    let extra = 0;
-    while (extra < 16 && LandmarkSites.ell(to, edge.x + dx * (out + extra), edge.z + dz * (out + extra))[0] > to.r * 0.7) extra += 0.5;
-    if (extra > 0) prof.forEach((p, i) => (p[0] += extra * smoothstep(0.5, 1, i / (prof.length - 1))));
-    out += extra;
+    // (Where the face slopes out below the lip, or the pool lies further
+    // out, the lip itself juts out over the water on a shelf of rock, and
+    // the fall leaps from its end, straight down into the pool: never
+    // bent out to meet it.)
+    let need = 0;
+    while (need < 10 && LandmarkSites.ell(to, edge.x + dx * (out + need), edge.z + dz * (out + need))[0] > to.r * 0.7) need += 0.5;
+    const ledge = out + need > 2.5 ? out + need - 0.6 : 0;
+    if (ledge) {
+      prof.length = 0;
+      prof.push([ledge, level - 0.05]);
+      for (let i = 1; i <= 14; i++) {
+        const v = i / 14;
+        prof.push([ledge + 0.2 + 1.1 * Math.sqrt(v), level - 0.05 - v * (level - 0.05 - to.level)]);
+      }
+      out = prof[prof.length - 1][0];
+    }
     // (And it starts back in the notch, at its water: no seam at the lip.)
     prof.unshift([-0.6, level + 0.02]);
     const ix = edge.x + dx * out, iz = edge.z + dz * out;
@@ -423,7 +433,7 @@ export class LandmarkSites {
     const ax = edge.x - from.x, az = edge.z - from.z, al = Math.hypot(ax, az) || 1;
     const start = Math.max(0, Math.min(al - 2, from.r * 0.7));
     s.runs.push({ x0: from.x + (ax / al) * start, z0: from.z + (az / al) * start, x1: edge.x + dx * 0.3, z1: edge.z + dz * 0.3, w, level, cut: 3 });
-    s.drops.push({ x: edge.x, z: edge.z, dx, dz, w, prof, top: level, bottom: to.level, ix, iz });
+    s.drops.push({ x: edge.x, z: edge.z, dx, dz, w, prof, top: level, bottom: to.level, ix, iz, ledge });
     return true;
   }
 

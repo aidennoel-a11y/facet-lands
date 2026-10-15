@@ -782,10 +782,27 @@ export class Landmarks {
           }
         });
         for (const d of site.drops) {
+          const rot = -Math.atan2(d.dz, d.dx), px = -d.dz, pz = d.dx, lx = d.x - site.x, lz = d.z - site.z;
+          // The shelf of rock the fall leaps from, jutting out over the
+          // pool, thick where it leaves the cliff, the water running out
+          // along its top; and the cliff's edge either side of it
+          // overhanging the water too, in slabs, moss on them.
+          if (d.ledge) {
+            const len = d.ledge + 2.5, T = 1.6 + d.ledge * 0.3, mid = d.ledge / 2 - 0.6;
+            k.add(new BoxGeometry(len, T, d.w + 2.2), pick(rockc), [lx + d.dx * mid, d.top - 0.25 - T / 2, lz + d.dz * mid], [0, rot, 0], [1, 1, 1], 0.12);
+            k.add(new BoxGeometry(len * 0.6, T * 1.8, d.w + 1.6), pick(rockc), [lx + d.dx * (mid - len * 0.25), d.top - 0.25 - T * 1.2, lz + d.dz * (mid - len * 0.25)], [0, rot, 0.25], [1, 1, 1], 0.15);
+            for (let t = 0; t <= d.ledge; t += 2.5) solid(lx + d.dx * t, lz + d.dz * t, d.w / 2 + 0.8, d.top - 0.2);
+          }
           for (const side of [-1, 1]) {
+            let off = d.w / 2 + 1.1;
             for (let j = 0; j < 2; j++) {
-              const off = side * (d.w * 0.5 + r(0.8, 2)), x = d.x - site.x - d.dx * r(0.5, 3) - d.dz * off, z = d.z - site.z - d.dz * r(0.5, 3) + d.dx * off, y = gy(x, z);
-              blob(k, pick(rockc), [x, y, z], r(0.7, 1.4), [1, 0.75, 1], 0.25);
+              const wide = r(3, 6), jut = Math.max(1.5, (d.ledge || 2) * r(0.5, 0.9)), T = r(1.4, 2.6);
+              const cx = lx + px * side * (off + wide / 2) - d.dx * 1, cz = lz + pz * side * (off + wide / 2) - d.dz * 1;
+              const top = gy(cx, cz) + 0.05, mid = jut / 2;
+              if (top < d.bottom + 3) break;
+              k.add(new BoxGeometry(jut + 2, T, wide), pick(rockc), [cx + d.dx * mid, top - T / 2, cz + d.dz * mid], [0, rot + r(-0.15, 0.15), 0], [1, 1, 1], 0.14);
+              k.add(new BoxGeometry(jut + 1.6, 0.18, wide * 0.9), pick(moss), [cx + d.dx * (mid - 0.3), top + 0.06, cz + d.dz * (mid - 0.3)], [0, rot, 0], [1, 1, 1], 0.05);
+              off += wide + r(0, 1.5);
             }
           }
         }
