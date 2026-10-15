@@ -45,7 +45,7 @@ export const BIOME_TUNING = {
 };
 const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
 // The Cascades' tiers: where each steps up (on its noise), and how far (m).
-const CASCADE_TIERS = [[-0.34, 17], [-0.17, 21], [-0.01, 19], [0.15, 23], [0.31, 18]];
+const CASCADE_TIERS = [[-0.24, 12], [-0.04, 15], [0.16, 13]];
 const T = BIOME_TUNING;
 const DUNE = new Color(0xe6b86e); // dune sand
 const CORALS = [0xe0708a, 0xe89a4a, 0x9a6ab8, 0x4fb3a0, 0xe6cf5a, 0xd9566a].map((c) => new Color(c));
@@ -421,24 +421,27 @@ export class TerrainGenerator {
    * bays and headlands, its face dark rock knobbled with ledges; the tops
    * gently rolling.
    */
-  cascadesRelief(x, z) {
+  cascadesRelief(x, z, w = 1) {
     const N = this.escarpNoise;
     const wx = x + N.noise2D(x * 0.0025 + 11, z * 0.0025) * 45, wz = z + N.noise2D(x * 0.0025, z * 0.0025 - 11) * 45;
     const ragged = N.noise2D(x * 0.018 + 3, z * 0.018 - 3) * 0.022 + N.noise2D(x * 0.05 - 8, z * 0.05 + 2) * 0.006;
     const m = N.fbm(wx * 0.0008 + 500, wz * 0.0008 - 500, 3) + ragged;
+    // (Sheer in the heart of the country; out towards its edge the steps
+    // soften into slopes, and the land eases down into what's round it.)
+    const sharp = 0.011 / Math.max(0.06, w * w);
     let h = 0, face = 0;
     CASCADE_TIERS.forEach(([e, H], i) => {
-      const t = smoothstep(e, e + 0.011, m);
+      const t = smoothstep(e, e + sharp, m);
       // (Each cliff higher in some places and lower in others along its
-      // length: from next to nothing up to twice its usual height.)
-      const tall = 0.15 + 1.85 * smoothstep(-0.7, 0.8, N.noise2D(x * 0.0011 + i * 37.1, z * 0.0011 - i * 19.3));
+      // length: from a low step up to a good cliff.)
+      const tall = 0.45 + 0.95 * smoothstep(-0.7, 0.8, N.noise2D(x * 0.0011 + i * 37.1, z * 0.0011 - i * 19.3));
       h += t * H * tall;
-      face = Math.max(face, 4 * t * (1 - t) * Math.min(1, tall));
+      face = Math.max(face, 4 * t * (1 - t) * Math.min(1, tall) * w);
     });
-    // (Ledges and bulges on the faces; the tops rolling, not flat tables.)
-    const knobs = face > 0 ? (N.noise2D(x * 0.21 + 5, z * 0.21 - 5) * 1.4 + N.ridged(x * 0.09 - 3, z * 0.09 + 9, 2, 2, 0.5, 0.05) * 1.6) * face : 0;
-    const swell = N.fbm(x * 0.0045 + 40, z * 0.0045, 2) * 4 + N.fbm(x * 0.0012 - 70, z * 0.0012 + 30, 2) * 8;
-    return 14 + h + knobs + swell;
+    // (Ledges and bulges on the faces; the tops gently rolling.)
+    const knobs = face > 0 ? (N.noise2D(x * 0.21 + 5, z * 0.21 - 5) * 1.2 + N.ridged(x * 0.09 - 3, z * 0.09 + 9, 2, 2, 0.5, 0.05) * 1.3) * face : 0;
+    const swell = N.fbm(x * 0.0045 + 40, z * 0.0045, 2) * 2.5 + N.fbm(x * 0.0012 - 70, z * 0.0012 + 30, 2) * 4;
+    return 3 + h + knobs + swell;
   }
 
   /** Where redwoods take over in the heart of a pine forest near a lake or the sea (0..1). */
@@ -1346,7 +1349,7 @@ export class TerrainGenerator {
     // (Few cliffs drop straight into a lake: escarpments fade out over lake basins.)
     const badlands = w.badlands > 0.005 ? w.badlands * this.badlandsRelief(x, z) : 0;
     // (The Cascades' tiers likewise fade out over lake basins.)
-    const cascades = w.cascades > 0.005 ? w.cascades * this.cascadesRelief(x, z) * (1 - smoothstep(0.5, 6, lakes)) : 0;
+    const cascades = w.cascades > 0.005 ? w.cascades * this.cascadesRelief(x, z, w.cascades) * (1 - smoothstep(0.5, 6, lakes)) : 0;
     let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + volcanic + badlands + cascades + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // (Valleys only in land well above the water: never new lakes.)
     if (valleys > 0) height -= valleys * smoothstep(seaLevel + 3, seaLevel + 30, height);

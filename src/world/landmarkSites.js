@@ -58,6 +58,11 @@ export const LANDMARK_KINDS = Object.keys(LANDMARKS);
 export const FOUND_KINDS = LANDMARK_KINDS.filter((k) => !LANDMARKS[k].hidden);
 const BASIN_KINDS = LANDMARK_KINDS.filter((k) => LANDMARKS[k].basin || LANDMARKS[k].falls);
 
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
 // (A smooth wobbly noise, for a pit's rough walls.)
 const wob = (x, z, s) => Math.sin(x * 0.11 + s) * Math.cos(z * 0.13 - s) + 0.5 * Math.sin(x * 0.29 - z * 0.23 + s * 2) + 0.25 * Math.sin(x * 0.61 + z * 0.53 + s * 3);
 
@@ -306,9 +311,9 @@ export class LandmarkSites {
         const u = (l.foot.x - fx) * ux + (l.foot.z - fz) * uz;
         (lo = Math.min(lo, u)), (hi = Math.max(hi, u));
       }
-      const b = Math.min(12, 7.5 + R() * 4, ...lips.map((l) => (l.foot.t - 1) / 0.45));
+      const b = Math.min(16, 9 + R() * 6, ...lips.map((l) => Math.max(8, (l.foot.t - 0.5) / 0.15)));
       const a = Math.max(b * 1.2, (hi - lo) / 2 + b * 1.1, (hi - lo) / 2 + Math.max(...lips.map((l) => l.w)) * 0.75 + 2), st = a / b, mid = (lo + hi) / 2;
-      const x = fx + ux * mid + dx * b * 0.55, z = fz + uz * mid + dz * b * 0.55;
+      const x = fx + ux * mid + dx * b * 0.85, z = fz + uz * mid + dz * b * 0.85;
       let ok = b >= 5;
       let low = Infinity;
       for (let q = 0; q < 24 && ok; q++) {
@@ -347,12 +352,12 @@ export class LandmarkSites {
       pools.push(p);
       return p;
     };
-    if (lips.length >= 2 && R() < 0.5) {
+    if (lips.length >= 2 && R() < 0.8) {
       // One lake on the top, spilling through a notch to each fall.
       let mx = 0, mz = 0, dx = 0, dz = 0;
       for (const l of lips) (mx += l.x / lips.length), (mz += l.z / lips.length), (dx += l.dx), (dz += l.dz);
       const dl = Math.hypot(dx, dz) || 1;
-      const rl = Math.min(24, Math.max(10, Math.max(...lips.map((l) => Math.hypot(l.x - mx, l.z - mz) + l.w / 2)) * 0.9));
+      const rl = Math.min(26, Math.max(12 + R() * 6, Math.max(...lips.map((l) => Math.hypot(l.x - mx, l.z - mz) + l.w / 2)) * 0.9));
       const lake = pond(mx - (dx / dl) * (rl + 6), mz - (dz / dl) * (rl + 6), rl);
       if (lake) for (const lip of lips) if (this.#pour(H, s, lake, lip, basin, R, false)) made++;
       if (made) return made;
@@ -360,7 +365,7 @@ export class LandmarkSites {
     }
     for (const lip of lips) {
       const near = pools.find((p) => p.source && Math.abs(p.level - lip.top) < 4 && Math.hypot(p.x - lip.x, p.z - lip.z) < p.r + 22);
-      const r = Math.max(6 + R() * 5, lip.w * 0.8);
+      const r = Math.max(9 + R() * 6, lip.w * 0.9);
       const p = near ?? pond(lip.x - lip.dx * (r + 4), lip.z - lip.dz * (r + 4), r);
       if (!p) continue;
       if (this.#pour(H, s, p, lip, basin, R, false)) made++;
@@ -396,13 +401,21 @@ export class LandmarkSites {
       out = Math.max(out, t);
       prof.push([out, y]);
     }
+    // (Thrown out a little at the foot as it fans into the pool, so it
+    // always comes down well into the water, never on its bank.)
+    let extra = 0;
+    while (extra < 10 && LandmarkSites.ell(to, edge.x + dx * (out + extra), edge.z + dz * (out + extra))[0] > to.r * 0.7) extra += 0.5;
+    if (extra > 0) prof.forEach((p, i) => (p[0] += extra * smoothstep(0.5, 1, i / (prof.length - 1))));
+    out += extra;
+    // (And it starts back in the notch, at its water: no seam at the lip.)
+    prof.unshift([-0.6, level + 0.02]);
     const ix = edge.x + dx * out, iz = edge.z + dz * out;
-    if (LandmarkSites.ell(to, ix, iz)[0] > to.r * 0.96) return false; // (it must land in the pool) // (it must land in the pool)
+    if (LandmarkSites.ell(to, ix, iz)[0] > to.r * 0.85) return false; // (it must land in the pool) // (it must land in the pool)
     const w = Math.min(edge.w ?? 6, from.r * (from.st ?? 1) * 1.4) * (outlet ? 1.2 : 1);
     // (The notch: from inside the pool, out to the lip.)
     const ax = edge.x - from.x, az = edge.z - from.z, al = Math.hypot(ax, az) || 1;
     const start = Math.max(0, Math.min(al - 2, from.r * 0.7));
-    s.runs.push({ x0: from.x + (ax / al) * start, z0: from.z + (az / al) * start, x1: edge.x + dx * 0.3, z1: edge.z + dz * 0.3, w, level });
+    s.runs.push({ x0: from.x + (ax / al) * start, z0: from.z + (az / al) * start, x1: edge.x + dx * 0.3, z1: edge.z + dz * 0.3, w, level, cut: 3 });
     s.drops.push({ x: edge.x, z: edge.z, dx, dz, w, prof, top: level, bottom: to.level, ix, iz });
     return true;
   }
@@ -508,8 +521,8 @@ export class LandmarkSites {
         if (d > half + margin) continue;
         // (White where a fall lands.)
         let foam = 0;
-        for (const q of s.drops) if (Math.abs(q.bottom - p.level) < 0.01) foam = Math.max(foam, 1 - Math.min(1, Math.hypot(x - q.ix, z - q.iz) / (q.w * 1.6)));
-        const w = { level: p.level, fx: 0, fz: 0, drop: 0.25 + 0.55 * foam * foam, along: d, across: d / half, inset: half - d, pond: true, tint: 1 };
+        for (const q of s.drops) if (Math.abs(q.bottom - p.level) < 0.01) foam = Math.max(foam, 1 - Math.min(1, Math.hypot(x - q.ix, z - q.iz) / (q.w * 0.9 + 1.5)));
+        const w = { level: p.level, fx: 0, fz: 0, drop: 0.25 + 0.5 * foam * foam, along: d, across: d / half, inset: half - d, pond: true, tint: 1 };
         if (!best || w.inset > best.inset) best = w;
       }
       for (const q of s.runs) {
@@ -578,7 +591,9 @@ export class LandmarkSites {
       // (The falls' notches: a channel through the bank, its bed under the water, its sides sloping up.)
       if (s.runs?.length && h !== null) {
         for (const q of s.runs) {
-          const e = LandmarkSites.#along(q, x, z) - q.w / 2;
+          // (Cut on a little way past the lip, so no lip of land stands up between the water and the fall.)
+          const L = Math.hypot(q.x1 - q.x0, q.z1 - q.z0) || 1, k = (L + (q.cut ?? 0)) / L;
+          const e = LandmarkSites.#along({ x0: q.x0, z0: q.z0, x1: q.x0 + (q.x1 - q.x0) * k, z1: q.z0 + (q.z1 - q.z0) * k }, x, z) - q.w / 2;
           if (e > 4) continue;
           d = Math.max(d, h - Math.min(h, q.level - 0.7 + Math.max(0, e) * 1.3));
         }
