@@ -69,7 +69,7 @@ export function rockCandidates(generator, config, cx, cz) {
       const jitter = generator.getColorJitter(wx, wz);
       const colourHeight = land + jitter;
       const bare = smoothstep(132, 150, colourHeight) * (1 - smoothstep(snowLine - 20, snowLine - 8, colourHeight));
-      const cliffy = m > 0.05 || Math.max(m, mesa, escarp, granite, (bw.cascades ?? 0) * 0.5) > 0.05;
+      const cliffy = m > 0.05 || Math.max(m, mesa, escarp, granite) > 0.05;
       const shoreMax = land < seaLevel + 5.5 ? 1.4 : 0;
       // Round the volcanoes: black basalt blocks heaped along the lava and
       // round the craters.
@@ -141,6 +141,7 @@ export function rockCandidates(generator, config, cx, cz) {
       if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
       if (generator.nearTidePool?.(wx, wz)) continue; // and tide pools
       if (!bank && generator.rivers.at(wx, wz, 1)) continue; // and rivers
+      if (generator.landmarks?.nearFalls(wx, wz, 1.5)) continue; // nor in the falls' pools and notches
       if ((lavaRock > 0 || strewn > 0) && generator.onLiveLava?.(wx, wz)) continue; // and a live lava flow
       let size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.2 * foothill + 3.2 * foot + 2.5 * cliff + 2.2 * stony + 2.5 * granite + 1.2 * red + 3.5 * blast + 1.2 * strewn) * (bank ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
       // (Fallen into the water: big enough to stand out of it.)

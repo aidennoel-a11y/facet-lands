@@ -982,7 +982,10 @@ export class Rivers {
    * two run together as one.
    */
   waterAt(x, z, margin = 0) {
-    const creek = this.#creekWaterAt(x, z, margin);
+    let creek = this.#creekWaterAt(x, z, margin);
+    // (The Cascades' falls: their pools and the notches down to their lips, water as a stream's.)
+    const f = this.generator.landmarks?.fallsWater(x, z, margin);
+    if (f && (!creek || f.inset > creek.inset)) creek = f;
     const b = this.big.waterAt(x, z, margin);
     if (!b) return creek;
     const big = { level: b.level, fx: b.fx, fz: b.fz, drop: b.drop, along: b.along, across: b.across, inset: b.inset, pond: false, tint: 0, big: true };

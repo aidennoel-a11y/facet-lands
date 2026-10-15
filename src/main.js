@@ -1685,6 +1685,17 @@ function waterSounds(dt, e) {
     fall += v;
     fallPan += v * panTowards(camera, f.x, f.z);
   }
+  // (And the Cascades' falls near you: see Landmarks.)
+  for (const b of landmarks.built.values()) {
+    if (b.site.kind !== 'falls' || Math.abs(b.site.x - p.x) > 400 || Math.abs(b.site.z - p.z) > 400) continue;
+    for (const f of b.site.drops ?? []) {
+      const drop = f.top - f.bottom, y = f.bottom + drop * 0.3;
+      const d = Math.hypot(f.ix - p.x, (y - p.y) * 0.7, f.iz - p.z);
+      const v = Math.min(1, 0.45 + drop / 10 + f.w / 10) / (1 + (d / (14 + drop * 2.5)) ** 2);
+      fall += v;
+      fallPan += v * panTowards(camera, f.ix, f.iz);
+    }
+  }
   for (const r of waterNear.runs) {
     const d = Math.hypot(r.x - p.x, (r.y - p.y) * 0.7, r.z - p.z);
     if (r.stream && r.width < 6) {

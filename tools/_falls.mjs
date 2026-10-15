@@ -12,9 +12,9 @@ page.on('pageerror', (e) => errs.push(e.message + ' ' + (e.stack ?? '').split('\
 await page.addInitScript(() => localStorage.setItem('facet-lands:quality', 'low'));
 let n = 0;
 for (const spec of process.argv.slice(3)) {
-  const [x, z, dx, dz, drop, dist0, up = 0] = spec.split(':').map(Number);
+  const [x, z, dx, dz, drop, dist0, up = 0, side = 0.35] = spec.split(':').map(Number);
   const dist = dist0 || 30 + drop * 0.8;
-  const cx = x + dx * dist - dz * dist * 0.35, cz = z + dz * dist + dx * dist * 0.35;
+  const cx = x + dx * dist - dz * dist * side, cz = z + dz * dist + dx * dist * side;
   await page.goto(`http://localhost:4173/?seed=polaris&x=${Math.round(cx)}&z=${Math.round(cz)}&hide&hour=14&weather=clear&vd=3&season=0.5`, { timeout: 180000 });
   await page.waitForFunction(() => window.world?.chunks && window.world.chunks.pendingCount === 0, null, { timeout: 600000, polling: 1000 });
   await page.waitForTimeout(5000);

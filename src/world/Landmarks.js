@@ -765,37 +765,30 @@ export class Landmarks {
         break;
       }
       case 'falls': {
-        // The Cascades' falls (as Kirkjufellsfoss): a pond on a cliff top,
-        // turquoise, ringed with mossy boulders, spilling through a notch in
-        // its bank over the edge in a white fall down the dark rock into a
-        // pool at its foot, spray hanging over it; and on, over the next
-        // cliff, into the next pool. Ferns and moss all round the water.
+        // The Cascades' falls: the water itself (pools, notches, the falls)
+        // is the rivers' (see Rivers.waterAt, riverData); here only what's
+        // round it: mossy boulders on the banks of the pools, ferns among
+        // them, rocks either side of each notch at the lip.
         const L = this.generator.landmarks, pools = L.poolsOf(site);
         const moss = [0x4a7a32, 0x5a8a3a, 0x3e6a2a, 0x66963e], rockc = [0x4a4c4a, 0x55575a, 0x3f4241, 0x5f605c];
         pools.forEach((p) => {
           const px = p.x - site.x, pz = p.z - site.z;
-          waters.push({ level: p.level, r: p.r * 1.12, clean: true, mat: 'turq', x: px, z: pz });
-          // (Mossy boulders round its bank, ferns among them.)
-          for (let i = 0; i < Math.round(p.r * 0.8); i++) {
-            const a = r(0, Math.PI * 2), d = p.r * r(1.05, 1.3), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = gy(x, z), sz = r(0.5, 1.5);
-            if (y < p.level + 0.2 || L.nearFalls(site.x + x, site.z + z, 0.5)) continue;
+          for (let i = 0; i < Math.round(p.r * 0.7); i++) {
+            const a = r(0, Math.PI * 2), d = p.r * r(1.08, 1.35), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = gy(x, z), sz = r(0.5, 1.5);
+            if (y < p.level + 0.3 || y > p.level + 4 || L.nearFalls(site.x + x, site.z + z, 0.8)) continue;
             blob(k, pick(rockc), [x, y, z], sz, [1, 0.7, 1], 0.25);
             k.add(new BoxGeometry(sz * 1.2, 0.15, sz * 1.1), pick(moss), [x, y + sz * 0.6, z], [0, r(0, 3), 0]);
             if (R() < 0.5) fern(x + r(-1.5, 1.5), gy(x, z), z + r(-1.5, 1.5), r(0.8, 1.4), pick(moss));
           }
         });
-        for (const q of site.runs) waters.push({ run: q, level: q.level, mat: 'turq' });
         for (const d of site.drops) {
-          // (Mossy rocks either side of the notch at the lip.)
           for (const side of [-1, 1]) {
             for (let j = 0; j < 2; j++) {
-              const off = side * (d.w * 0.5 + r(0.6, 1.8)), x = d.x - site.x - d.dx * r(0.5, 3) - d.dz * off, z = d.z - site.z - d.dz * r(0.5, 3) + d.dx * off, y = gy(x, z);
+              const off = side * (d.w * 0.5 + r(0.8, 2)), x = d.x - site.x - d.dx * r(0.5, 3) - d.dz * off, z = d.z - site.z - d.dz * r(0.5, 3) + d.dx * off, y = gy(x, z);
               blob(k, pick(rockc), [x, y, z], r(0.7, 1.4), [1, 0.75, 1], 0.25);
-              k.add(new BoxGeometry(1.3, 0.14, 1.1), pick(moss), [x, y + 0.75, z], [0, r(0, 3), 0]);
             }
           }
         }
-        ribbons = site.drops;
         break;
       }
       case 'glacier': {

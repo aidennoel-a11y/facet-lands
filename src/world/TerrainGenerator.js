@@ -39,7 +39,7 @@ export const BIOME_TUNING = {
   badlands: 0.2,
   badlandsSize: 0.78, // (radius: 0.78 ≈ 40% smaller patches)
   // The Cascades (escarpment country with falls): the chance of a patch per 3.2 km square.
-  cascades: 1,
+  cascades: 0.75,
   // How much of the green country is forest rather than plains: higher, more forest.
   forest: 0,
 };
@@ -58,7 +58,6 @@ const SCREE = new Color(0x4b423e); // a cinder cone's dark slopes
 const ICE = new Color(0x9fcbe0); // glacier ice
 const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
 const GRAVEL = new Color(0x8a8590);
-const CASCADE_MOSS = new Color(0x4a7a34); // moss on the Cascades' cliffs
 const CASCADE_ROCK = [0x4a4d4c, 0x585b58, 0x3f4342].map((c) => new Color(c)); // their basalt, layer on layer
 // Tide pools: the water held in them, and the rock lip round them, in metres above the sea.
 export const TIDE_LEVEL = 0.62;
@@ -407,7 +406,7 @@ export class TerrainGenerator {
   #cascadesZone(x, z, range) {
     const low = 1 - smoothstep(0.1, 0.25, smoothstep(0.08, 0.55, range + MOUNTAIN_BIAS - this.#drySuppress(x, z)));
     if (low <= 0) return 0;
-    return low * this.#blobs('cascades', x, z, 3200, T.cascades, 950, 1500, 0xca5c, (px, pz) => {
+    return low * this.#blobs('cascades', x, z, 3200, T.cascades, 825, 1300, 0xca5c, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       const a = this.getAridity(px, pz, r);
       // (Wet green country clear of the ranges, the sea, the savanna, the
@@ -428,15 +427,18 @@ export class TerrainGenerator {
     const ragged = N.noise2D(x * 0.018 + 3, z * 0.018 - 3) * 0.022 + N.noise2D(x * 0.05 - 8, z * 0.05 + 2) * 0.006;
     const m = N.fbm(wx * 0.0008 + 500, wz * 0.0008 - 500, 3) + ragged;
     let h = 0, face = 0;
-    for (const [e, H] of CASCADE_TIERS) {
+    CASCADE_TIERS.forEach(([e, H], i) => {
       const t = smoothstep(e, e + 0.011, m);
-      h += t * H;
-      face = Math.max(face, 4 * t * (1 - t));
-    }
-    // (Ledges and bulges on the faces; the tops gently rolling.)
+      // (Each cliff higher in some places and lower in others along its
+      // length: from next to nothing up to twice its usual height.)
+      const tall = 0.15 + 1.85 * smoothstep(-0.7, 0.8, N.noise2D(x * 0.0011 + i * 37.1, z * 0.0011 - i * 19.3));
+      h += t * H * tall;
+      face = Math.max(face, 4 * t * (1 - t) * Math.min(1, tall));
+    });
+    // (Ledges and bulges on the faces; the tops rolling, not flat tables.)
     const knobs = face > 0 ? (N.noise2D(x * 0.21 + 5, z * 0.21 - 5) * 1.4 + N.ridged(x * 0.09 - 3, z * 0.09 + 9, 2, 2, 0.5, 0.05) * 1.6) * face : 0;
-    const swell = N.fbm(x * 0.0045 + 40, z * 0.0045, 2) * 3.5;
-    return 8 + h + knobs + swell;
+    const swell = N.fbm(x * 0.0045 + 40, z * 0.0045, 2) * 4 + N.fbm(x * 0.0012 - 70, z * 0.0012 + 30, 2) * 8;
+    return 14 + h + knobs + swell;
   }
 
   /** Where redwoods take over in the heart of a pine forest near a lake or the sea (0..1). */
@@ -3773,13 +3775,12 @@ export class TerrainGenerator {
         out.lerp(BADLANDS[((band % BADLANDS.length) + BADLANDS.length) % BADLANDS.length], 0.9 * bare * smoothstep(0.02, 0.5, w.badlands));
       }
     }
-    // The Cascades' cliffs: dark basalt in layers, wet, moss on the ledges
-    // and in streaks down the faces.
-    if (w.cascades > 0.05 && upness < 0.82) {
-      const face = (1 - smoothstep(0.55, 0.82, upness)) * smoothstep(0.05, 0.5, w.cascades);
+    // The Cascades' cliffs: bare dark basalt in layers, all of every face
+    // that's at all steep (no green on them).
+    if (w.cascades > 0.05 && upness < 0.9) {
+      const face = (1 - smoothstep(0.78, 0.9, upness)) * smoothstep(0.05, 0.5, w.cascades);
       const layer = Math.floor((ground + this.detailNoise.noise2D(x * 0.03, z * 0.03) * 0.8) / 2.6);
-      const moss = this.detailNoise.noise2D(x * 0.09 + 9, z * 0.09 - 4) + 0.7 * this.detailNoise.noise2D(x * 0.3 - 2, ground * 0.45 + 5);
-      out.lerp(moss > 0.45 ? CASCADE_MOSS : CASCADE_ROCK[((layer % 3) + 3) % 3], 0.85 * face);
+      out.lerp(CASCADE_ROCK[((layer % 3) + 3) % 3], face);
     }
     // Mesa and canyon walls: bands of red and orange sandstone.
     // (Fading gradually into the rock round about: an escarpment's walls

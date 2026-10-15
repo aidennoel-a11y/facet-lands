@@ -119,7 +119,9 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
   const rivers = generator.rivers;
   const x0 = cx * chunkSize, z0 = cz * chunkSize;
   const courses = rivers.inBox(x0, z0, x0 + chunkSize, z0 + chunkSize);
-  if (!courses.length) return null;
+  // (And the Cascades' falls, their pools and the falls themselves: see fallsWater, fallCurtains.)
+  const falls = generator.landmarks?.fallsInBox(x0, z0, x0 + chunkSize, z0 + chunkSize) ?? false;
+  if (!courses.length && !falls) return null;
 
   // The water at each grid point: its level, current, white water, how far
   // in from the channel's edge, how much it has given way to a lake or the
@@ -183,7 +185,7 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
       rgba[k * 4 + 3] = 0.5 + 0.18 * deep;
     }
   }
-  if (!any) return null;
+  if (!any && !falls) return null;
 
   const positions = [];
   const colors = [];
@@ -208,6 +210,9 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
     if (Number.isNaN(level[a]) || Number.isNaN(level[b]) || Number.isNaN(level[c])) return; // (well away from any water)
     if (keep[a] < 0 && keep[b] < 0 && keep[c] < 0) return;
     if (mouth[a] === 0 && mouth[b] === 0 && mouth[c] === 0) return; // (well out in the lake: its own water)
+    // (Never a sheet hung between the water at the top of one of the
+    // Cascades' falls and the pool at its foot: the fall's own water is there.)
+    if (falls && Math.max(level[a], level[b], level[c]) - Math.min(level[a], level[b], level[c]) > 2) return;
     // Where two rivers meet, their distances along don't match: no
     // streaks on the few faces that straddle the two.
     const spread = Math.max(flow[a * 4], flow[b * 4], flow[c * 4]) - Math.min(flow[a * 4], flow[b * 4], flow[c * 4]);
@@ -241,6 +246,8 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
       }
     }
   }
+  const drops = falls ? generator.landmarks.dropsIn(x0, z0, x0 + chunkSize, z0 + chunkSize) : [];
+  for (const d of drops) fallCurtain(generator, d, x0, z0, { positions, colors, flows, streaks, freezes, mouths });
   if (!positions.length) return null;
   return {
     positions: new Float32Array(positions),
@@ -249,6 +256,112 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
     streaks: new Float32Array(streaks),
     freezes: new Float32Array(freezes),
     mouths: new Float32Array(mouths),
-    spray: grid <= GRID ? sprayData(courses, x0, z0, chunkSize, generator) : null,
+    spray: grid <= GRID ? joinSpray(sprayData(courses, x0, z0, chunkSize, generator), fallsSpray(generator, drops, x0, z0)) : null,
   };
+}
+
+/**
+ * A Cascades fall (see LandmarkSites: a drop) as the river's own water,
+ * added to the chunk's surface: a curtain pouring from the lip, out over
+ * the rock and down into the pool, rounded across (thicker in the middle,
+ * as falling water is), spreading as it falls, and behind it a second,
+ * darker sheet, so it has depth from any side. Smooth and glassy as it
+ * rolls over the lip, then white, the froth racing down it.
+ */
+function fallCurtain(generator, d, x0, z0, out) {
+  const px = -d.dz, pz = d.dx, U = 9 + Math.round(d.w / 2), P = d.prof, ice = fallIce(generator, d.x, d.z);
+  let seed = Math.floor(d.x * 13 + d.z * 7) >>> 0;
+  const rand = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const ph = rand() * 6.28;
+  for (const back of [false, true]) {
+    const grid = [];
+    let along = 0;
+    for (let i = 0; i < P.length; i++) {
+      const [o, y0] = P[i], v = i / (P.length - 1);
+      if (i) along += Math.hypot(o - P[i - 1][0], y0 - P[i - 1][1]);
+      const y = i === P.length - 1 ? y0 - 0.5 : y0; // (on down under the pool's water: no seam)
+      const half = d.w * (0.5 + 0.35 * v) * (back ? 0.8 : 1);
+      const row = [];
+      for (let j = 0; j < U; j++) {
+        const u = (j / (U - 1)) * 2 - 1;
+        // (Bowed out in the middle, rippling, the back sheet a little in behind.)
+        const bulge = d.w * (1 - u * u) * (0.12 + 0.22 * v) + 0.18 * Math.sin(u * 3.1 + v * 11 + ph) * v;
+        const off = back ? -0.25 - 0.12 * d.w * (1 - u * u) : 0;
+        const x = d.x + d.dx * (o + bulge + off) + px * u * half, z = d.z + d.dz * (o + bulge + off) + pz * u * half;
+        const white = (back ? 0.55 : 0.92) * smoothstep(0, 0.22, v) + (back ? 0.1 : 0.25) * (1 - smoothstep(0, 0.22, v));
+        row.push([x - x0, y, z - z0, along, u * 0.95, white]);
+      }
+      grid.push(row);
+    }
+    const col = back ? [0.36, 0.62, 0.68, 0.7] : [0.78, 0.9, 0.94, 0.78];
+    const put = (q) => {
+      out.positions.push(q[0], q[1], q[2]);
+      out.colors.push(...col);
+      out.flows.push(q[3], q[4], 3.2, q[5]);
+      out.streaks.push(1);
+      out.freezes.push(ice);
+      out.mouths.push(1);
+    };
+    for (let i = 0; i + 1 < grid.length; i++) {
+      for (let j = 0; j + 1 < U; j++) {
+        const a = grid[i][j], b = grid[i][j + 1], c = grid[i + 1][j], e = grid[i + 1][j + 1];
+        put(a), put(c), put(b);
+        put(b), put(c), put(e);
+      }
+    }
+  }
+}
+
+/** Spray off the Cascades' falls: pouring over the lip, splashing up where it lands, mist billowing up from the pool. */
+function fallsSpray(generator, drops, x0, z0) {
+  if (!drops.length) return null;
+  const starts = [], velocities = [], lives = [], mist = [], mistLife = [], ice = [], mistIce = [];
+  for (const d of drops) {
+    let seed = Math.floor(d.x * 31 + d.z * 17) >>> 0;
+    const rand = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+    const fall = d.top - d.bottom, px = -d.dz, pz = d.dx, cold = fallIce(generator, d.x, d.z);
+    const t = Math.sqrt((2 * Math.min(fall, 4)) / 9.8);
+    for (let k = 0; k < 12 + d.w * 3; k++) {
+      const u = (rand() - 0.5) * d.w;
+      starts.push(d.x - x0 + px * u, d.top + 0.1, d.z - z0 + pz * u);
+      const v = 1 + rand() * 1.4;
+      velocities.push(d.dx * v, rand() * 0.3, d.dz * v);
+      lives.push(t, rand(), 0.2 + rand() * 0.25);
+      ice.push(cold);
+    }
+    for (let k = 0; k < 26 + d.w * 6; k++) {
+      const u = (rand() - 0.5) * d.w * 1.6, out = (rand() - 0.3) * 2;
+      starts.push(d.ix - x0 + px * u + d.dx * out, d.bottom + 0.05, d.iz - z0 + pz * u + d.dz * out);
+      const up = 2 + rand() * 3 + Math.min(3, fall * 0.12), a = rand() * Math.PI * 2, side = 0.8 + rand() * 2;
+      velocities.push(Math.cos(a) * side + d.dx * 1.2, up, Math.sin(a) * side + d.dz * 1.2);
+      lives.push((2 * up) / 9.8, rand(), 0.18 + rand() * 0.3);
+      ice.push(cold);
+    }
+    for (let k = 0; k < 10 + Math.min(14, fall * 0.6); k++) {
+      const u = (rand() - 0.5) * d.w * 2, out = 0.5 + rand() * (3 + fall * 0.15);
+      mist.push(d.ix - x0 + px * u + d.dx * out, d.bottom + 0.3, d.iz - z0 + pz * u + d.dz * out);
+      mistLife.push(3 + rand() * 3, rand(), 2 + rand() * 2 + fall * 0.1, 2 + rand() * 2 + fall * 0.35);
+      mistIce.push(cold);
+    }
+  }
+  return { starts: new Float32Array(starts), velocities: new Float32Array(velocities), lives: new Float32Array(lives), ice: new Float32Array(ice), mist: new Float32Array(mist), mistLife: new Float32Array(mistLife), mistIce: new Float32Array(mistIce) };
+}
+
+// (Two lots of spray as one.)
+function joinSpray(a, b) {
+  if (!a || !b) return a ?? b;
+  const cat = (x, y) => {
+    if (!x) return y;
+    if (!y) return x;
+    const r = new Float32Array(x.length + y.length);
+    r.set(x);
+    r.set(y, x.length);
+    return r;
+  };
+  const out = {};
+  for (const k of ['starts', 'velocities', 'lives', 'ice', 'mist', 'mistLife', 'mistIce']) {
+    const v = cat(a[k], b[k]);
+    if (v) out[k] = v;
+  }
+  return out;
 }
