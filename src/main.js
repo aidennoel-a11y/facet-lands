@@ -1279,6 +1279,11 @@ document.getElementById('test-storm')?.addEventListener('click', (e) => {
   sandstorm.start(true);
   e.currentTarget.blur();
 });
+// (A tornado for testing: forming a few hundred metres off, coming your way.)
+document.getElementById('test-tornado')?.addEventListener('click', (e) => {
+  spawnTornado({ near: (Math.random() - 0.5) * 80, delay: 4, back: 350 });
+  e.currentTarget.blur();
+});
 document.getElementById('test-devil')?.addEventListener('click', (e) => {
   devils.spawn(camera.position.x, camera.position.z, true);
   e.currentTarget.blur();

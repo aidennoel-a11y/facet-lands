@@ -770,7 +770,7 @@ export class Landmarks {
         // round it: mossy boulders on the banks of the pools, ferns among
         // them, rocks either side of each notch at the lip.
         const L = this.generator.landmarks, pools = L.poolsOf(site);
-        const moss = [0x4a7a32, 0x5a8a3a, 0x3e6a2a, 0x66963e], rockc = [0x4a4c4a, 0x55575a, 0x3f4241, 0x5f605c];
+        const moss = [0x4a7a32, 0x5a8a3a, 0x3e6a2a, 0x66963e], rockc = [0x4a4c4a, 0x55575a, 0x3f4241, 0x5f605c], basalt = [0x4a4d4c, 0x585b58, 0x3f4342];
         pools.forEach((p) => {
           const px = p.x - site.x, pz = p.z - site.z;
           for (let i = 0; i < Math.round(p.r * 0.7); i++) {
@@ -787,22 +787,31 @@ export class Landmarks {
           // pool, thick where it leaves the cliff, the water running out
           // along its top; and the cliff's edge either side of it
           // overhanging the water too, in slabs, moss on them.
+          // (Rounded, rough lumps of the cliff's own dark rock, flat-topped,
+          // merging into it: the land itself jutting out.)
+          const lump = (x, y, z, size, along, tall, wide, col, rough = 0.12) => k.add(jitter(new IcosahedronGeometry(size, 1), rough, x * 3.1 + z * 1.7), col, [x, y, z], [0, rot, 0], [along, tall, wide], 0.06);
           if (d.ledge) {
-            const len = d.ledge + 2.5, T = 1.6 + d.ledge * 0.3, mid = d.ledge / 2 - 0.6;
-            k.add(new BoxGeometry(len, T, d.w + 2.2), pick(rockc), [lx + d.dx * mid, d.top - 0.25 - T / 2, lz + d.dz * mid], [0, rot, 0], [1, 1, 1], 0.12);
-            k.add(new BoxGeometry(len * 0.6, T * 1.8, d.w + 1.6), pick(rockc), [lx + d.dx * (mid - len * 0.25), d.top - 0.25 - T * 1.2, lz + d.dz * (mid - len * 0.25)], [0, rot, 0.25], [1, 1, 1], 0.15);
+            // (A flat shelf: two rows of low lumps side by side under the
+            // water's sheet, thinning towards its end; under it the rock
+            // stepping back into the face.)
+            for (let t = -1; t <= d.ledge - 0.5; t += 1.4) {
+              const f = Math.max(0, t) / Math.max(1, d.ledge), size = Math.max(1.2, d.w / 4 + 1) * (1 - 0.3 * f), tall = 0.3;
+              for (const side of [-1, 1]) lump(lx + d.dx * t + px * side * size * 0.6, d.top - 0.7 - size * tall, lz + d.dz * t + pz * side * size * 0.6, size, 1.3, tall, 1, pick(basalt));
+            }
+            for (let t = -1; t <= d.ledge * 0.6; t += 1.6) lump(lx + d.dx * t, d.top - 2.2 - t * 0.35, lz + d.dz * t, d.w / 3 + 0.8, 1.2, 0.5, 1.1, pick(basalt));
+            for (const side of [-1, 1]) for (let t = 0; t < d.ledge; t += 1.8) lump(lx + d.dx * t + px * side * (d.w / 2 + 0.9), d.top - 0.35, lz + d.dz * t + pz * side * (d.w / 2 + 0.9), 0.7, 1.3, 0.3, 0.8, pick(moss));
             for (let t = 0; t <= d.ledge; t += 2.5) solid(lx + d.dx * t, lz + d.dz * t, d.w / 2 + 0.8, d.top - 0.2);
-          }
-          for (const side of [-1, 1]) {
-            let off = d.w / 2 + 1.1;
-            for (let j = 0; j < 2; j++) {
-              const wide = r(3, 6), jut = Math.max(1.5, (d.ledge || 2) * r(0.5, 0.9)), T = r(1.4, 2.6);
-              const cx = lx + px * side * (off + wide / 2) - d.dx * 1, cz = lz + pz * side * (off + wide / 2) - d.dz * 1;
-              const top = gy(cx, cz) + 0.05, mid = jut / 2;
-              if (top < d.bottom + 3) break;
-              k.add(new BoxGeometry(jut + 2, T, wide), pick(rockc), [cx + d.dx * mid, top - T / 2, cz + d.dz * mid], [0, rot + r(-0.15, 0.15), 0], [1, 1, 1], 0.14);
-              k.add(new BoxGeometry(jut + 1.6, 0.18, wide * 0.9), pick(moss), [cx + d.dx * (mid - 0.3), top + 0.06, cz + d.dz * (mid - 0.3)], [0, rot, 0], [1, 1, 1], 0.05);
-              off += wide + r(0, 1.5);
+            // The cliff's edge either side overhangs the water too.
+            for (const side of [-1, 1]) {
+              let off = d.w / 2 + 1.5;
+              for (let j = 0; j < 2; j++) {
+                const size = r(2, 3.2), jut = Math.max(1.2, d.ledge * r(0.4, 0.8));
+                const cx = lx + px * side * (off + size * 0.7), cz = lz + pz * side * (off + size * 0.7), top = gy(cx - d.dx * 2, cz - d.dz * 2);
+                if (top < d.bottom + 3) break;
+                for (let t = -1; t <= jut; t += 1.4) lump(cx + d.dx * t, top - size * 0.4, cz + d.dz * t, size * (1 - 0.2 * Math.max(0, t) / jut), 1.1, 0.42, 1, pick(basalt));
+                lump(cx + d.dx * (jut * 0.4), top + 0.02, cz + d.dz * (jut * 0.4), size * 0.8, 1.2, 0.08, 1, pick(moss));
+                off += size * 1.4;
+              }
             }
           }
         }

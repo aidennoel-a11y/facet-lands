@@ -412,9 +412,17 @@ export class LandmarkSites {
     // out, the lip itself juts out over the water on a shelf of rock, and
     // the fall leaps from its end, straight down into the pool: never
     // bent out to meet it.)
+    // (A shelf now and then, about one fall in four; the rest pour down the
+    // face, thrown out a little at the foot at most, or aren't made.)
     let need = 0;
     while (need < 10 && LandmarkSites.ell(to, edge.x + dx * (out + need), edge.z + dz * (out + need))[0] > to.r * 0.7) need += 0.5;
-    const ledge = out + need > 2.5 ? out + need - 0.6 : 0;
+    const shelf = R() < 0.25;
+    const ledge = shelf && out + need > 2.5 ? out + need - 0.6 : 0;
+    if (!ledge && need > 0) {
+      const extra = Math.min(3, need);
+      prof.forEach((p, i) => (p[0] += extra * Math.pow(i / (prof.length - 1), 1.5))); // (a gentle arc, as it's thrown out)
+      out += extra;
+    }
     if (ledge) {
       prof.length = 0;
       prof.push([ledge, level - 0.05]);
