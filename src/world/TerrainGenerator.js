@@ -45,7 +45,7 @@ export const BIOME_TUNING = {
 };
 const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
 // The Cascades' tiers: where each steps up (on its noise), and how far (m).
-const CASCADE_TIERS = [[-0.3, 8], [-0.19, 9], [-0.08, 8], [0.03, 10], [0.14, 8], [0.25, 9]];
+const CASCADE_TIERS = [[-0.24, 12], [-0.04, 15], [0.16, 13]];
 const T = BIOME_TUNING;
 const DUNE = new Color(0xe6b86e); // dune sand
 const CORALS = [0xe0708a, 0xe89a4a, 0x9a6ab8, 0x4fb3a0, 0xe6cf5a, 0xd9566a].map((c) => new Color(c));
@@ -425,10 +425,11 @@ export class TerrainGenerator {
     const N = this.escarpNoise;
     const wx = x + N.noise2D(x * 0.0025 + 11, z * 0.0025) * 45, wz = z + N.noise2D(x * 0.0025, z * 0.0025 - 11) * 45;
     const ragged = N.noise2D(x * 0.018 + 3, z * 0.018 - 3) * 0.022 + N.noise2D(x * 0.05 - 8, z * 0.05 + 2) * 0.006;
-    const m = N.fbm(wx * 0.0008 + 500, wz * 0.0008 - 500, 3) + ragged;
+    const inside = smoothstep(0.5, 0.97, w); // (out towards the edge, smooth gentle swells, no ragged steps)
+    const m = N.fbm(wx * 0.0008 + 500, wz * 0.0008 - 500, 3) + ragged * inside;
     // (Sheer in the heart of the country; out towards its edge the steps
     // soften into slopes, and the land eases down into what's round it.)
-    const sharp = 0.006 / Math.max(0.035, w * w);
+    const sharp = 0.006 / Math.max(0.012, inside * inside); // (soft slopes until well inside the country)
     let h = 0, face = 0;
     CASCADE_TIERS.forEach(([e, H], i) => {
       const t = smoothstep(e, e + sharp, m);
@@ -442,6 +443,32 @@ export class TerrainGenerator {
     const knobs = face > 0 ? (N.noise2D(x * 0.21 + 5, z * 0.21 - 5) * 1.2 + N.ridged(x * 0.09 - 3, z * 0.09 + 9, 2, 2, 0.5, 0.05) * 1.3) * face : 0;
     const swell = N.fbm(x * 0.0045 + 40, z * 0.0045, 2) * 2.5 + N.fbm(x * 0.0012 - 70, z * 0.0012 + 30, 2) * 4;
     return 3 + h + knobs + swell;
+  }
+
+  /**
+   * The Cascades' share of the biomes round (x, z), smoothed over some 60 m
+   * (on a 16 m grid, remembered, blended between its points).
+   */
+  #cascadesShare(x, z) {
+    const G = 16, gx = Math.floor(x / G), gz = Math.floor(z / G), fx = x / G - gx, fz = z / G - gz;
+    const cache = this._cascShare ?? (this._cascShare = new Map()), o = {};
+    const at = (i, j) => {
+      const key = (i + 65536) * 131072 + (j + 65536);
+      let v = cache.get(key);
+      if (v === undefined) {
+        const cx = i * G, cz = j * G;
+        v = this.getBiomeWeights(cx, cz, o).cascades;
+        for (const [r, k] of [[30, 8], [60, 8]]) for (let q = 0; q < k; q++) v += this.getBiomeWeights(cx + Math.cos(q * 0.785 + r) * r, cz + Math.sin(q * 0.785 + r) * r, o).cascades;
+        v /= 17;
+        if (cache.size > 80000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx, b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const v = a + (b - a) * fz;
+    this._lastWeights.x = NaN; // (the remembered weights were another point's)
+    return v;
   }
 
   /** Where redwoods take over in the heart of a pine forest near a lake or the sea (0..1). */
@@ -1349,7 +1376,10 @@ export class TerrainGenerator {
     // (Few cliffs drop straight into a lake: escarpments fade out over lake basins.)
     const badlands = w.badlands > 0.005 ? w.badlands * this.badlandsRelief(x, z) : 0;
     // (The Cascades' tiers likewise fade out over lake basins.)
-    const cascades = w.cascades > 0.005 ? w.cascades * this.cascadesRelief(x, z, w.cascades) * (1 - smoothstep(0.5, 6, lakes)) : 0;
+    // (Their share smoothed over the ground round about, so where another
+    // kind of country meets them sharply the land still eases up into them.)
+    const cw = !this._probing && this.#cascadesZone(x, z, field.value) > 0 ? this.#cascadesShare(x, z) : 0;
+    const cascades = cw > 0.005 ? cw * this.cascadesRelief(x, z, cw) * (1 - smoothstep(0.5, 6, lakes)) : 0;
     let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + volcanic + badlands + cascades + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // (Valleys only in land well above the water: never new lakes.)
     if (valleys > 0) height -= valleys * smoothstep(seaLevel + 3, seaLevel + 30, height);
