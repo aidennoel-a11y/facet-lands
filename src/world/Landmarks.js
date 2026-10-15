@@ -782,6 +782,27 @@ export class Landmarks {
           }
         });
         // (A fall's shelf, where it has one, is the land itself: see landmarkSites.basinAt.)
+        // Great boulders: fallen from the cliff round the foot of each fall,
+        // half in the water, and a few out in the pools.
+        for (const d of site.drops) {
+          const px = -d.dz, pz = d.dx;
+          for (let i = 0, n = 2 + Math.floor(R() * 3); i < n; i++) {
+            const side = R() < 0.5 ? -1 : 1, u = side * (d.w / 2 + r(0.8, 3.5)), out = r(0.5, 4), size = r(1.4, 3.2);
+            const x = d.ix - site.x + px * u + d.dx * out, z = d.iz - site.z + pz * u + d.dz * out, y = d.bottom - size * 0.45;
+            blob(k, pick(rockc), [x, y, z], size, [1.1, 0.8, 1], 0.22);
+            if (R() < 0.6) k.add(new BoxGeometry(size * 1.1, 0.12, size), pick(moss), [x, y + size * 0.78, z], [0, r(0, 3), 0]);
+            solid(x, z, size * 0.9, y + size * 0.8);
+          }
+        }
+        for (const p of pools) {
+          if (!p.basin) continue;
+          for (let i = 0, n = 1 + Math.floor(R() * 3); i < n; i++) {
+            const a = r(0, Math.PI * 2), f = r(0.3, 0.75), u = Math.cos(a) * f * p.r * p.st, v = Math.sin(a) * f * p.r;
+            const x = p.x - site.x + p.ux * u + p.uz * v, z = p.z - site.z + p.uz * u - p.ux * v, size = r(1.6, 3.6), y = p.level - size * 0.55;
+            blob(k, pick(rockc), [x, y, z], size, [1.15, 0.75, 1], 0.22);
+            solid(x, z, size * 0.9, y + size * 0.75);
+          }
+        }
         break;
       }
       case 'glacier': {

@@ -165,7 +165,7 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
       const drop = Math.max(0, w.drop);
       flow[k * 4] = w.along;
       flow[k * 4 + 1] = Math.min(1.5, w.across);
-      flow[k * 4 + 2] = w.pond ? 0 : (0.6 + Math.min(2.4, drop * 6)) * (1 - lake);
+      flow[k * 4 + 2] = w.ripple ? 0.4 : w.pond ? 0 : (0.6 + Math.min(2.4, drop * 6)) * (1 - lake); // (a falls' pool: its ripples running out from the fall)
       flow[k * 4 + 3] = Math.min(1, Math.max(0, (drop - 0.25) / 0.5));
       if (w.pond) ice[k] = w.tint === 2 ? 0 : generator.getSeasonality(x, z); // (hot springs never freeze)
       else if (drop > 0.25 && w.tint !== 2) ice[k] = fallIce(generator, x, z) * Math.min(1, (drop - 0.25) / 0.3); // (and falls, where it's cold enough)
@@ -329,7 +329,7 @@ function fallsSpray(generator, drops, x0, z0) {
       lives.push(t, rand(), 0.2 + rand() * 0.25);
       ice.push(cold);
     }
-    for (let k = 0; k < 26 + d.w * 6; k++) {
+    for (let k = 0; k < 48 + d.w * 10; k++) {
       const u = (rand() - 0.5) * d.w * 1.6, out = (rand() - 0.3) * 2;
       starts.push(d.ix - x0 + px * u + d.dx * out, d.bottom + 0.05, d.iz - z0 + pz * u + d.dz * out);
       const up = 2 + rand() * 3 + Math.min(3, fall * 0.12), a = rand() * Math.PI * 2, side = 0.8 + rand() * 2;
@@ -337,10 +337,11 @@ function fallsSpray(generator, drops, x0, z0) {
       lives.push((2 * up) / 9.8, rand(), 0.18 + rand() * 0.3);
       ice.push(cold);
     }
-    for (let k = 0; k < 10 + Math.min(14, fall * 0.6); k++) {
-      const u = (rand() - 0.5) * d.w * 2, out = 0.5 + rand() * (3 + fall * 0.15);
+    for (let k = 0; k < 22 + Math.min(26, fall * 1.2); k++) {
+      // (A cloud of it boiling up round the foot, some drifting low out over the pool.)
+      const low = rand() < 0.35, u = (rand() - 0.5) * d.w * (low ? 3.5 : 2.2), out = 0.3 + rand() * (low ? 6 + fall * 0.3 : 3 + fall * 0.15);
       mist.push(d.ix - x0 + px * u + d.dx * out, d.bottom + 0.3, d.iz - z0 + pz * u + d.dz * out);
-      mistLife.push(3 + rand() * 3, rand(), 2 + rand() * 2 + fall * 0.1, 2 + rand() * 2 + fall * 0.35);
+      mistLife.push(3 + rand() * 4, rand(), (low ? 3 : 2.4) + rand() * 2.5 + fall * 0.12, low ? 0.6 + rand() * 1.2 : 2.5 + rand() * 2 + fall * 0.45);
       mistIce.push(cold);
     }
   }

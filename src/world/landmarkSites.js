@@ -194,7 +194,7 @@ export class LandmarkSites {
     for (const p of s.pools) if (!p.dry && p.level === undefined) p.level = this.#rimLevel(p);
     s.runs ??= [];
     s.drops ??= [];
-    s.extent = Math.max(...s.pools.map((p) => Math.hypot(p.x - s.x, p.z - s.z) + p.r * (p.st ?? 1)), ...s.runs.map((q) => Math.max(Math.hypot(q.x0 - s.x, q.z0 - s.z), Math.hypot(q.x1 - s.x, q.z1 - s.z)) + q.w), 0) * 1.15;
+    s.extent = Math.max(...s.pools.map((p) => Math.hypot(p.x - s.x, p.z - s.z) + p.r * (p.st ?? 1) * 1.3), ...s.runs.map((q) => Math.max(Math.hypot(q.x0 - s.x, q.z0 - s.z), Math.hypot(q.x1 - s.x, q.z1 - s.z)) + q.w), 0) * 1.15;
     return s.pools;
   }
 
@@ -211,15 +211,22 @@ export class LandmarkSites {
     let st = s.seed >>> 0;
     const R = () => (st = (Math.imul(st, 1664525) + 1013904223) >>> 0) / 4294967296;
     const pools = this.#probe((H) => {
-      // (From where it was put, or failing that a few spots round about.)
-      for (let t = 0; t < 24; t++) {
+      // (From where it was put, or spots round about: of the first few
+      // that make falls, the one with the most falls and steps down.)
+      let best = null, found = 0;
+      for (let t = 0; t < 30 && found < 4; t++) {
         const ox = t ? (R() - 0.5) * 190 : 0, oz = t ? (R() - 0.5) * 190 : 0;
-        const pools = this.#fallsFrom(H, s, s.x + ox, s.z + oz, R);
-        if (pools.length) return pools;
         s.runs = [];
         s.drops = [];
+        const pools = this.#fallsFrom(H, s, s.x + ox, s.z + oz, R);
+        if (!pools.length) continue;
+        found++;
+        const score = s.drops.length + 1.5 * pools.filter((p) => p.basin).length + R() * 0.5;
+        if (!best || score > best.score) best = { pools, runs: s.runs, drops: s.drops, score };
       }
-      return [];
+      s.runs = best?.runs ?? [];
+      s.drops = best?.drops ?? [];
+      return best?.pools ?? [];
     });
     return pools;
   }
@@ -233,16 +240,16 @@ export class LandmarkSites {
     if (!edge || Math.floor(edge.x / C) !== Math.floor(s.x / C) || Math.floor(edge.z / C) !== Math.floor(s.z / C)) return pools;
     // Two or three falls over it side by side, from a lake on the top or a
     // pond each, all pouring into one great pool along its foot...
-    const lips = this.#lipsAlong(H, edge, R, 2 + (R() < 0.5 ? 1 : 0));
+    const lips = this.#lipsAlong(H, edge, R, 2 + (R() < 0.6 ? 1 : 0) + (R() < 0.25 ? 1 : 0));
     const basin = lips && this.#basinFor(H, s, pools, lips, R);
     if (!basin || !this.#feed(H, s, pools, basin, lips, R)) return [];
     // ...and it spilling on over the next cliff into the next great pool,
     // a fall or two more off the top joining it there, and so on down.
     let from = basin;
     for (let depth = 0; depth < 3; depth++) {
-      const e = this.#edge(H, from.x, from.z, from.level + 2, from.r + 2, from.r * (from.st ?? 1) + 80, [lips[0].dx, lips[0].dz, 0.2], 7);
+      const e = this.#edge(H, from.x, from.z, from.level + 2, from.r + 2, from.r * (from.st ?? 1) + 160, [lips[0].dx, lips[0].dz, -0.1], 7, 6);
       if (!e) break;
-      const more = this.#lipsAlong(H, e, R, 1 + (R() < 0.6 ? 1 : 0) + (R() < 0.3 ? 1 : 0));
+      const more = this.#lipsAlong(H, e, R, 2 + (R() < 0.4 ? 1 : 0));
       const next = more && this.#basinFor(H, s, pools, more, R);
       if (!next) break;
       if (!this.#pour(H, s, from, more[0], next, R, true)) {
@@ -305,20 +312,22 @@ export class LandmarkSites {
     let shrink = 1;
     while (lips.length) {
       let dx = 0, dz = 0, fx = 0, fz = 0;
-      for (const l of lips) (dx += l.dx), (dz += l.dz), (fx += l.foot.x), (fz += l.foot.z);
+      for (const l of lips) (dx += l.dx), (dz += l.dz), (fx += l.x), (fz += l.z);
       const dl = Math.hypot(dx, dz) || 1;
       (dx /= dl), (dz /= dl), (fx /= lips.length), (fz /= lips.length);
       const ux = -dz, uz = dx;
       let lo = 0, hi = 0;
       for (const l of lips) {
-        const u = (l.foot.x - fx) * ux + (l.foot.z - fz) * uz;
+        const u = (l.x - fx) * ux + (l.z - fz) * uz;
         (lo = Math.min(lo, u)), (hi = Math.max(hi, u));
       }
       // (Big: some 15 to 26 m across the short way, its back reaching in
       // under the cliff's foot no further than the face goes.)
-      const b = (21 + R() * 4.2) * (shrink ?? 1), back = Math.min(...lips.map((l) => Math.max(0, l.foot.t - 0.4))); // (right in to the cliff's face below the lips)
-      const a = Math.max(b * 1.2, (hi - lo) / 2 + b * 1.1, (hi - lo) / 2 + Math.max(...lips.map((l) => l.w)) * 0.75 + 2), st = a / b, mid = (lo + hi) / 2;
-      const x = fx + ux * mid + dx * (b - back), z = fz + uz * mid + dz * (b - back);
+      const b = (21 + R() * 14) * (shrink ?? 1), back = Math.min(...lips.map((l) => Math.max(0, l.foot.t - 0.4))); // (right in to the cliff's face below the lips)
+      const a = Math.max(b * 1.2, (hi - lo) / 2 + Math.max(...lips.map((l) => l.w)) * 0.75 + 6), st = a / b, mid = (lo + hi) / 2;
+      // (Its back right under the lips, a metre or so out from them: the falls come down into it against the cliff.)
+      const gap = 1.2 + b * 0.03;
+      const x = fx + ux * mid + dx * (b + gap), z = fz + uz * mid + dz * (b + gap);
       let ok = true;
       let low = Infinity;
       for (let q = 0; q < 24 && ok; q++) {
@@ -330,9 +339,18 @@ export class LandmarkSites {
       const deep = ok ? Math.max(H(x, z), H(x + ux * a * 0.8, z + uz * a * 0.8), H(x - ux * a * 0.8, z - uz * a * 0.8)) : 0;
       // (Nor over another pool at about its height.)
       if (ok && this.g.bigRivers?.waterAt(x, z, a + 10)) ok = false; // (nor in a great river)
-      if (ok && pools.some((p) => Math.abs(p.level - level) < 5 && Math.hypot(p.x - x, p.z - z) < p.r * (p.st ?? 1) + a * 0.8)) ok = false;
+      // (Where it would run into another pool: one at about its height, they
+      // join as one sheet of water at the same level; otherwise, no.)
+      let lvl = level;
+      for (const p of pools) {
+        if (!ok || Math.hypot(p.x - x, p.z - z) > p.r * (p.st ?? 1) + a * 0.9) continue;
+        if (Math.abs(p.level - level) < 2.5) lvl = Math.min(lvl, p.level);
+        else ok = false;
+      }
+      // (Nor any creek running through it.)
+      if (ok && this.#creekNear(x, z, a + 10)) ok = false;
       if (ok && level >= deep - 4 && lips.every((l) => l.top - level >= 7)) {
-        const p = { x, z, r: b, st, ux, uz, d: 3 + b * 0.06, steep: 0.5, seed: s.seed + pools.length * 7919, level, basin: true };
+        const p = { x, z, r: b, st, ux, uz, d: 3 + b * 0.06, steep: 0.5, seed: s.seed + pools.length * 7919, level: lvl, basin: true };
         pools.push(p);
         return p;
       }
@@ -356,6 +374,7 @@ export class LandmarkSites {
       const level = low - 0.6;
       if (pools.some((p) => Math.abs(p.level - level) < 5 && Math.hypot(p.x - x, p.z - z) < p.r * (p.st ?? 1) + r + 2)) return null;
       if (level < H(x, z) - 4.5 || level < basin.level + 6) return null; // (on a fairly level top, well above the pool)
+      if (this.#creekNear(x, z, r + 10)) return null; // (no creek running through it)
       const p = { x, z, r, d: 2 + r * 0.06, steep: 0.35, seed: s.seed + pools.length * 7919, level, source: true };
       pools.push(p);
       return p;
@@ -365,15 +384,15 @@ export class LandmarkSites {
       let mx = 0, mz = 0, dx = 0, dz = 0;
       for (const l of lips) (mx += l.x / lips.length), (mz += l.z / lips.length), (dx += l.dx), (dz += l.dz);
       const dl = Math.hypot(dx, dz) || 1;
-      const rl = Math.min(32, Math.max(15 + R() * 8, Math.max(...lips.map((l) => Math.hypot(l.x - mx, l.z - mz) + l.w / 2)) * 0.9));
+      const rl = Math.min(45, Math.max(15 + R() * 14, Math.max(...lips.map((l) => Math.hypot(l.x - mx, l.z - mz) + l.w / 2)) * 0.9));
       const lake = pond(mx - (dx / dl) * (rl + 6), mz - (dz / dl) * (rl + 6), rl);
       if (lake) for (const lip of lips) if (this.#pour(H, s, lake, lip, basin, R, false)) made++;
       if (made) return made;
       if (lake) pools.splice(pools.indexOf(lake), 1);
     }
     for (const lip of lips) {
-      const near = pools.find((p) => p.source && Math.abs(p.level - lip.top) < 4 && Math.hypot(p.x - lip.x, p.z - lip.z) < p.r + 22);
-      const r = Math.max(11 + R() * 8, lip.w * 0.9);
+      const near = pools.find((p) => p.source && Math.abs(p.level - lip.top) < 4 && Math.hypot(p.x - lip.x, p.z - lip.z) < p.r + 30);
+      const r = Math.max(11 + R() * 12, lip.w * 0.9);
       const p = near ?? pond(lip.x - lip.dx * (r + 4), lip.z - lip.dz * (r + 4), r);
       if (!p) continue;
       if (this.#pour(H, s, p, lip, basin, R, false)) made++;
@@ -404,19 +423,29 @@ export class LandmarkSites {
       if (LandmarkSites.ell(to, fx, fz)[0] < to.r * 0.95) face[q] = Math.min(face[q], to.level - 0.5);
     }
     const faceAt = (o) => face[Math.min(face.length - 1, Math.max(0, Math.round(o * 2)))];
-    const arc = (j) => {
+    const arc = (j, k = 2.2) => {
       const pts = [];
       for (let i = 0; i <= 14; i++) {
         const v = i / 14, y = level - 0.05 - v * (level - 0.05 - to.level);
-        const o = j + 0.4 + 2.2 * Math.sqrt(v);
-        if (v > 0.06 && faceAt(o) > y - 0.3) return null; // (into the rock)
+        const o = j + 0.4 + k * Math.sqrt(v);
+        // (Where the rock stands in its way, the water has worn it back into an alcove: see basinAt.)
         pts.push([o, y]);
       }
       const [o] = pts[pts.length - 1];
-      return LandmarkSites.ell(to, edge.x + dx * o, edge.z + dz * o)[0] < to.r * 0.85 ? pts : null;
+      const [ld, la] = LandmarkSites.ell(to, edge.x + dx * o, edge.z + dz * o);
+      return ld < to.r * LandmarkSites.wob(to, la) * 0.96 ? pts : null;
     };
-    let prof = arc(0), ledge = 0;
-    if (!prof && R() < 0.3) {
+    // (Thrown out as far as a fall that size would be, a few metres at most, to come down in the water.)
+    let prof = null, ledge = 0;
+    for (const k of [2.2, 3, 3.8, 4.6]) if (!prof) prof = arc(0, k);
+    // (Now and then the lip overhangs the pool on a shelf of rock anyway, where one would land in it.)
+    if (prof && R() < 0.2) {
+      for (let j = 1.5; j <= 3; j += 0.5) {
+        const p2 = arc(j);
+        if (p2) (prof = p2), (ledge = j);
+        if (p2) break;
+      }
+    } else if (!prof && R() < 0.3) {
       for (let j = 1.5; j <= 3 && !prof; j += 0.5) if ((prof = arc(j))) ledge = j;
     }
     if (!prof) return false;
@@ -432,10 +461,10 @@ export class LandmarkSites {
     const start = Math.max(0, Math.min(al - 2, from.r * 0.7));
     // (Its water must reach the lip plainly: the lip about at the pool's
     // water, a short notch, never a deep cut through a ridge.)
-    if (edge.top - level > (outlet ? 4 : 3) || al - start > (outlet ? 30 : 18)) return false;
+    if (edge.top - level > (outlet ? 6 : 3) || al - start > (outlet ? 45 : 18)) return false;
     for (let k = 1; k < 8; k++) {
       const f = start + ((al - start) * k) / 8;
-      if (H(from.x + (ax / al) * f, from.z + (az / al) * f) > level + 3.5) return false;
+      if (H(from.x + (ax / al) * f, from.z + (az / al) * f) > level + (outlet ? 6 : 3.5)) return false; // (a creek's channel cut down through any rise)
     }
     s.runs.push({ x0: from.x + (ax / al) * start, z0: from.z + (az / al) * start, x1: edge.x + dx * (ledge + 0.3), z1: edge.z + dz * (ledge + 0.3), w, level, cut: ledge ? 0 : 3 });
     s.drops.push({ x: edge.x, z: edge.z, dx, dz, w, prof, top: level, bottom: to.level, ix, iz, ledge });
@@ -448,7 +477,7 @@ export class LandmarkSites {
    * has dropped 8 m or more. `aim` [dx, dz, cos]: only the ways within
    * that of it. { x, z (the lip), dx, dz, top }, or null.
    */
-  #edge(H, x, z, ref, d0, d1, aim, tol = 4) {
+  #edge(H, x, z, ref, d0, d1, aim, tol = 4, drop = 8) {
     let best = null;
     for (let k = 0; k < 16; k++) {
       const a = (k / 16) * Math.PI * 2 + 0.1, dx = Math.cos(a), dz = Math.sin(a);
@@ -460,7 +489,7 @@ export class LandmarkSites {
         const j = i - 3, h = hs[j], dj = d0 + j * 3;
         if (best && dj >= best.d) break;
         if (Math.abs(h - ref) > tol) break; // (off this tier: up a cliff, or down one too soon)
-        if (h - hs[i] > 8) {
+        if (h - hs[i] > drop) {
           // (The lip: where it starts to drop.)
           let t = dj;
           while (t < dj + 9 && H(x + dx * (t + 1), z + dz * (t + 1)) > h - 1.2) t++;
@@ -506,6 +535,22 @@ export class LandmarkSites {
     }
   }
 
+  /** How far out a pool's edge lies that way (times its radius): lobed and uneven, like a lake's. */
+  static wob(p, a) {
+    const k = p.seed % 97;
+    // (A great pool's side under the cliff runs straight along it; its open side wanders in lobes.)
+    const amp = p.basin ? smoothstep(-0.5, 0.3, -Math.sin(a)) : 1;
+    return 1 + amp * 0.13 * Math.sin(a * 2 + k) + amp * (0.08 * Math.sin(a * 3 + k * 1.7) + 0.05 * Math.sin(a * 5 + p.seed) + 0.03 * Math.sin(a * 11 + p.seed * 0.7));
+  }
+
+  // (Whether a creek or river runs within `r` of (x, z).)
+  #creekNear(x, z, r) {
+    for (const c of this.g.rivers?.inBox(x - r, z - r, x + r, z + r) ?? []) {
+      for (const q of c.points ?? []) if (Math.abs(q.x - x) < r && Math.abs(q.z - z) < r && Math.hypot(q.x - x, q.z - z) < r) return true;
+    }
+    return false;
+  }
+
   /**
    * How far (x, z) is from a pool's middle, and which way: for one drawn
    * out long (`st` times as long along { ux, uz } as across), in metres
@@ -538,13 +583,20 @@ export class LandmarkSites {
       if (s.kind !== 'falls') continue;
       for (const p of pools) {
         const dx = x - p.x, dz = z - p.z;
-        if (Math.abs(dx) > p.r * (p.st ?? 1) * 1.2 + margin || Math.abs(dz) > p.r * (p.st ?? 1) * 1.2 + margin) continue;
-        const [d, a] = LandmarkSites.ell(p, x, z), half = p.r * (1 + 0.07 * Math.sin(a * 5 + p.seed) + 0.04 * Math.sin(a * 11 + p.seed * 0.7));
+        if (Math.abs(dx) > p.r * (p.st ?? 1) * 1.35 + margin || Math.abs(dz) > p.r * (p.st ?? 1) * 1.35 + margin) continue;
+        const [d, a] = LandmarkSites.ell(p, x, z), half = p.r * LandmarkSites.wob(p, a);
         if (d > half + margin) continue;
-        // (White where a fall lands.)
-        let foam = 0;
-        for (const q of s.drops) if (Math.abs(q.bottom - p.level) < 0.01) foam = Math.max(foam, 1 - Math.min(1, Math.hypot(x - q.ix, z - q.iz) / (q.w * 0.9 + 1.5)));
-        const w = { level: p.level, fx: 0, fz: 0, drop: 0.25 + 0.5 * foam * foam, along: d, across: d / half, inset: half - d, half, pond: true, tint: 1 };
+        // (White where a fall lands, and rings of ripples running out from
+        // it across the pool, dying away.)
+        let foam = 0, di = Infinity, R = 1;
+        for (const q of s.drops) {
+          if (Math.abs(q.bottom - p.level) > 0.01) continue;
+          const dq = Math.hypot(x - q.ix, z - q.iz);
+          foam = Math.max(foam, 1 - Math.min(1, dq / (q.w * 0.9 + 1.5)));
+          if (dq < di) (di = dq), (R = q.w * 2 + 16);
+        }
+        const ripple = di < R;
+        const w = { level: p.level, fx: 0, fz: 0, drop: 0.25 + 0.5 * foam * foam, along: ripple ? di : d, across: ripple ? 0.5 + 0.48 * smoothstep(0.25 * R, R, di) : d / half, inset: half - d, half, pond: true, tint: 1, ripple };
         if (!best || w.inset > best.inset) best = w;
       }
       for (const q of s.runs) {
@@ -594,7 +646,7 @@ export class LandmarkSites {
     if (this.busy) return false;
     for (const [s, pools] of this.#hollowsAt(x, z)) {
       if (s.kind !== 'falls') continue;
-      for (const p of pools) if (LandmarkSites.ell(p, x, z)[0] < p.r * 1.12 + margin) return true;
+      for (const p of pools) { const [d, a] = LandmarkSites.ell(p, x, z); if (d < p.r * LandmarkSites.wob(p, a) * 1.05 + margin) return true; }
       for (const q of s.runs) if (LandmarkSites.#along(q, x, z) < q.w / 2 + margin) return true;
     }
     return false;
@@ -622,6 +674,23 @@ export class LandmarkSites {
           return h - (u < q.w / 2 ? q.top - 0.7 : bank - Math.max(0, u - q.w / 2 - 2) * 0.6);
         }
       }
+      // (Behind each fall, the alcove it has worn into the cliff: the rock
+      // cut back to just behind the falling water, all the way down.)
+      if (h !== null) {
+        for (const q of s.drops ?? []) {
+          const ox = x - q.x, oz = z - q.z, t = ox * q.dx + oz * q.dz, u = Math.abs(-ox * q.dz + oz * q.dx);
+          const t0 = (q.ledge ?? 0) + 0.4, t1 = q.prof[q.prof.length - 1][0];
+          if (t < t0 || t > t1 + 0.5 || u > q.w / 2 + 1.2) continue;
+          // (The water's height where it's that far out.)
+          let y = q.bottom;
+          for (let i = 1; i < q.prof.length; i++) {
+            const [o0, y0] = q.prof[i - 1], [o1, y1] = q.prof[i];
+            if (t <= o1 && o1 > o0) { y = y0 + ((t - o0) / (o1 - o0)) * (y1 - y0); break; }
+          }
+          const cut = y - 1.2 - Math.max(0, u - q.w / 2) * 0.8;
+          if (h > cut) d = Math.max(d, h - cut);
+        }
+      }
       // (The falls' notches: a channel through the bank, its bed under the water, its sides sloping up.)
       if (s.runs?.length && h !== null) {
         for (const q of s.runs) {
@@ -634,9 +703,9 @@ export class LandmarkSites {
       }
       for (const p of pools) {
         const dx = x - p.x, dz = z - p.z;
-        if (Math.abs(dx) > p.r * (p.st ?? 1) * 1.15 || Math.abs(dz) > p.r * (p.st ?? 1) * 1.15) continue;
+        if (Math.abs(dx) > p.r * (p.st ?? 1) * 1.35 || Math.abs(dz) > p.r * (p.st ?? 1) * 1.35) continue;
         // (Not quite round: its edge wanders in and out a little.)
-        const [dd, a] = LandmarkSites.ell(p, x, z), w = 1 + 0.07 * Math.sin(a * 5 + p.seed) + 0.04 * Math.sin(a * 11 + p.seed * 0.7);
+        const [dd, a] = LandmarkSites.ell(p, x, z), w = LandmarkSites.wob(p, a);
         const r = dd / (p.r * w);
         if (r >= 1) continue;
         const t = Math.min(1, Math.max(0, (r - p.steep) / (1 - p.steep)));
@@ -662,7 +731,7 @@ export class LandmarkSites {
       for (const q of s.runs ?? []) if (h < q.level + 0.2 && LandmarkSites.#along(q, x, z) < q.w / 2) return true;
       for (const p of pools) {
         if (p.dry) continue;
-        if (LandmarkSites.ell(p, x, z)[0] < p.r * 1.1 && h < p.level + 0.25) return true;
+        if (h < p.level + 0.25) { const [d, a] = LandmarkSites.ell(p, x, z); if (d < p.r * LandmarkSites.wob(p, a) * 1.05) return true; }
       }
     }
     return false;
