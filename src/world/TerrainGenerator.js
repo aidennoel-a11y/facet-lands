@@ -45,7 +45,7 @@ export const BIOME_TUNING = {
 };
 const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
 // The Cascades' tiers: where each steps up (on its noise), and how far (m).
-const CASCADE_TIERS = [[-0.24, 12], [-0.04, 15], [0.16, 13]];
+const CASCADE_TIERS = [[-0.3, 8], [-0.19, 9], [-0.08, 8], [0.03, 10], [0.14, 8], [0.25, 9]];
 const T = BIOME_TUNING;
 const DUNE = new Color(0xe6b86e); // dune sand
 const CORALS = [0xe0708a, 0xe89a4a, 0x9a6ab8, 0x4fb3a0, 0xe6cf5a, 0xd9566a].map((c) => new Color(c));

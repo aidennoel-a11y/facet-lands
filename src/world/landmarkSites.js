@@ -210,21 +210,31 @@ export class LandmarkSites {
     s.drops = [];
     let st = s.seed >>> 0;
     const R = () => (st = (Math.imul(st, 1664525) + 1013904223) >>> 0) / 4294967296;
+    // How many falls in a row this one steps down: one (three in ten), two
+    // (three in ten), three (three in ten) or four (one in ten).
+    const u = R(), want = u < 0.3 ? 1 : u < 0.6 ? 2 : u < 0.9 ? 3 : 4;
     const pools = this.#probe((H) => {
-      // (From where it was put, or failing that a few spots round about.)
-      for (let t = 0; t < 24; t++) {
+      // (From where it was put, or a good many spots round about: the
+      // first that steps down as many times as wanted, or the nearest to it.)
+      let best = null;
+      for (let t = 0; t < (want > 1 ? 40 : 20); t++) {
         const ox = t ? (R() - 0.5) * 190 : 0, oz = t ? (R() - 0.5) * 190 : 0;
-        const pools = this.#fallsFrom(H, s, s.x + ox, s.z + oz, R);
-        if (pools.length) return pools;
         s.runs = [];
         s.drops = [];
+        const pools = this.#fallsFrom(H, s, s.x + ox, s.z + oz, R, want);
+        if (!pools.length) continue;
+        const steps = pools.filter((p) => p.basin).length;
+        if (!best || steps > best.steps) best = { pools, runs: s.runs, drops: s.drops, steps };
+        if (steps >= want) break;
       }
-      return [];
+      s.runs = best?.runs ?? [];
+      s.drops = best?.drops ?? [];
+      return best?.pools ?? [];
     });
     return pools;
   }
 
-  #fallsFrom(H, s, x0, z0, R) {
+  #fallsFrom(H, s, x0, z0, R, want = 3) {
     const pools = [];
     // (The nearest cliff from there.)
     const edge = this.#edge(H, x0, z0, H(x0, z0), 0, 80, null, 6);
@@ -239,8 +249,8 @@ export class LandmarkSites {
     // ...and it spilling on over the next cliff into the next great pool,
     // a fall or two more off the top joining it there, and so on down.
     let from = basin;
-    for (let depth = 0; depth < 3; depth++) {
-      const e = this.#edge(H, from.x, from.z, from.level + 2, from.r + 2, from.r * (from.st ?? 1) + 80, [lips[0].dx, lips[0].dz, 0.2], 7);
+    for (let depth = 1; depth < want; depth++) {
+      const e = this.#edge(H, from.x, from.z, from.level + 2, from.r + 2, from.r * (from.st ?? 1) + 140, [lips[0].dx, lips[0].dz, 0.1], 7);
       if (!e) break;
       const more = this.#lipsAlong(H, e, R, 1 + (R() < 0.6 ? 1 : 0) + (R() < 0.3 ? 1 : 0));
       const next = more && this.#basinFor(H, s, pools, more, R);
@@ -416,7 +426,7 @@ export class LandmarkSites {
       return LandmarkSites.ell(to, edge.x + dx * o, edge.z + dz * o)[0] < to.r * 0.85 ? pts : null;
     };
     let prof = arc(0), ledge = 0;
-    if (!prof && R() < 0.3) {
+    if (!prof && (outlet || R() < 0.3)) { // (always, where one pool spills on into the next)
       for (let j = 1.5; j <= 3 && !prof; j += 0.5) if ((prof = arc(j))) ledge = j;
     }
     if (!prof) return false;
@@ -430,6 +440,14 @@ export class LandmarkSites {
     // (The notch: from inside the pool, out to the lip.)
     const ax = edge.x - from.x, az = edge.z - from.z, al = Math.hypot(ax, az) || 1;
     const start = Math.max(0, Math.min(al - 2, from.r * 0.7));
+    // (Its water must reach the lip plainly: the lip about at the pool's
+    // water, a short notch, never a deep cut through a ridge.)
+    // (From one pool on to the next fall, a little creek may run a way.)
+    if (edge.top - level > (outlet ? 4 : 3) || al - start > (outlet ? 60 : 18)) return false;
+    for (let k = 1; k < 12; k++) {
+      const f = start + ((al - start) * k) / 12;
+      if (H(from.x + (ax / al) * f, from.z + (az / al) * f) > level + 3.5) return false;
+    }
     s.runs.push({ x0: from.x + (ax / al) * start, z0: from.z + (az / al) * start, x1: edge.x + dx * (ledge + 0.3), z1: edge.z + dz * (ledge + 0.3), w, level, cut: ledge ? 0 : 3 });
     s.drops.push({ x: edge.x, z: edge.z, dx, dz, w, prof, top: level, bottom: to.level, ix, iz, ledge });
     return true;
@@ -453,7 +471,7 @@ export class LandmarkSites {
         const j = i - 3, h = hs[j], dj = d0 + j * 3;
         if (best && dj >= best.d) break;
         if (Math.abs(h - ref) > tol) break; // (off this tier: up a cliff, or down one too soon)
-        if (h - hs[i] > 8) {
+        if (h - hs[i] > 6.5) {
           // (The lip: where it starts to drop.)
           let t = dj;
           while (t < dj + 9 && H(x + dx * (t + 1), z + dz * (t + 1)) > h - 1.2) t++;

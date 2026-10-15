@@ -3,7 +3,7 @@ import { hash2 } from '../noise/random.js';
 import { beehiveModel, nestModel, nestEggsModel } from './models.js';
 
 const m4 = new Matrix4(), q = new Quaternion(), p = new Vector3(), s = new Vector3(1, 1, 1), UP = new Vector3(0, 1, 0);
-const BIG = new Vector3(1.7, 1.7, 1.7), HIVE = new Vector3(1.4, 1.4, 1.4); // (drawn a little larger than life: to be seen up there)
+const BIG = new Vector3(1.5, 1.5, 1.5), HIVE = new Vector3(1.4, 1.4, 1.4); // (drawn a little larger than life: to be seen up there)
 const MAX = 64; // (drawn at once, the nearest)
 const BEES = 24; // (bees about each hive close by)
 
@@ -57,13 +57,40 @@ export class TreeFinds {
           const h = hash2(Math.round(tx * 4), Math.round(tz * 4), 0x4e57);
           if (h >= 0.06) continue;
           const kind = h < 0.012 ? 'hive' : 'nest';
-          // (In the fork of a low bough: out from the trunk a little, at the crown's foot.)
-          const a = h * 1000, off = Math.min(1.6, r * 0.45);
-          out.push({ key: `${Math.round(tx * 10)},${Math.round(tz * 10)}`, kind, x: tx + Math.cos(a) * off, y: bottom + (kind === 'hive' ? -0.35 : 0.1), z: tz + Math.sin(a) * off });
+          const a = h * 1000, key = `${Math.round(tx * 10)},${Math.round(tz * 10)}`;
+          if (kind === 'nest') {
+            // (A nest sits against the trunk itself, just under where the
+            // crown spreads, pressed into the bark a little: never in the air.)
+            const trunk = this.#trunkNear(tx, tz, chunkSize);
+            if (!trunk) continue;
+            const [ox, oz, tr] = trunk, out0 = tr * 0.7 + 0.2;
+            out.push({ key, kind, x: ox + Math.cos(a) * out0, y: bottom - 0.12, z: oz + Math.sin(a) * out0, a });
+            continue;
+          }
+          // (A bees' nest hangs under a low bough, out from the trunk a little.)
+          const off = Math.min(1.6, r * 0.45);
+          out.push({ key, kind, x: tx + Math.cos(a) * off, y: bottom - 0.35, z: tz + Math.sin(a) * off });
         }
       }
     }
     return out;
+  }
+
+  // (The trunk of the tree whose crown is at (x, z): [x, z, radius], or null.)
+  #trunkNear(x, z, chunkSize) {
+    let best = null, bd = 2.5;
+    const cx = Math.floor(x / chunkSize), cz = Math.floor(z / chunkSize);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const list = this.trees.trunks?.get(`${cx + dx},${cz + dz}`);
+        if (!list) continue;
+        for (let k = 0; k < list.length; k += 3) {
+          const d = Math.hypot(list[k] - x, list[k + 1] - z);
+          if (d < bd) (bd = d), (best = [list[k], list[k + 1], list[k + 2]]);
+        }
+      }
+    }
+    return best;
   }
 
   /** Whether it's had its eggs or honey taken lately (a nest's back next spring, a hive's honey in a few days). */
@@ -87,9 +114,13 @@ export class TreeFinds {
     // Eggs in the spring and early summer.
     const laying = season > 0.25 && season < 1.6;
     let n = 0, e = 0, h = 0, b = 0;
+    const sway = this.sway ?? (this.sway = { x: 0, z: 0 });
     for (const f of this.near) {
       q.setFromAxisAngle(UP, (f.x * 7.1) % 6.28);
-      p.set(f.x, f.y, f.z);
+      // (Moving with the tree as the wind sways it.)
+      if (f.kind === 'nest' && this.trees.swayAt) this.trees.swayAt(f.x, f.y, f.z, chunkSize, sway);
+      else sway.x = sway.z = 0;
+      p.set(f.x + sway.x, f.y, f.z + sway.z);
       m4.compose(p, q, f.kind === 'nest' ? BIG : HIVE);
       if (f.kind === 'nest') {
         this.nests.setMatrixAt(n++, m4);
