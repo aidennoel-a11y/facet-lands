@@ -412,7 +412,7 @@ export class TerrainGenerator {
       const a = this.getAridity(px, pz, r);
       // (Wet green country clear of the ranges, the sea, the savanna, the
       // jungles, the volcanoes and the Smoky Mountains.)
-      return a < 0.44 && r < 0.3 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#smokyBlob(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.45 ? 1 : 0;
+      return a < 0.4 && r < 0.3 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#smokyBlob(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.45 ? 1 : 0;
     }) * (1 - smoothstep(0, 0.15, this.#seaCoast(x, z)));
   }
 

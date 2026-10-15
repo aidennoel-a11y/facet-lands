@@ -111,7 +111,7 @@ export function rockCandidates(generator, config, cx, cz) {
       const flat = 1 - smoothstep(0.2, 0.45, slope);
       const heap = granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope));
       if (roll > (0.025 + 0.2 * foothill * flat + (cliffy ? 0.95 * flat : 0) + 0.45 * bank + 0.55 * bare * flat + 0.6 * shoreMax + 0.9 * heap + 0.16 * red + 1.1 * blast + lavaRock) * soft + strewn + surf) continue;
-      const dry = bw.desert + bw.savanna > 0.5 || mesa > 0.1;
+      const dry = (bw.desert + bw.savanna > 0.5 || mesa > 0.1) && (bw.cascades ?? 0) < 0.3; // (the Cascades' rocks dark basalt, even at the edge of the dry country)
       let foot = 0, cliff = 0;
       if (flat > 0 && cliffy) {
         let rise = 0;

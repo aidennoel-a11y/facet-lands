@@ -226,6 +226,7 @@ export class Landmarks {
     this.fallsMat ??= new MeshBasicMaterial({ map: tex, color: 0xeef8ff, transparent: true, opacity: 0.9, depthWrite: false, side: DoubleSide });
     this.sprayMat ??= new SpriteMaterial({ map: this.#puff(), color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false });
     this.foamMat ??= new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false });
+    this.veilMat ??= new MeshBasicMaterial({ map: tex, color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false, side: DoubleSide });
   }
 
   // --- Each kind ------------------------------------------------------------------
@@ -891,6 +892,20 @@ export class Landmarks {
         const m = new Mesh(geo, this.fallsMat);
         m.renderOrder = 3;
         g.add(m);
+        // (And round it a thin veil of spray, wider, a little out in front.)
+        const vpos = [];
+        d.prof.forEach(([out, y], i) => {
+          const v = i / (d.prof.length - 1), half = d.w * (0.8 + 0.5 * v), o = out + 0.3 + 0.8 * v;
+          const cx = d.x - site.x + d.dx * o, cz = d.z - site.z + d.dz * o;
+          vpos.push(cx - px * half, y, cz - pz * half, cx + px * half, y, cz + pz * half);
+        });
+        const vgeo = new BufferGeometry();
+        vgeo.setAttribute('position', new Float32BufferAttribute(vpos, 3));
+        vgeo.setAttribute('uv', new Float32BufferAttribute(uv.map((u, i) => (i % 2 ? u * 0.7 : u)), 2));
+        vgeo.setIndex(idx);
+        const veil = new Mesh(vgeo, this.veilMat);
+        veil.renderOrder = 4;
+        g.add(veil);
         const [out, y] = d.prof[d.prof.length - 1], fx = d.x - site.x + d.dx * out, fz = d.z - site.z + d.dz * out;
         for (let i = 0; i < 3 + Math.round((d.top - d.bottom) / 8); i++) {
           const spray = new Sprite(this.sprayMat);
