@@ -206,6 +206,28 @@ export class Landmarks {
     return m;
   }
 
+  // (The white water of falls, its spray and foam.)
+  #fallsMaterials() {
+    const tex = (this.fallsTexture ??= (() => {
+      const c = document.createElement('canvas');
+      c.width = 32;
+      c.height = 128;
+      const x = c.getContext('2d');
+      x.fillStyle = 'rgba(200,230,255,0.35)';
+      x.fillRect(0, 0, 32, 128);
+      for (let i = 0; i < 60; i++) {
+        x.fillStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.6})`;
+        x.fillRect(Math.random() * 32, Math.random() * 128, 1 + Math.random() * 4, 10 + Math.random() * 40);
+      }
+      const t = new CanvasTexture(c);
+      t.wrapS = t.wrapT = RepeatWrapping;
+      return t;
+    })());
+    this.fallsMat ??= new MeshBasicMaterial({ map: tex, color: 0xeef8ff, transparent: true, opacity: 0.9, depthWrite: false, side: DoubleSide });
+    this.sprayMat ??= new SpriteMaterial({ map: this.#puff(), color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false });
+    this.foamMat ??= new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false });
+  }
+
   // --- Each kind ------------------------------------------------------------------
 
   #build(site) {
@@ -231,7 +253,7 @@ export class Landmarks {
     };
     const solid = (dx, dz, rad, top) => solids.push({ x: site.x + dx, z: site.z + dz, r: rad, top });
     const waters = [];
-    let steam = null, falls = null;
+    let steam = null, falls = null, ribbons = null;
     const k = new Kit(site.seed), glow = new Kit(site.seed + 1), icy = new Kit(site.seed + 2);
     // (Grass tufts and ferns, the little green round a place that makes it sit in the land.)
     const tufts = (n, rad, cols = [0x5a8a3a, 0x4a7a32, 0x6a9a44]) => {
@@ -741,56 +763,38 @@ export class Landmarks {
         waters.push({ level: floor + 1.2, r: b.r * 0.3, clean: false, mat: 'dark' });
         break;
       }
-      case 'cascades': {
-        // A lake high on a hillside, and below it pool after pool down the
-        // fall of the land, each held in a lip of mossy, mineral-stained
-        // rock and spilling over it in curtains of white falls into the next
-        // (as Kuang Si); the lake's uphill bank a mossy cliff with falls of
-        // its own pouring in (as Kirkjufellsfoss); turquoise water; mossy
-        // boulders, ferns, spray hanging over every fall.
-        const pools = this.generator.landmarks.poolsOf(site);
-        const moss = [0x4a7a32, 0x5a8a3a, 0x6a9a3a, 0x3e6a2a], rockc = [0x5a5a56, 0x4a4a48, 0x6a6862], stain = [0xc8b890, 0xb8a878, 0xd8c8a0];
-        falls = [];
-        pools.forEach((p, n) => {
+      case 'falls': {
+        // The Cascades' falls (as Kirkjufellsfoss): a pond on a cliff top,
+        // turquoise, ringed with mossy boulders, spilling through a notch in
+        // its bank over the edge in a white fall down the dark rock into a
+        // pool at its foot, spray hanging over it; and on, over the next
+        // cliff, into the next pool. Ferns and moss all round the water.
+        const L = this.generator.landmarks, pools = L.poolsOf(site);
+        const moss = [0x4a7a32, 0x5a8a3a, 0x3e6a2a, 0x66963e], rockc = [0x4a4c4a, 0x55575a, 0x3f4241, 0x5f605c];
+        pools.forEach((p) => {
           const px = p.x - site.x, pz = p.z - site.z;
-          waters.push({ level: p.level, r: p.r * 1.03, clean: true, mat: 'turq', x: px, z: pz });
-          // (Mossy boulders round its edge, ferns among them.)
-          for (let i = 0; i < Math.round(p.r * 0.9); i++) {
-            const a = r(0, Math.PI * 2), d = p.r * r(0.95, 1.2), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = gy(x, z), sz = r(0.5, 1.6);
+          waters.push({ level: p.level, r: p.r * 1.12, clean: true, mat: 'turq', x: px, z: pz });
+          // (Mossy boulders round its bank, ferns among them.)
+          for (let i = 0; i < Math.round(p.r * 0.8); i++) {
+            const a = r(0, Math.PI * 2), d = p.r * r(1.05, 1.3), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = gy(x, z), sz = r(0.5, 1.5);
+            if (y < p.level + 0.2 || L.nearFalls(site.x + x, site.z + z, 0.5)) continue;
             blob(k, pick(rockc), [x, y, z], sz, [1, 0.7, 1], 0.25);
-            k.add(new BoxGeometry(sz * 1.2, 0.15, sz * 1.2), pick(moss), [x, y + sz * 0.6, z], [0, r(0, 3), 0]);
-            if (R() < 0.4) fern(x + r(-1.5, 1.5), y, z + r(-1.5, 1.5), r(0.8, 1.3));
-          }
-          if (n === 0) {
-            // The lake's uphill bank: a mossy cliff, falls coming down it.
-            const up = Math.atan2(site.z - (pools[1]?.z ?? site.z - 1), site.x - (pools[1]?.x ?? site.x)) ;
-            for (let v = -1; v <= 1; v += 0.08) {
-              const a = up + v, x = Math.cos(a) * p.r * 1.0, z = Math.sin(a) * p.r * 1.0, top = gy(Math.cos(a) * p.r * 1.25, Math.sin(a) * p.r * 1.25);
-              for (let h = p.level - 1; h < top; h += 1.7) {
-                blob(k, h > top - 2 ? pick(moss) : pick(rockc), [x, h, z], 1.6, [1.3, 0.7, 1.3], 0.2);
-                if (R() < 0.35) k.add(new BoxGeometry(1.5, 0.3, 1.2), pick(moss), [x * 0.97, h + 0.6, z * 0.97], [0, -a, 0]);
-              }
-            }
-            for (const v of [-0.45, -0.1, 0.35]) {
-              const a = up + v, top = gy(Math.cos(a) * p.r * 1.25, Math.sin(a) * p.r * 1.25);
-              if (top - p.level > 3) falls.push({ x: site.x + Math.cos(a) * p.r * 0.94, z: site.z + Math.sin(a) * p.r * 0.94, top, bottom: p.level, rot: a, width: r(2.5, 4.5) });
-            }
-          } else {
-            // The lip between this pool and the one above: a scalloped rim
-            // of stained rock, and the water spilling over it in curtains.
-            const q = pools[n - 1], dx = p.x - q.x, dz = p.z - q.z, len = Math.hypot(dx, dz), ux = dx / len, uz = dz / len;
-            const lx = q.x + ux * q.r, lz = q.z + uz * q.r, width = Math.min(q.r, p.r) * 1.1, drop = q.level - p.level;
-            for (let v = -width; v <= width; v += 1.2) {
-              const x = lx - uz * v - site.x, z = lz + ux * v - site.z;
-              blob(k, pick(stain), [x, q.level - 0.2, z], 1.1, [1.2, Math.max(0.6, drop / 2), 1], 0.15);
-              if (R() < 0.5) k.add(new BoxGeometry(1.2, 0.2, 0.8), pick(moss), [x, q.level + 0.35, z], [0, Math.atan2(ux, uz), 0]);
-            }
-            for (let c = 0; c < 4; c++) {
-              const v = (c / 3 - 0.5) * width * 1.5 + r(-1, 1);
-              falls.push({ x: lx - uz * v, z: lz + ux * v, top: q.level + 0.1, bottom: p.level, rot: Math.atan2(-uz, -ux), width: r(1.8, 3.6) });
-            }
+            k.add(new BoxGeometry(sz * 1.2, 0.15, sz * 1.1), pick(moss), [x, y + sz * 0.6, z], [0, r(0, 3), 0]);
+            if (R() < 0.5) fern(x + r(-1.5, 1.5), gy(x, z), z + r(-1.5, 1.5), r(0.8, 1.4), pick(moss));
           }
         });
+        for (const q of site.runs) waters.push({ run: q, level: q.level, mat: 'turq' });
+        for (const d of site.drops) {
+          // (Mossy rocks either side of the notch at the lip.)
+          for (const side of [-1, 1]) {
+            for (let j = 0; j < 2; j++) {
+              const off = side * (d.w * 0.5 + r(0.6, 1.8)), x = d.x - site.x - d.dx * r(0.5, 3) - d.dz * off, z = d.z - site.z - d.dz * r(0.5, 3) + d.dx * off, y = gy(x, z);
+              blob(k, pick(rockc), [x, y, z], r(0.7, 1.4), [1, 0.75, 1], 0.25);
+              k.add(new BoxGeometry(1.3, 0.14, 1.1), pick(moss), [x, y + 0.75, z], [0, r(0, 3), 0]);
+            }
+          }
+        }
+        ribbons = site.drops;
         break;
       }
       case 'glacier': {
@@ -827,6 +831,17 @@ export class Landmarks {
     if (glow.list.length) g.add(new Mesh(glow.build(), this.glowMaterial));
     for (const m of g.children) (m.castShadow = true), (m.receiveShadow = true);
     for (const w of waters) {
+      if (w.run) {
+        // (A falls' notch: a strip of water from the pool to the lip.)
+        const q = w.run, len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
+        const m = new Mesh(new PlaneGeometry(len, q.w + 0.8).rotateX(-Math.PI / 2), this.waterMats[w.mat]);
+        m.position.set((q.x0 + q.x1) / 2 - site.x, q.level, (q.z0 + q.z1) / 2 - site.z);
+        m.rotation.y = -Math.atan2(q.z1 - q.z0, q.x1 - q.x0);
+        m.renderOrder = 2;
+        g.add(m);
+        w.mesh = m;
+        continue;
+      }
       // (Positions given relative to the site; the ones from at() and local() are already.)
       w.mesh = this.#disc(g, w.r, w.level, this.waterMats[w.mat], w.x ?? 0, w.z ?? 0);
       w.mesh.castShadow = false;
@@ -835,23 +850,7 @@ export class Landmarks {
     }
     if (falls) {
       // The falls: ribbons of white water streaming down, spray and foam where they land.
-      const tex = this.fallsTexture ??= (() => {
-        const c = document.createElement('canvas');
-        c.width = 32;
-        c.height = 128;
-        const x = c.getContext('2d');
-        x.fillStyle = 'rgba(200,230,255,0.35)';
-        x.fillRect(0, 0, 32, 128);
-        for (let i = 0; i < 60; i++) {
-          x.fillStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.6})`;
-          x.fillRect(Math.random() * 32, Math.random() * 128, 1 + Math.random() * 4, 10 + Math.random() * 40);
-        }
-        const t = new CanvasTexture(c);
-        t.wrapS = t.wrapT = RepeatWrapping;
-        return t;
-      })();
-      this.fallsMat ??= new MeshBasicMaterial({ map: tex, color: 0xeef8ff, transparent: true, opacity: 0.9, depthWrite: false, side: DoubleSide });
-      this.sprayMat ??= new SpriteMaterial({ map: this.#puff(), color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false });
+      this.#fallsMaterials();
       for (const f of falls) {
         const h = f.top - f.bottom;
         const m = new Mesh(new PlaneGeometry(f.width ?? 3.4, h), this.fallsMat);
@@ -864,8 +863,44 @@ export class Landmarks {
           spray.scale.set(r(3, 6), r(2, 3.5), 1);
           g.add(spray);
         }
-        const foam = new Mesh(new CircleGeometry((f.width ?? 3.4) * 0.9, 12).rotateX(-Math.PI / 2), (this.foamMat ??= new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false })));
+        const foam = new Mesh(new CircleGeometry((f.width ?? 3.4) * 0.9, 12).rotateX(-Math.PI / 2), this.foamMat);
         foam.position.set(f.x - site.x, f.bottom + 0.06, f.z - site.z);
+        g.add(foam);
+      }
+    }
+    if (ribbons?.length) {
+      // The falls down the cliffs: a ribbon of white water from the lip,
+      // out over the rock as it's thrown and down the face, spreading a
+      // little as it falls; spray and foam where it lands.
+      this.#fallsMaterials();
+      for (const d of ribbons) {
+        const pos = [], uv = [], idx = [], px = -d.dz, pz = d.dx;
+        let along = 0;
+        d.prof.forEach(([out, y], i) => {
+          if (i) along += Math.hypot(out - d.prof[i - 1][0], y - d.prof[i - 1][1]);
+          const v = i / (d.prof.length - 1), half = d.w * (0.5 + 0.25 * v);
+          const cx = d.x - site.x + d.dx * out, cz = d.z - site.z + d.dz * out;
+          pos.push(cx - px * half, y, cz - pz * half, cx + px * half, y, cz + pz * half);
+          uv.push(0, -along / 5, 1, -along / 5); // (the texture scrolls down it)
+          if (i) idx.push(2 * i - 2, 2 * i - 1, 2 * i, 2 * i - 1, 2 * i + 1, 2 * i);
+        });
+        const geo = new BufferGeometry();
+        geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+        geo.setIndex(idx);
+        const m = new Mesh(geo, this.fallsMat);
+        m.renderOrder = 3;
+        g.add(m);
+        const [out, y] = d.prof[d.prof.length - 1], fx = d.x - site.x + d.dx * out, fz = d.z - site.z + d.dz * out;
+        for (let i = 0; i < 3 + Math.round((d.top - d.bottom) / 8); i++) {
+          const spray = new Sprite(this.sprayMat);
+          spray.position.set(fx + r(-1.5, 1.5) + d.dx * r(0, 2), y + r(0.5, 3), fz + r(-1.5, 1.5) + d.dz * r(0, 2));
+          spray.scale.set(r(4, 7), r(2.5, 4.5), 1);
+          g.add(spray);
+        }
+        const foam = new Mesh(new CircleGeometry(d.w * 1.1, 14).rotateX(-Math.PI / 2), this.foamMat);
+        foam.position.set(fx + d.dx * 0.8, y + 0.05, fz + d.dz * 0.8);
+        foam.renderOrder = 3;
         g.add(foam);
       }
     }
@@ -900,13 +935,21 @@ export class Landmarks {
         for (let i = Math.floor((x - 900) / C); i <= Math.floor((x + 900) / C) && todo > 0; i++) if (!L.known(kind, i, k)) (L.site(kind, i, k), todo--);
       }
     }
+    this.bigWait = (this.bigWait ?? 0) - dt;
     if (this.wait <= 0 && todo > 0) {
-      this.wait = 1.5;
+      this.wait = 0.3;
       const near = L.near(x, z, 900);
       const keep = new Set(near.map((s) => s.key));
       for (const [key, b] of this.built) if (!keep.has(key)) (this.scene.remove(b.group), this.built.delete(key));
-      // (One built a time: a big one's a moment's work.)
-      for (const s of near) if (!this.built.has(s.key)) { this.built.set(s.key, this.#build(s)); break; }
+      // (One built a time, the nearest first: a big one's a moment's work,
+      // so those no more than one every second and a half; the falls,
+      // quick, as often as asked.)
+      near.sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
+      const next = near.find((s) => !this.built.has(s.key) && (s.kind === 'falls' || this.bigWait <= 0));
+      if (next) {
+        if (next.kind !== 'falls') this.bigWait = 1.5;
+        this.built.set(next.key, this.#build(next));
+      }
     }
     if (this.fallsMat) this.fallsMat.map.offset.y = (this.fallsMat.map.offset.y + dt * 1.6) % 1;
     for (const b of this.built.values()) {
@@ -945,6 +988,12 @@ export class Landmarks {
   waterAt(x, z, ground) {
     for (const b of this.built.values()) {
       for (const w of b.waters) {
+        if (w.run) {
+          const q = w.run, ux = q.x1 - q.x0, uz = q.z1 - q.z0, L2 = ux * ux + uz * uz || 1;
+          const t = Math.min(1, Math.max(0, ((x - q.x0) * ux + (z - q.z0) * uz) / L2));
+          if (ground < q.level && Math.hypot(x - q.x0 - ux * t, z - q.z0 - uz * t) < q.w / 2 + 0.4) return { level: q.level, fx: 0, fz: 0, speed: 0, clean: true, hot: false, pond: false, landmark: b.site.kind };
+          continue;
+        }
         if (Math.abs(w.cx - x) > w.r || Math.abs(w.cz - z) > w.r) continue;
         if (Math.hypot(w.cx - x, w.cz - z) < w.r && ground < w.level) return { level: w.level, fx: 0, fz: 0, speed: 0, clean: w.clean, hot: !!w.hot, pond: !w.clean, landmark: b.site.kind };
       }

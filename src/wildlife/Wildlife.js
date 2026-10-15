@@ -1649,7 +1649,7 @@ export class Wildlife {
     this.farHowl = (this.farHowl ?? rnd(20, 60)) - 0.5;
     if (day < 0.25 && this.farHowl <= 0) {
       this.farHowl = rnd(60, 160);
-      const w = g.getBiomeWeights(cx, cz, {}), wild = (w.pine ?? 0) + (w.smoky ?? 0) + (w.blackHills ?? 0) + (w.redwood ?? 0) * 0.5 + (w.parkland ?? 0) * 0.6 + (w.temperate ?? 0) * Math.min(1, g.getForestDensity(cx, cz) * 1.5);
+      const w = g.getBiomeWeights(cx, cz, {}), wild = (w.pine ?? 0) + (w.smoky ?? 0) + (w.blackHills ?? 0) + (w.redwood ?? 0) * 0.5 + (w.parkland ?? 0) * 0.6 + (w.cascades ?? 0) * 0.7 + (w.temperate ?? 0) * Math.min(1, g.getForestDensity(cx, cz) * 1.5);
       const packNear = this.animals.some((a) => a.kind === 'wolf' && a.alive && Math.hypot(a.x - cx, a.z - cz) < 700);
       if (wild > 0.5 && !packNear) {
         const a = rnd(0, TAU), d = rnd(600, 1400);
@@ -1807,7 +1807,7 @@ export class Wildlife {
       const p = at();
       if (p.y < ctx.seaLevel + 1 || p.y > 150) continue;
       const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
-      if (w.temperate + w.pine + w.smoky + w.parkland > 0.6 && f > 0.08 && f < 0.95 && g.getMountainness(p.x, p.z) < 0.55) { // (the birch and aspen parkland too)
+      if (w.temperate + w.pine + w.smoky + w.parkland + (w.cascades ?? 0) > 0.6 && f > 0.08 && f < 0.95 && g.getMountainness(p.x, p.z) < 0.55) { // (the birch and aspen parkland too)
         if (rand() < 0.28) {
           const from = this.animals.length;
           const herd = this.#group('deer', p, 2 + Math.floor(rand() * 5), rand() < 0.35);
@@ -1976,7 +1976,7 @@ export class Wildlife {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
       const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z), f = g.getForestDensity(p.x, p.z);
-      if (w.pine + w.smoky + w.temperate + w.parkland > 0.6 && m > 0.1 && m < 0.75 && f < 0.85) {
+      if (w.pine + w.smoky + w.temperate + w.parkland + (w.cascades ?? 0) > 0.6 && m > 0.1 && m < 0.75 && f < 0.85) {
         if (rand() < 0.3) {
           const from = this.animals.length;
           const herd = this.#group('elk', p, 4 + Math.floor(rand() * 7), rand() < 0.3);
@@ -2059,7 +2059,7 @@ export class Wildlife {
     {
       const p = at();
       const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
-      if (p.y > ctx.seaLevel + 1 && w.temperate + w.smoky + w.parkland > 0.6 && f > 0.15 && f < 0.8 && g.getMountainness(p.x, p.z) < 0.45 && rand() < 0.1) {
+      if (p.y > ctx.seaLevel + 1 && w.temperate + w.smoky + w.parkland + (w.cascades ?? 0) > 0.6 && f > 0.15 && f < 0.8 && g.getMountainness(p.x, p.z) < 0.45 && rand() < 0.1) {
         const from = this.animals.length;
         const herd = this.#group('turkey', p, 4 + Math.floor(rand() * 6), rand() < 0.2);
         if (herd) home.herds.push(herd);

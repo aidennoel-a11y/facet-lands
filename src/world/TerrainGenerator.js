@@ -38,10 +38,14 @@ export const BIOME_TUNING = {
   // Badlands in the savanna and the desert: the chance of a patch per 6 km square, and their size.
   badlands: 0.2,
   badlandsSize: 0.78, // (radius: 0.78 ≈ 40% smaller patches)
+  // The Cascades (escarpment country with falls): the chance of a patch per 3.2 km square.
+  cascades: 1,
   // How much of the green country is forest rather than plains: higher, more forest.
   forest: 0,
 };
 const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
+// The Cascades' tiers: where each steps up (on its noise), and how far (m).
+const CASCADE_TIERS = [[-0.34, 17], [-0.17, 21], [-0.01, 19], [0.15, 23], [0.31, 18]];
 const T = BIOME_TUNING;
 const DUNE = new Color(0xe6b86e); // dune sand
 const CORALS = [0xe0708a, 0xe89a4a, 0x9a6ab8, 0x4fb3a0, 0xe6cf5a, 0xd9566a].map((c) => new Color(c));
@@ -54,6 +58,8 @@ const SCREE = new Color(0x4b423e); // a cinder cone's dark slopes
 const ICE = new Color(0x9fcbe0); // glacier ice
 const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
 const GRAVEL = new Color(0x8a8590);
+const CASCADE_MOSS = new Color(0x4a7a34); // moss on the Cascades' cliffs
+const CASCADE_ROCK = [0x4a4d4c, 0x585b58, 0x3f4342].map((c) => new Color(c)); // their basalt, layer on layer
 // Tide pools: the water held in them, and the rock lip round them, in metres above the sea.
 export const TIDE_LEVEL = 0.62;
 const TIDE_LIP = 0.8;
@@ -77,6 +83,7 @@ const BANKS = {
   temperate: { mud: 0x5f4d38, bank: 0x7fb24e, rock: 0 },
   smoky: { mud: 0x5a4a38, bank: 0x6ca447, rock: 0 },
   parkland: { mud: 0x6a5a3e, bank: 0x9cc25a, rock: 0 },
+  cascades: { mud: 0x4f4a3e, bank: 0x5fa244, rock: 0.35, rockColor: 0x4f5250 },
   pine: { mud: 0x5a4c3e, bank: 0x6f9a4c, rock: 0.1, rockColor: 0x8a8590 },
   jungle: { mud: 0x5a4430, bank: 0x4f9a3c, rock: 0 },
   wetland: { mud: 0x4f4232, bank: 0x6a8e44, rock: 0 },
@@ -352,8 +359,12 @@ export class TerrainGenerator {
     // Birch and aspen parkland: rounded stretches of the green lowlands
     // (not up towards the ranges), open grass with groves in it.
     const pk = open > 0 ? this.#parkland(x, z, range) : 0;
-    out.temperate = open * (1 - pk);
-    out.parkland = open * pk;
+    // The Cascades: escarpment country, stepping up in tiers of cliffs
+    // with falls pouring off them (see cascadesRelief).
+    const ck = open > 0 ? this.#cascadesZone(x, z, range) : 0;
+    out.temperate = open * (1 - pk) * (1 - ck);
+    out.parkland = open * pk * (1 - ck);
+    out.cascades = open * ck;
     out.pine = rest * pz * (1 - rz);
     out.redwood = rest * pz * rz;
     out.wetland = green * wz;
@@ -390,6 +401,42 @@ export class TerrainGenerator {
       // (Cool green country, well clear of the ranges, the savanna and the jungles.)
       return a < 0.34 && r < 0.2 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.35 ? 1 : 0;
     });
+  }
+
+  /** Where the Cascades lie in the green country (0..1). */
+  #cascadesZone(x, z, range) {
+    const low = 1 - smoothstep(0.1, 0.25, smoothstep(0.08, 0.55, range + MOUNTAIN_BIAS - this.#drySuppress(x, z)));
+    if (low <= 0) return 0;
+    return low * this.#blobs('cascades', x, z, 3200, T.cascades, 950, 1500, 0xca5c, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      const a = this.getAridity(px, pz, r);
+      // (Wet green country clear of the ranges, the sea, the savanna, the
+      // jungles, the volcanoes and the Smoky Mountains.)
+      return a < 0.44 && r < 0.3 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#smokyBlob(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.45 ? 1 : 0;
+    }) * (1 - smoothstep(0, 0.15, this.#seaCoast(x, z)));
+  }
+
+  /**
+   * The Cascades' land (metres to add): broad tiers stepping up across the
+   * country, each ending in a cliff 15 to 25 m tall, its line ragged with
+   * bays and headlands, its face dark rock knobbled with ledges; the tops
+   * gently rolling.
+   */
+  cascadesRelief(x, z) {
+    const N = this.escarpNoise;
+    const wx = x + N.noise2D(x * 0.0025 + 11, z * 0.0025) * 45, wz = z + N.noise2D(x * 0.0025, z * 0.0025 - 11) * 45;
+    const ragged = N.noise2D(x * 0.018 + 3, z * 0.018 - 3) * 0.022 + N.noise2D(x * 0.05 - 8, z * 0.05 + 2) * 0.006;
+    const m = N.fbm(wx * 0.0008 + 500, wz * 0.0008 - 500, 3) + ragged;
+    let h = 0, face = 0;
+    for (const [e, H] of CASCADE_TIERS) {
+      const t = smoothstep(e, e + 0.011, m);
+      h += t * H;
+      face = Math.max(face, 4 * t * (1 - t));
+    }
+    // (Ledges and bulges on the faces; the tops gently rolling.)
+    const knobs = face > 0 ? (N.noise2D(x * 0.21 + 5, z * 0.21 - 5) * 1.4 + N.ridged(x * 0.09 - 3, z * 0.09 + 9, 2, 2, 0.5, 0.05) * 1.6) * face : 0;
+    const swell = N.fbm(x * 0.0045 + 40, z * 0.0045, 2) * 3.5;
+    return 8 + h + knobs + swell;
   }
 
   /** Where redwoods take over in the heart of a pine forest near a lake or the sea (0..1). */
@@ -1296,7 +1343,9 @@ export class TerrainGenerator {
     const seaLevel = this.rivers.seaLevel;
     // (Few cliffs drop straight into a lake: escarpments fade out over lake basins.)
     const badlands = w.badlands > 0.005 ? w.badlands * this.badlandsRelief(x, z) : 0;
-    let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + volcanic + badlands + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
+    // (The Cascades' tiers likewise fade out over lake basins.)
+    const cascades = w.cascades > 0.005 ? w.cascades * this.cascadesRelief(x, z) * (1 - smoothstep(0.5, 6, lakes)) : 0;
+    let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + volcanic + badlands + cascades + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // (Valleys only in land well above the water: never new lakes.)
     if (valleys > 0) height -= valleys * smoothstep(seaLevel + 3, seaLevel + 30, height);
     // Canyons cut down into it (their floors kept above the sea).
@@ -2606,7 +2655,7 @@ export class TerrainGenerator {
    */
   getSeasonality(x, z) {
     const w = this.getBiomeWeights(x, z, {});
-    const s = w.temperate + w.pine + 0.9 * w.redwood + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + 0.1 * w.badlands + w.parkland;
+    const s = w.temperate + w.pine + 0.9 * w.redwood + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + 0.1 * w.badlands + w.parkland + w.cascades;
     // (Near a jungle its warmth reaches out past its edge: no autumn there, and no snow.)
     return s * (1 - smoothstep(0.05, 0.45, this.jungleNear(x, z)));
   }
@@ -2951,11 +3000,11 @@ export class TerrainGenerator {
 
   /**
    * How much the land here is given to steep rock faces (mountains, mesas,
-   * escarpments, Black Hills): 0..1. Where boulders gather at the foot of cliffs.
+   * escarpments, Black Hills, the Cascades): 0..1. Where boulders gather at the foot of cliffs.
    */
   getCliffiness(x, z) {
-    const f = this.getFeatures(x, z);
-    return Math.max(this.getMountainness(x, z), f.mesa, f.escarp, this.getBiomeWeights(x, z, {}).blackHills);
+    const f = this.getFeatures(x, z), w = this.getBiomeWeights(x, z, {});
+    return Math.max(this.getMountainness(x, z), f.mesa, f.escarp, w.blackHills, 0.8 * w.cascades);
   }
 
   /**
@@ -3426,7 +3475,7 @@ export class TerrainGenerator {
     const beds = smoothstep(0.0, 0.25, this.coastNoise.fbm(x * 0.004 - 70, z * 0.004 + 35, 2));
     if (beds <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
-    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.redwood + w.wetland + w.blackHills + w.smoky + w.volcanic + w.parkland);
+    const cool = smoothstep(0.45, 0.7, w.temperate + w.pine + w.redwood + w.wetland + w.blackHills + w.smoky + w.volcanic + w.parkland + w.cascades);
     if (cool <= 0) return 0;
     const ocean = smoothstep(0.4, 0.7, this.getOceanness(x, z));
     const depth = smoothstep(sea - 2.5, sea - 4, ground) * (1 - smoothstep(sea - 13, sea - 16, ground));
@@ -3592,6 +3641,7 @@ export class TerrainGenerator {
     if (top === 'savanna') return f.mesa > 0.28 ? 'Mesas' : 'Savanna';
     if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
     if (top === 'parkland') return 'Birch & aspen parkland';
+    if (top === 'cascades') return 'Cascades';
     if (top === 'redwood') return 'Redwood forest';
     if (top === 'badlands') return 'Badlands';
     if (top === 'saltFlat') return 'Salt flats';
@@ -3722,6 +3772,14 @@ export class TerrainGenerator {
         const band = Math.floor((ground + this.detailNoise.noise2D(x * 0.01, z * 0.01) * 0.6) / 2.2);
         out.lerp(BADLANDS[((band % BADLANDS.length) + BADLANDS.length) % BADLANDS.length], 0.9 * bare * smoothstep(0.02, 0.5, w.badlands));
       }
+    }
+    // The Cascades' cliffs: dark basalt in layers, wet, moss on the ledges
+    // and in streaks down the faces.
+    if (w.cascades > 0.05 && upness < 0.82) {
+      const face = (1 - smoothstep(0.55, 0.82, upness)) * smoothstep(0.05, 0.5, w.cascades);
+      const layer = Math.floor((ground + this.detailNoise.noise2D(x * 0.03, z * 0.03) * 0.8) / 2.6);
+      const moss = this.detailNoise.noise2D(x * 0.09 + 9, z * 0.09 - 4) + 0.7 * this.detailNoise.noise2D(x * 0.3 - 2, ground * 0.45 + 5);
+      out.lerp(moss > 0.45 ? CASCADE_MOSS : CASCADE_ROCK[((layer % 3) + 3) % 3], 0.85 * face);
     }
     // Mesa and canyon walls: bands of red and orange sandstone.
     // (Fading gradually into the rock round about: an escarpment's walls

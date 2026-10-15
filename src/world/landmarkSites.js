@@ -20,11 +20,6 @@ export const LANDMARKS = {
   crystalLake: { name: 'Crystal Lake', cell: 3000, tries: 14, land: (h, slope, rise) => h > 30 && rise < -1.5 && slope < 0.4, // (in a high bowl among the peaks, where the water gathers)
     basin: { r: 34, d: 7, steep: 0.35 }, what: 'A clear mountain lake ringed with crystals, some taller than a house: its water is safe to drink, and crystals lie on its shore',
     fits: (w, m) => m > 0.22 && m < 0.65 && w.desert + w.savanna + w.badlands < 0.2 },
-  // (A lake high on a wooded hillside, and below it a chain of pools, each
-  // spilling over its lip in falls into the next: see cascadePools.)
-  cascades: { name: 'The Cascades', cell: 3000, tries: 12, cascade: true, land: (h, slope) => h > 25 && slope > 0.1 && slope < 0.55, // (on a hillside, for the water to step down)
-    what: 'A high lake spilling down a hillside in falls from one turquoise pool to the next: clean water, and the fish there bite fast',
-    fits: (w, m, f) => w.temperate + w.smoky + w.parkland + w.pine + w.redwood + w.wetland > 0.6 && m < 0.7 },
   standingStones: { name: 'The Standing Stones', cell: 2600, land: (h, slope, rise) => h > 6 && rise > 1.5 && slope < 0.2, // (on the crown of a low hill, seen from all round)
     what: 'A ring of old stones: stood in it, the other landmarks near are shown on your map',
     fits: (w, m, f, open) => (open > 0.25 || w.blackHills > 0.5 || w.parkland > 0.5) && m < 0.3 },
@@ -50,11 +45,18 @@ export const LANDMARKS = {
   // of the snowy peaks. Placed the same way; never on the map.)
   glacier: { name: 'Glacier', cell: 1500, hidden: true, chance: 0.85, tries: 14, land: (h, slope, rise) => h > 120 && rise < -2.5 && slope < 0.7,
     what: '', fits: (w, m, f, open, cold) => m > 0.6 && cold > 0.4 },
+  // (Not a landmark to find: the falls of the Cascades. On a cliff top a
+  // pond, spilling through a notch in its bank over the edge in a fall
+  // into a pool at the cliff's foot, and that pool on over the next cliff
+  // into the next, and so on down; a big lake at the top spilling over
+  // two edges. One to a square or so, all over the Cascades: see fallsPools.)
+  falls: { name: 'Falls', cell: 200, hidden: true, falls: true, chance: 0.9, tries: 3, needs: { forest: false },
+    what: '', fits: (w) => (w.cascades ?? 0) > 0.75 },
 };
 export const LANDMARK_KINDS = Object.keys(LANDMARKS);
 /** The ones to be found (on the map, an achievement each). */
 export const FOUND_KINDS = LANDMARK_KINDS.filter((k) => !LANDMARKS[k].hidden);
-const BASIN_KINDS = LANDMARK_KINDS.filter((k) => LANDMARKS[k].basin || LANDMARKS[k].cascade);
+const BASIN_KINDS = LANDMARK_KINDS.filter((k) => LANDMARKS[k].basin || LANDMARKS[k].falls);
 
 // (A smooth wobbly noise, for a pit's rough walls.)
 const wob = (x, z, s) => Math.sin(x * 0.11 + s) * Math.cos(z * 0.13 - s) + 0.5 * Math.sin(x * 0.29 - z * 0.23 + s * 2) + 0.25 * Math.sin(x * 0.61 + z * 0.53 + s * 3);
@@ -85,7 +87,7 @@ export class LandmarkSites {
         const x = (i + 0.15 + 0.7 * hash2(i * 3 + t, k, seed + 1)) * C, z = (k + 0.15 + 0.7 * hash2(i, k * 3 + t, seed + 2)) * C;
         // (The cheap questions first.)
         this.g.getBiomeWeights(x, z, w);
-        for (const id of ['temperate', 'parkland', 'smoky', 'redwood', 'badlands', 'desert', 'blackHills', 'savanna', 'wetland', 'volcanic', 'pine']) w[id] ??= 0;
+        for (const id of ['temperate', 'parkland', 'cascades', 'smoky', 'redwood', 'badlands', 'desert', 'blackHills', 'savanna', 'wetland', 'volcanic', 'pine']) w[id] ??= 0;
         if ((w.saltFlat ?? 0) > 0.3 || (w.mangrove ?? 0) > 0.3) continue;
         const m = this.g.getMountainness(x, z), f = L.needs?.forest === false ? 0 : this.g.getForestDensity(x, z);
         const open = w.temperate > 0.5 ? 1 - Math.min(1, f * 1.6) : 0;
@@ -182,49 +184,142 @@ export class LandmarkSites {
       s.pools = [{ x: s.x, z: s.z, ...L.basin, seed: s.seed }];
       // (A dry pit no deeper than keeps its floor above the sea's level.)
       if (L.basin.dry) s.pools[0].d = Math.min(L.basin.d, this.#probe((H) => H(s.x, s.z)) - (this.g.rivers?.seaLevel ?? 2) - 8);
-    } else if (L.cascade) s.pools = this.#cascadePools(s);
+    } else if (L.falls) s.pools = this.#fallsPools(s);
     else s.pools = [];
     for (const p of s.pools) if (!p.dry && p.level === undefined) p.level = this.#rimLevel(p);
-    // (Each pool's water below the one above it, so it spills down, never back.)
-    for (let i = 1; i < s.pools.length; i++) s.pools[i].level = Math.min(s.pools[i].level, s.pools[i - 1].level - 0.8);
-    s.extent = Math.max(...s.pools.map((p) => Math.hypot(p.x - s.x, p.z - s.z) + p.r), 0) * 1.15;
+    s.runs ??= [];
+    s.drops ??= [];
+    s.extent = Math.max(...s.pools.map((p) => Math.hypot(p.x - s.x, p.z - s.z) + p.r), ...s.runs.map((q) => Math.max(Math.hypot(q.x0 - s.x, q.z0 - s.z), Math.hypot(q.x1 - s.x, q.z1 - s.z)) + q.w), 0) * 1.15;
     return s.pools;
   }
 
-  // The cascades: a lake on the hillside, then pool after pool down the
-  // fall of the land below it, each touching the next, wandering a little.
-  #cascadePools(s) {
-    return this.#probe((H) => {
-      const gx = (H(s.x + 25, s.z) - H(s.x - 25, s.z)) / 50, gz = (H(s.x, s.z + 25) - H(s.x, s.z - 25)) / 50;
-      let dir = Math.atan2(-gz, -gx); // (downhill)
-      const R = (n) => (Math.sin(s.seed * 0.001 + n * 12.9898) * 43758.5453) % 1;
-      const rnd = (n, a, b) => a + (b - a) * Math.abs(R(n));
-      const pools = [{ x: s.x, z: s.z, r: 34, d: 5, steep: 0.35, seed: s.seed, lake: true }];
-      let prev = pools[0], prevH = H(s.x, s.z);
-      for (let i = 1; i <= 10; i++) {
-        const r = rnd(i, 10, 17);
-        dir += rnd(i + 50, -0.35, 0.35);
-        const step = (prev.r + r) * 1.08;
-        const x = prev.x + Math.cos(dir) * step, z = prev.z + Math.sin(dir) * step, h = H(x, z);
-        if (h > prevH - 0.8) {
-          // (Not falling away here: look a little to either side for where it does.)
-          let found = null;
-          for (const turn of [0.5, -0.5, 0.9, -0.9]) {
-            const tx = prev.x + Math.cos(dir + turn) * step, tz = prev.z + Math.sin(dir + turn) * step, th = H(tx, tz);
-            if (th < prevH - 0.8) (found = [tx, tz, th]), (dir += turn);
-            if (found) break;
-          }
-          if (!found) break;
-          prev = { x: found[0], z: found[1], r, d: 2.6, steep: 0.4, seed: s.seed + i };
-          prevH = found[2];
-        } else {
-          prev = { x, z, r, d: 2.6, steep: 0.4, seed: s.seed + i };
-          prevH = h;
-        }
-        pools.push(prev);
+  /**
+   * The falls (see LANDMARKS.falls): their pools (the pond at the top
+   * first), and on the site `runs` (the notch from a pool to the cliff's
+   * edge: { x0, z0, x1, z1, w, level }) and `drops` (the falls: from the
+   * lip at { x, z }, outwards along { dx, dz }, `prof` [out, height] down
+   * the face to the pool below, `w` wide).
+   */
+  #fallsPools(s) {
+    s.runs = [];
+    s.drops = [];
+    let st = s.seed >>> 0;
+    const R = () => (st = (Math.imul(st, 1664525) + 1013904223) >>> 0) / 4294967296;
+    const pools = this.#probe((H) => {
+      // (From where it was put, or failing that a few spots round about.)
+      for (let t = 0; t < 5; t++) {
+        const ox = t ? (R() - 0.5) * 160 : 0, oz = t ? (R() - 0.5) * 160 : 0;
+        const pools = this.#fallsFrom(H, s, s.x + ox, s.z + oz, R);
+        if (pools.length) return pools;
+        s.runs = [];
+        s.drops = [];
       }
-      return pools;
+      return [];
     });
+    return pools;
+  }
+
+  #fallsFrom(H, s, x0, z0, R) {
+    {
+      const pools = [];
+      // (The nearest edge from there: a cliff's top.)
+      const edge = this.#edge(H, x0, z0, H(x0, z0), 0, 80, null);
+      if (!edge) return pools;
+      // The pond: set back from the edge on the level top, dug a little
+      // into it, its water just under the lowest of its bank.
+      const big = R() < 0.3, r = big ? 15 + R() * 10 : 7 + R() * 6;
+      const sx = edge.x - edge.dx * (r + 5), sz = edge.z - edge.dz * (r + 5);
+      let low = Infinity;
+      for (let k = 0; k < 16; k++) low = Math.min(low, H(sx + Math.cos(k * 0.3927) * r * 1.1, sz + Math.sin(k * 0.3927) * r * 1.1));
+      if (low < edge.top - 3.5 || H(sx, sz) > edge.top + 4) return pools; // (not on a level top)
+      const src = { x: sx, z: sz, r, d: 2 + r * 0.06, steep: 0.35, seed: s.seed, level: low - 0.6, source: true };
+      pools.push(src);
+      this.#fall(H, s, pools, src, edge, R, 0);
+      // (A big lake spills over a second edge too, if there's one near.)
+      if (big) {
+        const e2 = this.#edge(H, sx, sz, low, r + 2, r + 70, [-edge.dx, -edge.dz, -0.2]);
+        if (e2) this.#fall(H, s, pools, src, e2, R, 0);
+      }
+      // (A pond that goes nowhere isn't kept: every one here is a fall's source.)
+      return s.drops.length ? pools : [];
+    }
+  }
+
+  /**
+   * The nearest cliff edge from (x, z), going out `d0` to `d1` m, on ground
+   * about as high as `ref` (the same tier): where the land just past it
+   * has dropped 8 m or more. `aim` [dx, dz, cos]: only the ways within
+   * that of it. { x, z (the lip), dx, dz, top }, or null.
+   */
+  #edge(H, x, z, ref, d0, d1, aim) {
+    let best = null;
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2 + 0.1, dx = Math.cos(a), dz = Math.sin(a);
+      if (aim && dx * aim[0] + dz * aim[1] < aim[2]) continue;
+      const hs = [];
+      for (let d = d0, i = 0; d <= d1 + 9; d += 3, i++) {
+        hs.push(H(x + dx * d, z + dz * d));
+        if (i < 3) continue;
+        const j = i - 3, h = hs[j], dj = d0 + j * 3;
+        if (best && dj >= best.d) break;
+        if (Math.abs(h - ref) > 4) break; // (off this tier: up a cliff, or down one too soon)
+        if (h - hs[i] > 8) {
+          // (The lip: where it starts to drop.)
+          let t = dj;
+          while (t < dj + 9 && H(x + dx * (t + 1), z + dz * (t + 1)) > h - 1.2) t++;
+          best = { x: x + dx * t, z: z + dz * t, dx, dz, top: h, d: dj };
+          break;
+        }
+      }
+    }
+    return best;
+  }
+
+  /** A fall over `edge` from the pool `from`, into a pool at the cliff's foot; and on from that over the next edge, if there's one. */
+  #fall(H, s, pools, from, edge, R, depth) {
+    const level = from.level, { dx, dz } = edge;
+    // The foot of the cliff (where the face eases off), and the face's line down to it.
+    const face = [];
+    let foot = null;
+    for (let t = 0; t <= 50; t += 1) {
+      const h = H(edge.x + dx * t, edge.z + dz * t);
+      face.push(h);
+      if (t >= 3 && !foot && h < level - 5 && face[t - 3] - h < 2.4) foot = { t: t - 1.5, h: face[t - 2] };
+      if (foot && t > foot.t + 14) break;
+    }
+    if (!foot) return;
+    const fx = edge.x + dx * foot.t, fz = edge.z + dz * foot.t;
+    // The pool there: its back under the foot of the fall, its water the
+    // lowest of its bank less a little.
+    const r2 = Math.min(12, Math.max(5, (level - foot.h) * 0.32)) + R() * 2;
+    const bx = fx + dx * r2 * 0.45, bz = fz + dz * r2 * 0.45;
+    let low = Infinity;
+    for (let k = 0; k < 16; k++) low = Math.min(low, H(bx + Math.cos(k * 0.3927) * r2 * 1.08, bz + Math.sin(k * 0.3927) * r2 * 1.08));
+    const l2 = Math.min(low - 0.5, foot.h - 0.3);
+    if (level - l2 < 6) return; // (not much of a fall)
+    if (pools.some((p) => Math.hypot(p.x - bx, p.z - bz) < p.r + r2 * 0.8)) return;
+    const w = Math.min(from.r * 0.7, 2.4 + R() * 2.2 + (from.source ? from.r * 0.06 : 0));
+    const pool = { x: bx, z: bz, r: r2, d: 2.6, steep: 0.45, seed: s.seed + pools.length * 7919, level: l2 };
+    pools.push(pool);
+    // The notch from the pool through its bank to the lip, its water the pool's.
+    s.runs.push({ x0: from.x + dx * from.r * 0.75, z0: from.z + dz * from.r * 0.75, x1: edge.x + dx * 0.6, z1: edge.z + dz * 0.6, w, level });
+    // The fall: from the lip, out over the rock (as far as the water's
+    // thrown, or the rock juts), down into the pool.
+    const prof = [];
+    let out = 0;
+    for (let i = 0; i <= 12; i++) {
+      const v = i / 12, y = level - v * (level - l2);
+      let t = 0.3 + 1.8 * Math.sqrt(v);
+      for (let q = 0; q < face.length; q++) if (face[q] < y - 0.4) { t = Math.max(t, q + 0.7); break; }
+      out = Math.max(out, t);
+      prof.push([out, y]);
+    }
+    s.drops.push({ x: edge.x, z: edge.z, dx, dz, w: w * (1 + R() * 0.6), prof, top: level, bottom: l2, pool: pools.length - 1 });
+    // And on down: over the next edge on from this pool, if there's one.
+    if (depth < 4) {
+      const e = this.#edge(H, bx, bz, l2 + 0.8, r2 + 2, r2 + 60, [dx, dz, 0.25]);
+      if (e) this.#fall(H, s, pools, pool, e, R, depth + 1);
+    }
   }
 
   #rimLevel(p) {
@@ -246,13 +341,37 @@ export class LandmarkSites {
   /** The sites with hollows whose square (x, z) is in, with their pools. */
   *#hollowsAt(x, z) {
     for (const kind of BASIN_KINDS) {
-      const C = LANDMARKS[kind].cell;
-      const s = this.site(kind, Math.floor(x / C), Math.floor(z / C));
-      if (!s) continue;
-      const pools = this.poolsOf(s);
-      if (Math.abs(x - s.x) > s.extent || Math.abs(z - s.z) > s.extent) continue;
-      yield [s, pools];
+      const C = LANDMARKS[kind].cell, ci = Math.floor(x / C), ck = Math.floor(z / C);
+      // (The falls run on out of their squares: the ones round about asked too.)
+      const n = LANDMARKS[kind].falls ? 1 : 0;
+      for (let k = ck - n; k <= ck + n; k++) {
+        for (let i = ci - n; i <= ci + n; i++) {
+          const s = this.site(kind, i, k);
+          if (!s) continue;
+          const pools = this.poolsOf(s);
+          if (Math.abs(x - s.x) > s.extent || Math.abs(z - s.z) > s.extent) continue;
+          yield [s, pools];
+        }
+      }
     }
+  }
+
+  // (How far (x, z) is from a run's middle line.)
+  static #along(q, x, z) {
+    const ux = q.x1 - q.x0, uz = q.z1 - q.z0, L2 = ux * ux + uz * uz || 1;
+    const t = Math.min(1, Math.max(0, ((x - q.x0) * ux + (z - q.z0) * uz) / L2));
+    return Math.hypot(x - q.x0 - ux * t, z - q.z0 - uz * t);
+  }
+
+  /** Whether (x, z) is within `margin` of the falls' water (no trees growing there). */
+  nearFalls(x, z, margin = 2) {
+    if (this.busy) return false;
+    for (const [s, pools] of this.#hollowsAt(x, z)) {
+      if (s.kind !== 'falls') continue;
+      for (const p of pools) if (Math.hypot(x - p.x, z - p.z) < p.r * 1.12 + margin) return true;
+      for (const q of s.runs) if (LandmarkSites.#along(q, x, z) < q.w / 2 + margin) return true;
+    }
+    return false;
   }
 
   /**
@@ -264,7 +383,15 @@ export class LandmarkSites {
   basinAt(x, z, h = null) {
     if (this.busy) return 0;
     let d = 0;
-    for (const [, pools] of this.#hollowsAt(x, z)) {
+    for (const [s, pools] of this.#hollowsAt(x, z)) {
+      // (The falls' notches: a channel through the bank, its bed under the water, its sides sloping up.)
+      if (s.runs?.length && h !== null) {
+        for (const q of s.runs) {
+          const e = LandmarkSites.#along(q, x, z) - q.w / 2;
+          if (e > 4) continue;
+          d = Math.max(d, h - Math.min(h, q.level - 0.7 + Math.max(0, e) * 1.3));
+        }
+      }
       for (const p of pools) {
         const dx = x - p.x, dz = z - p.z;
         if (Math.abs(dx) > p.r * 1.15 || Math.abs(dz) > p.r * 1.15) continue;
@@ -291,7 +418,8 @@ export class LandmarkSites {
   /** Whether (x, z), its ground at `h`, is under a landmark's water (no grass, no flowers there). */
   underWater(x, z, h) {
     if (this.busy) return false;
-    for (const [, pools] of this.#hollowsAt(x, z)) {
+    for (const [s, pools] of this.#hollowsAt(x, z)) {
+      for (const q of s.runs ?? []) if (h < q.level + 0.2 && LandmarkSites.#along(q, x, z) < q.w / 2) return true;
       for (const p of pools) {
         if (p.dry) continue;
         if (Math.hypot(x - p.x, z - p.z) < p.r * 1.1 && h < p.level + 0.25) return true;

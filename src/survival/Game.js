@@ -2424,7 +2424,7 @@ export class Game {
     this.scene.add(line);
     // (Sooner where there are fish about.)
     const near = (this.fish?.fish ?? []).some((f) => Math.hypot(f.x - at.x, f.z - at.z) < 10);
-    this.line = { ...at, bobber, line, wait: rnd(4, 14) * (near ? 0.5 : 1) * (this.landmarkHere?.kind === 'cascades' ? 0.5 : 1) * (1 - 0.06 * this.skillLevel('fishing')), bite: 0 };
+    this.line = { ...at, bobber, line, wait: rnd(4, 14) * (near ? 0.5 : 1) * (this.generator().getBiomeWeights(at.x, at.z, {}).cascades > 0.5 ? 0.6 : 1) * (1 - 0.06 * this.skillLevel('fishing')), bite: 0 };
     this.sound?.call('whoosh', 0, 0.3);
     this.traces?.splash(at.x, at.level, at.z, 4, 1, 0.4);
   }
@@ -3361,7 +3361,7 @@ export class Game {
     const kinds = new Set([...this.landmarksFound].map((k) => k.split(':')[0]));
     if (FOUND_KINDS.every((k) => kinds.has(k))) this.#achieve('landmarks');
     const GIFTS = {
-      elderTree: [['honey', 3], ['apple', 4]], stoneArch: [['flint', 4]], crystalLake: [['crystal', 4]], cascades: [['rawFish', 3]],
+      elderTree: [['honey', 3], ['apple', 4]], stoneArch: [['flint', 4]], crystalLake: [['crystal', 4]],
       standingStones: [['oldMap', 1]], sunkenForest: [['iron', 4]], petrifiedLog: [['flint', 6], ['crystal', 1]], boneField: [['arrow', 10], ['oldMap', 1]],
       hotPools: [['salt', 5]], greatSinkhole: [['coal', 4], ['guano', 3]],
     };

@@ -69,7 +69,7 @@ export function rockCandidates(generator, config, cx, cz) {
       const jitter = generator.getColorJitter(wx, wz);
       const colourHeight = land + jitter;
       const bare = smoothstep(132, 150, colourHeight) * (1 - smoothstep(snowLine - 20, snowLine - 8, colourHeight));
-      const cliffy = m > 0.05 || Math.max(m, mesa, escarp, granite) > 0.05;
+      const cliffy = m > 0.05 || Math.max(m, mesa, escarp, granite, (bw.cascades ?? 0) * 0.5) > 0.05;
       const shoreMax = land < seaLevel + 5.5 ? 1.4 : 0;
       // Round the volcanoes: black basalt blocks heaped along the lava and
       // round the craters.

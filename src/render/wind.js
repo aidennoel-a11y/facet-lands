@@ -12,11 +12,24 @@ export const windDirection = { value: new Vector2(0.95, 0.31) };
 // same in the shaders, where they bend the grass over in waves, and here,
 // where the wind's sound swells as one passes.)
 const GUST = /* glsl */ `
+  // (How far a point that high up a model bends: more the higher, but past
+  // about 8 m the tall trunk is stiff, its top swaying only a little more
+  // than a common tree's: see windReach.)
+  float windReach(float y) {
+    y = max(y, 0.0);
+    return y <= 8.0 ? pow(y, 1.5) : 22.63 + (y - 8.0) * 1.2;
+  }
   float windGust(vec2 p, float t, vec2 dir, float strength) {
     float along = dot(p, dir), across = dot(p, vec2(-dir.y, dir.x));
     float w = along * 0.045 - t * 0.4 + 1.6 * sin(across * 0.011 + t * 0.05) + 0.7 * sin(across * 0.031 - along * 0.008);
     return smoothstep(0.55, 1.0, sin(w)) * smoothstep(0.1, 0.5, strength);
   }`;
+
+/** How far a point `y` up a model bends in the wind (as the shaders have it). */
+export function windReach(y) {
+  y = Math.max(y, 0);
+  return y <= 8 ? Math.pow(y, 1.5) : 22.63 + (y - 8) * 1.2;
+}
 
 /** How strong a gust is at (x, z) now (0..1), as the shaders have it. */
 export function gustAt(x, z) {
@@ -69,7 +82,7 @@ export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, g
   // \`vGust\` for the fragment shader.)
   const gustCode = gust
     ? `vGust = windGust(wOrigin.xz, uWindTime, uWindDir, uWindStrength) * wNear;
-        transformed.xz += uWindDir * pow(max(transformed.y, 0.0), 1.5) * ${f(gust)} * vGust;`
+        transformed.xz += uWindDir * windReach(transformed.y) * ${f(gust)} * vGust;`
     : '';
   const fadeCode = fade
     ? `transformed *= 1.0 - smoothstep(${f(fade[0])}, ${f(fade[1])}, distance(wOrigin.xz, cameraPosition.xz));`
@@ -94,7 +107,7 @@ export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, g
         // (Past \`still\`, it stands still: too far off for its swaying to be seen, so not worked out.)
         ${still ? `float wNear = 1.0 - smoothstep(${f(still[0])}, ${f(still[1])}, distance(wOrigin.xz, cameraPosition.xz));\n        if (wNear > 0.0) {` : 'float wNear = 1.0;\n        {'}
         float wPhase = uWindTime * ${f(speed)} + wOrigin.x * 0.045 + wOrigin.z * 0.037;
-        float wBend = pow(max(transformed.y, 0.0), 1.5) * ${f(strength)} * uWindStrength * wNear;
+        float wBend = windReach(transformed.y) * ${f(strength)} * uWindStrength * wNear;
         transformed.x += (sin(wPhase) + 0.35 * sin(wPhase * 2.7 + position.z)) * wBend;
         transformed.z += (0.6 * cos(wPhase * 0.8) + 0.25 * sin(wPhase * 3.1 + position.x)) * wBend;
         ${gustCode}

@@ -460,7 +460,7 @@ fires.fuelAt = (x, z) => {
   const h = generator.getBaseHeight(x, z);
   if (h < WORLD.seaLevel + 0.3 || waterAt(x, z, true)) return 0;
   const w = generator.getBiomeWeights(x, z, {});
-  const dry = 1.15 * (w.savanna ?? 0) + 0.85 * ((w.temperate ?? 0) + (w.parkland ?? 0) + (w.blackHills ?? 0)) + 0.75 * ((w.pine ?? 0) + (w.redwood ?? 0) + (w.smoky ?? 0))
+  const dry = 1.15 * (w.savanna ?? 0) + 0.85 * ((w.temperate ?? 0) + (w.parkland ?? 0) + (w.cascades ?? 0) + (w.blackHills ?? 0)) + 0.75 * ((w.pine ?? 0) + (w.redwood ?? 0) + (w.smoky ?? 0))
     + 0.45 * ((w.jungle ?? 0) + (w.volcanic ?? 0) + (w.badlands ?? 0)) + 0.25 * ((w.wetland ?? 0) + (w.mangrove ?? 0)) + 0.03 * ((w.desert ?? 0) + (w.saltFlat ?? 0));
   let f = dry * (0.45 + 0.55 * generator.getGrassDensity(x, z)) + 0.45 * generator.getForestDensity(x, z) * Math.min(1, dry * 1.5);
   // (Green grass, growing and full of sap, hardly takes; dry grass goes up:
@@ -525,8 +525,8 @@ trees.keepOut = (x0, z0, x1, z1) => [
   // (And none along a tornado's track, till the woods grow back over it: see wreck.)
   ...stormTrack(x0, z0, x1, z1),
   // (Nor in a landmark's hollow or about it: each stands in its own clearing.)
-  ...generator.landmarks.near((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 300).flatMap((s) =>
-    s.kind === 'cascades' ? generator.landmarks.poolsOf(s).map((p) => [p.x, p.z, p.r + 5]) : [[s.x, s.z, LANDMARK_CLEAR[s.kind] ?? 16]]),
+  // (The Cascades' falls keep their own clear of trees where they're placed: see treePlacement.)
+  ...generator.landmarks.near((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 300).filter((s) => s.kind !== 'falls').map((s) => [s.x, s.z, LANDMARK_CLEAR[s.kind] ?? 16]),
 ];
 chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
 // The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).
@@ -2501,7 +2501,7 @@ function tick(now) {
         .task({ kind: 'describe', x, z })
         .catch(() => generator.describe(x, z))
         .then((label) => {
-          if (!sheltered) ui.biome.textContent = game.landmarkHere?.kind === 'cascades' ? 'Cascades' : label;
+          if (!sheltered) ui.biome.textContent = label;
         })
         .finally(() => (describing = false));
     }

@@ -49,14 +49,13 @@ export const ACHIEVEMENTS = [
   { id: 'lm_elderTree', name: 'The Elder Tree', what: 'Find the oldest tree in the forest' },
   { id: 'lm_stoneArch', name: 'The Stone Arch', what: 'Find the great arch of red rock' },
   { id: 'lm_crystalLake', name: 'Crystal Lake', what: 'Find the lake ringed with crystals' },
-  { id: 'lm_cascades', name: 'The Cascades', what: 'Find the lake that spills down a hillside, pool to pool' },
   { id: 'lm_standingStones', name: 'The Standing Stones', what: 'Find the ring of old stones' },
   { id: 'lm_sunkenForest', name: 'The Sunken Forest', what: 'Find the drowned forest' },
   { id: 'lm_petrifiedLog', name: 'The Petrified Log', what: 'Find the tree turned to stone' },
   { id: 'lm_boneField', name: 'The Bone Field', what: 'Find the bones of something enormous' },
   { id: 'lm_hotPools', name: 'The Hot Pools', what: 'Find the steaming pools on white terraces' },
   { id: 'lm_greatSinkhole', name: 'The Great Sinkhole', what: 'Find where the ground fell away' },
-  { id: 'landmarks', name: 'Wayfarer', what: 'Find all ten kinds of landmark' },
+  { id: 'landmarks', name: 'Wayfarer', what: 'Find all nine kinds of landmark' },
   { id: 'keep', name: 'The end of the long road', what: 'Set every trophy in the altar of the Lost Keep' },
 ];
 

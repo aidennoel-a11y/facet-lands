@@ -357,6 +357,46 @@ export const BIOMES = {
     },
   },
 
+  // The Cascades: escarpment country, the land stepping up in tiers of
+  // dark, wet, mossy cliffs, the tops green and gently rolling, ponds on
+  // them spilling over the edges in falls into pools below (see
+  // TerrainGenerator.cascadesRelief, and the falls: landmarkSites).
+  cascades: {
+    id: 'cascades',
+    name: 'Cascades',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xc9b98a },
+      { height: 5, color: 0x8fb562 },
+      { height: 8, color: 0x6fae4c }, // lush grass
+      { height: 40, color: 0x5fa244 },
+      { height: 80, color: 0x5a9a42 },
+      { height: 120, color: 0x6a9a4c },
+      { height: 160, color: 0x7f9a5c },
+      { height: 210, color: 0x838198 },
+    ],
+    cliff: 0x4f5250, // (dark, wet rock)
+    cliffSlope: [0.62, 0.42],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 1,
+    trees: {
+      density: 0.55, // (woods here and there on the tops and below the cliffs, open grass between)
+      clumped: true,
+      species: [
+        { type: 'broadleaf', weight: 1, minHeight: 4, maxHeight: 200 },
+        { type: 'oak', weight: 0.5, minHeight: 4, maxHeight: 200 },
+        { type: 'birch', weight: 0.4, minHeight: 4, maxHeight: 200 },
+        { type: 'spruce', weight: 0.5, minHeight: 4, maxHeight: 200 },
+        { type: 'treeFern', weight: 0.15, minHeight: 4, maxHeight: 120 },
+        { type: 'bush', weight: 0.7, minHeight: 4, maxHeight: 200 },
+        { type: 'raspberryBush', weight: 0.2, minHeight: 4, maxHeight: 200 },
+        { type: 'blueberryBush', weight: 0.15, minHeight: 4, maxHeight: 200 },
+      ],
+    },
+  },
+
   // Mangrove coast (like Florida's): flat, low shores running out into
   // warm shallows, dark mud and brackish channels, mangroves standing on
   // their stilt roots out in the water.

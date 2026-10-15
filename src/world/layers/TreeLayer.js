@@ -1,5 +1,5 @@
 import { Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Raycaster, Vector3 } from 'three';
-import { addWind, gustAt, windDepthMaterial, windDirection, windStrength, windTime } from '../../render/wind.js';
+import { addWind, gustAt, windReach, windDepthMaterial, windDirection, windStrength, windTime } from '../../render/wind.js';
 import { seasonalTrees, seasonUniforms } from '../../render/Seasons.js';
 import { LEAF_GEOMETRIES, NO_COLLIDE, STIFF, TREE_GEOMETRIES, treeGeometry } from '../trees.js';
 import { placeTrees } from '../treePlacement.js';
@@ -166,7 +166,7 @@ export function createTreeLayer({ rocks = null } = {}) {
       // (Where that is on the tree's own model, unturned and unscaled.)
       const lx = (dx * c - dz * sn) / sc, lz = (dx * sn + dz * c) / sc, ly = Math.max(0, (y - oy) / sy);
       const ph = windTime.value * WIND.speed + ox * 0.045 + oz * 0.037;
-      const reach = Math.pow(ly, 1.5), bend = reach * WIND.strength * windStrength.value;
+      const reach = windReach(ly), bend = reach * WIND.strength * windStrength.value;
       const g = reach * WIND.gust * gustAt(ox, oz), d = windDirection.value;
       const mx = (Math.sin(ph) + 0.35 * Math.sin(ph * 2.7 + lz)) * bend + d.x * g;
       const mz = (0.6 * Math.cos(ph * 0.8) + 0.25 * Math.sin(ph * 3.1 + lx)) * bend + d.y * g;
