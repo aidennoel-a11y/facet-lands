@@ -1660,7 +1660,15 @@ function surroundings(dt, snow) {
       for (const d of [120, 300]) ring += generator.getBaseHeight(x + Math.cos(a) * d, z + Math.sin(a) * d) / 16;
     }
     const above = camera.position.y - here;
+    // (A still lake or a big pond close by; and is it the cool north, for the loons.)
+    let lake = 0;
+    for (let k = 0; k < 8 && !lake; k++) {
+      const a = (k / 8) * Math.PI * 2, px = x + Math.cos(a) * 70, pz = z + Math.sin(a) * 70, w = waterAt(px, pz, true);
+      if (w && (w.pond || (w.lake && generator.getOceanness(px, pz) < 0.4))) lake = 1;
+    }
+    const cool = smoothstep(0.35, 0.65, generator.getSeasonality(x, z)) * Math.min(1, pine * 2 + woods);
     Object.assign(e, {
+      lake, cool,
       woods, jungle, grass, wetland, desert, pine, ocean: ocean * (1 - smoothstep(30, 90, camera.position.y - WORLD.seaLevel)), lava: heat.lava,
       exposure: smoothstep(4, 40, here - ring) * (1 - smoothstep(40, 150, above)),
       hollow: smoothstep(4, 40, ring - here) * (1 - smoothstep(15, 80, above)),

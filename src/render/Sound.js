@@ -225,6 +225,8 @@ export class Sound {
       // and over it the howl of the wind round it, rising and falling.
       tornado: this.#bed(this.brownNoise, 'lowpass', 140, 0.9, true),
       tornadoHowl: this.#bed(this.noise, 'bandpass', 420, 2.2, true),
+      // The desert's wind: a low hollow moan.
+      moan: this.#bed(this.brownNoise, 'bandpass', 220, 5),
       // Hail: hard little stones rattling down on everything.
       hail: this.#bed(this.noise, 'highpass', 2600, 0.7),
     };
@@ -477,6 +479,20 @@ export class Sound {
     if (e.day < 0.25 && lowland > 0.5 && (e.woods + e.grass + (e.wetland ?? 0)) > 0.3 && e.rain < 0.3 && (r = due(6, 3.5))) {
       this.call((e.wetland ?? 0) > 0.4 && r(1) < 0.5 ? 'treefrog' : 'katydid', way(r(2)), (0.2 + 0.3 * r(3)) * quiet);
     }
+    // A still lake in the north woods, at dusk and dawn and in the night:
+    // loons wailing and laughing across it.
+    if ((e.lake ?? 0) > 0.3 && (e.cool ?? 0) > 0.3 && Math.max(e.dawn, e.dusk, 1 - e.day) > 0.4 && e.rain < 0.3 && (r = due(13, 16))) {
+      this.call(r(1) < 0.6 ? 'loon' : 'loonLaugh', way(r(2)), (0.3 + 0.35 * r(3)) * quiet);
+    }
+    // The marsh at dusk and in the night: a bittern booming in the reeds, the bullfrogs.
+    if ((e.wetland ?? 0) * lowland > 0.35 && Math.max(e.dusk, 1 - e.day) > 0.4 && e.rain < 0.4 && (r = due(14, 7))) {
+      this.call(r(1) < 0.35 ? 'bittern' : 'bullfrog', way(r(2)), (0.3 + 0.4 * r(3)) * quiet);
+    }
+    // Ravens over the desert, the badlands and the high bare rock by day.
+    if ((desert + 0.6 * e.high * (1 - e.woods)) > 0.4 && e.day > 0.5 && e.rain < 0.3 && (r = due(15, 14))) this.call('raven', way(r(1)), 0.2 + 0.3 * r(2));
+    // The desert's own wind: a low moan over the sand, rising and falling.
+    set(this.beds.moan, 0.035 * desert * (0.3 + 0.7 * e.wind) * (0.6 + 0.4 * Math.sin(t * 0.21) * Math.sin(t * 0.083)), 1.5);
+    this.beds.moan.filter.frequency.setTargetAtTime(210 + 70 * Math.sin(t * 0.17) + 50 * gust, t, 1.2);
     // Sand trickling down the dunes as the wind blows.
     if (desert > 0.4 && e.wind > 0.25 && (r = due(7, 7))) this.call('sandslide', way(r(1)), 0.5 * desert * e.wind);
     const crickets = lowland * (e.grass + 0.6 * e.woods + 0.5 * e.jungle) * (1 - e.day) * (1 - e.rain) * quiet;
@@ -1197,6 +1213,28 @@ export class Sound {
       // A woodpecker drumming on a dead branch: a fast run of knocks, slowing.
       const n = 14 + Math.floor(Math.random() * 10);
       for (let k = 0, at = t; k < n; k++, at += 0.045 + k * 0.0018) noise(at, 0.025, 1100, 2.5, 0.16 * (1 - (k / n) * 0.5)); // (beak on hollow wood: knocks, not notes)
+    } else if (kind === 'loon') {
+      // A loon's wail over a still lake: a long, rising, haunting cry, held,
+      // then falling away (and its echo off the far shore).
+      const f = 560 + Math.random() * 80;
+      voice(t, 2.6, f, 0.11, [[0, 1], [0.12, 1.42], [0.55, 1.5], [0.7, 1.3], [0.85, 1.36], [1, 1.05]], 4.5, 0.008);
+    } else if (kind === 'loonLaugh') {
+      // Its tremolo: a wavering, laughing call.
+      voice(t, 1.7, 820 + Math.random() * 120, 0.08, [[0, 1], [0.1, 1.15], [0.9, 1.1], [1, 0.9]], 8.5, 0.07);
+    } else if (kind === 'bittern') {
+      // A bittern booming in the reeds at dusk: deep 'pump-er-lunk', two or three times.
+      const n = 2 + Math.floor(Math.random() * 2);
+      for (let k = 0; k < n; k++) {
+        tone(t + k * 1.1, 0.16, 'sine', 95, 90, 100, 1, 0.22);
+        tone(t + k * 1.1 + 0.22, 0.45, 'sine', 80, 66, 75, 1, 0.3);
+      }
+    } else if (kind === 'bullfrog') {
+      // A bullfrog: a deep, rubbery 'jug-o-rum'.
+      for (let k = 0; k < 2 + Math.floor(Math.random() * 2); k++) tone(t + k * 0.55, 0.38, 'sawtooth', 120, 100, 160, 2.5, 0.07, 28);
+    } else if (kind === 'raven') {
+      // A raven over the dry country or the high rocks: a hollow 'kraa', its echo off the stone.
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) voice(t + k * 0.55, 0.32, 420 + Math.random() * 60, 0.06, [[0, 1.05], [0.3, 1], [1, 0.82]], 32, 0.06);
     } else if (kind === 'cuckoo') {
       tone(t, 0.3, 'sine', 700, 690, 700, 1, 0.08);
       tone(t + 0.4, 0.4, 'sine', 560, 550, 560, 1, 0.08);
