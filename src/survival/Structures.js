@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -85,6 +85,9 @@ const KINDS = {
   table: { make: tableModel, box: [0.7, 0.43], tall: 0.8 },
   shelf: { make: shelfModel, box: [0.65, 0.2], tall: 1.6 },
   trophyRack: { make: trophyRackModel, circle: 0.2, tall: 1.9 },
+  orchardApple: { make: plantingModel, circle: 0.25, tall: 3, grows: 'appleTree' },
+  orchardBerry: { make: plantingModel, circle: 0, grows: 'raspberryBush' },
+  plantedOak: { make: plantingModel, circle: 0.3, tall: 6, grows: 'oak' },
   coop: { make: coopModel, box: [0.85, 0.7], tall: 1.6 },
   beeBox: { make: beeBoxModel, box: [0.3, 0.25], tall: 1.15 },
   sign: { make: signModel, box: [0.45, 0.06], tall: 1.55 },
@@ -460,6 +463,13 @@ export class Structures {
       mesh.add(s.trophyMesh);
       this.showTrophy(s);
     }
+    if (KINDS[s.type].grows) {
+      // (A tree or bush growing there: see showPlant, and Game's plantModel.)
+      s.growth ??= 0;
+      s.plant = new Group();
+      mesh.add(s.plant);
+      this.showPlant(s);
+    }
     if (s.type === 'plot') {
       s.cropMesh = new Mesh(undefined, this.material);
       s.cropMesh.castShadow = true;
@@ -611,6 +621,16 @@ export class Structures {
     return true;
   }
 
+  /** What's growing in an orchard planting, drawn at its size now (and the season's: bare in winter). */
+  showPlant(s) {
+    if (!s.plant) return;
+    s.plant.clear();
+    const kind = s.type === 'orchardBerry' ? (Math.abs(Math.sin(s.x * 12.9898 + s.z * 78.233) * 43758.5453) % 1 < 0.5 ? 'raspberryBush' : 'blueberryBush') : KINDS[s.type].grows;
+    const made = this.plantModel?.(kind, 0.12 + 0.88 * Math.min(1, s.growth ?? 0));
+    if (made) s.plant.add(made);
+    s.plantShown = Math.floor((s.growth ?? 0) * 20);
+  }
+
   /** Waters a plot: it grows faster a while. */
   water(s) {
     s.watered = 240;
@@ -684,6 +704,12 @@ export class Structures {
     const lights = [];
     for (const s of this.list) {
       const kind = KINDS[s.type];
+      if (KINDS[s.type].grows && (s.growth ?? 0) < 1) {
+        // A sapling growing: a few days to a tree (a bush sooner); not in the winter.
+        const season = (ctx.winter ?? 0) > 0.6 ? 0 : 0.35 + 0.8 * (ctx.spring ?? 0) + 0.65 * (ctx.summer ?? 0) + 0.25 * (ctx.autumn ?? 0);
+        s.growth = Math.min(1, (s.growth ?? 0) + (dt * season * (1 + 0.4 * Math.min(1, ctx.rain ?? 0))) / (s.type === 'orchardBerry' ? 1100 : s.type === 'plantedOak' ? 1700 : 1900));
+        if (Math.floor(s.growth * 20) !== s.plantShown) (this.showPlant(s), this.onChange?.());
+      }
       if (s.type === 'plot' && s.crop && s.growth < 1) {
         // Growing: best in the spring and summer, none in the winter;
         // faster watered, or in the rain.

@@ -1,5 +1,6 @@
-import { BufferGeometry, CylinderGeometry, Float32BufferAttribute, Group, Line, LineBasicMaterial, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Vector3 } from 'three';
+import { BufferGeometry, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Vector3 } from 'three';
 import { seasonUniforms } from '../render/Seasons.js';
+import { LEAF_GEOMETRIES, treeGeometry } from '../world/trees.js';
 import { Felling } from './Felling.js';
 import { GroundItems } from './GroundItems.js';
 import { Hud } from './Hud.js';
@@ -149,6 +150,19 @@ export class Game {
       if (d < 30) this.hotbar?.flash(`${ITEMS[out.id].name} ready at the ${ITEMS[s.type].name.toLowerCase()}`);
     };
     this.felling = new Felling(o.scene, o.trees, this.items);
+    // (What grows in an orchard planting: the same trees and bushes as the wild ones, at its size.)
+    this.structures.plantModel = (type, size) => {
+      const g = new Group(), m = new Matrix4().makeScale(size, size, size);
+      for (const [geo, mat] of [[treeGeometry(type, this.trees.bare), this.trees.material], [this.trees.bare ? null : LEAF_GEOMETRIES[type], this.trees.leafMaterial]]) {
+        if (!geo) continue;
+        const mesh = new InstancedMesh(geo, mat, 1);
+        mesh.setMatrixAt(0, m);
+        mesh.castShadow = true;
+        mesh.frustumCulled = false;
+        g.add(mesh);
+      }
+      return g;
+    };
     this.flying = []; // spears and arrows in flight: { kind, mesh, pos, vel, stack, life }
     this.ghosts = []; // (online: the others' in flight, only to be seen: see ghostShot)
     this.harvested = new Map(); // tree key -> time picked (the fruit comes again after a while)
@@ -559,6 +573,15 @@ export class Game {
       case 'shelf': return 'Open the shelves';
       case 'chair': return 'Sit and rest';
       case 'repairBench': return held && ITEMS[held.id]?.durability ? `Mend the ${ITEMS[held.id].name.toLowerCase()}` : 'The repair bench: Q with a worn tool in hand';
+      case 'orchardApple':
+      case 'orchardBerry':
+      case 'plantedOak': {
+        const what = s.type === 'orchardApple' ? 'apple tree' : s.type === 'orchardBerry' ? 'berry bush' : 'oak';
+        if ((s.growth ?? 0) < 1) return `A young ${what}: ${Math.round((s.growth ?? 0) * 100)}% grown (Shift+Q: dig it up)`;
+        if (s.type === 'plantedOak') return 'A grown oak: fell it for logs (Q); it grows back from the stump';
+        const r = this.#orchardRipe(s);
+        return r.picked ? 'Picked clean this year' : r.ripe ? `Pick ${s.type === 'orchardApple' ? 'apples' : 'berries'}` : `Your ${what}: fruit from midsummer`;
+      }
       case 'trophyRack': return s.trophy ? `${ITEMS[s.trophy].name} (Q: take it down)` : 'Hang a great beast\'s trophy here';
       case 'waterFilter': return 'Click with a waterskin of still water to filter it clean';
       case 'leanTo': return 'A lean-to: out of the rain under it (sleep under it in a bedroll)';
@@ -614,6 +637,15 @@ export class Game {
         return s.jobs.length ? `Drying: ${s.jobs.map((j) => `${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}` : 'Hang raw meat or fish on it (click with it)';
       default: return `Shift+Q: take down the ${ITEMS[s.type].name.toLowerCase()}`;
     }
+  }
+
+  // An orchard tree's or bush's fruit: ripe from midsummer (as the wild
+  // ones: berries till the fourth day of autumn, apples till the ninth),
+  // picked once a year.
+  #orchardRipe(s) {
+    const t = seasonUniforms.uSeasonTime.value, days = this.config.daysPerSeason ?? 12, year = Math.floor((this.age ?? 0) / (4 * days));
+    const ripe = t >= 1.45 && t < 2 + (s.type === 'orchardApple' ? 9 : 4) / days;
+    return { ripe, year, picked: s.data?.picked === year };
   }
 
   // Sitting in a hot spring (a hot pool: see Rivers), in it to the waist or more.
@@ -935,6 +967,31 @@ export class Game {
         this.survival.energy = Math.min(100, this.survival.energy + 8);
         this.sound?.call('creak', 0, 0.3);
         return this.hotbar?.flash('You sit a while and rest');
+      case 'orchardApple':
+      case 'orchardBerry':
+      case 'plantedOak': {
+        if ((s.growth ?? 0) < 1) return this.hotbar?.flash(this.#structureText(s));
+        if (s.type === 'plantedOak') {
+          // Felled: logs and sticks, and it comes again from the stump.
+          s.growth = 0.2;
+          this.structures.showPlant(s);
+          this.#give('log', 4, s);
+          this.#give('stick', 2, s);
+          if (Math.random() < 0.4) this.#give('sapling', 1, s);
+          this.sound?.call('treefall', 0, 0.6);
+          this.dirty = true;
+          return this.hotbar?.flash('Timber! Logs ×4, sticks ×2');
+        }
+        const r = this.#orchardRipe(s);
+        if (!r.ripe || r.picked) return this.hotbar?.flash(this.#structureText(s));
+        const id = s.type === 'orchardApple' ? 'apple' : 'berries', n = id === 'apple' ? 4 + Math.floor(Math.random() * 3) : 4 + Math.floor(Math.random() * 3);
+        s.data = { ...(s.data ?? {}), picked: r.year };
+        this.#give(id, n, s);
+        this.sound?.call('pickup', 0, 0.5);
+        this.dirty = true;
+        this.structures.onChange?.();
+        return this.hotbar?.flash(`${ITEMS[id].name} ×${n}`);
+      }
       case 'trophyRack': {
         const i = this.hotbar.index, held = this.inventory.slots[i];
         if (s.trophy) {
@@ -1911,6 +1968,8 @@ export class Game {
       const result = this.felling.chop(tree, origin, at, this.wind?.() ?? { x: 0, z: 0 }, power);
       if (result === 'fell') {
         this.sound?.call('creak', 0, 0.7);
+        // (Now and then a seedling from round its foot: to plant.)
+        if (Math.random() < 0.3 && !CACTI.has(tree.type)) this.items.drop(Inventory.stack('sapling', 1), tree.x + 0.6, tree.y + 0.5, tree.z);
         this.hotbar?.flash('Timber!');
       } else if (result === 'bush') {
         this.items.drop(Inventory.stack('stick', 1 + Math.floor(Math.random() * 2)), tree.x, tree.y + 0.8, tree.z);

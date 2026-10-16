@@ -625,6 +625,14 @@ export function trophyRackModel() {
   return b.build();
 }
 
+/** Where something's planted: a ring of turned earth, and a stake. */
+export function plantingModel() {
+  const b = new Parts(166);
+  b.add(new CylinderGeometry(0.55, 0.65, 0.08, 7), 0x5a4030, [0, 0.03, 0]);
+  b.add(new CylinderGeometry(0.02, 0.025, 0.9, 4), 0x9a7a54, [0.18, 0.45, 0.05]);
+  return b.build();
+}
+
 /** A hen-house for turkeys and ducks: a little plank hut on legs, a ramp up, a nesting box with straw. */
 export function coopModel() {
   const b = new Parts(165);
