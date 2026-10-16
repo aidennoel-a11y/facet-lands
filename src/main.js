@@ -1389,6 +1389,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 0 && (controls.locked || controls.lockFailed || !controls.mouseLock)) game.press(); // (a bow starts to draw)
 });
 canvas.addEventListener('pointerup', (e) => {
+  game.release(); // (a fish on the line: no longer reeling)
   if (!press) return;
   let at = null;
   if (press.locked) {

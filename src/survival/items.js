@@ -270,7 +270,7 @@ export const RECIPES = [
   { id: 'bow', needs: { stick: 2, vine: 2 }, note: 'Hold the mouse to draw, let go to shoot' },
   { id: 'arrow', needs: { stick: 1, flint: 1 }, makes: 4, note: 'Four arrows (fletched with a feather they fly truer)' },
   { id: 'strawHat', needs: { straw: 3 }, note: 'Broad-brimmed: keeps the sun off you (far slower to get heatstroke)' },
-  { id: 'fishingRod', needs: { stick: 2, vine: 2 }, note: 'Cast into water, click again when it bites' },
+  { id: 'fishingRod', needs: { stick: 2, vine: 2 }, note: 'Cast into water, click when it bites, then hold to reel (ease off when the line’s tight)' },
   { id: 'waterskin', needs: { deerSkin: 1, vine: 1 }, note: 'Fill it at water (Q); boil it on a fire to make it safe' },
   { id: 'bandage', needs: { vine: 2 }, makes: 2, note: 'Stops bleeding' },
   { id: 'campfire', needs: { log: 3 }, note: 'Set it down, then light it with flint and steel' },

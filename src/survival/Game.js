@@ -79,6 +79,14 @@ const SHOTS = { spear: { tip: 1.16, bury: 0.3 }, arrow: { tip: 0.42, bury: 0.16,
 const LIGHTERS = new Set(['flintSteel', 'fineFlintSteel']);
 const VEG = ['berries', 'mushroom', 'apple'];
 const MEATS = ['rawMeat', 'cookedMeat', 'rawFowl', 'rawFish', 'cookedFish'];
+// What you can catch: its name, how heavy (kg, the most of it rare), how hard it fights.
+export const FISH_KINDS = Object.fromEntries(Object.entries({
+  brookTrout: ['Brook trout', 0.2, 1.5, 0.7], rainbowTrout: ['Rainbow trout', 0.3, 3.5, 0.9], steelhead: ['Steelhead', 2, 9, 1.4], salmon: ['Chinook salmon', 3, 20, 1.6],
+  lakeTrout: ['Lake trout', 1, 12, 1.1], pike: ['Northern pike', 1, 11, 1.3], perch: ['Yellow perch', 0.1, 0.8, 0.5], bluegill: ['Bluegill', 0.1, 0.6, 0.5],
+  largemouth: ['Largemouth bass', 0.5, 5, 1.0], smallmouth: ['Smallmouth bass', 0.4, 3.5, 1.1], carp: ['Carp', 1, 14, 1.2], catfish: ['Channel catfish', 1, 15, 1.3], gar: ['Longnose gar', 1, 10, 1.2],
+  striper: ['Striped bass', 2, 18, 1.4], mackerel: ['Mackerel', 0.3, 2, 0.9], cod: ['Cod', 1, 15, 1.1], snapper: ['Red snapper', 1, 10, 1.2], redfish: ['Redfish', 1, 12, 1.3],
+  blind: ['Blind cave fish', 0.05, 0.4, 0.4, 'blindFish'],
+}).map(([id, [name, min, max, pull, item]]) => [id, { id, name, min, max, pull, item }]));
 // How long things take: meat on the fire a minute; ore in the furnace half
 // a minute; meat on the drying rack three; a waterskin coming to the boil.
 const TIMES = { cook: 60, smelt: 30, dry: 180, boil: 20, stew: 60, tan: 240, char: 20, steel: 45, smoke: 150 };
@@ -1135,6 +1143,7 @@ export class Game {
   /** The mouse pressed down (a bow starts to draw). */
   press() {
     if (!this.walking || !this.survival.alive || this.hud.busy || this.riding) return;
+    if (this.line?.fight) return void (this.reeling = true);
     const s = this.inventory.slots[this.hotbar.index];
     if (BOWS.has(s?.id) && this.cooldown <= 0) {
       if (!this.#ammo()) return this.hotbar?.flash('No arrows (make some: a stick and a flint)');
@@ -2386,22 +2395,23 @@ export class Game {
   // A click with the rod: cast (into water within 14 m), or reel in (with a
   // fish, if it's biting just then).
   #fish(i, origin, direction) {
+    if (this.line?.fight) return; // (playing a fish: the button held reels in, see press/release)
     if (this.line) {
       const biting = this.line.bite > 0;
-      this.#reel();
       this.#animate('cast', 0.4);
-      if (!biting) return this.hotbar?.flash('Nothing on the line');
-      this.inventory.wear(i, 1);
-      // (And one fewer in the water there, if there's one to be had.)
-      const f = (this.fish?.fish ?? []).find((f) => !f.gone && Math.hypot(f.x - this.line?.x, f.z - this.line?.z) < 12);
-      if (f) f.gone = true;
-      // (Down in the dark water, the fish are pale and blind.)
-      const blind = !!this.waterAt(this.line?.x ?? this.camera.position.x, this.line?.z ?? this.camera.position.z)?.cave;
-      this.#give(blind ? 'blindFish' : 'rawFish', 1);
-      this.skill('fishing', 4);
-      if (this.record.count('fish') >= 10) this.#achieve('fish10');
-      this.sound?.call('splash', 0, 0.6);
-      return this.hotbar?.flash(blind ? 'A blind cave fish!' : 'A fish!');
+      if (!biting) {
+        this.#reel();
+        return this.hotbar?.flash('Nothing on the line');
+      }
+      // Hooked! Now to bring it in: hold the button to reel, let go when
+      // the line's too tight, or it snaps; too slack too long and it's off.
+      const l = this.line, kind = this.#fishKind(l.x, l.z, l.salty);
+      const kg = kind.min + (kind.max - kind.min) * Math.pow(Math.random(), 2.2);
+      l.fight = { kind, kg, slot: i, tension: 0.35, progress: 0.08, burst: 0, nextBurst: rnd(0.8, 2), slack: 0, pull: kind.pull * (0.7 + 0.6 * (kg - kind.min) / Math.max(0.01, kind.max - kind.min)) };
+      l.bite = 0;
+      this.reeling = false;
+      this.sound?.call('splash', 0, 0.5);
+      return this.hotbar?.flash('Hooked! Hold to reel in, ease off when the line’s tight');
     }
     if (this.cooldown > 0) return;
     // Where the float lands: the first water along a gentle arc out in front.
@@ -2429,8 +2439,35 @@ export class Game {
     this.traces?.splash(at.x, at.level, at.z, 4, 1, 0.4);
   }
 
+  // What bites, where: by the water (a river, a still pond or lake, the
+  // sea, the dark water underground) and the country round it.
+  #fishKind(x, z, salty) {
+    const w = this.waterAt(x, z), g = this.generator(), b = g.getBiomeWeights(x, z, {});
+    const pickOf = (list) => list[Math.floor(Math.random() * list.length)];
+    if (w?.cave) return FISH_KINDS.blind;
+    const warm = (b.jungle ?? 0) + (b.mangrove ?? 0) + (b.wetland ?? 0) + (b.savanna ?? 0) > 0.4;
+    const cold = g.getSeasonality(x, z) > 0.6 || (b.cascades ?? 0) > 0.4 || g.getMountainness(x, z) > 0.4;
+    if (salty) return FISH_KINDS[pickOf((b.mangrove ?? 0) > 0.3 ? ['snapper', 'redfish', 'mackerel'] : cold ? ['cod', 'mackerel', 'striper'] : ['striper', 'mackerel', 'snapper'])];
+    const autumn = (this.lastCtx?.autumn ?? 0) > 0.3;
+    if (w && !w.pond && !w.lake) {
+      // Running water.
+      const list = cold ? ['brookTrout', 'rainbowTrout', 'rainbowTrout', ...(autumn || (b.cascades ?? 0) > 0.4 ? ['salmon', 'steelhead'] : [])] : warm ? ['catfish', 'smallmouth', 'gar'] : ['smallmouth', 'rainbowTrout', 'catfish', 'perch'];
+      return FISH_KINDS[pickOf(list)];
+    }
+    // Still water.
+    const list = cold ? ['lakeTrout', 'pike', 'perch', 'brookTrout'] : warm ? ['catfish', 'gar', 'largemouth', 'bluegill'] : ['largemouth', 'bluegill', 'perch', 'carp', 'pike'];
+    return FISH_KINDS[pickOf(list)];
+  }
+
+  /** The button held down, then let go: reeling in a fish on the line. */
+  release() {
+    this.reeling = false;
+  }
+
   #reel() {
     if (!this.line) return;
+    this.reeling = false;
+    this.hud?.meter(null, null);
     this.scene.remove(this.line.bobber);
     this.scene.remove(this.line.line);
     this.line.line.geometry.dispose();
@@ -2441,6 +2478,7 @@ export class Game {
     const l = this.line;
     if (!l) return;
     if (held?.id !== 'fishingRod' || !this.walking || Math.hypot(l.x - this.camera.position.x, l.z - this.camera.position.z) > 25) return this.#reel();
+    if (l.fight) return this.#playFish(dt, l);
     // Waiting; then a bite: the float bobs under (click now!), then it's gone.
     if (l.bite > 0) {
       l.bite -= dt;
@@ -2461,6 +2499,68 @@ export class Game {
     a.setXYZ(0, tip.x, tip.y, tip.z);
     a.setXYZ(1, l.bobber.position.x, l.bobber.position.y + 0.04, l.bobber.position.z);
     a.needsUpdate = true;
+  }
+
+  // Playing a fish: it runs and pulls in bursts (the line goes tight); you
+  // reel in between. Too tight, it snaps; slack too long, it throws the hook.
+  #playFish(dt, l) {
+    const f = l.fight, k = f.kind;
+    f.nextBurst -= dt;
+    if (f.nextBurst <= 0 && f.burst <= 0) (f.burst = rnd(0.5, 1.4) * (0.8 + 0.4 * f.pull)), (f.nextBurst = rnd(1.2, 3.2) / (0.7 + 0.4 * f.pull));
+    const running = f.burst > 0;
+    if (running) f.burst -= dt;
+    const skill = 1 - 0.05 * this.skillLevel('fishing');
+    if (this.reeling) {
+      f.tension += dt * (0.42 + (running ? 0.75 * f.pull : 0)) * skill;
+      f.progress += dt * (running ? 0.02 : 0.16) / (0.6 + 0.4 * f.pull);
+    } else {
+      f.tension -= dt * (running ? 0.15 : 0.55);
+      f.progress -= dt * (running ? 0.07 * f.pull : 0.015);
+    }
+    f.tension = Math.max(0, f.tension);
+    f.progress = Math.max(0, f.progress);
+    f.slack = f.tension < 0.08 ? f.slack + dt : 0;
+    // The float dragged about by it, and in towards you as it comes.
+    const cam = this.camera.position;
+    const base = l.start ??= { x: l.x, z: l.z };
+    const k2 = Math.min(0.85, f.progress);
+    const jig = running ? Math.sin(this.time * 23) * 0.25 : 0;
+    l.bobber.position.x = base.x + (cam.x - base.x) * k2 + jig;
+    l.bobber.position.z = base.z + (cam.z - base.z) * k2 + jig * 0.6;
+    l.bobber.position.y = l.level - (running ? 0.15 : 0.05);
+    if (running && Math.random() < dt * 4) this.traces?.splash(l.bobber.position.x, l.level, l.bobber.position.z, 3, 0.6, 0.3);
+    const word = f.tension > 0.82 ? 'line about to snap: ease off!' : f.tension < 0.15 ? 'line slack: reel!' : running ? 'it’s running!' : 'reeling…';
+    this.hud?.meter(`${k.name} · ${word}`, f.progress);
+    const tip = this.rodTip ? this.rodTip.getWorldPosition(v) : cam;
+    const a = l.line.geometry.attributes.position;
+    a.setXYZ(0, tip.x, tip.y, tip.z);
+    a.setXYZ(1, l.bobber.position.x, l.bobber.position.y + 0.04, l.bobber.position.z);
+    a.needsUpdate = true;
+    if (f.tension >= 1) {
+      this.inventory.wear(f.slot, 3);
+      this.#reel();
+      this.sound?.call('twig', 0, 0.7);
+      return this.hotbar?.flash('The line snapped!');
+    }
+    if (f.slack > 1.6) {
+      this.#reel();
+      return this.hotbar?.flash('It threw the hook');
+    }
+    if (f.progress < 1) return;
+    // Landed!
+    this.#reel();
+    this.inventory.wear(f.slot, 1);
+    const near = (this.fish?.fish ?? []).find((q) => !q.gone && Math.hypot(q.x - l.x, q.z - l.z) < 12);
+    if (near) near.gone = true;
+    const kg = Math.round(f.kg * 10) / 10;
+    this.#give(k.item ?? 'rawFish', Math.max(1, Math.min(4, Math.round(kg / 1.4))));
+    this.skill('fishing', 4 + Math.round(f.pull * 3));
+    if (this.record.count('fish') >= 10) this.#achieve('fish10');
+    const key = `bestFish:${k.id}`, best = this.record.counts[key] ?? 0;
+    const record = kg * 10 > best;
+    if (record) this.record.counts[key] = Math.round(kg * 10);
+    this.sound?.call('splash', 0, 0.6);
+    this.hotbar?.flash(`${k.name}, ${kg} kg!${record && best ? ' Your biggest yet!' : ''}`);
   }
 
   // --- A horse ----------------------------------------------------------------------
