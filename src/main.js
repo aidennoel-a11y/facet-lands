@@ -302,7 +302,13 @@ function wreck(x, z, r, strength, dir) {
     // (Thrown round with the winds: anticlockwise round it, and on with it.)
     const tx = -dz / d + dir.x * 0.8, tz = dx / d + dir.z * 0.8;
     const away = Math.atan2(tx, tz);
-    if (!hit.bush && falls < 4 && Math.hypot(hit.x - cam.x, hit.z - cam.z) < 170) {
+    const near = Math.hypot(hit.x - cam.x, hit.z - cam.z) < 220;
+    // (In its heart, near you: some torn out whole and carried up and round in it.)
+    const flying = game.felling.falling.filter((f) => f.fly).length;
+    if (!hit.bush && near && d < r * 0.9 && strength > 0.4 && flying < 8 && unitHash(hit.z, hit.x) < 0.45) {
+      game.felling.liftUp(hit, { x, z });
+      falls++;
+    } else if (!hit.bush && falls < 4 && near) {
       game.felling.blowDown(hit, away);
       falls++;
     } else game.felling.uproot(hit);
@@ -1082,6 +1088,7 @@ const game = new Game({
     return Number.isFinite(h) ? Math.max(h, rocks.surfaceAt(x, z)) : generator.getHeight(x, z);
   },
 });
+game.felling.vortex = () => tornadoes.now; // (trees carried round in a tornado: see Felling.liftUp)
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 ruins.onChest = (c) => game.ruinChest(c);
 wrecks.onChest = (c) => game.ruinChest(c); // (a wreck's sea chest)

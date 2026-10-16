@@ -2,6 +2,7 @@ import {
   BoxGeometry,
   Color,
   CylinderGeometry,
+  IcosahedronGeometry,
   DoubleSide,
   Group,
   InstancedMesh,
@@ -30,7 +31,8 @@ function mulberry(seed) {
   };
 }
 
-const DEBRIS = 900; // (bits of the land swept up and round: soil, leaves, twigs, splinters)
+const DEBRIS = 900;
+const PUFFS = 220; // (clouds of dust and soil torn up off the ground, drawn in along it and up round the funnel) // (bits of the land swept up and round: soil, leaves, twigs, splinters)
 const m4 = new Matrix4(), q = new Quaternion(), p = new Vector3(), s = new Vector3(), e3 = new Vector3();
 
 /**
@@ -129,7 +131,7 @@ function funnelMaterial({ dust = false } = {}) {
         // Into the cloud base at the top; into the debris at the foot.
         float top = 1.0 - smoothstep(0.82, 1.0, vH);
         float foot = smoothstep(0.0, 0.05, vH);
-        float alpha = min(0.97, uDense * (0.55 + 0.6 * bands) * edge * top * foot * shown * uFade);
+        float alpha = min(0.9, uDense * (0.68 + 0.16 * bands) * mix(0.92, 1.0, edge) * top * foot * shown * uFade); // (a thick, dark column: hardly see-through)
         // (Its edges catch what light there is: a pale outline against the dark of the storm.)
         vec3 col = uColour * (0.7 + 0.5 * bands) * uLight * facet * (1.0 + 0.3 * (1.0 - vRim));
         gl_FragColor = vec4(col, alpha);
@@ -164,9 +166,17 @@ export class Tornadoes {
     const tube = new CylinderGeometry(1, 1, 1, 14, 22, true).translate(0, 0.5, 0).toNonIndexed(); // (faceted, low-poly)
     this.funnel = new Mesh(tube, funnelMaterial());
     this.funnel.frustumCulled = false;
-    this.dust = new Mesh(tube, funnelMaterial({ dust: true }));
+    // (Its dust: lumps of it, faceted like everything else, each one kicked up
+    // off the land round its foot, dragged in along the ground, then carried
+    // up and round, swelling and thinning as it goes.)
+    this.dustMaterial = new MeshLambertMaterial({ flatShading: true, transparent: true, opacity: 0.82, depthWrite: false });
+    this.dust = new InstancedMesh(new IcosahedronGeometry(1, 0), this.dustMaterial, PUFFS);
     this.dust.frustumCulled = false;
     this.dust.renderOrder = 1;
+    const soil = [0x6a5a44, 0x7a6850, 0x5a4c3a, 0x8a7a62, 0x5e5a50, 0x706656];
+    for (let k = 0; k < PUFFS; k++) this.dust.setColorAt(k, new Color(soil[k % soil.length]));
+    this.puffSpin = new Float32Array(PUFFS);
+    this.puffClock = 0;
     const wall = new CylinderGeometry(1, 1.15, 1, 16, 3, false).translate(0, 0.5, 0);
     this.wallMaterial = new MeshLambertMaterial({ color: 0x3a3e40, transparent: true, opacity: 0.92, depthWrite: false });
     this.wall = new Mesh(wall, this.wallMaterial);
@@ -292,7 +302,6 @@ export class Tornadoes {
     const rope = smoothstep(a.life * 0.75, a.life, t);
     for (const [mesh, foot, topR, height, dense] of [
       [this.funnel, c.r * 0.5 * (1 - 0.6 * rope) + 2, Math.max(c.r * 1.7, 40) * (1 - 0.45 * rope), top - groundY, 1 - 0.5 * rope],
-      [this.dust, c.r * 1.0 + 4, c.r * 1.45 + 10, 10 + c.r * 0.6, 0.85 * smoothstep(0, 10, t) * (1 - rope)],
     ]) {
       const u = mesh.material.uniforms;
       u.uTime.value = this.time % 3600;
@@ -301,13 +310,41 @@ export class Tornadoes {
       u.uHeight.value = height;
       u.uFoot.value = foot;
       u.uTop.value = topR;
-      u.uLean.value.set(lean.x * (1 + 2 * rope), 0, lean.z * (1 + 2 * rope)).multiplyScalar(mesh === this.dust ? 0.05 : 1);
-      u.uForm.value = mesh === this.dust ? 1 : form;
+      u.uLean.value.set(lean.x * (1 + 2 * rope), 0, lean.z * (1 + 2 * rope));
+      u.uForm.value = form;
       u.uFade.value = dense;
       u.uSpin.value = 0.6 + 0.6 * c.strength;
       u.uLight.value.copy(this.light).multiplyScalar(1.3);
     }
     this.dust.visible = t > 0;
+    // The dust: torn up off the ground all round its foot.
+    const kick = (t > 0 ? c.strength : 0) * (1 - rope * 0.7);
+    this.puffClock += dt * (0.05 + 0.04 * kick);
+    const prand = mulberry(a.seed ^ 0x9e37);
+    for (let k = 0; k < PUFFS; k++) {
+      const r0 = prand(), r1 = prand(), r2 = prand(), r3 = prand();
+      if (kick <= 0.02) {
+        this.dust.setMatrixAt(k, m4.makeScale(0, 0, 0));
+        continue;
+      }
+      const u = (this.puffClock * (0.8 + 0.5 * r1) + r0) % 1;
+      // (Out on the ground first, a way off from the funnel, drawn in along it;
+      // then up into the funnel's foot and round it, rising and spreading.)
+      const inflow = smoothstep(0, 0.45, u), rise = smoothstep(0.3, 1, u);
+      const rad = c.r * ((1.8 + 1.6 * r1) * (1 - inflow) + (0.55 + 0.35 * r2) * inflow) + rise * rise * c.r * 0.9 * r3;
+      this.puffSpin[k] = (this.puffSpin[k] + dt * (0.25 + 0.9 * inflow) * kick * (14 / Math.max(10, rad))) % 6.2832;
+      const ang = r0 * 6.283 + r3 * 2 + this.puffSpin[k];
+      const x = c.x + Math.cos(ang) * rad, z = c.z + Math.sin(ang) * rad;
+      const g0 = ctx.ground(x, z), gy = Number.isFinite(g0) ? g0 : groundY;
+      const hgt = 0.6 + rise * (14 + 45 * r2 * r2) * kick;
+      // (Small as it's torn up, swelling as it rises, wasting away at the end.)
+      const size = (1.2 + 3.5 * r3) * (0.4 + 0.6 * smoothstep(0, 0.25, u) + 1.4 * rise) * (1 - smoothstep(0.8, 1, u)) * (0.5 + 0.5 * kick);
+      p.set(x, gy + hgt, z);
+      q.setFromAxisAngle(e3.set(r2, 1, r1).normalize(), ang + r0 * 9);
+      s.set(size * (1.2 + 0.4 * r1), size * (0.6 + 0.3 * r2), size * (1 + 0.3 * r0));
+      this.dust.setMatrixAt(k, m4.compose(p, q, s));
+    }
+    this.dust.instanceMatrix.needsUpdate = true;
     // (Its turning added up a frame at a time: steady, building gently as it strengthens.)
     this.phase = (this.phase + dt * (0.35 + 0.45 * c.strength)) % 6283.19;
     // The wall cloud: a dark, slowly turning shelf hanging under the storm where the funnel comes from.

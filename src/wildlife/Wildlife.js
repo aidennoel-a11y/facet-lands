@@ -1238,7 +1238,8 @@ export class Wildlife {
     // (Far off, they think less often: thirty times a second past 60 m, ten
     // times past 150; behind you (out of view) past 30 m, ten times too.
     // Each with the time gone by since; staggered, so it's never all at once.
-    // Close by, or hunting you, charging, ridden, led: every frame.)
+    // Close by, or hunting you, charging, ridden, led, and birds (on the wing
+    // far off, a jerky flight shows): every frame.)
     this.frame = (this.frame ?? 0) + 1;
     for (const a of this.animals) {
       const t0 = prof ? performance.now() : 0;
@@ -1246,7 +1247,7 @@ export class Wildlife {
       if (a.owed === undefined) a.owed = ((a.id ?? 0) * 0.618) % 1 * 0.1; // (the stagger)
       a.owed += dt;
       const cam = c.camera.position, dx = a.x - cam.x, dz = a.z - cam.z, d = Math.max(Math.abs(dx), Math.abs(dz));
-      const busy = a.hunting || a.charging > 0 || a.ridden || a.led || a.leap || a.stalking || (a.boss && d < 150) || !a.alive && a.rag;
+      const busy = (SPECIES[a.kind].bird && !SPECIES[a.kind].climber) || a.hunting || a.charging > 0 || a.ridden || a.led || a.leap || a.stalking || (a.boss && d < 150) || !a.alive && a.rag;
       const behind = d > 30 && c.forward && dx * c.forward.x + dz * c.forward.z < -0.2 * Math.hypot(dx, dz);
       const every = busy || d < 60 && !behind ? 0 : d < 150 && !behind ? 1 / 30 : 0.1;
       if (a.owed < every) {

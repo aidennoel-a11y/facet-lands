@@ -338,6 +338,28 @@ export class Felling {
     if (st) (st.at = this.day ?? 0), (st.storm = true);
   }
 
+  /**
+   * A tree in the heart of a tornado, near you: torn out by the roots and
+   * carried up and round in it (see update: `vortex`, the tornado as it is
+   * now), then flung out, to come crashing down somewhere along its way.
+   */
+  liftUp(hit, from) {
+    if (hit.t.removed) return;
+    if (hit.bush) return this.uproot(hit);
+    const n = this.falling.length;
+    this.#fell(hit, 0.05, { away: 0, angle: 0, speed: 0, heft: 1, hold: 0 });
+    const f = this.falling[n];
+    if (!f) return;
+    const st = this.stumps[this.stumps.length - 1];
+    if (st) (st.at = this.day ?? 0), (st.storm = true);
+    const R = () => Math.random();
+    f.fly = {
+      t: 0, hold: 2.5 + R() * 4, ang: Math.atan2(f.pivot.z - from.z, f.pivot.x - from.x), rad: Math.hypot(f.pivot.x - from.x, f.pivot.z - from.z),
+      base: f.pivot.y, h: 0, vh: 5 + R() * 5, top: 15 + R() * 30, axis: new Vector3(R() - 0.5, R() * 0.4, R() - 0.5).normalize(), turn: 0, rate: 0.5 + R() * 0.8,
+      v: null,
+    };
+  }
+
   /** A tree or bush (far off, or a bush) torn out by a tornado: gone, roots and all; it grows back in time. */
   uproot(hit) {
     if (hit.t.removed) return;
@@ -586,6 +608,51 @@ export class Felling {
     }
     for (const f of this.falling) {
       f.time += dt;
+      if (f.fly) {
+        // Carried round in the tornado, rising; then thrown out of it.
+        const y = f.fly, c = this.vortex?.();
+        y.t += dt;
+        y.turn += dt * y.rate * (y.v ? 1.6 : 1);
+        if (!y.v && c && c.strength > 0.05 && y.t < y.hold) {
+          const vt = 18 + 14 * c.strength;
+          y.rad += (Math.max(6, c.r * 0.85) - y.rad) * Math.min(1, dt * 0.8);
+          y.ang += (dt * vt) / Math.max(6, y.rad);
+          y.vh += (Math.min(y.top - y.h, 12) * 0.6 - y.vh) * Math.min(1, dt * 1.5);
+          y.h += y.vh * dt;
+          f.pivot.set(c.x + Math.cos(y.ang) * y.rad, y.base + y.h, c.z + Math.sin(y.ang) * y.rad);
+          const g0 = ground(f.pivot.x, f.pivot.z);
+          if (Number.isFinite(g0)) y.base += (g0 - y.base) * Math.min(1, dt * 2);
+          f.pivot.y = y.base + y.h;
+          y.cx = c.x, y.cz = c.z, y.vt = vt;
+        } else if (!y.v) {
+          // (Flung out: on round the way it was going, and outward.)
+          const tx = -Math.sin(y.ang), tz = Math.cos(y.ang), ox = Math.cos(y.ang), oz = Math.sin(y.ang), vt = (y.vt ?? 20) * 0.8;
+          y.v = new Vector3(tx * vt + ox * 6, 2 + Math.random() * 4, tz * vt + oz * 6);
+        } else {
+          y.v.y -= 9.8 * dt;
+          y.v.multiplyScalar(1 - 0.25 * dt);
+          f.pivot.addScaledVector(y.v, dt);
+          const g = ground(f.pivot.x, f.pivot.z);
+          if (Number.isFinite(g) && f.pivot.y <= g + 0.3 && y.v.y < 0) {
+            // Down: crashing to the ground, and lying where it fell.
+            const away = Math.atan2(y.v.x, y.v.z);
+            f.pivot.y = g;
+            f.axis.set(Math.cos(away), 0, -Math.sin(away));
+            f.dir.set(Math.sin(away), 0, Math.cos(away));
+            f.angle = Math.PI * 0.47;
+            f.speed = 0;
+            f.fallen = true;
+            f.fly = null;
+            f.group.position.copy(f.pivot);
+            f.group.quaternion.setFromAxisAngle(f.axis, f.angle);
+            onLand?.(f.pivot.x + f.dir.x * f.length * 0.5, g, f.pivot.z + f.dir.z * f.length * 0.5, f.length);
+            continue;
+          }
+        }
+        f.group.position.copy(f.pivot);
+        f.group.quaternion.setFromAxisAngle(y.axis, y.turn);
+        continue;
+      }
       if (!f.fallen) {
         // A rod pivoting at the cut: it tips ever faster (a tall one slower,
         // a heavy-crowned one quicker), once the hinge of wood gives.
