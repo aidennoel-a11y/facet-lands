@@ -217,6 +217,14 @@ function labelAnimals(on) {
 const traces = new Traces(scene);
 const fish = new Fish(scene, addCloudShadow);
 const shootingStars = new ShootingStars(scene);
+// (Word of what's in the sky tonight, as the evening comes on: an eclipse, a meteor shower.)
+let skyTold = null;
+function skyNews() {
+  const tonight = dayNight.tonight, key = tonight && `${dayNight.hour >= 12 ? dayNight.day : dayNight.day - 1}${tonight}`;
+  if (!tonight || skyTold === key || !(dayNight.hour > 19 || dayNight.hour < 3)) return;
+  skyTold = key;
+  game.hotbar?.flash(tonight === 'eclipse' ? 'The full moon will be eclipsed tonight: a blood moon. The hunters will be about.' : 'Look up: a meteor shower tonight');
+}
 // Lightning may set the land alight where it strikes: dry ground with
 // something on it to burn (not sand, snow, bare rock or water).
 lightning.onStrike = (x, y, z, distance) => {
@@ -2396,6 +2404,7 @@ function tick(now) {
     return w?.frozen ? Math.max(g, w.level) : g;
   } : (x, z) => chunks.groundHeightAt(x, z);
   const life = {
+    bloodMoon: dayNight.bloodMoon ?? 0,
     waterAt: (x, z) => waterAt(x, z),
     splash: (x, y, z, size = 1) => traces.splash(x, y, z, 6, 1.2 * size, 0.6 * size),
     bleed,
@@ -2445,7 +2454,8 @@ function tick(now) {
   volcanoes.update(dt, air);
   sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y, fog: scene.fog.color });
   devils.update(dt, { ...air, seed: generator.seed, hour: dayNight.hour, winter: seasonUniforms.uWinter.value, ground: (x, z) => chunks.groundHeightAt(x, z) });
-  shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)), worldNow);
+  shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)), worldNow, dayNight.meteors ?? 0, dayNight.radiant ?? 0);
+  skyNews();
   life.beeBoxes = game.structures.list.filter((st) => st.type === 'beeBox' && st.data?.bees);
   insects.update(dt, life);
   env.tornado = tornadoes.sound?.loud ?? 0;

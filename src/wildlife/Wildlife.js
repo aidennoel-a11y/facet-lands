@@ -1628,13 +1628,14 @@ export class Wildlife {
     // `night` in the herd).
     this.nightCool = (this.nightCool ?? rnd(10, 30)) - 0.5;
     if (day < 0.25 && this.nightCool <= 0) {
-      this.nightCool = rnd(35, 80);
+      const blood = (ctx.bloodMoon ?? 0) > 0.3; // (under a blood moon: the hunters out in numbers)
+      this.nightCool = blood ? rnd(15, 30) : rnd(35, 80);
       const near = (kind) => this.animals.some((a) => a.kind === kind && a.alive && Math.hypot(a.x - cx, a.z - cz) < 200);
       const s = spot(140, 260, (x, z) => g.getMountainness(x, z) < 0.6 && g.getBiomeWeights(x, z, {}).desert < 0.5, 10);
       if (s) {
         const w = g.getBiomeWeights(s.x, s.z, {}), open = w.savanna > 0.4 || (w.temperate > 0.5 && g.getPlainness(s.x, s.z) > 0.3 && g.getForestDensity(s.x, s.z) < 0.3);
-        const kind = open && !near('coyote') ? 'coyote' : !near('wolf') && w.jungle + w.mangrove < 0.4 ? 'wolf' : null;
-        const herd = kind && this.#spawnHerd(kind, s, kind === 'wolf' ? 3 + Math.floor(rnd(0, 3)) : 1 + Math.floor(rnd(0, 3)));
+        const kind = open && !near('coyote') ? 'coyote' : (blood || !near('wolf')) && w.jungle + w.mangrove < 0.4 ? 'wolf' : null;
+        const herd = kind && this.#spawnHerd(kind, s, (kind === 'wolf' ? 3 + Math.floor(rnd(0, 3)) : 1 + Math.floor(rnd(0, 3))) + (blood ? 2 : 0));
         if (herd) {
           herd.night = true;
           herd.callWait = rnd(3, 12); // (heard before they're seen)

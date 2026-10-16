@@ -52,18 +52,21 @@ export class ShootingStars {
   /**
    * @param dark   how dark and clear the night is (0 by day or under cloud .. 1)
    */
-  update(dt, camera, dark, clock = performance.now() / 1000) {
+  update(dt, camera, dark, clock = performance.now() / 1000, shower = 0, radiant = 0) {
     if (!this.star) {
       this.mesh.visible = false;
       if (dark < 0.5) return;
       // (When, and where in the sky: by the clock (online, the room's), so
       // everyone looking up sees the same one. A chance every 20 seconds.)
-      const slot = Math.floor(clock / 20), r = (k) => hash01(slot, k);
-      const at = slot * 20 + 18 * r(0);
-      if (this.slot === slot || clock < at || clock - at > 0.3 || r(1) > 0.6 * dark) return;
+      // (In a meteor shower, one every couple of seconds, all streaming out
+      // from one part of the sky.)
+      const every = shower > 0.05 ? 20 - 18 * shower : 20;
+      const slot = Math.floor(clock / every), r = (k) => hash01(slot, k, shower > 0.05 ? 7 : 0);
+      const at = slot * every + every * 0.9 * r(0);
+      if (this.slot === slot || clock < at || clock - at > 0.3 || r(1) > (0.6 + 0.35 * shower) * dark) return;
       this.slot = slot;
       // Somewhere up the sky, falling slantwise across it.
-      const az = r(2) * Math.PI * 2, el = 0.45 + r(3) * 0.7;
+      const az = shower > 0.05 ? radiant + (r(2) - 0.5) * 1.6 : r(2) * Math.PI * 2, el = 0.45 + r(3) * 0.7;
       const from = new Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
       const across = new Vector3(-Math.sin(az), 0, Math.cos(az)).multiplyScalar(r(4) < 0.5 ? 1 : -1);
       const dir = across.multiplyScalar(0.8).addScaledVector(new Vector3(0, -1, 0), 0.5).normalize();

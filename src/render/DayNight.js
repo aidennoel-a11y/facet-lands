@@ -111,6 +111,7 @@ const skyFragment = /* glsl */ `
   uniform float horizonY; // where the land's edge is (below level when you're up high)
   uniform float time; // seconds, for twinkling and shooting stars
   uniform float moonPhase; // 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter
+  uniform float eclipse; // the earth's shadow across the full moon (0 none .. 1 all of it: a coppery red moon)
   uniform float aurora; // northern lights, 0..1
   uniform float rainbow; // after rain, 0..1
   varying vec3 vDir;
@@ -178,6 +179,15 @@ const skyFragment = /* glsl */ `
       float seas = 0.78 + 0.22 * vnoise(vec3(uv * 2.2, 3.0));
       vec3 moonCol = vec3(0.92, 0.94, 1.0) * seas * (0.55 + 0.45 * n.z) * lit;
       moonCol += vec3(0.05, 0.06, 0.08) * (1.0 - lit); // earthshine
+      // (Eclipsed: the earth's shadow creeping over it from one side, and
+      // in it the moon dim and coppery red.)
+      if (eclipse > 0.0) {
+        float edge = eclipse * 2.3 - 1.1;
+        float shade = 1.0 - smoothstep(edge - 0.08, edge + 0.08, uv.x * 0.9 + uv.y * 0.3);
+        shade = max(shade, smoothstep(0.92, 1.0, eclipse));
+        vec3 red = vec3(0.42, 0.12, 0.06) * seas * (0.6 + 0.4 * n.z);
+        moonCol = mix(moonCol, red, shade);
+      }
       col = mix(col, moonCol + col * 0.25 * (1.0 - lit), disc * night * veiled);
     }
 
@@ -319,6 +329,7 @@ export class DayNight {
           glowHigh: { value: new Color() },
           time: { value: 0 },
           moonPhase: { value: 0.35 },
+          eclipse: { value: 0 },
           aurora: { value: 0 },
           rainbow: { value: 0 },
         },
@@ -437,6 +448,31 @@ export class DayNight {
    * @param focus    the camera position (the sky and shadows follow it)
    * @param weather  { cover, rain, storm, sunsetGlow } (see Weather), or null
    */
+  /**
+   * Tonight's sky: now and then, on a full-moon night, the moon is
+   * eclipsed (an hour or two either side of midnight its light goes and it
+   * turns a dull red: a blood moon, the hunters about); some other nights
+   * there's a meteor shower. Fixed by the night (online, the same for
+   * all). Sets `eclipse` (0..1), `bloodMoon` (0..1), `meteors` (0..1) and
+   * `tonight` ('eclipse', 'meteors' or null).
+   */
+  #skyEvents() {
+    const night = this.hour >= 12 ? this.day : this.day - 1;
+    const h = (k) => {
+      let v = Math.imul(night * 7919 + k * 104729, 0x9e3779b1) ^ 0x5bd1e995;
+      v = Math.imul(v ^ (v >>> 15), 0x2c1b3c6d);
+      return ((v ^ (v >>> 12)) >>> 0) / 4294967296;
+    };
+    const fullMoon = ((night + 1) % 8 + 8) % 8 === 4;
+    const kind = this.forceSky ?? (fullMoon && h(1) < 0.35 ? 'eclipse' : !fullMoon && h(2) < 0.09 ? 'meteors' : null);
+    this.tonight = kind;
+    const dh = this.hour >= 12 ? this.hour - 24.5 : this.hour - 0.5; // (hours from the middle of it, half past midnight)
+    this.eclipse = kind === 'eclipse' ? 1 - smoothstep(0.6, 2.4, Math.abs(dh)) : 0;
+    this.bloodMoon = kind === 'eclipse' ? 1 - smoothstep(0.4, 1.2, Math.abs(dh)) : 0;
+    this.meteors = kind === 'meteors' ? 1 - smoothstep(3, 6, Math.abs(dh)) : 0;
+    this.radiant = h(3) * Math.PI * 2;
+  }
+
   update(dt, focus, weather = null) {
     this._dt = dt;
     if (this.playing) this.hour = (this.hour + (dt * 24) / (this.config.dayLengthMinutes * 60)) % 24;
@@ -488,7 +524,8 @@ export class DayNight {
     // without one is black: only what's lit by a fire or a torch shows,
     // and the land fades out a few dozen metres off (see main: nightSight).
     const full = 0.5 - 0.5 * Math.cos(this.moonPhase * Math.PI * 2);
-    this.moonlight = full * smoothstep(0.02, 0.3, -e) * (1 - 0.85 * overcast);
+    this.#skyEvents();
+    this.moonlight = full * smoothstep(0.02, 0.3, -e) * (1 - 0.85 * overcast) * (1 - 0.8 * this.eclipse);
     const blackness = night * (1 - this.moonlight);
     if (blackness > 0) {
       this.horizon.lerp(MOONLESS, 0.7 * blackness);
@@ -498,6 +535,7 @@ export class DayNight {
     const u = this.sky.material.uniforms;
     u.time.value = this._skyTime % 10000;
     u.moonPhase.value = this.moonPhase;
+    u.eclipse.value = this.eclipse;
     u.aurora.value = this.aurora;
     u.rainbow.value = this.rainbow;
     u.night.value = night;
@@ -548,10 +586,10 @@ export class DayNight {
       this._moonLit = true;
       dir.copy(this.sunDir).negate();
       this._shaftDir.copy(dir);
-      light.color.copy(MOON);
+      light.color.copy(MOON).lerp(tmp.setRGB(0.75, 0.3, 0.2), this.eclipse);
       // (A full moon lights the land well; a thin one, barely.)
       // (Strong enough, with so little light from the sky, to cast dark shadows.)
-      light.intensity = 0.75 * full * smoothstep(0.12, 0.3, -e) * (1 - 0.85 * overcast);
+      light.intensity = 0.75 * full * smoothstep(0.12, 0.3, -e) * (1 - 0.85 * overcast) * (1 - 0.75 * this.eclipse);
     }
 
     // Clouds catch the low sun: gold, then orange-red, pink and purple as it
