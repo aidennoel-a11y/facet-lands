@@ -581,6 +581,57 @@ function groundAt(x, feetY, z) {
  * no water to swim in, but ice to walk on: null, unless `ice` is asked for,
  * then with `frozen` set.
  */
+// Thin ice: early in the winter and at the thaw it creaks and cracks under
+// you; run on it, or stand too long where it's thinnest, and you go
+// through into the freezing water. The hole stays open a while.
+var iceHoles = []; // { x, z, r, until (world day), mesh } (var: waterAt may be asked before this line runs)
+const iceWalk = { stress: 0, crackWait: 0 };
+function thinIce(dt) {
+  const day = dayNight.day + dayNight.hour / 24;
+  for (let k = iceHoles.length - 1; k >= 0; k--) {
+    if (day < iceHoles[k].until) continue;
+    scene.remove(iceHoles[k].mesh);
+    iceHoles.splice(k, 1);
+  }
+  if (controls.mode !== 'walk' || controls.swimming || sheltered) return (iceWalk.stress = 0);
+  const p = camera.position, feet = p.y - controls.eyeHeight, w = waterAt(p.x, p.z, true);
+  if (!w?.frozen || Math.abs(feet - w.level) > 0.3 || !(w.thick < 0.14)) return (iceWalk.stress = Math.max(0, iceWalk.stress - dt));
+  const thin = 1 - w.thick / 0.14; // (0 sound enough .. 1 hardly there)
+  const load = controls.sprinting ? 2.2 : controls.moving ? 0.6 : 0.35;
+  iceWalk.stress += dt * load * thin * thin * 0.5;
+  iceWalk.crackWait -= dt * (0.5 + load) * (0.3 + thin);
+  if (iceWalk.crackWait <= 0) {
+    iceWalk.crackWait = 1.2 + Math.random() * 2;
+    sound.call('crack', (Math.random() - 0.5) * 0.6, 0.35 + 0.4 * thin);
+    if (thin > 0.4 && iceWalk.stress > 0.4) game.hotbar?.flash('The ice is cracking under you!');
+  }
+  if (iceWalk.stress < 1) return;
+  // Through it!
+  iceWalk.stress = 0;
+  const geo = new THREE.CircleGeometry(1.6, 9);
+  const pos = geo.attributes.position;
+  for (let i = 1; i < pos.count; i++) pos.setXY(i, pos.getX(i) * (0.8 + Math.random() * 0.4), pos.getY(i) * (0.8 + Math.random() * 0.4));
+  const hole = new THREE.Group();
+  const water = new THREE.Mesh(geo.rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x1c3440, flatShading: true }));
+  water.position.y = 0.02;
+  hole.add(water);
+  // (Broken slabs of ice tipped up round its edge.)
+  const slabMat = new THREE.MeshLambertMaterial({ color: 0xcfe4ee, flatShading: true });
+  for (let k = 0; k < 7; k++) {
+    const a = (k / 7) * Math.PI * 2 + Math.random() * 0.5, slab = new THREE.Mesh(new THREE.BoxGeometry(0.5 + Math.random() * 0.6, 0.1, 0.4 + Math.random() * 0.5), slabMat);
+    slab.position.set(Math.cos(a) * 1.5, 0.05, Math.sin(a) * 1.5);
+    slab.rotation.set((Math.random() - 0.5) * 0.7, -a, (Math.random() - 0.5) * 0.7);
+    hole.add(slab);
+  }
+  hole.position.set(p.x, w.level, p.z);
+  scene.add(hole);
+  iceHoles.push({ x: p.x, z: p.z, r: 1.4, until: day + 0.6, mesh: hole });
+  traces.splash(p.x, w.level, p.z, 14, 2.2, 1.2);
+  sound.call('bigsplash', 0, 0.9);
+  sound.call('crack', 0, 1);
+  game.hotbar?.flash('You went through the ice! Get out before the cold takes you');
+}
+
 function waterAt(x, z, ice = false) {
   // Underground: the still lakes of the great chambers, the rivers in the
   // rock, the pools on cave floors (or lava). Not the sea or the rivers
@@ -601,6 +652,9 @@ function waterAt(x, z, ice = false) {
     if (winter > 0.5) {
       const cold = generator.getSeasonality(x, z) * (found.lake ? 1 - generator.getOceanness(x, z) : 1);
       found.frozen = winter * cold > 0.6;
+      found.thick = winter * cold - 0.6; // (how sound the ice is: thin at first, and as the thaw comes)
+      // (Where you've gone through it: open water, till it freezes over again.)
+      if (found.frozen && iceHoles?.length) for (const h of iceHoles) if (Math.hypot(x - h.x, z - h.z) < h.r) found.frozen = false;
     }
   }
   if (found?.frozen && !ice) return null;
@@ -2384,6 +2438,8 @@ function tick(now) {
   // The spiders in the dark, round you when you're down in the caves.
   // The landmarks near you (found, the first time you come to one), and the old mines' timbers.
   if (landmarks.generator !== generator) (landmarks.generator = generator), landmarks.built.forEach((b) => scene.remove(b.group)), landmarks.built.clear();
+  landmarks.winter = seasonUniforms.uWinter.value;
+  thinIce(dt);
   landmarks.update(dt, camera.position.x, camera.position.z);
   game.landmarkHere = sheltered ? null : landmarks.at(camera.position.x, camera.position.z);
   if (game.landmarkHere && controls.mode === 'walk' && game.mode !== 'creative') game.discoverLandmark(game.landmarkHere);

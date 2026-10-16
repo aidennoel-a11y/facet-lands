@@ -5,6 +5,7 @@ import {
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../noise/random.js';
 import { LANDMARKS } from './landmarkSites.js';
+import { fallIce } from './riverData.js';
 
 const tint = new Color(), m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s3 = new Vector3();
 
@@ -254,7 +255,7 @@ export class Landmarks {
     };
     const solid = (dx, dz, rad, top) => solids.push({ x: site.x + dx, z: site.z + dz, r: rad, top });
     const waters = [];
-    let steam = null, falls = null, ribbons = null;
+    let steam = null, falls = null, ribbons = null, frozen = null;
     const k = new Kit(site.seed), glow = new Kit(site.seed + 1), icy = new Kit(site.seed + 2);
     // (Grass tufts and ferns, the little green round a place that makes it sit in the land.)
     const tufts = (n, rad, cols = [0x5a8a3a, 0x4a7a32, 0x6a9a44]) => {
@@ -800,6 +801,31 @@ export class Landmarks {
             solid(x, z, size * 0.9, y + size * 0.8);
           }
         }
+        // In the coldest lands, in the depth of winter: the falls frozen,
+        // icicles hanging all along the lip, columns of ice down the cliff
+        // where the water ran, a cone of ice built up at the foot (shown
+        // only in the deep of winter: see update).
+        if (site.drops.length && fallIce(this.generator, site.x, site.z) > 0.15) {
+          const frost = new Kit(site.seed + 5), ices = [0xcfe6f4, 0xb8dcf0, 0xe4f2fa, 0xa8d0ea];
+          for (const d of site.drops) {
+            const px = -d.dz, pz = d.dx, H = d.top - d.bottom, lx = d.x - site.x + d.dx * (d.ledge + 0.2), lz = d.z - site.z + d.dz * (d.ledge + 0.2);
+            const n = Math.round(d.w * 2.2) + 4;
+            for (let i = 0; i < n; i++) {
+              const u = (i / (n - 1) - 0.5) * d.w * 1.15 + r(-0.2, 0.2), len = R() < 0.25 ? r(H * 0.5, H * 0.95) : r(0.6, Math.min(4, H * 0.4)), rad = 0.12 + len * r(0.05, 0.09);
+              frost.add(new ConeGeometry(rad, len, 5), pick(ices), [lx + px * u + d.dx * r(-0.2, 0.4), d.top - len / 2 + 0.1, lz + pz * u + d.dz * r(-0.2, 0.4)], [Math.PI + r(-0.06, 0.06), r(0, 3), r(-0.06, 0.06)], [1, 1, 1], 0.1);
+            }
+            // (Columns of ice down the face, thick where the water fell hardest.)
+            for (let i = 0, m = 2 + Math.round(d.w / 2); i < m; i++) {
+              const u = (R() - 0.5) * d.w * 0.9, [out] = d.prof[d.prof.length - 1], o = out * r(0.4, 0.8);
+              frost.limb([d.x - site.x + d.dx * o + px * u, d.bottom - 0.3, d.z - site.z + d.dz * o + pz * u], [lx + px * u, d.top - 0.2, lz + pz * u], r(0.5, 1.1) * Math.min(1.6, d.w / 4 + 0.4), r(0.25, 0.5), pick(ices), 6);
+            }
+            // (The cone of ice at its foot.)
+            const [out] = d.prof[d.prof.length - 1];
+            blob(frost, pick(ices), [d.x - site.x + d.dx * out, d.bottom - 0.2, d.z - site.z + d.dz * out], d.w * 0.55 + 1, [1.2, 0.7, 1.1], 0.25);
+          }
+          frozen = new Mesh(frost.build(), this.iceMaterial);
+          frozen.visible = false;
+        }
         for (const p of pools) {
           if (!p.basin) continue;
           for (let i = 0, n = 1 + Math.floor(R() * 3); i < n; i++) {
@@ -953,8 +979,9 @@ export class Landmarks {
         steam.puffs.push(sp);
       }
     }
+    if (frozen) g.add(frozen);
     this.scene.add(g);
-    return { site, group: g, solids, waters, steam, falls: !!falls, surface: site.surface ?? null };
+    return { site, group: g, solids, waters, steam, falls: !!falls, surface: site.surface ?? null, frozen, iceAt: frozen ? fallIce(this.generator, site.x, site.z) : 0 };
   }
 
   // --- Each frame -----------------------------------------------------------------
@@ -991,6 +1018,12 @@ export class Landmarks {
     }
     if (this.fallsMat) this.fallsMat.map.offset.y = (this.fallsMat.map.offset.y + dt * 1.6) % 1;
     for (const b of this.built.values()) {
+      // (The falls' winter ice: there only in the deep of winter, where it's cold enough, growing as it deepens.)
+      if (b.frozen) {
+        const f = Math.max(0, Math.min(1, ((this.winter ?? 0) - 0.55) / 0.3)) * Math.min(1, b.iceAt * 1.3);
+        b.frozen.visible = f > 0.05;
+        if (b.frozen.visible) b.frozen.scale.set(1, 0.4 + 0.6 * f, 1), (b.frozen.position.y = (1 - (0.4 + 0.6 * f)) * (b.site.drops[0]?.top ?? 0));
+      }
       if (!b.steam) continue;
       for (const sp of b.steam.puffs) {
         const u = sp.userData;
