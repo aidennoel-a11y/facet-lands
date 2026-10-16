@@ -22,7 +22,7 @@ export const TILLED_HALF = 1.1; // half a plot's side (m), a little past its cro
  * Paints the map afresh round (cx, cz) from `plots` ([{ x, z, rot, watered }]):
  * each a patch of dug earth about its middle, roughly square, frayed at the edges.
  */
-export function paintTilled(cx, cz, plots) {
+export function paintTilled(cx, cz, plots, paths = []) {
   const size = N * TEXEL, x0 = Math.floor((cx - size / 2) / 8) * 8, z0 = Math.floor((cz - size / 2) / 8) * 8;
   data.fill(0);
   const R = TILLED_HALF + 0.45;
@@ -40,6 +40,20 @@ export function paintTilled(cx, cz, plots) {
         const o = (k * N + i) * 4;
         if (v > data[o]) data[o] = v;
         if (v && wet) data[o + 1] = Math.max(data[o + 1], Math.min(v, wet));
+      }
+    }
+  }
+  // The paths you've worn (blue): bare trodden earth, about a metre wide, ragged at its edges.
+  for (const [px, pz, s] of paths) {
+    const i0 = Math.max(0, Math.floor((px - 1.2 - x0) / TEXEL)), i1 = Math.min(N - 1, Math.ceil((px + 1.2 - x0) / TEXEL));
+    const k0 = Math.max(0, Math.floor((pz - 1.2 - z0) / TEXEL)), k1 = Math.min(N - 1, Math.ceil((pz + 1.2 - z0) / TEXEL));
+    for (let k = k0; k <= k1; k++) {
+      for (let i = i0; i <= i1; i++) {
+        const wx = x0 + (i + 0.5) * TEXEL, wz = z0 + (k + 0.5) * TEXEL;
+        const d = Math.hypot(wx - px, wz - pz) + 0.15 * Math.sin(wx * 3.1 + wz * 1.7) + 0.1 * Math.sin(wz * 4.3 - wx * 2.2);
+        const v = Math.round(255 * s * Math.min(1, Math.max(0, (1.05 - d) / 0.5)));
+        const o = (k * N + i) * 4 + 2;
+        if (v > data[o]) data[o] = v;
       }
     }
   }
@@ -65,6 +79,9 @@ export function addTilledSoil(material) {
           vec2 tuv = (vTillXZ - uTilledOrigin.xy) / uTilledOrigin.z;
           if (tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) {
             vec4 till = texture2D(uTilledMap, tuv);
+            // (A worn path: the grass gone, bare earth trodden hard and pale.)
+            float worn = smoothstep(0.08, 0.6, till.b) * 0.9;
+            if (worn > 0.0) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.20, 0.145, 0.09) * (0.9 + 0.2 * fract(sin(dot(floor(vTillXZ * 3.0), vec2(12.9898, 78.233))) * 43758.5453)), worn);
             float inside = smoothstep(0.15, 0.6, till.r);
             if (inside > 0.0) {
               float furrow = smoothstep(0.35, 0.65, abs(fract(vTillXZ.y * 2.0) - 0.5) * 2.0); // (rows half a metre apart)

@@ -14,6 +14,8 @@ export const cutUniforms = { uCutMap: { value: cutMap }, uCutOrigin: { value: ne
 
 export class GrassCut {
   constructor() {
+    this.paths = new Map(); // "i,k" -> [how worn, the day last trodden]: the ways you keep walking, worn bare
+    this.pathVersion = 0;
     this.cells = new Map(); // "i,k" -> the day it was cut
     this.origin = null;
     this.wait = 0;
@@ -32,6 +34,49 @@ export class GrassCut {
     }
     this.wait = 0;
     return fresh;
+  }
+
+  /**
+   * A step on the grass at (x, z): where you walk again and again the
+   * grass is trodden down, then worn away to a bare path (see pathsNear,
+   * tilledSoil), which grows over again if you stop using it.
+   */
+  tread(x, z, day) {
+    const i = Math.floor(x), k = Math.floor(z), key = `${i},${k}`;
+    if (key === this.lastTread) return;
+    this.lastTread = key;
+    for (let dk = -1; dk <= 1; dk++) {
+      for (let di = -1; di <= 1; di++) {
+        const d = Math.hypot(i + di + 0.5 - x, k + dk + 0.5 - z);
+        if (d > 1.1) continue;
+        const kk = `${i + di},${k + dk}`, was = this.paths.get(kk), w0 = was ? this.#worn(was, day) : 0;
+        const w = Math.min(60, w0 + (d < 0.6 ? 1 : 0.45));
+        if (Math.floor(w / 4) !== Math.floor(w0 / 4) && w > 6) (this.pathVersion++), (this.wait = 0);
+        this.paths.set(kk, [w, day]);
+      }
+    }
+  }
+
+  // (Wear fading as the grass comes back: a few treads' worth a day.)
+  #worn([w, at], day) {
+    return w - 2.5 * Math.max(0, day - at);
+  }
+
+  /** How worn (0..1) each metre of path is round (x, z): [[x, z, amount], ...]. */
+  pathsNear(x, z, r, day) {
+    const out = [];
+    for (const [key, v] of this.paths) {
+      const w = this.#worn(v, day);
+      if (w <= 0) {
+        this.paths.delete(key);
+        continue;
+      }
+      const [i, k] = key.split(',').map(Number);
+      if (Math.abs(i - x) > r || Math.abs(k - z) > r) continue;
+      const s = Math.min(1, Math.max(0, (w - 6) / 18));
+      if (s > 0) out.push([i + 0.5, k + 0.5, s]);
+    }
+    return out;
   }
 
   /** Keeps the map round you up to date (now and then, or when you've cut more). */
@@ -53,16 +98,25 @@ export class GrassCut {
       if (u < 0 || v < 0 || u >= N || v >= N) continue;
       data[v * N + u] = Math.round(255 * (age < 0.5 ? 1 : 1 - (age - 0.5) / 1.5));
     }
+    // (And along the paths you've worn, the grass trodden short, or gone.)
+    for (const [px, pz, s] of this.pathsNear(oi + N / 2, ok + N / 2, N / 2, day)) {
+      const u = Math.floor(px) - oi, v = Math.floor(pz) - ok;
+      if (u < 0 || v < 0 || u >= N || v >= N) continue;
+      data[v * N + u] = Math.max(data[v * N + u], Math.round(255 * Math.min(1, s * 1.4)));
+    }
     cutMap.needsUpdate = true;
     cutUniforms.uCutOrigin.value.set(oi, ok);
   }
 
   toJSON() {
-    return [...this.cells];
+    return { cut: [...this.cells], paths: [...this.paths].map(([k, [w, at]]) => [k, [Math.round(w * 10) / 10, Math.round(at * 1000) / 1000]]) };
   }
 
-  load(list) {
+  load(saved) {
+    const list = Array.isArray(saved) ? saved : saved?.cut; // (older saves: just the cut grass)
     this.cells = new Map(list ?? []);
+    this.paths = new Map(Array.isArray(saved) ? [] : saved?.paths ?? []);
+    this.pathVersion++;
     this.wait = 0;
   }
 }

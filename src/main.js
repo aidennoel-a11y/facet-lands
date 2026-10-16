@@ -1976,11 +1976,11 @@ function clearGrass() {
   // watered or gone, or you've walked off towards the map's edge.)
   const plots = [];
   for (const s of game.structures.list) if (s.type === 'plot' && Math.abs(s.x - p.x) < 70 && Math.abs(s.z - p.z) < 70) plots.push({ x: s.x, z: s.z, rot: s.rot ?? 0, watered: s.watered > 0 });
-  const sign = plots.map((q) => `${q.x.toFixed(1)},${q.z.toFixed(1)},${q.watered ? 1 : 0}`).join(';');
+  const sign = plots.map((q) => `${q.x.toFixed(1)},${q.z.toFixed(1)},${q.watered ? 1 : 0}`).join(';') + `|${grassCut.pathVersion}`;
   const o = tilledOrigin.value, mid = { x: o.x + o.z / 2, z: o.y + o.z / 2 };
   if (sign !== tilled.sign || Math.abs(p.x - mid.x) > 24 || Math.abs(p.z - mid.z) > 24) {
     tilled.sign = sign;
-    paintTilled(p.x, p.z, plots);
+    paintTilled(p.x, p.z, plots, grassCut.pathsNear(p.x, p.z, 70, dayNight.day + dayNight.hour / 24));
   }
 }
 
@@ -2458,6 +2458,14 @@ function tick(now) {
   const night = dayNight._w?.night ?? 0;
   const air = { time: worldNow, netTime: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
+  // (Where you walk, over and over, a path wears into the grass.)
+  if (controls.mode === 'walk' && !controls.swimming && !sheltered && controls.moving && !game.riding) {
+    const fx = camera.position.x, fz = camera.position.z, cell = `${Math.floor(fx)},${Math.floor(fz)}`;
+    if (cell !== grassCut.lastTread && Math.abs(camera.position.y - controls.eyeHeight - chunks.groundHeightAt(fx, fz)) < 0.4) {
+      const s = stepSurface(fx, fz);
+      if (s === 'grass' || s === 'dirt' || s === 'leaves') grassCut.tread(fx, fz, air.day);
+    }
+  }
   grassCut.update(dt, camera.position, air.day);
   volcanoes.update(dt, air);
   sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y, fog: scene.fog.color });
