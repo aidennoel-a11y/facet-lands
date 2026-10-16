@@ -625,6 +625,57 @@ export function trophyRackModel() {
   return b.build();
 }
 
+/** A water mill's house: a stone footing on the bank, a timber mill house, a shingled roof; the wheel turns on its side (see millWheelModel). */
+export function waterMillModel() {
+  const b = new Parts(171);
+  b.add(new BoxGeometry(2.6, 0.7, 2.4), 0x7e7a72, [0, 0.35, 0]);
+  b.add(new BoxGeometry(2.4, 2.1, 2.2), 0x9a7048, [0, 1.75, 0]);
+  for (const x of [-1.18, 1.18]) for (const z of [-1.08, 1.08]) b.add(new BoxGeometry(0.14, 2.1, 0.14), 0x6e4c32, [x, 1.75, z]);
+  b.add(new BoxGeometry(2.8, 0.08, 1.5), 0x5a4232, [0, 3.15, -0.6], [0.6, 0, 0]);
+  b.add(new BoxGeometry(2.8, 0.08, 1.5), 0x5a4232, [0, 3.15, 0.6], [-0.6, 0, 0]);
+  b.add(new BoxGeometry(0.6, 1.1, 0.06), 0x3a2a1e, [0, 1.25, 1.12]);
+  b.add(new CylinderGeometry(0.1, 0.1, 0.9, 6), 0x5a4232, [1.55, 1.3, 0], [0, 0, Math.PI / 2]); // (the axle out to the wheel)
+  return b.build();
+}
+
+/** A mill's water wheel: a rim of boards on spokes, paddles all round (it turns about x). */
+export function millWheelModel() {
+  const b = new Parts(173), R = 1.25;
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2;
+    b.add(new BoxGeometry(0.5, 0.06, 0.42), 0x7a5a3c, [0, Math.cos(a) * R, Math.sin(a) * R], [a, 0, 0]); // (paddles)
+    b.add(new BoxGeometry(0.08, 0.68, 0.1), 0x8a6a48, [0.2, Math.cos(a + 0.26) * R * 0.98, Math.sin(a + 0.26) * R * 0.98], [a + 0.26, 0, 0]); // (the rim)
+    b.add(new BoxGeometry(0.08, 0.68, 0.1), 0x8a6a48, [-0.2, Math.cos(a + 0.26) * R * 0.98, Math.sin(a + 0.26) * R * 0.98], [a + 0.26, 0, 0]);
+  }
+  for (let k = 0; k < 4; k++) b.add(new BoxGeometry(0.07, R * 2, 0.08), 0x6e4c32, [0, 0, 0], [(k / 4) * Math.PI, 0, 0]); // (spokes)
+  b.add(new CylinderGeometry(0.16, 0.16, 0.5, 6), 0x5a4232, [0, 0, 0], [0, 0, Math.PI / 2]);
+  return b.build();
+}
+
+/** A windmill: a tapering tower of stone and plaster, a wooden cap; its sails turn at the front (see windmillSailsModel). */
+export function windmillModel() {
+  const b = new Parts(175);
+  b.add(new CylinderGeometry(1.15, 1.55, 2.2, 8), 0x8a867c, [0, 1.1, 0]);
+  b.add(new CylinderGeometry(0.95, 1.15, 3.6, 8), 0xd8d0bc, [0, 4.0, 0]);
+  b.add(new ConeGeometry(1.25, 1.4, 8), 0x6a4a34, [0, 6.5, 0]);
+  b.add(new BoxGeometry(0.7, 1.2, 0.08), 0x3a2a1e, [0, 0.7, 1.45], [0.1, 0, 0]);
+  b.add(new BoxGeometry(0.4, 0.5, 0.06), 0x3a3430, [0, 3.8, 1.02], [0.06, 0, 0]);
+  b.add(new CylinderGeometry(0.12, 0.12, 0.9, 6), 0x5a4232, [0, 5.9, 1.1], [Math.PI / 2, 0, 0]); // (the windshaft out to the sails)
+  return b.build();
+}
+
+/** A windmill's four sails: lattice arms with cloth on them (it turns about z). */
+export function windmillSailsModel() {
+  const b = new Parts(177), L = 3.4;
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2, cx = Math.sin(a), cy = Math.cos(a);
+    b.add(new BoxGeometry(0.12, L, 0.1), 0x6e4c32, [cx * L * 0.5, cy * L * 0.5, 0], [0, 0, -a]);
+    b.add(new BoxGeometry(0.75, L * 0.78, 0.03), 0xece4d0, [cx * L * 0.56 + cy * 0.42, cy * L * 0.56 - cx * 0.42, 0.04], [0, 0, -a]);
+  }
+  b.add(new CylinderGeometry(0.22, 0.22, 0.3, 6), 0x5a4232, [0, 0, 0], [Math.PI / 2, 0, 0]);
+  return b.build();
+}
+
 /** Where something's planted: a ring of turned earth, and a stake. */
 export function plantingModel() {
   const b = new Parts(166);

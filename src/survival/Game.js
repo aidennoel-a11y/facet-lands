@@ -151,6 +151,15 @@ export class Game {
     };
     this.felling = new Felling(o.scene, o.trees, this.items);
     // (What grows in an orchard planting: the same trees and bushes as the wild ones, at its size.)
+    // (A water mill's wheel: turned by running water just off its side.)
+    this.structures.flowAt = (s) => {
+      let best = 0;
+      for (const d of [2, 2.8, 3.6]) {
+        const x = s.x + Math.cos(s.rot) * d, z = s.z - Math.sin(s.rot) * d, w = this.waterAt?.(x, z);
+        if (w && w.speed > 0.2 && !w.frozen) best = Math.max(best, Math.min(1, 0.35 + w.speed * 0.4));
+      }
+      return best;
+    };
     this.structures.plantModel = (type, size) => {
       const g = new Group(), m = new Matrix4().makeScale(size, size, size);
       for (const [geo, mat] of [[treeGeometry(type, this.trees.bare), this.trees.material], [this.trees.bare ? null : LEAF_GEOMETRIES[type], this.trees.leafMaterial]]) {
@@ -573,6 +582,12 @@ export class Game {
       case 'shelf': return 'Open the shelves';
       case 'chair': return 'Sit and rest';
       case 'repairBench': return held && ITEMS[held.id]?.durability ? `Mend the ${ITEMS[held.id].name.toLowerCase()}` : 'The repair bench: Q with a worn tool in hand';
+      case 'waterMill':
+      case 'windmill': {
+        const p = s.power ?? 0, working = s.jobs.length ? ` · grinding: ${s.jobs.map((j) => (j.done ? 'flour ready' : `${Math.round(100 - (j.left / j.total) * 100)}%`)).join(', ')}` : ' · click it with wheat or corn';
+        const power = s.type === 'waterMill' ? (p > 0.08 ? 'The wheel turns in the current' : 'No running water at its wheel: set it by a stream') : p > 0.6 ? 'Sails spinning in a stiff wind' : p > 0.08 ? 'Sails turning slowly' : 'Becalmed: waiting for the wind';
+        return power + working;
+      }
       case 'orchardApple':
       case 'orchardBerry':
       case 'plantedOak': {
@@ -1498,6 +1513,12 @@ export class Game {
       take();
       this.cooldown = 0.3;
       return say(at.lit ? 'Iron ore in the furnace: it will be a bar in half a minute' : 'Iron ore in the furnace: light it');
+    }
+    if ((at.type === 'waterMill' || at.type === 'windmill') && (s.id === 'wheat' || s.id === 'corn')) {
+      if (!this.structures.work(at, { id: s.id, count: 1 }, Inventory.stack('flour', s.id === 'wheat' ? 2 : 1), 40)) return say('The mill is full: take the flour first');
+      take();
+      this.cooldown = 0.3;
+      return say((at.power ?? 0) > 0.08 ? `${ITEMS[s.id].name} in the hopper: flour soon` : at.type === 'windmill' ? `${ITEMS[s.id].name} in the hopper: it will grind when the wind gets up` : `${ITEMS[s.id].name} in the hopper, but there’s no running water here to turn the wheel`);
     }
     if (at.type === 'tanningRack' && item.tans) {
       if (!this.structures.work(at, { id: s.id, count: 1 }, Inventory.stack(item.tans, 1), TIMES.tan)) return say('There is a hide on it already');

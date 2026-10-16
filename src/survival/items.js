@@ -201,6 +201,10 @@ export const ITEMS = {
   shelf: { name: 'Shelves', place: 'shelf', weight: 8, group: 'Building' }, // (six slots of storage)
   trophyRack: { name: 'Trophy rack', place: 'trophyRack', weight: 5, group: 'Building' },
   // (To plant: an orchard, a berry patch, a woodlot by your home.)
+  waterMill: { name: 'Water mill', place: 'waterMill', weight: 30, group: 'Building' }, // (on a stream bank: its wheel grinds grain to flour)
+  windmill: { name: 'Windmill', place: 'windmill', weight: 40, group: 'Building' }, // (its sails grind grain to flour, when the wind blows)
+  flour: { name: 'Flour', weight: 0.5, spoils: 9000, group: 'Materials' },
+  fineDough: { name: 'Bread dough', food: { hunger: 4, health: -1, full: 90 }, spoils: 1200, cooks: 'bread', weight: 0.5, group: 'Food' },
   appleSapling: { name: 'Apple sapling', place: 'orchardApple', weight: 1, group: 'Farming' },
   berryCutting: { name: 'Berry cutting', place: 'orchardBerry', weight: 0.3, group: 'Farming' },
   sapling: { name: 'Oak sapling', place: 'plantedOak', weight: 0.8, group: 'Farming' }, // (hang a great beast's trophy on it)
@@ -328,6 +332,9 @@ export const RECIPES = [
   { id: 'chair', needs: { log: 1, stick: 4 }, note: 'Sit and rest a while (Q): you get your strength back faster' },
   { id: 'table', needs: { log: 2, stick: 4 }, note: 'A table, for your house' },
   { id: 'shelf', needs: { log: 2, stick: 3 }, note: 'Shelves: six slots of storage (Q)' },
+  { id: 'waterMill', needs: { log: 8, rock: 12, rope: 2, ironBar: 1 }, note: 'Set it on the bank of a stream or river: the wheel turns in the current and grinds grain (wheat, corn) to flour, much faster than by hand' },
+  { id: 'windmill', needs: { log: 10, rock: 20, rope: 3, deerSkin: 2, ironBar: 1 }, note: 'Its sails turn in the wind and grind grain (wheat, corn) to flour: the stronger the wind, the faster' },
+  { id: 'fineDough', needs: { flour: 2 }, makes: 2, note: 'Milled flour makes more bread: bake it on a fire' },
   { id: 'appleSapling', needs: { apple: 2, stick: 1 }, note: 'Pips from good apples, started on a stake. Plant it: an apple tree in a few days, fruiting each summer' },
   { id: 'berryCutting', needs: { berries: 4, stick: 1 }, note: 'Plant it: a berry bush in a couple of days, fruiting each summer' },
   { id: 'sapling', needs: { stick: 2, vine: 1 }, note: 'An oak to grow by your home (or get them felling trees). Grown, fell it for logs: it grows back from the stump' },
@@ -413,7 +420,7 @@ export const RECIPES = [
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
   { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
-  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'climbingPicks'] },
+  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];
@@ -611,6 +618,10 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   ICONS.bearClaws = `<path d="M8 8c2 6 2 12 0 18M14 6c2 7 2 14 0 20M20 6c2 7 2 14 0 20M26 8c1 6 1 12-1 18" stroke="#3a2e26" stroke-width="2.6" fill="none" stroke-linecap="round"/>`;
   ICONS.wolfSkull = `<path d="M6 12l4-6 6 4 6-4 4 6-2 8-8 8-8-8z" fill="#ece4d4"/><circle cx="12" cy="15" r="2" fill="#3a3430"/><circle cx="20" cy="15" r="2" fill="#3a3430"/>`;
   ICONS.cougarSkull = ICONS.wolfSkull;
+  ICONS.waterMill = `<rect x="4" y="12" width="14" height="14" fill="#9a7048"/><path d="M2 13l9-7 9 7z" fill="#5a4232"/><circle cx="23" cy="20" r="7" fill="none" stroke="#7a5a3c" stroke-width="2.4"/><path d="M23 13v14M16 20h14" stroke="#7a5a3c" stroke-width="1.6"/>`;
+  ICONS.windmill = `<path d="M12 30l2-16h4l2 16z" fill="#d8d0bc"/><path d="M11 14l5-5 5 5z" fill="#6a4a34"/><path d="M16 11L6 3M16 11l10-8M16 11L7 20M16 11l9 9" stroke="#ece4d0" stroke-width="2.6"/>`;
+  ICONS.flour = `<path d="M8 28h16l-2-16H10z" fill="#e8e0cc"/><path d="M10 12c2-3 10-3 12 0" fill="#f4eee0"/><path d="M12 18h8" stroke="#c8b898"/>`;
+  ICONS.fineDough = `<ellipse cx="16" cy="20" rx="10" ry="6" fill="#f0dcb0"/><path d="M10 18c3-2 9-2 12 0" stroke="#d8c090" fill="none"/>`;
   ICONS.appleSapling = `<path d="M16 29V14" stroke="#7a5236" stroke-width="2.4"/><path d="M16 15c-6 0-9-4-9-8 5 0 9 3 9 8zM16 13c5-1 8-5 8-9-5 1-8 4-8 9z" fill="#6aa44a"/><circle cx="21" cy="17" r="2.4" fill="#d43a2a"/>`;
   ICONS.berryCutting = `<path d="M16 29V12" stroke="#6a4a34" stroke-width="2"/><path d="M16 16c-5-1-7-5-7-8 4 1 7 4 7 8zM16 14c4-1 6-4 6-7-4 1-6 3-6 7z" fill="#5a9a44"/><circle cx="12" cy="20" r="2" fill="#c02a4a"/><circle cx="20" cy="22" r="2" fill="#3a4aa8"/>`;
   ICONS.sapling = `<path d="M16 29V10" stroke="#7a5236" stroke-width="2.4"/><path d="M16 12c-6 0-10-4-10-8 6 0 10 3 10 8zM16 10c6-1 10-5 10-9-6 1-10 4-10 9zM16 18c-5 0-8-3-8-6 5 0 8 2 8 6z" fill="#4a8a3a"/>`;

@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -85,6 +85,8 @@ const KINDS = {
   table: { make: tableModel, box: [0.7, 0.43], tall: 0.8 },
   shelf: { make: shelfModel, box: [0.65, 0.2], tall: 1.6 },
   trophyRack: { make: trophyRackModel, circle: 0.2, tall: 1.9 },
+  waterMill: { make: waterMillModel, box: [1.3, 1.2], tall: 3.4, jobs: 4, mill: 'water' },
+  windmill: { make: windmillModel, circle: 1.5, tall: 7, jobs: 4, mill: 'wind' },
   orchardApple: { make: plantingModel, circle: 0.25, tall: 3, grows: 'appleTree' },
   orchardBerry: { make: plantingModel, circle: 0, grows: 'raspberryBush' },
   plantedOak: { make: plantingModel, circle: 0.3, tall: 6, grows: 'oak' },
@@ -488,6 +490,14 @@ export class Structures {
       s.catchMesh.visible = !!s.caught;
       mesh.add(s.catchMesh);
     }
+    if (KINDS[s.type].mill) {
+      // (Its wheel, or its sails: turning as the water runs, as the wind blows.)
+      const water = KINDS[s.type].mill === 'water';
+      s.rotor = new Mesh(this.models[s.type + 'Rotor'] ??= water ? millWheelModel() : windmillSailsModel(), this.material);
+      s.rotor.position.set(water ? 2.05 : 0, water ? 1.3 : 5.9, water ? 0 : 1.65);
+      s.rotor.castShadow = true;
+      mesh.add(s.rotor);
+    }
     s.jobGroup = new Group();
     mesh.add(s.jobGroup);
     mesh.position.set(s.x, s.y, s.z);
@@ -732,8 +742,18 @@ export class Structures {
         s.fireCheck = ctx.time + 1;
         s.smoking = this.list.some((f) => f.type === 'campfire' && f.lit && Math.hypot(f.x - s.x, f.z - s.z) < 1.4);
       }
-      if (s.jobs.length && (!kind.fire || s.lit) && (!kind.over || s.smoking)) {
-        const rate = kind.fire || kind.over ? 1 : 1 - 0.6 * (ctx.rain ?? 0);
+      if (kind.mill) {
+        // A mill's power: the stream running past its wheel; the wind in its sails.
+        if (kind.mill === 'water') {
+          if (!s.flowCheck || ctx.time > s.flowCheck) (s.flowCheck = ctx.time + 5), (s.power = this.flowAt?.(s) ?? 0);
+        } else s.power = Math.min(1, Math.max(0, (Math.hypot(ctx.wind?.x ?? 0, ctx.wind?.z ?? 0) - 1.5) / 7));
+        if (s.rotor) {
+          if (kind.mill === 'water') s.rotor.rotation.x -= dt * 1.1 * s.power;
+          else s.rotor.rotation.z -= dt * 1.4 * s.power;
+        }
+      }
+      if (s.jobs.length && (!kind.fire || s.lit) && (!kind.over || s.smoking) && (!kind.mill || (s.power ?? 0) > 0.08)) {
+        const rate = kind.mill ? s.power : kind.fire || kind.over ? 1 : 1 - 0.6 * (ctx.rain ?? 0);
         for (const j of s.jobs) {
           if (j.done) continue;
           j.left -= dt * rate;
