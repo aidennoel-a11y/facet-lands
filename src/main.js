@@ -44,6 +44,7 @@ import { RayEffects } from './render/RayEffects.js';
 import { Clouds } from './world/Clouds.js';
 import { Weather, WEATHER } from './render/Weather.js';
 import { Tornadoes } from './render/Tornado.js';
+import { Avalanches } from './render/Avalanche.js';
 import { Landmarks } from './world/Landmarks.js';
 import { MineProps } from './world/caves/MineProps.js';
 import { Lightning, panTowards, Rain } from './render/Storm.js';
@@ -407,8 +408,79 @@ function spawnTornado({ near = null, delay = 50, back = null } = {}) {
   return tornadoes.spawn(x, z, heading, { speed: 10 + Math.random() * 7, life: 170 + Math.random() * 170, R: 50 + Math.random() * 70, delay });
 }
 
+// Avalanches: after heavy snow, on the steep snowy slopes high above you,
+// now and then one breaks away and comes down (see Avalanche); or you set
+// one off yourself, running across a steep slope of deep snow.
+const avalanches = new Avalanches(scene);
+const slide = { wait: 5, rumble: 0, hit: 0 };
+function snowSlopeAt(x, z) {
+  const g = chunks.groundHeightAt(x, z), h = 2;
+  const gx = (chunks.groundHeightAt(x + h, z) - chunks.groundHeightAt(x - h, z)) / (2 * h), gz = (chunks.groundHeightAt(x, z + h) - chunks.groundHeightAt(x, z - h)) / (2 * h);
+  return { g, slope: Math.hypot(gx, gz), snow: printGround(x, z, g) === 'snow', down: Math.atan2(-gx, -gz) };
+}
+function startAvalanche(x, z) {
+  avalanches.start(x, z, (px, pz) => chunks.groundHeightAt(px, pz), 35 + Math.random() * 40);
+  slide.rumble = 0;
+}
+function avalancheUpdate(dt) {
+  const p = camera.position;
+  slide.wait -= dt;
+  if (slide.wait <= 0 && !avalanches.now && !sheltered) {
+    slide.wait = 2;
+    // (Deep fresh snow on the mountains: after it's been snowing, in the winter.)
+    const load = Math.min(1, seasonUniforms.uSnowfall.value * 1.2) * (0.4 + 0.6 * Math.min(1, weather.rain * 2 * (seasonUniforms.uWinter.value > 0.4 ? 1 : 0.3)));
+    if (load > 0.15 && generator.getMountainness(p.x, p.z) > 0.35 && Math.random() < 0.014 * load) {
+      // Somewhere high above, steep and snowy, that you can see.
+      const fwd = Math.atan2(-Math.sin(controls.euler?.y ?? 0), -Math.cos(controls.euler?.y ?? 0));
+      for (let k = 0; k < 14; k++) {
+        const a = fwd + (Math.random() - 0.5) * 2.2, d = 140 + Math.random() * 260, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
+        const s = snowSlopeAt(x, z);
+        if (s.snow && s.slope > 0.65 && s.g > p.y + 25) {
+          startAvalanche(x, z);
+          break;
+        }
+      }
+    }
+    // (Or set off under your own feet: sprinting across a steep slope of deep snow.)
+    if (!avalanches.now && controls.mode === 'walk' && controls.sprinting && load > 0.3) {
+      const s = snowSlopeAt(p.x, p.z);
+      if (s.snow && s.slope > 0.75 && Math.random() < 0.08 * load) {
+        startAvalanche(p.x - Math.sin(s.down) * 22, p.z - Math.cos(s.down) * 22);
+        game.hotbar?.flash('The snow’s giving way above you: run sideways!');
+      }
+    }
+  }
+  avalanches.update(dt, (x, z) => chunks.groundHeightAt(x, z));
+  const a = avalanches.now;
+  if (!a) return;
+  // Its roar, rolling down the mountain.
+  slide.rumble -= dt;
+  if (a.speed > 3 && slide.rumble <= 0 && a.front) {
+    slide.rumble = 1.1;
+    const d = Math.hypot(a.front.x - p.x, a.front.z - p.z);
+    sound.call('rumble', panTowards(camera, a.front.x, a.front.z), Math.min(1, 0.25 + 120 / (d + 60)));
+  }
+  // What it catches: knocked down, carried along, buried.
+  slide.hit -= dt;
+  if (controls.mode !== 'walk') return;
+  const feet = p.y - controls.eyeHeight;
+  for (const b of a.bits) {
+    const v = Math.hypot(b.vx, b.vz);
+    if (v < 4 || Math.abs(b.y - feet - 0.8) > 2.5 || Math.hypot(b.x - p.x, b.z - p.z) > b.size + 1) continue;
+    p.x += b.vx * dt * 0.85;
+    p.z += b.vz * dt * 0.85;
+    if (slide.hit <= 0) {
+      slide.hit = 1.2;
+      game.hurt(8 + v * 1.2, 'an avalanche');
+      game.hotbar?.flash('Caught in the avalanche!');
+    }
+    break;
+  }
+}
+
 const tornadoWind = {};
 function tornadoUpdate(dt) {
+  avalancheUpdate(dt);
   tornadoWatch(dt);
   tornadoes.update(dt, {
     camera, light: ambientLight, wind: clouds.wind,
@@ -1351,6 +1423,18 @@ document.getElementById('test-storm')?.addEventListener('click', (e) => {
   e.currentTarget.blur();
 });
 // (A tornado for testing: forming a few hundred metres off, coming your way.)
+// (An avalanche for testing: down the steepest snowy slope above you, or the slope nearest.)
+document.getElementById('test-avalanche')?.addEventListener('click', (e) => {
+  const p = camera.position;
+  let best = null;
+  for (let k = 0; k < 60; k++) {
+    const a = Math.random() * Math.PI * 2, d = 60 + Math.random() * 300, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d, s = snowSlopeAt(x, z);
+    const score = s.slope * (s.snow ? 2 : 1) + (s.g - p.y) / 200;
+    if (!best || score > best.score) best = { x, z, score };
+  }
+  if (best) startAvalanche(best.x, best.z);
+  e.currentTarget.blur();
+});
 document.getElementById('test-tornado')?.addEventListener('click', (e) => {
   spawnTornado({ near: (Math.random() - 0.5) * 80, delay: 4, back: 350 });
   e.currentTarget.blur();
@@ -2627,7 +2711,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)
