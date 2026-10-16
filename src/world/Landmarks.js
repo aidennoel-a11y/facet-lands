@@ -765,6 +765,37 @@ export class Landmarks {
         waters.push({ level: floor + 1.2, r: b.r * 0.3, clean: false, mat: 'dark' });
         break;
       }
+      case 'foxDen': {
+        // A fox's earth: a mound of dug-out soil against the bank, two dark
+        // holes into it, the ground bare and trodden round, bones and
+        // feathers of what they've brought home.
+        const soil = [0x6a4e36, 0x7a5a3e, 0x5e4430];
+        blob(k, pick(soil), [0, y0 - 0.2, 0], 2.4, [1.5, 0.55, 1.2], 0.3);
+        for (const [hx, hz, a] of [[0.9, 1.5, 0.3], [-1.0, 1.4, -0.4]]) {
+          const yy = gy(hx, hz);
+          k.add(new CylinderGeometry(0.42, 0.42, 0.9, 7), 0x16100c, [hx, yy + 0.32, hz], [Math.PI / 2 - 0.25, a, 0], [1, 1, 0.75]);
+          blob(k, pick(soil), [hx * 1.25, yy - 0.05, hz * 1.35], 0.7, [1.3, 0.35, 1], 0.3); // (the spoil heap at its mouth)
+        }
+        for (let i = 0; i < 7; i++) {
+          const a = r(0, 6.28), d = r(1.5, 3.5), x = Math.cos(a) * d, z = Math.sin(a) * d + 1;
+          k.add(new CylinderGeometry(0.025, 0.03, r(0.18, 0.35), 4), 0xe8e0cc, [x, gy(x, z) + 0.03, z], [Math.PI / 2, r(0, 3), 0]);
+          if (R() < 0.5) k.add(new BoxGeometry(0.04, 0.01, 0.14), pick([0x6a5a4a, 0xd8d0c0, 0x3a3a3a]), [x + 0.2, gy(x, z) + 0.02, z], [0, r(0, 3), 0]);
+        }
+        tufts(10, 4);
+        solid(0, 0, 1.6, y0 + 0.9);
+        break;
+      }
+      case 'warren': {
+        // A rabbit warren: holes dug all over a low rise, each with its fan
+        // of bare earth, the grass cropped short between.
+        const n = 6 + Math.floor(R() * 5);
+        for (let i = 0; i < n; i++) {
+          const a = r(0, 6.28), d = r(0.5, 7), x = Math.cos(a) * d, z = Math.sin(a) * d, yy = gy(x, z), dir = r(0, 6.28);
+          blob(k, pick([0x7a5e42, 0x8a6a4a, 0x6a5038]), [x + Math.cos(dir) * 0.35, yy - 0.08, z + Math.sin(dir) * 0.35], 0.45, [1.4, 0.3, 1], 0.3);
+          k.add(new CylinderGeometry(0.17, 0.17, 0.5, 6), 0x140e0a, [x, yy + 0.06, z], [Math.PI / 2 - 0.5, -dir + Math.PI / 2, 0], [1, 1, 0.7]);
+        }
+        break;
+      }
       case 'mere':
       case 'falls': {
         // (A pond on the flats below: only the mossy rocks and ferns round it.)
@@ -1010,7 +1041,7 @@ export class Landmarks {
       // so those no more than one every second and a half; the falls,
       // quick, as often as asked.)
       near.sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
-      const next = near.find((s) => !this.built.has(s.key) && (s.kind === 'falls' || s.kind === 'mere' || this.bigWait <= 0));
+      const next = near.find((s) => !this.built.has(s.key) && (s.kind === 'falls' || s.kind === 'mere' || s.kind === 'foxDen' || s.kind === 'warren' || this.bigWait <= 0));
       if (next) {
         if (next.kind !== 'falls') this.bigWait = 1.5;
         this.built.set(next.key, this.#build(next));
