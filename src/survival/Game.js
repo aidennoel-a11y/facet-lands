@@ -2908,12 +2908,17 @@ export class Game {
     else if (this.breaking && this.time < this.breaking.until) this.hud.meter(this.breaking.label, this.breaking.frac);
     else this.hud.meter(null, null);
     this.hud.almanac(this.mode === 'survival' && this.survival.alive ? { day: Math.floor(this.age) + 1, season: ctx.season ?? '', longest: Math.max(longestRun(), Math.floor(this.age)) } : null);
+    // (Under thick trees the rain comes through slower; standing in the
+    // water you're wet to the knees.)
+    const canopy = cave === null ? Math.min(1, this.generator().getForestDensity(cam.x, cam.z) * 1.2) : 0;
+    const feetY = cam.y - this.controls.eyeHeight, wadeW = this.controls.swimming ? null : this.waterAt(cam.x, cam.z);
+    const wading = wadeW && wadeW.level > feetY + 0.05 ? Math.min(1, (wadeW.level - feetY) / 0.6) : 0;
     const e = {
       active: walking && this.survival.alive && !this.sleeping,
       moving: this.controls.moving, sprinting: this.controls.sprinting, swimming: this.controls.swimming, jumped, load: heavy,
       heat: heat.heat, day: ctx.day, coat: this.#warmClothes(), fire, inFire: walking && (this.structures.inFire(cam.x, cam.z) || (this.fireHeat?.(cam.x, cam.y - this.controls.eyeHeight, cam.z) ?? 0) > 0.3),
       winter: ctx.winter, spring: ctx.spring, autumn: ctx.autumn, summer: ctx.summer,
-      seasonality: heat.seasonality, altitude: cam.y - this.controls.eyeHeight, night: ctx.night, rain: ctx.rain * (1 - shelter.roof), snowing: ctx.snowing && shelter.roof < 0.5,
+      seasonality: heat.seasonality, altitude: cam.y - this.controls.eyeHeight, night: ctx.night, rain: ctx.rain * (1 - shelter.roof) * (1 - 0.45 * canopy), wading, snowing: ctx.snowing && shelter.roof < 0.5,
       shelter: sheltered, exposed, storm: cave !== null ? 0 : ctx.blizzard ?? 0, dust: (ctx.dust ?? 0) * (1 - sheltered),
       hotSpring: this.#inHotSpring(cam),
       cave, inLava: !!ctx.lava,
@@ -3027,7 +3032,7 @@ export class Game {
     // (Which way the wind blows, as you look.)
     const w = this.wind?.() ?? { x: 0, z: 0 }, yaw = this.controls.euler.y;
     const along = -w.x * Math.sin(yaw) - w.z * Math.cos(yaw), across = w.x * Math.cos(yaw) - w.z * Math.sin(yaw);
-    this.hud.update(this.survival, this.inventory, { active: walking, load, heavy, wind: Math.atan2(across, along), sheltered: sheltered > 0.5, heatstroke: this.survival.hot > 90 && this.survival.thirst < 40, blizzard: (ctx.blizzard ?? 0) > 0.3 && walking, hotSpring: e.hotSpring, coldWater: this.controls.swimming && !e.hotSpring ? e.waterCold : 0 });
+    this.hud.update(this.survival, this.inventory, { active: walking, load, heavy, wind: Math.atan2(across, along), sheltered: sheltered > 0.5, heatstroke: this.survival.hot > 90 && this.survival.thirst < 40, blizzard: (ctx.blizzard ?? 0) > 0.3 && walking, hotSpring: e.hotSpring, coldWater: this.controls.swimming && !e.hotSpring ? e.waterCold : 0, drying: fire > 0.2 });
 
     // Held in your hand.
     this.#drawHeld(dt, held, walking);

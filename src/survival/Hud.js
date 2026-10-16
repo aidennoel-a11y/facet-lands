@@ -191,7 +191,10 @@ export class Hud {
     if (info.blizzard) chips.push(['wet', 'Blizzard']);
     if (info.coldWater > 0.25) chips.push(['wet', info.coldWater > 0.8 ? 'Icy water' : 'Cold water']);
     if (survival.energy < 20) chips.push(['tired', survival.energy <= 0 ? 'Exhausted' : 'Worn out']);
-    if (survival.wet > 0.3) chips.push(['wet', 'Soaked']);
+    if (survival.wet > 0.3) chips.push(['wet', survival.wet > 0.7 ? 'Soaked through' : 'Soaked']);
+    else if (survival.wet > 0.08) chips.push(['wet', 'Damp']);
+    if ((survival.shivering ?? 0) > 0.5) chips.push(['wet', 'Shivering']);
+    if (survival.wet > 0.08 && info.drying) chips.push(['load', 'Drying off']);
     if (survival.full > 0) chips.push(['load', 'Full']);
     chips.push([info.heavy > 0 ? 'heavy' : 'load', `${Math.round(info.load)} kg${info.heavy > 0.5 ? ': too heavy to run' : info.heavy > 0 ? ': heavy' : ''}`]);
     const html = chips.map(([k, t]) => `<span class="chip chip-${k}">${t}</span>`).join('');

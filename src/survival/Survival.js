@@ -189,7 +189,14 @@ export class Survival {
     }
     // Wet from swimming and the rain; drying off slowly (fast by a fire).
     // (Drying faster in the sun and the heat.)
-    this.wet = Math.min(1, Math.max(0, this.wet + (e.swimming ? dt * 0.5 : e.rain > 0.2 ? dt * 0.01 * e.rain : -dt * (0.004 + 0.004 * (e.sun ?? 0) * (e.day ?? 1) + 0.004 * (e.heat ?? 0) + 0.05 * (e.fire ?? 0)))));
+    // (Wading: soaked to the knees, no more; snow settling on you melts
+    // in; hard rain soaks through faster than a drizzle.)
+    const wetting = e.swimming ? dt * 0.5 : (e.wading ?? 0) > 0 && this.wet < 0.35 * e.wading ? dt * 0.15 : e.rain > 0.2 ? dt * 0.014 * e.rain * e.rain * 1.6 : e.snowing ? dt * 0.004 : 0;
+    const drying = dt * (0.004 + 0.004 * (e.sun ?? 0) * (e.day ?? 1) + 0.004 * (e.heat ?? 0) + 0.05 * (e.fire ?? 0) + 0.003 * (e.wind ?? 0));
+    this.wet = Math.min(1, Math.max(0, this.wet + (wetting > 0 ? wetting : -drying)));
+    // Wet and cold through: shivering (it tires you).
+    this.shivering = this.wet > 0.3 && this.cold > 0.08 && !(e.fire > 0) ? Math.min(1, (this.shivering ?? 0) + dt * 0.2) : Math.max(0, (this.shivering ?? 0) - dt * 0.3);
+    if (this.shivering > 0.5) this.energy = Math.max(0, this.energy - dt * 0.05 * this.shivering);
     // (A swim cools you off, out in the desert sun.)
     if (e.swimming) this.hot = Math.max(0, this.hot - dt * 8);
     // Warmth.
@@ -203,7 +210,7 @@ export class Survival {
       this.cold = Math.max(this.cold, e.waterCold);
       this.warmth = Math.max(0, this.warmth - dt * (e.waterCold * 2.6 + this.coldness(e) * 0.3));
       this.energy = Math.max(0, this.energy - dt * 0.08 * e.waterCold);
-    } else if (this.cold > 0.03) this.warmth = Math.max(0, this.warmth - dt * this.cold * 0.55 * (e.coat || 1));
+    } else if (this.cold > 0.03) this.warmth = Math.max(0, this.warmth - dt * this.cold * 0.55 * (1 - (1 - (e.coat || 1)) * (1 - 0.6 * this.wet))); // (a wet coat's little use)
     else this.warmth = Math.min(100, this.warmth + dt * 1.2);
     // What hurts: starving, parched, freezing, standing in the fire.
     if (this.hunger <= 0 && this.hurt(dt * 0.6, 'starvation')) return;
