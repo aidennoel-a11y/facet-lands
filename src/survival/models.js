@@ -931,6 +931,45 @@ export const antlersModel = () => {
   b.add(new BoxGeometry(0.22, 0.03, 0.18), 0xcbb690, [0.06, 0.03, 0.28], [0, 0.4, 0]); // (the palm of it)
   return b.build();
 };
+/** Antlers for the wall: a pair, rising from the skull plate, tines on each (bigger and broader for an elk, palmate for a moose). */
+export function trophyAntlersModel(kind = 'deer') {
+  const b = R(kind === 'moose' ? 251 : kind === 'elk' ? 253 : 255), s = kind === 'moose' ? 1.5 : kind === 'elk' ? 1.35 : 1, col = 0xcbb690;
+  b.add(new BoxGeometry(0.16, 0.08, 0.12), 0xe8e0cc, [0, 0, 0]);
+  for (const side of [-1, 1]) {
+    if (kind === 'moose') {
+      b.add(new CylinderGeometry(0.025, 0.035, 0.22, 5), col, [side * 0.12, 0.02, 0], [0, 0, side * 1.2]);
+      b.add(new BoxGeometry(0.4, 0.03, 0.26), col, [side * 0.38, 0.1, 0], [0, 0, side * 0.35]);
+      for (let k = 0; k < 4; k++) b.add(new ConeGeometry(0.02, 0.12, 4), 0xd8c6a0, [side * (0.24 + k * 0.08), 0.22 + k * 0.03, 0.05], [0, 0, -side * 0.3]);
+    } else {
+      const lean = side * 0.55;
+      b.add(new CylinderGeometry(0.018 * s, 0.03 * s, 0.5 * s, 5), col, [side * 0.16 * s, 0.2 * s, 0], [0, 0, -lean]);
+      b.add(new CylinderGeometry(0.014 * s, 0.022 * s, 0.32 * s, 5), col, [side * 0.33 * s, 0.48 * s, 0], [0, 0, side * 0.25]);
+      for (const [h, o] of [[0.18, 0.12], [0.32, 0.22], [0.46, 0.3]]) b.add(new ConeGeometry(0.012 * s, 0.16 * s, 4), 0xd8c6a0, [side * o * s, (h + 0.08) * s, 0.04], [0.2, 0, side * 0.1]);
+    }
+  }
+  return b.build();
+}
+
+/** A skull for the wall (a wolf's, a cougar's): long-snouted, the eye sockets dark. */
+export function skullModel(cat = false) {
+  const b = R(cat ? 257 : 259), bone = 0xece4d4;
+  b.add(new DodecahedronGeometry(0.1, 0), bone, [0, 0.08, 0], [0, 0, 0], [1, 0.8, 1.1]);
+  b.add(new BoxGeometry(0.08, 0.06, cat ? 0.1 : 0.18), bone, [0, 0.05, cat ? 0.12 : 0.16]);
+  for (const sx of [-1, 1]) {
+    b.add(new BoxGeometry(0.035, 0.03, 0.02), 0x2a2420, [sx * 0.045, 0.1, 0.09]);
+    b.add(new ConeGeometry(0.01, 0.05, 4), 0xf4ecdc, [sx * 0.03, 0.01, cat ? 0.15 : 0.22], [Math.PI, 0, 0]);
+  }
+  return b.build();
+}
+
+/** A bear's claws: five dark hooked claws on a thong. */
+export function clawsModel() {
+  const b = R(261);
+  b.add(new CylinderGeometry(0.008, 0.008, 0.3, 4), 0x8a6a4a, [0, 0.05, 0], [0, 0, Math.PI / 2]);
+  for (let k = 0; k < 5; k++) b.add(new ConeGeometry(0.018, 0.1, 4), 0x2e2622, [(k - 2) * 0.055, 0.0, 0.01], [0.3, 0, Math.PI]);
+  return b.build();
+}
+
 export const venomSacModel = () =>
   R(239)
     .add(new DodecahedronGeometry(0.07, 0), 0x8ab04a, [0, 0.06, 0], [0, 0, 0], [1, 0.8, 1.3])

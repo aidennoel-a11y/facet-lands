@@ -944,7 +944,7 @@ export class Game {
           this.structures.showTrophy(s);
           return this.hotbar?.flash(`${ITEMS[was].name} taken down`);
         }
-        if (!held || ITEMS[held.id]?.group !== 'Trophies') return this.hotbar?.flash('Q with a great beast\'s trophy in hand to hang it up');
+        if (!held || ITEMS[held.id]?.group !== 'Trophies') return this.hotbar?.flash('Q with a trophy in hand to hang it up (antlers, claws, a skull, a fine fish, a great beast\'s)');
         s.trophy = held.id;
         this.inventory.take(i);
         this.structures.showTrophy(s);
@@ -2559,8 +2559,11 @@ export class Game {
     const key = `bestFish:${k.id}`, best = this.record.counts[key] ?? 0;
     const record = kg * 10 > best;
     if (record) this.record.counts[key] = Math.round(kg * 10);
+    // (A fish near the biggest of its kind: worth mounting on the trophy rack.)
+    const trophy = kg >= k.min + (k.max - k.min) * 0.6 && k.max >= 2;
+    if (trophy) this.#give('trophyFish', 1);
     this.sound?.call('splash', 0, 0.6);
-    this.hotbar?.flash(`${k.name}, ${kg} kg!${record && best ? ' Your biggest yet!' : ''}`);
+    this.hotbar?.flash(`${k.name}, ${kg} kg!${record && best ? ' Your biggest yet!' : ''}${trophy ? ' A trophy: hang it on a trophy rack' : ''}`);
   }
 
   // --- A horse ----------------------------------------------------------------------

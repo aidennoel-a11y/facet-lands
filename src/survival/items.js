@@ -55,6 +55,14 @@ export const ITEMS = {
   venomSac: { name: "The Old Rattler's venom", weight: 0.3, group: 'Trophies' },
   boarTusk: { name: "Ironhide's tusks", weight: 1.5, group: 'Trophies' },
   caveBearPelt: { name: "The Cave Bear's pelt", weight: 5, group: 'Trophies' },
+  // (Trophies from a good hunt, or a fine catch: for the trophy rack.)
+  deerAntlers: { name: 'Whitetail antlers', weight: 1.2, group: 'Trophies' },
+  elkAntlers: { name: 'Elk antlers', weight: 3.5, group: 'Trophies' },
+  mooseAntlers: { name: 'Moose antlers', weight: 6, group: 'Trophies' },
+  bearClaws: { name: 'Bear claws', weight: 0.3, group: 'Trophies' },
+  wolfSkull: { name: 'Wolf skull', weight: 0.6, group: 'Trophies' },
+  cougarSkull: { name: 'Cougar skull', weight: 0.5, group: 'Trophies' },
+  trophyFish: { name: 'Trophy fish', weight: 3, group: 'Trophies' },
   broodHeart: { name: "The Broodmother's heart", weight: 2, group: 'Trophies' },
   seedWheat: { name: 'Wheat seeds', weight: 0.05, sow: 'wheat', group: 'Farming' },
   seedCorn: { name: 'Corn kernels', weight: 0.05, sow: 'corn', group: 'Farming' },
@@ -590,6 +598,13 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   re('crocHide', 'hide', [['#8a5a3a', '#4a5a3a'], ['#b06a58', '#6a7a50']]);
   ICONS.alphaFang = `<path d="M14 4c4 0 6 3 5 8l-3 16-3-16c-1-5-1-8 1-8z" fill="#f0ead8"/><path d="M15 6c2 0 3 2 2 5" stroke="#c8c0a8" fill="none"/>`;
   ICONS.greatAntlers = `<path d="M16 28V18M16 18c-6-2-9-8-9-14M16 18c6-2 9-8 9-14M10 12l-5-2M22 12l5-2M9 7l-3-4M23 7l3-4" stroke="#d8c8a0" stroke-width="2.4" fill="none" stroke-linecap="round"/>`;
+  ICONS.deerAntlers = ICONS.greatAntlers;
+  ICONS.elkAntlers = ICONS.greatAntlers;
+  ICONS.mooseAntlers = `<path d="M16 28V19M16 19c-7 0-11-4-11-10l4 2 1-4 3 3M16 19c7 0 11-4 11-10l-4 2-1-4-3 3" stroke="#cbb690" stroke-width="2.4" fill="none" stroke-linejoin="round"/>`;
+  ICONS.bearClaws = `<path d="M8 8c2 6 2 12 0 18M14 6c2 7 2 14 0 20M20 6c2 7 2 14 0 20M26 8c1 6 1 12-1 18" stroke="#3a2e26" stroke-width="2.6" fill="none" stroke-linecap="round"/>`;
+  ICONS.wolfSkull = `<path d="M6 12l4-6 6 4 6-4 4 6-2 8-8 8-8-8z" fill="#ece4d4"/><circle cx="12" cy="15" r="2" fill="#3a3430"/><circle cx="20" cy="15" r="2" fill="#3a3430"/>`;
+  ICONS.cougarSkull = ICONS.wolfSkull;
+  ICONS.trophyFish = `<path d="M3 16c6-8 16-9 22-3l5-4v14l-5-4c-6 6-16 5-22-3z" fill="#6a8a5a"/><circle cx="9" cy="14" r="1.4" fill="#222"/>`;
   ICONS.venomSac = `<path d="M16 6c6 4 9 9 9 14a9 9 0 0 1-18 0c0-5 3-10 9-14z" fill="#6a8a3a"/><path d="M13 14c2-2 5-2 6 0" stroke="#a8c86a" fill="none"/><circle cx="16" cy="21" r="2.4" fill="#3a5a1a"/>`;
   ICONS.boarTusk = `<path d="M8 26c0-10 6-18 14-20-4 6-6 12-6 20z" fill="#f0e6d0"/><path d="M14 26c2-8 7-14 12-16-3 5-4 10-4 16z" fill="#e0d4b8"/>`;
   re('scarArmour', 'steelArmour', [['#9aa4b0', '#6a5040']]);

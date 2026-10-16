@@ -1012,7 +1012,14 @@ export class Structures {
   showTrophy(s) {
     if (!s.trophyMesh) return;
     s.trophyMesh.visible = !!s.trophy;
-    if (s.trophy) s.trophyMesh.geometry = this.modelOf(s.trophy);
+    if (s.trophy) {
+      s.trophyMesh.geometry = this.modelOf(s.trophy);
+      // (Antlers and skulls mounted upright, facing out; a fish side-on along the board; pelts and the rest laid flat on it.)
+      const upright = /Antlers$|Skull$|^bearClaws$/.test(s.trophy), fish = s.trophy === 'trophyFish';
+      s.trophyMesh.rotation.set(upright ? 0.15 : fish ? 0 : -Math.PI / 2 + 0.25, fish ? Math.PI / 2 : 0, fish ? Math.PI / 2 : 0);
+      s.trophyMesh.position.set(0, upright ? 1.45 : 1.25, upright ? 0.16 : 0.2);
+      s.trophyMesh.scale.setScalar(fish ? 2.2 : 1.5);
+    }
     this.onChange?.();
   }
 

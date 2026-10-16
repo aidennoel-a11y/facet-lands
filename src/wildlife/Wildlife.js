@@ -760,6 +760,12 @@ export class Wildlife {
     if (a.young) for (const k of Object.keys(got)) got[k] = Math.max(1, Math.floor(got[k] / 2));
     // (Picked at by scavengers first: less of it.)
     if (a.picked) got.rawMeat = Math.max(0, (got.rawMeat ?? 0) - Math.ceil(a.picked));
+    // (Trophies for the wall, from the great ones: a stag's antlers, a bear's claws, a wolf's skull.)
+    if (!a.boss && !a.young) {
+      if (a.antlers) got[{ deer: 'deerAntlers', elk: 'elkAntlers', moose: 'mooseAntlers' }[a.kind] ?? 'deerAntlers'] = 1;
+      else if (a.kind === 'blackBear' || a.kind === 'grizzly') got.bearClaws = 1;
+      else if (a.kind === 'wolf' || a.kind === 'cougar') got[a.kind === 'wolf' ? 'wolfSkull' : 'cougarSkull'] = 1;
+    }
     Object.defineProperty(got, 'stuck', { value: stuck, enumerable: false });
     return got;
   }

@@ -98,6 +98,7 @@ export class GroundItems {
         // (Everything else, each its own shape.)
         vine: M.vineModel, rope: M.ropeModel, hide: M.hideModel, fur: M.furModel, pelt: M.tannedFurModel, wool: M.woolModel, feather: M.featherModel, charcoal: M.charcoalModel,
         grizzlyPelt: M.grizzlyPeltModel, alphaFang: M.fangModel, paleFur: M.paleFurModel, greatAntlers: M.antlersModel, greatHide: M.greatHideModel, crocHide: M.crocHideModel,
+        deerAntlers: () => M.trophyAntlersModel('deer'), elkAntlers: () => M.trophyAntlersModel('elk'), mooseAntlers: () => M.trophyAntlersModel('moose'), wolfSkull: () => M.skullModel(false), cougarSkull: () => M.skullModel(true), bearClaws: M.clawsModel, trophyFish: () => fishModel(false),
         lionPelt: M.lionPeltModel, tigerPelt: M.tigerPeltModel, venomSac: M.venomSacModel, boarTusk: M.tusksModel, caveBearPelt: M.caveBearPeltModel,
         seedWheat: () => M.seedsModel(0xd8b464), seedCorn: () => M.seedsModel(0xe8c030), seedPotato: () => M.potatoModel(), seedCarrot: () => M.seedsModel(0x7a6a4a), wheat: M.wheatModel,
         berries: M.berriesModel, apple: M.appleModel, mushroom: () => M.mushroomModel(), jerky: M.jerkyModel, corn: () => M.cornModel(false), roastCorn: () => M.cornModel(true),
