@@ -59,6 +59,12 @@ export const LANDMARKS = {
   // (Nor these: a fox's earth dug into a bank at the edge of the woods,
   // the vixen and her kits about it; a rabbit warren out in the grass,
   // its holes all over a low rise, rabbits feeding round them.)
+  // (Nor this: a beaver pond. A dam of sticks and mud across a slow
+  // creek in the woods, the water backed up behind it into a pond, the
+  // beavers' lodge out in it, drowned trees standing grey in the water,
+  // gnawed stumps round its banks: see beaverPool.)
+  beaverPond: { name: 'Beaver pond', cell: 800, hidden: true, chance: 0.7, tries: 4, riverWater: true, spread: true, land: (h) => h > 4,
+    basin: { r: 14, d: 1.2, steep: 0.35 }, what: '', fits: (w, m, f) => w.temperate + w.pine + (w.parkland ?? 0) + (w.smoky ?? 0) + (w.cascades ?? 0) * 0.8 > 0.6 && m < 0.55 && f > 0.12 },
   foxDen: { name: 'Fox den', cell: 700, hidden: true, chance: 0.55, tries: 6, land: (h, slope) => h > 4 && slope > 0.04 && slope < 0.35,
     what: '', fits: (w, m, f) => (w.temperate + (w.parkland ?? 0) + w.pine + (w.smoky ?? 0) * 0.6 > 0.6) && m < 0.5 && f > 0.1 && f < 0.75 },
   warren: { name: 'Warren', cell: 520, hidden: true, chance: 0.6, tries: 6, land: (h, slope, rise) => h > 4 && slope < 0.18 && rise > -0.5,
@@ -198,7 +204,14 @@ export class LandmarkSites {
     const L = LANDMARKS[s.kind];
     if (L.basin) {
       s.pools = [{ x: s.x, z: s.z, ...L.basin, seed: s.seed }];
-      if (s.kind === 'mere') {
+      if (s.kind === 'beaverPond') {
+        s.pools = [];
+        s.runs = [];
+        s.drops = [];
+        s.extent = 0;
+        const p = this.#beaverPool(s);
+        if (p) s.pools = [p];
+      } else if (s.kind === 'mere') {
         // (Of a size, some 10 to 26 m across; none where the falls' pools or a creek lie.)
         const p = s.pools[0];
         p.r *= 0.5 + ((s.seed % 1000) / 1000) * 0.8;
@@ -553,6 +566,34 @@ export class LandmarkSites {
     });
   }
 
+  /**
+   * A beaver pond near a site: on a slow creek nearby, the dam across it
+   * where the valley's narrow, the water backed up behind it into a pond.
+   * Its level as high as the dam (a metre and a half over the creek), but
+   * no higher than its banks hold (bar the dam's side). Null if no creek
+   * is fit for one.
+   */
+  #beaverPool(s) {
+    let best = null;
+    for (const c of this.g.rivers?.inBox(s.x - 350, s.z - 350, s.x + 350, s.z + 350) ?? []) {
+      const P = c.points;
+      if (!P || c.big) continue;
+      for (let i = 3; i < P.length - 3; i++) {
+        const q = P[i], d = Math.hypot(q.x - s.x, q.z - s.z);
+        if (d > 350 || (q.width ?? 3) > 6) continue;
+        const run = Math.hypot(P[i - 3].x - P[i + 3].x, P[i - 3].z - P[i + 3].z) || 1;
+        if ((P[i - 3].level - P[i + 3].level) / run > 0.05) continue; // (a slow stretch)
+        if (!best || d < best.d) best = { q, up: P[i - 3], d };
+      }
+    }
+    if (!best) return null;
+    const { q, up } = best, ul = Math.hypot(up.x - q.x, up.z - q.z) || 1, ux = (up.x - q.x) / ul, uz = (up.z - q.z) / ul;
+    const r = 11 + ((s.seed >>> 3) % 1000) / 1000 * 7, x = q.x + ux * r * 0.8, z = q.z + uz * r * 0.8;
+    if (!this.#fallsClear(x, z, r + 15) || this.g.bigRivers?.waterAt(x, z, r + 10)) return null;
+    const down = Math.atan2(-uz, -ux), level = q.level + 1.2; // (as high as the dam holds it: its banks built up round it where they're low, see basinAt)
+    return { x, z, r, d: 1.2, steep: 0.35, seed: s.seed, level, beaver: true, dam: { a: down, top: level + 0.35 } };
+  }
+
   /** A single-hollow site's water level (see poolsOf). */
   levelOf(s) {
     return this.poolsOf(s)[0]?.level;
@@ -563,7 +604,7 @@ export class LandmarkSites {
     for (const kind of BASIN_KINDS) {
       const C = LANDMARKS[kind].cell, ci = Math.floor(x / C), ck = Math.floor(z / C);
       // (The falls run on out of their squares: the ones round about asked too.)
-      const n = LANDMARKS[kind].falls ? 1 : 0;
+      const n = LANDMARKS[kind].falls || LANDMARKS[kind].spread ? 1 : 0;
       for (let k = ck - n; k <= ck + n; k++) {
         for (let i = ci - n; i <= ci + n; i++) {
           const s = this.site(kind, i, k);
@@ -651,7 +692,7 @@ export class LandmarkSites {
           if (dq < di) (di = dq), (R = q.w * 2 + 16);
         }
         const ripple = di < R;
-        const w = { level: p.level, fx: 0, fz: 0, drop: 0.25 + 0.5 * foam * foam, along: ripple ? di : d, across: ripple ? 0.5 + 0.48 * smoothstep(0.25 * R, R, di) : d / half, inset: half - d, half, pond: true, tint: 1, ripple };
+        const w = { beaver: !!p.beaver, level: p.level, fx: 0, fz: 0, drop: 0.25 + 0.5 * foam * foam, along: ripple ? di : d, across: ripple ? 0.5 + 0.48 * smoothstep(0.25 * R, R, di) : d / half, inset: half - d, half, pond: true, tint: 1, ripple };
         if (!best || w.inset > best.inset) best = w;
       }
       for (const q of s.runs) {
@@ -672,7 +713,7 @@ export class LandmarkSites {
 
   /** Whether any of the falls' water may lie in the box (for drawing it). */
   fallsInBox(x0, z0, x1, z1) {
-    for (const kind of ['falls', 'mere']) {
+    for (const kind of ['falls', 'mere', 'beaverPond']) {
       const C = LANDMARKS[kind].cell;
       for (let k = Math.floor(z0 / C) - 1; k <= Math.floor(z1 / C) + 1; k++) {
         for (let i = Math.floor(x0 / C) - 1; i <= Math.floor(x1 / C) + 1; i++) {
@@ -764,6 +805,21 @@ export class LandmarkSites {
         // (Not quite round: its edge wanders in and out a little.)
         const [dd, a] = LandmarkSites.ell(p, x, z), w = LandmarkSites.wob(p, a);
         const r = dd / (p.r * w);
+        // (A beaver dam: a bank of sticks and mud across the creek on the
+        // pond's downstream side, a little over the water, holding it.)
+        if (p.dam && h !== null) {
+          const off = Math.abs(Math.atan2(Math.sin(a - p.dam.a), Math.cos(a - p.dam.a)));
+          if (off < 1.0 && r > 0.84 && r < 1.12) {
+            const rise = p.dam.top - 0.25 * Math.max(0, off - 0.6) / 0.4 - 1.2 * Math.max(0, Math.abs(r - 0.97) - 0.07) / 0.08;
+            if (h < rise) return h - rise;
+          }
+          // (And all round, where the land's low, a bank: the pond's edge
+          // a little over its water, falling away gently outside.)
+          if (r > 0.92 && r < 1 + 5 / p.r) {
+            const bank = p.level + 0.2 - Math.max(0, (r - 1) * p.r) * 0.22;
+            if (h < bank) return h - bank;
+          }
+        }
         if (r >= 1) continue;
         const t = Math.min(1, Math.max(0, (r - p.steep) / (1 - p.steep)));
         let dip = p.d * (1 - t * t * (3 - 2 * t));

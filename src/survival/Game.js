@@ -46,7 +46,7 @@ const WORN_SLOT = { coat: 'worn', armour: 'armour', back: 'back', head: 'head', 
 const CACTI = new Set(['smallCactus', 'ocotillo']); // (bushes, but no vines on them)
 const FRUIT = { raspberryBush: 'berries', blueberryBush: 'berries', appleTree: 'apple' };
 const NAMES = {
-  deer: 'deer', elk: 'elk', moose: 'moose', bison: 'bison', blackBear: 'black bear', grizzly: 'grizzly bear', wolf: 'wolf', wolfPup: 'wolf pup', coyote: 'coyote', fox: 'fox',
+  deer: 'deer', elk: 'elk', moose: 'moose', bison: 'bison', blackBear: 'black bear', grizzly: 'grizzly bear', wolf: 'wolf', wolfPup: 'wolf pup', coyote: 'coyote', fox: 'fox', beaver: 'beaver',
   rabbit: 'rabbit', hare: 'hare', sheep: 'sheep', boar: 'boar', cougar: 'cougar', turkey: 'turkey', duck: 'duck', snake: 'rattlesnake',
   tiger: 'tiger', jaguar: 'jaguar', monkey: 'monkey', panther: 'black panther', panda: 'giant panda', crocodile: 'crocodile', mountainGoat: 'mountain goat',
   songbird: 'bird', starling: 'starling', crow: 'crow', gull: 'gull', hawk: 'hawk',

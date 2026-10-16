@@ -640,6 +640,36 @@ export function duck() {
 }
 
 /**
+ * A beaver: a heavy brown body low in the water, the broad flat scaly tail
+ * behind, a blunt head with small round ears and the orange front teeth.
+ */
+export function beaver() {
+  const fur = 0x6a4a30, dark = 0x4a3222, tail = 0x2a2420, teeth = 0xe08a30;
+  return {
+    body: new Blocks()
+      .box(0.34, 0.28, 0.6, fur, [0, 0.2, -0.02], [0, 0, 0], [0.85, 0.85])
+      .box(0.28, 0.08, 0.5, dark, [0, 0.33, -0.04])
+      .box(0.22, 0.04, 0.36, tail, [0, 0.14, -0.48], [0.12, 0, 0]) // (the flat paddle of a tail)
+      .build(),
+    headPivot: [0, 0.26, 0.26],
+    head: new Blocks()
+      .box(0.2, 0.17, 0.2, fur, [0, 0.02, 0.06], [0, 0, 0], [0.9, 0.9])
+      .box(0.13, 0.1, 0.08, dark, [0, -0.01, 0.17])
+      .box(0.05, 0.05, 0.02, teeth, [0, -0.06, 0.2])
+      .eyes(0.025, 0.025, 0.02, 0x1a1008, [0.07, 0.06, 0.13], 'round')
+      .box(0.04, 0.04, 0.02, dark, [0.08, 0.11, 0.04])
+      .box(0.04, 0.04, 0.02, dark, [-0.08, 0.11, 0.04])
+      .build(),
+    antlers: null,
+    fore: limb(0.07, 0.06, { top: [0.06, 0.06], knee: [0.04, 0.04], color: dark, foot: [0.06, 0.02, 0.07, dark, 0.02] }),
+    hind: limb(0.08, 0.07, { top: [0.08, 0.08], knee: [0.05, 0.05], color: dark, foot: [0.09, 0.02, 0.12, tail, 0.03] }),
+    legs: [[0.1, 0.12, 0.16], [-0.1, 0.12, 0.16], [0.11, 0.14, -0.16], [-0.11, 0.14, -0.16]],
+    torso: [[0, 0.2, 0, 0.15, 0.13, 0.27]],
+    skull: [0, 0.02, 0.1, 0.09, 0.08, 0.11],
+  };
+}
+
+/**
  * A rattlesnake: a long body drawn as a chain of segments (the body tan
  * with dark diamonds down the back), a broad flat head, the rattle at the
  * end of the tail.

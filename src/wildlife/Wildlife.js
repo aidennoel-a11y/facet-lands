@@ -63,6 +63,7 @@ const SPECIES = {
   // their fans in the spring).
   turkey: { ground: true, biped: true, grade: 0.8, model: Models.turkey, max: 30, walk: 0.9, run: 6.5, flee: 24, calm: 70, radius: 0.25, height: 1.0, health: 10, stride: 0.55, turn: 4, size: 1.0, gaits: FOWL, call: 'gobble' },
   // Ducks paddling on the ponds and lakes (up and away, if you come near).
+  beaver: { ground: true, water: true, diver: true, model: Models.beaver, max: 20, walk: 0.5, run: 1.6, flee: 14, calm: 50, radius: 0.3, height: 0.4, health: 18, stride: 0.3, turn: 2.5, size: 1.15, gaits: DOG, trotBand: 0.5 },
   duck: { ground: true, biped: true, water: true, model: Models.duck, max: 60, walk: 0.5, run: 1.5, flee: 20, calm: 60, radius: 0.2, height: 0.35, health: 4, stride: 0.2, turn: 3, size: 1.3, gaits: FOWL, call: 'quack' },
   // Rattlesnakes in the dry country (not in the winter): coiling, rattling, striking.
   // The jungle's big cats: tigers (heavy, striped, deadly) and black
@@ -234,7 +235,7 @@ const BOSS_CELL = 2000; // (each 2 km of the land, a one-in-ten chance of its bi
 const YIELD = {
   sheep: { rawMeat: 3, wool: 3 }, wolfPup: { rawMeat: 1 }, deer: { rawMeat: 4, hide: 1 }, elk: { rawMeat: 6, hide: 2 }, moose: { rawMeat: 9, hide: 2 },
   bison: { rawMeat: 6, hide: 2 }, blackBear: { rawMeat: 5, fur: 2 }, grizzly: { rawMeat: 6, fur: 2 }, wolf: { rawMeat: 2, fur: 1 }, coyote: { rawMeat: 2, fur: 1 },
-  fox: { rawMeat: 1, fur: 1 }, rabbit: { rawMeat: 1 }, hare: { rawMeat: 1, fur: 1 }, boar: { rawMeat: 5, hide: 1 }, cougar: { rawMeat: 3, fur: 1 },
+  fox: { rawMeat: 1, fur: 1 }, beaver: { rawMeat: 2, fur: 2 }, rabbit: { rawMeat: 1 }, hare: { rawMeat: 1, fur: 1 }, boar: { rawMeat: 5, hide: 1 }, cougar: { rawMeat: 3, fur: 1 },
   tiger: { rawMeat: 6, fur: 2 }, jaguar: { rawMeat: 4, fur: 1 }, monkey: { rawMeat: 1 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 }, goat: { rawMeat: 3, hide: 1 },
   turkey: { rawFowl: 2, feather: 3 }, duck: { rawFowl: 1, feather: 2 }, owl: { rawFowl: 1, feather: 2 }, snake: { rawMeat: 1 },
   lion: { rawMeat: 5, fur: 2 }, hyena: { rawMeat: 2, fur: 1 }, elephant: { rawMeat: 20, hide: 4 }, hippo: { rawMeat: 14, hide: 3 }, camel: { rawMeat: 7, hide: 2 },
@@ -3654,7 +3655,27 @@ export class Wildlife {
     }
     const t = this.#threat(a, ctx), p = ctx.player;
     const stance = !p || p.mode !== 'walk' ? 1 : p.crouch ? 0.4 : p.sprint ? 1.5 : 1;
-    if (!ctx.tame && t.d < sp.flee * stance && p?.alive) {
+    // A beaver: under the water a while, then up again somewhere near its lodge.
+    if (sp.diver && a.dive) {
+      a.dive.t -= dt;
+      const w = ctx.waterAt?.(a.x, a.z);
+      const home = a.home ?? a;
+      a.heading += angleTo(a.heading, Math.atan2(home.x - a.x, home.z - a.z)) * Math.min(1, dt);
+      const nx = a.x + Math.sin(a.heading) * 0.8 * dt, nz = a.z + Math.cos(a.heading) * 0.8 * dt, nw = ctx.waterAt?.(nx, nz);
+      if (nw && nw.level - ctx.ground(nx, nz) > 0.5) (a.x = nx), (a.z = nz);
+      a.y = (w ? w.level : a.y) - 1.4;
+      if (a.dive.t <= 0) a.dive = null;
+      return;
+    }
+    if (sp.diver && !ctx.tame && t.d < sp.flee * stance && p?.alive) {
+      // (The slap of its tail on the water, the warning; and down it goes.)
+      const w = ctx.waterAt?.(a.x, a.z);
+      if (w) ctx.splash?.(a.x, w.level, a.z, 1.6);
+      ctx.sound?.call('bigsplash', ctx.pan(a.x, a.z), 0.8);
+      a.dive = { t: rnd(18, 40) };
+      return;
+    }
+    if (!sp.diver && !ctx.tame && t.d < sp.flee * stance && p?.alive) {
       const away = Math.atan2(a.x - p.x, a.z - p.z) + rnd(-0.5, 0.5);
       a.flying = { vx: Math.sin(away) * rnd(9, 12), vz: Math.cos(away) * rnd(9, 12), vy: rnd(3.5, 5), t: 10 };
       ctx.sound?.call('quack', ctx.pan(a.x, a.z), 0.7);
@@ -3672,7 +3693,7 @@ export class Wildlife {
       return;
     }
     // A quack now and then, near you.
-    if ((a.callWait = (a.callWait ?? rnd(5, 30)) - dt) <= 0) {
+    if (!sp.diver && (a.callWait = (a.callWait ?? rnd(5, 30)) - dt) <= 0) {
       a.callWait = rnd(12, 40);
       if (t.d < 160) ctx.sound?.call('quack', ctx.pan(a.x, a.z), Math.min(0.6, (40 / (t.d + 20)) ** 2)); // (a duck's quack carries, over the water)
     }

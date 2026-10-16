@@ -765,6 +765,47 @@ export class Landmarks {
         waters.push({ level: floor + 1.2, r: b.r * 0.3, clean: false, mat: 'dark' });
         break;
       }
+      case 'beaverPond': {
+        // The beavers' work: the dam (a bank of crossed sticks and logs, mud
+        // packed between, curving across the creek), their lodge out in the
+        // pond (a dome of sticks), drowned trees standing grey in the water,
+        // the stumps they've gnawed to points round the banks.
+        const L = this.generator.landmarks, p = L.poolsOf(site)[0];
+        if (!p) break;
+        const px = p.x - site.x, pz = p.z - site.z, sticks = [0x6a5038, 0x7a5e42, 0x5a4430, 0x8a6e4e], mud = [0x4a3a2a, 0x5a4632];
+        for (let i = 0; i < 70; i++) {
+          const a = p.dam.a + r(-0.95, 0.95), rr = p.r * r(0.9, 1.05) * L.constructor.wob(p, a), x = px + Math.cos(a) * rr, z = pz + Math.sin(a) * rr;
+          const y = Math.min(gy(x, z), p.dam.top) + r(-0.1, 0.25), len = r(1.2, 3);
+          k.add(new CylinderGeometry(r(0.04, 0.09), r(0.05, 0.1), len, 5), pick(sticks), [x, y, z], [Math.PI / 2 + r(-0.4, 0.4), a + Math.PI / 2 + r(-0.7, 0.7), r(-0.3, 0.3)]);
+          if (i % 4 === 0) blob(k, pick(mud), [x, y - 0.2, z], r(0.4, 0.7), [1.4, 0.4, 1], 0.3);
+        }
+        // (The lodge: off-centre in the pond.)
+        const la = r(0, 6.28), lx = px + Math.cos(la) * p.r * 0.35, lz = pz + Math.sin(la) * p.r * 0.35;
+        blob(k, 0x5a4632, [lx, p.level - 0.4, lz], 2.2, [1.2, 0.75, 1.2], 0.3);
+        for (let i = 0; i < 46; i++) {
+          const a = r(0, 6.28), up = r(0, 1), rad = 2.4 * (1 - up * 0.8);
+          k.add(new CylinderGeometry(0.04, 0.06, r(1, 2.2), 4), pick(sticks), [lx + Math.cos(a) * rad, p.level - 0.2 + up * 1.4, lz + Math.sin(a) * rad], [r(-1.2, 1.2), r(0, 6.28), r(-1.2, 1.2)]);
+        }
+        solid(lx, lz, 2.2, p.level + 1.2);
+        // Drowned trees, grey and bare, standing in the water.
+        for (let i = 0, n = 3 + Math.floor(R() * 4); i < n; i++) {
+          const a = r(0, 6.28), d = p.r * r(0.3, 0.8), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, hgt = r(3, 7), bot = Math.min(gy(x, z), p.level - 0.3);
+          k.limb([x, bot, z], [x + r(-0.3, 0.3), bot + hgt, z + r(-0.3, 0.3)], r(0.12, 0.2), 0.04, 0x8a8478, 5);
+          for (let j = 0; j < 3; j++) {
+            const h0 = bot + hgt * r(0.45, 0.85), b = r(0, 6.28);
+            k.limb([x, h0, z], [x + Math.cos(b) * r(0.8, 1.6), h0 + r(0.3, 1), z + Math.sin(b) * r(0.8, 1.6)], 0.05, 0.02, 0x9a9488, 4);
+          }
+        }
+        // Stumps gnawed to a point round the banks, chips of wood about them.
+        for (let i = 0; i < 7; i++) {
+          const a = r(0, 6.28), d = p.r * r(1.1, 1.5), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = gy(x, z);
+          if (y < p.level) continue;
+          k.add(new CylinderGeometry(0.16, 0.2, 0.4, 6), 0x7a5a3a, [x, y + 0.2, z]);
+          k.add(new ConeGeometry(0.16, 0.3, 6), 0xd8b888, [x, y + 0.55, z]);
+          for (let j = 0; j < 4; j++) k.add(new BoxGeometry(0.08, 0.02, 0.05), 0xe0c898, [x + r(-0.6, 0.6), y + 0.02, z + r(-0.6, 0.6)], [0, r(0, 3), 0]);
+        }
+        break;
+      }
       case 'foxDen': {
         // A fox's earth: a mound of dug-out soil against the bank, two dark
         // holes into it, the ground bare and trodden round, bones and
@@ -1041,7 +1082,7 @@ export class Landmarks {
       // so those no more than one every second and a half; the falls,
       // quick, as often as asked.)
       near.sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
-      const next = near.find((s) => !this.built.has(s.key) && (s.kind === 'falls' || s.kind === 'mere' || s.kind === 'foxDen' || s.kind === 'warren' || this.bigWait <= 0));
+      const next = near.find((s) => !this.built.has(s.key) && (s.kind === 'falls' || s.kind === 'mere' || s.kind === 'foxDen' || s.kind === 'warren' || s.kind === 'beaverPond' || this.bigWait <= 0));
       if (next) {
         if (next.kind !== 'falls') this.bigWait = 1.5;
         this.built.set(next.key, this.#build(next));
