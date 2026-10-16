@@ -375,7 +375,9 @@ function blowApart(st, x, z, strength, dir) {
 // one storm in three like that), touching down a kilometre or so off,
 // upwind, and coming on with the storm (from the south-west, mostly);
 // passing by, or right over you.
+const NATURAL_TORNADOES = false; // (set aside for now: they come only from the testing button)
 function tornadoWatch(dt) {
+  if (!NATURAL_TORNADOES) return;
   if (weather.following || game.mode === 'testing' && !weather.auto) return;
   if (weather.storm < 0.3) tornadoes.rolled = false;
   if (tornadoes.active || tornadoes.rolled || weather.storm < 0.75 || controls.mode !== 'walk' && game.mode !== 'creative') return;
