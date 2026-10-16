@@ -2388,7 +2388,12 @@ function tick(now) {
   sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater);
   const env = surroundings(dt, snow);
   if (!sheltered && !underwater) surfSound();
-  // The wildlife round you.
+  // The wildlife round you. (In a hard winter they walk out on the ice of
+  // a frozen lake or pond, not along its bed.)
+  const wildGround = seasonUniforms.uWinter.value > 0.5 ? (x, z) => {
+    const g = chunks.groundHeightAt(x, z), w = waterAt(x, z, true);
+    return w?.frozen ? Math.max(g, w.level) : g;
+  } : (x, z) => chunks.groundHeightAt(x, z);
   const life = {
     waterAt: (x, z) => waterAt(x, z),
     splash: (x, y, z, size = 1) => traces.splash(x, y, z, 6, 1.2 * size, 0.6 * size),
@@ -2409,7 +2414,7 @@ function tick(now) {
         if (surface === 'leaves' && Math.random() < 0.04 * (running ? 2 : 1)) sound.call('crack', pan, loud * 0.8);
       }
     },
-    camera, forward: dir, generator, ground: (x, z) => chunks.groundHeightAt(x, z), trees, rocks, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
+    camera, forward: dir, generator, ground: wildGround, trees, rocks, chunkSize: WORLD.chunkSize, seaLevel: WORLD.seaLevel, seed: generator.seed,
     worldDay: dayNight.day + dayNight.hour / 24, // (for the great beasts' coming back: see Wildlife.#bosses)
     // (A torch in your hand, or a fire or torch close by: the animals' eyes shine back out of the dark. See Wildlife.#eyeshine.)
     eyeLight: gameLights.some((l) => Math.hypot(l.x - camera.position.x, l.z - camera.position.z) < 12) || torches.torches.some((t) => t.lit && t.point.distanceTo(camera.position) < 10),

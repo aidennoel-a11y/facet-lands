@@ -297,7 +297,7 @@ export class Fish {
           const sIn = (T + off) % P;
           const along = f.dart * (sIn < 0.5 ? sIn / 0.5 : 1 - (sIn - 0.5) / (P - 0.5));
           const sway = Math.sin(T * 0.7 + off) * 0.25;
-          const fish = { id, x: f.x + Math.sin(f.up) * along + Math.cos(f.up) * sway, y: f.y, z: f.z + Math.cos(f.up) * along - Math.sin(f.up) * sway, level: f.level, heading: f.up + Math.sin(T * 0.9 + off) * 0.12, size: f.size, tint: f.tint, kind: f.kind, beat: sIn < 0.5 ? 3.2 : 1.4, amp: sIn < 0.5 ? 1.5 : 0.8, shoal: false };
+          const fish = { id, ax: f.x, az: f.z, x: f.x + Math.sin(f.up) * along + Math.cos(f.up) * sway, y: f.y, z: f.z + Math.cos(f.up) * along - Math.sin(f.up) * sway, level: f.level, heading: f.up + Math.sin(T * 0.9 + off) * 0.12, size: f.size, tint: f.tint, kind: f.kind, beat: sIn < 0.5 ? 3.2 : 1.4, amp: sIn < 0.5 ? 1.5 : 0.8, shoal: false };
           // (Rising: up to the top in a moment, a ring where it takes the fly, and down again.)
           const RP = 35 + 50 * this.#h(i, j, 0xf165), rIn = (T + this.#h(i, j, 0xf166) * RP) % RP;
           if (rIn < 0.9) {
@@ -313,6 +313,7 @@ export class Fish {
             fish.z += sp.dz * sp.away;
             fish.y = Math.min(fish.y, f.y - 0.15 * (1 - smoothstep(8, 12, sp.u)));
             if (sp.u < 2.5) (fish.heading = Math.atan2(sp.dx, sp.dz)), (fish.beat = 5), (fish.amp = 1.8);
+            else if (sp.u > 6) (fish.heading = Math.atan2(-sp.dx, -sp.dz)), (fish.beat = 2); // (nosing its way back to its place, not sliding backwards)
             fish.pitch = 0;
           }
           list.push(fish);
@@ -338,13 +339,14 @@ export class Fish {
               cz += sp.dz * sp.away * 1.5;
               spread = 1 + 1.4 * (1 - smoothstep(3, 10, sp.u));
               if (sp.u < 3) (heading = Math.atan2(sp.dx, sp.dz)), (beat = 5);
+              else if (sp.u > 6) heading = Math.atan2(-sp.dx, -sp.dz);
             }
             for (let k = 0; k < sh.n; k++) {
               const off = (0.4 + 1.8 * this.#h(i * 31 + k, j, 0xf162)) * spread;
               // (Each weaving its own way within the shoal.)
               const wx = Math.sin(T * 0.6 + k * 1.7) * 0.5, wz = Math.cos(T * 0.47 + k * 2.3) * 0.5;
               list.push({
-                id: `s${i},${j},${k}`, x: cx + Math.sin(heading + k * 2.4) * off + wx, y: sh.y + (this.#h(i, j * 17 + k, 0xf163) - 0.5) * 0.6 + Math.sin(T * 0.4 + k) * 0.12, z: cz + Math.cos(heading + k * 2.4) * off + wz,
+                id: `s${i},${j},${k}`, ax: sh.x, az: sh.z, x: cx + Math.sin(heading + k * 2.4) * off + wx, y: sh.y + (this.#h(i, j * 17 + k, 0xf163) - 0.5) * 0.6 + Math.sin(T * 0.4 + k) * 0.12, z: cz + Math.cos(heading + k * 2.4) * off + wz,
                 level: sh.level, heading: heading + Math.cos(T * 0.6 + k * 1.7) * 0.25, size: 0.22 + 0.12 * this.#h(i + k, j, 0xf164), tint: sh.tint, kind: sh.kind, beat: beat * (0.9 + 0.2 * this.#h(k, j, 0xf167)), amp: 1, shoal: true,
               });
             }
@@ -358,18 +360,35 @@ export class Fish {
             const pf = this.#cell('p', i, j, W, ctx);
             if (!pf || Math.hypot(pf.x - cam.x, pf.z - cam.z) > 50) continue;
             const id = `p${i},${j}`, u = T * pf.speed / pf.r + pf.phase;
-            const fish = { id, x: pf.x + Math.cos(u) * pf.r, y: pf.y + Math.sin(T * 0.3 + pf.phase) * 0.08, z: pf.z + Math.sin(u) * pf.r * 0.7, level: pf.level, heading: Math.atan2(-Math.sin(u), Math.cos(u) * 0.7), size: pf.size, tint: pf.tint, kind: pf.kind, beat: 1, amp: 0.7, shoal: false };
+            const fish = { id, ax: pf.x, az: pf.z, x: pf.x + Math.cos(u) * pf.r, y: pf.y + Math.sin(T * 0.3 + pf.phase) * 0.08, z: pf.z + Math.sin(u) * pf.r * 0.7, level: pf.level, heading: Math.atan2(-Math.sin(u), Math.cos(u) * 0.7), size: pf.size, tint: pf.tint, kind: pf.kind, beat: 1, amp: 0.7, shoal: false };
             const sp = fled(id, fish);
             if (sp) {
               fish.x += sp.dx * Math.min(sp.away, pf.r);
               fish.z += sp.dz * Math.min(sp.away, pf.r);
               fish.y -= 0.25;
               if (sp.u < 2.5) (fish.heading = Math.atan2(sp.dx, sp.dz)), (fish.beat = 4.5), (fish.amp = 1.6);
+              else if (sp.u > 6) fish.heading = Math.atan2(-sp.dx, -sp.dz);
             }
             list.push(fish);
           }
         }
       }
+    }
+    // Every one in water deep enough for it: never in the bank or the bed,
+    // never out on the shore. (Where it would be, it keeps nearer its own
+    // place; no room even there, it isn't drawn.)
+    for (let n = list.length - 1; n >= 0; n--) {
+      const f = list[n];
+      if (f.ax === undefined) continue;
+      let ok = false;
+      for (let t = 0; t < 4 && !ok; t++) {
+        const g = ctx.ground(f.x, f.z);
+        if (Number.isFinite(g) && f.level - g > f.size * 0.45 + 0.15) {
+          f.y = Math.min(f.level - 0.1 - f.size * 0.12, Math.max(f.y, g + f.size * 0.25 + 0.05));
+          ok = true;
+        } else (f.x = f.ax + (f.x - f.ax) * 0.5), (f.z = f.az + (f.z - f.az) * 0.5);
+      }
+      if (!ok) list.splice(n, 1);
     }
     // Leaps: now and then one clears the water (each every couple of
     // minutes, at its own time).
@@ -377,15 +396,22 @@ export class Fish {
       const hh = hash2(hashSeed(f.id) | 0, 7, this.seed ^ 0x1ea9);
       const P = 90 + 120 * hh, start = Math.floor((T + hh * P) / P) * P - hh * P, h = 0.8 + 0.8 * hh, dur = 0.45 + Math.sqrt(h) * 0.35;
       const k = (T - start) / dur;
+      const d = 0.8 + hh;
       if (k >= 0 && k < 1 && Math.hypot(f.x - cam.x, f.z - cam.z) < 45 && !this.spooked.has(f.id)) {
-        const d = 0.8 + hh;
         f.x += Math.sin(f.heading) * d * k;
         f.z += Math.cos(f.heading) * d * k;
-        f.y = f.level - 0.3 + Math.sin(Math.PI * k) * h;
+        // (Up from where it was swimming, smoothly, and back down to it.)
+        const blend = smoothstep(0, 0.2, k) * (1 - smoothstep(0.85, 1, k));
+        f.y += (f.level - 0.3 + Math.sin(Math.PI * k) * h - f.y) * Math.max(blend, k > 0.1 && k < 0.9 ? 1 : 0);
         f.pitch = -Math.cos(Math.PI * k) * 0.9;
         f.leap = true;
         f.beat = 5;
         f.amp = 1.6;
+      } else if (k >= 1 && T - start - dur < 5) {
+        // (Landed a little way on: easing back into its own path, not jumping to it.)
+        const back = d * (1 - (T - start - dur) / 5);
+        f.x += Math.sin(f.heading) * back;
+        f.z += Math.cos(f.heading) * back;
       }
     }
     // Salmon at the falls, in summer and autumn: one after another up the

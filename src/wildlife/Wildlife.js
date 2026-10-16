@@ -2474,6 +2474,9 @@ export class Wildlife {
       y = w.level;
     } else {
       if (!(y > this.ctx.seaLevel + 0.5)) return null;
+      // (Not in a pond, a creek or a pool: on dry land.)
+      const w = this.ctx.waterAt?.(x, z);
+      if (w && w.level - y > 0.1 && !SPECIES[kind].water) return null;
       if (this.#trueSlope(x, z, this.ctx) > sp.grade) return null; // (not on a slope too steep for it)
     }
     const spread = kind === 'bison' ? 12 : 7;
@@ -3428,6 +3431,7 @@ export class Wildlife {
     // one that swims, into the water when it must).
     let moved = 0;
     const swimming = a.swimming;
+    if (a.shoreHeading !== null && a.shoreHeading !== undefined) (a.heading = a.shoreHeading), (a.speed = Math.max(a.speed, sp.walk * 1.5));
     if (a.speed > 0.01) {
       const go = a.speed * a.rh.surge * (swimming ? 0.4 : 1);
       const sx = Math.sin(a.heading), sz = Math.cos(a.heading);
@@ -3444,7 +3448,9 @@ export class Wildlife {
         a.aheadSteep = this.#trueSlope(a.x + sx * (body + 1.5), a.z + sz * (body + 1.5), ctx) > sp.grade * 1.2;
       }
       const steep = !swimming && (a.onSteep ? probe > a.y - 0.05 : Math.abs(probe - a.y) > sp.grade * (body + 1.5) || this.#slope(nx, nz, ctx) > sp.grade * 1.2 || a.aheadSteep);
-      const blocked = !kind || !ahead || (steep && !wet) || (wet && !(fleeing || swimming || a.hunting || a.ridden || a.led));
+      // (One that's somehow in water too deep for it, a rabbit pushed in: it paddles out, any way it can.)
+      const sunk = !sp.swims && this.#footing(a, sp, a.x, a.z, ctx) === 0;
+      const blocked = sunk ? false : !kind || !ahead || (steep && !wet) || (wet && !(fleeing || swimming || a.hunting || a.ridden || a.led));
       if (blocked) {
         if (fleeing) (a.herd ?? a).escapeAt = 0; // (another way, then)
         else if (!a.detour) a.detour = { heading: a.heading + (Math.random() < 0.5 ? 1 : -1) * rnd(1.4, 2.2), time: rnd(1.5, 3) };
@@ -3473,9 +3479,24 @@ export class Wildlife {
     if (y === y) a.y = y + (a.air ?? 0);
     const c0 = ctx.camera.position;
     // In deep water: swimming, low in it, only its back and head out.
-    const w = sp.swims ? ctx.waterAt?.(a.x, a.z) : null;
+    const w = ctx.waterAt?.(a.x, a.z); // (any of them: none walks along the bottom)
     const H = this.rigs[a.kind].model.legs[0][1] * a.scale;
     a.swimming = !!w && w.level - a.y > H * 0.8;
+    // (One that doesn't swim, in over its head: making for the nearest shore.)
+    if (a.swimming && !sp.swims && a.shoreHeading == null) {
+      let best = null;
+      for (let q = 0; q < 12; q++) {
+        const ang = (q / 12) * TAU;
+        for (let d = 2; d <= 30; d += 2) {
+          if (this.#footing(a, sp, a.x + Math.sin(ang) * d, a.z + Math.cos(ang) * d, ctx) === 1) {
+            if (!best || d < best.d) best = { d, ang };
+            break;
+          }
+        }
+      }
+      a.shoreHeading = best ? best.ang : a.heading + Math.PI;
+    }
+    if (!a.swimming) a.shoreHeading = null;
     if (a.swimming) {
       a.y = w.level - H * 1.2;
       a.feet = null;
