@@ -4272,7 +4272,7 @@ export class Wildlife {
         continue;
       }
       if (cam && !a.ridden) {
-        const h = (sp.height ?? 1) * a.scale, near = Math.abs(a.x - cam.position.x) < 25 && Math.abs(a.z - cam.position.z) < 25;
+        const h = (sp.height ?? 1) * a.scale, near = Math.abs(a.x - cam.position.x) < 15 && Math.abs(a.z - cam.position.z) < 15;
         sphere.center.set(a.x, (a.y ?? 0) + h * 0.5, a.z);
         sphere.radius = Math.max(h, (sp.radius ?? 0.5) * a.scale * 3, sp.serpent ? 3 * a.scale : 0) + 2;
         if (!near && !view.intersectsSphere(sphere)) {

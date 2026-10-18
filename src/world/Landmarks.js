@@ -39,8 +39,26 @@ class Kit {
     return this.add(g, color, a);
   }
 
-  build() {
+  build(ground = null) {
     const g = mergeGeometries(this.list);
+    // (The faces sunk wholly in the ground, never seen, left out.)
+    if (ground) {
+      const pos = g.attributes.position.array, col = g.attributes.color.array, n = pos.length / 3;
+      const below = (i) => {
+        const d = ground(pos[i * 3], pos[i * 3 + 2]) - pos[i * 3 + 1];
+        return d > 0.1 && d < 4; // (just under the surface: not a vault or a tunnel built down there)
+      };
+      let w = 0;
+      for (let i = 0; i + 2 < n; i += 3) {
+        if (below(i) && below(i + 1) && below(i + 2)) continue;
+        if (w !== i) (pos.copyWithin(w * 3, i * 3, i * 3 + 9), col.copyWithin(w * 3, i * 3, i * 3 + 9));
+        w += 3;
+      }
+      if (w < n) {
+        g.setAttribute('position', new BufferAttribute(pos.slice(0, w * 3), 3));
+        g.setAttribute('color', new BufferAttribute(col.slice(0, w * 3), 3));
+      }
+    }
     g.computeVertexNormals();
     return g;
   }
@@ -948,7 +966,7 @@ export class Landmarks {
         break;
       }
     }
-    if (k.list.length) g.add(new Mesh(k.build(), this.material));
+    if (k.list.length) g.add(new Mesh(k.build(gy), this.material));
     if (icy.list.length) g.add(new Mesh(icy.build(), this.iceMaterial));
     if (glow.list.length) g.add(new Mesh(glow.build(), this.glowMaterial));
     for (const m of g.children) (m.castShadow = true), (m.receiveShadow = true);

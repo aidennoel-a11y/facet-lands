@@ -287,10 +287,11 @@ export function createRockLayer(config) {
       let rockIndex = 0;
       let o = 0;
       const ranges = new Map(); // boulder key -> [first vertex, vertex count]
+      const rocks = []; // [first vertex, vertex count, boulder key]
       placed.forEach((list, s) => {
         const shape = ALL_SHAPES[s].attributes;
         for (const m of list) {
-          if (m.boulderKey) ranges.set(m.boulderKey, [o / 3, shape.position.count]);
+          rocks.push([o / 3, shape.position.count, m.boulderKey]);
           normalMatrix.getNormalMatrix(m);
           locals.set(shape.position.array, o);
           colors.set(shape.color.array, o);
@@ -308,12 +309,31 @@ export function createRockLayer(config) {
           }
         }
       });
+      // The faces sunk wholly in the ground (half of a rock, often, and
+      // every face of its underside) are never seen: left out.
+      let w = 0;
+      const below = (i) => positions[i * 3 + 1] < groundHeightAt(positions[i * 3], positions[i * 3 + 2]) - 0.08;
+      for (const [first, n, key] of rocks) {
+        const start = w;
+        for (let i = first; i < first + n; i += 3) {
+          if (below(i) && below(i + 1) && below(i + 2)) continue;
+          if (w !== i) {
+            positions.copyWithin(w * 3, i * 3, i * 3 + 9);
+            normals.copyWithin(w * 3, i * 3, i * 3 + 9);
+            colors.copyWithin(w * 3, i * 3, i * 3 + 9);
+            locals.copyWithin(w * 3, i * 3, i * 3 + 9);
+            mosses.copyWithin(w * 2, i * 2, i * 2 + 6);
+          }
+          w += 3;
+        }
+        if (key) ranges.set(key, [start, w - start]);
+      }
       const geometry = new BufferGeometry();
-      geometry.setAttribute('position', new BufferAttribute(positions, 3));
-      geometry.setAttribute('normal', new BufferAttribute(normals, 3));
-      geometry.setAttribute('color', new BufferAttribute(colors, 3));
-      geometry.setAttribute('rockLocal', new BufferAttribute(locals, 3));
-      geometry.setAttribute('rockMoss', new BufferAttribute(mosses, 2));
+      geometry.setAttribute('position', new BufferAttribute(positions.subarray(0, w * 3), 3));
+      geometry.setAttribute('normal', new BufferAttribute(normals.subarray(0, w * 3), 3));
+      geometry.setAttribute('color', new BufferAttribute(colors.subarray(0, w * 3), 3));
+      geometry.setAttribute('rockLocal', new BufferAttribute(locals.subarray(0, w * 3), 3));
+      geometry.setAttribute('rockMoss', new BufferAttribute(mosses.subarray(0, w * 2), 2));
       geometry.computeBoundingSphere();
       const mesh = new Mesh(geometry, material);
       mesh.castShadow = true;
