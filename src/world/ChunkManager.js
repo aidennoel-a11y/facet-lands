@@ -453,9 +453,36 @@ export class ChunkManager {
   #resolutionFor(key, lod) {
     const base = this.config.lods[lod].resolution;
     const level = this.noRugged ? 0 : this.rugged.get(key);
-    if (!level) return base;
+    // (Plain land, open sea or deep woods, off away from you: coarser, for
+    // nothing shows the difference there; full detail again as you come near.)
+    if (level < 0 && lod >= 1) return Math.max(4, level === -2 ? base / 4 : base / 2);
+    if (!level || level < 0) return base;
     const finest = this.config.lods[Math.min(2, this.config.lods.length - 1)].resolution;
     return Math.max(base, Math.min(finest, base * (level === 2 ? 4 : 2)));
+  }
+
+  /**
+   * Whether a chunk's ground can be drawn coarser when it's off away from
+   * you: -2 open sea well under the water (nothing of the bed shows), -1
+   * flat plain land or ground deep under thick woods; 0 not. Never where a
+   * creek or river runs, nor along a shore (their banks need the detail).
+   */
+  #simple(heights, cx, cz) {
+    const { gridY, size: n } = heights, C = this.config.chunkSize, sea = this.config.seaLevel;
+    let lo = Infinity, hi = -Infinity;
+    for (let a = 0; a < n * n; a += 3) {
+      const y = gridY[a];
+      if (y < lo) lo = y;
+      if (y > hi) hi = y;
+    }
+    if (hi < sea - 4) return -2;
+    if (lo < sea + 1.5) return 0; // (a shore)
+    const g = this.generator, x0 = cx * C, z0 = cz * C;
+    if (g.rivers?.inBox(x0 - 8, z0 - 8, x0 + C + 8, z0 + C + 8)?.length) return 0;
+    if (hi - lo < 7) return -1; // (flat)
+    let wood = 0;
+    for (const [u, v] of [[0.5, 0.5], [0.15, 0.15], [0.85, 0.15], [0.15, 0.85], [0.85, 0.85]]) wood += g.getForestDensity(x0 + u * C, z0 + v * C) / 5;
+    return wood > 0.72 && hi - lo < 40 ? -1 : 0; // (the ground hardly seen under the trees)
   }
 
   /**
@@ -464,8 +491,10 @@ export class ChunkManager {
    * rolling. Its slopes are looked at some 32 m apart, whatever its
    * detail, so it comes out the same however it was built.
    */
-  #rugged(heights, resolution) {
+  #rugged(heights, resolution, cx = null, cz = null) {
     const { gridX, gridY, gridZ, size: n } = heights;
+    const simple = cx === null ? 0 : this.#simple(heights, cx, cz);
+    if (simple) return simple;
     const cell = this.config.chunkSize / resolution, k = Math.max(1, Math.round(32 / cell));
     let lo = Infinity, hi = -Infinity, steep = 0;
     for (let j = 0; j < n; j += k) {
@@ -588,9 +617,9 @@ export class ChunkManager {
     if (merged) this.#tileOf(chunk, true);
     // (Rugged land, seen for the first time: wanted in finer detail, now and from now on.)
     if (!this.rugged.has(key)) {
-      this.rugged.set(key, this.#rugged(heights, resolution));
+      this.rugged.set(key, this.#rugged(heights, resolution, cx, cz));
       const finer = this.#resolutionFor(key, lod);
-      if (finer > resolution && this.wanted.get(key) === lod) this.queue.push({ key, cx, cz, lod, resolution: finer, distance: Math.hypot(cx - (this.centre?.[0] ?? cx), cz - (this.centre?.[1] ?? cz)) });
+      if (finer !== resolution && this.wanted.get(key) === lod) this.queue.push({ key, cx, cz, lod, resolution: finer, distance: Math.hypot(cx - (this.centre?.[0] ?? cx), cz - (this.centre?.[1] ?? cz)) });
     }
     this.#applyVisibility(chunk);
     this.root.add(group);
