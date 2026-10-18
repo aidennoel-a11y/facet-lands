@@ -1,4 +1,4 @@
-import { CanvasTexture, Color, Group, Mesh, MeshLambertMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, CanvasTexture, Color, Group, Mesh, MeshLambertMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { Puffs } from '../render/Puffs.js';
 import { Inventory } from './Inventory.js';
 import {
@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, scaffoldModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -26,6 +26,19 @@ const R = ROOF_SIZE / 2 - 0.15;
 // (`jobs`: meat cooking on a fire, ore smelting, strips drying on a rack).
 // (`line`: a wall, a fence: they join end to end, `len` long; `door`: a gate;
 // `posts`: a roof's, what's solid of it; `tilt`: laid on the slope of the ground.)
+// The part of a model up to height `cut`: the faces wholly below it (a building part-way up).
+function partOf(geometry, cut) {
+  const pos = geometry.attributes.position.array, names = Object.keys(geometry.attributes), keep = [];
+  for (let i = 0; i < pos.length / 3; i += 3) if (Math.max(pos[i * 3 + 1], pos[i * 3 + 4], pos[i * 3 + 7]) <= cut + 0.05) keep.push(i);
+  const g = new BufferGeometry();
+  for (const n of names) {
+    const a = geometry.attributes[n], size = a.itemSize, out = new Float32Array(keep.length * 3 * size);
+    keep.forEach((i, k) => out.set(a.array.subarray(i * size, (i + 3) * size), k * 3 * size));
+    g.setAttribute(n, new BufferAttribute(out, size));
+  }
+  return g;
+}
+
 const KINDS = {
   campfire: { make: campfireModel, circle: 0, fire: 'open', jobs: 3, tilt: true, reach: 0.8 },
   furnace: { make: furnaceModel, circle: 0.72, tall: 1.4, fire: 'closed', jobs: 4 },
@@ -85,8 +98,20 @@ const KINDS = {
   table: { make: tableModel, box: [0.7, 0.43], tall: 0.8 },
   shelf: { make: shelfModel, box: [0.65, 0.2], tall: 1.6 },
   trophyRack: { make: trophyRackModel, circle: 0.2, tall: 1.9 },
-  waterMill: { make: waterMillModel, box: [1.3, 1.2], tall: 3.4, jobs: 4, mill: 'water' },
-  windmill: { make: windmillModel, circle: 1.5, tall: 7, jobs: 4, mill: 'wind' },
+  // (The big ones go up in stages: a site marked out, then each stage
+  // built as you bring its materials: see addToSite.)
+  waterMill: { make: waterMillModel, box: [1.3, 1.2], tall: 3.4, jobs: 4, mill: 'water', stages: [
+    { name: 'the stone footing', needs: { rock: 12 }, upTo: 0.24 },
+    { name: 'the mill house', needs: { log: 6 }, upTo: 0.72 },
+    { name: 'the roof', needs: { log: 2, stick: 6 }, upTo: 1 },
+    { name: 'the wheel and millstones', needs: { log: 2, rope: 2, ironBar: 1 }, upTo: 1 },
+  ] },
+  windmill: { make: windmillModel, circle: 1.5, tall: 7, jobs: 4, mill: 'wind', stages: [
+    { name: 'the stone footing', needs: { rock: 20 }, upTo: 0.3 },
+    { name: 'the tower', needs: { log: 8, rock: 6 }, upTo: 0.82 },
+    { name: 'the cap', needs: { log: 2, stick: 6 }, upTo: 1 },
+    { name: 'the sails and millstones', needs: { deerSkin: 2, rope: 3, ironBar: 1 }, upTo: 1 },
+  ] },
   orchardApple: { make: plantingModel, circle: 0.25, tall: 3, grows: 'appleTree' },
   orchardBerry: { make: plantingModel, circle: 0, grows: 'raspberryBush' },
   plantedOak: { make: plantingModel, circle: 0.3, tall: 6, grows: 'oak' },
@@ -141,6 +166,75 @@ export class Structures {
     this.nextId = 1;
     this.onChange = null; // (called whenever something's built, lit or taken: to save)
     this.onDone = null; // (s, stack): something's finished cooking, smelting or drying
+  }
+
+  /** A big build's stages (see KINDS), or null. */
+  stagesOf(type) {
+    return KINDS[type]?.stages ?? null;
+  }
+
+  /** Whether it's finished (anything without stages always is). */
+  isBuilt(s) {
+    const st = KINDS[s.type]?.stages;
+    return !st || (s.data?.stage ?? st.length) >= st.length;
+  }
+
+  /** The stage under way at a site, and what it still wants: { index, of, name, wants: { id: n } }, or null if it's built. */
+  siteNeeds(s) {
+    const st = KINDS[s.type]?.stages;
+    if (!st || this.isBuilt(s)) return null;
+    const k = s.data.stage, got = s.data.got ?? {}, wants = {};
+    for (const [id, n] of Object.entries(st[k].needs)) if ((got[id] ?? 0) < n) wants[id] = n - (got[id] ?? 0);
+    return { index: k, of: st.length, name: st[k].name, wants };
+  }
+
+  /**
+   * Brings `n` of `id` to a site: as many as its stage still wants (the
+   * count taken back); the stage done, on to the next, the building going
+   * up. Returns { took, stageDone, built }.
+   */
+  addToSite(s, id, n) {
+    const need = this.siteNeeds(s);
+    if (!need || !need.wants[id]) return { took: 0 };
+    const took = Math.min(n, need.wants[id]);
+    s.data.got = { ...(s.data.got ?? {}), [id]: (s.data.got?.[id] ?? 0) + took };
+    const left = this.siteNeeds(s);
+    let stageDone = false;
+    if (!Object.keys(left.wants).length) {
+      s.data.stage++;
+      s.data.got = {};
+      stageDone = true;
+      this.#showSite(s);
+    }
+    this.onChange?.();
+    return { took, stageDone, built: this.isBuilt(s), name: need.name };
+  }
+
+  // A site as far as it's got: what's built of it so far (the model up to
+  // that stage's height), the rest a faint outline, scaffolding round it.
+  #showSite(s) {
+    const st = KINDS[s.type]?.stages;
+    if (!st || !s.body) return;
+    const built = this.isBuilt(s), full = this.model(s.type, !!s.upper);
+    s.siteBits?.forEach((m) => m.parent?.remove(m));
+    s.siteBits = [];
+    if (s.rotor) s.rotor.visible = built;
+    if (s.door) s.door.visible = built;
+    if (built) {
+      s.body.geometry = full;
+      return;
+    }
+    const k = s.data.stage, f = k > 0 ? st[k - 1].upTo : 0, key = `${s.type}:part${k}`;
+    full.computeBoundingBox();
+    const bb = full.boundingBox;
+    s.body.geometry = this.models[key] ??= partOf(full, bb.min.y + (bb.max.y - bb.min.y) * f);
+    this.ghostMaterial ??= new MeshLambertMaterial({ color: 0xd8e4ec, transparent: true, opacity: 0.16, depthWrite: false });
+    const ghost = new Mesh(full, this.ghostMaterial);
+    const sc = new Mesh(this.models[`${s.type}:scaffold`] ??= scaffoldModel(bb.max.x - bb.min.x, bb.max.z - bb.min.z, bb.max.y), this.material);
+    sc.position.set((bb.min.x + bb.max.x) / 2, 0, (bb.min.z + bb.max.z) / 2);
+    sc.castShadow = true;
+    s.body.parent.add(ghost, sc);
+    s.siteBits.push(ghost, sc);
   }
 
   model(type, upper = false) {
@@ -422,6 +516,7 @@ export class Structures {
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);
+    s.body = body;
     if (KINDS[s.type].door) {
       // (The door swings on its hinge at the left post.)
       s.door = new Mesh(this.doorModel(s.type), this.material);
@@ -500,6 +595,7 @@ export class Structures {
     }
     s.jobGroup = new Group();
     mesh.add(s.jobGroup);
+    if (KINDS[s.type].stages) this.#showSite(s);
     mesh.position.set(s.x, s.y, s.z);
     this.#orient(mesh, s.rot, s.tilt);
     mesh.userData.structure = s;
@@ -742,7 +838,7 @@ export class Structures {
         s.fireCheck = ctx.time + 1;
         s.smoking = this.list.some((f) => f.type === 'campfire' && f.lit && Math.hypot(f.x - s.x, f.z - s.z) < 1.4);
       }
-      if (kind.mill) {
+      if (kind.mill && this.isBuilt(s)) {
         // A mill's power: the stream running past its wheel; the wind in its sails.
         if (kind.mill === 'water') {
           if (!s.flowCheck || ctx.time > s.flowCheck) (s.flowCheck = ctx.time + 5), (s.power = this.flowAt?.(s) ?? 0);

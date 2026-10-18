@@ -584,6 +584,8 @@ export class Game {
       case 'repairBench': return held && ITEMS[held.id]?.durability ? `Mend the ${ITEMS[held.id].name.toLowerCase()}` : 'The repair bench: Q with a worn tool in hand';
       case 'waterMill':
       case 'windmill': {
+        const need = this.structures.siteNeeds(s);
+        if (need) return `Building (stage ${need.index + 1} of ${need.of}: ${need.name}): wants ${this.#wantsText(need.wants)}`;
         const p = s.power ?? 0, working = s.jobs.length ? ` · grinding: ${s.jobs.map((j) => (j.done ? 'flour ready' : `${Math.round(100 - (j.left / j.total) * 100)}%`)).join(', ')}` : ' · click it with wheat or corn';
         const power = s.type === 'waterMill' ? (p > 0.08 ? 'The wheel turns in the current' : 'No running water at its wheel: set it by a stream') : p > 0.6 ? 'Sails spinning in a stiff wind' : p > 0.08 ? 'Sails turning slowly' : 'Becalmed: waiting for the wind';
         return power + working;
@@ -1433,7 +1435,17 @@ export class Game {
       const plan = this.plan;
       if (!plan) return this.hotbar?.flash('Point at the ground nearby');
       if (!plan.ok) return this.hotbar?.flash(plan.why);
-      this.structures.build(plan);
+      // (A big one: its site marked out, to be built up stage by stage.)
+      const stages = this.structures.stagesOf(plan.type);
+      const site = this.structures.build(plan, stages ? { data: { stage: 0, got: {} } } : {});
+      if (stages) {
+        this.#learn(plan.type);
+        this.inventory.take(i);
+        this.cooldown = 0.4;
+        this.sound?.call('place', 0, 0.5);
+        const need = this.structures.siteNeeds(site);
+        return this.hotbar?.flash(`Site marked out for the ${item.name.toLowerCase()}. First, ${need.name}: bring ${this.#wantsText(need.wants)} (click the site with them)`);
+      }
       this.#learn(plan.type);
       this.inventory.take(i);
       this.cooldown = 0.4;
@@ -1444,10 +1456,31 @@ export class Game {
     this.hotbar?.flash(`${item.name}: craft it into something (Tab)`);
   }
 
+  // What a site still wants, in words: "6 logs, 2 rope".
+  #wantsText(wants) {
+    return Object.entries(wants).map(([id, n]) => `${n} ${ITEMS[id]?.name.toLowerCase() ?? id}`).join(', ');
+  }
+
   // Something in hand, put to work at a fire, furnace or rack. Returns whether it was.
   #workAt(i, s, at) {
     const say = (t) => (this.hotbar?.flash(t), true);
     const take = () => this.inventory.take(i);
+    // A building site: what it's wanting, brought to it (all you have of it, as far as it's needed).
+    const need = this.structures.siteNeeds(at);
+    if (need) {
+      if (!need.wants[s.id]) return say(`For ${need.name} it wants ${this.#wantsText(need.wants)}`);
+      const r = this.structures.addToSite(at, s.id, s.count ?? 1);
+      for (let k = 0; k < r.took; k++) this.inventory.take(i);
+      this.cooldown = 0.4;
+      this.sound?.call(s.id === 'rock' ? 'dig' : 'chop', 0, 0.5);
+      this.dirty = true;
+      if (r.built) {
+        this.#achieve?.('builder');
+        return say(`The ${ITEMS[at.type]?.name.toLowerCase() ?? 'building'} is finished!`);
+      }
+      const next = this.structures.siteNeeds(at);
+      return say(r.stageDone ? `${r.name[0].toUpperCase() + r.name.slice(1)} done. Next, ${next.name}: ${this.#wantsText(next.wants)}` : `Still wants ${this.#wantsText(next.wants)} for ${next.name}`);
+    }
     if (s.id === 'log' && this.structures.isFire(at)) {
       if (!this.structures.feed(at)) return say('It has all the wood it can take');
       take();
@@ -1514,7 +1547,7 @@ export class Game {
       this.cooldown = 0.3;
       return say(at.lit ? 'Iron ore in the furnace: it will be a bar in half a minute' : 'Iron ore in the furnace: light it');
     }
-    if ((at.type === 'waterMill' || at.type === 'windmill') && (s.id === 'wheat' || s.id === 'corn')) {
+    if ((at.type === 'waterMill' || at.type === 'windmill') && (s.id === 'wheat' || s.id === 'corn') && this.structures.isBuilt(at)) {
       if (!this.structures.work(at, { id: s.id, count: 1 }, Inventory.stack('flour', s.id === 'wheat' ? 2 : 1), 40)) return say('The mill is full: take the flour first');
       take();
       this.cooldown = 0.3;

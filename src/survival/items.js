@@ -201,8 +201,8 @@ export const ITEMS = {
   shelf: { name: 'Shelves', place: 'shelf', weight: 8, group: 'Building' }, // (six slots of storage)
   trophyRack: { name: 'Trophy rack', place: 'trophyRack', weight: 5, group: 'Building' },
   // (To plant: an orchard, a berry patch, a woodlot by your home.)
-  waterMill: { name: 'Water mill', place: 'waterMill', weight: 30, group: 'Building' }, // (on a stream bank: its wheel grinds grain to flour)
-  windmill: { name: 'Windmill', place: 'windmill', weight: 40, group: 'Building' }, // (its sails grind grain to flour, when the wind blows)
+  waterMill: { name: 'Water mill', place: 'waterMill', weight: 1, group: 'Building' }, // (on a stream bank: its wheel grinds grain to flour)
+  windmill: { name: 'Windmill', place: 'windmill', weight: 1, group: 'Building' }, // (its sails grind grain to flour, when the wind blows)
   flour: { name: 'Flour', weight: 0.5, spoils: 9000, group: 'Materials' },
   fineDough: { name: 'Bread dough', food: { hunger: 4, health: -1, full: 90 }, spoils: 1200, cooks: 'bread', weight: 0.5, group: 'Food' },
   appleSapling: { name: 'Apple sapling', place: 'orchardApple', weight: 1, group: 'Farming' },
@@ -332,8 +332,8 @@ export const RECIPES = [
   { id: 'chair', needs: { log: 1, stick: 4 }, note: 'Sit and rest a while (Q): you get your strength back faster' },
   { id: 'table', needs: { log: 2, stick: 4 }, note: 'A table, for your house' },
   { id: 'shelf', needs: { log: 2, stick: 3 }, note: 'Shelves: six slots of storage (Q)' },
-  { id: 'waterMill', needs: { log: 8, rock: 12, rope: 2, ironBar: 1 }, note: 'Set it on the bank of a stream or river: the wheel turns in the current and grinds grain (wheat, corn) to flour, much faster than by hand' },
-  { id: 'windmill', needs: { log: 10, rock: 20, rope: 3, deerSkin: 2, ironBar: 1 }, note: 'Its sails turn in the wind and grind grain (wheat, corn) to flour: the stronger the wind, the faster' },
+  { id: 'waterMill', needs: { stick: 4, rope: 1 }, note: 'Stakes and line to mark out a water mill on a stream bank; then build it up in stages, bringing stone, logs, rope and iron to the site. Its wheel grinds grain (wheat, corn) to flour' },
+  { id: 'windmill', needs: { stick: 4, rope: 1 }, note: 'Stakes and line to mark out a windmill; then build it up in stages, bringing stone, logs, hides, rope and iron to the site. Its sails grind grain to flour in the wind' },
   { id: 'fineDough', needs: { flour: 2 }, makes: 2, note: 'Milled flour makes more bread: bake it on a fire' },
   { id: 'appleSapling', needs: { apple: 2, stick: 1 }, note: 'Pips from good apples, started on a stake. Plant it: an apple tree in a few days, fruiting each summer' },
   { id: 'berryCutting', needs: { berries: 4, stick: 1 }, note: 'Plant it: a berry bush in a couple of days, fruiting each summer' },

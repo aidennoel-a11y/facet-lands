@@ -625,6 +625,19 @@ export function trophyRackModel() {
   return b.build();
 }
 
+/** Scaffolding round a building going up: poles at its corners and between, boards across every metre and a half up, braces. */
+export function scaffoldModel(w, d, h) {
+  const b = new Parts(181), pole = 0x8a6a48, board = 0xa8845a;
+  const xs = [-w / 2 - 0.4, w / 2 + 0.4], zs = [-d / 2 - 0.4, d / 2 + 0.4];
+  for (const x of xs) for (const z of zs) b.log([x, 0, z], [x, h + 0.6, z], 0.06, pole, 0xc8a070, 5);
+  for (let y = 1.4; y < h + 0.4; y += 1.5) {
+    for (const z of zs) b.add(new BoxGeometry(w + 1, 0.06, 0.3), board, [0, y, z]);
+    for (const x of xs) b.add(new BoxGeometry(0.3, 0.06, d + 1), board, [x, y, 0]);
+  }
+  for (const z of zs) b.log([xs[0], 0.2, z], [xs[1], Math.min(h, 3), z], 0.035, pole, 0xc8a070, 4);
+  return b.build();
+}
+
 /** A water mill's house: a stone footing on the bank, a timber mill house, a shingled roof; the wheel turns on its side (see millWheelModel). */
 export function waterMillModel() {
   const b = new Parts(171);
