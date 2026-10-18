@@ -589,6 +589,7 @@ export class Game {
   #structureText(s, held) {
     // (A site going up: how far along, and what it wants next.)
     const need = this.structures.siteNeeds(s);
+    if (need && this.mode !== 'survival') return `Build the ${ITEMS[s.type]?.name.toLowerCase()} (free in ${this.mode})`;
     if (need) return `Building the ${ITEMS[s.type]?.name.toLowerCase()} (stage ${need.index + 1} of ${need.of}: ${need.name}): bring ${this.#wantsText(need.wants)}`;
     const done = s.jobs?.some((j) => j.done);
     if (done) return `Take what's ready`;
@@ -944,6 +945,12 @@ export class Game {
       this.structures.remove(s);
       return this.hotbar?.flash(`${ITEMS[s.type].name} taken down`);
     }
+    // (Testing and creative: a site finished outright, nothing brought.)
+    if (this.mode !== 'survival' && this.structures.finish(s)) {
+      this.sound?.call('place', 0, 0.6);
+      this.dirty = true;
+      return this.hotbar?.flash(`The ${ITEMS[s.type]?.name.toLowerCase() ?? 'building'} is built`);
+    }
     // What's done at it: cooked meat, bars, jerky, stew, a boiled waterskin.
     const done = this.structures.takeDone(s);
     if (done.length) {
@@ -1100,6 +1107,7 @@ export class Game {
       case 'canoe':
         return this.#board(s);
       case 'zipLine':
+        if (!this.structures.isBuilt(s)) return this.hotbar?.flash('Not strung yet');
         return this.#zip(s);
       case 'snare':
         if (!s.caught) return this.hotbar?.flash('Nothing yet');
@@ -1441,22 +1449,29 @@ export class Game {
         return this.hotbar?.flash(`Near end marked. Now click where the far end of the ${sp.name} goes`);
       }
       if (!plan.ok) return this.hotbar?.flash(plan.why);
-      for (const [id, n] of Object.entries(plan.cost)) this.inventory.remove(id, n);
-      if (sp.tool) {
+      if (sp.tool && this.mode === 'survival') {
         const ti = this.inventory.slots.findIndex((x) => x && sp.tool.includes(x.id));
         if (ti >= 0) this.inventory.wear(ti, Math.ceil(plan.len / 4));
       }
       this.inventory.take(i);
-      const extra = { len: plan.len, rise: plan.rise };
-      if (sp.drape || sp.water) extra.data = { ys: plan.ys, fed: !!sp.water };
-      this.structures.build({ type: item.place, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, ok: true }, extra);
+      // (Its site marked out end to end, built across a stage at a time as you bring what it takes.)
+      const stages = this.#spanStages(item.place, plan.len);
+      const extra = { len: plan.len, rise: plan.rise, data: { stage: 0, got: {}, stages } };
+      if (sp.drape || sp.water) Object.assign(extra.data, { ys: plan.ys, fed: !!sp.water });
+      const site = this.structures.build({ type: item.place, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, ok: true }, extra);
       if (item.place === 'stoneRoad') for (let d = 0; d <= plan.len; d += 1) this.pave?.(plan.x + Math.sin(plan.rot) * d, plan.z + Math.cos(plan.rot) * d);
       this.spanStart = null;
       this.cooldown = 0.5;
       this.sound?.call(item.place === 'stoneRoad' ? 'dig' : 'place', 0, 0.6);
       this.#learn(item.place);
       this.dirty = true;
-      return this.hotbar?.flash(`The ${sp.name} is laid: ${Math.round(plan.len)} m`);
+      if (this.mode !== 'survival') {
+        this.structures.finish(site);
+        return this.hotbar?.flash(`The ${sp.name} is built: ${Math.round(plan.len)} m`);
+      }
+      const need = this.structures.siteNeeds(site);
+      if (!need) return this.hotbar?.flash(`The ${sp.name} is laid: ${Math.round(plan.len)} m`);
+      return this.hotbar?.flash(`The ${sp.name} is marked out (${Math.round(plan.len)} m). First, ${need.name}: bring ${this.#wantsText(need.wants)} (click the site with them)`);
     }
     if (item.place === 'ladder') {
       const plan = this.plan;
@@ -1488,6 +1503,10 @@ export class Game {
         this.inventory.take(i);
         this.cooldown = 0.4;
         this.sound?.call('place', 0, 0.5);
+        if (this.mode !== 'survival') {
+          this.structures.finish(site);
+          return this.hotbar?.flash(`The ${item.name.toLowerCase()} is built`);
+        }
         const need = this.structures.siteNeeds(site);
         return this.hotbar?.flash(`Site marked out for the ${item.name.toLowerCase()}. First, ${need.name}: bring ${this.#wantsText(need.wants)} (click the site with them)`);
       }
@@ -1499,6 +1518,34 @@ export class Game {
     }
     if (item.carried) return this.hotbar?.flash(item.carried);
     this.hotbar?.flash(`${item.name}: craft it into something (Tab)`);
+  }
+
+  // A span's stages, sized to its length: across from the near end, a stretch at a time.
+  #spanStages(type, len) {
+    const n = (m) => Math.max(1, Math.ceil(len / m));
+    switch (type) {
+      case 'logBridge': return [
+        { name: 'the end posts', needs: { log: 2 }, upTo: 0.08 },
+        { name: 'the stringers', needs: { log: n(2.5) }, upTo: 0.55 },
+        { name: 'the deck', needs: { stick: n(1), rope: 2 }, upTo: 1 },
+      ];
+      case 'ropeBridge': return [
+        { name: 'the anchor posts', needs: { log: 2 }, upTo: 0.08 },
+        { name: 'the hand ropes', needs: { rope: n(4) + 1 }, upTo: 0.5 },
+        { name: 'the deck', needs: { stick: n(1), rope: 1 }, upTo: 1 },
+      ];
+      case 'stoneRoad': return [
+        { name: 'the first stretch', needs: { rock: n(0.75) }, upTo: 0.34 },
+        { name: 'the middle stretch', needs: { rock: n(0.75) }, upTo: 0.67 },
+        { name: 'the last stretch', needs: { rock: n(0.75) }, upTo: 1 },
+      ];
+      case 'zipLine': return [
+        { name: 'the top post', needs: { log: 2 }, upTo: 0.1 },
+        { name: 'the cable', needs: { rope: n(5) }, upTo: 0.9 },
+        { name: 'the foot post', needs: { log: 2 }, upTo: 1 },
+      ];
+      default: return null; // (a ditch: dug as it's marked)
+    }
   }
 
   // What a site still wants, in words: "6 logs, 2 rope".
@@ -1876,7 +1923,7 @@ export class Game {
     const plan = { at: where, x: start.x, y: start.y, z: start.z, rot, len, rise, ok: false };
     // What it takes, for this length.
     const cost = {};
-    for (const [id, m] of sp.per) cost[id] = (cost[id] ?? 0) + Math.ceil(len / m);
+    for (const st of this.#spanStages(type, len) ?? []) for (const [id, n] of Object.entries(st.needs)) cost[id] = (cost[id] ?? 0) + n;
     plan.cost = cost;
     const costText = Object.entries(cost).map(([id, n]) => countOf(id, n)).join(', ');
     const no = (why) => ((plan.why = why), (plan.prompt = why), plan);
@@ -1888,8 +1935,8 @@ export class Game {
     } else if (Math.abs(rise) / len > sp.steep) return no('Too steep from end to end');
     const wet = (x, z) => (this.waterAt(x, z)?.level ?? -Infinity) > this.groundAt(x, z) + 0.15;
     if (!sp.water && (wet(start.x, start.z) || wet(at.x, at.z))) return no('Each end on dry ground');
-    if (sp.tool && !this.inventory.slots.some((x) => x && sp.tool.includes(x.id))) return no(`You need ${sp.tool.map((id) => ITEMS[id].name.toLowerCase()).join(' or ')} for this`);
-    for (const [id, n] of Object.entries(cost)) if (this.inventory.count(id) < n) return no(`Not enough: it takes ${costText} for ${Math.round(len)} m`);
+    const free = this.mode !== 'survival';
+    if (sp.tool && !free && !this.inventory.slots.some((x) => x && sp.tool.includes(x.id))) return no(`You need ${sp.tool.map((id) => ITEMS[id].name.toLowerCase()).join(' or ')} for this`);
     // (Over the lie of the land, a metre at a time, from the near end.)
     if (sp.drape || sp.water) {
       plan.ys = [];
@@ -1899,7 +1946,7 @@ export class Game {
       }
     }
     plan.ok = true;
-    plan.prompt = `<kbd>Click</kbd> Lay the ${sp.name} here: ${Math.round(len)} m${costText ? `, taking ${costText}` : ''}`;
+    plan.prompt = `<kbd>Click</kbd> Mark out the ${sp.name} here: ${Math.round(len)} m${costText && !free ? ` (built in stages: ${costText} in all)` : ''}`;
     return plan;
   }
 
@@ -3156,7 +3203,7 @@ export class Game {
     const jumped = this.controls.takeJumps();
     // What you carry weighs you down.
     const load = this.inventory.slots.reduce((n, s) => n + weightOf(s), 0) + ['back', 'head', 'hands', 'feet'].reduce((n, k) => n + weightOf(this.inventory[k]), 0);
-    const heavy = Math.max(0, (load - LOAD - (this.mount ? 40 : 0)) / LOAD); // (a horse's saddlebags carry 40 kg more)
+    const heavy = this.mode === 'survival' ? Math.max(0, (load - LOAD - (this.mount ? 40 : 0)) / LOAD) : 0; // (a horse's saddlebags carry 40 kg more; testing and creative: no weight)
     this.controls.burden = Math.max(0.45, 1 - heavy * 0.5);
     // (Climbing picks in your pack: you can scramble up rock far too steep to
     // walk, an ice-axe in each hand; it's hard going, and wears them.)

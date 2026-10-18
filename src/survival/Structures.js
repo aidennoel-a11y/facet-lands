@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, scaffoldModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -27,9 +27,10 @@ const R = ROOF_SIZE / 2 - 0.15;
 // (`line`: a wall, a fence: they join end to end, `len` long; `door`: a gate;
 // `posts`: a roof's, what's solid of it; `tilt`: laid on the slope of the ground.)
 // The part of a model up to height `cut`: the faces wholly below it (a building part-way up).
-function partOf(geometry, cut) {
+// (`axis` 2: along its length instead, out from the near end: a bridge going across.)
+function partOf(geometry, cut, axis = 1) {
   const pos = geometry.attributes.position.array, names = Object.keys(geometry.attributes), keep = [];
-  for (let i = 0; i < pos.length / 3; i += 3) if (Math.max(pos[i * 3 + 1], pos[i * 3 + 4], pos[i * 3 + 7]) <= cut + 0.05) keep.push(i);
+  for (let i = 0; i < pos.length / 3; i += 3) if (Math.max(pos[i * 3 + axis], pos[i * 3 + 3 + axis], pos[i * 3 + 6 + axis]) <= cut + 0.05) keep.push(i);
   const g = new BufferGeometry();
   for (const n of names) {
     const a = geometry.attributes[n], size = a.itemSize, out = new Float32Array(keep.length * 3 * size);
@@ -225,7 +226,7 @@ export class Structures {
   /** Whether (x, z) is on a paved road (you walk faster on it). */
   onRoad(x, z) {
     for (const s of this.list) {
-      if (s.type !== 'stoneRoad') continue;
+      if (s.type !== 'stoneRoad' || !this.isBuilt(s)) continue;
       const ox = x - s.x, oz = z - s.z;
       if (Math.abs(ox) > s.len + 2 || Math.abs(oz) > s.len + 2) continue;
       const u = ox * Math.cos(s.rot) - oz * Math.sin(s.rot), v = ox * Math.sin(s.rot) + oz * Math.cos(s.rot);
@@ -238,7 +239,7 @@ export class Structures {
   ditchDistance(x, z) {
     let best = Infinity;
     for (const s of this.list) {
-      if (s.type !== 'ditch' || !s.data?.fed) continue;
+      if (s.type !== 'ditch' || !s.data?.fed || !this.isBuilt(s)) continue;
       const ox = x - s.x, oz = z - s.z;
       if (Math.abs(ox) > s.len + 5 || Math.abs(oz) > s.len + 5) continue;
       const u = ox * Math.cos(s.rot) - oz * Math.sin(s.rot), v = ox * Math.sin(s.rot) + oz * Math.cos(s.rot);
@@ -253,15 +254,31 @@ export class Structures {
     return KINDS[type]?.stages ?? null;
   }
 
+  // (A span's own stages, sized to its length, kept with it; else its kind's.)
+  #stages(s) {
+    return s.data?.stages ?? KINDS[s.type]?.stages ?? null;
+  }
+
+  /** Finished outright, nothing brought (testing and creative). */
+  finish(s) {
+    const st = this.#stages(s);
+    if (!st || this.isBuilt(s)) return false;
+    s.data.stage = st.length;
+    s.data.got = {};
+    this.#showSite(s);
+    this.onChange?.();
+    return true;
+  }
+
   /** Whether it's finished (anything without stages always is). */
   isBuilt(s) {
-    const st = KINDS[s.type]?.stages;
+    const st = this.#stages(s);
     return !st || (s.data?.stage ?? st.length) >= st.length;
   }
 
   /** The stage under way at a site, and what it still wants: { index, of, name, wants: { id: n } }, or null if it's built. */
   siteNeeds(s) {
-    const st = KINDS[s.type]?.stages;
+    const st = this.#stages(s);
     if (!st || this.isBuilt(s)) return null;
     const k = s.data.stage, got = s.data.got ?? {}, wants = {};
     for (const [id, n] of Object.entries(st[k].needs)) if ((got[id] ?? 0) < n) wants[id] = n - (got[id] ?? 0);
@@ -291,11 +308,13 @@ export class Structures {
   }
 
   // A site as far as it's got: what's built of it so far (the model up to
-  // that stage's height), the rest a faint outline, scaffolding round it.
+  // that stage's height, or a span as far out as it's got), the rest a faint outline.
   #showSite(s) {
-    const st = KINDS[s.type]?.stages;
+    const st = this.#stages(s);
     if (!st || !s.body) return;
-    const built = this.isBuilt(s), full = this.model(s.type, !!s.upper);
+    const span = !!s.data?.stages;
+    s.fullGeometry ??= span ? s.body.geometry : this.model(s.type, !!s.upper);
+    const built = this.isBuilt(s), full = s.fullGeometry;
     s.siteBits?.forEach((m) => m.parent?.remove(m));
     s.siteBits = [];
     if (s.rotor) s.rotor.visible = built;
@@ -304,17 +323,15 @@ export class Structures {
       s.body.geometry = full;
       return;
     }
-    const k = s.data.stage, f = k > 0 ? st[k - 1].upTo : 0, key = `${s.type}:part${k}`;
+    const k = s.data.stage, f = k > 0 ? st[k - 1].upTo : 0;
     full.computeBoundingBox();
     const bb = full.boundingBox;
-    s.body.geometry = this.models[key] ??= partOf(full, bb.min.y + (bb.max.y - bb.min.y) * f);
-    this.ghostMaterial ??= new MeshLambertMaterial({ color: 0xd8e4ec, transparent: true, opacity: 0.16, depthWrite: false });
-    const ghost = new Mesh(full, this.ghostMaterial);
-    const sc = new Mesh(this.models[`${s.type}:scaffold`] ??= scaffoldModel(bb.max.x - bb.min.x, bb.max.z - bb.min.z, bb.max.y), this.material);
-    sc.position.set((bb.min.x + bb.max.x) / 2, 0, (bb.min.z + bb.max.z) / 2);
-    sc.castShadow = true;
-    s.body.parent.add(ghost, sc);
-    s.siteBits.push(ghost, sc);
+    if (span) s.body.geometry = partOf(full, bb.min.z + (bb.max.z - bb.min.z) * f, 2);
+    else s.body.geometry = this.models[`${s.type}:part${k}`] ??= partOf(full, bb.min.y + (bb.max.y - bb.min.y) * f);
+    this.siteGhost ??= new MeshLambertMaterial({ color: 0xd8e4ec, transparent: true, opacity: 0.16, depthWrite: false });
+    const ghost = new Mesh(full, this.siteGhost);
+    s.body.parent.add(ghost);
+    s.siteBits.push(ghost);
   }
 
   model(type, upper = false) {
@@ -678,7 +695,7 @@ export class Structures {
     }
     s.jobGroup = new Group();
     mesh.add(s.jobGroup);
-    if (KINDS[s.type].stages) this.#showSite(s);
+    if (this.#stages(s)) this.#showSite(s);
     mesh.position.set(s.x, s.y, s.z);
     this.#orient(mesh, s.rot, s.tilt);
     mesh.userData.structure = s;
@@ -1341,6 +1358,7 @@ export class Structures {
       if (k.bridge) {
         // (A bridge: along its length, its deck, sagging in the middle if it's a rope one.)
         const len = s.len ?? 6;
+        if (!this.isBuilt(s)) continue;
         if (Math.abs(s.x - x) > len + 2 || Math.abs(s.z - z) > len + 2) continue;
         const ox = x - s.x, oz = z - s.z, u = ox * Math.cos(s.rot) - oz * Math.sin(s.rot), v = ox * Math.sin(s.rot) + oz * Math.cos(s.rot);
         if (Math.abs(u) > BRIDGE_WIDTH / 2 + 0.1 || v < -0.4 || v > len + 0.4) continue;
