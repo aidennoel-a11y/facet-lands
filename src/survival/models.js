@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../noise/random.js';
 
 const tint = new Color(), m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s = new Vector3();
+const tint2 = new Color();
 
 /**
  * Builds a low-poly model from coloured parts (each face its part's colour,
@@ -1530,14 +1531,23 @@ function gableWedge(run, rise, thick) {
  * set on top of the walls, the pieces side by side make a roof.
  */
 export const ROOF_RISE = 1.6;
-function roofPiece(seed, { slate, style = slate ? 'slate' : 'thatch' }) {
+function roofPiece(seed, { slate, style = slate ? 'slate' : 'thatch', dye = 'natural' }) {
   const b = new Parts(seed), rand = mulberry32(seed), h = ROOF_SIZE / 2, over = 0.3;
   const len = Math.hypot(ROOF_SIZE + over * 2, ROOF_RISE), ang = Math.atan2(ROOF_RISE, ROOF_SIZE);
   // The rafters, low edge to high, and the beams along them.
   for (const x of [-h + 0.15, -h / 3, h / 3, h - 0.15]) b.log([x, -0.05 - over * Math.tan(ang), -h - over], [x, ROOF_RISE - 0.05 + over * Math.tan(ang), h + over], 0.08, 0x5e4630, 0xc8a070, 6);
   for (const [z, y] of [[-h, 0], [h, ROOF_RISE]]) b.log([-h - over, y, z], [h + over, y, z], 0.1, 0x5a4230, 0xc8a070, 6);
   // The covering, in courses up the slope.
-  const n = { slate: 8, thatch: 5, shingle: 10, tile: 9, log: 1 }[style];
+  const n = { slate: 8, thatch: 5, shingle: 10, tile: 9, log: 1, barn: 1 }[style];
+  if (style === 'barn') {
+    // (Long painted boards running down the slope, a batten over each joint.)
+    const paint = (BARN_DYES[dye] ?? BARN_DYES.natural)[0];
+    const roofPaint = dye === 'white' || dye === 'yellow' ? 0x5a3a2a : dye === 'natural' ? 0x7a5a3a : paint;
+    for (let x = -h - over + 0.15; x < h + over; x += 0.3) {
+      b.add(new BoxGeometry(0.29, 0.05, len + 0.05), tint2.set(roofPaint).multiplyScalar(0.88 + rand() * 0.2).getHex(), [x, 0.12 + ROOF_RISE / 2, 0], [-ang, 0, 0], [1, 1, 1], 0.03);
+      b.add(new BoxGeometry(0.05, 0.05, len + 0.05), tint2.set(roofPaint).multiplyScalar(0.7).getHex(), [x + 0.15, 0.16 + ROOF_RISE / 2, 0], [-ang, 0, 0], [1, 1, 1], 0.03);
+    }
+  }
   if (style === 'log') {
     // (Split logs laid side by side down the slope, bark up.)
     for (let x = -h - over + 0.16; x < h + over; x += 0.3) {
@@ -1545,7 +1555,7 @@ function roofPiece(seed, { slate, style = slate ? 'slate' : 'thatch' }) {
       b.log([x, lift - over * Math.tan(ang), -h - over], [x, ROOF_RISE + lift + over * Math.tan(ang), h + over], r, [0x6e4c32, 0x664630, 0x74503a][Math.floor(rand() * 3)], 0xc8a070, 6);
     }
   }
-  for (let k = 0; k < n && style !== 'log'; k++) {
+  for (let k = 0; k < n && style !== 'log' && style !== 'barn'; k++) {
     const t = (k + 0.5) / n, z = -h - over + t * (ROOF_SIZE + over * 2), y = 0.12 + (z + h) * Math.tan(ang);
     if (style === 'slate') {
       const SL = [0x4e5560, 0x5a6270, 0x464c56, 0x626a74];
@@ -1569,6 +1579,54 @@ export const thatchRoofModel = () => roofPiece(153, { slate: false });
 export const slateRoofPieceModel = () => roofPiece(155, { slate: true });
 export const logRoofModel = () => roofPiece(157, { style: 'log' });
 export const shingleRoofModel = () => roofPiece(159, { style: 'shingle' });
+
+// --- The barn: board-and-batten walls and a board roof, painted with dye ---------
+
+/** The colours a barn can be painted (see dyes, items): its boards, and the trim round its corners and openings. */
+export const BARN_DYES = {
+  natural: [0x9a7448, 0xe8e2d4], red: [0x9a2a22, 0xece6da], white: [0xe2dccf, 0x8a2a22], black: [0x34302c, 0xe8e2d4],
+  green: [0x3e6a3a, 0xece6da], yellow: [0xc8a038, 0x5a3a24],
+};
+
+/** A barn wall, 4 m: tall boards stood on end, battens over the joints, painted; trim at its ends (and round a window or a door's opening). */
+export function barnWallModel(dye = 'natural', what = 'wall') {
+  const [paint, trim] = BARN_DYES[dye] ?? BARN_DYES.natural, L = WALL_LENGTH, H = 3.2, o = what === 'wall' ? null : OPENING[what];
+  const b = new Parts(241 + Object.keys(BARN_DYES).indexOf(dye) * 3 + (what === 'window' ? 1 : what === 'door' ? 2 : 0)), rand = mulberry32(241);
+  const shade = (k) => tint2.set(paint).multiplyScalar(0.9 + rand() * 0.2).getHex();
+  for (const side of [0.08, -0.08]) {
+    for (let x = -L / 2 + 0.2, k = 0; x < L / 2 - 0.15; x += 0.3, k++) {
+      if (o && Math.abs(x) < o.w / 2 + 0.05) {
+        // (Boards cut short round the opening: under a window, and over it.)
+        if (o.lo > 0.1) b.add(new BoxGeometry(0.29, o.lo, 0.05), shade(k), [x, o.lo / 2, side], [0, 0, 0], [1, 1, 1], 0.02);
+        b.add(new BoxGeometry(0.29, H - o.hi, 0.05), shade(k), [x, (H + o.hi) / 2, side], [0, 0, 0], [1, 1, 1], 0.02);
+        continue;
+      }
+      b.add(new BoxGeometry(0.29, H, 0.05), shade(k), [x, H / 2, side], [0, 0, 0], [1, 1, 1], 0.02);
+      b.add(new BoxGeometry(0.06, H, 0.03), tint2.set(paint).multiplyScalar(0.8).getHex(), [x + 0.15, H / 2, side * 1.45], [0, 0, 0], [1, 1, 1], 0.02); // (the batten)
+    }
+  }
+  for (const x of [-L / 2 + 0.08, L / 2 - 0.08]) b.add(new BoxGeometry(0.16, H + 0.2, 0.3), trim, [x, H / 2, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  b.add(new BoxGeometry(L + 0.04, 0.18, 0.3), trim, [0, H + 0.05, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  b.add(new BoxGeometry(L + 0.04, 0.22, 0.3), 0x6a5a4a, [0, -0.06, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  if (o) frameOpening(b, o, 0.28, trim, what === 'window');
+  return b.build();
+}
+
+/** A barn's door: painted boards with the white cross-braces (it swings on its left edge). */
+export function barnDoorModel(dye = 'natural') {
+  const [paint, trim] = BARN_DYES[dye] ?? BARN_DYES.natural, w = HOUSE_DOOR_WIDTH - 0.04, h = 2.3, b = new Parts(271 + Object.keys(BARN_DYES).indexOf(dye));
+  for (let k = 0; k < 4; k++) b.add(new BoxGeometry(w / 4 - 0.02, h, 0.08), tint2.set(paint).multiplyScalar(0.92 + (k % 2) * 0.1).getHex(), [(w / 4) * (k + 0.5), h / 2 - 0.35, 0], [0, 0, 0], [1, 1, 1], 0.04);
+  for (const y of [0.0, 1.0, 1.85]) b.add(new BoxGeometry(w, 0.12, 0.05), trim, [w / 2, y, 0.06]);
+  const diag = Math.hypot(w, 0.85), ang = Math.atan2(0.85, w);
+  for (const [y, s] of [[0.5, 1], [0.5, -1], [1.42, 1], [1.42, -1]]) b.add(new BoxGeometry(diag, 0.1, 0.05), trim, [w / 2, y, 0.065], [0, 0, s * ang]);
+  b.add(new BoxGeometry(0.05, 0.05, 0.1), 0x2a2a2a, [w - 0.12, 0.8, 0.1]);
+  return b.build();
+}
+
+/** A barn's roof, 4 m: long boards down the slope, painted (or plain), a trim along its eaves. */
+export function barnRoofModel(dye = 'natural') {
+  return roofPiece(281 + Object.keys(BARN_DYES).indexOf(dye), { style: 'barn', dye });
+}
 export const tileRoofModel = () => roofPiece(161, { style: 'tile' });
 
 // --- The building sets: log, plank, rough stone, cut stone ------------------------

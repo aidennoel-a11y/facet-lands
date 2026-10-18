@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, scaffoldModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, scaffoldModel, barnWallModel, barnDoorModel, barnRoofModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -79,6 +79,11 @@ const KINDS = {
   cutDoor: { make: () => openWallModel('cut', 'door'), box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'cut' },
   logRoof: { make: logRoofModel, roof: true, steep: 99 },
   shingleRoof: { make: shingleRoofModel, roof: true, steep: 99 },
+  // (The barn: board-and-batten walls, a board roof, painted with dye: see dye.)
+  barnWall: { make: () => barnWallModel('natural', 'wall'), dyeWith: (d) => barnWallModel(d, 'wall'), box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH },
+  barnWindow: { make: () => barnWallModel('natural', 'window'), dyeWith: (d) => barnWallModel(d, 'window'), box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH },
+  barnDoor: { make: () => barnWallModel('natural', 'door'), dyeWith: (d) => barnWallModel(d, 'door'), box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'barn' },
+  barnRoof: { make: () => barnRoofModel('natural'), dyeWith: (d) => barnRoofModel(d), roof: true, steep: 99 },
   tileRoof: { make: tileRoofModel, roof: true, steep: 99, stone: true },
   bedroll: { make: bedrollModel, box: [0.5, 1.0], tall: 0.2, bed: true, tilt: true },
   strawBed: { make: strawBedModel, box: [0.55, 1.0], tall: 0.3, bed: true, tilt: true },
@@ -166,6 +171,27 @@ export class Structures {
     this.nextId = 1;
     this.onChange = null; // (called whenever something's built, lit or taken: to save)
     this.onDone = null; // (s, stack): something's finished cooking, smelting or drying
+  }
+
+  // A painted piece's model, in its dye.
+  #dyed(type, dye) {
+    const k = KINDS[type];
+    return k.dyeWith ? (this.models[`${type}:${dye}`] ??= k.dyeWith(dye)) : this.model(type);
+  }
+
+  /** Whether it can be painted (the barn's pieces). */
+  canDye(s) {
+    return !!KINDS[s.type]?.dyeWith;
+  }
+
+  /** Paints it with `dye` ('red', 'white', 'black', 'green', 'yellow', or 'natural' to scrub it back). */
+  dye(s, dye) {
+    if (!this.canDye(s)) return false;
+    s.data = { ...(s.data ?? {}), dye };
+    if (s.body) s.body.geometry = this.#dyed(s.type, dye);
+    if (s.door) s.door.geometry = this.doorModel(s.type, dye);
+    this.onChange?.();
+    return true;
   }
 
   /** A big build's stages (see KINDS), or null. */
@@ -481,7 +507,8 @@ export class Structures {
     this.ghostMaterial.emissive.setHex(plan.ok ? 0x2a8a3a : 0xa02a2a);
   }
 
-  doorModel(type = 'gate') {
+  doorModel(type = 'gate', dye = null) {
+    if (KINDS[type]?.doorStyle === 'barn') return this.models[`barnDoor:${dye ?? 'natural'}`] ??= barnDoorModel(dye ?? 'natural');
     const key = `${type}Door`;
     const style = KINDS[type]?.doorStyle;
     return this.models[key] ?? (this.models[key] = style ? houseDoorModel(style) : type === 'fenceGate' ? fenceGateDoorModel() : gateDoorModel());
@@ -512,14 +539,14 @@ export class Structures {
     const mesh = new Group();
     // (A bridge: its own length and rise, from here to the far side.)
     const bk = KINDS[s.type].bridge;
-    const body = new Mesh(bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : this.model(s.type, !!s.upper), this.material);
+    const body = new Mesh(bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper), this.material);
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);
     s.body = body;
     if (KINDS[s.type].door) {
       // (The door swings on its hinge at the left post.)
-      s.door = new Mesh(this.doorModel(s.type), this.material);
+      s.door = new Mesh(this.doorModel(s.type, s.data?.dye), this.material);
       s.door.castShadow = true;
       s.door.position.x = -this.#doorWidth(s.type) / 2;
       s.door.rotation.y = s.open ? -Math.PI / 2 : 0;

@@ -236,6 +236,16 @@ export const ITEMS = {
   logDoor: { name: 'Log wall, door', place: 'logDoor', weight: 22, group: 'Building' },
   plankWindow: { name: 'Plank wall, window', place: 'plankWindow', weight: 16, group: 'Building' },
   plankDoor: { name: 'Plank wall, door', place: 'plankDoor', weight: 18, group: 'Building' },
+  barnWall: { name: 'Barn wall', place: 'barnWall', weight: 16, group: 'Building' },
+  barnWindow: { name: 'Barn wall, window', place: 'barnWindow', weight: 15, group: 'Building' },
+  barnDoor: { name: 'Barn wall, door', place: 'barnDoor', weight: 16, group: 'Building' },
+  barnRoof: { name: 'Barn roof', place: 'barnRoof', weight: 14, group: 'Building' },
+  // (Paint for the barn: click a barn's wall, door or roof with it.)
+  redDye: { name: 'Red paint', dye: 'red', weight: 0.4, group: 'Materials' },
+  whiteDye: { name: 'Whitewash', dye: 'white', weight: 0.4, group: 'Materials' },
+  blackDye: { name: 'Black paint', dye: 'black', weight: 0.4, group: 'Materials' },
+  greenDye: { name: 'Green paint', dye: 'green', weight: 0.4, group: 'Materials' },
+  yellowDye: { name: 'Yellow ochre', dye: 'yellow', weight: 0.4, group: 'Materials' },
   stoneDoor: { name: 'Stone wall, door', place: 'stoneDoor', weight: 28, group: 'Building' },
   cutWindow: { name: 'Cut stone wall, window', place: 'cutWindow', weight: 28, group: 'Building' },
   cutDoor: { name: 'Cut stone wall, door', place: 'cutDoor', weight: 28, group: 'Building' },
@@ -306,6 +316,15 @@ export const RECIPES = [
   { id: 'cutDoor', needs: { rock: 30, log: 3, ironBar: 1 }, uses: ['forgedPickaxe', 'tuskPickaxe'], note: 'Cut stone with a doorway under a carved lintel, a dark studded door: Q to open and close it. Needs a steel pickaxe' },
   { id: 'strawBed', needs: { straw: 8 }, note: 'A heap of straw (cut grass with a sickle): sleep the night on it, and wake here after dying' },
   { id: 'bedroll', needs: { deerSkin: 1, wool: 2 }, note: 'A bed on the ground: sleep the night (stiffly), and wake here after dying' },
+  { id: 'barnWall', needs: { log: 3, stick: 4 }, note: 'Tall boards stood on end, battens over the joints: snaps to the other walls and floors. Paint it with a dye (click it)' },
+  { id: 'barnWindow', needs: { log: 3, stick: 5 }, note: 'A barn wall with a window, trimmed: paint it with a dye' },
+  { id: 'barnDoor', needs: { log: 3, stick: 4, ironBar: 1 }, note: 'A barn wall with a cross-braced door: Q to open and close it. Paint it with a dye' },
+  { id: 'barnRoof', needs: { log: 2, stick: 6 }, note: 'Long boards down the slope over the walls: paint it with a dye' },
+  { id: 'redDye', needs: { berries: 3 }, makes: 2, note: 'Berries mashed to a red paint: click a barn piece with it' },
+  { id: 'whiteDye', needs: { salt: 1, sand: 1 }, makes: 2, note: 'Whitewash: click a barn piece with it' },
+  { id: 'blackDye', needs: { charcoal: 2 }, makes: 2, note: 'Charcoal ground to a black paint: click a barn piece with it' },
+  { id: 'greenDye', needs: { vine: 3 }, makes: 2, note: 'Green leaves and vines steeped to a paint: click a barn piece with it' },
+  { id: 'yellowDye', needs: { corn: 2 }, makes: 2, note: 'Yellow ochre from corn husk and clay: click a barn piece with it' },
   { id: 'plankWall', needs: { log: 3, stick: 4 }, uses: ['forgedAxe'], note: 'Boards lapped on a squared frame: neat and tight. Needs a steel axe to cut the planks' },
   { id: 'plankStairs', needs: { log: 2, stick: 4 }, uses: ['forgedAxe'], note: 'A flight of plank steps with a rail, up to the top of your walls. Needs a steel axe' },
   { id: 'shingleRoof', needs: { log: 3, stick: 2 }, uses: ['forgedAxe'], note: 'Cedar shingles in even courses, set on top of your walls. Needs a steel axe' },
@@ -419,7 +438,7 @@ export const RECIPES = [
  */
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
@@ -618,6 +637,17 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   ICONS.bearClaws = `<path d="M8 8c2 6 2 12 0 18M14 6c2 7 2 14 0 20M20 6c2 7 2 14 0 20M26 8c1 6 1 12-1 18" stroke="#3a2e26" stroke-width="2.6" fill="none" stroke-linecap="round"/>`;
   ICONS.wolfSkull = `<path d="M6 12l4-6 6 4 6-4 4 6-2 8-8 8-8-8z" fill="#ece4d4"/><circle cx="12" cy="15" r="2" fill="#3a3430"/><circle cx="20" cy="15" r="2" fill="#3a3430"/>`;
   ICONS.cougarSkull = ICONS.wolfSkull;
+  const barnIcon = (c) => `<path d="M4 28V12l12-8 12 8v16z" fill="${c}"/><path d="M4 12l12-8 12 8" stroke="#ece6da" stroke-width="2" fill="none"/><path d="M11 28v-9h10v9M11 19l10 9M21 19l-10 9" stroke="#ece6da" stroke-width="1.5" fill="none"/>`;
+  ICONS.barnWall = barnIcon('#9a2a22');
+  ICONS.barnWindow = barnIcon('#9a2a22');
+  ICONS.barnDoor = barnIcon('#9a2a22');
+  ICONS.barnRoof = `<path d="M2 22l14-12 14 12z" fill="#7a3a2a"/><path d="M6 19l20 0M9 16h14" stroke="#5a2a1e"/>`;
+  const pot = (c) => `<path d="M8 12h16l-2 16H10z" fill="#8a6a4a"/><ellipse cx="16" cy="12" rx="8" ry="3" fill="${c}"/><path d="M20 4l-4 9" stroke="#6a4a2c" stroke-width="2"/>`;
+  ICONS.redDye = pot('#b02a24');
+  ICONS.whiteDye = pot('#ece8de');
+  ICONS.blackDye = pot('#2a2624');
+  ICONS.greenDye = pot('#3e7a3a');
+  ICONS.yellowDye = pot('#d8a830');
   ICONS.waterMill = `<rect x="4" y="12" width="14" height="14" fill="#9a7048"/><path d="M2 13l9-7 9 7z" fill="#5a4232"/><circle cx="23" cy="20" r="7" fill="none" stroke="#7a5a3c" stroke-width="2.4"/><path d="M23 13v14M16 20h14" stroke="#7a5a3c" stroke-width="1.6"/>`;
   ICONS.windmill = `<path d="M12 30l2-16h4l2 16z" fill="#d8d0bc"/><path d="M11 14l5-5 5 5z" fill="#6a4a34"/><path d="M16 11L6 3M16 11l10-8M16 11L7 20M16 11l9 9" stroke="#ece4d0" stroke-width="2.6"/>`;
   ICONS.flour = `<path d="M8 28h16l-2-16H10z" fill="#e8e0cc"/><path d="M10 12c2-3 10-3 12 0" fill="#f4eee0"/><path d="M12 18h8" stroke="#c8b898"/>`;
