@@ -140,6 +140,7 @@ export function createLogLayer(config) {
         mesh.computeBoundingSphere();
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+        mesh.userData.smallShadow = true; // (sticks and fallen logs: their shadows only close by)
         group.add(mesh);
       });
       return group;

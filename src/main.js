@@ -2696,6 +2696,7 @@ function tick(now) {
   camera.position.y += tremble;
   const eye = thirdPersonView(dt, now);
   camera.updateMatrixWorld();
+  chunks.sunHigh = dayNight.sunDir.y > 0.6; // (the sun high: shadows short)
   chunks.cull(camera.position); // (the land behind the hills not drawn)
   // (Every other frame, for what can wait a frame: see the clouds.)
   shadowTurn = (shadowTurn + 1) % 2;

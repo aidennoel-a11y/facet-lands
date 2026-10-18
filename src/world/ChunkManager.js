@@ -551,6 +551,10 @@ export class ChunkManager {
       if (object) {
         group.add(object);
         chunk.layerObjects.push({ layer, object });
+        // (The little things on it, whose shadows are only cast close by: see cull.)
+        object.traverse((m) => m.userData?.smallShadow && ((m.userData.baseCast ??= m.castShadow), (chunk.smallCasters ??= []).push(m)));
+        chunk.smallOn = undefined;
+        this.cullDirty = true;
       }
       // (A pause after each layer that took real work.)
       if (object && !kept.has(object)) yield;
@@ -655,6 +659,21 @@ export class ChunkManager {
     const ground = this.groundHeightAt(eye.x, eye.z);
     const on = this.occlusion !== false && this.visibility.surface && eye.y > ground - 0.5;
     this.culled = 0;
+    // Small things (bushes, sticks, fallen logs) cast their shadows only
+    // close by, where they show: further off they're left out of the
+    // shadow maps altogether.
+    {
+      const C = this.config.chunkSize;
+      for (const chunk of this.chunks.values()) {
+        if (!chunk.smallCasters) continue;
+        const x0 = chunk.cx * C, z0 = chunk.cz * C, dx = Math.max(x0 - eye.x, 0, eye.x - x0 - C), dz = Math.max(z0 - eye.z, 0, eye.z - z0 - C);
+        const near = dx * dx + dz * dz < 45 * 45;
+        if (chunk.smallOn === near) continue;
+        chunk.smallOn = near;
+        chunk.smallCasters = chunk.smallCasters.filter((m) => m.parent);
+        for (const m of chunk.smallCasters) m.castShadow = near && m.userData.baseCast;
+      }
+    }
     if (!on) {
       for (const chunk of this.chunks.values()) chunk.group.visible = true;
       return;
@@ -720,7 +739,8 @@ export class ChunkManager {
         }
       }
       span(x0, z0, x0 + C, z0 + C);
-      if (box.near < 250) {
+      // (Within 250 m never hidden: its shadows might show beyond the hill. With the sun high, they're short: 150 m.)
+      if (box.near < (this.sunHigh ? 150 : 250)) {
         if (!chunk.group.visible) chunk.group.visible = true;
         continue;
       }

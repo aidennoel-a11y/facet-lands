@@ -558,6 +558,7 @@ export function createTreeLayer({ rocks = null } = {}) {
         });
         mesh.computeBoundingSphere();
         mesh.castShadow = lod <= (config.treeShadowLod ?? Infinity); // (out past the shadows' reach, none to cast)
+        mesh.userData.smallShadow = NO_COLLIDE.has(type); // (a bush: its shadow only close by, see ChunkManager.cull)
         mesh.receiveShadow = true;
         if (!stiff) mesh.customDepthMaterial = depthMaterial;
         group.add(mesh);
@@ -572,6 +573,7 @@ export function createTreeLayer({ rocks = null } = {}) {
           leavesMesh.instanceColor = mesh.instanceColor;
           leavesMesh.computeBoundingSphere();
           leavesMesh.castShadow = true; // dappled shade under the crown
+          leavesMesh.userData.smallShadow = NO_COLLIDE.has(type);
           leavesMesh.receiveShadow = true;
           leavesMesh.customDepthMaterial = depthMaterial;
           group.add(leavesMesh);

@@ -19,8 +19,12 @@ export class Puffs {
    */
   constructor(scene, count, make, { opacity = 0.7 } = {}) {
     const offsets = new Float32Array(count * 3), velocities = new Float32Array(count * 3), lives = new Float32Array(count * 4), colours = new Float32Array(count * 4);
+    // (Which are in use: only up to the last of them is drawn, none at all when none are.)
+    this.used = new Uint8Array(count);
+    this.top = 0;
     for (let k = 0; k < count; k++) {
       const p = make(k);
+      if (p.from > 0 || p.to > 0) (this.used[k] = 1), (this.top = k + 1);
       offsets.set(p.offset, k * 3);
       velocities.set(p.velocity, k * 3);
       lives.set([p.period, p.phase, p.from, p.to], k * 4);
@@ -97,6 +101,8 @@ export class Puffs {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 2;
     this.mesh.name = 'puffs';
+    this.mesh.count = this.top;
+    this.mesh.visible = this.top > 0;
     scene.add(this.mesh);
     this.scene = scene;
   }
@@ -104,6 +110,8 @@ export class Puffs {
   /** Gives puff `k` a new life (`p` as for make): for a pool of puffs handed out as they're wanted. Then flush. */
   setSlot(k, p) {
     const g = this.mesh.geometry.attributes;
+    this.used[k] = p.from > 0 || p.to > 0 ? 1 : 0;
+    if (this.used[k]) this.top = Math.max(this.top, k + 1);
     g.aOffset.array.set(p.offset, k * 3);
     g.aVelocity.array.set(p.velocity, k * 3);
     g.aLife.array.set([p.period, p.phase, p.from, p.to], k * 4);
@@ -114,11 +122,15 @@ export class Puffs {
   hideSlot(k) {
     const a = this.mesh.geometry.attributes.aLife.array;
     a[k * 4 + 2] = a[k * 4 + 3] = 0;
+    this.used[k] = 0;
   }
 
   /** Sends what setSlot and hideSlot changed to the graphics card. */
   flush() {
     for (const n of ['aOffset', 'aVelocity', 'aLife', 'aColour']) this.mesh.geometry.attributes[n].needsUpdate = true;
+    while (this.top > 0 && !this.used[this.top - 1]) this.top--;
+    this.mesh.count = this.top;
+    this.mesh.visible = this.top > 0;
   }
 
   dispose() {
