@@ -653,10 +653,9 @@ function groundAt(x, feetY, z) {
  * no water to swim in, but ice to walk on: null, unless `ice` is asked for,
  * then with `frozen` set.
  */
-// The dens round about (see landmarkSites: foxDen, warren): a vixen and her
-// kits about a fox's earth, rabbits feeding round their warren; when you
-// come running, the rabbits bolt down their holes (to come up again later).
-const dens = new Map(); // site key -> { animals, back (when the rabbits come up again) }
+// The dens round about (see landmarkSites: foxDen, beaverPond): a vixen and
+// her kits about a fox's earth, the beavers on their pond.
+const dens = new Map(); // site key -> { animals, back }
 let denWait = 0;
 function denLife(dt) {
   denWait -= dt;
