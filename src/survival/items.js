@@ -196,6 +196,11 @@ export const ITEMS = {
   repairBench: { name: 'Repair bench', place: 'repairBench', weight: 12, group: 'Building' }, // (mend worn tools for a little of what they're made of)
   logBridge: { name: 'Log bridge', place: 'logBridge', weight: 6, group: 'Building' },
   ditch: { name: 'Ditch stakes', place: 'ditch', weight: 0.6, group: 'Building' },
+  gatehouse: { name: 'Gatehouse', place: 'gatehouse', weight: 1, group: 'Building' },
+  fireplace: { name: 'Fireplace', place: 'fireplace', weight: 1, group: 'Building' },
+  lanternPost: { name: 'Lantern post', place: 'lanternPost', weight: 1, group: 'Building' },
+  flowerBed: { name: 'Flower bed', place: 'flowerBed', weight: 1, group: 'Farming' },
+  dock: { name: 'Dock', place: 'dock', weight: 1, group: 'Building' },
   stoneRoad: { name: 'Paver\'s kit', place: 'stoneRoad', weight: 16, group: 'Building' },
   zipLine: { name: 'Zip line kit', place: 'zipLine', weight: 24, group: 'Building' }, // (laid across a river or a gap, up to 14 m)
   ropeBridge: { name: 'Rope bridge', place: 'ropeBridge', weight: 4, group: 'Building' }, // (slung across a gorge, up to 26 m)
@@ -351,6 +356,11 @@ export const RECIPES = [
   { id: 'repairBench', needs: { log: 3, rock: 4, stick: 2 }, note: 'Q at it with a worn tool in hand: mended good as new for a little of what it was made of (far cheaper than a new one)' },
   { id: 'logBridge', needs: { log: 2, rope: 2 }, note: 'The end posts and lashings. Click where the near end goes, then the far end (up to 18 m): a log for every 2.5 m is taken then' },
   { id: 'ropeBridge', needs: { log: 2, rope: 2 }, note: 'The anchor posts. Click the near end, then the far end (up to 36 m): a rope for every 4 m and a stick a metre are taken then' },
+  { id: 'gatehouse', needs: { stick: 4, rope: 1 }, note: 'Mark out a gatehouse in a palisade (it snaps in like a wall); then build it in stages: footings, log towers, a walkway and parapet over the gate, the gates' },
+  { id: 'fireplace', needs: { stick: 2 }, note: 'Mark out a stone fireplace (in your house); then build it in stages: the hearth, the firebox and chimney, the crane. Warm indoors, and cook at it' },
+  { id: 'lanternPost', needs: { stick: 2 }, note: 'Mark out a lantern post; then put up the post and hang the lantern (iron and a candle): lit from dusk to dawn' },
+  { id: 'flowerBed', needs: { stick: 1 }, note: 'Mark out a flower bed; then lay its stone border and plant it: bee boxes near it make more honey' },
+  { id: 'dock', needs: { stick: 4, rope: 1 }, note: 'Mark out a dock at the water\'s edge, facing out; then drive the piles, lay the deck, put up the rail: walk out over the water' },
   { id: 'ditch', needs: { stick: 3 }, note: 'Stakes to mark it out. Click at the water (a river, stream or lake), then where it runs to (up to 40 m), with a hoe on you: plots beside it never need watering' },
   { id: 'stoneRoad', needs: { steelBar: 2, rock: 12, sand: 4 }, uses: ['forgedPickaxe', 'tuskPickaxe'], note: 'A paver\'s kit. Click where the road starts, then where it ends (up to 30 m): four stones a metre are taken then. Quicker going on it. Needs a steel pickaxe' },
   { id: 'zipLine', needs: { steelBar: 4, rope: 8, log: 6, ironBar: 2 }, uses: ['forgedAxe'], note: 'Posts, steel cable and a pulley. Click the top end (high up), then the foot (well below, up to 120 m away): a rope for every 5 m is taken then. Q at the top to ride it down' },
@@ -444,7 +454,7 @@ export const RECIPES = [
  */
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor', 'stoneRoad', 'zipLine'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
@@ -654,6 +664,11 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   ICONS.blackDye = pot('#2a2624');
   ICONS.greenDye = pot('#3e7a3a');
   ICONS.yellowDye = pot('#d8a830');
+  ICONS.gatehouse = `<path d="M2 30V8h7v22M23 30V8h7v22" fill="#7a5a3a"/><path d="M1 8l4.5-5L10 8M22 8l4.5-5L31 8" fill="#5a4232"/><path d="M9 12h14v4H9z" fill="#8a6a48"/><path d="M10 30V18h12v12" fill="#4a3424"/>`;
+  ICONS.fireplace = `<path d="M6 30V14h20v16z" fill="#8a867c"/><path d="M12 6h8v8h-8z" fill="#7e7a72"/><path d="M10 30v-9h12v9" fill="#2a2420"/><path d="M14 30q2-6 4 0" fill="#f09030"/>`;
+  ICONS.lanternPost = `<path d="M10 30V4h3v26M10 6h10" stroke="#6e4c32" stroke-width="2.5" fill="none"/><rect x="17" y="9" width="6" height="7" fill="#ffd890" stroke="#2a2a2a"/>`;
+  ICONS.flowerBed = `<ellipse cx="16" cy="24" rx="13" ry="5" fill="#8a867c"/><ellipse cx="16" cy="23" rx="11" ry="3.5" fill="#4a3424"/><circle cx="10" cy="16" r="2.5" fill="#d83a4a"/><circle cx="16" cy="13" r="2.5" fill="#f0c838"/><circle cx="22" cy="16" r="2.5" fill="#8a5ad0"/>`;
+  ICONS.dock = `<path d="M2 24h20v-6H2z" fill="#9a7048"/><path d="M5 24v6M12 24v6M19 24v6" stroke="#5e4430" stroke-width="2"/><path d="M14 28h16" stroke="#3e6a84" stroke-width="3"/><path d="M20 12v6" stroke="#5e4430" stroke-width="2"/>`;
   ICONS.ditch = `<path d="M2 20q14-6 28 0v4q-14-6-28 0z" fill="#3e6a84"/><path d="M2 18q14-6 28 0" stroke="#5a4430" stroke-width="3" fill="none"/><path d="M6 6v12M26 6v12" stroke="#8a6a48" stroke-width="2"/>`;
   ICONS.stoneRoad = `<path d="M10 30L14 2h4l4 28z" fill="#9a968e"/><path d="M11 22h10M12 14h8M13 8h6M16 2v28" stroke="#6e6a64"/>`;
   ICONS.zipLine = `<path d="M4 6v24M28 16v14" stroke="#6e4c32" stroke-width="3"/><path d="M4 7q12 10 24 10" stroke="#9a9ea4" stroke-width="1.6" fill="none"/><path d="M15 11v6" stroke="#3a2a1e" stroke-width="2"/>`;

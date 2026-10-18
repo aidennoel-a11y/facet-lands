@@ -587,6 +587,9 @@ export class Game {
   }
 
   #structureText(s, held) {
+    // (A site going up: how far along, and what it wants next.)
+    const need = this.structures.siteNeeds(s);
+    if (need) return `Building the ${ITEMS[s.type]?.name.toLowerCase()} (stage ${need.index + 1} of ${need.of}: ${need.name}): bring ${this.#wantsText(need.wants)}`;
     const done = s.jobs?.some((j) => j.done);
     if (done) return `Take what's ready`;
     switch (s.type) {
@@ -662,7 +665,11 @@ export class Game {
       case 'stoneRoad': return 'A paved road: quicker going on it (Shift+Q: take it up)';
       case 'ditch': return s.data?.fed ? 'A ditch running from the water: plots beside it never need watering' : 'A ditch (dry: it needs to start at water)';
       case 'snare': return s.caught ? 'Take the rabbit' : 'Set, and waiting (Shift+Q to take it up)';
+      case 'dock': return 'Your dock: walk out on it over the water';
+      case 'lanternPost': return 'A lantern post: lit from dusk to dawn (Shift+Q: take it down)';
+      case 'flowerBed': return 'A flower bed: bees about it make more honey in your bee boxes near by';
       case 'campfire':
+      case 'fireplace':
       case 'furnace': {
         const working = s.jobs.length ? ` · ${s.jobs.map((j) => `${ITEMS[j.stack.id].name.toLowerCase()} ${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}` : '';
         return s.lit ? `Burning${working}` : `Cold${working}: light it with flint and steel`;
@@ -1787,8 +1794,10 @@ export class Game {
         }
         continue;
       }
+      // (A flower bed of yours near by: more for them to work.)
+      const beds = this.structures.list.some((f) => f.type === 'flowerBed' && this.structures.isBuilt(f) && Math.hypot(f.x - s.x, f.z - s.z) < 15) ? 1.6 : 1;
       if (flowering > 0) {
-        d.honey = Math.min(8, d.honey + (step / 720) * flowering * d.forage);
+        d.honey = Math.min(8, d.honey + (step / 720) * flowering * d.forage * beds);
         d.wax = Math.min(4, d.wax + (step / 2400) * flowering * d.forage);
         d.starving = 0;
       } else if (winter > 0.3) {
@@ -3266,8 +3275,13 @@ export class Game {
         prompt = this.plan.ok ? `<kbd>Click</kbd> Let the rope down (${Math.round(this.plan.len)} m)` : null;
       } else if (placing && placing !== 'torch') {
         const at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
-        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'stoneDoor', 'cutWindow', 'cutDoor', 'barnWall', 'barnWindow', 'barnDoor'].includes(placing) ? Math.PI : 0);
+        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'stoneDoor', 'cutWindow', 'cutDoor', 'barnWall', 'barnWindow', 'barnDoor', 'gatehouse', 'dock'].includes(placing) ? Math.PI : 0);
         this.plan = this.structures.plan(placing, at, yaw, ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
+        // (A dock: set at the water's edge, out over the water.)
+        if (placing === 'dock' && this.plan.ok) {
+          const out = (d) => this.waterAt(this.plan.x + Math.sin(this.plan.rot) * d, this.plan.z + Math.cos(this.plan.rot) * d);
+          if (!out(4) || !out(7.5)) Object.assign(this.plan, { ok: false, why: 'Set it at the water\'s edge, facing out over the water' });
+        }
         const onPlot = placing === 'plot' && t?.kind === 'structure' && t.structure.type === 'plot';
         this.structures.preview(onPlot ? null : this.plan);
         if (!onPlot) prompt = this.plan.ok ? `<kbd>Click</kbd> ${placing === 'plot' ? 'Dig a plot' : `Build ${item.name.toLowerCase()}`}` : this.plan.why;

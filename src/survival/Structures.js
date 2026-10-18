@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, scaffoldModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, scaffoldModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -120,6 +120,30 @@ const KINDS = {
     { name: 'the tower', needs: { log: 8, rock: 6 }, upTo: 0.82 },
     { name: 'the cap', needs: { log: 2, stick: 6 }, upTo: 1 },
     { name: 'the sails and millstones', needs: { deerSkin: 2, rope: 3, ironBar: 1 }, upTo: 1 },
+  ] },
+  gatehouse: { make: gatehouseModel, box: [WALL_LENGTH / 2, 0.28], tall: 6.5, line: 'wall', len: WALL_LENGTH, door: true, stages: [
+    { name: 'the tower footings', needs: { rock: 12 }, upTo: 0.08 },
+    { name: 'the towers', needs: { log: 12 }, upTo: 0.62 },
+    { name: 'the walkway and parapet', needs: { log: 4, stick: 12 }, upTo: 0.82 },
+    { name: 'the gates and roofs', needs: { log: 4, rope: 2, ironBar: 1 }, upTo: 1 },
+  ] },
+  fireplace: { make: fireplaceModel, box: [0.95, 0.6], tall: 4.7, fire: 'closed', jobs: 3, stages: [
+    { name: 'the hearth', needs: { rock: 10 }, upTo: 0.08 },
+    { name: 'the firebox and chimney', needs: { rock: 18 }, upTo: 1 },
+    { name: 'the crane and grate', needs: { ironBar: 1, stick: 2 }, upTo: 1 },
+  ] },
+  lanternPost: { make: lanternPostModel, circle: 0.15, tall: 2.8, lamp: true, stages: [
+    { name: 'the post', needs: { log: 1, stick: 2 }, upTo: 0.78 },
+    { name: 'the lantern', needs: { ironBar: 1, candle: 1 }, upTo: 1 },
+  ] },
+  flowerBed: { make: flowerBedModel, circle: 0, steep: 0.6, stages: [
+    { name: 'the stone border and earth', needs: { rock: 8 }, upTo: 0.35 },
+    { name: 'the planting', needs: { berries: 2, vine: 2 }, upTo: 1 },
+  ] },
+  dock: { make: dockModel, box: [1.2, 0.5], tall: 1.2, dock: true, stages: [
+    { name: 'the piles', needs: { log: 6 }, upTo: 0.8 },
+    { name: 'the deck', needs: { log: 4, stick: 8 }, upTo: 0.92 },
+    { name: 'the rail and mooring post', needs: { stick: 6, rope: 2 }, upTo: 1 },
   ] },
   orchardApple: { make: plantingModel, circle: 0.25, tall: 3, grows: 'appleTree' },
   orchardBerry: { make: plantingModel, circle: 0, grows: 'raspberryBush' },
@@ -687,7 +711,7 @@ export class Structures {
 
   /** Lights a campfire or furnace (with flint and steel). Returns false if it has nothing to burn. */
   light(s) {
-    if (!KINDS[s.type].fire || s.lit) return false;
+    if (!KINDS[s.type].fire || s.lit || !this.isBuilt(s)) return false;
     if (s.fuel <= 0) s.fuel = s.burnt ? 0 : FUEL_START;
     if (s.fuel <= 0) return false;
     s.lit = true;
@@ -848,7 +872,7 @@ export class Structures {
     // (A furnace's fire is in its mouth, at the front.)
     const fx = closed ? Math.sin(s.rot) * 0.45 : 0, fz = closed ? Math.cos(s.rot) * 0.45 : 0;
     flames.uniforms.uCentre.value.set(s.x + fx, s.y, s.z + fz);
-    smoke.uniforms.uCentre.value.set(s.x, s.y, s.z);
+    smoke.uniforms.uCentre.value.set(s.x, s.y + (s.type === 'fireplace' ? 3.4 : 0), s.z);
     s.flames = flames;
     s.smoke = smoke;
   }
@@ -869,6 +893,8 @@ export class Structures {
     const lights = [];
     for (const s of this.list) {
       const kind = KINDS[s.type];
+      // (A lantern post, finished: lit from dusk to dawn.)
+      if (kind.lamp && (ctx.night ?? 0) > 0.3 && this.isBuilt(s)) lights.push({ x: s.x + Math.cos(s.rot) * 0.55, y: s.y + 2.15, z: s.z - Math.sin(s.rot) * 0.55, strength: 6, reach: 14 });
       if (KINDS[s.type].grows && (s.growth ?? 0) < 1) {
         // A sapling growing: a few days to a tree (a bush sooner); not in the winter.
         const season = (ctx.winter ?? 0) > 0.6 ? 0 : 0.35 + 0.8 * (ctx.spring ?? 0) + 0.65 * (ctx.summer ?? 0) + 0.25 * (ctx.autumn ?? 0);
@@ -1324,6 +1350,16 @@ export class Structures {
         if (top === null || t > top) top = t;
         continue;
       }
+      if (k.dock) {
+        // (A dock: its deck, out over the water, once it's laid.)
+        if (Math.abs(s.x - x) > 10 || Math.abs(s.z - z) > 10 || (s.data?.stage ?? 9) < 2) continue;
+        const ox = x - s.x, oz = z - s.z, u = ox * Math.cos(s.rot) - oz * Math.sin(s.rot), v = ox * Math.sin(s.rot) + oz * Math.cos(s.rot);
+        if (Math.abs(u) > 1.25 || v < -0.3 || v > 8.1) continue;
+        const t = s.y + 0.23;
+        if (t > feetY + 0.7) continue;
+        if (top === null || t > top) top = t;
+        continue;
+      }
       if (!(k.floor || k.stairs) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
       const ox = x - s.x, oz = z - s.z, c = Math.cos(s.rot), sn = Math.sin(s.rot);
       const u = ox * c - oz * sn, v = ox * sn + oz * c;
@@ -1351,6 +1387,7 @@ export class Structures {
     for (const s of this.list) {
       const k = KINDS[s.type];
       if (k.bridge && Math.hypot(s.x - x, s.z - z) < (s.len ?? 6) + 1) return 'wood';
+      if (k.dock && Math.hypot(s.x - x, s.z - z) < 9) return 'wood';
       if (!(k.floor || k.stairs) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
       return k.stone ? 'rock' : 'wood';
     }

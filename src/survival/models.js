@@ -677,6 +677,90 @@ export function trophyRackModel() {
   return b.build();
 }
 
+/** A gatehouse over a palisade's gateway, 4 m: a squat log tower each side, a walkway across over the gate, a stake parapet, little roofs on the towers. (The gate's leaves swing in it: see gateDoorModel.) */
+export function gatehouseModel() {
+  const b = new Parts(301), rand = mulberry32(301), L = WALL_LENGTH;
+  for (const sx of [-1, 1]) {
+    const x = sx * (L / 2 + 0.25);
+    b.add(new BoxGeometry(1.5, 0.5, 1.5), 0x7e7a72, [x, 0.1, 0]); // (the footing)
+    // (Log courses on the outer faces; a solid core behind them.)
+    b.add(new BoxGeometry(1.3, 4.8, 1.3), 0x5e4630, [x, 2.8, 0]);
+    for (let y = 0.45; y < 5.2; y += 0.42) {
+      for (const dz of [-0.62, 0.62]) b.log([x - 0.75, y, dz], [x + 0.75, y, dz], 0.19, [0x7a5a3a, 0x6e5034][Math.floor(rand() * 2)], 0xc8a070, 5);
+      b.log([x + sx * 0.62, y + 0.21, -0.75], [x + sx * 0.62, y + 0.21, 0.75], 0.19, [0x7a5a3a, 0x6e5034][Math.floor(rand() * 2)], 0xc8a070, 5);
+    }
+    b.add(new ConeGeometry(1.25, 1.2, 4), 0x5a4232, [x, 6.0, 0], [0, Math.PI / 4, 0]);
+    b.add(new BoxGeometry(0.4, 0.3, 0.06), 0x1a1410, [x, 3.8, 0.66]); // (an arrow slit)
+  }
+  // The walkway over the gate, and its parapet of sharpened stakes.
+  b.add(new BoxGeometry(L + 0.4, 0.16, 1.4), 0x8a6a48, [0, 3.6, 0]);
+  for (const z of [-0.65, 0.65]) b.log([-L / 2, 3.6, z], [L / 2, 3.6, z], 0.12, 0x6e4c32);
+  for (let x = -L / 2 + 0.2; x < L / 2; x += 0.34) {
+    b.add(new CylinderGeometry(0.12, 0.13, 1.1, 6), 0x7a6448, [x, 4.2, 0.62]);
+    b.add(new ConeGeometry(0.12, 0.3, 6), 0xb0946a, [x, 4.9, 0.62]);
+  }
+  b.log([-L / 2 + 0.2, 3.5, -0.3], [L / 2 - 0.2, 3.5, -0.3], 0.18, 0x6e4c32); // (the lintel beam over the gate)
+  return b.build();
+}
+
+/** A stone fireplace and chimney: a hearth, a firebox open at the front, the stack going up, a crane for a pot. */
+export function fireplaceModel() {
+  const b = new Parts(303), rand = mulberry32(303), ST = [0x8a867c, 0x7e7a72, 0x96928a, 0x726e66];
+  const stone = (w, h, d, x, y, z) => b.add(new BoxGeometry(w, h, d), ST[Math.floor(rand() * ST.length)], [x, y, z], [0, (rand() - 0.5) * 0.05, 0], [1, 1, 1], 0.05);
+  stone(1.9, 0.2, 1.3, 0, 0.1, 0.1); // (the hearth)
+  for (let y = 0.3; y < 1.4; y += 0.28) for (const x of [-0.7, 0.7]) stone(0.46, 0.28, 0.9, x, y, -0.05);
+  stone(1.9, 0.3, 0.9, 0, 1.45, -0.05); // (the lintel)
+  stone(1.9, 1.3, 0.25, 0, 0.75, -0.42); // (the back of the firebox)
+  for (let y = 1.75, w = 1.6; y < 4.6; y += 0.3, w = Math.max(0.8, w - 0.12)) stone(w, 0.3, 0.8, 0, y, -0.1);
+  b.add(new BoxGeometry(0.85, 0.12, 0.85), 0x5e5a54, [0, 4.65, -0.1]);
+  b.add(new BoxGeometry(0.9, 0.08, 0.6), 0x2a2420, [0, 0.24, 0.0]); // (the ashes)
+  b.log([0.55, 0.25, 0.1], [0.55, 1.2, 0.1], 0.025, 0x3a3a3a, 0x3a3a3a, 4); // (the crane)
+  b.log([0.55, 1.15, 0.1], [0, 1.15, 0.1], 0.02, 0x3a3a3a, 0x3a3a3a, 4);
+  return b.build();
+}
+
+/** A lantern on a post: a squared post, an arm, the iron lantern hanging, its glass glowing. */
+export function lanternPostModel() {
+  const b = new Parts(305);
+  b.add(new BoxGeometry(0.18, 2.7, 0.18), 0x6e4c32, [0, 1.35, 0]);
+  b.add(new BoxGeometry(0.7, 0.1, 0.1), 0x6e4c32, [0.3, 2.55, 0]);
+  b.add(new BoxGeometry(0.06, 0.4, 0.06), 0x5a3c24, [0.15, 2.35, 0], [0, 0, 0.8]);
+  b.add(new BoxGeometry(0.03, 0.2, 0.03), 0x2a2a2a, [0.55, 2.42, 0]);
+  b.add(new BoxGeometry(0.24, 0.3, 0.24), 0xffd890, [0.55, 2.16, 0], [0, 0, 0], [1, 1, 1], 0); // (the glass: lit)
+  b.add(new ConeGeometry(0.2, 0.16, 4), 0x2a2a2a, [0.55, 2.38, 0], [0, Math.PI / 4, 0]);
+  b.add(new BoxGeometry(0.26, 0.04, 0.26), 0x2a2a2a, [0.55, 2.0, 0]);
+  b.add(new BoxGeometry(0.4, 0.12, 0.4), 0x7e7a72, [0, 0.06, 0]);
+  return b.build();
+}
+
+/** A flower bed: a low border of stones round turned earth, wildflowers growing thick in it. */
+export function flowerBedModel() {
+  const b = new Parts(307), rand = mulberry32(307), W = 1.2, D = 0.7;
+  for (let a = 0; a < Math.PI * 2; a += 0.36) b.add(new OctahedronGeometry(0.15, 0), [0x8a867c, 0x96928a, 0x7e7a72][Math.floor(rand() * 3)], [Math.cos(a) * W, 0.08, Math.sin(a) * D], [rand(), rand(), 0], [1.2, 0.7, 1]);
+  b.add(new CylinderGeometry(1, 1, 0.16, 12), 0x4a3424, [0, 0.08, 0], [0, 0, 0], [W * 0.95, 1, D * 0.95]);
+  const PETAL = [0xd83a4a, 0xf0c838, 0x8a5ad0, 0xf4f0e8, 0xf08a30, 0xe86aa8, 0x4a7ad8];
+  for (let k = 0; k < 28; k++) {
+    const a = rand() * Math.PI * 2, r = Math.sqrt(rand()) * 0.85, x = Math.cos(a) * r * W, z = Math.sin(a) * r * D, h = 0.25 + rand() * 0.35;
+    b.add(new CylinderGeometry(0.012, 0.015, h, 3, 1, true), 0x4a7a32, [x, 0.16 + h / 2, z]);
+    b.add(new OctahedronGeometry(0.07 + rand() * 0.04, 0), PETAL[Math.floor(rand() * PETAL.length)], [x, 0.18 + h, z], [rand(), rand(), 0], [1, 0.6, 1]);
+    if (rand() < 0.5) b.add(new BoxGeometry(0.12, 0.01, 0.05), 0x5a8a3a, [x, 0.22 + h * 0.4, z], [0, rand() * 3, 0.4]);
+  }
+  return b.build();
+}
+
+/** A dock: piles driven down into the bed, a plank deck out over the water 8 m (along +z from the bank), a rail along one side, a mooring post at the end. */
+export function dockModel() {
+  const b = new Parts(309), rand = mulberry32(309), L = 8, W = 2.4, top = 0.2;
+  for (let z = 0.6; z <= L; z += 2.4) for (const x of [-W / 2 + 0.1, W / 2 - 0.1]) b.log([x, -3.2, z], [x, top - 0.05, z], 0.13, 0x5e4430, 0xb89468, 7);
+  for (const x of [-W / 2 + 0.1, W / 2 - 0.1]) b.log([x, top - 0.15, 0], [x, top - 0.15, L], 0.1, 0x6e4c32);
+  for (let z = 0.15; z < L; z += 0.3) b.add(new BoxGeometry(W + (rand() - 0.5) * 0.1, 0.06, 0.27), [0x9a7048, 0x8a6040, 0xa87a50][Math.floor(rand() * 3)], [(rand() - 0.5) * 0.05, top, z], [0, (rand() - 0.5) * 0.04, 0], [1, 1, 1], 0.08);
+  for (let z = 0.6; z <= L; z += 2.4) b.log([W / 2 - 0.1, top, z], [W / 2 - 0.1, top + 0.95, z], 0.05, 0x6e4c32);
+  b.log([W / 2 - 0.1, top + 0.95, 0.5], [W / 2 - 0.1, top + 0.95, L], 0.04, 0x7a5638);
+  b.log([-W / 2 + 0.2, top, L - 0.3], [-W / 2 + 0.2, top + 0.7, L - 0.3], 0.1, 0x5e4430, 0xb89468, 7);
+  b.add(new TorusGeometry(0.12, 0.025, 4, 8), 0xc8a878, [-W / 2 + 0.2, top + 0.45, L - 0.3], [Math.PI / 2, 0, 0]);
+  return b.build();
+}
+
 /** Scaffolding round a building going up: poles at its corners and between, boards across every metre and a half up, braces. */
 export function scaffoldModel(w, d, h) {
   const b = new Parts(181), pole = 0x8a6a48, board = 0xa8845a;
