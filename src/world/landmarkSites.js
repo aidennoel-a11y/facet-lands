@@ -56,9 +56,8 @@ export const LANDMARKS = {
   // Cascades' cliffs, lily pads on them, reeds round them.)
   mere: { name: 'Pond', cell: 110, hidden: true, chance: 0.65, tries: 5, riverWater: true, needs: { forest: false }, land: (h, slope, rise) => h > 3 && slope < 0.06 && Math.abs(rise) < 1.5,
     basin: { r: 10, d: 1.8, steep: 0.35 }, what: '', fits: (w) => (w.cascades ?? 0) > 0.85 },
-  // (Nor these: a fox's earth dug into a bank at the edge of the woods,
-  // the vixen and her kits about it; a rabbit warren out in the grass,
-  // its holes all over a low rise, rabbits feeding round them.)
+  // (Nor this: a fox's earth dug into a bank at the edge of the woods,
+  // the vixen and her kits about it.)
   // (Nor this: a beaver pond. A dam of sticks and mud across a slow
   // creek in the woods, the water backed up behind it into a pond, the
   // beavers' lodge out in it, drowned trees standing grey in the water,
@@ -67,8 +66,6 @@ export const LANDMARKS = {
     basin: { r: 14, d: 1.2, steep: 0.35 }, what: '', fits: (w, m, f) => w.temperate + w.pine + (w.parkland ?? 0) + (w.smoky ?? 0) + (w.cascades ?? 0) * 0.8 > 0.6 && m < 0.55 && f > 0.12 },
   foxDen: { name: 'Fox den', cell: 700, hidden: true, chance: 0.55, tries: 6, land: (h, slope) => h > 4 && slope > 0.04 && slope < 0.35,
     what: '', fits: (w, m, f) => (w.temperate + (w.parkland ?? 0) + w.pine + (w.smoky ?? 0) * 0.6 > 0.6) && m < 0.5 && f > 0.1 && f < 0.75 },
-  warren: { name: 'Warren', cell: 520, hidden: true, chance: 0.6, tries: 6, land: (h, slope, rise) => h > 4 && slope < 0.18 && rise > -0.5,
-    what: '', fits: (w, m, f) => (w.temperate + (w.parkland ?? 0) + w.savanna * 0.6 > 0.6) && m < 0.35 && f < 0.35 },
 };
 export const LANDMARK_KINDS = Object.keys(LANDMARKS);
 /** The ones to be found (on the map, an achievement each). */

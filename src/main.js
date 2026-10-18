@@ -665,7 +665,7 @@ function denLife(dt) {
     denWait = 1;
     for (const b of landmarks.built.values()) {
       const s = b.site;
-      if (s.kind !== 'foxDen' && s.kind !== 'warren' && s.kind !== 'beaverPond') continue;
+      if (s.kind !== 'foxDen' && s.kind !== 'beaverPond') continue;
       const d = Math.hypot(s.x - p.x, s.z - p.z);
       let den = dens.get(s.key);
       if (d > 160) {
@@ -697,7 +697,7 @@ function denLife(dt) {
         const vixen = put('fox');
         // (Kits in the spring and early summer, tumbling about the mouth of the earth.)
         if (vixen && (seasonUniforms.uSpring.value > 0.3 || seasonUniforms.uSummer.value > 0.5)) for (let k = 0; k < 2 + Math.floor(Math.random() * 3); k++) put('fox', { young: 0.45, mother: vixen });
-      } else for (let k = 0; k < 3 + Math.floor(Math.random() * 4); k++) put('rabbit');
+      }
       dens.set(s.key, den);
     }
   }
