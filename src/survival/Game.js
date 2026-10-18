@@ -1,4 +1,4 @@
-import { BufferGeometry, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Vector3 } from 'three';
+import { BoxGeometry, BufferGeometry, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Vector3 } from 'three';
 import { seasonUniforms } from '../render/Seasons.js';
 import { LEAF_GEOMETRIES, treeGeometry } from '../world/trees.js';
 import { Felling } from './Felling.js';
@@ -81,6 +81,23 @@ const LIGHTERS = new Set(['flintSteel', 'fineFlintSteel']);
 const VEG = ['berries', 'mushroom', 'apple'];
 const MEATS = ['rawMeat', 'cookedMeat', 'rawFowl', 'rawFish', 'cookedFish'];
 // What you can catch: its name, how heavy (kg, the most of it rare), how hard it fights.
+// What's laid from one point to another, two clicks: the near end, then
+// the far (see #spanPlan). Its reach (m), how steep it may be, and what
+// it takes for its length ([item, metres each]) beyond the kit in hand.
+// "3 logs", "1 rope", "6 small rocks".
+const countOf = (id, n) => {
+  const name = ITEMS[id]?.name.toLowerCase() ?? id;
+  return `${n} ${n > 1 && !/s$/.test(name) ? name.replace(/^(.*?)( of .*)?$/, (m, a, b) => `${a}s${b ?? ''}`) : name}`;
+};
+
+const SPANS = {
+  logBridge: { max: 18, steep: 0.35, per: [['log', 2.5]], name: 'log bridge' },
+  ropeBridge: { max: 36, steep: 0.35, per: [['rope', 4], ['stick', 1]], name: 'rope bridge' },
+  stoneRoad: { max: 30, min: 2, steep: 0.35, per: [['rock', 0.25]], tool: ['forgedPickaxe', 'tuskPickaxe'], name: 'stone road', drape: true },
+  zipLine: { max: 120, min: 12, drop: 3, steep: 0.6, per: [['rope', 5]], name: 'zip line' },
+  ditch: { max: 40, min: 2, steep: 0.25, per: [], tool: ['hoe'], name: 'ditch', drape: true, water: true },
+};
+
 export const FISH_KINDS = Object.fromEntries(Object.entries({
   brookTrout: ['Brook trout', 0.2, 1.5, 0.7], rainbowTrout: ['Rainbow trout', 0.3, 3.5, 0.9], steelhead: ['Steelhead', 2, 9, 1.4], salmon: ['Chinook salmon', 3, 20, 1.6],
   lakeTrout: ['Lake trout', 1, 12, 1.1], pike: ['Northern pike', 1, 11, 1.3], perch: ['Yellow perch', 0.1, 0.8, 0.5], bluegill: ['Bluegill', 0.1, 0.6, 0.5],
@@ -641,6 +658,9 @@ export class Game {
       case 'fancyBed': return 'Sleep';
       case 'raft': return 'Climb aboard';
       case 'canoe': return 'Climb in (Shift+Q: carry it)';
+      case 'zipLine': return Math.hypot(this.camera.position.x - s.x, this.camera.position.z - s.z) < 5 ? `Ride the zip line down (${Math.round(s.len)} m)` : 'The foot of the zip line: ride it from the top';
+      case 'stoneRoad': return 'A paved road: quicker going on it (Shift+Q: take it up)';
+      case 'ditch': return s.data?.fed ? 'A ditch running from the water: plots beside it never need watering' : 'A ditch (dry: it needs to start at water)';
       case 'snare': return s.caught ? 'Take the rabbit' : 'Set, and waiting (Shift+Q to take it up)';
       case 'campfire':
       case 'furnace': {
@@ -1072,6 +1092,8 @@ export class Game {
       case 'raft':
       case 'canoe':
         return this.#board(s);
+      case 'zipLine':
+        return this.#zip(s);
       case 'snare':
         if (!s.caught) return this.hotbar?.flash('Nothing yet');
         s.caught = false;
@@ -1400,15 +1422,34 @@ export class Game {
       }
       return;
     }
-    if (item.place === 'logBridge' || item.place === 'ropeBridge') {
-      const plan = this.plan;
-      if (!plan?.ok) return this.hotbar?.flash(plan?.why ?? 'Stand at the edge, looking across');
-      this.structures.build(plan, { len: plan.len, rise: plan.rise });
+    if (SPANS[item.place]) {
+      const plan = this.plan, sp = SPANS[item.place];
+      if (!plan?.at) return this.hotbar?.flash('Point at the ground');
+      if (!this.spanStart || this.spanStart.type !== item.place) {
+        // The near end: marked.
+        if (plan.why && !plan.at) return this.hotbar?.flash(plan.why);
+        if (sp.water && !this.#nearWater(plan.at.x, plan.at.z)) return this.hotbar?.flash('Start a ditch at a river, a stream or a lake');
+        this.spanStart = { type: item.place, x: plan.at.x, y: plan.at.y, z: plan.at.z };
+        this.sound?.call('place', 0, 0.3);
+        return this.hotbar?.flash(`Near end marked. Now click where the far end of the ${sp.name} goes`);
+      }
+      if (!plan.ok) return this.hotbar?.flash(plan.why);
+      for (const [id, n] of Object.entries(plan.cost)) this.inventory.remove(id, n);
+      if (sp.tool) {
+        const ti = this.inventory.slots.findIndex((x) => x && sp.tool.includes(x.id));
+        if (ti >= 0) this.inventory.wear(ti, Math.ceil(plan.len / 4));
+      }
       this.inventory.take(i);
+      const extra = { len: plan.len, rise: plan.rise };
+      if (sp.drape || sp.water) extra.data = { ys: plan.ys, fed: !!sp.water };
+      this.structures.build({ type: item.place, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, ok: true }, extra);
+      if (item.place === 'stoneRoad') for (let d = 0; d <= plan.len; d += 1) this.pave?.(plan.x + Math.sin(plan.rot) * d, plan.z + Math.cos(plan.rot) * d);
+      this.spanStart = null;
       this.cooldown = 0.5;
-      this.sound?.call('place', 0, 0.6);
+      this.sound?.call(item.place === 'stoneRoad' ? 'dig' : 'place', 0, 0.6);
       this.#learn(item.place);
-      return this.hotbar?.flash(`The bridge is across: ${Math.round(plan.len)} m`);
+      this.dirty = true;
+      return this.hotbar?.flash(`The ${sp.name} is laid: ${Math.round(plan.len)} m`);
     }
     if (item.place === 'ladder') {
       const plan = this.plan;
@@ -1455,7 +1496,7 @@ export class Game {
 
   // What a site still wants, in words: "6 logs, 2 rope".
   #wantsText(wants) {
-    return Object.entries(wants).map(([id, n]) => `${n} ${ITEMS[id]?.name.toLowerCase() ?? id}`).join(', ');
+    return Object.entries(wants).map(([id, n]) => countOf(id, n)).join(', ');
   }
 
   // Something in hand, put to work at a fire, furnace or rack. Returns whether it was.
@@ -1788,6 +1829,99 @@ export class Game {
     if (b === null) return no(`Too far to the other side (a ${type === 'ropeBridge' ? 'rope bridge reaches 26 m' : 'log bridge reaches 14 m'})`);
     const y0 = g(a), y1 = g(b + 0.4);
     return { type, ok: true, x: cam.x + fx * a, y: y0, z: cam.z + fz * a, rot: Math.atan2(fx, fz), len: b - a + 0.8, rise: y1 - y0 };
+  }
+
+  // Whether there's water (a river, a stream, a lake) within a few metres of (x, z).
+  #nearWater(x, z) {
+    for (let a = 0; a < 8; a++) for (const d of [0, 1.5, 3]) if (this.waterAt(x + Math.cos(a * 0.785) * d, z + Math.sin(a * 0.785) * d)) return true;
+    return false;
+  }
+
+  // Something laid from end to end (a bridge, a road, a zip line, a ditch):
+  // the near end clicked, then the far one. What it would be, aimed at
+  // `at`: { at, ok, why, prompt, x, y, z, rot, len, rise, ys, cost }. Its
+  // line shown on the ground as you aim.
+  #spanPlan(type, at) {
+    const sp = SPANS[type], start = this.spanStart?.type === type ? this.spanStart : null;
+    if (!this.spanGuide) {
+      const mat = new MeshBasicMaterial({ color: 0xf0e0a0, transparent: true, opacity: 0.55, depthWrite: false });
+      this.spanGuide = new Mesh(new BoxGeometry(1, 1, 1).translate(0, 0, 0.5), mat);
+      this.spanMark = new Mesh(new CylinderGeometry(0.08, 0.08, 1.6, 6).translate(0, 0.8, 0), mat);
+      this.scene.add(this.spanGuide, this.spanMark);
+    }
+    if (!at) return { prompt: start ? 'Point at the ground for the far end' : `Point at the ground for the near end of the ${sp.name}` };
+    const where = { x: at.x, y: at.y, z: at.z };
+    if (!start) {
+      this.spanMark.position.copy(at);
+      this.spanMark.visible = true;
+      const needWater = sp.water && !this.#nearWater(at.x, at.z);
+      return { at: where, prompt: needWater ? 'A ditch starts at the water: point at a river bank, a stream or a lake shore' : `<kbd>Click</kbd> Mark the near end of the ${sp.name} here` };
+    }
+    const dx = at.x - start.x, dz = at.z - start.z, len = Math.hypot(dx, dz), rise = at.y - start.y, rot = Math.atan2(dx, dz);
+    this.spanMark.position.set(start.x, start.y, start.z);
+    this.spanMark.visible = true;
+    this.spanGuide.position.set(start.x, start.y + 0.15, start.z);
+    this.spanGuide.rotation.set(-Math.atan2(rise, Math.max(0.01, len)), rot, 0, 'YXZ');
+    this.spanGuide.scale.set(type === 'stoneRoad' ? 2.4 : 0.25, 0.08, Math.hypot(len, rise));
+    this.spanGuide.visible = true;
+    const plan = { at: where, x: start.x, y: start.y, z: start.z, rot, len, rise, ok: false };
+    // What it takes, for this length.
+    const cost = {};
+    for (const [id, m] of sp.per) cost[id] = (cost[id] ?? 0) + Math.ceil(len / m);
+    plan.cost = cost;
+    const costText = Object.entries(cost).map(([id, n]) => countOf(id, n)).join(', ');
+    const no = (why) => ((plan.why = why), (plan.prompt = why), plan);
+    if (len > sp.max) return no(`Too long: a ${sp.name} reaches ${sp.max} m (this is ${Math.round(len)} m)`);
+    if (len < (sp.min ?? 3)) return no('Too short: click further off');
+    if (type === 'zipLine') {
+      if (-rise < sp.drop) return no('The far end must be well below the near one (3 m or more): a zip line runs downhill');
+      if (-rise / len > sp.steep) return no('Too steep: you would come down too fast');
+    } else if (Math.abs(rise) / len > sp.steep) return no('Too steep from end to end');
+    const wet = (x, z) => (this.waterAt(x, z)?.level ?? -Infinity) > this.groundAt(x, z) + 0.15;
+    if (!sp.water && (wet(start.x, start.z) || wet(at.x, at.z))) return no('Each end on dry ground');
+    if (sp.tool && !this.inventory.slots.some((x) => x && sp.tool.includes(x.id))) return no(`You need ${sp.tool.map((id) => ITEMS[id].name.toLowerCase()).join(' or ')} for this`);
+    for (const [id, n] of Object.entries(cost)) if (this.inventory.count(id) < n) return no(`Not enough: it takes ${costText} for ${Math.round(len)} m`);
+    // (Over the lie of the land, a metre at a time, from the near end.)
+    if (sp.drape || sp.water) {
+      plan.ys = [];
+      for (let d = 0; d <= Math.ceil(len); d++) {
+        const g = this.groundAt(start.x + Math.sin(rot) * Math.min(d, len), start.z + Math.cos(rot) * Math.min(d, len));
+        plan.ys.push(+((Number.isFinite(g) ? g : start.y) - start.y).toFixed(2));
+      }
+    }
+    plan.ok = true;
+    plan.prompt = `<kbd>Click</kbd> Lay the ${sp.name} here: ${Math.round(len)} m${costText ? `, taking ${costText}` : ''}`;
+    return plan;
+  }
+
+  // Down a zip line from its top: hanging from the pulley, faster and
+  // faster down the cable, slowing at its foot, off onto the ground there.
+  #zip(s) {
+    const p = this.camera.position, eye = this.controls.eyeHeight, fx = Math.sin(s.rot), fz = Math.cos(s.rot);
+    if (Math.hypot(p.x - s.x, p.z - s.z) > 5) return this.hotbar?.flash('Ride it from its top end');
+    const len = s.len, top = 4.2, low = 2.8, sag = Math.min(2, len * 0.025);
+    const cable = (d) => s.y + top + (s.rise + low - top) * (d / len) - sag * Math.sin((Math.PI * d) / len);
+    let d = 0.4, v = 1.5, whoosh = 0;
+    this.zipping = s;
+    this.controls.velocityY = 0;
+    this.controls.vehicle = (dt, input) => {
+      const slope = (cable(Math.min(len, d + 0.5)) - cable(Math.max(0, d - 0.5)));
+      v = Math.max(1, v + (-slope * 9.8 - 0.012 * v * v) * dt);
+      d += v * dt;
+      if ((whoosh -= dt) <= 0) (whoosh = 0.6), this.sound?.call('whoosh', 0, Math.min(0.6, v / 25));
+      if (d >= len - 1.2) {
+        // At the foot: let go, onto the ground just past the post.
+        this.controls.vehicle = null;
+        this.zipping = null;
+        const x = s.x + fx * (len + 1), z = s.z + fz * (len + 1), g = this.groundAt(x, z);
+        p.set(x, (Number.isFinite(g) ? g : p.y - eye) + eye + 0.05, z);
+        return;
+      }
+      p.set(s.x + fx * d, cable(d) - 0.45, s.z + fz * d);
+      this.controls.grounded = true;
+      this.controls.moving = true;
+    };
+    this.hotbar?.flash('Hold on!');
   }
 
   #ropePlan() {
@@ -3103,15 +3237,18 @@ export class Game {
     // What's under the crosshair: what Q would do, and where a thing to be built would go.
     let prompt = null;
     this.plan = null;
+    if (this.spanGuide) this.spanGuide.visible = this.spanMark.visible = false;
+    // (Changed what's in hand: a half-laid span forgotten.)
+    if (this.spanStart && held?.id !== this.spanStart.type && ITEMS[held?.id]?.place !== this.spanStart.type) this.spanStart = null;
     if (walking && this.survival.alive && !this.hud.busy && !this.riding) {
       const origin = cam, direction = this.camera.getWorldDirection(dir.clone());
       const t = this.#target({ origin, direction });
       const item = held && ITEMS[held.id];
       const placing = item?.place === 'caveLamp' || item?.place === 'lantern' || item?.place === 'candle' ? 'torch' : item?.place ?? (held?.id === 'hoe' ? 'plot' : null);
-      if (placing === 'logBridge' || placing === 'ropeBridge') {
-        this.plan = this.#bridgePlan(placing);
+      if (SPANS[placing]) {
+        this.plan = this.#spanPlan(placing, ctx.planPoint(origin, direction, 60));
         this.structures.preview(null);
-        prompt = this.plan.ok ? `<kbd>Click</kbd> Lay the ${placing === 'logBridge' ? 'log' : 'rope'} bridge across (${Math.round(this.plan.len)} m)` : this.plan.why;
+        prompt = this.plan.prompt;
       } else if (placing === 'ladder') {
         this.plan = this.#ladderPlan();
         this.structures.preview(this.plan.ok ? this.plan : null);

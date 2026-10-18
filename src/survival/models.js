@@ -512,6 +512,57 @@ export function leanToModel() {
 
 /** A water filter: a bark cone on a little tripod, sand and charcoal in it, a pot under it to catch the water. */
 /** A repair bench: a heavy plank top on log legs, a vice at one end, a whetstone and a few tools laid on it. */
+/** Heights along something laid over the land, one a metre (`ys`, from its start), at `t` metres along. */
+const alongYs = (ys, t) => {
+  const i = Math.min(ys.length - 2, Math.max(0, Math.floor(t))), f = Math.min(1, Math.max(0, t - i));
+  return ys.length < 2 ? 0 : ys[i] + (ys[i + 1] - ys[i]) * f;
+};
+
+/** A paved road `len` m long, 2.4 m wide, over the lie of the land (`ys`): flagstones in rows, kerbstones along its sides. */
+export function stoneRoadModel(len, ys) {
+  const b = new Parts(291), rand = mulberry32(291 + Math.round(len)), FLAG = [0x9a968e, 0x8e8a82, 0xa6a298, 0x88847c];
+  for (let z = 0.25, row = 0; z < len; z += 0.5, row++) {
+    const y = alongYs(ys, z), slope = Math.atan2(alongYs(ys, z + 0.25) - alongYs(ys, z - 0.25), 0.5);
+    for (let x = -0.9 + (row % 2) * 0.15; x < 1.0; x += 0.6) {
+      const w = Math.min(0.58, 1.05 - x);
+      if (w < 0.15) continue;
+      b.add(new BoxGeometry(w - 0.04, 0.12, 0.46), FLAG[Math.floor(rand() * FLAG.length)], [x + w / 2 - 0.3, y + 0.02, z], [-slope, (rand() - 0.5) * 0.06, 0], [1, 1, 1], 0.06);
+    }
+    for (const x of [-1.2, 1.2]) b.add(new BoxGeometry(0.22, 0.2, 0.48), 0x6e6a64, [x, y + 0.04, z], [-slope, 0, 0], [1, 1, 1], 0.08);
+  }
+  return b.build();
+}
+
+/** A zip line: a tall post at its top end, a lower one at the foot (`rise` m lower, `len` m on), the steel cable between, a pulley on it. */
+export function zipLineModel(len, rise) {
+  const b = new Parts(293), top = 4.2, low = 2.8, sag = Math.min(2, len * 0.025);
+  for (const [z, y0, h] of [[0, 0, top], [len, rise, low]]) {
+    b.log([0, y0 - 0.6, z], [0, y0 + h + 0.3, z], 0.16, 0x6e4c32, 0xc8a070, 8);
+    b.log([-0.6, y0 + h - 0.2, z], [0.6, y0 + h - 0.2, z], 0.08, 0x6e4c32, 0xc8a070, 6);
+    for (const s of [-1, 1]) b.log([0, y0 + h, z], [s * 1.2, y0 - 0.3, z + (z ? 0.8 : -0.8)], 0.025, 0x8a8a8a, 0x8a8a8a, 4); // (guy wires)
+  }
+  // (A platform to step off from at the top.)
+  b.add(new BoxGeometry(1.4, 0.1, 1.2), 0x8a6a48, [0, 1.6, -0.6]);
+  for (const x of [-0.6, 0.6]) b.log([x, 0, -1.1], [x, 1.6, -1.1], 0.06, 0x6e4c32);
+  const n = 20, at = (k) => [0, top + (rise + low - top) * (k / n) - sag * Math.sin((Math.PI * k) / n), (len * k) / n];
+  for (let k = 0; k < n; k++) b.log(at(k), at(k + 1), 0.022, 0x9a9ea4, 0x9a9ea4, 4);
+  b.add(new BoxGeometry(0.12, 0.18, 0.22), 0x4a4e54, [0, top - 0.12, 0.4]); // (the pulley, waiting at the top)
+  b.add(new BoxGeometry(0.5, 0.05, 0.05), 0x3a2a1e, [0, top - 0.42, 0.4]);
+  return b.build();
+}
+
+/** An irrigation ditch `len` m long over the land (`ys`): a trench of dark earth, water running in its bed, spoil banked either side. */
+export function ditchModel(len, ys) {
+  const b = new Parts(295), rand = mulberry32(295);
+  for (let z = 0.5; z < len; z += 1) {
+    const y = alongYs(ys, z), slope = Math.atan2(alongYs(ys, z + 0.5) - alongYs(ys, z - 0.5), 1);
+    b.add(new BoxGeometry(0.7, 0.04, 1.02), 0x3a2a1e, [0, y - 0.18, z], [-slope, 0, 0], [1, 1, 1], 0.05);
+    b.add(new BoxGeometry(0.62, 0.02, 1.02), 0x3e6a84, [0, y - 0.09, z], [-slope, 0, 0], [1, 1, 1], 0.05); // (the water)
+    for (const s of [-1, 1]) b.add(new BoxGeometry(0.35, 0.16, 1.04), [0x5a4430, 0x4e3a28][Math.floor(rand() * 2)], [s * 0.52, y - 0.02, z], [-slope, 0, s * 0.35], [1, 1, 1], 0.08);
+  }
+  return b.build();
+}
+
 /**
  * A bridge `len` metres long, rising `rise` from where it starts to where
  * it ends, along +z: a log bridge (two big logs laid across, split planks

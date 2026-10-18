@@ -57,6 +57,13 @@ export class GrassCut {
     }
   }
 
+  /** Paved over (a stone road): the grass there gone for good. */
+  pave(x, z) {
+    for (let dk = -1; dk <= 1; dk++) for (let di = -1; di <= 1; di++) this.paths.set(`${Math.floor(x) + di},${Math.floor(z) + dk}`, [60, 1e9]);
+    this.pathVersion++;
+    this.wait = 0;
+  }
+
   // (Wear fading as the grass comes back: a few treads' worth a day.)
   #worn([w, at], day) {
     return w - 2.5 * Math.max(0, day - at);

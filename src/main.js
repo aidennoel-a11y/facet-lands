@@ -1193,7 +1193,7 @@ const controls = new PlayerControls(camera, canvas, {
     trees.collide(position, radius, WORLD.chunkSize);
     treeBump(position.x - bx, position.z - bz);
     // (Into the leaves a little way, not through them; and they slow you.)
-    controls.speedFactor = trees.leaves(position, radius, feet, controls.eyeHeight + 0.1);
+    controls.speedFactor = trees.leaves(position, radius, feet, controls.eyeHeight + 0.1) * (game.structures.onRoad(position.x, position.z) ? 1.3 : 1); // (quicker on a paved road)
     game.structures.collide(position, radius, feet);
     ruins.collide(position, radius, feet);
     generator.caves.collide(position, radius, feet);
@@ -1288,6 +1288,7 @@ const game = new Game({
   },
 });
 game.felling.vortex = () => tornadoes.now;
+game.pave = (x, z) => grassCut.pave(x, z); // (a stone road laid: the grass gone under it)
 // (The sea's and the lakes' waves under a boat: see WaterLayer.waveAt.)
 game.waveAt = (x, z) => water.waveAt(x, z, WORLD.seaLevel - chunks.groundHeightAt(x, z), generator.getOceanness(x, z)); // (trees carried round in a tornado: see Felling.liftUp)
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);

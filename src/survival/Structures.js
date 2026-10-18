@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, scaffoldModel, barnWallModel, barnDoorModel, barnRoofModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, scaffoldModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -96,6 +96,10 @@ const KINDS = {
   // (A lean-to: a roof on poles, sheltering what's under it.)
   leanTo: { make: leanToModel, posts: [[-1.2, 0.9], [1.2, 0.9]], shelter: [1.5, 1.4] },
   // (Bridges: laid across a gorge or a river from where you stand; walked on, see floorTop. Each its own length: see build.)
+  // (Laid from one end to the other, two clicks: see Game's spans.)
+  stoneRoad: { make: () => stoneRoadModel(1, [0, 0]), span: true, circle: 0 },
+  zipLine: { make: () => zipLineModel(10, -3), span: true, circle: 0.2 },
+  ditch: { make: () => ditchModel(1, [0, 0]), span: true, circle: 0 },
   logBridge: { make: () => bridgeModel('log', 0.1, 0), bridge: 'log', circle: 0 },
   ropeBridge: { make: () => bridgeModel('rope', 0.1, 0), bridge: 'rope', circle: 0 },
   // (Furniture.)
@@ -192,6 +196,32 @@ export class Structures {
     if (s.door) s.door.geometry = this.doorModel(s.type, dye);
     this.onChange?.();
     return true;
+  }
+
+  /** Whether (x, z) is on a paved road (you walk faster on it). */
+  onRoad(x, z) {
+    for (const s of this.list) {
+      if (s.type !== 'stoneRoad') continue;
+      const ox = x - s.x, oz = z - s.z;
+      if (Math.abs(ox) > s.len + 2 || Math.abs(oz) > s.len + 2) continue;
+      const u = ox * Math.cos(s.rot) - oz * Math.sin(s.rot), v = ox * Math.sin(s.rot) + oz * Math.cos(s.rot);
+      if (Math.abs(u) < 1.3 && v > -0.3 && v < s.len + 0.3) return true;
+    }
+    return false;
+  }
+
+  /** How far (x, z) is from the nearest ditch running from water, in m (Infinity if none near). */
+  ditchDistance(x, z) {
+    let best = Infinity;
+    for (const s of this.list) {
+      if (s.type !== 'ditch' || !s.data?.fed) continue;
+      const ox = x - s.x, oz = z - s.z;
+      if (Math.abs(ox) > s.len + 5 || Math.abs(oz) > s.len + 5) continue;
+      const u = ox * Math.cos(s.rot) - oz * Math.sin(s.rot), v = ox * Math.sin(s.rot) + oz * Math.cos(s.rot);
+      const along = Math.min(s.len, Math.max(0, v));
+      best = Math.min(best, Math.hypot(u, v - along));
+    }
+    return best;
   }
 
   /** A big build's stages (see KINDS), or null. */
@@ -539,7 +569,9 @@ export class Structures {
     const mesh = new Group();
     // (A bridge: its own length and rise, from here to the far side.)
     const bk = KINDS[s.type].bridge;
-    const body = new Mesh(bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper), this.material);
+    const ys = s.data?.ys ?? [0, 0];
+    const spanModel = s.type === 'stoneRoad' ? stoneRoadModel(s.len ?? 1, ys) : s.type === 'zipLine' ? zipLineModel(s.len ?? 10, s.rise ?? -3) : s.type === 'ditch' ? ditchModel(s.len ?? 1, ys) : null;
+    const body = new Mesh(spanModel ? spanModel : bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper), this.material);
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);
@@ -843,6 +875,12 @@ export class Structures {
         s.growth = Math.min(1, (s.growth ?? 0) + (dt * season * (1 + 0.4 * Math.min(1, ctx.rain ?? 0))) / (s.type === 'orchardBerry' ? 1100 : s.type === 'plantedOak' ? 1700 : 1900));
         if (Math.floor(s.growth * 20) !== s.plantShown) (this.showPlant(s), this.onChange?.());
       }
+      // (A plot by a ditch running from water: watered, always.)
+      if (s.type === 'plot' && (!s.ditchCheck || ctx.time > s.ditchCheck)) {
+        s.ditchCheck = ctx.time + 3;
+        s.ditched = this.ditchDistance(s.x, s.z) < 3.2;
+      }
+      if (s.ditched) s.watered = Math.max(s.watered ?? 0, 60);
       if (s.type === 'plot' && s.crop && s.growth < 1) {
         // Growing: best in the spring and summer, none in the winter;
         // faster watered, or in the rain.
