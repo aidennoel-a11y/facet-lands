@@ -455,7 +455,8 @@ export class ChunkManager {
     const level = this.noRugged ? 0 : this.rugged.get(key);
     // (Plain land, open sea or deep woods, off away from you: coarser, for
     // nothing shows the difference there; full detail again as you come near.)
-    if (level < 0 && lod >= 1) return Math.max(4, level === -2 ? base / 4 : base / 2);
+    if (level === -2) return Math.max(2, base / 4); // (the sea bed out in open water: a quarter the detail, near or far)
+    if (level < 0 && lod >= 1) return Math.max(4, base / 2);
     if (!level || level < 0) return base;
     const finest = this.config.lods[Math.min(2, this.config.lods.length - 1)].resolution;
     return Math.max(base, Math.min(finest, base * (level === 2 ? 4 : 2)));

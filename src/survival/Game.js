@@ -2742,7 +2742,7 @@ export class Game {
     // (A raft: poled along, slow, steady. A canoe: sat low in it, quick
     // under the paddle, gliding on between strokes, turning as you steer.)
     const canoe = s.type === 'canoe';
-    const top = canoe ? 4.8 : 3, grip = canoe ? 0.55 : 0.8, turn = canoe ? 1.1 : 1.5, seat = canoe ? 0.15 : 0.45, sink = canoe ? 0.06 : 0.12;
+    const top = canoe ? 4.8 : 3, grip = canoe ? 0.55 : 0.8, turn = canoe ? 1.1 : 1.5, seat = canoe ? 0.22 : 0.45, sink = canoe ? -0.05 : 0.12; // (a canoe rides high: its floor well above the water)
     const eye = canoe ? this.controls.eyeHeight * 0.55 : this.controls.eyeHeight;
     p.set(s.x, s.y + seat + eye, s.z);
     this.controls.velocityY = 0;
@@ -2754,19 +2754,27 @@ export class Game {
       const yaw = this.controls.euler.y;
       s.speed = (s.speed ?? 0) + (input.forward * top - (s.speed ?? 0)) * Math.min(1, dt * (input.forward ? grip : grip * 0.35));
       const drift = (w.speed ?? 0) * (canoe ? 0.85 : 0.7);
-      s.heading ??= s.rot;
+      // (Its heading is the way it goes, bow first: the model's bow is the way it was set down facing.)
+      s.heading ??= s.rot + Math.PI;
       const nx = s.x - Math.sin(s.heading) * s.speed * dt + (w.fx ?? 0) * drift * dt, nz = s.z - Math.cos(s.heading) * s.speed * dt + (w.fz ?? 0) * drift * dt;
       const next = this.waterAt(nx, nz);
       if (next && this.groundAt(nx, nz) < next.level - (canoe ? 0.12 : 0.2)) {
         // (It comes round to where you look as you paddle; adrift, it hardly turns.)
         const pull = Math.min(1, dt * turn * (canoe ? Math.min(1, 0.25 + Math.abs(s.speed) / 2) : 1));
         s.heading += Math.atan2(Math.sin(yaw - s.heading), Math.cos(yaw - s.heading)) * pull;
-        this.structures.move(s, nx, next.level - sink + Math.sin(this.time * 1.6) * 0.03, nz, s.heading);
+        this.structures.move(s, nx, next.level - sink, nz, s.heading + Math.PI);
       } else s.speed = 0;
+      // Riding the waves: lifted and dropped with them, pitching and rolling
+      // on their slopes (on a lake or the sea; a river's water runs smooth).
+      const wave = w.lake && this.waveAt ? this.waveAt(s.x, s.z) : { y: Math.sin(this.time * 1.6) * 0.03, nx: 0, nz: 0 };
+      const fx = Math.sin(s.rot), fz = Math.cos(s.rot);
+      s.mesh.position.y = s.y + wave.y;
+      s.mesh.rotation.order = 'YXZ';
+      s.mesh.rotation.x = Math.atan(fx * wave.nx + fz * wave.nz) * 0.8;
+      s.mesh.rotation.z = -Math.atan(fz * wave.nx - fx * wave.nz) * 0.8;
       // (The dip of the paddle, stroke by stroke.)
       if (input.forward && (stroke -= dt) <= 0) (stroke = canoe ? 0.85 : 1.3), this.sound?.call('paddle', (Math.random() - 0.5) * 0.6, canoe ? 0.35 : 0.3);
-      const b = this.time * 1.6;
-      p.set(s.x, w.level - sink + seat + eye + Math.sin(b) * 0.03, s.z);
+      p.set(s.x, w.level - sink + seat + eye + wave.y, s.z);
       this.controls.grounded = true;
       this.controls.moving = Math.abs(s.speed) > 0.2;
     };

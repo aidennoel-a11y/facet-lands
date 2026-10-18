@@ -195,6 +195,29 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
       uniforms.uTime.value = time;
     },
 
+    /**
+     * The waves' lift at (x, z) (the water `depth` deep there, `ocean` how
+     * open the sea), as the shader draws them: { y (m above the still
+     * water), nx, nz (the surface's tilt) }. For what floats on it.
+     */
+    waveAt(x, z, depth, ocean, out = {}) {
+      const sm = (a, b, v) => { const q = Math.min(1, Math.max(0, (v - a) / (b - a))); return q * q * (3 - 2 * q); };
+      const scale = 0.1 + 0.9 * sm(1, 16, depth) + 2.4 * (depth >= 6 ? sm(6, 30, depth) * sm(0.4, 0.8, ocean) : 0);
+      const amp = waveHeight * scale * (0.3 + 0.7 * windStrength.value), wd = windDirection.value, time = uniforms.uTime.value;
+      let y = 0, nx = 0, nz = 0;
+      for (const [turn, len, share, phase] of [[0, 74, 1, 0], [0.55, 43, 0.6, 1.7], [-0.75, 25, 0.34, 4.1], [1.35, 15, 0.18, 2.3]]) {
+        const c = Math.cos(turn), s = Math.sin(turn), dx = wd.x * c - wd.y * s, dz = wd.x * s + wd.y * c;
+        const k = (Math.PI * 2) / len, a = amp * share, th = k * (dx * x + dz * z) - Math.sqrt(9.8 * k) * time + phase;
+        y += a * Math.sin(th);
+        nx -= dx * k * a * Math.cos(th);
+        nz -= dz * k * a * Math.cos(th);
+      }
+      out.y = y;
+      out.nx = nx;
+      out.nz = nz;
+      return out;
+    },
+
     reuseKey: ({ resolution }) => `${resolution}`,
 
     build({ cx, cz, heights, generator, config, prepared }) {

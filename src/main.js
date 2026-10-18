@@ -1287,7 +1287,9 @@ const game = new Game({
     return Number.isFinite(h) ? Math.max(h, rocks.surfaceAt(x, z)) : generator.getHeight(x, z);
   },
 });
-game.felling.vortex = () => tornadoes.now; // (trees carried round in a tornado: see Felling.liftUp)
+game.felling.vortex = () => tornadoes.now;
+// (The sea's and the lakes' waves under a boat: see WaterLayer.waveAt.)
+game.waveAt = (x, z) => water.waveAt(x, z, WORLD.seaLevel - chunks.groundHeightAt(x, z), generator.getOceanness(x, z)); // (trees carried round in a tornado: see Felling.liftUp)
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 ruins.onChest = (c) => game.ruinChest(c);
 wrecks.onChest = (c) => game.ruinChest(c); // (a wreck's sea chest)
