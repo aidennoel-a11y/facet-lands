@@ -160,6 +160,7 @@ function cervid({ coat, back, belly, rump = 0xf2ece0, neck = coat, mane = null, 
     torso: [[0, 1.05, -0.08, 0.21, 0.27, 0.74]],
     neck: [0, 0.28, 0.08, 0.12, 0.28, 0.13],
     skull: [0, 0.57, 0.32, 0.12, 0.12, 0.27],
+    tailAt: -0.835,
   };
 }
 export const deer = () => cervid({ coat: 0x9c6b3f, back: 0x86592f, belly: 0xdcc6a2 });
@@ -1110,6 +1111,7 @@ export function crocodile() {
     legs: [[0.32, 0.28, 0.38], [-0.32, 0.28, 0.38], [0.3, 0.28, -0.3], [-0.3, 0.28, -0.3]],
     torso: [[0, 0.3, -0.3, 0.3, 0.17, 1.3]],
     skull: [0, 0.0, 0.4, 0.17, 0.11, 0.42],
+    tailAt: -0.32, // (its long tail, from just behind the hind legs)
   };
 }
 

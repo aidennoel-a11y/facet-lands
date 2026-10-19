@@ -77,7 +77,7 @@ export function strideLength(sp, scale, g, v) {
  */
 export function rhythm(g, c, amount = 1) {
   const G = GAITS[g];
-  if (!G) return { bob: 0, pitch: 0, roll: 0, surge: 1, nod: 0 };
+  if (!G) return { bob: 0, pitch: 0, roll: 0, surge: 1, nod: 0, flex: 0 };
   const beat = TAU * G.beats;
   if (GALLOPS.has(g)) {
     // Highest in the air after the fore feet leave; nose up as the hind
@@ -88,6 +88,9 @@ export function rhythm(g, c, amount = 1) {
       roll: 0,
       surge: 1 + G.surge * amount * Math.cos(TAU * (c - 0.2)),
       nod: G.nod * amount * Math.sin(TAU * (c - 0.45)),
+      // (The back: gathered, arched, as the hind feet reach up under it;
+      // stretched out flat as the fore feet reach ahead.)
+      flex: G.rock * (g === 'bound' ? 1.6 : 1.3) * amount * Math.sin(TAU * (c - 0.6)),
     };
   }
   // Walking and trotting: lowest as the feet take its weight, two beats a
@@ -98,14 +101,17 @@ export function rhythm(g, c, amount = 1) {
     roll: G.sway * amount * Math.sin(TAU * c),
     surge: 1 + G.surge * amount * Math.cos(beat * (c - G.duty * 0.85)),
     nod: G.nod * amount * Math.cos(beat * (c - 0.3)),
+    flex: 0,
   };
 }
 
-// Where a leg's foot stands when it's at rest: under its hip.
+// Where a leg's foot stands when it's at rest: under its hip (going, drawn
+// in toward the middle, as a real animal's are: `a.track`, of the hip's
+// width; or out wide, a crocodile's sprawl).
 function neutral(a, p, out) {
-  const ch = Math.cos(a.heading), sh = Math.sin(a.heading), s = a.scale;
-  out.x = a.x + (p[0] * ch + p[2] * sh) * s;
-  out.z = a.z + (-p[0] * sh + p[2] * ch) * s;
+  const ch = Math.cos(a.heading), sh = Math.sin(a.heading), s = a.scale, x = p[0] * (a.track ?? 1);
+  out.x = a.x + (x * ch + p[2] * sh) * s;
+  out.z = a.z + (-x * sh + p[2] * ch) * s;
   return out;
 }
 const home = { x: 0, z: 0 };
@@ -161,9 +167,12 @@ export function stepFeet(a, sp, model, dt, moved, ground) {
         let ty = ground(tx, tz);
         if (!(ty === ty)) ty = f.sy;
         const w = ease(Math.min(1, (u - f.u0) / (1 - f.u0)));
-        f.x = f.sx + (tx - f.sx) * w;
-        f.z = f.sz + (tz - f.sz) * w;
-        f.y = f.sy + (ty - f.sy) * w + Math.sin(Math.PI * w) * G.lift * H;
+        // (A bear's or an elephant's foot swung round out to the side; a
+        // horse's or a deer's fore hoof picked up high, the knee folded.)
+        const out = Math.sin(Math.PI * w) * (sp.motion?.paddle ?? 0) * H * Math.sign(p[0]);
+        f.x = f.sx + (tx - f.sx) * w + ch * out;
+        f.z = f.sz + (tz - f.sz) * w - sh * out;
+        f.y = f.sy + (ty - f.sy) * w + Math.sin(Math.PI * w) * G.lift * H * (k < 2 && !model.biped ? sp.motion?.foreLift ?? 1 : 1);
       }
     }
     if (!f.up) need = Math.max(need, a.y + p[1] * s - (f.y + (model.biped || k >= 2 ? model.hind : model.fore).l1 * s * 0.96 + (model.biped || k >= 2 ? model.hind : model.fore).l2 * s * 0.96));

@@ -2,6 +2,7 @@ import { AdditiveBlending, BoxGeometry, Color, DynamicDrawUsage, Euler, Frustum,
 import { hash2, mulberry32 } from '../noise/random.js';
 import { chooseGait, footAt, rhythm, solveLeg, stepFeet, strideLength } from './Gait.js';
 import * as Models from './models.js';
+import { splitBody } from './Spine.js';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -259,6 +260,38 @@ const ik = { rz: 0, a1: 0, a2: 0, kx: 0, ky: 0, kz: 0 }, foot = { x: 0, y: 0, z:
 const ray = new Raycaster();
 const view = new Frustum(), viewMatrix = new Matrix4(), sphere = new Sphere();
 const shake = new Quaternion();
+const rearQ = new Quaternion(), rearM = new Matrix4(), tailM = new Matrix4(), hip = [0, 0, 0];
+
+/**
+ * How each kind moves its body, as the real ones do (see #drawBeast).
+ * `flex`: how much its back bends (into a turn; arching and stretching at
+ * the gallop). `track`: how far in toward the middle its feet come down,
+ * going (of its hips' width: a cat's almost in one line, a bear's hardly
+ * at all). `stab`: how steady it holds its head as its body bounces (a
+ * cat's, a horse's, eyes fixed on where it's going). `lean`: into a turn.
+ * `tail`: how much its tail swings; `swish`: at the flies, standing;
+ * `flag`: up when it bolts (a white-tail's); `curl`: a cat's, slowly
+ * curling and twitching. `cock`: resting a hind leg, standing about.
+ * `paddle`: its feet swung round out to the side; `foreLift`: its fore
+ * feet picked up high, the knees folded. `undulate`: its back swinging
+ * from side to side as it walks (a crocodile's).
+ */
+const CAT = { flex: 1.4, track: 0.5, stab: 0.85, lean: 1, tail: 1, curl: true };
+const DOGLIKE = { flex: 1.2, track: 0.6, stab: 0.7, lean: 1, tail: 1 };
+const HOOFED = { flex: 0.6, track: 0.72, stab: 0.75, lean: 0.8, tail: 0.6, cock: true, foreLift: 1.25 };
+const BULKY = { flex: 0.45, track: 1.05, stab: 0.4, lean: 0.5, tail: 0.7, paddle: 0.1 };
+const MOTION = {
+  cougar: CAT, panther: CAT, jaguar: CAT, tiger: CAT, lion: { ...CAT, swish: true },
+  wolf: DOGLIKE, coyote: DOGLIKE, fox: DOGLIKE, hyena: { ...DOGLIKE, track: 0.7 },
+  deer: { ...HOOFED, flag: true, foreLift: 1.35 }, elk: HOOFED, moose: { ...HOOFED, foreLift: 1.4 },
+  horse: { ...HOOFED, swish: true, foreLift: 1.5 }, donkey: { ...HOOFED, swish: true }, mule: { ...HOOFED, swish: true }, camel: { ...HOOFED, track: 0.85, swish: true },
+  bison: { ...HOOFED, flex: 0.45, swish: true }, sheep: { ...HOOFED, foreLift: 1 }, goat: { ...HOOFED, foreLift: 1, tail: 1.2 }, mountainGoat: { ...HOOFED, foreLift: 1.1 }, boar: { ...HOOFED, cock: false, tail: 1.4, foreLift: 1 },
+  blackBear: BULKY, grizzly: BULKY, panda: BULKY, elephant: { ...BULKY, swish: true, paddle: 0.06 }, hippo: { ...BULKY, paddle: 0.04 },
+  crocodile: { flex: 1, track: 1, stab: 0, lean: 0.3, tail: 2.2, undulate: 0.16, sprawl: true },
+  beaver: { flex: 0.8, track: 0.9, stab: 0.3, lean: 0.5, tail: 0.8, undulate: 0.05 },
+  rabbit: { flex: 1.3, track: 0.8, stab: 0.5, lean: 1, tail: 0.5 }, hare: { flex: 1.3, track: 0.8, stab: 0.5, lean: 1, tail: 0.5 },
+};
+const STILL = { flex: 0, track: 1, stab: 0.3, lean: 0.5, tail: 0 };
 
 /**
  * The animals of the world round you: herds of deer, elk and bison, a
@@ -325,7 +358,22 @@ export class Wildlife {
       };
       if (sp.ground) {
         const n = model.legs.length / 2;
-        make('body', model.body, sp.max, true);
+        sp.motion = MOTION[kind] ?? STILL;
+        // (Its body in three: the fore part, the hind part about the middle
+        // of its back, and its tail; see Spine.js.)
+        if (!model.biped && model.torso && sp.motion !== STILL) {
+          model.body.computeBoundingBox();
+          const bb = model.body.boundingBox, t0 = model.torso[0], back = model.tailAt ?? t0[2] - t0[5];
+          model.parts = splitBody(model.body, {
+            split: (model.legs[0][2] + model.legs[2][2]) / 2,
+            spineY: t0[1],
+            tailAt: bb.min.z < back - 0.04 ? back : null,
+            overlap: Math.min(0.06, (bb.max.z - bb.min.z) * 0.03),
+          });
+        }
+        make('body', model.parts?.front ?? model.body, sp.max, true);
+        make('rear', model.parts?.rear, sp.max, true);
+        make('tail', model.parts?.tail, sp.max, true);
         make('head', model.head, sp.max, true);
         make('antlers', model.antlers, sp.max, true);
         make('saddle', model.saddle, sp.max, true);
@@ -3435,6 +3483,11 @@ export class Wildlife {
     a.gait = chooseGait(a, sp, a.speed);
     a.strideLen = strideLength(sp, a.scale, a.gait, Math.max(a.speed, sp.walk * 0.6));
     a.rh = rhythm(a.gait, a.cycle ?? 0, smoothstep(0.03, sp.walk * 0.5, a.speed));
+    // (Its feet drawn in under it as it goes; a crocodile's out at its sides
+    // as it crawls, under it as it rises up to walk tall.)
+    const mo = sp.motion ?? STILL, going = smoothstep(0.05, sp.walk * 0.8, a.speed);
+    const track = mo.sprawl ? 1.7 - 0.7 * smoothstep(sp.walk, sp.walk * 2.5, a.speed) : 1 + (mo.track - 1) * going;
+    a.track = (a.track ?? 1) + (track - (a.track ?? 1)) * Math.min(1, dt * 4);
     // Step, over ground it can go on (not into the water, or off a cliff;
     // one that swims, into the water when it must).
     let moved = 0;
@@ -4357,6 +4410,40 @@ export class Wildlife {
     const model = rig.model, H = model.legs[0][1], s = a.scale;
     const lying = !a.alive || a.down;
     const ground = ctx?.ground;
+    const mo = sp.motion ?? STILL, moving = Math.min(1, (a.speed ?? 0) / (sp.walk * 0.5));
+    // How fast it's turning, and speeding up or slowing down (frame to frame, eased).
+    const now = this.time, fdt = Math.min(0.2, now - (a.mt ?? now));
+    if (fdt > 0) {
+      const turn = angleTo(a.mh ?? a.heading, a.heading) / fdt, acc = ((a.speed ?? 0) - (a.ms ?? a.speed ?? 0)) / fdt;
+      a.turnRate = (a.turnRate ?? 0) + (Math.max(-4, Math.min(4, turn)) - (a.turnRate ?? 0)) * Math.min(1, fdt * 6);
+      a.accel = (a.accel ?? 0) + (Math.max(-15, Math.min(15, acc)) - (a.accel ?? 0)) * Math.min(1, fdt * 5);
+    }
+    a.mt = now;
+    a.mh = a.heading;
+    a.ms = a.speed ?? 0;
+    const live = a.alive && !lying && !a.boss && !a.swimming;
+    const still = live && (a.speed ?? 0) < 0.05 && (a.lie ?? 0) < 0.1;
+    // Standing about: the weight shifted now and then from foot to foot, a
+    // hind leg rested (cocked, the hip on that side dropped); now and then a
+    // glance about, a shake of the head (at the flies).
+    if ((a.cockT = (a.cockT ?? rnd(2, 8)) - fdt) <= 0) {
+      a.cockT = rnd(5, 14);
+      a.cock = mo.cock && Math.random() < 0.55 ? (Math.random() < 0.5 ? 2 : 3) : -1;
+    }
+    a.cockW = (a.cockW ?? 0) + ((still && a.cock >= 0 ? 1 : 0) - (a.cockW ?? 0)) * Math.min(1, fdt * 1.5);
+    if ((a.glanceT = (a.glanceT ?? rnd(1, 4)) - fdt) <= 0) {
+      a.glanceT = rnd(1.5, 5);
+      a.glance = still && (a.state === 'walk' || a.state === 'graze') && Math.random() < 0.6 ? rnd(-0.9, 0.9) : 0;
+      if (still && Math.random() < 0.12) a.shook = 0.45;
+    }
+    a.glanceW = (a.glanceW ?? 0) + ((still ? a.glance ?? 0 : 0) - (a.glanceW ?? 0)) * Math.min(1, fdt * 5);
+    a.shook = Math.max(0, (a.shook ?? 0) - fdt);
+    const shakeRoll = a.shook > 0 ? Math.sin(a.shook * 45) * 0.3 * (a.shook / 0.45) : 0;
+    const idleRoll = still ? Math.sin(now * 0.45 + (a.phase ?? 0) * 3) * 0.02 : 0;
+    // Leaning into a turn (as a running animal does: more, the faster and the
+    // tighter); nose up as it sets off hard, down as it pulls up.
+    const lean = live ? Math.max(-0.3, Math.min(0.3, -Math.atan((a.speed ?? 0) * (a.turnRate ?? 0) / 9.8) * mo.lean)) : 0;
+    const surgePitch = live ? Math.max(-0.12, Math.min(0.12, -(a.accel ?? 0) * 0.012)) : 0;
     if (lying) {
       // On its side, turned about the middle of its body, lying along the
       // ground (on the highest of it under its length: never into it; or
@@ -4394,31 +4481,80 @@ export class Wildlife {
       const crouch = (a.crouch ?? 0) * H * 0.3 + (a.state === 'charge' ? H * 0.06 : 0);
       let x = a.x, z = a.z;
       if (a.jolt) (x += a.jolt.x * 0.12 * s * (a.jolt.t / 0.3)), (z += a.jolt.z * 0.12 * s * (a.jolt.t / 0.3));
-      euler.set(a.pitch + r.pitch - (a.rear ?? 0) * 0.55, a.heading, a.roll + r.roll, 'YXZ');
+      // (A crocodile crawls with its belly on the ground, rising up on its
+      // legs to walk tall as it goes faster.)
+      const belly = mo.sprawl && a.alive ? H * 0.4 * (1 - smoothstep(sp.walk, sp.walk * 2.5, a.speed ?? 0)) : 0;
+      euler.set(a.pitch + r.pitch + surgePitch - (a.rear ?? 0) * 0.55, a.heading, a.roll + r.roll + lean + idleRoll, 'YXZ');
       quat.setFromEuler(euler);
-      base.compose(pos.set(x, a.y + (r.bob * H - lieDrop - crouch) * s - (a.drop ?? 0), z), quat, scl.setScalar(s));
+      base.compose(pos.set(x, a.y + (r.bob * H - lieDrop - crouch - belly) * s - (a.drop ?? 0), z), quat, scl.setScalar(s));
     }
     a.m = (a.m ?? new Matrix4()).copy(base);
     put(M.body, [0, 0, 0], 0, 0, 0);
+    // The hind part of the body, about the middle of its back: bending
+    // round into a turn (its hind end following on behind), arched and
+    // stretched at the gallop, its hips rocking against its shoulders as it
+    // walks (and dropped on the side of a rested leg); a crocodile's
+    // swinging from side to side. And the tail, from the end of it.
+    const parts = model.parts;
+    let rearYaw = 0;
+    if (parts) {
+      const r = a.rh ?? { roll: 0, flex: 0 };
+      const cyc = TAU * (a.cycle ?? 0);
+      rearYaw = live ? Math.max(-0.32, Math.min(0.32, -(a.turnRate ?? 0) * 0.16 * mo.flex)) + (mo.undulate ?? 0) * Math.sin(cyc) * moving : 0;
+      const flexP = live ? (r.flex ?? 0) * mo.flex : 0;
+      const cockSide = a.cock >= 0 ? Math.sign(model.legs[a.cock][0]) : 0;
+      const rearRoll = live ? -(r.roll ?? 0) * 1.3 - cockSide * 0.05 * (a.cockW ?? 0) : 0;
+      put(M.rear, parts.pivot, flexP, rearYaw, rearRoll);
+      euler.set(flexP, rearYaw, rearRoll, 'YXZ');
+      rearQ.setFromEuler(euler);
+      rearM.compose(pos.set(parts.pivot[0], parts.pivot[1], parts.pivot[2]), rearQ, scl.set(1, 1, 1));
+      if (M.tail) {
+        // Raised: a white-tail's flag as it bolts; streaming out behind at a
+        // run; a little up, alert; hanging, at ease (limp, dead). Swinging
+        // against the hips as it goes, trailing round a turn, swished at the
+        // flies; a cat's slowly curling, its tip twitching.
+        const running = smoothstep(sp.walk * 1.5, sp.run * 0.6, a.speed ?? 0);
+        const alert = a.state === 'alert' || a.state === 'wary' || a.state === 'stalk' || a.state === 'threat' ? 1 : 0;
+        let tp = 0, ty = 0;
+        if (a.alive) {
+          tp = (mo.flag && a.state === 'flee' ? 1.0 : 0.38 * running) + 0.15 * alert * (mo.curl ? -1 : 1) + (mo.curl && a.state === 'stalk' ? -0.2 : 0);
+          ty = mo.tail * (-rearYaw * 1.4 + Math.sin(cyc + Math.PI) * 0.14 * moving * (1 - running * 0.6));
+          if (mo.swish && still) ty += Math.sin(now * 2.2 + (a.phase ?? 0)) * 0.45 * Math.max(0, Math.sin(now * 0.31 + (a.phase ?? 0) * 7));
+          if (mo.curl) ty += Math.sin(now * 0.9 + (a.phase ?? 0)) * (0.22 + 0.2 * alert) + Math.sin(now * 7 + (a.phase ?? 0)) * 0.05 * alert;
+          tp += mo.tail * Math.sin(cyc * 2) * 0.05 * moving;
+        }
+        euler.set(tp, ty, 0, 'YXZ');
+        quat.setFromEuler(euler);
+        tailM.compose(pos.set(parts.tailPivot[0] - parts.pivot[0], parts.tailPivot[1] - parts.pivot[1], parts.tailPivot[2] - parts.pivot[2]), quat, scl.set(1, 1, 1));
+        tailM.premultiply(rearM);
+        put(M.tail, [0, 0, 0], 0, 0, 0);
+        M.tail.setMatrixAt(M.tail.count - 1, out.multiplyMatrices(base, tailM));
+      }
+    }
     // The head: down to graze, up when alarmed, nodding with its steps (a
     // bird's thrust forward and held); limp, dead.
     const nod = a.alive ? (a.rh?.nod ?? 0) : 0;
     const bend = a.kind === 'bison' ? 0.5 : a.kind === 'rabbit' || a.kind === 'hare' ? 0.4 : sp.forager ? 0.6 : sp.biped ? 0.7 : 1.05;
     // (A crocodile's head lies along the ground: it never dips its snout into it.)
-    let headRx = a.alive ? a.headDown * bend + nod : 0.35;
+    // (Its head held steady as its body bounces and pitches beneath it: its
+    // eyes fixed on where it's going.)
+    const steady = live ? mo.stab : 0;
+    let headRx = a.alive ? a.headDown * bend + nod - ((a.rh?.pitch ?? 0) + surgePitch) * steady : 0.35;
     if (a.kind === 'crocodile') headRx = Math.min(headRx, 0.06);
     headRx = Math.min(headRx, model.headMax ?? Infinity); // (never down into its own chest)
     const hp = model.headPivot;
     const thrust = sp.biped && a.alive && !sp.water && a.speed > 0.05 ? Math.max(0, Math.sin(TAU * (a.cycle ?? 0) * 2)) * 0.05 : 0;
     // (Dead, the head lolls over to the ground: a turn about the body's own up, which lying on its side is towards the ground.)
     const deadYaw = !a.alive ? -(a.side ?? 1) * 0.25 * Math.min(1, Math.abs(Math.sin(a.roll ?? 0))) : 0;
-    const head = put(M.head, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : deadYaw, 0);
+    const hy = hp[1] - (a.rh?.bob ?? 0) * H * steady * 0.7, headYaw = a.alive ? a.headYaw + (a.glanceW ?? 0) : deadYaw;
+    const headRoll = live ? -((a.rh?.roll ?? 0) + lean + idleRoll) * steady * 0.8 + shakeRoll : 0;
+    const head = put(M.head, [hp[0], hy, hp[2] + thrust], headRx, headYaw, headRoll);
     a.hm = (a.hm ?? new Matrix4()).copy(head);
-    if (M.antlers && a.antlers) put(M.antlers, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : 0, 0);
+    if (M.antlers && a.antlers) put(M.antlers, [hp[0], hy, hp[2] + thrust], headRx, headYaw, headRoll);
     if (M.saddle && a.saddled) put(M.saddle, [0, 0, 0], 0, 0, 0);
     // (A great beast's shag.)
     if (a.boss && M.furBody && M.furBody.count < 4) put(M.furBody, [0, 0, 0], 0, 0, 0);
-    if (a.boss && M.furHead && M.furHead.count < 4) put(M.furHead, [hp[0], hp[1], hp[2] + thrust], headRx, a.alive ? a.headYaw : deadYaw, 0);
+    if (a.boss && M.furHead && M.furHead.count < 4) put(M.furHead, [hp[0], hy, hp[2] + thrust], headRx, headYaw, headRoll);
     // A tom turkey's fan, raised.
     if (M.fan && (a.display ?? 0) > 0.05) {
       part.makeTranslation(0, 0.66, -0.3).multiply(lift.makeRotationX((1 - a.display) * 1.4)).multiply(out.makeTranslation(0, -0.66, 0.3));
@@ -4464,7 +4600,12 @@ export class Wildlife {
         foot.x = v3.x;
         foot.y = v3.y;
         foot.z = v3.z;
-      } else footAt(foot, p, k, a.gait ?? sp.gaits[0], a.cycle ?? 0, (a.strideLen ?? sp.stride) / s, H, Math.min(1, (a.speed ?? 0) / (sp.walk * 0.3)));
+      } else {
+        footAt(foot, p, k, a.gait ?? sp.gaits[0], a.cycle ?? 0, (a.strideLen ?? sp.stride) / s, H, Math.min(1, (a.speed ?? 0) / (sp.walk * 0.3)));
+        foot.x *= a.track ?? 1;
+      }
+      // (A rested hind leg: the hoof tipped up, just touching, the knee bent.)
+      if (k === a.cock && (a.cockW ?? 0) > 0.01 && !lying) (foot.y += 0.07 * H * a.cockW), (foot.z += 0.04 * H * a.cockW);
       // Lying down: the legs folded under it (the fore hooves tucked back;
       // the hind legs folded as a resting deer's or sheep's are, the knee
       // forward along the belly and the foot tucked back beside the rump,
@@ -4477,8 +4618,17 @@ export class Wildlife {
         foot.z += (fz - foot.z) * a.lie;
         tucked = hind && a.lie > 0.5;
       }
-      solveLeg(ik, p[0], p[1], p[2], foot.x, foot.y, foot.z, limb.l1, limb.l2, !hind || tucked);
-      put(hind ? M.hindUpper : M.foreUpper, p, ik.a1, 0, ik.rz, 'ZYX');
+      // (A hind leg hangs from the hip, where the hind part of the body has it.)
+      let q = p;
+      if (hind && parts && !model.biped) {
+        v3.set(p[0] - parts.pivot[0], p[1] - parts.pivot[1], p[2] - parts.pivot[2]).applyQuaternion(rearQ);
+        q = hip;
+        hip[0] = v3.x + parts.pivot[0];
+        hip[1] = v3.y + parts.pivot[1];
+        hip[2] = v3.z + parts.pivot[2];
+      }
+      solveLeg(ik, q[0], q[1], q[2], foot.x, foot.y, foot.z, limb.l1, limb.l2, !hind || tucked);
+      put(hind ? M.hindUpper : M.foreUpper, q, ik.a1, 0, ik.rz, 'ZYX');
       put(hind ? M.hindLower : M.foreLower, [ik.kx, ik.ky, ik.kz], ik.a2, 0, ik.rz, 'ZYX');
     });
   }
@@ -4508,6 +4658,18 @@ export class Wildlife {
         pts.push({ x: lastP.x - Math.sin(a.heading) * gap, z: lastP.z - Math.cos(a.heading) * gap });
       }
     }
+    // Its body in S-bends, as a real snake's is: the waves fixed to the
+    // ground, its body sliding on through them (each part of it going where
+    // the part ahead went), the head held straighter.
+    const now = this.time;
+    a.slid = (a.slid ?? Math.random() * 3) + (a.alive ? a.speed ?? 0 : 0) * Math.min(0.2, now - (a.st ?? now));
+    a.st = now;
+    const wl = 0.62 * s, amp = 0.075 * s * (a.alive ? 1 : 0.5), sh = Math.sin(a.heading), ch = Math.cos(a.heading);
+    pts.forEach((pt, k) => {
+      const off = amp * Math.sin((TAU * (a.slid - k * gap)) / wl) * Math.min(1, 0.3 + k / 4) * Math.min(1, (n - k + 2) / 4 + 0.4);
+      pt.x += ch * off;
+      pt.z -= sh * off;
+    });
     // Coiled: in a spiral, the head up in the middle, ready.
     const coil = a.alive ? a.coil ?? 0 : 0;
     if (coil > 0.01) {
