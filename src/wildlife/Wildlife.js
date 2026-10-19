@@ -286,7 +286,7 @@ const MOTION = {
   deer: { ...HOOFED, flag: true, foreLift: 1.35 }, elk: HOOFED, moose: { ...HOOFED, foreLift: 1.4 },
   horse: { ...HOOFED, swish: true, foreLift: 1.5 }, donkey: { ...HOOFED, swish: true }, mule: { ...HOOFED, swish: true }, camel: { ...HOOFED, track: 0.85, swish: true },
   bison: { ...HOOFED, flex: 0.45, swish: true }, sheep: { ...HOOFED, foreLift: 1 }, goat: { ...HOOFED, foreLift: 1, tail: 1.2 }, mountainGoat: { ...HOOFED, foreLift: 1.1 }, boar: { ...HOOFED, cock: false, tail: 1.4, foreLift: 1 },
-  blackBear: BULKY, grizzly: BULKY, panda: BULKY, elephant: { ...BULKY, swish: true, paddle: 0.06 }, hippo: { ...BULKY, paddle: 0.04 },
+  blackBear: BULKY, grizzly: BULKY, panda: BULKY, elephant: { ...BULKY, swish: true, paddle: 0.06, fan: true }, hippo: { ...BULKY, paddle: 0.04 },
   crocodile: { flex: 1, track: 1, stab: 0, lean: 0.3, tail: 2.2, undulate: 0.16, sprawl: true },
   beaver: { flex: 0.8, track: 0.9, stab: 0.3, lean: 0.5, tail: 0.8, undulate: 0.05 },
   rabbit: { flex: 1.3, track: 0.8, stab: 0.5, lean: 1, tail: 0.5 }, hare: { flex: 1.3, track: 0.8, stab: 0.5, lean: 1, tail: 0.5 },
@@ -375,6 +375,8 @@ export class Wildlife {
         make('rear', model.parts?.rear, sp.max, true);
         make('tail', model.parts?.tail, sp.max, true);
         make('head', model.head, sp.max, true);
+        make('earL', model.head.userData.ears?.L?.geometry, sp.max, false);
+        make('earR', model.head.userData.ears?.R?.geometry, sp.max, false);
         make('antlers', model.antlers, sp.max, true);
         make('saddle', model.saddle, sp.max, true);
         if (BOSS_KINDS.has(kind)) {
@@ -4411,16 +4413,23 @@ export class Wildlife {
     const lying = !a.alive || a.down;
     const ground = ctx?.ground;
     const mo = sp.motion ?? STILL, moving = Math.min(1, (a.speed ?? 0) / (sp.walk * 0.5));
-    // How fast it's turning, and speeding up or slowing down (frame to frame, eased).
+    // How fast it's turning, and speeding up or slowing down: measured over
+    // the time between its moves (one far off moves only now and then, not
+    // every frame), and eased, so it never snaps.
     const now = this.time, fdt = Math.min(0.2, now - (a.mt ?? now));
-    if (fdt > 0) {
-      const turn = angleTo(a.mh ?? a.heading, a.heading) / fdt, acc = ((a.speed ?? 0) - (a.ms ?? a.speed ?? 0)) / fdt;
-      a.turnRate = (a.turnRate ?? 0) + (Math.max(-4, Math.min(4, turn)) - (a.turnRate ?? 0)) * Math.min(1, fdt * 6);
-      a.accel = (a.accel ?? 0) + (Math.max(-15, Math.min(15, acc)) - (a.accel ?? 0)) * Math.min(1, fdt * 5);
-    }
     a.mt = now;
-    a.mh = a.heading;
-    a.ms = a.speed ?? 0;
+    const since = now - (a.mhT ?? now);
+    if (a.mh === undefined || a.heading !== a.mh || (a.speed ?? 0) !== a.ms || since > 0.3) {
+      const span = Math.max(1 / 60, Math.min(0.3, since));
+      const turn = a.mh === undefined ? 0 : angleTo(a.mh, a.heading) / span, acc = a.ms === undefined ? 0 : ((a.speed ?? 0) - a.ms) / span;
+      a.turnTo = Math.max(-3, Math.min(3, turn));
+      a.accelTo = Math.max(-12, Math.min(12, acc));
+      a.mh = a.heading;
+      a.ms = a.speed ?? 0;
+      a.mhT = now;
+    }
+    a.turnRate = (a.turnRate ?? 0) + ((a.turnTo ?? 0) - (a.turnRate ?? 0)) * Math.min(1, fdt * 3);
+    a.accel = (a.accel ?? 0) + ((a.accelTo ?? 0) - (a.accel ?? 0)) * Math.min(1, fdt * 3);
     const live = a.alive && !lying && !a.boss && !a.swimming;
     const still = live && (a.speed ?? 0) < 0.05 && (a.lie ?? 0) < 0.1;
     // Standing about: the weight shifted now and then from foot to foot, a
@@ -4442,8 +4451,12 @@ export class Wildlife {
     const idleRoll = still ? Math.sin(now * 0.45 + (a.phase ?? 0) * 3) * 0.02 : 0;
     // Leaning into a turn (as a running animal does: more, the faster and the
     // tighter); nose up as it sets off hard, down as it pulls up.
-    const lean = live ? Math.max(-0.22, Math.min(0.22, -Math.atan((a.speed ?? 0) * (a.turnRate ?? 0) / 9.8) * mo.lean)) : 0;
-    const surgePitch = live ? Math.max(-0.12, Math.min(0.12, -(a.accel ?? 0) * 0.012)) : 0;
+    // (Eased in and out, and leveling off softly at the most it leans: never a hard stop.)
+    const soft = (x, most) => most * Math.tanh(x / most);
+    const leanTo = live ? soft(-Math.atan((a.speed ?? 0) * (a.turnRate ?? 0) / 9.8) * mo.lean, 0.2) : 0;
+    a.leanS = (a.leanS ?? 0) + (leanTo - (a.leanS ?? 0)) * Math.min(1, fdt * 2.5);
+    const lean = a.leanS;
+    const surgePitch = live ? soft(-(a.accel ?? 0) * 0.012, 0.1) : 0;
     if (lying) {
       // On its side, turned about the middle of its body, lying along the
       // ground (on the highest of it under its length: never into it; or
@@ -4500,7 +4513,8 @@ export class Wildlife {
     if (parts) {
       const r = a.rh ?? { roll: 0, flex: 0 };
       const cyc = TAU * (a.cycle ?? 0);
-      rearYaw = live ? Math.max(-0.32, Math.min(0.32, -(a.turnRate ?? 0) * 0.16 * mo.flex)) + (mo.undulate ?? 0) * Math.sin(cyc) * moving : 0;
+      a.bendS = (a.bendS ?? 0) + ((live ? soft(-(a.turnRate ?? 0) * 0.16 * mo.flex, 0.3) : 0) - (a.bendS ?? 0)) * Math.min(1, fdt * 4);
+      rearYaw = live ? a.bendS + (mo.undulate ?? 0) * Math.sin(cyc) * moving : 0;
       const flexP = live ? (r.flex ?? 0) * mo.flex : 0;
       const cockSide = a.cock >= 0 ? Math.sign(model.legs[a.cock][0]) : 0;
       const rearRoll = live ? -(r.roll ?? 0) * 1.3 - cockSide * 0.05 * (a.cockW ?? 0) : 0;
@@ -4551,6 +4565,34 @@ export class Wildlife {
     const head = put(M.head, [hp[0], hy, hp[2] + thrust], headRx, headYaw, headRoll);
     a.hm = (a.hm ?? new Matrix4()).copy(head);
     if (M.antlers && a.antlers) put(M.antlers, [hp[0], hy, hp[2] + thrust], headRx, headYaw, headRoll);
+    // Its ears: pricked forward, alert; laid back flat as it runs or
+    // charges; turned about now and then, listening; flicked at a fly (one,
+    // then the other); an elephant's fanned slowly. Limp, dead.
+    const ears = model.head.userData.ears;
+    if (ears && M.earL) {
+      const alertE = a.state === 'alert' || a.state === 'wary' || a.state === 'freeze' || a.state === 'look' ? 1 : 0;
+      const back = a.state === 'flee' || a.state === 'charge' || a.state === 'threat' || a.hunting ? 1 : smoothstep(sp.walk * 1.5, sp.run, a.speed ?? 0) * 0.6;
+      for (const side of ['L', 'R']) {
+        const e = ears[side];
+        if (!e) continue;
+        const sg = side === 'L' ? 1 : -1, f = (a[`ear${side}`] ??= { t: rnd(1, 6), flick: 0, turn: 0, turnTo: 0 });
+        if ((f.t -= fdt) <= 0) {
+          f.t = rnd(1.5, 7) / (mo.swish ? 1.6 : 1);
+          if (Math.random() < 0.6) f.flick = 0.22;
+          else f.turnTo = Math.random() < 0.5 ? 0 : rnd(-0.5, 0.6);
+        }
+        f.flick = Math.max(0, f.flick - fdt);
+        f.turn += ((a.alive && !back ? f.turnTo : 0) - f.turn) * Math.min(1, fdt * 6);
+        const flick = f.flick > 0 ? Math.sin((1 - f.flick / 0.22) * Math.PI) * 0.5 : 0;
+        const fan = mo.fan && a.alive ? Math.sin(now * 1.3 + (a.phase ?? 0)) * 0.35 : 0;
+        const ex = a.alive ? 0.25 * alertE - 0.7 * back : -0.3;
+        put(M[`ear${side}`], [0, 0, 0], 0, 0, 0);
+        euler.set(ex + flick * 0.4, sg * (f.turn + fan), -sg * (flick + (a.alive ? 0 : 0.3)), 'YXZ');
+        quat.setFromEuler(euler);
+        tailM.compose(pos.set(e.root[0], e.root[1], e.root[2]), quat, scl.set(1, 1, 1));
+        M[`ear${side}`].setMatrixAt(M[`ear${side}`].count - 1, out.multiplyMatrices(a.hm, tailM));
+      }
+    }
     if (M.saddle && a.saddled) put(M.saddle, [0, 0, 0], 0, 0, 0);
     // (A great beast's shag.)
     if (a.boss && M.furBody && M.furBody.count < 4) put(M.furBody, [0, 0, 0], 0, 0, 0);

@@ -59,11 +59,45 @@ class Blocks {
     return this;
   }
 
+  /**
+   * An ear (a block, as box): kept apart from the head, so it can turn on
+   * its own (pricked, laid back, flicked at a fly), about its root: where
+   * the first block on that side is nearest the middle of the head. Those
+   * that follow on the same side (the pale inside of it, a dark tip) go
+   * with it.
+   */
+  ear(w, h, d, color, at, rot, taper) {
+    this.box(w, h, d, color, at, rot, taper);
+    const g = this.parts.pop(), side = at[0] >= 0 ? 'L' : 'R';
+    this.earParts ??= { L: [], R: [] };
+    this.earRoot ??= {};
+    if (!this.earRoot[side]) {
+      const p = g.attributes.position, seen = new Map();
+      for (let k = 0; k < p.count; k++) seen.set(`${p.getX(k).toFixed(4)},${p.getY(k).toFixed(4)},${p.getZ(k).toFixed(4)}`, [p.getX(k), p.getY(k), p.getZ(k)]);
+      const near = [...seen.values()].sort((a, b) => Math.hypot(a[0], a[1], a[2] - at[2]) - Math.hypot(b[0], b[1], b[2] - at[2])).slice(0, 4);
+      this.earRoot[side] = [0, 1, 2].map((i) => near.reduce((s, v) => s + v[i], 0) / near.length);
+    }
+    this.earParts[side].push(g);
+    return this;
+  }
+
   build() {
     const g = mergeGeometries(this.parts);
     g.computeVertexNormals();
     g.computeBoundingSphere();
     if (this.eye) g.userData.eye = this.eye;
+    // (The ears, each about its own root: see ear.)
+    if (this.earParts) {
+      g.userData.ears = {};
+      for (const side of ['L', 'R']) {
+        if (!this.earParts[side].length) continue;
+        const e = mergeGeometries(this.earParts[side]), [x, y, z] = this.earRoot[side];
+        e.translate(-x, -y, -z);
+        e.computeVertexNormals();
+        e.computeBoundingSphere();
+        g.userData.ears[side] = { geometry: e, root: [x, y, z] };
+      }
+    }
     return g;
   }
 }
@@ -120,10 +154,10 @@ function cervid({ coat, back, belly, rump = 0xf2ece0, neck = coat, mane = null, 
     .box(0.12, 0.09, 0.08, nose, [0, 0.52, 0.56]) // nose
     .box(0.03, 0.04, 0.04, 0x0e0a08, [0.11, 0.62, 0.32]) // eyes
     .box(0.03, 0.04, 0.04, 0x0e0a08, [-0.11, 0.62, 0.32])
-    .box(0.05, 0.2, 0.12, coat, [0.15, 0.74, 0.16], [0, 0.3, -0.7], [0.6, 0.6]) // ears
-    .box(0.05, 0.2, 0.12, coat, [-0.15, 0.74, 0.16], [0, -0.3, 0.7], [0.6, 0.6])
-    .box(0.02, 0.14, 0.08, 0xe8c8b0, [0.17, 0.74, 0.18], [0, 0.3, -0.7])
-    .box(0.02, 0.14, 0.08, 0xe8c8b0, [-0.17, 0.74, 0.18], [0, -0.3, 0.7]);
+    .ear(0.05, 0.2, 0.12, coat, [0.15, 0.74, 0.16], [0, 0.3, -0.7], [0.6, 0.6]) // ears
+    .ear(0.05, 0.2, 0.12, coat, [-0.15, 0.74, 0.16], [0, -0.3, 0.7], [0.6, 0.6])
+    .ear(0.02, 0.14, 0.08, 0xe8c8b0, [0.17, 0.74, 0.18], [0, 0.3, -0.7])
+    .ear(0.02, 0.14, 0.08, 0xe8c8b0, [-0.17, 0.74, 0.18], [0, -0.3, 0.7]);
   if (mane) head.box(0.26, 0.4, 0.2, mane, [0, 0.16, -0.02], [0.45, 0, 0], [0.9, 0.9]); // the shaggy mane under the neck
   const antlers = new Blocks(), bone = 0xcbb690;
   for (const side of [1, -1]) {
@@ -190,8 +224,8 @@ export function bison() {
       .box(0.36, 0.14, 0.06, nose, [0, -0.26, 0.72]) // nose
       .box(0.38, 0.48, 0.26, mane, [0, -0.6, 0.34], [0, 0, 0], [1.2, 1.1]) // beard
       .eyes(0.05, 0.06, 0.05, 0x3a2414, [0.3, -0.02, 0.44], 'round') // eyes
-      .box(0.12, 0.08, 0.12, shag, [0.38, 0.08, 0.2]) // ears
-      .box(0.12, 0.08, 0.12, shag, [-0.38, 0.08, 0.2])
+      .ear(0.12, 0.08, 0.12, shag, [0.38, 0.08, 0.2]) // ears
+      .ear(0.12, 0.08, 0.12, shag, [-0.38, 0.08, 0.2])
       .box(0.1, 0.09, 0.2, horn, [0.4, 0.2, 0.3], [0, 0.5, 0]) // horns: out, then up and in
       .box(0.08, 0.16, 0.08, horn, [0.49, 0.3, 0.36], [0, 0, 0.35])
       .box(0.1, 0.09, 0.2, horn, [-0.4, 0.2, 0.3], [0, -0.5, 0])
@@ -237,8 +271,8 @@ export function moose() {
       .box(0.08, 0.36, 0.14, dark, [0, -0.36, 0.44], [0.15, 0, 0]) // the bell
       .box(0.04, 0.05, 0.04, 0x0a0806, [0.15, 0.1, 0.62]) // eyes
       .box(0.04, 0.05, 0.04, 0x0a0806, [-0.15, 0.1, 0.62])
-      .box(0.08, 0.22, 0.12, coat, [0.2, 0.24, 0.4], [0, 0.3, -0.9], [0.6, 0.6]) // ears
-      .box(0.08, 0.22, 0.12, coat, [-0.2, 0.24, 0.4], [0, -0.3, 0.9], [0.6, 0.6])
+      .ear(0.08, 0.22, 0.12, coat, [0.2, 0.24, 0.4], [0, 0.3, -0.9], [0.6, 0.6]) // ears
+      .ear(0.08, 0.22, 0.12, coat, [-0.2, 0.24, 0.4], [0, -0.3, 0.9], [0.6, 0.6])
       .build(),
     antlers: antlers.build(),
     fore: limb(0.6, 0.64, { top: [0.24, 0.3], knee: [0.12, 0.13], ankle: [0.08, 0.09], color: coat, low: leg, foot: [0.11, 0.09, 0.15, dark, 0.02] }),
@@ -265,10 +299,10 @@ export function rabbit({ fur = 0x8f7f6a, pale = 0xe8e0d2, hare = false } = {}) {
       .box(0.12, 0.09, 0.08, pale, [0, 0.0, 0.14]) // muzzle
       .box(0.04, 0.03, 0.02, pink, [0, 0.02, 0.18]) // nose
       .eyes(0.025, 0.035, 0.03, 0x2e1c10, [0.07, 0.06, 0.1], 'round') // eyes
-      .box(0.045, ear, 0.025, fur, [0.04, 0.08 + ear / 2, 0.02], [-0.25, 0, -0.12], [0.7, 1]) // long ears
-      .box(0.045, ear, 0.025, fur, [-0.04, 0.08 + ear / 2, 0.02], [-0.25, 0, 0.12], [0.7, 1])
-      .box(0.025, ear * 0.75, 0.01, hare ? dark : pink, [0.04, 0.08 + ear / 2, 0.035], [-0.25, 0, -0.12]) // (a hare's ears tipped black)
-      .box(0.025, ear * 0.75, 0.01, hare ? dark : pink, [-0.04, 0.08 + ear / 2, 0.035], [-0.25, 0, 0.12])
+      .ear(0.045, ear, 0.025, fur, [0.04, 0.08 + ear / 2, 0.02], [-0.25, 0, -0.12], [0.7, 1]) // long ears
+      .ear(0.045, ear, 0.025, fur, [-0.04, 0.08 + ear / 2, 0.02], [-0.25, 0, 0.12], [0.7, 1])
+      .ear(0.025, ear * 0.75, 0.01, hare ? dark : pink, [0.04, 0.08 + ear / 2, 0.035], [-0.25, 0, -0.12]) // (a hare's ears tipped black)
+      .ear(0.025, ear * 0.75, 0.01, hare ? dark : pink, [-0.04, 0.08 + ear / 2, 0.035], [-0.25, 0, 0.12])
       .build(),
     antlers: null,
     // Short forelegs; the long hind legs folded, on their big long feet.
@@ -304,8 +338,8 @@ function bear({ coat, back, muzzle, claws = 0x2a2420, hump = 0 }) {
       .box(0.24, 0.2, 0.26, muzzle, [0, -0.06, 0.44], [0, 0, 0], [0.85, 0.9]) // snout
       .box(0.12, 0.08, 0.06, 0x100c0a, [0, -0.02, 0.58]) // nose
       .eyes(0.04, 0.04, 0.03, 0x4a2c16, [0.12, 0.08, 0.35], 'round') // eyes
-      .box(0.12, 0.12, 0.06, coat, [0.18, 0.25, 0.1]) // round ears
-      .box(0.12, 0.12, 0.06, coat, [-0.18, 0.25, 0.1])
+      .ear(0.12, 0.12, 0.06, coat, [0.18, 0.25, 0.1]) // round ears
+      .ear(0.12, 0.12, 0.06, coat, [-0.18, 0.25, 0.1])
       .build(),
     antlers: null,
     // (Thick legs, flat on the ground on their broad clawed paws.)
@@ -350,8 +384,8 @@ export function wolf() {
       .box(0.08, 0.06, 0.04, 0x141010, [0, 0.0, 0.42]) // nose
       .box(0.1, 0.03, 0.1, back, [0, 0.14, 0.14]) // dark brow
       .eyes(0.035, 0.03, 0.02, 0xc8a040, [0.08, 0.06, 0.21], 'round') // amber eyes
-      .box(0.08, 0.1, 0.05, coat, [0.09, 0.17, 0.02], [0, 0, 0.2], [0.35, 0.5]) // short rounded ears
-      .box(0.08, 0.1, 0.05, coat, [-0.09, 0.17, 0.02], [0, 0, -0.2], [0.35, 0.5])
+      .ear(0.08, 0.1, 0.05, coat, [0.09, 0.17, 0.02], [0, 0, 0.2], [0.35, 0.5]) // short rounded ears
+      .ear(0.08, 0.1, 0.05, coat, [-0.09, 0.17, 0.02], [0, 0, -0.2], [0.35, 0.5])
       .build(),
     antlers: null,
     fore: limb(0.28, 0.3, { top: [0.12, 0.15], knee: [0.08, 0.08], ankle: [0.065, 0.065], color: coat, low: pale, foot: [0.11, 0.05, 0.14, 0x6a6660, 0.03] }),
@@ -387,10 +421,10 @@ export function coyote() {
       .box(0.08, 0.07, 0.26, pale, [0, -0.03, 0.28], [0, 0, 0], [0.75, 0.8]) // long pointed muzzle
       .box(0.05, 0.04, 0.04, 0x141010, [0, -0.01, 0.42]) // nose
       .eyes(0.03, 0.025, 0.02, 0xb89040, [0.06, 0.05, 0.17], 'round') // yellow eyes
-      .box(0.08, 0.17, 0.04, coat, [0.07, 0.18, 0.02], [0, 0, 0.12], [0.2, 0.4]) // big tall ears
-      .box(0.08, 0.17, 0.04, coat, [-0.07, 0.18, 0.02], [0, 0, -0.12], [0.2, 0.4])
-      .box(0.05, 0.1, 0.01, pale, [0.07, 0.16, 0.045], [0, 0, 0.12], [0.3, 0.4]) // pale inner ears
-      .box(0.05, 0.1, 0.01, pale, [-0.07, 0.16, 0.045], [0, 0, -0.12], [0.3, 0.4])
+      .ear(0.08, 0.17, 0.04, coat, [0.07, 0.18, 0.02], [0, 0, 0.12], [0.2, 0.4]) // big tall ears
+      .ear(0.08, 0.17, 0.04, coat, [-0.07, 0.18, 0.02], [0, 0, -0.12], [0.2, 0.4])
+      .ear(0.05, 0.1, 0.01, pale, [0.07, 0.16, 0.045], [0, 0, 0.12], [0.3, 0.4]) // pale inner ears
+      .ear(0.05, 0.1, 0.01, pale, [-0.07, 0.16, 0.045], [0, 0, -0.12], [0.3, 0.4])
       .build(),
     antlers: null,
     fore: limb(0.26, 0.28, { top: [0.085, 0.1], knee: [0.055, 0.06], ankle: [0.045, 0.045], color: coat, low: 0xc4a47a, foot: [0.07, 0.04, 0.1, 0x8a6e50, 0.03] }),
@@ -430,10 +464,10 @@ export function fox() {
       .box(0.07, 0.03, 0.2, white, [0, -0.06, 0.24]) // white chin
       .box(0.045, 0.04, 0.04, 0x141010, [0, 0.0, 0.36]) // nose
       .eyes(0.03, 0.025, 0.02, 0xc08a30, [0.06, 0.05, 0.16], 'slit') // eyes
-      .box(0.08, 0.15, 0.04, black, [0.07, 0.17, 0.0], [0, 0, 0.15], [0.2, 0.4]) // black-backed ears
-      .box(0.08, 0.15, 0.04, black, [-0.07, 0.17, 0.0], [0, 0, -0.15], [0.2, 0.4])
-      .box(0.05, 0.09, 0.01, white, [0.07, 0.15, 0.025], [0, 0, 0.15], [0.3, 0.4])
-      .box(0.05, 0.09, 0.01, white, [-0.07, 0.15, 0.025], [0, 0, -0.15], [0.3, 0.4])
+      .ear(0.08, 0.15, 0.04, black, [0.07, 0.17, 0.0], [0, 0, 0.15], [0.2, 0.4]) // black-backed ears
+      .ear(0.08, 0.15, 0.04, black, [-0.07, 0.17, 0.0], [0, 0, -0.15], [0.2, 0.4])
+      .ear(0.05, 0.09, 0.01, white, [0.07, 0.15, 0.025], [0, 0, 0.15], [0.3, 0.4])
+      .ear(0.05, 0.09, 0.01, white, [-0.07, 0.15, 0.025], [0, 0, -0.15], [0.3, 0.4])
       .build(),
     antlers: null,
     fore: limb(0.17, 0.19, { top: [0.08, 0.1], knee: [0.06, 0.06], color: coat, low: black, foot: [0.07, 0.035, 0.09, black, 0.025] }),
@@ -464,8 +498,8 @@ export function sheep() {
     head: new Blocks()
       .box(0.16, 0.2, 0.26, face, [0, -0.02, 0.12], [0.3, 0, 0], [0.8, 0.85]) // long narrow face
       .box(0.22, 0.14, 0.14, wool, [0, 0.08, 0.0]) // a woolly cap
-      .box(0.14, 0.05, 0.05, face, [0.13, 0.04, 0.04], [0, 0, -0.3]) // ears, out sideways
-      .box(0.14, 0.05, 0.05, face, [-0.13, 0.04, 0.04], [0, 0, 0.3])
+      .ear(0.14, 0.05, 0.05, face, [0.13, 0.04, 0.04], [0, 0, -0.3]) // ears, out sideways
+      .ear(0.14, 0.05, 0.05, face, [-0.13, 0.04, 0.04], [0, 0, 0.3])
       .eyes(0.03, 0.03, 0.02, 0xc8b070, [0.07, 0.04, 0.2], 'bar') // pale eyes
       .build(),
     antlers: null,
@@ -503,8 +537,8 @@ export function boar() {
       .box(0.03, 0.12, 0.03, tusk, [0.09, -0.14, 0.5], [0.3, 0, -0.5]) // tusks, curving up and out
       .box(0.03, 0.12, 0.03, tusk, [-0.09, -0.14, 0.5], [0.3, 0, 0.5])
       .eyes(0.035, 0.035, 0.03, 0x4a2a16, [0.12, 0.04, 0.3], 'round') // small eyes
-      .box(0.08, 0.12, 0.04, coat, [0.12, 0.2, 0.06], [0.3, 0, -0.3], [0.4, 0.6]) // small pointed ears
-      .box(0.08, 0.12, 0.04, coat, [-0.12, 0.2, 0.06], [0.3, 0, 0.3], [0.4, 0.6])
+      .ear(0.08, 0.12, 0.04, coat, [0.12, 0.2, 0.06], [0.3, 0, -0.3], [0.4, 0.6]) // small pointed ears
+      .ear(0.08, 0.12, 0.04, coat, [-0.12, 0.2, 0.06], [0.3, 0, 0.3], [0.4, 0.6])
       .box(0.08, 0.14, 0.2, mane, [0, 0.2, -0.02]) // the mane, starting on the head
       .build(),
     antlers: null,
@@ -542,8 +576,8 @@ export function cougar() {
       .box(0.05, 0.04, 0.03, 0x6a4a3a, [0, 0.02, 0.33]) // nose
       .box(0.13, 0.03, 0.02, dark, [0, -0.05, 0.32]) // the dark lip line
       .eyes(0.035, 0.03, 0.02, 0xc8a040, [0.06, 0.08, 0.24], 'round') // amber eyes
-      .box(0.07, 0.07, 0.04, coat, [0.08, 0.16, 0.1], [0, 0, 0.2], [0.6, 0.6]) // small round ears
-      .box(0.07, 0.07, 0.04, coat, [-0.08, 0.16, 0.1], [0, 0, -0.2], [0.6, 0.6])
+      .ear(0.07, 0.07, 0.04, coat, [0.08, 0.16, 0.1], [0, 0, 0.2], [0.6, 0.6]) // small round ears
+      .ear(0.07, 0.07, 0.04, coat, [-0.08, 0.16, 0.1], [0, 0, -0.2], [0.6, 0.6])
       .build(),
     antlers: null,
     fore: limb(0.26, 0.28, { top: [0.12, 0.15], knee: [0.09, 0.09], ankle: [0.075, 0.075], color: coat, foot: [0.12, 0.05, 0.13, pale, 0.03] }),
@@ -889,10 +923,10 @@ export function tiger() {
       .box(0.03, 0.08, 0.02, dark, [-0.07, 0.17, 0.32], [0, 0, -0.3])
       .box(0.03, 0.03, 0.16, dark, [0.2, 0.0, 0.2]) // cheek stripes
       .box(0.03, 0.03, 0.16, dark, [-0.2, 0.0, 0.2])
-      .box(0.1, 0.1, 0.05, coat, [0.13, 0.22, 0.1], [0, 0, 0.2], [0.6, 0.6]) // small round ears
-      .box(0.1, 0.1, 0.05, coat, [-0.13, 0.22, 0.1], [0, 0, -0.2], [0.6, 0.6])
-      .box(0.05, 0.05, 0.01, white, [0.13, 0.22, 0.075]) // white marks behind them
-      .box(0.05, 0.05, 0.01, white, [-0.13, 0.22, 0.075])
+      .ear(0.1, 0.1, 0.05, coat, [0.13, 0.22, 0.1], [0, 0, 0.2], [0.6, 0.6]) // small round ears
+      .ear(0.1, 0.1, 0.05, coat, [-0.13, 0.22, 0.1], [0, 0, -0.2], [0.6, 0.6])
+      .ear(0.05, 0.05, 0.01, white, [0.13, 0.22, 0.075]) // white marks behind them
+      .ear(0.05, 0.05, 0.01, white, [-0.13, 0.22, 0.075])
       .build(),
     antlers: null,
     fore: limb(0.32, 0.34, { top: [0.18, 0.22], knee: [0.13, 0.14], ankle: [0.11, 0.11], color: coat, foot: [0.17, 0.06, 0.19, white, 0.03] }),
@@ -932,8 +966,8 @@ export function panther() {
       .box(0.15, 0.11, 0.12, sheen, [0, -0.02, 0.3]) // muzzle
       .box(0.06, 0.04, 0.03, 0x0a080a, [0, 0.02, 0.37]) // nose
       .eyes(0.05, 0.035, 0.02, eye, [0.07, 0.09, 0.27], 'round') // pale green-gold eyes
-      .box(0.08, 0.08, 0.04, coat, [0.1, 0.18, 0.1], [0, 0, 0.25], [0.6, 0.6]) // small round ears
-      .box(0.08, 0.08, 0.04, coat, [-0.1, 0.18, 0.1], [0, 0, -0.25], [0.6, 0.6])
+      .ear(0.08, 0.08, 0.04, coat, [0.1, 0.18, 0.1], [0, 0, 0.25], [0.6, 0.6]) // small round ears
+      .ear(0.08, 0.08, 0.04, coat, [-0.1, 0.18, 0.1], [0, 0, -0.25], [0.6, 0.6])
       .build(),
     antlers: null,
     fore: limb(0.25, 0.27, { top: [0.13, 0.16], knee: [0.1, 0.1], ankle: [0.08, 0.08], color: coat, foot: [0.13, 0.05, 0.14, sheen, 0.03] }),
@@ -968,8 +1002,8 @@ export function panda() {
       .box(0.13, 0.11, 0.04, black, [0.11, 0.08, 0.37], [0, 0, -0.4]) // the black eye patches
       .box(0.13, 0.11, 0.04, black, [-0.11, 0.08, 0.37], [0, 0, 0.4])
       .eyes(0.035, 0.035, 0.02, 0x4a3a2c, [0.11, 0.09, 0.395], 'round') // small dark eyes in them
-      .box(0.15, 0.14, 0.08, black, [0.2, 0.28, 0.08]) // round black ears
-      .box(0.15, 0.14, 0.08, black, [-0.2, 0.28, 0.08])
+      .ear(0.15, 0.14, 0.08, black, [0.2, 0.28, 0.08]) // round black ears
+      .ear(0.15, 0.14, 0.08, black, [-0.2, 0.28, 0.08])
       .build(),
     antlers: null,
     // (Black legs, thick, on broad paws.)
@@ -1008,8 +1042,8 @@ export function mountainGoat() {
       .eyes(0.03, 0.03, 0.02, 0xb88a3a, [0.07, 0.1, 0.24], 'bar') // eyes
       .box(0.035, 0.18, 0.035, black, [0.05, 0.22, 0.1], [-0.5, 0, 0], [0.4, 0.4]) // short black horns, swept back
       .box(0.035, 0.18, 0.035, black, [-0.05, 0.22, 0.1], [-0.5, 0, 0], [0.4, 0.4])
-      .box(0.08, 0.04, 0.03, white, [0.1, 0.14, 0.06], [0, 0, -0.4]) // ears
-      .box(0.08, 0.04, 0.03, white, [-0.1, 0.14, 0.06], [0, 0, 0.4])
+      .ear(0.08, 0.04, 0.03, white, [0.1, 0.14, 0.06], [0, 0, -0.4]) // ears
+      .ear(0.08, 0.04, 0.03, white, [-0.1, 0.14, 0.06], [0, 0, 0.4])
       .build(),
     antlers: null,
     fore: limb(0.27, 0.27, { top: [0.12, 0.14], knee: [0.075, 0.075], ankle: [0.065, 0.065], color: white, low: shade, foot: [0.08, 0.06, 0.09, black, 0.01] }),
@@ -1047,8 +1081,8 @@ export function goat() {
       .eyes(0.03, 0.03, 0.02, 0xc8a040, [0.065, 0.1, 0.22], 'bar') // eyes (a goat's: barred)
       .box(0.035, 0.24, 0.04, horn, [0.045, 0.24, 0.06], [-0.75, 0, 0.1], [0.45, 0.4]) // ridged horns, up and back
       .box(0.035, 0.24, 0.04, horn, [-0.045, 0.24, 0.06], [-0.75, 0, -0.1], [0.45, 0.4])
-      .box(0.11, 0.035, 0.05, coat, [0.11, 0.12, 0.06], [0, 0, -0.15]) // ears, out to the sides
-      .box(0.11, 0.035, 0.05, coat, [-0.11, 0.12, 0.06], [0, 0, 0.15])
+      .ear(0.11, 0.035, 0.05, coat, [0.11, 0.12, 0.06], [0, 0, -0.15]) // ears, out to the sides
+      .ear(0.11, 0.035, 0.05, coat, [-0.11, 0.12, 0.06], [0, 0, 0.15])
       .build(),
     antlers: null,
     fore: limb(0.26, 0.26, { top: [0.1, 0.12], knee: [0.065, 0.065], ankle: [0.055, 0.055], color: coat, low: dark, foot: [0.07, 0.05, 0.08, black, 0.01] }),
@@ -1152,8 +1186,8 @@ export function jaguar() {
       .box(0.04, 0.04, 0.02, ring, [0.12, 0.15, 0.3]) // spots on the face
       .box(0.04, 0.04, 0.02, ring, [-0.12, 0.15, 0.3])
       .box(0.035, 0.035, 0.02, ring, [0, 0.18, 0.31])
-      .box(0.09, 0.09, 0.05, coat, [0.13, 0.2, 0.1], [0, 0, 0.25], [0.6, 0.6]) // small round ears
-      .box(0.09, 0.09, 0.05, coat, [-0.13, 0.2, 0.1], [0, 0, -0.25], [0.6, 0.6])
+      .ear(0.09, 0.09, 0.05, coat, [0.13, 0.2, 0.1], [0, 0, 0.25], [0.6, 0.6]) // small round ears
+      .ear(0.09, 0.09, 0.05, coat, [-0.13, 0.2, 0.1], [0, 0, -0.25], [0.6, 0.6])
       .build(),
     antlers: null,
     fore: limb(0.28, 0.28, { top: [0.17, 0.2], knee: [0.13, 0.13], ankle: [0.11, 0.11], color: coat, foot: [0.16, 0.06, 0.17, pale, 0.03] }),
@@ -1226,8 +1260,8 @@ export function lion() {
       .box(0.2, 0.15, 0.2, pale, [0, -0.04, 0.36]) // muzzle
       .box(0.08, 0.05, 0.04, 0x3a2420, [0, 0.01, 0.46]) // dark nose
       .eyes(0.045, 0.03, 0.02, 0xc89a40, [0.08, 0.09, 0.33], 'round') // amber eyes
-      .box(0.08, 0.08, 0.05, coat, [0.12, 0.2, 0.1], [0, 0, 0.2], [0.6, 0.6]) // round ears
-      .box(0.08, 0.08, 0.05, coat, [-0.12, 0.2, 0.1], [0, 0, -0.2], [0.6, 0.6])
+      .ear(0.08, 0.08, 0.05, coat, [0.12, 0.2, 0.1], [0, 0, 0.2], [0.6, 0.6]) // round ears
+      .ear(0.08, 0.08, 0.05, coat, [-0.12, 0.2, 0.1], [0, 0, -0.2], [0.6, 0.6])
       .build(),
     // A male's mane: a great dark ruff round the head and down the neck and chest.
     antlers: new Blocks()
@@ -1269,8 +1303,8 @@ export function hyena() {
       .box(0.22, 0.2, 0.22, coat, [0, 0.02, 0.16]) // broad head
       .box(0.14, 0.12, 0.16, dark, [0, -0.04, 0.32]) // dark blunt muzzle
       .eyes(0.035, 0.028, 0.02, 0x8a6a2a, [0.07, 0.07, 0.27], 'round')
-      .box(0.09, 0.1, 0.04, coat, [0.09, 0.16, 0.08], [0, 0, 0.3], [0.6, 0.6]) // round ears
-      .box(0.09, 0.1, 0.04, coat, [-0.09, 0.16, 0.08], [0, 0, -0.3], [0.6, 0.6])
+      .ear(0.09, 0.1, 0.04, coat, [0.09, 0.16, 0.08], [0, 0, 0.3], [0.6, 0.6]) // round ears
+      .ear(0.09, 0.1, 0.04, coat, [-0.09, 0.16, 0.08], [0, 0, -0.3], [0.6, 0.6])
       .build(),
     antlers: null,
     fore: limb(0.3, 0.3, { top: [0.12, 0.15], knee: [0.08, 0.09], ankle: [0.07, 0.07], color: coat, foot: [0.1, 0.05, 0.12, dark, 0.03] }),
@@ -1303,8 +1337,8 @@ export function elephant() {
     head: new Blocks()
       .box(1.0, 1.1, 0.8, hide, [0, 0.0, 0.4], [0, 0, 0], [0.85, 0.85]) // great domed head
       .box(0.7, 0.3, 0.4, hide, [0, 0.5, 0.32], [0, 0, 0], [0.8, 0.8]) // the dome above the brow
-      .box(0.12, 1.2, 1.0, dark, [0.62, -0.15, 0.1], [0, 0.35, 0.08]) // ears, wide and flat
-      .box(0.12, 1.2, 1.0, dark, [-0.62, -0.15, 0.1], [0, -0.35, -0.08])
+      .ear(0.12, 1.2, 1.0, dark, [0.62, -0.15, 0.1], [0, 0.35, 0.08]) // ears, wide and flat
+      .ear(0.12, 1.2, 1.0, dark, [-0.62, -0.15, 0.1], [0, -0.35, -0.08])
       .box(0.38, 0.6, 0.36, hide, [0, -0.62, 0.78]) // the trunk, hanging...
       .box(0.28, 0.6, 0.28, hide, [0, -1.18, 0.84])
       .box(0.21, 0.6, 0.21, hide, [0, -1.72, 0.88])
@@ -1350,8 +1384,8 @@ export function hippo() {
       .box(0.1, 0.1, 0.1, hide, [0.26, 0.32, 0.5]) // eyes up on top
       .box(0.1, 0.1, 0.1, hide, [-0.26, 0.32, 0.5])
       .eyes(0.05, 0.04, 0.02, 0x2a1a14, [0.26, 0.34, 0.56], 'round')
-      .box(0.1, 0.1, 0.06, hide, [0.28, 0.4, 0.3]) // small ears
-      .box(0.1, 0.1, 0.06, hide, [-0.28, 0.4, 0.3])
+      .ear(0.1, 0.1, 0.06, hide, [0.28, 0.4, 0.3]) // small ears
+      .ear(0.1, 0.1, 0.06, hide, [-0.28, 0.4, 0.3])
       .box(0.06, 0.18, 0.06, 0xf0e6d0, [0.3, -0.3, 1.14]) // tusks at the corners of the mouth
       .box(0.06, 0.18, 0.06, 0xf0e6d0, [-0.3, -0.3, 1.14])
       .build(),
@@ -1387,8 +1421,8 @@ export function camel() {
       .box(0.15, 0.13, 0.12, pale, [0, 0.56, 0.98]) // soft muzzle
       .box(0.04, 0.03, 0.02, 0x3a2a1a, [0, 0.5, 1.04]) // split lip
       .eyes(0.04, 0.03, 0.02, 0x3a2a1a, [0.09, 0.7, 0.8], 'round')
-      .box(0.05, 0.08, 0.04, coat, [0.08, 0.76, 0.66]) // little ears
-      .box(0.05, 0.08, 0.04, coat, [-0.08, 0.76, 0.66])
+      .ear(0.05, 0.08, 0.04, coat, [0.08, 0.76, 0.66]) // little ears
+      .ear(0.05, 0.08, 0.04, coat, [-0.08, 0.76, 0.66])
       .build(),
     antlers: null,
     fore: limb(0.62, 0.6, { top: [0.16, 0.2], knee: [0.11, 0.11], ankle: [0.08, 0.08], color: coat, foot: [0.18, 0.06, 0.2, dark, 0.03] }),
@@ -1513,8 +1547,8 @@ export function equine({ coat = 0x7a4a2a, dark = 0x1e1612, pale = 0x8a5a36, hoof
       .box(0.05, 0.03, 0.02, 0x1a1210, [-0.05, 0.27, 0.9])
       .box(0.25, 0.04, 0.06, coat, [0, 0.62, 0.55]) // brow
       .eyes(0.04, 0.035, 0.03, 0x2a1a10, [0.115, 0.58, 0.55], 'round')
-      .box(ear > 0.2 ? 0.07 : 0.05, ear, 0.04, coat, [0.07, 0.69 + ear / 2, 0.44], [0.1, 0, ear > 0.2 ? 0.3 : 0.15], [0.5, 0.5]) // upright ears (long, a donkey's)
-      .box(ear > 0.2 ? 0.07 : 0.05, ear, 0.04, coat, [-0.07, 0.69 + ear / 2, 0.44], [0.1, 0, ear > 0.2 ? -0.3 : -0.15], [0.5, 0.5])
+      .ear(ear > 0.2 ? 0.07 : 0.05, ear, 0.04, coat, [0.07, 0.69 + ear / 2, 0.44], [0.1, 0, ear > 0.2 ? 0.3 : 0.15], [0.5, 0.5]) // upright ears (long, a donkey's)
+      .ear(ear > 0.2 ? 0.07 : 0.05, ear, 0.04, coat, [-0.07, 0.69 + ear / 2, 0.44], [0.1, 0, ear > 0.2 ? -0.3 : -0.15], [0.5, 0.5])
       .build(),
     antlers: null,
     saddle: horseSaddle(), // (drawn on a saddled horse: see Wildlife)
