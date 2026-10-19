@@ -4442,7 +4442,7 @@ export class Wildlife {
     const idleRoll = still ? Math.sin(now * 0.45 + (a.phase ?? 0) * 3) * 0.02 : 0;
     // Leaning into a turn (as a running animal does: more, the faster and the
     // tighter); nose up as it sets off hard, down as it pulls up.
-    const lean = live ? Math.max(-0.3, Math.min(0.3, -Math.atan((a.speed ?? 0) * (a.turnRate ?? 0) / 9.8) * mo.lean)) : 0;
+    const lean = live ? Math.max(-0.22, Math.min(0.22, -Math.atan((a.speed ?? 0) * (a.turnRate ?? 0) / 9.8) * mo.lean)) : 0;
     const surgePitch = live ? Math.max(-0.12, Math.min(0.12, -(a.accel ?? 0) * 0.012)) : 0;
     if (lying) {
       // On its side, turned about the middle of its body, lying along the
