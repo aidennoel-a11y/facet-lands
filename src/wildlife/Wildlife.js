@@ -4,6 +4,17 @@ import { chooseGait, footAt, rhythm, solveLeg, stepFeet, strideLength } from './
 import * as Models from './models.js';
 import { splitBody } from './Spine.js';
 
+// The low back corners of a body's hind part and of its tail (each in its
+// own frame: [y, z]), to keep them out of the ground.
+function endsOf(parts) {
+  const low = (g) => {
+    if (!g) return [0, 0];
+    g.computeBoundingBox();
+    return [g.boundingBox.min.y, g.boundingBox.min.z];
+  };
+  return { rear: low(parts.rear), tail: low(parts.tail) };
+}
+
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -260,7 +271,7 @@ const ik = { rz: 0, a1: 0, a2: 0, kx: 0, ky: 0, kz: 0 }, foot = { x: 0, y: 0, z:
 const ray = new Raycaster();
 const view = new Frustum(), viewMatrix = new Matrix4(), sphere = new Sphere();
 const shake = new Quaternion();
-const rearQ = new Quaternion(), rearM = new Matrix4(), tailM = new Matrix4(), hip = [0, 0, 0];
+const rearQ = new Quaternion(), rearM = new Matrix4(), tailM = new Matrix4(), chk = new Matrix4(), hip = [0, 0, 0];
 
 /**
  * How each kind moves its body, as the real ones do (see #drawBeast).
@@ -3575,7 +3586,7 @@ export class Wildlife {
     // follows the hill, the legs only taking up the rest), the ground felt
     // under its fore and hind feet (not just under its middle), and
     // eased into, so it doesn't jerk at each facet of the ground.
-    const sx = Math.sin(a.heading), sz = Math.cos(a.heading), L = Math.max(0.3, sp.height * 0.6 * a.scale / (sp.size ?? 1));
+    const sx = Math.sin(a.heading), sz = Math.cos(a.heading), L = sp.motion?.sprawl ? 0.9 * a.scale : Math.max(0.3, sp.height * 0.6 * a.scale / (sp.size ?? 1));
     const up = ctx.ground(a.x + sx * L, a.z + sz * L), down = ctx.ground(a.x - sx * L, a.z - sz * L);
     if (up === up && down === down && !a.swimming) {
       const along = Math.max(-0.6, Math.min(0.6, -Math.atan2(up - down, 2 * L) * 0.8));
@@ -4496,7 +4507,7 @@ export class Wildlife {
       if (a.jolt) (x += a.jolt.x * 0.12 * s * (a.jolt.t / 0.3)), (z += a.jolt.z * 0.12 * s * (a.jolt.t / 0.3));
       // (A crocodile crawls with its belly on the ground, rising up on its
       // legs to walk tall as it goes faster.)
-      const belly = mo.sprawl && a.alive ? H * 0.4 * (1 - smoothstep(sp.walk, sp.walk * 2.5, a.speed ?? 0)) : 0;
+      const belly = mo.sprawl && a.alive ? H * 0.3 * (1 - smoothstep(sp.walk, sp.walk * 2.5, a.speed ?? 0)) : 0;
       euler.set(a.pitch + r.pitch + surgePitch - (a.rear ?? 0) * 0.55, a.heading, a.roll + r.roll + lean + idleRoll, 'YXZ');
       quat.setFromEuler(euler);
       base.compose(pos.set(x, a.y + (r.bob * H - lieDrop - crouch - belly) * s - (a.drop ?? 0), z), quat, scl.setScalar(s));
@@ -4515,13 +4526,32 @@ export class Wildlife {
       const cyc = TAU * (a.cycle ?? 0);
       a.bendS = (a.bendS ?? 0) + ((live ? soft(-(a.turnRate ?? 0) * 0.16 * mo.flex, 0.3) : 0) - (a.bendS ?? 0)) * Math.min(1, fdt * 4);
       rearYaw = live ? a.bendS + (mo.undulate ?? 0) * Math.sin(cyc) * moving : 0;
-      const flexP = live ? (r.flex ?? 0) * mo.flex : 0;
+      let flexP = live ? (r.flex ?? 0) * mo.flex : 0;
       const cockSide = a.cock >= 0 ? Math.sign(model.legs[a.cock][0]) : 0;
       const rearRoll = live ? -(r.roll ?? 0) * 1.3 - cockSide * 0.05 * (a.cockW ?? 0) : 0;
+      // (Never down into the ground: where its hind end, or its tail, would
+      // go into a bank or a rise behind it, lifted clear, following the lie
+      // of the land; a crocodile's long tail most of all.)
+      const sunk = (m, x, y, z) => {
+        if (!ground || lying) return 0;
+        v3.set(x, y, z).applyMatrix4(chk.multiplyMatrices(base, m));
+        const g = ground(v3.x, v3.z);
+        return g === g ? g + 0.03 - v3.y : 0;
+      };
+      const ends = (parts.ends ??= endsOf(parts));
+      const placeRear = () => {
+        euler.set(flexP, rearYaw, rearRoll, 'YXZ');
+        rearQ.setFromEuler(euler);
+        rearM.compose(pos.set(parts.pivot[0], parts.pivot[1], parts.pivot[2]), rearQ, scl.set(1, 1, 1));
+      };
+      placeRear();
+      for (let k = 0; k < 2; k++) {
+        const d = Math.max(sunk(rearM, 0, ends.rear[0], ends.rear[1]), sunk(rearM, 0, ends.rear[0], ends.rear[1] * 0.5));
+        if (d <= 0.005) break;
+        flexP = Math.min(0.6, flexP + Math.atan2(d / s, Math.abs(ends.rear[1])));
+        placeRear();
+      }
       put(M.rear, parts.pivot, flexP, rearYaw, rearRoll);
-      euler.set(flexP, rearYaw, rearRoll, 'YXZ');
-      rearQ.setFromEuler(euler);
-      rearM.compose(pos.set(parts.pivot[0], parts.pivot[1], parts.pivot[2]), rearQ, scl.set(1, 1, 1));
       if (M.tail) {
         // Raised: a white-tail's flag as it bolts; streaming out behind at a
         // run; a little up, alert; hanging, at ease (limp, dead). Swinging
@@ -4537,10 +4567,19 @@ export class Wildlife {
           if (mo.curl) ty += Math.sin(now * 0.9 + (a.phase ?? 0)) * (0.22 + 0.2 * alert) + Math.sin(now * 7 + (a.phase ?? 0)) * 0.05 * alert;
           tp += mo.tail * Math.sin(cyc * 2) * 0.05 * moving;
         }
-        euler.set(tp, ty, 0, 'YXZ');
-        quat.setFromEuler(euler);
-        tailM.compose(pos.set(parts.tailPivot[0] - parts.pivot[0], parts.tailPivot[1] - parts.pivot[1], parts.tailPivot[2] - parts.pivot[2]), quat, scl.set(1, 1, 1));
-        tailM.premultiply(rearM);
+        const placeTail = () => {
+          euler.set(tp, ty, 0, 'YXZ');
+          quat.setFromEuler(euler);
+          tailM.compose(pos.set(parts.tailPivot[0] - parts.pivot[0], parts.tailPivot[1] - parts.pivot[1], parts.tailPivot[2] - parts.pivot[2]), quat, scl.set(1, 1, 1));
+          tailM.premultiply(rearM);
+        };
+        placeTail();
+        for (let k = 0; k < 3; k++) {
+          const d = Math.max(sunk(tailM, 0, ends.tail[0], ends.tail[1]), sunk(tailM, 0, ends.tail[0] * 0.7, ends.tail[1] * 0.5), sunk(tailM, 0, ends.tail[0] * 0.4, ends.tail[1] * 0.2));
+          if (d <= 0.005) break;
+          tp = Math.min(1.2, tp + Math.atan2(d / s, Math.abs(ends.tail[1]) * 0.6));
+          placeTail();
+        }
         put(M.tail, [0, 0, 0], 0, 0, 0);
         M.tail.setMatrixAt(M.tail.count - 1, out.multiplyMatrices(base, tailM));
       }
