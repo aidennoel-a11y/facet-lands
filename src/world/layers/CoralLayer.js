@@ -1,4 +1,4 @@
-import { Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, OctahedronGeometry, Quaternion, Vector3 } from 'three';
+import { Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../../noise/random.js';
 import { CORAL_KINDS, placeCorals } from '../decorPlacement.js';
@@ -23,8 +23,8 @@ function knobs(seed, n, radius, flat) {
     // (Spread over the dome, more of them up top.)
     const a = rand() * Math.PI * 2, up = Math.acos(1 - rand() * 0.95);
     const r = radius * (0.12 + rand() * 0.1);
-    const g = new OctahedronGeometry(r, 0);
-    g.scale(1, 1.3, 1);
+    const g = new DodecahedronGeometry(r, 0);
+    g.scale(1, 1.15, 1);
     g.rotateY(rand() * Math.PI);
     g.translate(Math.sin(up) * Math.cos(a) * radius * 0.85, Math.cos(up) * radius * flat * 0.95, Math.sin(up) * Math.sin(a) * radius * 0.85);
     parts.push(shaped(g));
@@ -40,7 +40,7 @@ function fingers(seed) {
     const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * 0.4, len = 0.3 + rand() * 0.45, lean = rand() * 0.35;
     const g = new CylinderGeometry(0.05, 0.065, len, 5);
     g.translate(0, len / 2, 0);
-    const tip = new OctahedronGeometry(0.06, 0);
+    const tip = new DodecahedronGeometry(0.065, 0);
     tip.translate(0, len, 0);
     for (const p of [g, tip]) {
       p.rotateZ(lean);

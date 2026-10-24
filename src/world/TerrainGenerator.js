@@ -3789,7 +3789,7 @@ export class TerrainGenerator {
     // colour, the sand floor round it left pale.
     if (ground < this.rivers.seaLevel - 0.6) {
       const reef = this.getReef(x, z, ground);
-      if (reef > 0) out.lerp(CORALS[Math.floor(hash2(Math.floor(x / 1.6), Math.floor(z / 1.6), this.seed ^ 0xc0a1) * CORALS.length)], 0.8 * reef);
+      if (reef > 0) out.lerp(CORALS[Math.floor(hash2(Math.floor(x / 3), Math.floor(z / 3), this.seed ^ 0xc0a1) * CORALS.length)], 0.5 * reef);
     }
     // Round hot springs and geysers: orange mats of heat-loving microbes at
     // the water's edge, then pale crusts of sinter.
