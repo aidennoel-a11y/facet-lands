@@ -103,7 +103,7 @@ export class GroundItems {
         seedWheat: () => M.seedsModel(0xd8b464), seedCorn: () => M.seedsModel(0xe8c030), seedPotato: () => M.potatoModel(), seedCarrot: () => M.seedsModel(0x7a6a4a), wheat: M.wheatModel,
         berries: M.berriesModel, apple: M.appleModel, mushroom: () => M.mushroomModel(), jerky: M.jerkyModel, corn: () => M.cornModel(false), roastCorn: () => M.cornModel(true),
         potato: () => M.potatoModel(false), bakedPotato: () => M.potatoModel(true), carrot: M.carrotModel, dough: M.doughModel, bread: M.breadModel, stew: M.stewModel,
-        honey: () => M.seedsModel(0xe8a020), rawEgg: () => M.eggModel(false), cookedEgg: () => M.eggModel(true), salt: () => M.seedsModel(0xf4f2ee), straw: M.wheatModel, sand: () => M.seedsModel(0xe2c88a),
+        honey: () => M.seedsModel(0xe8a020), rawEgg: () => M.eggModel(false), cookedEgg: () => M.eggModel(true), salt: () => M.seedsModel(0xf4f2ee), oyster: M.oysterModel, seashell: M.seashellModel, pearl: M.pearlModel, straw: M.wheatModel, sand: () => M.seedsModel(0xe2c88a),
         flintSteel: () => M.flintSteelModel(false), fineFlintSteel: () => M.flintSteelModel(true),
         oldSword: () => swordModel(0xa8aca4, 0xc8ccc4, 0xb08a3a), oldMap: () => M.hideModel(),
         fangSword: () => swordModel(0xf0e8d4, 0xfaf4e4, 0x5a4a3a), antlerBow: () => bowModel(true, 0xcbb690), tuskPickaxe: () => pickaxeModel(0xe8dcc0, 0xf4ecd8),

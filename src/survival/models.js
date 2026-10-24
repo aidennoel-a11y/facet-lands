@@ -631,6 +631,24 @@ export function beehiveModel() {
   return b.build();
 }
 
+/** An oyster (rough grey shell, a pearly lip), a seashell (a fan, ridged), a pearl. */
+export function oysterModel() {
+  const b = new Parts(167);
+  b.add(new DodecahedronGeometry(0.07, 0), 0x7a7468, [0, 0.03, 0], [0, 0, 0], [1.2, 0.45, 0.9], 0.02);
+  b.add(new DodecahedronGeometry(0.06, 0), 0xd8d0c4, [0, 0.045, 0.005], [0, 0.4, 0], [1.05, 0.25, 0.8]);
+  return b.build();
+}
+export function seashellModel() {
+  const b = new Parts(168);
+  b.add(new ConeGeometry(0.06, 0.09, 6, 1), 0xf0d8c4, [0, 0.02, 0], [Math.PI / 2, 0, 0], [1, 1, 0.35]);
+  return b.build();
+}
+export function pearlModel() {
+  const b = new Parts(169);
+  b.add(new IcosahedronGeometry(0.02, 1), 0xf4f0ea, [0, 0.02, 0]);
+  return b.build();
+}
+
 export function eggModel(cooked) {
   const b = new Parts(166);
   b.add(new DodecahedronGeometry(0.05, 1), cooked ? 0xfafaf4 : 0xf0e6d2, [0, 0.05, 0], [0, 0, 0], [0.85, 1.15, 0.85], 0.03);

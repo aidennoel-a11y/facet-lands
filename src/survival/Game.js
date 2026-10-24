@@ -569,7 +569,13 @@ export class Game {
       const s = built.structure;
       found.push({ kind: 'structure', distance: built.distance, structure: s, text: down ? `Take down the ${ITEMS[s.type].name.toLowerCase()}` : this.#structureText(s, held) });
     }
-    const water = this.#waterAlong(origin, direction, reach);
+    // Under the water: the bed in front of you, to feel about on (oysters, shells, now and then a pearl).
+    if (this.underwater) {
+      const hit = this.solidHit?.(origin, direction, reach + 0.5);
+      const w = hit && this.waterAt(hit.point.x, hit.point.z);
+      if (hit && !hit.cave && w?.lake && this.generator().getOceanness(hit.point.x, hit.point.z) > 0.4) found.push({ kind: 'seabed', distance: hit.point.distanceTo(origin), x: hit.point.x, z: hit.point.z, text: 'Feel about on the sea bed (Q)' });
+    }
+    const water = this.underwater ? null : this.#waterAlong(origin, direction, reach);
     if (water) {
       const fill = held?.id === 'waterskin';
       found.push({ kind: 'water', distance: water.distance, ...water, text: water.salty && held?.id === 'pot' ? 'Fill the pot with sea water (boil it for salt)' : water.salty ? 'Sea water: too salty to drink' : fill ? `Fill the waterskin${water.clean ? '' : ' (still water: boil it)'}` : `Drink${water.clean ? '' : ' (still water: it may make you ill)'}` });
@@ -899,6 +905,30 @@ export class Game {
       }
       return this.hotbar?.flash(`Honey ×${n}: the smoke kept them quiet`);
     }
+    if (t.kind === 'seabed') {
+      if (this.cooldown > 0) return;
+      this.cooldown = 1.2;
+      this.#animate('chop', 0.4);
+      this.sound?.call('dig', 0, 0.25);
+      // (Each spot of the bed searched once a while: what was there's been taken.)
+      const key = `${Math.round(t.x / 3)},${Math.round(t.z / 3)}`;
+      this.searched ??= new Map();
+      if (this.time - (this.searched.get(key) ?? -1e9) < 900) return this.hotbar?.flash('Nothing more here: try further along the bed');
+      this.searched.set(key, this.time);
+      const reef = (this.generator().getReef?.(t.x, t.z, this.generator().getHeight(t.x, t.z)) ?? 0) > 0.15;
+      const r = Math.random();
+      if (r < (reef ? 0.5 : 0.35)) {
+        this.#give('oyster', 1);
+        if (Math.random() < (reef ? 0.12 : 0.06)) {
+          this.#give('pearl', 1);
+          this.#achieve?.('pearl');
+          return this.hotbar?.flash('An oyster, and inside it, a pearl!');
+        }
+        return this.hotbar?.flash('An oyster');
+      }
+      if (r < 0.75) return this.#give('seashell', 1 + Math.floor(Math.random() * 2)), this.hotbar?.flash('Seashells');
+      return this.hotbar?.flash('Just sand and weed');
+    }
     if (t.kind === 'scoop') {
       if (this.cooldown > 0) return;
       // (The salt flats: a crust of it, thick: far more than a pot of sea water gives.)
@@ -970,6 +1000,7 @@ export class Game {
         return this.#offer(s);
       case 'chest':
         if (s.ruinKey?.startsWith('wreck:')) this.#achieve('wreck');
+        if (s.ruinKey?.startsWith('sunken:')) this.#achieve('sunkenWreck');
         this.sound?.call('creak', 0, 0.35);
         this.hud.openChest(s.contents, this.inventory);
         return this.#menu(true);
@@ -3236,6 +3267,7 @@ export class Game {
     if (this.mount) this.hud.meter(`Your ${NAMES[this.mount.kind]}'s wind`, (this.mount.stamina ?? 100) / 100);
     else if (calming && !calming.a.tame && calming.calm > 0.02) this.hud.meter(`The ${NAMES[calming.a.kind]} is settling`, calming.calm);
     else if (this.breaking && this.time < this.breaking.until) this.hud.meter(this.breaking.label, this.breaking.frac);
+    else if ((this.survival.breath ?? 100) < 99.5 && this.mode === 'survival') this.hud.meter('Breath', this.survival.breath / 100);
     else this.hud.meter(null, null);
     this.hud.almanac(this.mode === 'survival' && this.survival.alive ? { day: Math.floor(this.age) + 1, season: ctx.season ?? '', longest: Math.max(longestRun(), Math.floor(this.age)) } : null);
     // (Under thick trees the rain comes through slower; standing in the
@@ -3277,6 +3309,21 @@ export class Game {
     }
     // (Resting under the Elder Tree's boughs: wounds close fast.)
     if (this.landmarkHere?.kind === 'elderTree' && e.active && !this.controls.moving && this.survival.bleeding <= 0) this.survival.health = Math.min(100, this.survival.health + dt * 0.8);
+    // Holding your breath under the water: half a minute or so, then you're
+    // drowning (back to the top, quick). It comes back fast once you're up.
+    this.underwater = !!ctx.underwater;
+    const sv = this.survival;
+    sv.breath ??= 100;
+    if (this.underwater && this.mode === 'survival' && sv.alive) {
+      sv.breath = Math.max(0, sv.breath - dt * (100 / 35));
+      if (sv.breath <= 0) {
+        this.drownWait = (this.drownWait ?? 0) - dt;
+        if (this.drownWait <= 0) (this.drownWait = 1), this.hurt(9, 'drowning'), this.hotbar?.flash('You need air! Up to the surface');
+      }
+    } else {
+      if (sv.breath < 40 && !this.underwater) this.sound?.call('splash', 0, 0.25); // (a gasp at the top)
+      sv.breath = Math.min(100, sv.breath + dt * (this.underwater ? 0 : 45));
+    }
     // (In creative there's no hunger, thirst or cold: you stay as you are.)
     if (this.mode !== 'creative') this.survival.update(dt, e);
     this.#progressStep(dt, e);
@@ -3919,6 +3966,8 @@ export class Game {
       roll('deerSkin', 1, 3, 0.4);
       roll('pot', 1, 1, 0.3);
       roll('coalTorch', 2, 4, 0.4);
+      // (One gone down out at sea, untouched all these years: richer.)
+      if (c.sunken) roll('goldBar', 1, 3, 0.7), roll('pearl', 1, 3, 0.5), roll('seashell', 2, 5, 0.6);
       if (!contents.length) contents.push(Inventory.stack('rope', 3));
       const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents: contents.slice(0, 10), ruinKey: c.key });
       s.ruinKey = c.key;

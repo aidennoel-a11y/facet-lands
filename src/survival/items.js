@@ -16,7 +16,9 @@ export const ITEMS = {
   rock: { name: 'Small rock', weight: 1, group: 'Materials' },
   flint: { name: 'Flint', weight: 0.4, group: 'Materials' },
   salt: { name: 'Salt', weight: 0.2, group: 'Materials' }, // (boiled out of sea water in a pot, or scraped up on the salt flats)
-  sand: { name: 'Sand', weight: 1.2, group: 'Materials' }, // (scooped up on a beach or in the desert)
+  sand: { name: 'Sand', weight: 1.2, group: 'Materials' },
+  seashell: { name: 'Seashell', weight: 0.05, group: 'Materials' }, // (off the sea bed: crushed for whitewash)
+  pearl: { name: 'Pearl', weight: 0.01, group: 'Materials' }, // (a rare find in an oyster on the sea bed) // (scooped up on a beach or in the desert)
   log: { name: 'Log', weight: 9, group: 'Materials' },
   vine: { name: 'Plant vine', weight: 0.2, group: 'Materials' },
   iron: { name: 'Iron ore', weight: 2.5, group: 'Materials' },
@@ -86,6 +88,7 @@ export const ITEMS = {
   blindFish: { name: 'Blind cave fish', food: { hunger: 6, health: -3, sick: 0.2, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.4, group: 'Food' },
   rawMeat: { name: 'Raw meat', food: { hunger: 10, health: -4, sick: 0.35, full: 180 }, spoils: 900, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 1, group: 'Food' },
   cookedMeat: { name: 'Cooked meat', food: { hunger: 35, health: 4, full: 600 }, spoils: 4 * DAY, dries: 'jerky', weight: 0.8, group: 'Food' },
+  oyster: { name: 'Oyster', food: { hunger: 5, thirst: 1, health: -1, sick: 0.12, full: 40 }, spoils: 1500, weight: 0.15, group: 'Food' }, // (prised off the sea bed: now and then one has a pearl in it)
   rawEgg: { name: 'Egg', food: { hunger: 6, health: -1, sick: 0.08, full: 60 }, spoils: 4000, cooks: 'cookedEgg', weight: 0.06, group: 'Food' },
   cookedEgg: { name: 'Cooked egg', food: { hunger: 14, full: 200 }, spoils: 2000, weight: 0.06, group: 'Food' },
   milk: { name: 'Goat\'s milk', food: { hunger: 8, thirst: 14, health: 1, full: 150 }, spoils: DAY, weight: 1, group: 'Food' }, // (fresh: a day, then it sours)
@@ -330,6 +333,7 @@ export const RECIPES = [
   { id: 'barnRoof', needs: { log: 2, stick: 6 }, note: 'Long boards down the slope over the walls: paint it with a dye' },
   { id: 'redDye', needs: { berries: 3 }, makes: 2, note: 'Berries mashed to a red paint: click a barn piece with it' },
   { id: 'whiteDye', needs: { salt: 1, sand: 1 }, makes: 2, note: 'Whitewash: click a barn piece with it' },
+  { id: 'whiteDye', needs: { seashell: 3 }, makes: 2, note: 'Whitewash from crushed seashells' },
   { id: 'blackDye', needs: { charcoal: 2 }, makes: 2, note: 'Charcoal ground to a black paint: click a barn piece with it' },
   { id: 'greenDye', needs: { vine: 3 }, makes: 2, note: 'Green leaves and vines steeped to a paint: click a barn piece with it' },
   { id: 'yellowDye', needs: { corn: 2 }, makes: 2, note: 'Yellow ochre from corn husk and clay: click a barn piece with it' },
@@ -508,6 +512,9 @@ export const ICONS = {
   shelf: `<path d="M5 3v26M27 3v26" stroke="#7a5638" stroke-width="2.5"/><path d="M5 8h22M5 16h22M5 24h22" stroke="#9a7048" stroke-width="2.5"/><path d="M9 12h4v4H9zM17 20h5v4h-5z" fill="#c4945a"/>`,
   trophyRack: `<path d="M16 14v16" stroke="#6e4c32" stroke-width="3"/><path d="M6 4h20v12H6z" fill="#8a6040"/><path d="M10 8c2-3 4-3 6 0 2-3 4-3 6 0-2 4-10 4-12 0z" fill="#e8dcc0"/>`,
   coop: `<path d="M4 14l12-9 12 9z" fill="#6a4a30"/><path d="M6 14h20v10H6z" fill="#9a7048"/><path d="M14 18h5v6h-5z" fill="#2a2018"/><path d="M6 24v5M26 24v5" stroke="#6e4c32" stroke-width="2"/>`,
+  oyster: `<path d="M5 17c2-7 20-9 22-1-3 6-19 8-22 1z" fill="#7a7468"/><path d="M8 16c3-4 14-5 16-1-3 3-13 4-16 1z" fill="#d8d0c4"/><path d="M5 17c4 3 18 2 22-1" stroke="#5a5448" fill="none"/>`,
+  seashell: `<path d="M16 6l10 16c-6 4-14 4-20 0z" fill="#f0d8c4"/><path d="M16 6l-4 18M16 6l4 18M16 6v19" stroke="#c8a088" fill="none"/>`,
+  pearl: `<circle cx="16" cy="17" r="7" fill="#f4f0ea"/><circle cx="13.5" cy="14.5" r="2.2" fill="#ffffff"/><circle cx="18" cy="20" r="3" fill="#e4dcd4"/>`,
   rawEgg: `<ellipse cx="16" cy="17" rx="8" ry="10" fill="#f0e6d2"/><ellipse cx="13" cy="13" rx="2.5" ry="3.5" fill="#fffaf0"/>`,
   cookedEgg: `<ellipse cx="16" cy="17" rx="12" ry="9" fill="#fafaf4"/><circle cx="16" cy="16" r="5" fill="#f0b830"/>`,
   honey: `<path d="M9 8h14l2 18c0 3-18 3-18 0z" fill="#e8a020"/><path d="M8 6h16v4H8z" fill="#c8a070"/><path d="M12 15c2 2 6 2 8 0" stroke="#f8c850" stroke-width="2" fill="none"/>`,

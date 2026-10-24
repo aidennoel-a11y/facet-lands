@@ -85,6 +85,23 @@ function wreckParts(seed) {
   return parts;
 }
 
+// Wrecks gone down out at sea: one to a stretch of 700 m of open water
+// six to twenty metres deep, upright in the sand of the bed, weed on it.
+const DEEP = 700;
+export function sunkenSite(I, K, generator, seaLevel) {
+  const seed = generator.seed ?? 1;
+  if (hash2(I, K, seed ^ 0x5a1) > 0.5) return null;
+  for (let k = 0; k < 16; k++) {
+    const x = (I + 0.15 + 0.7 * hash2(I * 7 + k, K, seed ^ 0x5a2)) * DEEP, z = (K + 0.15 + 0.7 * hash2(I, K * 7 + k, seed ^ 0x5a3)) * DEEP;
+    if (generator.getOceanness(x, z) < 0.6) continue;
+    const h = generator.landHeight(x, z);
+    if (h > seaLevel - 6 || h < seaLevel - 22) continue;
+    const rot = hash2(I, K, seed ^ 0x5a5) * Math.PI * 2;
+    return { x, z, y: h, rot, key: `sunken:${I},${K}`, seed: Math.floor(hash2(I, K, seed ^ 0x5a4) * 1e9), sunken: true };
+  }
+  return null;
+}
+
 export function createWreckLayer(config) {
   const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const sites = new Map(); // "I,K" -> site or null
@@ -116,6 +133,33 @@ export function createWreckLayer(config) {
       const I0 = Math.floor((x0 + size / 2) / CELL), K0 = Math.floor((z0 + size / 2) / CELL);
       const group = new Group();
       group.name = 'wrecks';
+      // (The sunken ones, out on the sea bed: settled upright, a little over on its side, its chest beside it.)
+      const D0 = Math.floor((x0 + size / 2) / DEEP), E0 = Math.floor((z0 + size / 2) / DEEP);
+      for (let K = E0 - 1; K <= E0 + 1; K++) {
+        for (let I = D0 - 1; I <= D0 + 1; I++) {
+          const key = `d${I},${K}`;
+          if (!sites.has(key)) sites.set(key, sunkenSite(I, K, generator, config.seaLevel));
+          const s = sites.get(key);
+          if (!s || Math.floor(s.x / size) !== cx || Math.floor(s.z / size) !== cz) continue;
+          const geometry = mergeGeometries(wreckParts(s.seed));
+          geometry.computeVertexNormals();
+          // (Weed and growth on it: the timbers gone dark green-brown.)
+          const col = geometry.attributes.color;
+          for (let k = 0; k < col.count; k++) col.setXYZ(k, col.getX(k) * 0.6, col.getY(k) * 0.72, col.getZ(k) * 0.55);
+          const mesh = new Mesh(geometry, material);
+          const gy = groundHeightAt?.(s.x - x0, s.z - z0);
+          const y = Number.isFinite(gy) ? gy : s.y;
+          mesh.position.set(s.x - x0, y - 0.6, s.z - z0);
+          mesh.rotation.set(0.05, s.rot, 0.18, 'YXZ');
+          mesh.receiveShadow = true;
+          group.add(mesh);
+          if (lod === 0) {
+            const cxw = s.x + Math.cos(s.rot) * 4, czw = s.z - Math.sin(s.rot) * 4;
+            const cy = groundHeightAt?.(cxw - x0, czw - z0);
+            layer.onChest?.({ key: s.key, x: cxw, y: Number.isFinite(cy) ? cy : y, z: czw, rot: s.rot, best: true, wreck: true, sunken: true });
+          }
+        }
+      }
       for (let K = K0 - 1; K <= K0 + 1; K++) {
         for (let I = I0 - 1; I <= I0 + 1; I++) {
           const s = site(I, K, generator);

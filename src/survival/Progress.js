@@ -40,6 +40,8 @@ export const ACHIEVEMENTS = [
   { id: 'eggs', name: 'Egg hunt', what: 'Take eggs from a nest or a hen-house' },
   { id: 'ruin', name: 'Explorer', what: 'Find an old ruin' },
   { id: 'wreck', name: 'Beachcomber', what: 'Open a shipwreck\'s sea chest' },
+  { id: 'pearl', name: 'Pearl Diver', what: 'Find a pearl on the sea bed' },
+  { id: 'sunkenWreck', name: 'Deep Diver', what: 'Open the chest of a wreck on the sea bed' },
   { id: 'cave', name: 'Into the dark', what: 'Go deep underground' },
   { id: 'hotspring', name: 'Hot soak', what: 'Warm up in a hot spring' },
   { id: 'boss', name: 'Beast slayer', what: 'Bring down one of the great beasts' },

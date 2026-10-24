@@ -27,6 +27,7 @@ import { createLeafLayer } from './world/layers/LeafLayer.js';
 import { createMushroomLayer } from './world/layers/MushroomLayer.js';
 import { createSeaCoastLayer } from './world/layers/SeaCoastLayer.js';
 import { createKelpLayer } from './world/layers/KelpLayer.js';
+import { createSeaRockLayer } from './world/layers/SeaRockLayer.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
 import { createFlowerLayer } from './world/layers/FlowerLayer.js';
 import { createSnowLayer } from './world/layers/SnowLayer.js';
@@ -717,6 +718,7 @@ chunks.addLayer(lavaLayer);
 const seaCoast = createSeaCoastLayer(WORLD, terrainMaterial);
 chunks.addLayer(seaCoast);
 chunks.addLayer(createKelpLayer(WORLD));
+chunks.addLayer(createSeaRockLayer(WORLD)); // (rock stacks, arches, ledges on the sea bed)
 const logs = createLogLayer(WORLD);
 chunks.addLayer(logs);
 chunks.addLayer(createFlowerLayer(WORLD));
@@ -2707,7 +2709,7 @@ function tick(now) {
   body.update(controls, dt);
   geese.update(dt, camera, { spring, autumn: autumn * turning }, sound, (x, z) => (sound.from(x, z), panTowards(camera, x, z)));
   const gameLights = game.update(dt, {
-    time: now / 1000, wind: clouds.wind, light: ambientLight, day: around.env.day, night: 1 - around.env.day, rain: localRain,
+    time: now / 1000, wind: clouds.wind, light: ambientLight, day: around.env.day, night: 1 - around.env.day, rain: localRain, underwater,
     snowing: weather.rain > 0.2 && seasonUniforms.uWinter.value > 0.5 && cold.value > 0.3,
     // A blizzard: a hard snowstorm (bitter cold in the wind).
     dust: sandstorm.amount,
