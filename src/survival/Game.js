@@ -569,12 +569,6 @@ export class Game {
       const s = built.structure;
       found.push({ kind: 'structure', distance: built.distance, structure: s, text: down ? `Take down the ${ITEMS[s.type].name.toLowerCase()}` : this.#structureText(s, held) });
     }
-    // Under the water: the bed in front of you, to feel about on (oysters, shells, now and then a pearl).
-    if (this.underwater) {
-      const hit = this.solidHit?.(origin, direction, reach + 0.5);
-      const w = hit && this.waterAt(hit.point.x, hit.point.z);
-      if (hit && !hit.cave && w?.lake && this.generator().getOceanness(hit.point.x, hit.point.z) > 0.4) found.push({ kind: 'seabed', distance: hit.point.distanceTo(origin), x: hit.point.x, z: hit.point.z, text: 'Feel about on the sea bed (Q)' });
-    }
     const water = this.underwater ? null : this.#waterAlong(origin, direction, reach);
     if (water) {
       const fill = held?.id === 'waterskin';
@@ -757,6 +751,12 @@ export class Game {
       }
       this.sound?.call('pickup', 0, 0.5);
       this.dirty = true;
+      // (An oyster prised off the sea bed: now and then there's a pearl in it.)
+      if (stack.id === 'oyster' && Math.random() < 0.08) {
+        this.#give('pearl', 1);
+        this.#achieve('pearl');
+        return this.hotbar?.flash('An oyster, and inside it, a pearl!');
+      }
       return this.hotbar?.flash(`${ITEMS[stack.id].name}${stack.count > 1 ? ` ×${stack.count}` : ''}`);
     }
     if (t.kind === 'carcass') {
@@ -904,30 +904,6 @@ export class Game {
         return this.hotbar?.flash(`Honey ×${n}, and stung all over`);
       }
       return this.hotbar?.flash(`Honey ×${n}: the smoke kept them quiet`);
-    }
-    if (t.kind === 'seabed') {
-      if (this.cooldown > 0) return;
-      this.cooldown = 1.2;
-      this.#animate('chop', 0.4);
-      this.sound?.call('dig', 0, 0.25);
-      // (Each spot of the bed searched once a while: what was there's been taken.)
-      const key = `${Math.round(t.x / 3)},${Math.round(t.z / 3)}`;
-      this.searched ??= new Map();
-      if (this.time - (this.searched.get(key) ?? -1e9) < 900) return this.hotbar?.flash('Nothing more here: try further along the bed');
-      this.searched.set(key, this.time);
-      const reef = (this.generator().getReef?.(t.x, t.z, this.generator().getHeight(t.x, t.z)) ?? 0) > 0.15;
-      const r = Math.random();
-      if (r < (reef ? 0.5 : 0.35)) {
-        this.#give('oyster', 1);
-        if (Math.random() < (reef ? 0.12 : 0.06)) {
-          this.#give('pearl', 1);
-          this.#achieve?.('pearl');
-          return this.hotbar?.flash('An oyster, and inside it, a pearl!');
-        }
-        return this.hotbar?.flash('An oyster');
-      }
-      if (r < 0.75) return this.#give('seashell', 1 + Math.floor(Math.random() * 2)), this.hotbar?.flash('Seashells');
-      return this.hotbar?.flash('Just sand and weed');
     }
     if (t.kind === 'scoop') {
       if (this.cooldown > 0) return;

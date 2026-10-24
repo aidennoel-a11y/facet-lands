@@ -132,7 +132,7 @@ export class GroundItems {
     const seed = generator.seed ^ 0x9e3779;
     const G = 6, cells = Math.floor(size / G);
     const surface = { normalY: 1 };
-    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], iron: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [] };
+    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], iron: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [], oyster: [], seashell: [] };
     const items = [];
     // (The country, sampled every 32 m.)
     const land = new Map();
@@ -177,11 +177,22 @@ export class GroundItems {
           const r = hash2(gi, gj, seed + 5);
           id = w.savanna > 0.5 ? 'seedCorn' : mount > 0.3 || w.pine > 0.5 ? 'seedPotato' : r < 0.6 ? 'seedWheat' : 'seedCarrot';
         }
+        // On the sea floor: oysters in clusters on the harder ground (most
+        // on the reefs and the rocky patches), seashells on the sand.
+        let y = null;
+        if (!id && h > 0.84) {
+          y = groundHeightAt(lx, lz, surface);
+          if (y < sea - 0.8 && y > sea - 24) {
+            const reef = generator.getReef?.(x0 + lx, z0 + lz, y) ?? 0;
+            id = hash2(gi, gj, seed + 9) < (surface.normalY < 0.92 ? 0.7 : 0.3) + 0.3 * reef ? 'oyster' : 'seashell';
+          }
+        }
         if (!id) continue;
         const key = `${cx},${cz},${i},${j}`;
         if (this.taken.has(key)) continue;
-        const y = groundHeightAt(lx, lz, surface);
-        if (!(y > sea + 0.3) || surface.normalY < 0.72) continue;
+        y ??= groundHeightAt(lx, lz, surface);
+        const wet = id === 'oyster' || id === 'seashell';
+        if (wet ? !(y < sea - 0.8) : !(y > sea + 0.3) || surface.normalY < 0.72) continue;
         // High in the mountains, some of the loose stone is coal, or the dark
         // ore that steel is made from (see Game.#mine).
         // Now and then, among the loose stones, a lump of rusty iron ore showing
@@ -193,7 +204,7 @@ export class GroundItems {
           if (r > 0.82) id = 'mountainOre';
           else if (r > 0.6) id = 'coal';
         }
-        if (generator.rivers?.at(x0 + lx, z0 + lz, 0.5)) continue;
+        if (!wet && generator.rivers?.at(x0 + lx, z0 + lz, 0.5)) continue;
         const turn = hash2(gi, gj, seed + 3) * Math.PI * 2;
         const item = { key, id, x: x0 + lx, y, z: z0 + lz, turn, index: found[id].length, node: ORE_NODES.has(id) };
         if (id === 'iron') (item.size = 2.1), (item.boulder = true); // (a boulder with iron in it: see ironBoulderModel)
