@@ -61,6 +61,10 @@ const LAVA = new Color(0x2b2827); // old lava
 const CINDER = new Color(0x6e3b2c); // red cinders
 const SCREE = new Color(0x4b423e); // a cinder cone's dark slopes
 const ICE = new Color(0x9fcbe0); // glacier ice
+const ICE_DEEP = new Color(0x5e9cc8), CREVASSE = new Color(0x3e78a8);
+const GLACIER_SNOW = [0xf2f6fa, 0xe8eff6, 0xdfe9f2, 0xf6f8fa].map((c) => new Color(c));
+const MORAINE = [0x6a6660, 0x7a756c, 0x5a5650, 0x8a847a].map((c) => new Color(c));
+const pickColor = (list, h) => list[Math.floor(h * list.length)];
 const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
 const GRAVEL = new Color(0x8a8590);
 const CASCADE_MOSS = new Color(0x3a7a2a); // thick moss on the Cascades' ground
@@ -1125,7 +1129,9 @@ export class TerrainGenerator {
     try {
       // (Let down where a landmark's a hollow: the great sinkhole, a lake's bowl.)
       const h = this.rivers.carve(x, z, base, rough);
-      return h - this.landmarks.basinAt(x, z, h);
+      const g = h - this.landmarks.basinAt(x, z, h);
+      // (Built up where a glacier lies: its ice is the land's top there.)
+      return g + (g > this.rivers.seaLevel + 60 ? this.landmarks.glacierAt(x, z, g)?.ice ?? 0 : 0);
     } finally {
       this.footprint = fp;
     }
@@ -3778,6 +3784,23 @@ export class TerrainGenerator {
       const glacier = smoothstep(0.15, 0.45, this.detailNoise.noise2D(x * 0.012 + 90, z * 0.012 - 40)) * smoothstep(0.45, 0.6, upness) * (1 - smoothstep(0.85, 0.95, upness));
       if (steep > 0) out.lerp(ICY_ROCK, 0.55 * steep * up);
       if (glacier > 0) out.lerp(ICE, 0.75 * glacier * up);
+    }
+    // A glacier's ice: snow lying on it, the blue ice showing in the
+    // crevasses across its flow and in its steep front, and along its sides
+    // and its snout the dark rock and grit of its moraines.
+    const gl = height > this.rivers.seaLevel + 60 ? this.landmarks.glacierAt(x, z, height) : null;
+    if (gl) {
+      const N = this.detailNoise;
+      const snowy = pickColor(GLACIER_SNOW, hash2(Math.floor(x / 3), Math.floor(z / 3), this.seed ^ 0x61ac));
+      let c = snowy;
+      // (Crevasses: bands across the flow, broken and wandering, where it bends and stretches.)
+      const band = Math.sin(gl.u * 0.42 + N.noise2D(x * 0.03, z * 0.03) * 4 + gl.v * gl.v * 0.004);
+      if (band > 0.86 && gl.q < 0.8 && N.noise2D(x * 0.08 + 7, z * 0.08) > -0.2) c = CREVASSE;
+      if (upness < 0.75) c = upness < 0.55 ? ICE_DEEP : ICE; // (its steep front and the walls of its seracs)
+      out.lerp(c, smoothstep(0.1, 0.8, gl.ice));
+      // (The moraines: rock and grit along its edges and heaped at its snout.)
+      const moraine = smoothstep(0.78, 0.94, gl.q) * (1 - smoothstep(0.96, 1, gl.q));
+      if (moraine > 0) out.lerp(MORAINE[Math.floor(hash2(Math.floor(x / 2), Math.floor(z / 2), this.seed ^ 0x3a0e) * MORAINE.length)], 0.8 * moraine);
     }
     // The rocky ground of the sea floor: crusted over with weed, sponge and
     // coralline algae, dull greens, rose and purple, in patches.

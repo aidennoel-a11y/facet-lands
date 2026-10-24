@@ -749,7 +749,13 @@ trees.keepOut = (x0, z0, x1, z1) => [
   ...stormTrack(x0, z0, x1, z1),
   // (Nor in a landmark's hollow or about it: each stands in its own clearing.)
   // (The Cascades' falls keep their own clear of trees where they're placed: see treePlacement.)
-  ...generator.landmarks.near((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 300).filter((s) => s.kind !== 'falls').map((s) => [s.x, s.z, LANDMARK_CLEAR[s.kind] ?? 16]),
+  ...generator.landmarks.near((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 300).filter((s) => s.kind !== 'falls' && s.kind !== 'glacier').map((s) => [s.x, s.z, LANDMARK_CLEAR[s.kind] ?? 16]),
+  // (A glacier's long tongue of ice: clear all down it.)
+  ...generator.landmarks.near((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + 300).filter((s) => s.kind === 'glacier').flatMap((s) => {
+    const G = generator.landmarks.glacierShape(s), out = [];
+    for (let u = -150; u <= 170; u += 40) out.push([s.x + G.dx * u, s.z + G.dz * u, u > 100 ? 50 : 75]);
+    return out;
+  }),
 ];
 chunks.addLayer(createSnowLayer(WORLD, rocks)); // (after the rocks: it caps their boulders)
 // The clouds' shadows slide over the land, the trees, grass, rocks and water (see cloudShadow).
@@ -1266,7 +1272,7 @@ let thirdPerson = false;
 let selfFigure = null;
 const eyeSaved = new THREE.Vector3(), behind = new THREE.Vector3();
 function thirdPersonView(dt, now) {
-  const on = thirdPerson && !loading && controls.mode === 'walk' && !game.sleeping;
+  const on = thirdPerson && !loading && (controls.mode === 'walk' || controls.mode === 'fly') && !game.sleeping;
   if (game.hand) game.hand.visible = !on;
   if (!on) {
     if (selfFigure) selfFigure.root.visible = false;
@@ -1274,7 +1280,12 @@ function thirdPersonView(dt, now) {
   }
   selfFigure ??= new Remote(scene, { id: 'me', name: 'You', colour: '#c8965a' });
   selfFigure.tag.visible = false;
-  const t = now / 1000, me = { crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: false, pose: game.pose() };
+  // (How fast you're going, eased: so the stride's swing and rhythm follow it.)
+  const p = camera.position, moved = selfFigure.last ? Math.hypot(p.x - selfFigure.last.x, p.z - selfFigure.last.z) / Math.max(dt, 1e-3) : 0;
+  selfFigure.last = { x: p.x, z: p.z };
+  selfFigure.speedOverride = (selfFigure.speedOverride ?? 0) + (Math.min(moved, 12) - (selfFigure.speedOverride ?? 0)) * Math.min(1, dt * 8);
+  const flying = controls.mode === 'fly';
+  const t = now / 1000, me = { crouch: controls.crouch, sprint: controls.sprinting || (flying && selfFigure.speedOverride > 4.5), swim: controls.swimming || (flying && controls.underwater), fly: false, pose: game.pose() };
   selfFigure.push([camera.position.x, camera.position.y - controls.eyeHeight, camera.position.z, controls.euler.y, controls.euler.x, packFlags(me, mp.items)], t);
   selfFigure.update(dt, t + 0.15, mp.items); // (drawn as you are now, not a moment behind as the others are)
   eyeSaved.copy(camera.position);
@@ -1656,8 +1667,8 @@ ui.fly.addEventListener('change', () => {
 const peaceful = document.getElementById('peaceful');
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
-  // F3: seen from behind, or through your own eyes.
-  if (e.code === 'F3') {
+  // F3 (or O: on a Mac, F3 is the windows' key): seen from behind, or through your own eyes.
+  if (e.code === 'F3' || (e.code === 'KeyO' && !e.metaKey && !e.ctrlKey)) {
     e.preventDefault();
     thirdPerson = !thirdPerson;
     return;

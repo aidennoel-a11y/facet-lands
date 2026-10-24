@@ -231,6 +231,14 @@ export class PlayerControls {
       // (Underground, flying, the rock walls still stop you: unless no clip.)
       if (!this.noclip && (m.x || m.z)) {
         const feet = p0.y - this.eyeHeight, here = this.#ground(p0.x, feet, p0.z);
+        // (Under the water, a rock face ahead stops you, as in a cave: you
+        // don't jump up onto its top.)
+        const wet = this.#water(p0.x, p0.z);
+        if (!here.inCave && wet && p0.y < wet.level - 0.2) {
+          const len = Math.hypot(m.x, m.z), ax = p0.x + m.x + (m.x / len) * 0.5, az = p0.z + m.z + (m.z / len) * 0.5;
+          const ahead = this.world.groundAt(ax, feet, az);
+          if (!ahead.inCave && ahead.height > p0.y + Math.max(0, m.y) - 0.45 && ahead.height < wet.level) (m.x = 0), (m.z = 0);
+        }
         if (here.inCave) {
           const len = Math.hypot(m.x, m.z), reach = this.radius + 0.35;
           const ahead = this.#ground(p0.x + m.x + (m.x / len) * reach, feet, p0.z + m.z + (m.z / len) * reach);
@@ -247,8 +255,10 @@ export class PlayerControls {
     }
     const ground = this.#ground(pos.x, pos.y - this.eyeHeight, pos.z);
     // (Down into the water, if you like, to near its bottom.)
-    const floor = ground.inCave ? ground.stand + 0.4 : ground.swim ? this.#bedAround(pos.x, pos.y - this.eyeHeight, pos.z, ground.height) + 0.9 : ground.stand + this.flyClearance;
-    const water = ground.swim ? this.#water(pos.x, pos.z) : null;
+    // (Under the water, however shallow: down to near the bottom, not held up over it.)
+    const wet = !ground.inCave ? this.#water(pos.x, pos.z) : null, under = !!wet && ground.height < wet.level && pos.y < wet.level + this.flyClearance;
+    const floor = ground.inCave ? ground.stand + 0.4 : ground.swim || under ? this.#bedAround(pos.x, pos.y, pos.z, ground.height) + 0.9 : ground.stand + this.flyClearance;
+    const water = ground.swim || under ? wet : null;
     this.underwater = water !== null && pos.y < water.level - 0.05;
     if (pos.y < floor) pos.y = floor;
     if (ground.inCave && pos.y > ground.ceiling - 0.2) pos.y = Math.max(floor, ground.ceiling - 0.2);
@@ -275,15 +285,26 @@ export class PlayerControls {
   }
 
   /**
-   * The highest of the sea bed round (x, z), an arm's length each way (not
-   * only straight below: on a steep, rough bed, the rock beside you is
-   * nearer than that under you, and your eyes mustn't go into it).
+   * The sea bed round you, an arm's length each way (not only straight
+   * below: on a steep, rough bed, the rock beside you is nearer than that
+   * under you, and your eyes mustn't go into it). Rock sloping up below
+   * your eyes lifts you over it; rock standing up beside you higher than
+   * that is a wall: it pushes you off it sideways, never up it.
    */
-  #bedAround(x, feetY, z, here) {
-    let top = here;
+  #bedAround(x, eyeY, z, here) {
+    let top = here, px = 0, pz = 0;
     for (let k = 0; k < 8; k++) {
-      const a = (k / 8) * Math.PI * 2, g = this.world.groundAt(x + Math.cos(a) * 0.7, feetY, z + Math.sin(a) * 0.7);
-      if (!g.inCave && Number.isFinite(g.height)) top = Math.max(top, g.height - 0.25); // (a little less: it's beside you, not under)
+      const a = (k / 8) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+      const g = this.world.groundAt(x + c * 0.7, eyeY - this.eyeHeight, z + s * 0.7);
+      if (g.inCave || !Number.isFinite(g.height)) continue;
+      if (g.height < eyeY - 0.45) top = Math.max(top, g.height - 0.25); // (a little less: it's beside you, not under)
+      else (px -= c), (pz -= s);
+    }
+    const n = Math.hypot(px, pz);
+    if (n > 0) {
+      const pos = this.camera.position;
+      pos.x += (px / n) * 0.06;
+      pos.z += (pz / n) * 0.06;
     }
     return top;
   }
@@ -429,7 +450,7 @@ export class PlayerControls {
     pos.y = Math.min(float + 0.05, pos.y + vy * dt);
     // Never down through the bottom.
     const below = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z);
-    const floor = (below.inCave ? below.height : this.#bedAround(pos.x, pos.y - this.eyeHeight, pos.z, below.height)) + 0.7;
+    const floor = (below.inCave ? below.height : this.#bedAround(pos.x, pos.y, pos.z, below.height)) + 0.7;
     // (Eased up over a sudden rise, not jolted; but never into it.)
     if (pos.y < floor) pos.y = Math.max(floor - 0.35, pos.y + (floor - pos.y) * Math.min(1, dt * 12));
     this.velocityY = 0;

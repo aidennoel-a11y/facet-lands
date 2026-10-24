@@ -897,41 +897,17 @@ export class Landmarks {
         break;
       }
       case 'glacier': {
-        // A glacier lying in a high valley among the snowy peaks: a great
-        // tongue of ice, 20 m thick in the middle, thinning up the valley's
-        // sides, ending downhill in a wall of blue ice; snow lying on top of
-        // it, crevasses across it, seracs broken off its front.
-        const R2 = 95, T = 22, base = y0;
-        const top = (x, z) => {
-          const q = (x * x + z * z) / (R2 * R2);
-          if (q >= 1) return -Infinity;
-          // (Thinning to nothing at its edges, so it lies down into the land all round.)
-          const g0 = gy(x, z), surf = base + T * (1 - q) + 0.5 * (g0 - base) + 0.8 * wob2(x * 0.5, z * 0.5);
-          return Math.max(g0 + 0.25 * (1 - q), Math.min(surf, g0 + 0.4 + 30 * Math.pow(1 - q, 1.3)));
-        };
-        g.add(this.#iceSheet(top, R2, (x, z, y, slope, depth) => (slope > 0.9 ? pick2([0x6aa8d8, 0x5a98c8, 0x88c4e8], x, z) : depth < 1.5 ? 0xc8e0f0 : pick2([0xf4f8fc, 0xe8f0f8, 0xdce8f4], x, z))));
-        // Crevasses across its flow.
-        for (let i = 0; i < 26; i++) {
-          const a = r(0, Math.PI * 2), d = r(10, R2 * 0.8), x = Math.cos(a) * d, z = Math.sin(a) * d, y = top(x, z);
-          if (!(y > gy(x, z) + 1)) continue;
-          k.add(new BoxGeometry(r(6, 14), 0.25, 0.7), 0x3a6a98, [x, y + 0.05, z], [0, r(0, 3), 0], [1, 1, 1], 0.05);
+        // A glacier lying in a high valley among the snowy peaks: the ice
+        // itself is the land there (see LandmarkSites.glacierAt); here only
+        // the blocks of ice broken from its front, lying tumbled below it.
+        const G = this.generator.landmarks.glacierShape(site);
+        for (let i = 0; i < 16; i++) {
+          const u = r(150, 200), v = r(-35, 35), x = G.dx * u - G.dz * v, z = G.dz * u + G.dx * v, g0 = gy(x, z);
+          if (!Number.isFinite(g0) || this.generator.landmarks.glacierAt(site.x + x, site.z + z, g0)) continue;
+          const sx = r(1.5, 4.5), sy = r(1.2, 3.5), sz = r(1.5, 4);
+          k.add(new BoxGeometry(sx, sy, sz), pick([0x88c4e8, 0xa8d8f0, 0x6aa8d8, 0xd8ecf6]), [x, g0 + sy * 0.3, z], [r(-0.4, 0.4), r(0, 3), r(-0.4, 0.4)], [1, 1, 1], 0.05);
+          solid(x, z, Math.max(sx, sz) * 0.5, g0 + sy * 0.8);
         }
-        // Seracs at its front, and blocks broken off below it.
-        for (let i = 0; i < 40; i++) {
-          const a = r(0, Math.PI * 2), d = R2 * r(0.82, 1.08), x = Math.cos(a) * d, z = Math.sin(a) * d, g0 = gy(x, z);
-          const y = Math.max(top(x * 0.95, z * 0.95), g0);
-          if (y - g0 < 3 && d < R2) continue;
-          blob(icy, pick([0x88c4e8, 0xa8d8f0, 0x6aa8d8]), [x, g0 + r(1, 4), z], r(4.5, 12), [1, r(0.7, 1.3), 1], 0.2);
-        }
-        // And great blocks of ice strewn down the hollow below it and round about.
-        for (let i = 0; i < 18; i++) {
-          const a = r(0, Math.PI * 2), d = R2 * r(1.05, 1.7), x = Math.cos(a) * d, z = Math.sin(a) * d, g0 = gy(x, z);
-          if (g0 > y0 + 25) continue; // (down in the low ground, not up the peaks)
-          const size = r(4, 11);
-          blob(icy, pick([0x88c4e8, 0xa8d8f0, 0x6aa8d8, 0x9fd0ec]), [x, g0 + size * 0.25, z], size, [1, r(0.6, 1.2), 1], 0.22);
-          solid(x, z, size * 0.85, g0 + size * 0.9);
-        }
-        site.surface = (wx, wz) => top(wx - site.x, wz - site.z);
         break;
       }
     }

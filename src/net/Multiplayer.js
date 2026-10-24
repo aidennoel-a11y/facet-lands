@@ -145,7 +145,7 @@ export class Remote {
     const x = lerp(0), y = lerp(1), z = lerp(2), yaw = a.s[3] + dyaw * u, pitch = lerp(4), flags = b.s[5];
     // (How fast they're going, for the swing of their arms and legs.)
     const span = Math.max(1e-3, b.at - a.at);
-    const speed = b === a ? 0 : Math.hypot(b.s[0] - a.s[0], b.s[2] - a.s[2]) / span;
+    const speed = this.speedOverride ?? (b === a ? 0 : Math.hypot(b.s[0] - a.s[0], b.s[2] - a.s[2]) / span); // (your own figure: told how fast you go)
     this.root.visible = true;
     this.root.position.set(x, y, z);
     (this.yaw = yaw), (this.speed = speed), (this.flags = flags); // (for the animals: see WorldSync.others)

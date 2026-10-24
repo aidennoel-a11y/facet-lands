@@ -830,6 +830,52 @@ export class LandmarkSites {
     return d;
   }
 
+  /** A glacier site's lie: { base (its rock's height at the site), dx, dz (the way it flows), grade }. */
+  glacierShape(s) {
+    return (s.glacier ??= this.#probe((H) => {
+      // (Which way the valley runs down, and how steeply, from round the site.)
+      const sx = (H(s.x + 40, s.z) - H(s.x - 40, s.z)) / 80, sz = (H(s.x, s.z + 40) - H(s.x, s.z - 40)) / 80, n = Math.hypot(sx, sz) || 1;
+      return { base: H(s.x, s.z), dx: -sx / n, dz: -sz / n, grade: Math.min(0.3, Math.max(0.06, n)) };
+    }));
+  }
+
+  /**
+   * A glacier over (x, z), its rock bed at `h`: { ice (metres thick), q
+   * (0 its middle .. 1 its edge), u (along its flow, downhill + from its
+   * middle), v (across) }, or null. A long tongue of ice lying down its
+   * valley, filling it nearly level from side to side and sloping down
+   * the way it flows, thinning up its sides into the rock, and ending
+   * downhill in a steep front. (The land itself, built up: see getHeight.)
+   */
+  glacierAt(x, z, h) {
+    if (this.busy) return null;
+    const C = LANDMARKS.glacier.cell, ci = Math.floor(x / C), ck = Math.floor(z / C);
+    for (let k = ck - 1; k <= ck + 1; k++) {
+      for (let i = ci - 1; i <= ci + 1; i++) {
+        // (Only the squares a tongue could reach from: it's 200 m at most from its site.)
+        if ((i < ci && x - ci * C > 220) || (i > ci && (ci + 1) * C - x > 220) || (k < ck && z - ck * C > 220) || (k > ck && (ck + 1) * C - z > 220)) continue;
+        const s = this.site('glacier', i, k);
+        if (!s || Math.abs(x - s.x) > 220 || Math.abs(z - s.z) > 220) continue;
+        const G = this.glacierShape(s);
+        const ox = x - s.x, oz = z - s.z, u = ox * G.dx + oz * G.dz, v = -ox * G.dz + oz * G.dx;
+        const RA = 160, RB = 62;
+        // (Broad up in its bowl, narrowing to its snout; the edge wandering in and out.)
+        const along = (u + 20) / RA, rb = RB * (1.15 - 0.45 * smoothstep(-0.6, 1, along)) * (1 + 0.08 * wob(x * 0.6, z * 0.6, s.seed % 50));
+        const q = along * along + (v / rb) * (v / rb);
+        if (q >= 1) continue;
+        // (Thinning gently up its sides and its head; at its front, a steep wall of ice.)
+        const front = smoothstep(0.1, 0.6, along), fall = 1 - q;
+        const edge = Math.pow(fall, 1.2) * (1 - front) + Math.pow(fall, 0.3) * front;
+        const thick = 26 * edge;
+        // (Its surface: nearly level across, sloping down its valley; never thinner than a skin over the rock.)
+        const level = G.base + 10 - G.grade * u * 0.8 + 1.2 * wob(x * 0.15, z * 0.15, s.seed % 31);
+        const ice = Math.min(thick, Math.max(thick * 0.25, level - h));
+        if (ice > 0.02) return { ice, q, u, v };
+      }
+    }
+    return null;
+  }
+
   /** Whether (x, z), its ground at `h`, is under a landmark's water (no grass, no flowers there). */
   underWater(x, z, h) {
     if (this.busy) return false;
