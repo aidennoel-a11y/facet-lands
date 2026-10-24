@@ -3802,7 +3802,7 @@ export class TerrainGenerator {
       let c = snowy;
       // (Crevasses: bands across the flow, broken and wandering, where it bends and stretches.)
       const band = Math.sin(gl.u * 0.42 + N.noise2D(x * 0.03, z * 0.03) * 4 + gl.v * gl.v * 0.004);
-      if (band > 0.86 && gl.q < 0.8 && N.noise2D(x * 0.08 + 7, z * 0.08) > -0.2) c = CREVASSE;
+      if (band > 0.72 && gl.q < 0.8 && N.noise2D(x * 0.08 + 7, z * 0.08) > -0.2) c = CREVASSE;
       if (upness < 0.75) c = upness < 0.55 ? ICE_DEEP : ICE; // (its steep front and the walls of its seracs)
       out.lerp(c, smoothstep(0.1, 0.8, gl.ice));
       // (The moraines: rock and grit along its edges and heaped at its snout.)

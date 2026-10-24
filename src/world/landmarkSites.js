@@ -864,12 +864,12 @@ export class LandmarkSites {
         const q = along * along + (v / rb) * (v / rb);
         if (q >= 1) continue;
         // (Thinning gently up its sides and its head; at its front, a steep wall of ice.)
-        const front = smoothstep(0.1, 0.6, along), fall = 1 - q;
-        const edge = Math.pow(fall, 1.2) * (1 - front) + Math.pow(fall, 0.3) * front;
+        const front = smoothstep(0.62, 0.88, along) * (1 - smoothstep(0.3, 0.7, Math.abs(v) / rb)), fall = 1 - q; // (steep only at its snout: its sides lie into the valley's walls)
+        const edge = Math.pow(fall, 1.5) * (1 - front) + Math.pow(fall, 0.35) * front;
         const thick = 26 * edge;
         // (Its surface: nearly level across, sloping down its valley; never thinner than a skin over the rock.)
         const level = G.base + 10 - G.grade * u * 0.8 + 1.2 * wob(x * 0.15, z * 0.15, s.seed % 31);
-        const ice = Math.min(thick, Math.max(thick * 0.25, level - h));
+        const ice = Math.min(thick, Math.max(thick * 0.25, level - h)) * (0.35 + 0.65 * Math.max(front, smoothstep(0, 0.45, fall)));
         if (ice > 0.02) return { ice, q, u, v };
       }
     }
