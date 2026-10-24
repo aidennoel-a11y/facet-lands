@@ -83,6 +83,9 @@ export class Wildfires {
       f = this.fuelAt ? this.fuelAt((i + 0.5) * CELL, (k + 0.5) * CELL) : 0.6;
       this.fuelCache.set(key, f);
     }
+    // (A firebreak: grass cut short, a worn path or a road, dug or tilled
+    // ground, what you've cleared: little or nothing there to carry it on.)
+    if (this.bareAt) f *= 1 - this.bareAt((i + 0.5) * CELL, (k + 0.5) * CELL, CELL);
     return f;
   }
 
@@ -291,7 +294,8 @@ export class Wildfires {
           const up = Math.max(-0.5, Math.min(1.5, (h1 - h0) / (CELL * dl)));
           // (About half a metre a second through good grass downwind; a
           // creep against the wind; faster up a slope, slower down one.)
-          const rate = 0.032 * Math.min(1, fuel) * strength * (0.35 + windy * (3 * Math.max(0, along) - 0.25 * Math.max(0, -along)) + (1 - windy) * 0.6) * (1 + 1.2 * up) / dl;
+          // (In a long dry spell in the hot months, it all goes up far faster.)
+          const rate = 0.032 * (1 + 2.2 * (ctx.dryness ?? 0)) * Math.min(1, fuel) * strength * (0.35 + windy * (3 * Math.max(0, along) - 0.25 * Math.max(0, -along)) + (1 - windy) * 0.6) * (1 + 1.2 * up) / dl;
           if (Math.random() < rate * step) this.#light(ni, nk);
         }
       }
@@ -493,6 +497,7 @@ export class Volcanoes {
       }
       if (c.lava) nearest = Math.min(nearest, Math.hypot(c.x - cam.x, c.z - cam.z) * (c.state === 'erupting' ? 1 : 1.6));
     }
+    this.nearest = nearest; // (for the earthquakes: see main, quakes)
     // A rumble now and then when you're near one awake; the ground trembles.
     this.shake = Math.max(0, this.shake - dt / 2.5);
     // (When, by the clock: online, the room's, so everyone near hears it at once.)

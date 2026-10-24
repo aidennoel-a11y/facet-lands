@@ -241,7 +241,7 @@ lightning.onStrike = (x, y, z, distance) => {
   const summer = 1 - seasonUniforms.uSpring.value - seasonUniforms.uWinter.value;
   // (Whether it catches: by where it struck, so it's the same for everyone online.)
   const chance = (((Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1) + 1) % 1;
-  if (chance < 0.18 + 0.2 * summer + 0.15 * w.savanna) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
+  if (chance < 0.18 + 0.2 * summer + 0.15 * w.savanna + 0.3 * fireSeason.dryness) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
 };
 const grassCut = new GrassCut();
 
@@ -413,6 +413,82 @@ function spawnTornado({ near = null, delay = 50, back = null } = {}) {
 // one off yourself, running across a steep slope of deep snow.
 const avalanches = new Avalanches(scene);
 const slide = { wait: 5, rumble: 0, hit: 0 };
+// Earthquakes, in the volcanic country: the ground heaving under you for
+// a few seconds, a deep roar; rock shaken loose tumbling down the steep
+// slopes; cracks torn open in the ground; every animal bolting.
+const rockfalls = new Avalanches(scene, true);
+const quake = { at: null, slot: -1, strength: 0, rumble: 0, hit: 0, fell: false, shake: 0 };
+const CRACK = new THREE.Color(0x1c1612);
+function quakeUpdate(dt) {
+  const p = camera.position, T = mp.roomTime() ?? performance.now() / 1000;
+  // (When: by the clock, so everyone near feels the same one. Where the
+  // land's volcanic, or near a volcano that's awake: more often the nearer.)
+  const volcanic = generator.getBiomeWeights(p.x, p.z, {}).volcanic ?? 0;
+  const nearVolcano = Number.isFinite(volcanoes.nearest) ? Math.max(0, 1 - volcanoes.nearest / 2500) : 0;
+  const prone = Math.max(smooth(0.2, 0.7, volcanic), nearVolcano);
+  const slot = Math.floor(T / 300);
+  if (slot !== quake.slot) {
+    quake.slot = slot;
+    if (prone > 0.05 && hash01(slot, 31) < 0.55 * prone && !quake.at) quake.at = { start: slot * 300 + 280 * hash01(slot, 32), dur: 7 + 8 * hash01(slot, 33), power: 0.5 + 0.5 * hash01(slot, 34) * prone };
+  }
+  quake.shake = 0;
+  if (quake.at && T >= quake.at.start) {
+    const q = quake.at, u = (T - q.start) / q.dur;
+    if (u >= 1) {
+      quake.at = null;
+      quake.fell = false;
+    } else {
+      // (Swelling in, the worst of it, dying away.)
+      quake.strength = q.power * smooth(0, 0.15, u) * (1 - smooth(0.6, 1, u));
+      quake.shake = quake.strength;
+      if ((quake.rumble -= dt) <= 0) (quake.rumble = 1.1), sound.call('rumble', 0, 0.5 + 0.5 * quake.strength);
+      if (!quake.fell && u > 0.15 && !sheltered) {
+        quake.fell = true;
+        game.hotbar?.flash('Earthquake! Keep clear of the steep slopes');
+        wildlife.startle(p.x, p.z, 180);
+        // Cracks torn open in the ground round you: jagged, dark.
+        for (let c = 0; c < 2 + Math.floor(q.power * 4); c++) {
+          let x = p.x + (Math.random() - 0.5) * 50, z = p.z + (Math.random() - 0.5) * 50, h = Math.random() * 6.28;
+          for (let s = 0, n = 6 + Math.floor(Math.random() * 10); s < n; s++) {
+            const len = 0.8 + Math.random() * 1.8, y = chunks.groundHeightAt(x, z);
+            if (!Number.isFinite(y) || waterAt(x, z)) break;
+            traces.print(x, y, z, h, PRINT.square, len, 'crack', CRACK, groundNormal(x, z), 0.08 + 0.18 * q.power * (1 - s / n));
+            x += Math.sin(h) * len * 0.9;
+            z += Math.cos(h) * len * 0.9;
+            h += (Math.random() - 0.5) * 1.1;
+          }
+        }
+        // Rock shaken loose above you: a slope steep and high in view.
+        if (!rockfalls.now) {
+          for (let k = 0; k < 20; k++) {
+            const a = Math.random() * 6.28, d = 30 + Math.random() * 120, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
+            const g = chunks.groundHeightAt(x, z), e = 3, slope = Math.hypot(chunks.groundHeightAt(x + e, z) - chunks.groundHeightAt(x - e, z), chunks.groundHeightAt(x, z + e) - chunks.groundHeightAt(x, z - e)) / (2 * e);
+            if (Number.isFinite(g) && slope > 0.7 && g > p.y + 6) {
+              rockfalls.start(x, z, (px, pz) => chunks.groundHeightAt(px, pz), 12 + 18 * q.power);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  rockfalls.update(dt, (x, z) => chunks.groundHeightAt(x, z));
+  // What the falling rock hits.
+  const a = rockfalls.now;
+  if (!a || controls.mode !== 'walk') return;
+  quake.hit -= dt;
+  const feet = p.y - controls.eyeHeight;
+  for (const b of a.bits) {
+    const v = Math.hypot(b.vx, b.vz);
+    if (v < 3 || Math.abs(b.y - feet - 0.8) > 1.6 || Math.hypot(b.x - p.x, b.z - p.z) > b.size + 0.6) continue;
+    if (quake.hit <= 0) {
+      quake.hit = 1;
+      game.hurt(6 + v * 1.5 * b.size, 'a rockfall');
+      game.hotbar?.flash('Hit by falling rock!');
+    }
+    break;
+  }
+}
 function snowSlopeAt(x, z) {
   const g = chunks.groundHeightAt(x, z), h = 2;
   const gx = (chunks.groundHeightAt(x + h, z) - chunks.groundHeightAt(x - h, z)) / (2 * h), gz = (chunks.groundHeightAt(x, z + h) - chunks.groundHeightAt(x, z - h)) / (2 * h);
@@ -481,6 +557,7 @@ function avalancheUpdate(dt) {
 const tornadoWind = {};
 function tornadoUpdate(dt) {
   avalancheUpdate(dt);
+  quakeUpdate(dt);
   tornadoWatch(dt);
   tornadoes.update(dt, {
     camera, light: ambientLight, wind: clouds.wind,
@@ -562,6 +639,28 @@ fires.fuelAt = (x, z) => {
   return Math.max(0, Math.min(1.5, f));
 };
 fires.onScorch = (t) => game.felling.scorch(t);
+// Firebreaks: cut grass, worn paths, roads, dug plots and ditches (little left there to burn).
+fires.bareAt = (x, z, size) => {
+  let bare = grassCut.bareAt(x, z, size, dayNight.day + dayNight.hour / 24);
+  if (bare < 0.9 && game.structures?.onRoad(x, z)) bare = 0.9;
+  if (bare < 0.8) for (const s of game.structures?.list ?? []) if ((s.type === 'plot' || s.type === 'ditch') && Math.abs(s.x - x) < size + (s.len ?? 0) && Math.abs(s.z - z) < size + (s.len ?? 0)) (bare = Math.max(bare, s.type === 'plot' ? 0.8 : 0.6));
+  return bare;
+};
+// Fire season: how long since it last rained, in the hot months. A long
+// dry spell leaves the land tinder-dry: fires catch more and spread far faster.
+const fireSeason = { spell: 1, dryness: 0, lastDay: null, warned: false };
+function updateFireSeason(raining) {
+  const day = dayNight.day + dayNight.hour / 24;
+  if (fireSeason.lastDay !== null) fireSeason.spell = raining ? 0 : fireSeason.spell + Math.max(0, Math.min(1, day - fireSeason.lastDay));
+  fireSeason.lastDay = day;
+  const summer = Math.max(0, 1 - seasonUniforms.uAutumn.value - seasonUniforms.uSpring.value - seasonUniforms.uWinter.value);
+  fireSeason.dryness = smooth(0.6, 4, fireSeason.spell) * (0.25 + 0.75 * Math.max(summer, 0.6 * seasonUniforms.uAutumn.value)) * (1 - seasonUniforms.uWinter.value);
+  if (fireSeason.dryness > 0.7 && !fireSeason.warned && controls.mode === 'walk') {
+    fireSeason.warned = true;
+    game.hotbar?.flash('A long dry spell: the land is tinder-dry and fire will race through it. Cut firebreaks (a sickle, a path) round your camp');
+  }
+  if (fireSeason.dryness < 0.3) fireSeason.warned = false;
+}
 const volcanoes = new Volcanoes(scene);
 const sandstorm = new Sandstorm(scene, Rain);
 const devils = new DustDevils(scene);
@@ -2663,7 +2762,8 @@ function tick(now) {
   // Fire, smoke and dust, lit by the light of the sky.
   ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
   const night = dayNight._w?.night ?? 0;
-  const air = { time: worldNow, netTime: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
+  updateFireSeason(weather.rain > 0.3 && !snowing);
+  const air = { time: worldNow, netTime: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, dryness: fireSeason.dryness, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
   // (Where you walk, over and over, a path wears into the grass.)
   if (controls.mode === 'walk' && !controls.swimming && !sheltered && controls.moving && !game.riding) {
@@ -2694,7 +2794,7 @@ function tick(now) {
   sound.ambience(sheltered ? { ...env, wind: 0, gust: 0, fall: 0, river: 0, brook: caveSounds.brook ?? 0, brookPan: 0, canopy: 0, exposure: 0, storm: 0 } : env);
   // (The ground trembles as a volcano rumbles.)
   lavaHeat(dt);
-  const tremble = volcanoes.shake > 0 && !controls.swimming ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0;
+  const tremble = !controls.swimming ? (volcanoes.shake > 0 ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0) + (quake.shake > 0 ? (Math.sin(now * 0.041) + 0.6 * Math.sin(now * 0.097 + 1.3)) * 0.16 * quake.shake : 0) : 0;
   camera.position.y += tremble;
   const eye = thirdPersonView(dt, now);
   camera.updateMatrixWorld();
@@ -2779,7 +2879,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

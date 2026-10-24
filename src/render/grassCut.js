@@ -69,6 +69,23 @@ export class GrassCut {
     return w - 2.5 * Math.max(0, day - at);
   }
 
+  /**
+   * How much of the `size`-metre square at (x, z) is bare (0..1): grass cut
+   * short in the last couple of days, or a worn path, or paved: a firebreak.
+   */
+  bareAt(x, z, size, day) {
+    let bare = 0, n = 0;
+    const h = size / 2;
+    for (let k = Math.floor(z - h); k < Math.floor(z + h); k++) {
+      for (let i = Math.floor(x - h); i < Math.floor(x + h); i++) {
+        n++;
+        const key = `${i},${k}`, cut = this.cells.get(key), path = this.paths.get(key);
+        if ((cut !== undefined && day - cut < 2.5) || (path && this.#worn(path, day) > 8)) bare++;
+      }
+    }
+    return n ? bare / n : 0;
+  }
+
   /** How worn (0..1) each metre of path is round (x, z): [[x, z, amount], ...]. */
   pathsNear(x, z, r, day) {
     const out = [];

@@ -15,7 +15,9 @@ const rnd = (a, b) => a + Math.random() * (b - a);
  * while, then settles away.
  */
 export class Avalanches {
-  constructor(scene) {
+  // (`rock`: a rockfall instead, shaken loose by an earthquake: broken rock tumbling down, a cloud of dust off it.)
+  constructor(scene, rock = false) {
+    this.rock = rock;
     this.material = new MeshLambertMaterial({ flatShading: true });
     this.chunks = new InstancedMesh(new DodecahedronGeometry(1, 0), this.material, CHUNKS);
     this.chunks.frustumCulled = false;
@@ -26,8 +28,13 @@ export class Avalanches {
     this.powder.frustumCulled = false;
     this.powder.count = 0;
     const c = new Color();
-    for (let k = 0; k < CHUNKS; k++) this.chunks.setColorAt(k, c.setRGB(0.9 + Math.random() * 0.08, 0.92 + Math.random() * 0.06, 0.96 + Math.random() * 0.04));
-    for (let k = 0; k < POWDER; k++) this.powder.setColorAt(k, c.setRGB(0.95, 0.96, 0.99));
+    for (let k = 0; k < CHUNKS; k++) {
+      if (rock) {
+        const v = 0.36 + Math.random() * 0.2;
+        this.chunks.setColorAt(k, c.setRGB(v * 1.05, v, v * 0.92));
+      } else this.chunks.setColorAt(k, c.setRGB(0.9 + Math.random() * 0.08, 0.92 + Math.random() * 0.06, 0.96 + Math.random() * 0.04));
+    }
+    for (let k = 0; k < POWDER; k++) this.powder.setColorAt(k, rock ? c.setRGB(0.62, 0.56, 0.48) : c.setRGB(0.95, 0.96, 0.99));
     scene.add(this.chunks, this.powder);
     this.active = null;
   }
@@ -43,7 +50,7 @@ export class Avalanches {
     for (let k = 0; k < CHUNKS; k++) {
       const u = (Math.random() - 0.5) * width, back = Math.random() * 14;
       const bx = x + ax * u - fall.x * back, bz = z + az * u - fall.z * back;
-      const size = 0.4 + Math.pow(Math.random(), 2.2) * 2.2;
+      const size = this.rock ? 0.25 + Math.pow(Math.random(), 2.6) * 1.6 : 0.4 + Math.pow(Math.random(), 2.2) * 2.2;
       bits.push({ x: bx, z: bz, y: ground(bx, bz) + size * 0.5, vx: 0, vz: 0, vy: 0, size, delay: back * 0.09 + Math.random() * 0.6, spin: new Vector3(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)), turn: Math.random() * 6, rest: 0, sy: 0.5 + Math.random() * 0.4 });
     }
     this.active = { bits, puffs: [], time: 0, x, z, speed: 0, settled: 0 };

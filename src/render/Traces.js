@@ -19,7 +19,7 @@ const RINGS = 80;
 const CROWNS = 24;
 
 // How long a print lasts (seconds) in each ground.
-const LASTS = { snow: 180, mud: 120, sand: 90, grass: 100, blood: 200, dung: 600, twig: 500 };
+const LASTS = { snow: 180, mud: 120, sand: 90, grass: 100, blood: 200, dung: 600, twig: 500, crack: 1500 };
 // Shapes of print: a boot, a cloven hoof, a paw, a rabbit's long hind foot
 // (each blocky, cut square like the animals' feet).
 export const PRINT = { boot: 0, hoof: 1, paw: 2, rabbit: 3, square: 4 };
@@ -167,12 +167,12 @@ export class Traces {
    * `size` (m, its length), pressed into ground `kind` (snow, sand, mud)
    * of colour `colour`, tipped to the ground's slope `normal`.
    */
-  print(x, y, z, heading, shape, size, kind, colour, normal = UP) {
+  print(x, y, z, heading, shape, size, kind, colour, normal = UP, width = null) {
     const k = this.nextPrint;
     this.nextPrint = (k + 1) % PRINTS;
     q.setFromUnitVectors(UP, n.copy(normal).normalize()).multiply(spin.setFromAxisAngle(UP, heading));
     p.set(x, y + 0.03, z);
-    s.set(size * (shape === PRINT.rabbit ? 0.45 : 0.62), 1, size);
+    s.set(width ?? size * (shape === PRINT.rabbit ? 0.45 : 0.62), 1, size);
     this.prints.setMatrixAt(k, m4.compose(p, q, s));
     this.prints.setColorAt(k, colour);
     this.printInfo.setXYZ(k, this.time, LASTS[kind] ?? 90, shape);
