@@ -52,7 +52,7 @@ const DUNE = new Color(0xe6b86e); // dune sand
 // mound corals, sponges and weed, in a living reef's mix of colours (the
 // tans and ochres, cream, rose and coral pink, orange, yellow-green, lilac,
 // teal), patch by patch (see surfaceColor).
-const SEA_CRUST = [0x5a6a48, 0x6a5a5a, 0x8a5a6a, 0x6a6a7a, 0x4e5a4a, 0x7a6a50].map((c) => new Color(c));
+const SEA_CRUST = [0x4a6a3a, 0x5a7a42, 0x3e5e36, 0x66784a, 0x546a50, 0x6a5a58, 0x4e6644].map((c) => new Color(c));
 const CORALS = [0xb08a58, 0xc8a070, 0xd8ccb0, 0xc8708a, 0xd88a5a, 0xa4b058, 0x9a7ab0, 0x5aa0a0, 0x8a6a44, 0xc0b070].map((c) => new Color(c));
 const SINTER = new Color(0xe6dcc4); // crusts round hot springs
 const MAT = new Color(0xd2803a); // microbial mats at a hot spring's edge
@@ -1428,13 +1428,14 @@ export class TerrainGenerator {
     // land with a beach round it (shaped by the lake shore below).
     if (height < seaLevel - 0.5 && !this._probing && !this._riverWork && soft < 0.3) { // (not while the great rivers are worked out: see BigRivers.#ensure)
       const lift = this.#islandHeight(x, z);
-      if (lift > height) height = lift;
+      // (Fading out towards the marshes, not cut off: no wall in the sea where they stop.)
+      if (lift > height) height += (lift - height) * (1 - smoothstep(0.15, 0.3, soft));
     }
     // Lake shores (not the open sea's beaches, nor marshes): a real edge
     // rather than the land just sloping on down under the water.
     const u = height - seaLevel;
     // (Only a great stretch of water is the open sea: see #openSea.)
-    const ocean = u > -40 && u < 60 ? smoothstep(-0.02, -0.25, continent) * this.#openSea(x, z) : 0;
+    const ocean = u > -90 && u < 60 ? smoothstep(-0.02, -0.25, continent) * this.#openSea(x, z) : 0;
     if (u > -4.5 && u < 7) {
       const lake = (1 - ocean) * Math.max(0, 1 - soft);
       if (lake > 0) height += (this.#lakeShore(u, x, z) - u) * lake;
@@ -1473,25 +1474,31 @@ export class TerrainGenerator {
         const raise = this.#reefRaise(x, z);
         const top = -1.3 - 1.8 * (N.noise2D(x * 0.05 - 7, z * 0.05 + 3) * 0.5 + 0.5) - 0.6 * (N.noise2D(x * 0.35, z * 0.35) * 0.5 + 0.5);
         const target = floor + (Math.max(top, floor) - floor) * raise;
-        height = seaLevel + depth + (target - depth) * reef;
+        // (Built up off the shelf, not off the deep: fading out down the slope, never a wall where it stops.)
+        height = seaLevel + depth + (target - depth) * reef * (1 - smoothstep(12, 26, -depth));
       }
     }
-    // The open sea floor isn't flat: here and there rocky ground rises out
-    // of the sand in ridges and knolls, with sharper pinnacles and spurs
-    // on them (never up to the surface), and between them the sand lies in
-    // low ripples. (The rock shows as rock: the faces are steep.)
+    // The open sea floor isn't flat: over much of it rock rises out of the
+    // sand in great rounded masses, ten to forty metres across, knobbly on
+    // top, standing up steep-sided off the bed, joined here and there into
+    // long ridges with gullies between, the tallest of them a good way up
+    // towards the surface (never to it); and between them the sand lies in
+    // low ripples. (Nothing narrower than the land's mesh can show: no
+    // spikes, no sheer walls drawn as slivers.)
     if (ocean > 0.35 && u < -4 && u > -60) {
-      const deep = -u, k = smoothstep(0.35, 0.6, ocean) * smoothstep(4, 7, deep);
+      const N = this.coastNoise, deep = -u, k = smoothstep(0.35, 0.6, ocean) * smoothstep(4, 8, deep) * (1 - smoothstep(44, 58, deep));
       const patch = this.getSeaRock(x, z);
       let lift = 0;
       if (patch > 0) {
-        const ridge = 1 - Math.abs(this.coastNoise.noise2D(x * 0.028 - 51, z * 0.028 + 83));
-        const knoll = Math.max(0, this.coastNoise.noise2D(x * 0.016 + 17, z * 0.016 - 29));
-        const spire = Math.pow(1 - Math.abs(this.coastNoise.noise2D(x * 0.09 + 5, z * 0.09 - 3)), 6);
-        lift = patch * (Math.pow(ridge, 3) * 0.55 + knoll * 0.45 + spire * 0.35 * ridge) * Math.min(9, deep * 0.6);
+        const mass = N.fbm(x * 0.016 - 51, z * 0.016 + 83, 2);
+        const body = smoothstep(-0.32, 0.3, mass + 0.3 * patch - 0.15);
+        const ridge = Math.pow(1 - Math.abs(N.noise2D(x * 0.0085 + 17, z * 0.0085 - 29)), 5) * smoothstep(-0.2, 0.2, mass);
+        const lumps = 0.7 + 0.3 * (N.noise2D(x * 0.06 + 5, z * 0.06 - 3) * 0.5 + 0.5) + 0.12 * N.noise2D(x * 0.13, z * 0.13);
+        lift = patch * Math.max(body, ridge * 0.75) * lumps * Math.min(15, deep * 0.72);
       }
       const ripples = 0.12 * Math.sin(x * 0.55 + this.coastNoise.noise2D(x * 0.05, z * 0.05) * 3) * (1 - patch);
-      height += (Math.min(lift, deep - 2) + ripples) * k;
+      // (Never nearer the surface than a couple of metres, wherever the bed already is.)
+      height += (Math.max(0, Math.min(lift, seaLevel - height - 2.5)) + ripples) * k;
     }
     // The legs of sandstone arches in mesa country (their spans are SeaCoastLayer's).
     if (f.mesa > 0.2 && !this._probing) {
@@ -1630,14 +1637,14 @@ export class TerrainGenerator {
         const isl = this.#island(i, j);
         if (!isl) continue;
         const d = Math.hypot(x - isl.x, z - isl.z);
-        if (d > isl.r * 2.4) continue;
+        if (d > isl.r * 3.6) continue;
         // (A ragged, bays-and-points outline, not a circle.)
         const t = d / (isl.r * (0.75 + 0.5 * (this.coastNoise.noise2D(x * 0.008 + 61, z * 0.008 - 17) * 0.5 + 0.5)));
         let h;
         if (t < 1) {
           const dome = Math.pow(1 - t * t, 1.4);
           h = sea - 1.5 + (isl.top - sea + 1.5) * dome + this.hillNoise.fbm(x * 0.02, z * 0.02, 2) * 1.5 * dome;
-        } else h = sea - 1.5 - (t - 1) * isl.r * 0.3; // (the underwater skirt)
+        } else h = sea - 1.5 - (t - 1) * isl.r * 0.3 - Math.pow(Math.max(0, t - 1.6), 2) * isl.r * 0.6; // (the underwater skirt: steepening on down, so it's well under the sea floor round it before it ends)
         if (h > best) best = h;
       }
     }
@@ -3563,15 +3570,15 @@ export class TerrainGenerator {
   #reefRaise(x, z) {
     const N = this.coastNoise;
     const tables = smoothstep(0.0, 0.25, N.noise2D(x * 0.007 - 21, z * 0.007 + 44));
-    const canyon = 1 - smoothstep(0.05, 0.2, Math.abs(N.noise2D(x * 0.017 + 7, z * 0.017 - 3)));
-    const b = N.noise2D(x * 0.06 + 13, z * 0.06 - 9) * 0.7 + N.noise2D(x * 0.15 - 5, z * 0.15 + 2) * 0.3;
-    const heads = smoothstep(0.28, 0.48, b) * (1 - 0.5 * tables);
+    const canyon = 1 - smoothstep(0.04, 0.3, Math.abs(N.noise2D(x * 0.017 + 7, z * 0.017 - 3)));
+    const b = N.noise2D(x * 0.045 + 13, z * 0.045 - 9) * 0.8 + N.noise2D(x * 0.1 - 5, z * 0.1 + 2) * 0.2;
+    const heads = smoothstep(0.2, 0.55, b) * (1 - 0.5 * tables);
     return Math.max(tables * (1 - canyon), heads);
   }
 
   /** How much (x, z) of the open sea floor is rocky ground (0 sand .. 1), its ridges and knolls rising out of the sand (see landHeight). */
   getSeaRock(x, z) {
-    return smoothstep(0.05, 0.35, this.coastNoise.fbm(x * 0.006 + 311, z * 0.006 - 97, 2));
+    return smoothstep(-0.3, 0.1, this.coastNoise.fbm(x * 0.006 + 311, z * 0.006 - 97, 2));
   }
 
   /** Stretches of the open coast with coral reefs off them (0..1). */
@@ -3806,7 +3813,7 @@ export class TerrainGenerator {
     // coralline algae, dull greens, rose and purple, in patches.
     if (ground < this.rivers.seaLevel - 4 && this.getOceanness(x, z) > 0.4) {
       const rock = this.getSeaRock(x, z) * smoothstep(this.rivers.seaLevel - 4, this.rivers.seaLevel - 7, ground);
-      if (rock > 0.05) out.lerp(SEA_CRUST[Math.floor(hash2(Math.floor(x / 2), Math.floor(z / 2), this.seed ^ 0x5ea1) * SEA_CRUST.length)], 0.55 * rock);
+      if (rock > 0.05) out.lerp(SEA_CRUST[Math.floor(hash2(Math.floor(x / 3), Math.floor(z / 3), this.seed ^ 0x5ea1) * SEA_CRUST.length)], (0.4 + 0.35 * (1 - upness)) * rock);
     }
     // Coral reefs in the warm shallows: the reef grown over in patches of
     // colour, the sand floor round it left pale.
