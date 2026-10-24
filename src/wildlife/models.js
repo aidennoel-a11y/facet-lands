@@ -821,7 +821,7 @@ export const frog = () => new Blocks()
  * Another player: a low-poly walker in a shirt of their colour, with a pack
  * on their back. Parts, each about its own joint (for swinging): the body
  * (hips at y = 0.92), the head (neck), the arms (shoulders) and the legs
- * (hips). About 1.8 m tall.
+ * (hips), and the arms and legs again in two (see upperArm). About 1.8 m tall.
  */
 export function person(shirt = 0x3a86c8) {
   const skin = 0xd8a47a, hair = 0x3a2a1e, trousers = 0x3a3a44, boots = 0x2a2018, pack = 0x7a5a32;
@@ -849,6 +849,18 @@ export function person(shirt = 0x3a86c8) {
       .box(0.14, 0.46, 0.15, trousers, [0, -0.23, 0])
       .box(0.12, 0.38, 0.13, trousers, [0, -0.62, 0])
       .box(0.13, 0.1, 0.22, boots, [0, -0.86, 0.04]) // boot
+      .build(),    // (The same limbs in two, to bend: the upper arm from the shoulder,
+    // the forearm and hand from the elbow, 0.32 down; the thigh from the
+    // hip, the shin and boot from the knee, 0.44 down.)
+    upperArm: new Blocks().box(0.1, 0.34, 0.11, shirt, [0, -0.16, 0]).build(),
+    forearm: new Blocks()
+      .box(0.085, 0.28, 0.09, skin, [0, -0.13, 0])
+      .box(0.09, 0.08, 0.09, skin, [0, -0.3, 0.01])
+      .build(),
+    thigh: new Blocks().box(0.14, 0.48, 0.15, trousers, [0, -0.22, 0]).build(),
+    shin: new Blocks()
+      .box(0.12, 0.4, 0.13, trousers, [0, -0.18, 0])
+      .box(0.13, 0.1, 0.22, boots, [0, -0.42, 0.04]) // boot
       .build(),
   };
 }

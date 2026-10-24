@@ -76,8 +76,22 @@ export class Remote {
     this.root = new Group();
     this.body = new Mesh(parts.body, mat);
     this.head = new Mesh(parts.head, mat);
-    this.arms = [new Mesh(parts.arm, mat), new Mesh(parts.arm, mat)];
-    this.legs = [new Mesh(parts.leg, mat), new Mesh(parts.leg, mat)];
+    // (Arms and legs that bend: the forearm on the upper arm at the elbow,
+    // the shin on the thigh at the knee.)
+    this.arms = [new Mesh(parts.upperArm, mat), new Mesh(parts.upperArm, mat)];
+    this.legs = [new Mesh(parts.thigh, mat), new Mesh(parts.thigh, mat)];
+    this.forearms = this.arms.map((arm) => {
+      const f = new Mesh(parts.forearm, mat);
+      f.position.y = -0.32;
+      arm.add(f);
+      return f;
+    });
+    this.shins = this.legs.map((leg) => {
+      const s = new Mesh(parts.shin, mat);
+      s.position.y = -0.44;
+      leg.add(s);
+      return s;
+    });
     this.body.position.y = 0.92;
     this.head.position.set(0, 0.5, 0.01);
     this.arms.forEach((a, k) => a.position.set(k ? -0.23 : 0.23, 0.46, 0));
@@ -85,17 +99,19 @@ export class Remote {
     this.body.add(this.head, ...this.arms, ...this.legs);
     this.root.add(this.body);
     // (Their hands, to hold what they're holding.)
-    this.hands = this.arms.map((arm) => {
+    this.hands = this.forearms.map((arm) => {
       const g = new Group();
-      g.position.set(0, -0.62, 0.03);
+      g.position.set(0, -0.3, 0.03);
       g.quaternion.setFromRotationMatrix(HAND);
       arm.add(g);
       return g;
     });
+    // (The way they're carrying themselves, eased from one to the next: see #gait.)
+    this.gait = { lean: 0, swim: 0, run: 0, move: 0, y: 0.92, roll: 0 };
     this.heldIndex = 0;
     this.actKey = 0;
     this.act = null;
-    for (const m of [this.body, this.head, ...this.arms, ...this.legs]) (m.castShadow = true), (m.receiveShadow = true);
+    for (const m of [this.body, this.head, ...this.arms, ...this.legs, ...this.forearms, ...this.shins]) (m.castShadow = true), (m.receiveShadow = true);
     this.tag = nameTag(name, colour);
     this.tag.position.y = 2.15;
     this.root.add(this.tag);
@@ -135,19 +151,89 @@ export class Remote {
     (this.yaw = yaw), (this.speed = speed), (this.flags = flags); // (for the animals: see WorldSync.others)
     this.root.rotation.y = yaw + Math.PI; // (the camera looks down -z; the model faces +z)
     const crouch = flags & FLAG.crouch, swim = flags & FLAG.swim;
-    this.walk += dt * Math.min(9, speed * 1.6);
-    const swing = Math.min(1, speed / 4) * (swim ? 0.4 : 0.7);
-    const legSwing = Math.sin(this.walk) * swing;
-    this.legs[0].rotation.x = legSwing;
-    this.legs[1].rotation.x = -legSwing;
-    this.arms[0].rotation.x = swim ? -2.6 + Math.sin(this.walk) * 0.5 : -legSwing * 0.9;
-    this.arms[1].rotation.x = swim ? -2.6 - Math.sin(this.walk) * 0.5 : legSwing * 0.9;
-    this.body.position.y = crouch ? 0.62 : swim ? 0.4 : 0.92 + Math.abs(Math.sin(this.walk)) * 0.04 * Math.min(1, speed / 3);
-    this.body.rotation.x = swim ? 1.2 : crouch ? 0.35 : Math.min(0.25, speed * 0.03);
-    this.head.rotation.x = Math.max(-0.8, Math.min(0.8, -pitch - this.body.rotation.x * (swim ? 0.9 : 0.5)));
-    this.tag.position.y = crouch ? 1.75 : swim ? 1.0 : 2.15;
+    this.#gait(dt, speed, pitch, !!crouch, !!swim, !!(flags & FLAG.sprint), y);
     this.#hands(dt, flags, pitch, swim, items);
     this.#emote(dt, flags, speed, swim);
+  }
+
+  /**
+   * Walking, running, swimming, treading water: the stride and its rhythm
+   * from how fast they're going (longer strides, quicker, the faster), each
+   * leg swinging from the hip and the knee folding as it comes through, the
+   * body rising and falling and swaying over each step, the arms swinging
+   * against the legs (bent at the elbow, pumping, at a run, leaning into
+   * it). In the water: a crawl, the arms over in turn, the body rolling to
+   * each stroke, the legs kicking; still, upright, treading water.
+   */
+  #gait(dt, speed, pitch, crouch, swim, sprint, y) {
+    const g = this.gait, ease = (k) => 1 - Math.exp(-dt * k);
+    const run = !swim && !crouch && (sprint || speed > 4.2) && speed > 1.5 ? 1 : 0;
+    const move = Math.min(1, speed / (swim ? 0.8 : 1.2));
+    g.run += (run - g.run) * ease(5);
+    g.swim += ((swim ? 1 : 0) - g.swim) * ease(4);
+    g.move += (move - g.move) * ease(6);
+    // (One stride, both feet, is longer the faster you go: about 1.4 m at a stroll, near 3 m at a run.)
+    const stride = swim ? 1.6 : Math.min(3.2, 1.25 + 0.3 * speed);
+    this.walk += dt * (speed > 0.05 ? (Math.PI * 2 * speed) / stride : 0) + dt * (swim ? 1.6 * (1 - g.move) : 0);
+    const p = this.walk, s = Math.sin(p), c = Math.cos(p), R = g.run, M = g.move, W = 1 - g.swim;
+    const [lt, rt] = this.legs, [ls, rs] = this.shins, [la, ra] = this.arms, [lf, rf] = this.forearms;
+    for (const a of this.arms) (a.rotation.z = 0), (a.position.y = 0.46), (a.position.z = 0);
+    // On land: thigh forward and back from the hip (positive: back).
+    const reach = (0.42 + 0.48 * R) * M;
+    const leg = (side) => {
+      const ph = side ? p + Math.PI : p, sw = Math.sin(ph), back = Math.cos(ph);
+      // (The knee folds as the leg comes through, under the body; more at a run, the heel kicked up.)
+      const fold = Math.max(0, -back) * (0.55 + 1.15 * R) * M + Math.max(0, sw) * 0.25 * R * M;
+      return [sw * reach, 0.06 + fold];
+    };
+    const [l0, k0] = leg(0), [l1, k1] = leg(1);
+    // In the water: a flutter kick, small and quick from the hip, the knees a little bent.
+    const kick = Math.sin(this.walk * 3.2) * (0.18 + 0.12 * M), tread = (1 - M) * 0.5;
+    lt.rotation.x = l0 * W + (kick - tread * Math.sin(this.walk * 2)) * g.swim;
+    rt.rotation.x = l1 * W + (-kick + tread * Math.sin(this.walk * 2)) * g.swim;
+    ls.rotation.x = k0 * W + (0.25 + 0.2 * Math.max(0, kick) + tread * 0.8) * g.swim;
+    rs.rotation.x = k1 * W + (0.25 + 0.2 * Math.max(0, -kick) + tread * 0.8) * g.swim;
+    lt.rotation.z = rt.rotation.z = 0;
+    lt.rotation.z = -0.25 * tread * g.swim;
+    rt.rotation.z = 0.25 * tread * g.swim;
+    // The arms: against the legs on land; at a run pumping, bent near square at the elbow.
+    const armSwing = (0.38 + 0.5 * R) * M;
+    const landL = -s * armSwing - 0.05, landR = s * armSwing - 0.05;
+    const elbow = -(0.18 + 0.12 * M + 1.15 * R);
+    // A crawl: each arm right over, in turn, reaching ahead and pulling down and back (elbow bent coming over).
+    const stroke = (ph) => {
+      const a = ((ph % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      // (0: back at the hip; up out over the water, elbow bent; on ahead; and the pull down under the body.)
+      return [a, a < Math.PI ? -0.9 * Math.sin(a) : -0.15];
+    };
+    const [sl, el] = stroke(p), [sr, er] = stroke(p + Math.PI);
+    // Treading water: arms out to the sides, sculling to and fro.
+    const scull = Math.sin(this.walk * 2.4) * 0.35;
+    const wl = M * sl + (1 - M) * (-0.5 + scull), wr = M * sr + (1 - M) * (-0.5 - scull);
+    la.rotation.x = landL * W + wl * g.swim;
+    ra.rotation.x = landR * W + wr * g.swim;
+    la.rotation.z = -0.55 * (1 - M) * g.swim;
+    ra.rotation.z = 0.55 * (1 - M) * g.swim;
+    lf.rotation.x = elbow * W + (M * el - 0.6 * (1 - M)) * g.swim;
+    rf.rotation.x = elbow * W + (M * er - 0.6 * (1 - M)) * g.swim;
+    // The body: leaning into a run, or along the water swimming (head down
+    // diving, up coming up), upright treading water.
+    const swimLean = M * Math.max(0.6, Math.min(2.4, 1.5 - pitch * 0.9)) + (1 - M) * 0.3;
+    const lean = crouch ? 0.35 : swim ? swimLean : Math.min(0.12, speed * 0.03) + 0.2 * R;
+    g.lean += (lean - g.lean) * ease(6);
+    // (Up and down over each step: at a walk, highest over the standing
+    // leg; at a run, highest in the stride's flight; still, breathing.)
+    const bob = (Math.abs(c) - 0.6) * 0.035 * M * (1 - R) + (Math.abs(s) - 0.3) * 0.07 * R + Math.sin(this.walk * 0.5 + performance.now() * 0.0016) * 0.006 * (1 - M);
+    const baseY = crouch ? 0.62 : swim ? 0.4 + 0.35 * (1 - M) : 0.92 - 0.05 * R;
+    g.y += (baseY - g.y) * ease(8);
+    this.body.position.y = g.y + bob * W;
+    this.body.rotation.x = g.lean;
+    // (Swaying over each step on land; rolling to each stroke in the water.)
+    this.body.rotation.z = s * 0.035 * M * W;
+    this.body.rotation.y = (s * 0.08 * M * W) + Math.sin(p) * 0.45 * M * g.swim;
+    this.head.rotation.x = Math.max(-0.8, Math.min(0.8, -pitch - g.lean * (swim ? 0.9 : 0.6)));
+    this.head.rotation.y = -this.body.rotation.y * 0.8; // (looking where they go, not rolling with the body)
+    this.tag.position.y = crouch ? 1.75 : swim ? 1.0 + 0.6 * (1 - M) : 2.15;
   }
 
   // A wave, a cheer, pointing, a bow, sitting down, a shrug (see EMOTES):
@@ -164,6 +250,8 @@ export class Remote {
     if (swim || (speed > 0.6 && em.t > 0.3) || em.t > EMOTE_TIME[em.kind]) return (this.emote = null);
     const [left, right] = this.arms, u = em.t;
     const ease = Math.min(1, u / 0.25, (EMOTE_TIME[em.kind] - u) / 0.3);
+    for (const f of this.forearms) f.rotation.x *= 1 - ease;
+    if (em.kind === 'sit') for (const s of this.shins) s.rotation.x = 0;
     switch (em.kind) {
       case 'wave':
         // The right arm up, the hand waving side to side.
@@ -243,8 +331,10 @@ export class Remote {
       right.rotation.z = 0.35;
       right.position.z = -0.25 * draw;
     }
+    if (id === 'bow' && draw > 0) for (const f of this.forearms) f.rotation.x = 0;
     const a = this.act;
     if (!a) return;
+    for (const f of this.forearms) f.rotation.x = a.kind === 'chop' ? 0 : f.rotation.x * 0.3;
     a.t += dt;
     const u = Math.min(1, a.t / ACT_TIME[a.kind]);
     if (a.kind === 'chop') {
