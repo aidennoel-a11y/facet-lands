@@ -84,12 +84,13 @@ export function createSeaCoastLayer(config, terrainMaterial) {
   // blocks of white water flung up the rock, falling back. Each spot's burst
   // comes when the wave reaches it, so they run along the coast. (All worked
   // out on the GPU from the time.)
-  const time = { value: 0 };
+  const time = { value: 0 }, storm = { value: 0 };
   const surfMaterial = new MeshLambertMaterial({ color: 0xf2f8fa, emissive: 0x506a72 });
   surfMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
+    shader.uniforms.uStorm = storm;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec3 aStart;\nattribute vec3 aVelocity;\nattribute vec4 aLife;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uStorm;\nattribute vec3 aStart;\nattribute vec3 aVelocity;\nattribute vec4 aLife;\nattribute float aOpen;')
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `// aLife: x = the waves' period (s), y = when this spot's comes (0..1 of it), z = size, w = delay within the burst.
@@ -99,14 +100,16 @@ export function createSeaCoastLayer(config, terrainMaterial) {
         float spin = aLife.y * 50.0 + age * 4.0;
         vec3 p = position;
         p.xz = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * p.xz;
-        vec3 transformed = p * aLife.z * (1.0 - k * k) * step(age, fly) + aStart + aVelocity * age + vec3(0.0, -4.9 * age * age, 0.0);`,
+        // (Sheltered water, shut in by the land: none, unless there's a storm to drive the waves in.)
+        float shown = max(smoothstep(0.15, 0.35, aOpen), smoothstep(0.45, 0.85, uStorm));
+        vec3 transformed = p * aLife.z * (1.0 - k * k) * step(age, fly) * shown + aStart + aVelocity * age + vec3(0.0, -4.9 * age * age, 0.0);`,
       );
   };
   surfMaterial.customProgramCacheKey = () => 'surf';
   const block = new BoxGeometry(1, 1, 1);
 
   function surf(spots, x0, z0, sea) {
-    const starts = [], velocities = [], lives = [];
+    const starts = [], velocities = [], lives = [], opens = [];
     for (const s of spots) {
       let seed = Math.floor(s.x * 13 + s.z * 7) >>> 0;
       const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -120,6 +123,7 @@ export function createSeaCoastLayer(config, terrainMaterial) {
         const back = 0.8 + rand() * 2.2; // (thrown up the rock face, landward)
         velocities.push(-s.out[0] * back + (rand() - 0.5) * 1.5, up, -s.out[1] * back + (rand() - 0.5) * 1.5);
         lives.push(period, ((when % 1) + 1) % 1, 0.25 + rand() * 0.35, rand() * 0.5);
+        opens.push(s.open ?? 1);
       }
     }
     if (!starts.length) return null;
@@ -127,6 +131,7 @@ export function createSeaCoastLayer(config, terrainMaterial) {
     geometry.setAttribute('aStart', new InstancedBufferAttribute(new Float32Array(starts), 3));
     geometry.setAttribute('aVelocity', new InstancedBufferAttribute(new Float32Array(velocities), 3));
     geometry.setAttribute('aLife', new InstancedBufferAttribute(new Float32Array(lives), 4));
+    geometry.setAttribute('aOpen', new InstancedBufferAttribute(new Float32Array(opens), 1));
     const mesh = new InstancedMesh(geometry, surfMaterial, starts.length / 3);
     // (It moves on the GPU: its bounds take in everywhere a speck flies, so it's left out when off the screen.)
     mesh.boundingSphere = boundsOf(starts, throwReach(velocities, (i) => 2 * Math.max(0, velocities[i * 3 + 1]) / 9.8) + 1);
@@ -148,6 +153,14 @@ export function createSeaCoastLayer(config, terrainMaterial) {
 
     update(t) {
       time.value = t;
+    },
+    /** How stormy it is (0..1): only then does the surf break in the sheltered coves. */
+    set storm(v) {
+      storm.value = v;
+    },
+    /** Whether the surf breaks at a spot of open (0..1) in this weather. */
+    surfShown(open) {
+      return Math.max(Math.min(1, Math.max(0, (open - 0.15) / 0.2)), Math.min(1, Math.max(0, (storm.value - 0.45) / 0.4)));
     },
 
     reuseKey: ({ lod }) => (lod > 3 ? 'none' : lod <= 1 ? 'near' : 'far'),
@@ -336,7 +349,7 @@ export function createSeaCoastLayer(config, terrainMaterial) {
         if (mesh) {
           group.add(mesh);
           group.userData.key = `${cx},${cz}`;
-          surfNear.set(group.userData.key, spots.map((s) => ({ x: s.x, z: s.z, rock: s.rock, when: ((((s.x * 0.8 + s.z * 0.45) / 55) % 1) + 1) % 1 })));
+          surfNear.set(group.userData.key, spots.map((s) => ({ x: s.x, z: s.z, rock: s.rock, open: s.open ?? 1, when: ((((s.x * 0.8 + s.z * 0.45) / 55) % 1) + 1) % 1 })));
         }
       }
       return group.children.length ? group : null;

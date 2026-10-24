@@ -48,7 +48,9 @@ const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
 const CASCADE_TIERS = [[-0.24, 12], [-0.04, 15], [0.16, 13]];
 const T = BIOME_TUNING;
 const DUNE = new Color(0xe6b86e); // dune sand
-const CORALS = [0xe0708a, 0xe89a4a, 0x9a6ab8, 0x4fb3a0, 0xe6cf5a, 0xd9566a].map((c) => new Color(c));
+// The reef's ground: coral rubble and the bases of the colonies, browns and
+// tans and olive, between pale sand channels (see surfaceColor).
+const CORALS = [0x8a7450, 0x9c8458, 0x76664a, 0x7a7650, 0xb4a27c, 0x6c5c40].map((c) => new Color(c));
 const SINTER = new Color(0xe6dcc4); // crusts round hot springs
 const MAT = new Color(0xd2803a); // microbial mats at a hot spring's edge
 const WASH = new Color(0xcdb592); // a canyon's dry wash
@@ -1457,6 +1459,23 @@ export class TerrainGenerator {
         const target = -1.6 - 1.6 * (this.coastNoise.noise2D(x * 0.05 - 7, z * 0.05 + 3) * 0.5 + 0.5);
         if (target > height - seaLevel) height += (target - (height - seaLevel)) * reef;
       }
+    }
+    // The open sea floor isn't flat: here and there rocky ground rises out
+    // of the sand in ridges and knolls, with sharper pinnacles and spurs
+    // on them (never up to the surface), and between them the sand lies in
+    // low ripples. (The rock shows as rock: the faces are steep.)
+    if (ocean > 0.35 && u < -4 && u > -60) {
+      const deep = -u, k = smoothstep(0.35, 0.6, ocean) * smoothstep(4, 7, deep);
+      const patch = smoothstep(0.05, 0.35, this.coastNoise.fbm(x * 0.006 + 311, z * 0.006 - 97, 2));
+      let lift = 0;
+      if (patch > 0) {
+        const ridge = 1 - Math.abs(this.coastNoise.noise2D(x * 0.028 - 51, z * 0.028 + 83));
+        const knoll = Math.max(0, this.coastNoise.noise2D(x * 0.016 + 17, z * 0.016 - 29));
+        const spire = Math.pow(1 - Math.abs(this.coastNoise.noise2D(x * 0.09 + 5, z * 0.09 - 3)), 6);
+        lift = patch * (Math.pow(ridge, 3) * 0.55 + knoll * 0.45 + spire * 0.35 * ridge) * Math.min(9, deep * 0.6);
+      }
+      const ripples = 0.12 * Math.sin(x * 0.55 + this.coastNoise.noise2D(x * 0.05, z * 0.05) * 3) * (1 - patch);
+      height += (Math.min(lift, deep - 2) + ripples) * k;
     }
     // The legs of sandstone arches in mesa country (their spans are SeaCoastLayer's).
     if (f.mesa > 0.2 && !this._probing) {
@@ -3730,10 +3749,12 @@ export class TerrainGenerator {
       if (steep > 0) out.lerp(ICY_ROCK, 0.55 * steep * up);
       if (glacier > 0) out.lerp(ICE, 0.75 * glacier * up);
     }
-    // Coral reefs in the warm shallows: pink, orange, purple, teal, gold.
+    // Coral reefs in the warm shallows: rubble and coral bases in browns,
+    // tans and olives, cut through by channels of pale sand.
     if (ground < this.rivers.seaLevel - 0.6) {
       const reef = this.getReef(x, z, ground);
-      if (reef > 0) out.lerp(CORALS[Math.floor(hash2(Math.floor(x / 3), Math.floor(z / 3), this.seed ^ 0xc0a1) * CORALS.length)], 0.75 * reef);
+      const channel = smoothstep(0.75, 0.9, 1 - Math.abs(this.coastNoise.noise2D(x * 0.04 + 9, z * 0.012 - 4)));
+      if (reef > 0) out.lerp(CORALS[Math.floor(hash2(Math.floor(x / 3), Math.floor(z / 3), this.seed ^ 0xc0a1) * CORALS.length)], 0.6 * reef * (1 - channel));
     }
     // Round hot springs and geysers: orange mats of heat-loving microbes at
     // the water's edge, then pale crusts of sinter.

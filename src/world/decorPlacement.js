@@ -79,6 +79,8 @@ export function placeCorals(generator, config, cx, cz, groundHeightAt, gridY, ki
       if (!Number.isFinite(ground)) continue;
       const reef = generator.getReef(wx, wz, ground);
       if (hash2(gi, gj, seed + 3) > reef) continue;
+      // (Not in the sand channels between the coral heads: see TerrainGenerator.surfaceColor.)
+      if (generator.coastNoise && 1 - Math.abs(generator.coastNoise.noise2D(wx * 0.04 + 9, wz * 0.012 - 4)) > 0.82) continue;
       const kind = Math.floor(hash2(gi, gj, seed + 4) * kinds);
       const s = 0.7 + hash2(gi, gj, seed + 5) * 1.1;
       list.push(kind, wx - x0, ground - 0.05, wz - z0, hash2(gi, gj, seed + 6), s, 0.8 + 0.5 * hash2(gi, gj, seed + 7), Math.floor(hash2(gi, gj, seed + 8) * colours));
@@ -108,7 +110,21 @@ export function surfSpots(generator, x0, z0, size, sea) {
       if (!out || generator.getOceanness(x, z) < 0.5) continue;
       const rock = Math.max(generator.getSeaCliff(x, z), 0.3);
       if (hash2(Math.floor(x), Math.floor(z), 0x5a1f) > 0.35 + 0.5 * rock) continue;
-      spots.push({ x, z, out, rock });
+      // How open to the sea it is: of a ring of ways out across the water,
+      // how many run on four hundred metres without meeting land. (A cove
+      // or an inlet shut in by the land all round lies still: no swell
+      // reaches it to break, but in a storm.)
+      let open = 0;
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2, cx = Math.cos(a), cz = Math.sin(a);
+        let clear = 0;
+        for (let d = 40; d <= 400; d += 40) {
+          if (generator.getBaseHeight(x + cx * d, z + cz * d) > sea - 0.2) break;
+          clear = d;
+        }
+        open += clear >= 400 ? 1 : clear / 800;
+      }
+      spots.push({ x, z, out, rock, open: open / 12 });
     }
   }
   return spots;

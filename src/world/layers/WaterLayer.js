@@ -19,6 +19,9 @@ import { SPARKLE_HEAD, sparkleUniforms } from '../../render/waterSparkle.js';
  * breaking whitest under the cliffs, and out at sea the highest crests
  * spill over in whitecaps. In a cold winter the lakes freeze over.
  */
+// How stormy it is at sea (0..1): only then does the surf break on the shores of a sheltered cove.
+export const seaStorm = { value: 0 };
+
 export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor = new Color(0xd6e8f7), skyTop = new Color(0x7fb4e6) } = {}) {
   const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor }, uSkyTop: { value: skyTop } };
 
@@ -34,6 +37,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
     shader.uniforms.uWind = windStrength;
     shader.uniforms.uWindDir = windDirection;
     shader.uniforms.uWinter = seasonUniforms.uWinter;
+    shader.uniforms.uSeaStorm = seaStorm;
     const f = (n) => n.toFixed(4);
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -43,6 +47,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         uniform float uWind;
         uniform vec2 uWindDir;
         uniform float uWinter;
+        uniform float uSeaStorm;
         attribute float waveScale;
         attribute float foam;
         attribute float aFreeze;
@@ -75,7 +80,11 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         '#include <beginnormal_vertex>',
         /* glsl */ `vec4 wp = modelMatrix * vec4(position, 1.0);
         vIce = aFreeze * smoothstep(0.35, 0.8, uWinter);
-        vFoam = foam * (1.0 - vIce);
+        // (foam: the surf, with how open the water is to the sea packed in
+        // above it, in sixteenths: see waterData. Shut in, it lies still.)
+        float foamOpen = floor(foam * 0.5) / 16.0;
+        float foamSurf = foam - 2.0 * floor(foam * 0.5);
+        vFoam = foamSurf * max(smoothstep(0.15, 0.35, foamOpen), smoothstep(0.45, 0.85, uSeaStorm)) * (1.0 - vIce);
         vWorld = wp.xz;
         vDepth = aDepth;
         // The waves: several trains crossing at odd angles about the wind,

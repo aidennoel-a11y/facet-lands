@@ -34,6 +34,51 @@ function brain() {
   return shaped(g);
 }
 
+// A massive (boulder) coral: the great builders of a reef, a broad lumpy
+// mound, slow-growing, wider than it's high.
+function boulder(seed) {
+  const rand = mulberry32(seed);
+  const g = new DodecahedronGeometry(0.6, 1);
+  const p = g.attributes.position;
+  for (let k = 0; k < p.count; k++) {
+    const y = p.getY(k), j = 0.88 + rand() * 0.24;
+    p.setXYZ(k, p.getX(k) * j, Math.max(-0.05, y) * 0.62 * j, p.getZ(k) * j);
+  }
+  return shaped(g);
+}
+
+// Staghorn: thin antler-like branches, forking as they reach up and out.
+function staghorn(seed) {
+  const rand = mulberry32(seed);
+  const parts = [];
+  for (let k = 0; k < 6; k++) {
+    const a = rand() * Math.PI * 2, lean = 0.3 + rand() * 0.5, len = 0.45 + rand() * 0.4;
+    const g = new CylinderGeometry(0.025, 0.045, len, 4);
+    g.translate(0, len / 2, 0);
+    g.rotateZ(lean);
+    g.rotateY(a);
+    parts.push(shaped(g));
+    // (A fork near its tip.)
+    const tx = Math.sin(lean) * len, ty = Math.cos(lean) * len, len2 = len * 0.45;
+    const f = new CylinderGeometry(0.018, 0.026, len2, 4);
+    f.translate(0, len2 / 2, 0);
+    f.rotateZ(lean - 0.6);
+    f.translate(tx * 0.7, ty * 0.7, 0);
+    f.rotateY(a);
+    parts.push(shaped(f));
+  }
+  return mergeGeometries(parts);
+}
+
+// A table coral: a broad flat plate held up on a short thick stalk.
+function table() {
+  const plate = new CylinderGeometry(0.75, 0.68, 0.08, 9);
+  plate.translate(0, 0.42, 0);
+  const stalk = new CylinderGeometry(0.1, 0.16, 0.42, 5);
+  stalk.translate(0, 0.21, 0);
+  return mergeGeometries([shaped(plate), shaped(stalk)]);
+}
+
 // Sea fan: a thin, flat, round-topped fan on a short stalk.
 function fan() {
   const blade = new CylinderGeometry(0.45, 0.45, 0.04, 7, 1, false, 0, Math.PI);
@@ -42,7 +87,14 @@ function fan() {
   return mergeGeometries([shaped(blade), shaped(new CylinderGeometry(0.03, 0.05, 0.2, 4).translate(0, 0.1, 0))]);
 }
 
-const CORAL_COLORS = [0xe0708a, 0xe89a4a, 0x9a6ab8, 0x4fb3a0, 0xe6cf5a, 0xd9566a, 0xf0a8b8].map((c) => new Color(c));
+// A real reef's colours: mostly the browns, golden tans and olives of the
+// algae living in the coral (and dulled further by the water over them),
+// only here and there a muted purple, a dusky blue tip, a soft pink.
+// (Repeats weight the pick: see placeCorals, an even pick of these.)
+const CORAL_COLORS = [
+  0x8a6a42, 0x8a6a42, 0x9c7c4e, 0x9c7c4e, 0x7a5a3a, 0x6e6a3e, 0x6e6a3e, 0xa08a5a, 0x6a7048, 0xb09a74, 0x84744c, 0x5e5034,
+  0x7a5a72, 0x6a7a92, 0xa8706a,
+].map((c) => new Color(c));
 
 const matrix = new Matrix4();
 const position = new Vector3();
@@ -52,11 +104,13 @@ const up = new Vector3(0, 1, 0);
 
 /**
  * Corals on the reefs in the warm shallows (see TerrainGenerator.getReef):
- * branching clumps, brain corals and sea fans in bright colours, seen
- * through the clear water, on the chunks near you.
+ * great mounds of boulder coral, brain corals, staghorn and finger corals,
+ * plates of table coral and sea fans, in a real reef's browns, tans and
+ * olives with a little colour here and there, on the chunks near you.
  */
 export function createCoralLayer(config) {
-  const shapes = [branching(7), branching(19), brain(), fan()];
+  // (Repeats weight the pick: mostly the massive mounds, then branching and plate corals.)
+  const shapes = [boulder(3), boulder(11), boulder(29), brain(), staghorn(5), staghorn(23), branching(7), table(), fan()];
   const material = new MeshLambertMaterial({ vertexColors: false });
 
   return {

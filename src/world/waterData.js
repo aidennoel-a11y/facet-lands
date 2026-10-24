@@ -70,6 +70,38 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     surf[k] = (1 - smoothstep(0.2, 1.8, depth)) * (0.35 + 0.65 * generator.getSeaCliff(x, z));
   }
 
+  // How open each part of the water is to the sea (a 5×5 grid over the
+  // chunk, between): a cove or inlet shut in by the land all round lies
+  // still, no swell reaching it to break on its shore (but in a storm: see
+  // WaterLayer). Of a ring of ways out, how many run on 400 m without land.
+  let anySurf = false;
+  for (let k = 0; k < n * n && !anySurf; k++) if (surf[k] > 0) anySurf = true;
+  const exposure = new Float32Array(25).fill(1);
+  if (anySurf) {
+    for (let j = 0; j < 5; j++) for (let i = 0; i < 5; i++) {
+      const x = originX + (i / 4) * chunkSize, z = originZ + (j / 4) * chunkSize;
+      let open = 0;
+      for (let d = 0; d < 12; d++) {
+        const a = (d / 12) * Math.PI * 2, ax = Math.cos(a), az = Math.sin(a);
+        let clear = 0;
+        for (let s = 40; s <= 400; s += 40) {
+          if (generator.getBaseHeight(x + ax * s, z + az * s) > seaLevel - 0.2) break;
+          clear = s;
+        }
+        open += clear >= 400 ? 1 : clear / 800;
+      }
+      exposure[j * 5 + i] = open / 12;
+    }
+    for (let k = 0; k < n * n; k++) {
+      if (!(surf[k] > 0)) continue;
+      const fx = Math.min(3.999, Math.max(0, (xs[k] / chunkSize) * 4)), fz = Math.min(3.999, Math.max(0, (zs[k] / chunkSize) * 4));
+      const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+      const e = (exposure[j * 5 + i] * (1 - u) + exposure[j * 5 + i + 1] * u) * (1 - v) + (exposure[(j + 1) * 5 + i] * (1 - u) + exposure[(j + 1) * 5 + i + 1] * u) * v;
+      // (Packed with the surf: how open, in sixteenths, above it. Unpacked per corner: see WaterLayer.)
+      surf[k] = Math.min(0.999, surf[k]) + 2 * Math.round(Math.min(1, e) * 16);
+    }
+  }
+
   // Not down a river's channel, though, where the river's own water runs
   // above the lake's level (see riverData): only where it has come down to
   // that level, at its mouth, does the lake's water run on up it. (Cut off
@@ -104,7 +136,7 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     colors.push(color.r, color.g, color.b, (0.6 + 0.38 * smoothstep(-0.5, 8, depth)) * fade);
     depths.push(Math.max(-2, Math.min(40, depth)));
     waves.push(0.1 + 0.9 * smoothstep(1, 16, depth) + 2.4 * (swell[a] * s + swell[b] * t));
-    foams.push(surf[a] * s + surf[b] * t);
+    foams.push(t < 0.5 ? surf[a] : surf[b]); // (packed: not to be blended, see above)
     freezes.push(freeze[a] * s + freeze[b] * t);
   };
   const addTri = (a, b, c) => {

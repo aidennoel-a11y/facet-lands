@@ -3,7 +3,7 @@ import './render/splitShadow.js'; // (first: the sun's shadow in two maps, befor
 import { WORLD } from './config.js';
 import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
-import { createWaterLayer } from './world/layers/WaterLayer.js';
+import { createWaterLayer, seaStorm } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { Geese } from './render/Geese.js';
@@ -27,7 +27,6 @@ import { createLeafLayer } from './world/layers/LeafLayer.js';
 import { createMushroomLayer } from './world/layers/MushroomLayer.js';
 import { createSeaCoastLayer } from './world/layers/SeaCoastLayer.js';
 import { createKelpLayer } from './world/layers/KelpLayer.js';
-import { createSeaRockLayer } from './world/layers/SeaRockLayer.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
 import { createFlowerLayer } from './world/layers/FlowerLayer.js';
 import { createSnowLayer } from './world/layers/SnowLayer.js';
@@ -718,7 +717,6 @@ chunks.addLayer(lavaLayer);
 const seaCoast = createSeaCoastLayer(WORLD, terrainMaterial);
 chunks.addLayer(seaCoast);
 chunks.addLayer(createKelpLayer(WORLD));
-chunks.addLayer(createSeaRockLayer(WORLD)); // (rock stacks, arches, ledges on the sea bed)
 const logs = createLogLayer(WORLD);
 chunks.addLayer(logs);
 chunks.addLayer(createFlowerLayer(WORLD));
@@ -1105,7 +1103,8 @@ function surfSound() {
         // (Its burst comes at when·P past each whole period.)
         if (Math.floor((T - s.when * P) / P) === Math.floor((prev - s.when * P) / P)) continue;
         if (s.rock < 0.35) continue; // (on sand the surf rolls in: no burst on rocks)
-        const v = (0.4 + 0.6 * s.rock) * near;
+        const v = (0.4 + 0.6 * s.rock) * near * seaCoast.surfShown(s.open ?? 1); // (none in a still, sheltered cove)
+        if (v <= 0.01) continue;
         loud += v;
         px += s.x * v;
         pz += s.z * v;
@@ -2804,6 +2803,8 @@ function tick(now) {
   ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
   const night = dayNight._w?.night ?? 0;
   updateFireSeason(weather.rain > 0.3 && !snowing);
+  seaCoast.storm = weather.storm;
+  seaStorm.value = weather.storm;
   updateFloods(dt);
   const air = { time: worldNow, netTime: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, dryness: fireSeason.dryness, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
