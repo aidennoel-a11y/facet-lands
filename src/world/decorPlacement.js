@@ -100,8 +100,8 @@ export function placeCorals(generator, config, cx, cz, groundHeightAt, gridY) {
       let mix = REEF_MIX;
       if (hash2(gi, gj, seed + 3) > reef * 0.95) {
         // (Off the reef: now and then a fan or a sponge on bare rock.)
-        if (ground > sea - 4 || hash2(gi, gj, seed + 9) > 0.12) continue;
-        if (generator.getSeaRock(wx, wz) < 0.3) continue;
+        if (ground > sea - 4 || hash2(gi, gj, seed + 9) > 0.025) continue;
+        if (generator.getSeaRock(wx, wz) < 0.5) continue;
         mix = ROCK_MIX;
       }
       // The patch it grows in (about five metres across) picks its kind
