@@ -399,17 +399,22 @@ export class PlayerControls {
     const dx = mx * dt, dz = mz * dt;
     if (dx || dz) {
       const next = this.world.groundAt(pos.x + dx, pos.y - this.eyeHeight, pos.z + dz);
-      // (Rock or a bank rising above your head: no further; a low bank: climb out onto it.)
-      if (next.height < pos.y - 0.2 || next.inCave) {
+      const under = next.height < water.level - 0.3;
+      // Under the water, the bed rising ahead (a ridge, a rock, the slope up
+      // to the shore): over it, gliding up along it; only rock standing
+      // well up above your head stops you. At the surface, a low bank: climb
+      // out onto it; one above your head: no further.
+      if (next.inCave || (under ? next.height < pos.y + 0.8 : next.height < pos.y - 0.2)) {
         pos.x += dx;
         pos.z += dz;
-        if (next.height > pos.y - this.eyeHeight) pos.y = next.height + this.eyeHeight;
+        if (under) pos.y = Math.max(pos.y, next.height + 0.6);
+        else if (next.height > pos.y - this.eyeHeight) pos.y = next.height + this.eyeHeight;
       }
     }
     this.world.collide?.(pos, this.radius);
     pos.y = Math.min(float + 0.05, pos.y + vy * dt);
     // Never down through the bottom.
-    const floor = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z).height + 0.45;
+    const floor = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z).height + 0.6;
     if (pos.y < floor) pos.y = floor;
     this.velocityY = 0;
     this.underwater = pos.y < water.level - 0.05;
