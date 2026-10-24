@@ -21,7 +21,7 @@ const CROWNS = 24;
 // How long a print lasts (seconds) in each ground.
 const LASTS = { snow: 180, mud: 120, sand: 90, grass: 100, blood: 200, dung: 600, twig: 500 };
 // Shapes of print: a boot, a cloven hoof, a paw, a rabbit's long hind foot
-// (and in snow, each a square-cut hollow).
+// (each blocky, cut square like the animals' feet).
 export const PRINT = { boot: 0, hoof: 1, paw: 2, rabbit: 3, square: 4 };
 
 const m4 = new Matrix4(), q = new Quaternion(), spin = new Quaternion(), p = new Vector3(), s = new Vector3(), n = new Vector3();
@@ -54,25 +54,28 @@ export class Traces {
             // aPrint: when it was made, how long it lasts, its shape.
             vec2 u = vPrintUv;
             float shape = vPrint.z, inside = 0.0;
+            // (Every shape blocky, cut square like the feet that made it: see
+            // the animals' models, each foot a block.)
+            #define BOX(c, h) step(max(abs(u.x - (c).x) / (h).x, abs(u.y - (c).y) / (h).y), 1.0)
             if (shape > 3.5) {
-              // Pressed into snow: a square-cut hollow.
-              inside = step(max(abs(u.x), abs(u.y)), 0.92);
+              // A square-cut hollow: a big flat foot (an elephant's, a hippo's), a snake's trail.
+              inside = BOX(vec2(0.0), vec2(0.92));
             } else if (shape < 0.5) {
-              // A boot: sole and heel, a gap at the instep.
-              inside = step(length(u / vec2(0.55, 1.0)), 1.0) * step(0.1, abs(u.y + 0.2));
+              // A boot: the sole and the heel, a gap at the instep.
+              inside = BOX(vec2(0.0, 0.3), vec2(0.55, 0.65)) + BOX(vec2(0.0, -0.72), vec2(0.5, 0.26));
             } else if (shape < 1.5) {
-              // A cloven hoof: two halves.
-              inside = step(length(u / vec2(0.9, 1.0)), 1.0) * step(0.14, abs(u.x));
+              // A cloven hoof: two blocks side by side, a gap between.
+              inside = BOX(vec2(0.47, 0.0), vec2(0.33, 0.9)) + BOX(vec2(-0.47, 0.0), vec2(0.33, 0.9));
             } else if (shape < 2.5) {
-              // A paw: the pad, and four toes.
-              inside = step(length((u - vec2(0.0, -0.25)) / vec2(0.55, 0.45)), 1.0);
+              // A paw: the square pad, and four square toes ahead of it.
+              inside = BOX(vec2(0.0, -0.3), vec2(0.5, 0.42));
               for (int k = 0; k < 4; k++) {
                 float x = -0.6 + 0.4 * float(k);
-                inside = max(inside, step(length(u - vec2(x, 0.55 - 0.12 * abs(x))), 0.2));
+                inside += BOX(vec2(x, 0.5 - 0.12 * abs(x)), vec2(0.15, 0.17));
               }
             } else {
               // A rabbit's long hind foot.
-              inside = step(length(u / vec2(0.45, 1.0)), 1.0);
+              inside = BOX(vec2(0.0), vec2(0.45, 0.95));
             }
             if (inside < 0.5) discard;
             float age = uTime - vPrint.x;
@@ -172,7 +175,7 @@ export class Traces {
     s.set(size * (shape === PRINT.rabbit ? 0.45 : 0.62), 1, size);
     this.prints.setMatrixAt(k, m4.compose(p, q, s));
     this.prints.setColorAt(k, colour);
-    this.printInfo.setXYZ(k, this.time, LASTS[kind] ?? 90, kind === 'snow' ? PRINT.square : shape);
+    this.printInfo.setXYZ(k, this.time, LASTS[kind] ?? 90, shape);
     this.dirty.prints = true;
   }
 

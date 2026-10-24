@@ -834,12 +834,14 @@ export class Game {
         this.inventory.remove(held.id, 1);
         a.saddled = held.id === 'greatSaddle' ? 'great' : true;
         this.dirty = true;
+        this.sound?.call('place', 0, 0.5);
         return this.hotbar?.flash('Saddled: Q to ride');
       }
       if (held?.id === 'saddlebags' && !a.bags && !a.young) {
         this.inventory.remove('saddlebags', 1);
         a.bags = new Inventory(PACK_SLOTS[a.kind] ?? 8);
         this.dirty = true;
+        this.sound?.call('place', 0, 0.45);
         return this.hotbar?.flash(`${a.kind === 'horse' ? 'Saddlebags' : 'Packs'} on: B close by it (or riding it) to open them`);
       }
       if (a.saddled && !down) return this.#ride(a);
@@ -938,11 +940,13 @@ export class Game {
       for (const st of this.structures.takeAll(s)) this.#give(st.id, st.count ?? 1, s);
       if (s.type === 'plot') {
         this.structures.remove(s);
+        this.sound?.call('dig', 0, 0.6);
         return this.hotbar?.flash('The plot filled in');
       }
       if (this.inventory.room(s.type) < 1) return this.hotbar?.flash('Your hands are full');
       this.inventory.add(Inventory.stack(s.type, 1));
       this.structures.remove(s);
+      this.sound?.call('place', 0, 0.5);
       return this.hotbar?.flash(`${ITEMS[s.type].name} taken down`);
     }
     // (Testing and creative: a site finished outright, nothing brought.)
@@ -1047,6 +1051,7 @@ export class Game {
           const was = s.trophy;
           s.trophy = null;
           this.structures.showTrophy(s);
+          this.sound?.call('place', 0, 0.4);
           return this.hotbar?.flash(`${ITEMS[was].name} taken down`);
         }
         if (!held || ITEMS[held.id]?.group !== 'Trophies') return this.hotbar?.flash('Q with a trophy in hand to hang it up (antlers, claws, a skull, a fine fish, a great beast\'s)');
@@ -1319,6 +1324,7 @@ export class Game {
       if (mown >= 3) {
         const n = mown >= 6 ? 2 : 1;
         this.#give('straw', n, { x: at.x, y: at.y + 0.3, z: at.z });
+        this.sound?.call('brush', 0, 0.6);
         return this.hotbar?.flash(`Straw ×${n}`);
       }
       return;
@@ -1433,6 +1439,7 @@ export class Game {
       if (placeTorch?.(origin, direction, s.id === 'coalTorch' ? 'coal' : false)) {
         this.inventory.take(i);
         this.cooldown = 0.3;
+        this.sound?.call('place', 0, 0.35);
         this.hotbar?.flash('Torch set down: light it with flint and steel (or a burning torch)');
       }
       return;
@@ -2077,7 +2084,7 @@ export class Game {
     this.controls.velocityY = 0;
     this.controls.vehicle = (dt, input) => {
       this.climbH += input.forward * 1.6 * (this.controls.burden ?? 1) * dt;
-      if (Math.abs(this.climbH - rungAt) > 0.3) (rungAt = this.climbH), this.sound?.call('step', 0, 0.15);
+      if (Math.abs(this.climbH - rungAt) > 0.3) (rungAt = this.climbH), this.sound?.step?.('wood', 0.25);
       if (this.climbH >= topY) {
         // Over the top: onto the ledge, or the top of the wall.
         this.#letGo();
@@ -2095,6 +2102,7 @@ export class Game {
       this.controls.grounded = true;
       this.controls.moving = input.forward !== 0;
     };
+    this.sound?.call('creak', 0, 0.35);
     this.hotbar?.flash('On the ladder: W to climb, S to go down, Q to step off');
   }
 
@@ -2140,6 +2148,7 @@ export class Game {
       this.controls.grounded = true;
       this.controls.moving = input.forward !== 0;
     };
+    this.sound?.call('brush', 0, 0.4);
     this.hotbar?.flash('On the rope: W to climb, S to go down, Q to let go');
   }
 
@@ -2651,7 +2660,7 @@ export class Game {
         if (sp.kind === 'spear') sp.stack.dur = (sp.stack.dur ?? 1) - 2;
         const broken = sp.kind === 'spear' ? sp.stack.dur <= 0 : Math.random() < 0.2;
         if (broken) {
-          if (sp.kind === 'spear') this.hotbar?.flash('The spear broke');
+          if (sp.kind === 'spear') this.hotbar?.flash('The spear broke'), this.sound?.call('crack', 0, 0.6);
           continue;
         }
         sp.mesh.quaternion.setFromUnitVectors(FORWARD, dir);
@@ -2792,7 +2801,7 @@ export class Game {
     // Waiting; then a bite: the float bobs under (click now!), then it's gone.
     if (l.bite > 0) {
       l.bite -= dt;
-      if (l.bite <= 0) (l.wait = rnd(5, 15)), this.hotbar?.flash('It got away');
+      if (l.bite <= 0) (l.wait = rnd(5, 15)), this.hotbar?.flash('It got away'), this.sound?.call('splash', 0, 0.3);
     } else {
       l.wait -= dt;
       if (l.wait <= 0) {
@@ -3387,6 +3396,7 @@ export class Game {
       armour.dur -= 1;
       if (armour.dur <= 0) {
         this.inventory.armour = null;
+        this.sound?.call('crack', 0, 0.7);
         this.hotbar?.flash('Your armour is torn to pieces');
       }
       this.inventory.changed();

@@ -833,6 +833,9 @@ export class Sound {
     if (done) return;
     if (kind === 'brush') {
       wash(t, 0.3, 'bandpass', 3000, 0.08, 0.06);
+    } else if (kind === 'scrape') {
+      // A blade scratching into wood (carving a sign): short rasping strokes.
+      for (let k = 0; k < 3; k++) wash(t + k * 0.16, 0.11, 'bandpass', 2400 + Math.random() * 900, 0.09, 0.01);
     } else if (kind === 'treebump') {
       wash(t, 0.08, 'lowpass', 300, 0.3, 0.003);
     } else if (kind === 'flybuzz' || kind === 'whine') {

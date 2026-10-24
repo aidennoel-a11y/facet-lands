@@ -1324,6 +1324,21 @@ export class Wildlife {
       }
       const step = Math.min(a.owed, 0.25);
       a.owed = 0;
+      // (Caught: carried off in an owl's talons, kicking; dropped, if the owl's shot.)
+      if (a.carriedBy) {
+        const o = a.carriedBy;
+        if (!o.alive || o.gone) (a.carriedBy = null), (a.down = false), (a.roll = 0);
+        else {
+          a.x = o.x;
+          a.z = o.z;
+          a.y = o.y - 0.35 * o.scale * 0.4;
+          a.heading = o.heading;
+          a.roll = 1.3;
+          a.down = true;
+          a.feet = null;
+          continue;
+        }
+      }
       if (SPECIES[a.kind].ground) this.#walker(a, step, c);
       else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES[a.kind], step, c);
       else if (a.flock) this.#flockBird(a, step, c);
@@ -2653,6 +2668,7 @@ export class Wildlife {
     a.timer -= dt;
     // (Day: away it goes, and out of sight.)
     if ((ctx.night ?? 0) < 0.3 && a.state !== 'leave') (a.state = 'leave'), (a.away = { x: a.x + rnd(-200, 200), z: a.z + rnd(-200, 200) });
+    if (a.state === 'leave' && a.carrying) (a.carrying.gone = true), (a.carrying = null);
     if (a.state === 'leave') {
       toward(a.away.x, a.y + 10, a.away.z, 9);
       if (Math.hypot(a.x - cam.x, a.z - cam.z) > 150) a.gone = true;
@@ -2665,7 +2681,7 @@ export class Wildlife {
         const d = Math.hypot(a.x - cam.x, a.z - cam.z);
         if (d < 140 && Math.random() < 0.7) ctx.sound?.call('owl', ctx.pan(a.x, a.z), Math.max(0.1, 1 - d / 140));
         // (Something small out on the ground below?)
-        const prey = this.animals.find((p) => (p.kind === 'rabbit' || p.kind === 'hare') && p.alive && !p.gone && !p.owl && Math.hypot(p.x - a.x, p.z - a.z) < 45);
+        const prey = this.animals.find((p) => (p.kind === 'rabbit' || p.kind === 'hare') && p.alive && !p.gone && !p.owl && !p.carriedBy && !(this.time < (p.owlSafe ?? 0)) && Math.hypot(p.x - a.x, p.z - a.z) < 45);
         if (prey) (a.state = 'swoop'), (a.prey = prey), (prey.owl = a);
         else if (Math.random() < 0.15) {
           // (Or off to another tree, a little way on.)
@@ -2676,16 +2692,39 @@ export class Wildlife {
       return;
     }
     if (a.state === 'fly') {
-      if (toward(a.perch.x, a.perch.y, a.perch.z, 8) < 0.4) (a.state = 'perch'), (a.timer = rnd(4, 10));
+      if (toward(a.perch.x, a.perch.y, a.perch.z, 8) < 0.4) {
+        a.state = 'perch';
+        a.timer = rnd(4, 10);
+        // (Up in its tree with what it caught: eaten, and gone.)
+        if (a.carrying) (a.carrying.gone = true), (a.carrying = null), (a.timer = rnd(20, 40));
+      }
       return;
     }
     if (a.state === 'swoop') {
       const p = a.prey;
-      if (!p || !p.alive || p.gone) return (a.state = 'fly'), (a.prey = null);
+      if (!p || !p.alive || p.gone || p.carriedBy) return (a.state = 'fly'), (a.prey = null);
       const d = toward(p.x, (p.y ?? 0) + 0.2, p.z, 12);
+      // (The last moment: a rabbit that hears it coming bolts for cover,
+      // jinking, and the owl misses, back up to a branch.)
+      if (d < 5 && !a.tried) {
+        a.tried = true;
+        if (Math.random() < 0.4) {
+          p.owl = null;
+          p.owlSafe = this.time + 40;
+          p.fear = 10;
+          p.fearFrom = { x: a.x, z: a.z };
+          a.prey = null;
+          a.state = 'fly';
+          a.tried = false;
+          return;
+        }
+      }
       if (d < 0.7) {
-        // Taken: carried off, up to a tree a way off.
-        p.gone = true;
+        // Taken: carried off in its talons, up to a tree a way off.
+        a.tried = false;
+        p.owl = null;
+        p.carriedBy = a;
+        a.carrying = p;
         const near = Math.hypot(a.x - cam.x, a.z - cam.z);
         if (near < 60) ctx.sound?.call('flutter', ctx.pan(a.x, a.z), Math.max(0.15, 1 - near / 60)), ctx.sound?.call('peep', ctx.pan(a.x, a.z), Math.max(0.1, 0.8 - near / 60));
         const t = rnd(0, TAU), x = a.x + Math.sin(t) * 40, z = a.z + Math.cos(t) * 40;
@@ -4478,7 +4517,7 @@ export class Wildlife {
       const lie = Math.abs(Math.sin(a.roll));
       const sh = Math.sin(a.heading), ch = Math.cos(a.heading);
       let g = -Infinity, front = NaN, back = NaN;
-      if (ground) {
+      if (ground && !a.carriedBy) {
         for (const f of [-1, -0.5, 0, 0.5, 1]) {
           const x = a.x + sh * (cz + f * hl) * s, z = a.z + ch * (cz + f * hl) * s;
           const y = ground(x, z);

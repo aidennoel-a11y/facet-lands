@@ -167,6 +167,17 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
       flow[k * 4 + 1] = Math.min(1.5, w.across);
       flow[k * 4 + 2] = w.ripple ? 0.4 : w.pond ? 0 : (0.6 + Math.min(2.4, drop * 6)) * (1 - lake); // (a falls' pool: its ripples running out from the fall)
       flow[k * 4 + 3] = Math.min(1, Math.max(0, (drop - 0.25) / 0.5));
+      // (Below a fall or a run of rapids: the water churned white where it
+      // lands, the froth drifting off downstream and thinning out.)
+      if (!w.pond && lake < 0.5 && flow[k * 4 + 3] < 0.6 && (w.fx || w.fz)) {
+        const fl = Math.hypot(w.fx, w.fz) || 1;
+        for (const back of [2.5, 5, 9]) {
+          const u = rivers.waterAt(x - (w.fx / fl) * back, z - (w.fz / fl) * back, 0);
+          const d = u && !u.pond ? Math.max(0, u.drop) : 0;
+          if (d > 0.35) flow[k * 4 + 3] = Math.max(flow[k * 4 + 3], Math.min(0.75, (d - 0.3) * 1.4) * (1 - back / 12));
+        }
+      }
+      if (w.ripple) flow[k * 4 + 3] = Math.max(flow[k * 4 + 3], 0.45 * (1 - smoothstep(0, 6, w.inset))); // (a falls' pool, churned at the foot of the fall)
       if (w.pond) ice[k] = w.tint === 2 ? 0 : generator.getSeasonality(x, z); // (hot springs never freeze)
       else if (drop > 0.25 && w.tint !== 2) ice[k] = fallIce(generator, x, z) * Math.min(1, (drop - 0.25) / 0.3); // (and falls, where it's cold enough)
       // Its colour: deeper out from the banks, the lake's colours where it
