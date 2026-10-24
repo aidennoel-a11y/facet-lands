@@ -2649,6 +2649,24 @@ export class Wildlife {
 
   // --- Behaviour ------------------------------------------------------------
 
+  // The nearest tree to shelter under from the rain (within 40 m), a step
+  // out from its trunk on this side: { x, z }, or null.
+  #shelterSpot(a, ctx) {
+    const C = ctx.chunkSize, cx = Math.floor(a.x / C), cz = Math.floor(a.z / C);
+    let best = null, bd = 40;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const trunks = ctx.trees?.trunks?.get(`${cx + dx},${cz + dz}`);
+      if (!trunks) continue;
+      for (let k = 0; k < trunks.length; k += 3) {
+        const d = Math.hypot(trunks[k] - a.x, trunks[k + 1] - a.z);
+        if (d < bd) (bd = d), (best = k), (best = { x: trunks[k], z: trunks[k + 1], r: trunks[k + 2] });
+      }
+    }
+    if (!best) return null;
+    const ang = Math.atan2(a.x - best.x, a.z - best.z) + rnd(-0.6, 0.6), out = best.r + 1 + (SPECIES[a.kind].radius ?? 0.4) * a.scale;
+    return { x: best.x + Math.sin(ang) * out, z: best.z + Math.cos(ang) * out };
+  }
+
   /**
    * An owl: it sits up in a tree, hooting now and then, watching the
    * ground; a rabbit or a hare out within reach, it drops on it without a
@@ -2835,6 +2853,8 @@ export class Wildlife {
       if (this.time < holder.voiceAt) continue;
       const t = this.#threat(a, ctx);
       holder.voiceAt = this.time + rnd(18, 70);
+      // (A storm coming on, or the rain coming down hard: the animals go quiet.)
+      if ((ctx.stormComing ?? 0) > 0.25 || (ctx.storm ?? 0) > 0.4 || (ctx.rain ?? 0) > 0.6) continue;
       if (t.d > 200) continue;
       let call = null;
       switch (a.kind) {
@@ -3297,8 +3317,13 @@ export class Wildlife {
     } else {
       a.timer -= dt;
       // (Going to drink, they bunch up along the bank.)
-      const spread = herd?.drinking ? 0.35 : 1;
-      const goal = herd ? { x: herd.goal.x + a.offset.x * spread, z: herd.goal.z + a.offset.z * spread } : a.goal ?? a.home;
+      // Weather: in hard rain, off under the nearest trees, standing it out
+      // beneath them; in snow, or a cold wet wind, a herd bunches up tight.
+      const wet = (ctx.rain ?? 0) > 0.45 && !(ctx.snowing > 0.3) && !sp.predator && !sp.swims, cold = (ctx.snowing ?? 0) > 0.3 || ((ctx.rain ?? 0) > 0.5 && (ctx.wind ?? 0) > 0.6);
+      if (wet && !a.tame && (a.shelterAt === undefined || this.time - a.shelterAt > 25)) (a.shelterAt = this.time), (a.shelter = this.#shelterSpot(a, ctx));
+      if (!wet) a.shelter = null;
+      const spread = herd?.drinking ? 0.35 : cold ? 0.45 : 1;
+      const goal = a.shelter && !herd?.drinking ? a.shelter : herd ? { x: herd.goal.x + a.offset.x * spread, z: herd.goal.z + a.offset.z * spread } : a.goal ?? a.home;
       const far = Math.hypot(goal.x - a.x, goal.z - a.z);
       // Safe again: it stops and looks back the way it came.
       if (a.state === 'flee') (a.state = 'alert'), (a.timer = rnd(3, 6)), (a.alertCool = rnd(10, 20));
@@ -3317,12 +3342,14 @@ export class Wildlife {
           // grazing if it's moved off), lift its head to look about, or lie
           // down to rest (more in the heat of the day and at night; at dawn
           // and dusk they're up and about).
-          const lull = a.kind === 'rabbit' || a.kind === 'hare' || sp.biped ? 0 : Math.min(0.55, 0.08 + 0.35 * ctx.night + 0.15 * ctx.day * (1 - ctx.dawn - ctx.dusk));
+          const lull = a.kind === 'rabbit' || a.kind === 'hare' || sp.biped ? 0 : Math.min(0.7, 0.08 + 0.35 * ctx.night + 0.15 * ctx.day * (1 - ctx.dawn - ctx.dusk) + 0.2 * (ctx.snowing ?? 0));
           const r = Math.random();
           if (r < lull && far < 16) (a.state = 'rest'), (a.timer = rnd(25, 80));
           else if (r < lull + 0.2) (a.state = 'look'), (a.timer = rnd(2, 5));
           else (a.state = 'walk'), (a.timer = far > 6 ? rnd(6, 14) : rnd(2, 5));
         } else (a.state = 'graze'), (a.timer = rnd(4, 14));
+        // (Under its tree out of the rain: it stays, standing or lying, till it eases.)
+        if (a.shelter && far < 2.5 && a.state === 'walk') (a.state = Math.random() < 0.35 ? 'rest' : 'look'), (a.timer = rnd(20, 50));
         const roam = a.tame ? 4 : 15;
         if (!herd && a.state === 'walk' && !a.goal?.water) a.goal = { x: a.home.x + rnd(-roam, roam), z: a.home.z + rnd(-roam, roam) };
         // (Which way to wander, set once: not turning on the spot.)
@@ -3360,6 +3387,11 @@ export class Wildlife {
         const c = ctx.camera.position;
         const off = angleTo(a.heading, Math.atan2(c.x - a.x, c.z - a.z));
         if (Math.abs(off) > 1.1) want = a.heading + off - Math.sign(off) * 0.9;
+      }
+      // Standing about in a cold wind or driving rain: turned tail to it, head low.
+      if ((cold || wet) && a.state !== 'walk' && a.state !== 'alert' && a.state !== 'drink' && ctx.windDir && sp.ground && !sp.predator) {
+        const off = angleTo(a.heading, Math.atan2(ctx.windDir.x, ctx.windDir.y));
+        if (Math.abs(off) > 0.35) (want = a.heading + Math.sign(off) * Math.min(Math.abs(off), 0.6)), (speed = Math.max(speed, sp.walk * 0.25));
       }
       // The young keep close by their mothers.
       if (a.young && a.mother?.alive && Math.hypot(a.mother.x - a.x, a.mother.z - a.z) > 4) {

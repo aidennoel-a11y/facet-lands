@@ -114,6 +114,13 @@ function fishMaterial(hook) {
             diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.24, 0.16), smoothstep(0.3, 0.38, l.z) * 0.8);
           } else if (k == 6) { // the sea's: silver, glinting
             diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85, 0.88, 0.92), flank * 0.6);
+          } else if (k == 7) { // a shark: slate grey over, white under, darker fin tips
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.92, 0.9), smoothstep(-0.01, -0.06, l.y));
+            if (l.y > 0.2 || l.z < -0.5) diffuseColor.rgb *= 0.6;
+          } else if (k == 8) { // a reef fish: bright, with dark bands across it
+            float band = step(0.72, sin(l.z * 26.0 + 1.0));
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.08, 0.08, 0.12), band * 0.85);
+            diffuseColor.rgb *= 1.15;
           }
         }`,
       );
@@ -133,6 +140,10 @@ const RIVER_KINDS = [[0x9aa888, 1], [0x8c9a7c, 1], [0x7f8f6a, 3]];
 const POND_KINDS = [[0x7a8c5a, 2], [0xc8a040, 4], [0x8a9a6a, 3]];
 const SALMON = 0xc0584a;
 const SEA_KINDS = [[0xb8c8d8, 6], [0x9fb4c8, 6], [0xc8c0a8, 6]];
+// Over the coral: bright reef fish, banded (yellow, blue, orange, green-gold).
+const REEF_KINDS = [[0xf0d040, 8], [0x3a8ad8, 8], [0xf08a30, 8], [0x8ad060, 8], [0xe86aa0, 8]];
+// Out in the deep water: big fish cruising alone, a tuna, a grouper, a shark now and then.
+const BIG_KINDS = [[0x8a9cb8, 6, 1.2, 1.9], [0x6a5a40, 2, 1.0, 1.6], [0x7c8890, 7, 1.9, 3.0]];
 
 const m4 = new Matrix4(), q = new Quaternion(), e = new Euler(0, 0, 0, 'YXZ'), p = new Vector3(), s = new Vector3(), tint = new Color();
 
@@ -209,7 +220,7 @@ export class Fish {
         // (It darts up into the current: so long as that's still water.)
         found.dart = ctx.waterAt(x + Math.sin(up) * 1.3, z + Math.cos(up) * 1.3) ? 1.25 : 0;
       }
-    } else if (kind === 's' && this.#h(i, j, 0xf156) < 0.4 && w && !(w.speed > 0) && w.level - bed > 1.5 && w.level - bed < 12) {
+    } else if (kind === 's' && this.#h(i, j, 0xf156) < (w?.lake ? 0.55 : 0.4) && w && !(w.speed > 0) && w.level - bed > 1.5 && w.level - bed < (w.lake ? 30 : 12)) {
       // (A shoal wanders round its patch of water, five metres or so each way: so it must all be deep enough.)
       let deep = true;
       for (let k = 0; k < 8 && deep; k++) {
@@ -218,12 +229,17 @@ export class Fish {
         deep = !!pw && pw.level - pg > 1.2;
       }
       if (deep) {
-        const depth = w.level - bed, sea = !!w.lake;
+        const depth = w.level - bed, sea = !!w.lake, reef = sea && (ctx.generator?.getReef?.(x, z, bed) ?? 0) > 0.15;
         found = {
-          x, z, level: w.level, y: w.level - Math.min(depth * 0.4, 1.4) - 0.3, n: 8 + Math.floor(this.#h(i, j, 0xf157) * 8),
-          ...pick(sea ? SEA_KINDS : RIVER_KINDS, this.#h(i, j, 0xf158)), speed: 0.6 + 0.6 * this.#h(i, j, 0xf159), phase: this.#h(i, j, 0xf15a) * TAU,
+          x, z, level: w.level, y: reef ? bed + Math.min(1.4, depth * 0.4) : w.level - Math.min(depth * (sea ? 0.5 : 0.4), sea ? 8 : 1.4) - 0.3, n: (reef ? 10 : 8) + Math.floor(this.#h(i, j, 0xf157) * 8),
+          ...pick(reef ? REEF_KINDS : sea ? SEA_KINDS : RIVER_KINDS, this.#h(i, j, 0xf158)), speed: 0.6 + 0.6 * this.#h(i, j, 0xf159), phase: this.#h(i, j, 0xf15a) * TAU,
         };
       }
+    }
+    if (kind === 'b' && this.#h(i, j, 0xf180) < 0.5 && w?.lake && w.level - bed > 6) {
+      // A big fish of the open sea: round a wide loop of its own, deep down.
+      const depth = w.level - bed, [tint, kk, s0, s1] = BIG_KINDS[this.#h(i, j, 0xf181) < 0.22 ? 2 : this.#h(i, j, 0xf182) < 0.6 ? 0 : 1];
+      found = { x, z, level: w.level, y: w.level - Math.min(depth * 0.55, 14), tint, kind: kk, size: s0 + (s1 - s0) * this.#h(i, j, 0xf183), r: 7 + 9 * this.#h(i, j, 0xf184), speed: 0.35 + 0.3 * this.#h(i, j, 0xf185), phase: this.#h(i, j, 0xf186) * TAU };
     }
     if (kind === 'p' && this.#h(i, j, 0xf170) < 0.45 && w && !(w.speed > 0) && w.level - bed > 0.55) {
       // A pond's fish: a bass or a sunfish, a carp, cruising slowly round the shallows near the top.
@@ -304,9 +320,11 @@ export class Fish {
             const k = Math.sin((rIn / 0.9) * Math.PI);
             fish.y += (f.level - 0.06 - f.y) * k;
             fish.pitch = -0.6 * Math.cos((rIn / 0.9) * Math.PI);
+            fish.rising = true;
             if (rIn >= 0.45 && rIn - dt < 0.45 && Math.hypot(f.x - cam.x, f.z - cam.z) < 30) ctx.traces?.splash(fish.x, f.level, fish.z, 3, 0.5, 0.25);
           }
           const sp = fled(id, fish);
+          fish.spooked = !!sp;
           if (sp) {
             // Off like a shot, away and down; back to its place a while later.
             fish.x += sp.dx * sp.away;
@@ -347,9 +365,24 @@ export class Fish {
               const wx = Math.sin(T * 0.6 + k * 1.7) * 0.5, wz = Math.cos(T * 0.47 + k * 2.3) * 0.5;
               list.push({
                 id: `s${i},${j},${k}`, ax: sh.x, az: sh.z, x: cx + Math.sin(heading + k * 2.4) * off + wx, y: sh.y + (this.#h(i, j * 17 + k, 0xf163) - 0.5) * 0.6 + Math.sin(T * 0.4 + k) * 0.12, z: cz + Math.cos(heading + k * 2.4) * off + wz,
-                level: sh.level, heading: heading + Math.cos(T * 0.6 + k * 1.7) * 0.25, size: 0.22 + 0.12 * this.#h(i + k, j, 0xf164), tint: sh.tint, kind: sh.kind, beat: beat * (0.9 + 0.2 * this.#h(k, j, 0xf167)), amp: 1, shoal: true,
+                level: sh.level, heading: heading + Math.cos(T * 0.6 + k * 1.7) * 0.25, size: 0.22 + 0.12 * this.#h(i + k, j, 0xf164), tint: sh.tint, kind: sh.kind, beat: beat * (0.9 + 0.2 * this.#h(k, j, 0xf167)), amp: 1, shoal: true, spooked: !!sp,
               });
             }
+          }
+        }
+        // The sea's big fish: each alone, round its own wide loop, sweeping
+        // its tail slowly. (Cells of 60 m out to 110 m.)
+        const B = 60, bi = Math.floor(cam.x / B), bj = Math.floor(cam.z / B);
+        for (let j = bj - 2; j <= bj + 2; j++) {
+          for (let i = bi - 2; i <= bi + 2; i++) {
+            const bf = this.#cell('b', i, j, B, ctx);
+            if (!bf || Math.hypot(bf.x - cam.x, bf.z - cam.z) > 110) continue;
+            const u = (T * bf.speed) / bf.r + bf.phase, id = `b${i},${j}`;
+            const fish = { id, ax: bf.x, az: bf.z, x: bf.x + Math.cos(u) * bf.r, y: bf.y + Math.sin(T * 0.13 + bf.phase) * 1.2, z: bf.z + Math.sin(u) * bf.r * 0.8, level: bf.level, heading: Math.atan2(-Math.sin(u), Math.cos(u) * 0.8), size: bf.size, tint: bf.tint, kind: bf.kind, beat: 0.7, amp: 0.8, shoal: false };
+            const sp = fled(id, fish);
+            fish.spooked = !!sp;
+            if (sp && bf.kind !== 7) (fish.x += sp.dx * sp.away * 2), (fish.z += sp.dz * sp.away * 2), (fish.beat = 4); // (a shark doesn't scare)
+            list.push(fish);
           }
         }
         // A pond's own fish: one or two cruising slowly round near the top,
@@ -362,6 +395,8 @@ export class Fish {
             const id = `p${i},${j}`, u = T * pf.speed / pf.r + pf.phase;
             const fish = { id, ax: pf.x, az: pf.z, x: pf.x + Math.cos(u) * pf.r, y: pf.y + Math.sin(T * 0.3 + pf.phase) * 0.08, z: pf.z + Math.sin(u) * pf.r * 0.7, level: pf.level, heading: Math.atan2(-Math.sin(u), Math.cos(u) * 0.7), size: pf.size, tint: pf.tint, kind: pf.kind, beat: 1, amp: 0.7, shoal: false };
             const sp = fled(id, fish);
+            fish.spooked = !!sp;
+          fish.spooked = !!sp;
             if (sp) {
               fish.x += sp.dx * Math.min(sp.away, pf.r);
               fish.z += sp.dz * Math.min(sp.away, pf.r);
@@ -374,46 +409,12 @@ export class Fish {
         }
       }
     }
-    // Every one in water deep enough for it: never in the bank or the bed,
-    // never out on the shore. (Where it would be, it keeps nearer its own
-    // place; no room even there, it isn't drawn.)
-    for (let n = list.length - 1; n >= 0; n--) {
-      const f = list[n];
-      if (f.ax === undefined) continue;
-      let ok = false;
-      for (let t = 0; t < 4 && !ok; t++) {
-        const g = ctx.ground(f.x, f.z);
-        if (Number.isFinite(g) && f.level - g > f.size * 0.45 + 0.15) {
-          f.y = Math.min(f.level - 0.1 - f.size * 0.12, Math.max(f.y, g + f.size * 0.25 + 0.05));
-          ok = true;
-        } else (f.x = f.ax + (f.x - f.ax) * 0.5), (f.z = f.az + (f.z - f.az) * 0.5);
-      }
-      if (!ok) list.splice(n, 1);
-    }
-    // Leaps: now and then one clears the water (each every couple of
-    // minutes, at its own time).
-    for (const f of list) {
-      const hh = hash2(hashSeed(f.id) | 0, 7, this.seed ^ 0x1ea9);
-      const P = 90 + 120 * hh, start = Math.floor((T + hh * P) / P) * P - hh * P, h = 0.8 + 0.8 * hh, dur = 0.45 + Math.sqrt(h) * 0.35;
-      const k = (T - start) / dur;
-      const d = 0.8 + hh;
-      if (k >= 0 && k < 1 && Math.hypot(f.x - cam.x, f.z - cam.z) < 45 && !this.spooked.has(f.id)) {
-        f.x += Math.sin(f.heading) * d * k;
-        f.z += Math.cos(f.heading) * d * k;
-        // (Up from where it was swimming, smoothly, and back down to it.)
-        const blend = smoothstep(0, 0.2, k) * (1 - smoothstep(0.85, 1, k));
-        f.y += (f.level - 0.3 + Math.sin(Math.PI * k) * h - f.y) * Math.max(blend, k > 0.1 && k < 0.9 ? 1 : 0);
-        f.pitch = -Math.cos(Math.PI * k) * 0.9;
-        f.leap = true;
-        f.beat = 5;
-        f.amp = 1.6;
-      } else if (k >= 1 && T - start - dur < 5) {
-        // (Landed a little way on: easing back into its own path, not jumping to it.)
-        const back = d * (1 - (T - start - dur) / 5);
-        f.x += Math.sin(f.heading) * back;
-        f.z += Math.cos(f.heading) * back;
-      }
-    }
+    // Each one swims there: not set down where the clock says (which would
+    // jump), but steering for it, as a real fish does: speeding up and
+    // easing off, turning smoothly, moving the way it's facing; never into
+    // the bank or the bed, never out on the shore (where it would go, it
+    // slides along the bank, or turns away); rising and sinking gently.
+    this.#swim(list, dt, T, ctx, cam);
     // Salmon at the falls, in summer and autumn: one after another up the
     // fall (most don't make it: they drop back).
     const run = Math.max(ctx.summer ?? 0, ctx.autumn ?? 0);
@@ -431,7 +432,7 @@ export class Fish {
           const x1 = x0 + Math.sin(fall.up) * reach, z1 = z0 + Math.cos(fall.up) * reach;
           const y0 = fall.low - 0.3, y1 = made ? fall.high - 0.3 : fall.low - 0.3;
           list.push({
-            id: `f${fall.key}:${n}`, x: x0 + (x1 - x0) * k, z: z0 + (z1 - z0) * k, y: y0 + (y1 - y0) * k + Math.sin(Math.PI * k) * h, level: k < 0.5 ? fall.low : y1 + 0.3,
+            id: `f${fall.key}:${n}`, salmon: true, x: x0 + (x1 - x0) * k, z: z0 + (z1 - z0) * k, y: y0 + (y1 - y0) * k + Math.sin(Math.PI * k) * h, level: k < 0.5 ? fall.low : y1 + 0.3,
             heading: fall.up, pitch: -Math.cos(Math.PI * k) * 0.9, size: 0.55 + 0.25 * r(0x5a5), tint: SALMON, kind: (ctx.autumn ?? 0) > 0.3 ? 5 : 6, leap: true, beat: 6, amp: 1.8,
           });
         }
@@ -453,17 +454,18 @@ export class Fish {
     this.leaping = now;
     this.lastLeap = new Map(list.filter((f) => f.leap).map((f) => [f.id, f]));
 
-    // Into the instanced mesh (the swimming itself, the bend of the body, is the shader's: see fishMaterial).
+    // Into the instanced mesh (the swimming itself, the bend of the body, is
+    // the shader's: see fishMaterial; its beat kept here, so it never jumps).
     let n = 0;
     const sw = this.swim.array;
     for (const f of list) {
-      if (n >= MAX) break;
-      e.set(f.pitch ?? 0, f.heading, 0, 'YXZ');
+      if (n >= MAX || f.hidden) continue;
+      e.set(f.pitch ?? 0, f.heading, f.roll ?? 0, 'YXZ');
       q.setFromEuler(e);
       this.mesh.setMatrixAt(n, m4.compose(p.set(f.x, f.y, f.z), q, s.setScalar(f.size)));
       this.mesh.setColorAt(n, tint.set(f.tint));
-      sw[n * 4] = (hashSeed(f.id) % 1000) * 0.0063;
-      sw[n * 4 + 1] = f.beat ?? 1.5;
+      sw[n * 4] = f.phase ?? (hashSeed(f.id) % 1000) * 0.0063 + T * (f.beat ?? 1.5) * TAU;
+      sw[n * 4 + 1] = 0;
       sw[n * 4 + 2] = f.amp ?? 1;
       sw[n * 4 + 3] = f.kind ?? 0;
       n++;
@@ -472,6 +474,133 @@ export class Fish {
     this.mesh.instanceMatrix.needsUpdate = true;
     this.swim.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+  }
+
+  // Room for a fish of `size` at (x, z) at height y: water deep enough, the
+  // bed (under it, and under its nose and its tail) below it. Returns the
+  // lowest and highest it can be there, or null.
+  #room(x, z, size, sh, ch, ctx) {
+    const w = ctx.waterAt(x, z);
+    if (!w) return null;
+    let bed = -Infinity;
+    for (const k of [0, 0.5, -0.45]) {
+      const g = ctx.ground(x + sh * size * k, z + ch * size * k);
+      if (!Number.isFinite(g)) return null;
+      bed = Math.max(bed, g);
+    }
+    const low = bed + size * 0.22 + 0.06, high = w.level - 0.08 - size * 0.12;
+    return high - low > 0.02 ? { low, high, level: w.level } : null;
+  }
+
+  #swim(list, dt, T, ctx, cam) {
+    const sim = (this.sim ??= new Map());
+    const h = Math.min(dt, 0.1);
+    for (const f of list) {
+      if (f.salmon) continue; // (the salmon at the falls: their leaps are their own)
+      let s = sim.get(f.id);
+      const sh0 = Math.sin(f.heading), ch0 = Math.cos(f.heading);
+      if (!s) {
+        // (New in view: where it should be, if there's room for it there.)
+        const room = this.#room(f.x, f.z, f.size, sh0, ch0, ctx);
+        if (!room) {
+          f.hidden = true;
+          continue;
+        }
+        s = { x: f.x, z: f.z, y: Math.min(room.high, Math.max(room.low, f.y)), vx: 0, vz: 0, heading: f.heading, pitch: 0, roll: 0, phase: (hashSeed(f.id) % 1000) * 0.0063, beat: f.beat ?? 1.5, amp: f.amp ?? 1, leap: null };
+        sim.set(f.id, s);
+      }
+      s.seen = T;
+      // A leap: up out of the water and back in, a little way on (only where it'll come down in water).
+      const hh = hash2(hashSeed(f.id) | 0, 7, this.seed ^ 0x1ea9);
+      const P = 90 + 120 * hh, start = Math.floor((T + hh * P) / P) * P - hh * P, lh = 0.8 + 0.8 * hh, dur = 0.45 + Math.sqrt(lh) * 0.35, d = 0.8 + hh;
+      const k = (T - start) / dur;
+      if (!s.leap && k >= 0 && k < 0.3 && s.leapDone !== start && !f.spooked && Math.hypot(s.x - cam.x, s.z - cam.z) < 45) {
+        s.leapDone = start;
+        const sh = Math.sin(s.heading), ch = Math.cos(s.heading), land = ctx.waterAt(s.x + sh * d, s.z + ch * d);
+        const g = ctx.ground(s.x + sh * d, s.z + ch * d);
+        if (land && land.level - g > f.size * 0.6 + 0.3) s.leap = { start, dur, d, h: lh, x0: s.x, z0: s.z, y0: s.y, level: f.level };
+      }
+      if (s.leap) {
+        const L = s.leap, u = (T - L.start) / L.dur;
+        if (u >= 1) {
+          s.leap = null;
+          s.y = Math.min(s.y, L.level - 0.25);
+        } else {
+          const sh = Math.sin(s.heading), ch = Math.cos(s.heading), e = Math.max(0, u);
+          s.x = L.x0 + sh * L.d * e;
+          s.z = L.z0 + ch * L.d * e;
+          // (Up from where it was swimming, smoothly, over the top, and back down to it.)
+          const blend = smoothstep(0, 0.2, e) * (1 - smoothstep(0.8, 1, e));
+          s.y = L.y0 + (L.level - 0.3 - L.y0) * blend + Math.sin(Math.PI * e) * L.h;
+          s.pitch = -Math.cos(Math.PI * e) * 0.9;
+          s.vx = sh * L.d / L.dur;
+          s.vz = ch * L.d / L.dur;
+          s.beat = 5;
+          f.leap = true;
+          Object.assign(f, { x: s.x, y: s.y, z: s.z, heading: s.heading, pitch: s.pitch, beat: 5, amp: 1.6 });
+          s.phase += 5 * h * TAU;
+          f.phase = s.phase;
+          continue;
+        }
+      }
+      // Steering: for where it means to be, at a pace for what it's doing
+      // (a dart, a flight: fast; holding in the current, cruising: slow).
+      const fast = (f.beat ?? 1.5) >= 4;
+      const top = (fast ? 3.2 : 1.1) * (0.5 + f.size);
+      let dx = f.x - s.x, dz = f.z - s.z;
+      const dist = Math.hypot(dx, dz);
+      const want = Math.min(top, dist * (fast ? 3 : 1.4));
+      const wx = dist > 1e-4 ? (dx / dist) * want : 0, wz = dist > 1e-4 ? (dz / dist) * want : 0;
+      s.vx += (wx - s.vx) * Math.min(1, h * (fast ? 5 : 2));
+      s.vz += (wz - s.vz) * Math.min(1, h * (fast ? 5 : 2));
+      const speed = Math.hypot(s.vx, s.vz);
+      // (Turning: toward the way it's going, or, holding still, the way it means to face.)
+      const aim = speed > 0.15 * (0.5 + f.size) ? Math.atan2(s.vx, s.vz) : f.heading;
+      const turn = Math.atan2(Math.sin(aim - s.heading), Math.cos(aim - s.heading));
+      const rate = fast ? 7 : 2.6;
+      const dh = Math.max(-rate * h, Math.min(rate * h, turn * Math.min(1, h * (fast ? 10 : 4))));
+      s.heading += dh;
+      s.roll += (-dh / Math.max(h, 1e-3) * 0.06 - s.roll) * Math.min(1, h * 6); // (banking a touch into a turn)
+      // (It swims the way it's facing: what's off to its side it can only slip toward a little.)
+      const sh = Math.sin(s.heading), ch = Math.cos(s.heading);
+      const ahead = Math.max(0, s.vx * sh + s.vz * ch), side = (s.vx * ch - s.vz * sh) * 0.3;
+      const mx = sh * ahead + ch * side, mz = ch * ahead - sh * side;
+      let nx = s.x + mx * h, nz = s.z + mz * h;
+      let room = this.#room(nx, nz, f.size, sh, ch, ctx);
+      if (!room) {
+        // (The bank, or the bed coming up: along it if it can, else stopped, and turning away.)
+        if ((room = this.#room(nx, s.z, f.size, sh, ch, ctx))) nz = s.z;
+        else if ((room = this.#room(s.x, nz, f.size, sh, ch, ctx))) nx = s.x;
+        else {
+          nx = s.x;
+          nz = s.z;
+          s.vx *= -0.3;
+          s.vz *= -0.3;
+          s.heading += Math.sign(turn || 1) * Math.min(1, h * 3);
+          room = this.#room(s.x, s.z, f.size, sh, ch, ctx);
+        }
+      }
+      s.x = nx;
+      s.z = nz;
+      // Up and down: gently toward where it means to be (quick, rising to a fly), never out of the water or into the bed.
+      const ty = room ? Math.min(room.high, Math.max(room.low, f.y)) : s.y;
+      const vy = (ty - s.y) * Math.min(1, h * (f.rising ? 7 : fast ? 3 : 1.2));
+      s.y += vy;
+      if (room) s.y = Math.min(room.high, Math.max(room.low, s.y));
+      s.pitch += ((f.pitch ?? Math.max(-0.45, Math.min(0.45, -vy / Math.max(h, 1e-3) * 0.5))) - s.pitch) * Math.min(1, h * 5);
+      // (Beating its tail harder the faster it goes.)
+      const beat = Math.max(f.beat ?? 1.5, 0.8 + speed * 2.2 / (0.5 + f.size));
+      s.beat += (beat - s.beat) * Math.min(1, h * 3);
+      s.amp += ((f.amp ?? 1) * (0.7 + 0.3 * Math.min(1, speed)) - s.amp) * Math.min(1, h * 3);
+      s.phase += s.beat * h * TAU;
+      Object.assign(f, { x: s.x, y: s.y, z: s.z, heading: s.heading, pitch: s.pitch, roll: s.roll, phase: s.phase, amp: s.amp, leap: false });
+      if (!room) f.hidden = true;
+    }
+    // (Forgetting those gone out of view a while.)
+    if ((this.forget = (this.forget ?? 0) - dt) <= 0) {
+      this.forget = 2;
+      for (const [id, s] of sim) if (T - s.seen > 4) sim.delete(id);
+    }
   }
 
   // The falls near you, for the salmon.

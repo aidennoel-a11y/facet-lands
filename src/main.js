@@ -2644,7 +2644,7 @@ function tick(now) {
     // (A torch in your hand, or a fire or torch close by: the animals' eyes shine back out of the dark. See Wildlife.#eyeshine.)
     eyeLight: gameLights.some((l) => Math.hypot(l.x - camera.position.x, l.z - camera.position.z) < 12) || torches.torches.some((t) => t.lit && t.point.distanceTo(camera.position) < 10),
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
-    rain: localRain, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
+    rain: localRain, storm: weather.storm, stormComing: weather.approaching?.storm ?? 0, snowing: snowing ? snow : 0, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
     sheltered, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), tame: peaceful?.checked ?? WORLD.tameWildlife,
     player: game.player, structures: game.structures,
     // (Online: the others, for the host's animals to mind; their calls, to be heard by everyone.)
