@@ -2401,15 +2401,16 @@ export class Game {
   }
 
   // Spearing a fish (along a ray, or where a thrown spear goes in): whether one was caught.
-  #spearFish(origin, direction, reach) {
-    for (const f of this.fish?.fish ?? []) {
-      if (f.gone || f.leap) continue;
+  #spearFish(origin, direction, reach, wide = 0.6) {
+    for (const f of this.fish?.list ?? []) {
+      if (f.hidden || f.leap || f.salmon) continue;
       const ox = f.x - origin.x, oy = f.y - origin.y, oz = f.z - origin.z;
       const t = ox * direction.x + oy * direction.y + oz * direction.z;
       if (t < 0 || t > reach) continue;
-      if (ox * ox + oy * oy + oz * oz - t * t > 0.6 * 0.6) continue;
-      f.gone = true;
-      this.#give('rawFish', 1);
+      const r = Math.max(wide, (f.size ?? 0.3) * 0.7);
+      if (ox * ox + oy * oy + oz * oz - t * t > r * r) continue;
+      this.fish.take(f);
+      this.#give('rawFish', (f.size ?? 0.3) > 1 ? 3 : 1);
       this.sound?.call('splash', 0, 0.5);
       this.hotbar?.flash('You speared a fish');
       return true;
@@ -2690,7 +2691,10 @@ export class Game {
         sp.vel.multiplyScalar(0.25);
         this.traces?.splash(sp.pos.x, w.level, sp.pos.z, 6, 1.5, 0.6);
         if (sp.fire) (sp.fire = false), sp.mesh.clear(), this.sound?.call('hiss', 0, 0.25); // (doused)
-        if (sp.kind === 'spear') this.#spearFish(sp.pos.clone().addScaledVector(dir, -1), dir, 2.5);
+        if (sp.kind === 'spear' && this.#spearFish(sp.pos.clone().addScaledVector(dir, -1), dir, 2.5)) sp.vel.multiplyScalar(0.2);
+      } else if (w && sp.pos.y < w.level && sp.kind === 'spear' && !sp.done && sp.vel.lengthSq() > 4) {
+        // (On through the water, thrown under it: anything in its way.)
+        if (this.#spearFish(sp.pos, dir, sp.vel.length() * dt + 0.3, 0.45)) sp.vel.multiplyScalar(0.2);
       }
       // Into the ground: it sticks there.
       const g = this.groundAt(sp.pos.x, sp.pos.z, sp.pos.y + 1);
@@ -2759,7 +2763,7 @@ export class Game {
     line.frustumCulled = false;
     this.scene.add(line);
     // (Sooner where there are fish about.)
-    const near = (this.fish?.fish ?? []).some((f) => Math.hypot(f.x - at.x, f.z - at.z) < 10);
+    const near = (this.fish?.list ?? []).some((f) => Math.hypot(f.x - at.x, f.z - at.z) < 10);
     this.line = { ...at, bobber, line, wait: rnd(4, 14) * (near ? 0.5 : 1) * (this.generator().getBiomeWeights(at.x, at.z, {}).cascades > 0.5 ? 0.6 : 1) * (1 - 0.06 * this.skillLevel('fishing')), bite: 0 };
     this.sound?.call('whoosh', 0, 0.3);
     this.traces?.splash(at.x, at.level, at.z, 4, 1, 0.4);
@@ -2876,8 +2880,8 @@ export class Game {
     // Landed!
     this.#reel();
     this.inventory.wear(f.slot, 1);
-    const near = (this.fish?.fish ?? []).find((q) => !q.gone && Math.hypot(q.x - l.x, q.z - l.z) < 12);
-    if (near) near.gone = true;
+    const near = (this.fish?.list ?? []).find((q) => !q.hidden && !q.leap && Math.hypot(q.x - l.x, q.z - l.z) < 12);
+    if (near) this.fish.take(near);
     const kg = Math.round(f.kg * 10) / 10;
     this.#give(k.item ?? 'rawFish', Math.max(1, Math.min(4, Math.round(kg / 1.4))));
     this.skill('fishing', 4 + Math.round(f.pull * 3));

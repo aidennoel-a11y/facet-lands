@@ -432,7 +432,9 @@ export class Insects {
     this.gnatMesh.instanceMatrix.needsUpdate = true;
     // Flies about your head (by day), mosquitoes (by night): darting in
     // and out, now off, now back, with a buzz or a whine as one goes by your ear.
-    const flies = Math.round(5 * B * (ctx.player?.alive === false ? 0 : 1));
+    // (None under the water with you: they stay up in the air.)
+    const flies = Math.round(5 * B * (ctx.player?.alive === false || ctx.underwater ? 0 : 1));
+    const surface = ctx.waterAt?.(cam.x, cam.z)?.level ?? -Infinity;
     while (this.buzzers.length > flies) this.buzzers.pop();
     while (this.buzzers.length < flies) this.buzzers.push({ x: cam.x + rnd(-6, 6), y: cam.y + rnd(-1, 1), z: cam.z + rnd(-6, 6), vx: 0, vy: 0, vz: 0, tx: 0, ty: 0, tz: 0, retarget: 0, heard: rnd(1, 6) });
     let m = 0;
@@ -455,6 +457,7 @@ export class Insects {
       f.x += f.vx * dt;
       f.y += f.vy * dt;
       f.z += f.vz * dt;
+      if (f.y < surface + 0.15) (f.y = surface + 0.15), (f.vy = Math.max(0, f.vy)); // (over the water, never into it)
       const d = Math.hypot(f.x - cam.x, f.y - cam.y, f.z - cam.z);
       f.heard -= dt;
       // (One going by your ear: louder the closer it passes.)

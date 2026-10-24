@@ -178,6 +178,7 @@ export class Fish {
     this.wait = 0;
     this.time = 0;
     this.list = []; // (this frame's fish, drawn: { x, y, z, heading, pitch, size, tint, kind, leap })
+    this.caught = new Map(); // id -> when: a fish speared or landed, gone from its water a long while
     this.spooked = new Map(); // id -> { at, dx, dz }: a fish (or a shoal) put to flight by someone close (see #spook)
   }
 
@@ -257,16 +258,35 @@ export class Fish {
     return found;
   }
 
+  /** A fish caught (speared, or landed on a line): gone, and the rest of its shoal off in a fright. */
+  take(f) {
+    this.caught.set(f.id, this.time);
+    this.sim?.delete(f.id);
+    const T = this.lastT ?? this.time, shoal = f.id[0] === 's' ? f.id.split(',').slice(0, 2).join(',') : null;
+    if (shoal) this.spooked.set(shoal, { at: T, dx: Math.sin(f.heading ?? 0), dz: Math.cos(f.heading ?? 0) });
+  }
+
   // Someone close by, or in the water by it: the fish (or the shoal) darts
   // off away from them, deeper, and keeps clear a while before it comes
   // back to its place. (Not shared online: each sees their own.)
   #spook(id, f, people, T) {
     const was = this.spooked.get(id);
     if (was && T - was.at < 12) return was;
+    // (Some fish are bold, and let a diver come almost up to them; most
+    // aren't. Each its own way, the same each time.)
+    let hsh = 0;
+    for (let k = 0; k < id.length; k++) hsh = (hsh * 31 + id.charCodeAt(k)) | 0;
+    const bold = ((hsh >>> 0) % 100) / 100 < 0.3;
     for (const q of people) {
-      const d = Math.hypot(f.x - q.x, f.z - q.z), close = q.inWater ? 7 : q.moving ? 4.5 : 3;
-      if (d < close && Math.abs(q.y - f.level) < 4) {
-        const v = { at: T, dx: (f.x - q.x) / (d || 1), dz: (f.z - q.z) / (d || 1) };
+      let d = Math.hypot(f.x - q.x, f.z - q.z), close = q.inWater ? 7 : q.moving ? 4.5 : 3;
+      if (q.under) {
+        // Swimming down among them: how near in all three ways, nearer
+        // still if you come at them fast.
+        d = Math.hypot(d, (f.y ?? f.level - 1) - q.eye);
+        close = (bold ? 1.6 : 5) + (q.moving ? (bold ? 0.6 : 2) : 0);
+      } else if (Math.abs(q.y - f.level) >= 4) continue;
+      if (d < close) {
+        const v = { at: T, dx: (f.x - q.x) / (Math.hypot(f.x - q.x, f.z - q.z) || 1), dz: (f.z - q.z) / (Math.hypot(f.x - q.x, f.z - q.z) || 1) };
         this.spooked.set(id, v);
         return v;
       }
@@ -284,6 +304,7 @@ export class Fish {
     this.seed = ctx.seed | 0;
     const T = ctx.netTime ?? this.time; // (online, the room's clock)
     fishTime.value = T;
+    this.lastT = T;
     const cam = ctx.camera.position;
     this.mesh.visible = !ctx.sheltered;
     this.wait -= dt;
@@ -296,7 +317,7 @@ export class Fish {
     const moved = this.lastCam ? Math.hypot(cam.x - this.lastCam.x, cam.z - this.lastCam.z) / Math.max(dt, 1e-3) : 0;
     this.lastCam = { x: cam.x, z: cam.z };
     const here = ctx.waterAt(cam.x, cam.z);
-    const people = [{ x: cam.x, y: cam.y - 1.6, z: cam.z, moving: moved > 1.2, inWater: !!here && cam.y - 1.6 < here.level + 0.1 }];
+    const people = [{ x: cam.x, y: cam.y - 1.6, z: cam.z, eye: cam.y, moving: moved > 1.2, inWater: !!here && cam.y - 1.6 < here.level + 0.1, under: !!here && cam.y < here.level - 0.3 }];
     for (const o of ctx.people ?? []) people.push({ x: o.x, y: o.y ?? cam.y, z: o.z, moving: true, inWater: false });
     const list = (this.list = []);
     const high = cam.y - ctx.ground(cam.x, cam.z) > 120; // (not from high up)
@@ -304,7 +325,7 @@ export class Fish {
       const sp = this.#spook(id, f, people, T);
       if (!sp) return 0;
       const u = T - sp.at;
-      return { u, away: Math.min(4, u * 7) * (1 - smoothstep(6, 12, u)), dx: sp.dx, dz: sp.dz };
+      return { u, away: Math.min(6, u * 8) * (1 - smoothstep(6, 12, u)), dx: sp.dx, dz: sp.dz };
     };
     if (!high) {
       // River fish, holding in the stream facing up it, swaying with the
@@ -357,7 +378,7 @@ export class Fish {
             const u = T * 0.12 * sh.speed + sh.phase;
             let cx = sh.x + Math.sin(u) * 5 * sh.wander, cz = sh.z + Math.sin(u * 0.7 + 1.3) * 4 * sh.wander;
             let heading = Math.atan2(Math.cos(u) * 5, Math.cos(u * 0.7 + 1.3) * 0.7 * 4);
-            const sp = fled(`s${i},${j}`, { x: cx, z: cz, level: sh.level });
+            const sp = fled(`s${i},${j}`, { x: cx, z: cz, y: sh.y, level: sh.level });
             let spread = 1, beat = 2.2;
             if (sp) {
               cx += sp.dx * sp.away * 1.5;
@@ -421,7 +442,11 @@ export class Fish {
     // easing off, turning smoothly, moving the way it's facing; never into
     // the bank or the bed, never out on the shore (where it would go, it
     // slides along the bank, or turns away); rising and sinking gently.
-    this.#swim(list, dt, T, ctx, cam);
+    if (this.caught.size) {
+      for (const [id, at] of this.caught) if (this.time - at > 900) this.caught.delete(id);
+      for (let k = list.length - 1; k >= 0; k--) if (this.caught.has(list[k].id)) list.splice(k, 1);
+    }
+        this.#swim(list, dt, T, ctx, cam);
     // Salmon at the falls, in summer and autumn: one after another up the
     // fall (most don't make it: they drop back).
     const run = Math.max(ctx.summer ?? 0, ctx.autumn ?? 0);

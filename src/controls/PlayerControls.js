@@ -247,7 +247,7 @@ export class PlayerControls {
     }
     const ground = this.#ground(pos.x, pos.y - this.eyeHeight, pos.z);
     // (Down into the water, if you like, to near its bottom.)
-    const floor = ground.inCave ? ground.stand + 0.4 : ground.swim ? ground.height + 1 : ground.stand + this.flyClearance;
+    const floor = ground.inCave ? ground.stand + 0.4 : ground.swim ? this.#bedAround(pos.x, pos.y - this.eyeHeight, pos.z, ground.height) + 0.9 : ground.stand + this.flyClearance;
     const water = ground.swim ? this.#water(pos.x, pos.z) : null;
     this.underwater = water !== null && pos.y < water.level - 0.05;
     if (pos.y < floor) pos.y = floor;
@@ -272,6 +272,20 @@ export class PlayerControls {
       ceiling: g.ceiling,
       swim: deepWater,
     };
+  }
+
+  /**
+   * The highest of the sea bed round (x, z), an arm's length each way (not
+   * only straight below: on a steep, rough bed, the rock beside you is
+   * nearer than that under you, and your eyes mustn't go into it).
+   */
+  #bedAround(x, feetY, z, here) {
+    let top = here;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2, g = this.world.groundAt(x + Math.cos(a) * 0.7, feetY, z + Math.sin(a) * 0.7);
+      if (!g.inCave && Number.isFinite(g.height)) top = Math.max(top, g.height - 0.25); // (a little less: it's beside you, not under)
+    }
+    return top;
   }
 
   // The water's surface at (x, z) (and its current), or null.
@@ -407,15 +421,17 @@ export class PlayerControls {
       if (next.inCave || (under ? next.height < pos.y + 0.8 : next.height < pos.y - 0.2)) {
         pos.x += dx;
         pos.z += dz;
-        if (under) pos.y = Math.max(pos.y, next.height + 0.6);
+        if (under) pos.y = Math.max(pos.y, next.height + 0.35);
         else if (next.height > pos.y - this.eyeHeight) pos.y = next.height + this.eyeHeight;
       }
     }
     this.world.collide?.(pos, this.radius);
     pos.y = Math.min(float + 0.05, pos.y + vy * dt);
     // Never down through the bottom.
-    const floor = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z).height + 0.6;
-    if (pos.y < floor) pos.y = floor;
+    const below = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z);
+    const floor = (below.inCave ? below.height : this.#bedAround(pos.x, pos.y - this.eyeHeight, pos.z, below.height)) + 0.7;
+    // (Eased up over a sudden rise, not jolted; but never into it.)
+    if (pos.y < floor) pos.y = Math.max(floor - 0.35, pos.y + (floor - pos.y) * Math.min(1, dt * 12));
     this.velocityY = 0;
     this.underwater = pos.y < water.level - 0.05;
   }

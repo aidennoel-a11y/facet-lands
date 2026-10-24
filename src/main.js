@@ -788,8 +788,7 @@ function groundAt(x, feetY, z) {
  * no water to swim in, but ice to walk on: null, unless `ice` is asked for,
  * then with `frozen` set.
  */
-// The dens round about (see landmarkSites: foxDen, beaverPond): a vixen and
-// her kits about a fox's earth, the beavers on their pond.
+// The beavers on their ponds round about (see landmarkSites: beaverPond).
 const dens = new Map(); // site key -> { animals, back }
 let denWait = 0;
 function denLife(dt) {
@@ -799,7 +798,7 @@ function denLife(dt) {
     denWait = 1;
     for (const b of landmarks.built.values()) {
       const s = b.site;
-      if (s.kind !== 'foxDen' && s.kind !== 'beaverPond') continue;
+      if (s.kind !== 'beaverPond') continue;
       const d = Math.hypot(s.x - p.x, s.z - p.z);
       let den = dens.get(s.key);
       if (d > 160) {
@@ -810,12 +809,7 @@ function denLife(dt) {
       if (d > 140 || (den && (den.animals.some((a) => a.alive && !a.gone) || worldTime() < den.back))) continue;
       if (den?.emptied) continue; // (all of them killed: none here now)
       den = { animals: [], back: 0 };
-      const home = { x: s.x, z: s.z + (s.kind === 'foxDen' ? 1.5 : 0) };
-      const put = (kind, o = {}) => {
-        const a = wildlife.spawn(kind, home.x + (Math.random() - 0.5) * 6, home.z + (Math.random() - 0.5) * 6, o);
-        if (a) (a.home = home), (a.den = home), (a.burrow = s.kind === 'warren' ? s : null), den.animals.push(a);
-        return a;
-      };
+      const home = { x: s.x, z: s.z };
       if (s.kind === 'beaverPond') {
         // (The beavers: out on their pond, about the lodge.)
         const pool = generator.landmarks.poolsOf(s)[0];
@@ -827,27 +821,11 @@ function denLife(dt) {
           const b = wildlife.spawn('beaver', pool.x + Math.cos(a) * d, pool.z + Math.sin(a) * d, { water: true });
           if (b) (b.home = home), den.animals.push(b);
         }
-      } else if (s.kind === 'foxDen') {
-        const vixen = put('fox');
-        // (Kits in the spring and early summer, tumbling about the mouth of the earth.)
-        if (vixen && (seasonUniforms.uSpring.value > 0.3 || seasonUniforms.uSummer.value > 0.5)) for (let k = 0; k < 2 + Math.floor(Math.random() * 3); k++) put('fox', { young: 0.45, mother: vixen });
       }
       dens.set(s.key, den);
     }
   }
-  // Down the hole: a frightened rabbit near its warren makes for the nearest hole and is gone.
-  for (const den of dens.values()) {
-    for (const a of den.animals) {
-      if (!a.burrow || !a.alive || a.gone) continue;
-      const fleeing = a.speed > 4 && Math.hypot(a.x - p.x, a.z - p.z) < 30;
-      if (fleeing && Math.hypot(a.x - a.burrow.x, a.z - a.burrow.z) < 7.5) {
-        a.gone = true;
-        den.back = worldTime() + 40 + Math.random() * 40;
-        traces?.puff?.(a.x, a.y, a.z);
-      }
-    }
-    if (den.animals.length && den.animals.every((a) => !a.alive && !a.gone)) den.emptied = true;
-  }
+  for (const den of dens.values()) if (den.animals.length && den.animals.every((a) => !a.alive && !a.gone)) den.emptied = true;
 }
 const worldTime = () => performance.now() / 1000;
 
@@ -2795,7 +2773,7 @@ function tick(now) {
     // (A torch in your hand, or a fire or torch close by: the animals' eyes shine back out of the dark. See Wildlife.#eyeshine.)
     eyeLight: gameLights.some((l) => Math.hypot(l.x - camera.position.x, l.z - camera.position.z) < 12) || torches.torches.some((t) => t.lit && t.point.distanceTo(camera.position) < 10),
     day: env.day, dawn: env.dawn, dusk: env.dusk, night: 1 - env.day, winter, spring, summer: Math.max(0, 1 - autumn - spring - winter),
-    rain: localRain, storm: weather.storm, stormComing: weather.approaching?.storm ?? 0, snowing: snowing ? snow : 0, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
+    underwater, rain: localRain, storm: weather.storm, stormComing: weather.approaching?.storm ?? 0, snowing: snowing ? snow : 0, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
     sheltered, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), tame: peaceful?.checked ?? WORLD.tameWildlife,
     player: game.player, structures: game.structures,
     // (Online: the others, for the host's animals to mind; their calls, to be heard by everyone.)
