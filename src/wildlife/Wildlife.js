@@ -1347,6 +1347,7 @@ export class Wildlife {
       else if (a.circling) this.#circler(a, step, c);
       else if (a.kind === 'monkey') this.#monkey(a, step, c);
       else this.#songbird(a, step, c);
+      if (SPECIES[a.kind].bird && !SPECIES[a.kind].climber) this.#overTrees(a, step, c);
       this.#prints(a, c);
       if (prof) prof[a.kind] = (prof[a.kind] ?? 0) + performance.now() - t0;
     }
@@ -2648,6 +2649,24 @@ export class Wildlife {
   }
 
   // --- Behaviour ------------------------------------------------------------
+
+  // A bird in the air never goes through a tree: where it would, it's
+  // lifted up over the crown (its flight planned over the treetops, so it
+  // seldom needs to be). Not on
+  // the way down into the tree it's landing in, or up out of the one it
+  // left, or to its prey.
+  #overTrees(a, dt, ctx) {
+    if (!a.alive || a.gone || a.landed || a.carriedBy) return;
+    if (a.state === 'perch' || a.state === 'ground' || a.state === 'dead' || a.state === 'falling') return;
+    const goal = a.state === 'swoop' ? a.prey : a.path?.to ?? (a.kind === 'owl' ? a.perch : null) ?? a.land;
+    const from = a.path?.from;
+    if (goal && Math.hypot(goal.x - a.x, goal.z - a.z) < 4) return;
+    if (from && Math.hypot(from.x - a.x, from.z - a.z) < 3) return;
+    const top = ctx.trees?.canopyTop?.(a.x, a.z, 0.6 * a.scale) ?? -Infinity;
+    if (!(top > -Infinity)) return;
+    const clear = top + 0.6;
+    if (a.y < clear) a.y = clear;
+  }
 
   // The nearest tree to shelter under from the rain (within 40 m), a step
   // out from its trunk on this side: { x, z }, or null.
@@ -4058,8 +4077,17 @@ export class Wildlife {
         if (scared && !to) to = { x: a.x + (a.x - ctx.camera.position.x) * 4, y: a.y + 20, z: a.z + (a.z - ctx.camera.position.z) * 4, state: 'gone' };
         if (to) {
           const d = Math.hypot(to.x - a.x, to.y - a.y, to.z - a.z);
-          // (Up over the treetops between, not through them.)
-          const over = Math.max(a.y, to.y) + 3 + d * 0.06 - (a.y + to.y) / 2;
+          // (Up over the treetops between, not through them: as high as the
+          // tallest crown along the way, clear of the one it leaves and the one it's making for.)
+          let canopy = Math.max(a.y, to.y);
+          const flat = Math.hypot(to.x - a.x, to.z - a.z);
+          for (let k = 1; k < 12; k++) {
+            const u = k / 12, gap = Math.min(u, 1 - u) * flat;
+            if (gap < 2.5) continue;
+            const top = ctx.trees?.canopyTop?.(a.x + (to.x - a.x) * u, a.z + (to.z - a.z) * u, 0.8) ?? -Infinity;
+            canopy = Math.max(canopy, top + 1.2);
+          }
+          const over = Math.max(Math.max(a.y, to.y) + 3 + d * 0.06, canopy + 1) - (a.y + to.y) / 2;
           a.path = { from: { x: a.x, y: a.y, z: a.z }, to, p: 0, dur: Math.max(0.6, (d + over) / (scared ? 9 : 6)), arc: Math.max(1 + d * 0.15, over) };
           a.state = 'fly';
           a.timer = rnd(5, 20);
@@ -4110,6 +4138,10 @@ export class Wildlife {
       f.centre.z = f.anchor.z + Math.sin(f.angle * 2) * f.radius * 0.5;
       f.groundY += (g.getBaseHeight(f.centre.x, f.centre.z) - f.groundY) * Math.min(1, dt * 0.5);
       f.centre.y = Math.max(f.groundY, ctx.seaLevel) + f.alt + Math.sin(this.time * 0.3) * 5;
+      // (Over the woods: high enough to clear the tallest trees under the flock.)
+      const under = (ctx.trees?.canopyTop?.(f.centre.x, f.centre.z, 6) ?? -Infinity) + 5;
+      f.canopy = Number.isFinite(f.canopy) ? f.canopy + ((Number.isFinite(under) ? under : f.canopy - 20) - f.canopy) * Math.min(1, dt * 0.8) : under;
+      if (Number.isFinite(f.canopy)) f.centre.y = Math.max(f.centre.y, f.canopy);
       if (!ctx.tame && d < 20 && Math.abs(cam.y - f.centre.y) < 20) this.#scatter(f, ctx);
       // (Smoke and flames below: they wheel off elsewhere.)
       const fire = this.#wildfireAt(f.anchor.x, f.anchor.z, ctx, f.radius + 60);

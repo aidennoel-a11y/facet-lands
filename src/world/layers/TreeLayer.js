@@ -389,6 +389,30 @@ export function createTreeLayer({ rocks = null } = {}) {
       return Math.max(0.12, slow);
     },
 
+    /**
+     * The top of the trees over (x, z): the highest crown (or bush) whose
+     * spread reaches within `pad` metres of it, or -Infinity. (For birds:
+     * over the treetops, not through them.)
+     */
+    canopyTop(x, z, pad = 0.5) {
+      const size = layer.chunkSize;
+      if (!size) return -Infinity;
+      const cx = Math.floor(x / size), cz = Math.floor(z / size);
+      let top = -Infinity;
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const list = layer.foliage.get(`${cx + dx},${cz + dz}`);
+          if (!list) continue;
+          for (let k = 0; k < list.length; k += 6) {
+            const ox = x - list[k], oz = z - list[k + 1], r = list[k + 4] + pad;
+            if (Math.abs(ox) > r || Math.abs(oz) > r || ox * ox + oz * oz > r * r || list[k + 3] <= top) continue;
+            top = list[k + 3];
+          }
+        }
+      }
+      return top;
+    },
+
     /** The thick of the leaves near (x, z) at the height of an animal `tall` metres high: circles [x, z, radius, ...]. */
     leafObstacles(x, z, reach, groundY, tall) {
       const size = layer.chunkSize;
