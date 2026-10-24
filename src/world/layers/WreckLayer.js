@@ -108,7 +108,7 @@ export function createWreckLayer(config) {
   const site = (I, K, generator) => {
     const key = `${I},${K}`;
     if (!sites.has(key)) sites.set(key, wreckSite(I, K, generator, config.seaLevel));
-    if (sites.size > 4000) sites.clear();
+    if (sites.size > 20000) sites.clear();
     return sites.get(key);
   };
   const layer = {
@@ -122,6 +122,19 @@ export function createWreckLayer(config) {
       for (let K = Math.floor((z - r) / CELL); K <= Math.floor((z + r) / CELL); K++) {
         for (let I = Math.floor((x - r) / CELL); I <= Math.floor((x + r) / CELL); I++) {
           const s = site(I, K, generator);
+          if (s) out.push(s);
+        }
+      }
+      return out;
+    },
+    /** The wrecks gone down out at sea round (x, z) within r: [{ x, z, sunken }] (for the map). */
+    sunkenNear(x, z, r, generator) {
+      const out = [];
+      for (let K = Math.floor((z - r) / DEEP); K <= Math.floor((z + r) / DEEP); K++) {
+        for (let I = Math.floor((x - r) / DEEP); I <= Math.floor((x + r) / DEEP); I++) {
+          const key = `d${I},${K}`;
+          if (!sites.has(key)) sites.set(key, sunkenSite(I, K, generator, config.seaLevel));
+          const s = sites.get(key);
           if (s) out.push(s);
         }
       }

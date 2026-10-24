@@ -34,7 +34,8 @@ const STYLE = `
  * @param teleport  (x, z) => take you there
  */
 export class BiomeMap {
-  constructor({ task, where, teleport, ruins, fog, keep, more, landmarks }) {
+  constructor({ task, where, teleport, ruins, fog, keep, more, landmarks, wrecks }) {
+    this.wrecks = wrecks; // ((x, z, r) => the shipwrecks to mark, round there: testing)
     this.landmarks = landmarks; // ((x, z, r) => the landmarks to mark: { x, z, name, found })
     this.more = more; // (() => whether the ruins aren't all worked out yet: drawn again in a moment)
     this.keep = keep; // (() => { x, z, r } where the Lost Keep is marked, or null)
@@ -299,6 +300,29 @@ export class BiomeMap {
       ctx.strokeRect(rx - 4, ry - 3, 8, 6);
       ctx.fillRect(rx - 4, ry - 6, 2.4, 3);
       ctx.fillRect(rx + 1.6, ry - 6, 2.4, 3);
+    }
+    // The shipwrecks: a little hull, brown on the beaches, ringed in blue where it's sunk out at sea.
+    for (const s of this.wrecks?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? []) {
+      const sx = (s.x - x0) / scale, sy = (s.z - z0) / scale;
+      if (sx < -6 || sy < -6 || sx > w + 6 || sy > n + 6) continue;
+      if (s.sunken) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = '#6ab8e8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.moveTo(sx - 6, sy - 1); ctx.lineTo(sx + 6, sy - 1); ctx.lineTo(sx + 3.5, sy + 3); ctx.lineTo(sx - 3.5, sy + 3);
+      ctx.closePath();
+      ctx.fillStyle = '#8a5a34';
+      ctx.strokeStyle = '#2a2420';
+      ctx.lineWidth = 1.5;
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 1); ctx.lineTo(sx + 1, sy - 7);
+      ctx.stroke();
     }
     // The landmarks: a gold star and its name (a hollow one, only shown you by the standing stones).
     for (const l of this.landmarks?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? []) {

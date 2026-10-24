@@ -1492,6 +1492,8 @@ const bigMap = new BiomeMap({
   landmarks: (x, z, r) => game.landmarksForMap(x, z, r),
   more: () => game.mode === 'testing' && !!game.landmarkMore, // (testing: the landmarks still being found, drawn again in a moment)
   ruins: (x, z, r, labelAt) => (game.mode === 'testing' ? ruins.sitesRoughly(x, z, Math.min(r, 20000), generator, labelAt) : ruins.sitesOf(game.ruinsSeen, generator)),
+  // (Testing: the shipwrecks too, on the beaches and sunk out at sea.)
+  wrecks: (x, z, r) => (game.mode === 'testing' ? [...wrecks.near(x, z, Math.min(r, 4000), generator), ...wrecks.sunkenNear(x, z, Math.min(r, 3000), generator)] : []),
   teleport: (x, z) => {
     if (!ui.fly.checked) ui.fly.click();
     camera.position.set(x, Math.max(generator.getBaseHeight(x, z), WORLD.seaLevel) + 45, z);
