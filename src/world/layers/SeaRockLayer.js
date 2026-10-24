@@ -36,11 +36,11 @@ export function createSeaRockLayer(config) {
         for (let i = 0; i < n; i++) {
           const gi = Math.floor(x0 / CELL) + i, gj = Math.floor(z0 / CELL) + j;
           const h = (k) => hash2(gi * 31 + k, gj, seed);
-          if (h(0) > 0.42) continue;
+          if (h(0) > 0.6) continue;
           const lx = (i + 0.2 + 0.6 * h(1)) * CELL, lz = (j + 0.2 + 0.6 * h(2)) * CELL;
           if (lx >= size || lz >= size) continue;
           const y = groundHeightAt(lx, lz), depth = sea - y;
-          if (!(depth > 3) || generator.getOceanness(x0 + lx, z0 + lz) < 0.35) continue;
+          if (!(depth > 3)) continue;
           const reef = (generator.getReef?.(x0 + lx, z0 + lz, y) ?? 0) > 0.2;
           const tone = (k) => {
             c.copy(STONE[Math.floor(h(10 + k) * STONE.length)]);
