@@ -17,7 +17,7 @@ import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createRuinLayer } from './world/layers/RuinLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
-import { createRiverLayer, mistLight } from './world/layers/RiverLayer.js';
+import { createRiverLayer, mistLight, riverFlood, FLOOD_RISE } from './world/layers/RiverLayer.js';
 import { createReedLayer } from './world/layers/ReedLayer.js';
 import { createLilyLayer } from './world/layers/LilyLayer.js';
 import { createVentLayer } from './world/layers/VentLayer.js';
@@ -646,6 +646,42 @@ fires.bareAt = (x, z, size) => {
   if (bare < 0.8) for (const s of game.structures?.list ?? []) if ((s.type === 'plot' || s.type === 'ditch') && Math.abs(s.x - x) < size + (s.len ?? 0) && Math.abs(s.z - z) < size + (s.len ?? 0)) (bare = Math.max(bare, s.type === 'plot' ? 0.8 : 0.6));
   return bare;
 };
+// Floods: after long heavy rain the rivers rise, brown and fast, up their
+// banks; crops planted down by the water are washed out, and a bridge
+// built low over a river can be carried away. They go down again when the
+// rain stops.
+const flood = { wet: 0, said: false, check: 0 };
+function updateFloods(dt) {
+  const heavy = weather.rain > 0.55 && !(seasonUniforms.uWinter.value > 0.6);
+  flood.wet = Math.max(0, Math.min(420, flood.wet + (heavy ? dt : -dt * 0.6)));
+  const target = smooth(90, 300, flood.wet);
+  riverFlood.value += (target - riverFlood.value) * Math.min(1, dt / 40);
+  if (riverFlood.value > 0.3 && !flood.said && !sheltered) {
+    flood.said = true;
+    game.hotbar?.flash('The rivers are rising after all this rain: keep your crops and camp off the low ground by the water');
+  }
+  if (riverFlood.value < 0.1) flood.said = false;
+  if ((flood.check -= dt) > 0 || riverFlood.value < 0.5) return;
+  flood.check = 3;
+  const rise = riverFlood.value * FLOOD_RISE;
+  for (const s of [...(game.structures?.list ?? [])]) {
+    if (Math.hypot(s.x - camera.position.x, s.z - camera.position.z) > 400) continue;
+    if (s.type === 'plot' && s.crop) {
+      const w = generator.rivers.waterAt(s.x, s.z, 4);
+      if (w && !w.pond && w.level + rise > chunks.groundHeightAt(s.x, s.z) - 0.05 && game.structures.washOut(s)) game.hotbar?.flash('The flood washed out a crop by the river');
+    } else if ((s.type === 'logBridge' || s.type === 'ropeBridge') && game.structures.isBuilt(s) && riverFlood.value > 0.8) {
+      const mx = s.x + Math.sin(s.rot) * (s.len ?? 6) / 2, mz = s.z + Math.cos(s.rot) * (s.len ?? 6) / 2;
+      const w = generator.rivers.waterAt(mx, mz, 0);
+      if (w && !w.pond && s.y + (s.rise ?? 0) / 2 < w.level + rise + 0.35) {
+        game.structures.remove(s);
+        game.dirty = true;
+        sound.call('crack', panTowards(camera, mx, mz), 0.8);
+        traces.splash(mx, w.level + rise, mz, 20, 3, 1.5);
+        game.hotbar?.flash('The flood has carried away a bridge');
+      }
+    }
+  }
+}
 // Fire season: how long since it last rained, in the hot months. A long
 // dry spell leaves the land tinder-dry: fires catch more and spread far faster.
 const fireSeason = { spell: 1, dryness: 0, lastDay: null, warned: false };
@@ -876,8 +912,11 @@ function waterAt(x, z, ice = false) {
   }
   const ground = chunks.groundHeightAt(x, z);
   let found = ground < WORLD.seaLevel ? { level: WORLD.seaLevel, fx: 0, fz: 0, speed: 0, lake: true } : null;
-  const r = generator.rivers.waterAt(x, z, 0);
-  if (r && (!found || r.level > found.level)) found = { level: r.level, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : 0.6 + Math.min(2.4, Math.max(0, r.drop) * 6), pond: r.pond, hot: r.tint === 2 };
+  // (A river in flood: up its banks, and quicker. Out to where it's spilt over them.)
+  const rise = riverFlood.value * FLOOD_RISE;
+  const r = generator.rivers.waterAt(x, z, rise > 0.02 ? 4.5 : 0);
+  const up = r && !r.pond && r.level > WORLD.seaLevel + 0.35 ? rise : 0;
+  if (r && (rise <= 0.02 || r.level + up > ground + 0.02) && (!found || r.level + up > found.level)) found = { level: r.level + up, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : (0.6 + Math.min(2.4, Math.max(0, r.drop) * 6)) * (1 + riverFlood.value), pond: r.pond, hot: r.tint === 2, flood: up > 0.05 };
   // (A landmark's lake or pool: the crystal lake, the falls' basin, the hot pools...)
   const lw = landmarks.waterAt(x, z, ground);
   if (lw && (!found || lw.level > found.level)) found = lw;
@@ -2763,6 +2802,7 @@ function tick(now) {
   ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
   const night = dayNight._w?.night ?? 0;
   updateFireSeason(weather.rain > 0.3 && !snowing);
+  updateFloods(dt);
   const air = { time: worldNow, netTime: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, dryness: fireSeason.dryness, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
   // (Where you walk, over and over, a path wears into the grass.)
@@ -2879,7 +2919,7 @@ let describing = false;
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

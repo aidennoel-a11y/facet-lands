@@ -18,6 +18,9 @@ import {
 
 // How bright the waterfalls' mist is (the daylight on it): set by the caller.
 export const mistLight = { value: 1 };
+// How far the rivers are up in flood after heavy rain (0..1): see main, floods.
+export const riverFlood = { value: 0 };
+export const FLOOD_RISE = 0.45; // (m, at the height of a flood: as far up the banks as the water's sheet runs)
 import { riverData, riverGrid } from '../riverData.js';
 import { seasonalWater, seasonUniforms } from '../../render/Seasons.js';
 import { SPARKLE_HEAD, sparkleUniforms } from '../../render/waterSparkle.js';
@@ -54,11 +57,13 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
   });
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms, sparkleUniforms);
+    shader.uniforms.uFlood = riverFlood;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
         /* glsl */ `#include <common>
         uniform float uTime;
+        uniform float uFlood;
         attribute vec4 flow;
         attribute float streaks;
         attribute float aMouth;
@@ -74,10 +79,12 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         vStreaks = streaks;
         vMouth = aMouth;
         vRiverWorld = (modelMatrix * vec4(transformed, 1.0)).xz;
+        // (In flood: up the banks, all but where it's become the lake or the sea.)
+        transformed.y += uFlood * ${FLOOD_RISE.toFixed(2)} * aMouth;
         // The current: little humps of water running downstream (quicker
         // and higher where it's steep, heaving over rapids), none at the banks.
         {
-          float run = uTime * (0.8 + 2.2 * flow.z);
+          float run = uTime * (0.8 + 2.2 * flow.z) * (1.0 + uFlood * aMouth);
           float mid = 1.0 - smoothstep(0.6, 1.0, abs(flow.y));
           float amp = (0.025 + 0.035 * flow.z + 0.12 * flow.w) * mid * step(0.01, flow.z) * streaks;
           transformed.y += amp * (0.6 * sin(flow.x * 0.8 - run * 0.8 + flow.y * 1.3) + 0.4 * sin(flow.x * 1.9 - run * 1.9 - flow.y * 2.1));
@@ -88,6 +95,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         '#include <common>',
         /* glsl */ `#include <common>
         uniform float uTime;
+        uniform float uFlood;
         uniform vec3 uSky;
         uniform vec3 uSkyTop;
         varying vec4 vFlow;
@@ -155,6 +163,11 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
           float froth = waterNoise(vec2(vFlow.x * 0.7 - run * 0.9, vFlow.y * 3.2)) * 0.65 + waterNoise(vec2(vFlow.x * 1.8 - run * 2.0, vFlow.y * 6.0 + 5.0)) * 0.35;
           float white = vFlow.w * smoothstep(0.55 - 0.45 * vFlow.w, 0.85 - 0.3 * vFlow.w, froth);
           white = max(white, smoothstep(0.85, 1.05, abs(vFlow.y)) * smoothstep(0.6, 0.8, froth) * 0.35 * min(1.0, vFlow.z * 0.6) * vStreaks);
+          // (In flood: brown with the mud it's carrying, churning white wherever it runs.)
+          float flood = uFlood * vMouth;
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.43, 0.36, 0.25), flood * 0.6);
+          gl_FragColor.a = mix(gl_FragColor.a, 0.92, flood * 0.6);
+          white = max(white, flood * step(0.01, vFlow.z) * smoothstep(0.6, 0.9, froth) * 0.55);
           gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 0.98), white * 0.85);
           gl_FragColor.a = mix(gl_FragColor.a, 1.0, white * 0.7);
           // Sun glitter on the smooth stretches (not under a cloud's shadow), and rings in the rain.

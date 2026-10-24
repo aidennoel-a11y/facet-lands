@@ -849,6 +849,16 @@ export class Structures {
     this.onChange?.();
   }
 
+  /** A plot's crop lost (washed out by a flood): bare again. Returns whether there was one. */
+  washOut(s) {
+    if (s.type !== 'plot' || !s.crop) return false;
+    s.crop = null;
+    s.growth = 0;
+    this.#showCrop(s);
+    this.onChange?.();
+    return true;
+  }
+
   /** Takes a ripe crop in: what it was ({ crop }), and the plot's bare again. */
   harvest(s) {
     if (!s.crop || s.growth < 1) return null;
