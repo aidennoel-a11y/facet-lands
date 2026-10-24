@@ -44,7 +44,10 @@ function lumpy(geometry, amount, seed, centre = new Vector3()) {
   const v = new Vector3();
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
-    const h = hash2(Math.round(v.x * 97 + v.y * 13), Math.round(v.z * 97 - v.y * 31), seed);
+    // (On the millimetre first: the two copies of a seam's corner, a hair
+    // apart, must move alike, or the seam opens into a crack.)
+    const qx = Math.round(v.x * 1000) / 1000, qy = Math.round(v.y * 1000) / 1000, qz = Math.round(v.z * 1000) / 1000;
+    const h = hash2(Math.round(qx * 97 + qy * 13 + 1e-4), Math.round(qz * 97 - qy * 31 + 1e-4), seed);
     v.sub(centre).multiplyScalar(1 + (h - 0.5) * 2 * amount).add(centre);
     pos.setXYZ(i, v.x, v.y, v.z);
   }
@@ -742,12 +745,19 @@ function bamboo() {
 function redwood() {
   const rand = mulberry32(2201);
   const bark = 0x7a3420, barkTop = 0x9a4a2c;
-  const wood = [part(new CylinderGeometry(0.5, 1.15, 26, 9, 4), bark, barkTop, { y: 13, lump: 0.06, seed: 2200 })];
-  // A flared foot.
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * Math.PI * 2 + rand() * 0.3;
-    wood.push(limb([Math.cos(a) * 1.5, -0.2, Math.sin(a) * 1.5], [Math.cos(a) * 0.4, 2.6, Math.sin(a) * 0.4], 0.28, 0.35, bark, bark, 2210 + k));
+  // (The trunk and its flared foot as one piece: a ring of the trunk's
+  // own sides widening out to the ground, so nothing lies against the bark
+  // to show a crack between.)
+  const trunk = new CylinderGeometry(0.5, 1.15, 26, 9, 8);
+  const p = trunk.attributes.position;
+  for (let k = 0; k < p.count; k++) {
+    const y = p.getY(k) + 13; // (0 at the foot)
+    if (y > 6.6) continue;
+    const flare = 1 + 0.55 * Math.pow(1 - y / 6.6, 2.2);
+    p.setXYZ(k, p.getX(k) * flare, p.getY(k), p.getZ(k) * flare);
   }
+  const foot = new CylinderGeometry(1.15 * 1.55, 1.15 * 1.72, 0.6, 9, 1);
+  const wood = [part(trunk, bark, barkTop, { y: 13, lump: 0.06, seed: 2200 }), part(foot, bark, bark, { y: -0.2, seed: 2201 })];
   // A few short, drooping limbs up the top half.
   for (let k = 0; k < 8; k++) {
     const a = rand() * Math.PI * 2, y = 14 + k * 1.4;

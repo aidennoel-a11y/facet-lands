@@ -53,37 +53,70 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
   return list.length ? new Float32Array(list) : null;
 }
 
+// The kinds of coral and other reef growth, in the order CoralLayer makes
+// their shapes.
+export const CORAL_KINDS = ['knobs', 'knobsBig', 'fingers', 'staghorn', 'table', 'brain', 'lettuce', 'fan', 'sponge', 'soft'];
+
+// How a reef's patches share out among the kinds (a patch, a few metres
+// across, is mostly one kind, as corals of a kind crowd together).
+const REEF_MIX = [0.2, 0.1, 0.15, 0.1, 0.08, 0.12, 0.1, 0.06, 0.05, 0.04];
+// On bare rocky sea floor: only fans, sponges and soft corals.
+const ROCK_MIX = [0, 0, 0, 0, 0, 0.05, 0, 0.4, 0.35, 0.2];
+
+function pickKind(mix, r) {
+  let sum = 0;
+  for (let k = 0; k < mix.length; k++) {
+    sum += mix[k];
+    if (r < sum) return k;
+  }
+  return mix.length - 1;
+}
+
 /**
- * The corals on a chunk's reef (see TerrainGenerator.getReef):
- * [kind, x, y, z (chunk-local), turn (0..1), size, stretch, colour index]
- * for each, flat in a Float32Array; null if there are none. (`kinds`,
- * `colours`: how many of each the layer has.)
+ * The corals on a chunk's reef (see TerrainGenerator.getReef), and the
+ * fans and sponges on its rocky sea floor:
+ * [kind (see CORAL_KINDS), x, y, z (chunk-local), turn (0..1), size,
+ * stretch, colour (0..1), slope x, slope z] for each, flat in a
+ * Float32Array; null if there are none.
  */
-export function placeCorals(generator, config, cx, cz, groundHeightAt, gridY, kinds = 4, colours = 7) {
+export function placeCorals(generator, config, cx, cz, groundHeightAt, gridY) {
   const size = config.chunkSize, sea = config.seaLevel;
   let low = Infinity;
   for (const y of gridY) low = Math.min(low, y);
   if (low > sea - 0.6) return null; // no sea here
   const x0 = cx * size, z0 = cz * size;
   const seed = generator.seed ^ 0xc0a2;
-  const spacing = 1.8;
+  const spacing = 1.25;
   const cells = Math.round(size / spacing);
   const step = size / cells;
   const list = [];
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
       const gi = cx * cells + i, gj = cz * cells + j;
-      if (hash2(gi, gj, seed) > 0.55) continue;
       const wx = x0 + (i + hash2(gi, gj, seed + 1)) * step, wz = z0 + (j + hash2(gi, gj, seed + 2)) * step;
       const ground = groundHeightAt(wx - x0, wz - z0);
-      if (!Number.isFinite(ground)) continue;
+      if (!Number.isFinite(ground) || ground > sea - 0.6) continue;
       const reef = generator.getReef(wx, wz, ground);
-      if (hash2(gi, gj, seed + 3) > reef) continue;
-      // (Not in the sand channels between the coral heads: see TerrainGenerator.surfaceColor.)
-      if (generator.coastNoise && 1 - Math.abs(generator.coastNoise.noise2D(wx * 0.04 + 9, wz * 0.012 - 4)) > 0.82) continue;
-      const kind = Math.floor(hash2(gi, gj, seed + 4) * kinds);
-      const s = 0.7 + hash2(gi, gj, seed + 5) * 1.1;
-      list.push(kind, wx - x0, ground - 0.05, wz - z0, hash2(gi, gj, seed + 6), s, 0.8 + 0.5 * hash2(gi, gj, seed + 7), Math.floor(hash2(gi, gj, seed + 8) * colours));
+      let mix = REEF_MIX;
+      if (hash2(gi, gj, seed + 3) > reef * 0.95) {
+        // (Off the reef: now and then a fan or a sponge on bare rock.)
+        if (ground > sea - 4 || hash2(gi, gj, seed + 9) > 0.12) continue;
+        if (generator.getSeaRock(wx, wz) < 0.3) continue;
+        mix = ROCK_MIX;
+      }
+      // The patch it grows in (about five metres across) picks its kind
+      // and colour; now and then one of another kind among them.
+      const pi = Math.floor(wx / 5 + 0.5 * Math.sin(wz * 0.13)), pj = Math.floor(wz / 5 + 0.5 * Math.sin(wx * 0.13));
+      const odd = hash2(gi, gj, seed + 10) < 0.25;
+      const kind = pickKind(mix, odd ? hash2(gi, gj, seed + 4) : hash2(pi, pj, seed + 4));
+      const colour = odd ? hash2(gi, gj, seed + 8) : hash2(pi, pj, seed + 8);
+      // How the ground slopes here: corals on a reef wall lean out from it.
+      const dx = groundHeightAt(wx - x0 + 0.6, wz - z0) - groundHeightAt(wx - x0 - 0.6, wz - z0);
+      const dz = groundHeightAt(wx - x0, wz - z0 + 0.6) - groundHeightAt(wx - x0, wz - z0 - 0.6);
+      const sx = Number.isFinite(dx) ? -dx / 1.2 : 0, sz = Number.isFinite(dz) ? -dz / 1.2 : 0;
+      const big = CORAL_KINDS[kind] === 'knobsBig' || CORAL_KINDS[kind] === 'table' ? 1.3 : 1;
+      const s = (0.6 + hash2(gi, gj, seed + 5) * 0.9) * big * (0.6 + 0.4 * reef);
+      list.push(kind, wx - x0, ground - 0.08, wz - z0, hash2(gi, gj, seed + 6), s, 0.8 + 0.5 * hash2(gi, gj, seed + 7), colour, sx, sz);
     }
   }
   return list.length ? new Float32Array(list) : null;

@@ -48,9 +48,12 @@ const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
 const CASCADE_TIERS = [[-0.24, 12], [-0.04, 15], [0.16, 13]];
 const T = BIOME_TUNING;
 const DUNE = new Color(0xe6b86e); // dune sand
-// The reef's ground: coral rubble and the bases of the colonies, browns and
-// tans and olive, between pale sand channels (see surfaceColor).
-const CORALS = [0x8a7450, 0x9c8458, 0x76664a, 0x7a7650, 0xb4a27c, 0x6c5c40].map((c) => new Color(c));
+// The reef itself, every surface of it grown over: the low encrusting and
+// mound corals, sponges and weed, in a living reef's mix of colours (the
+// tans and ochres, cream, rose and coral pink, orange, yellow-green, lilac,
+// teal), patch by patch (see surfaceColor).
+const SEA_CRUST = [0x5a6a48, 0x6a5a5a, 0x8a5a6a, 0x6a6a7a, 0x4e5a4a, 0x7a6a50].map((c) => new Color(c));
+const CORALS = [0xb08a58, 0xc8a070, 0xd8ccb0, 0xc8708a, 0xd88a5a, 0xa4b058, 0x9a7ab0, 0x5aa0a0, 0x8a6a44, 0xc0b070].map((c) => new Color(c));
 const SINTER = new Color(0xe6dcc4); // crusts round hot springs
 const MAT = new Color(0xd2803a); // microbial mats at a hot spring's edge
 const WASH = new Color(0xcdb592); // a canyon's dry wash
@@ -1450,14 +1453,21 @@ export class TerrainGenerator {
         height += (seaLevel + 8 * Math.pow(t, 2.6) - height) * beachy;
       }
     }
-    // Coral reefs build up flats of shallow water off the open coast,
-    // a metre or three deep (not off cliffs, wetlands or volcanic shores).
+    // Coral reefs off the open coast (not off cliffs, wetlands or volcanic
+    // shores): built up off a sandy floor seven to eleven metres down, the
+    // reef itself: broad tables of it cut through by narrow canyons, and
+    // out on the sand, coral heads (bommies) standing up alone, steep-sided,
+    // their knobbly tops a metre or three under the surface.
     if (ocean > 0.3 && u < -1.2 && u > -40) {
       // (Near the coast only: out in the deep they give way to open sea.)
       const reef = this.#reefZone(x, z, w) * smoothstep(0.3, 0.7, ocean) * (1 - smoothstep(-0.2, -0.34, continent)) * (1 - this.#cliffZone(x, z, w));
       if (reef > 0) {
-        const target = -1.6 - 1.6 * (this.coastNoise.noise2D(x * 0.05 - 7, z * 0.05 + 3) * 0.5 + 0.5);
-        if (target > height - seaLevel) height += (target - (height - seaLevel)) * reef;
+        const N = this.coastNoise, depth = height - seaLevel;
+        const floor = Math.max(depth, -7 - 4 * (N.noise2D(x * 0.01 + 3, z * 0.01 - 8) * 0.5 + 0.5));
+        const raise = this.#reefRaise(x, z);
+        const top = -1.3 - 1.8 * (N.noise2D(x * 0.05 - 7, z * 0.05 + 3) * 0.5 + 0.5) - 0.6 * (N.noise2D(x * 0.35, z * 0.35) * 0.5 + 0.5);
+        const target = floor + (Math.max(top, floor) - floor) * raise;
+        height = seaLevel + depth + (target - depth) * reef;
       }
     }
     // The open sea floor isn't flat: here and there rocky ground rises out
@@ -1466,7 +1476,7 @@ export class TerrainGenerator {
     // low ripples. (The rock shows as rock: the faces are steep.)
     if (ocean > 0.35 && u < -4 && u > -60) {
       const deep = -u, k = smoothstep(0.35, 0.6, ocean) * smoothstep(4, 7, deep);
-      const patch = smoothstep(0.05, 0.35, this.coastNoise.fbm(x * 0.006 + 311, z * 0.006 - 97, 2));
+      const patch = this.getSeaRock(x, z);
       let lift = 0;
       if (patch > 0) {
         const ridge = 1 - Math.abs(this.coastNoise.noise2D(x * 0.028 - 51, z * 0.028 + 83));
@@ -3511,13 +3521,14 @@ export class TerrainGenerator {
    */
   getReef(x, z, ground) {
     const sea = this.rivers.seaLevel;
-    if (ground > sea - 0.6 || ground < sea - 8) return 0;
+    if (ground > sea - 0.6 || ground < sea - 12) return 0;
     const zone = this.#reefZone(x, z, this.getBiomeWeights(x, z, {}));
     if (zone <= 0) return 0;
-    const patch = smoothstep(-0.1, 0.2, this.coastNoise.fbm(x * 0.012 + 40, z * 0.012 - 40, 2));
+    const patch = smoothstep(-0.45, -0.05, this.coastNoise.fbm(x * 0.012 + 40, z * 0.012 - 40, 2));
     if (patch <= 0) return 0;
     const ocean = smoothstep(0.3, 0.6, this.getOceanness(x, z));
-    return zone * patch * ocean * (1 - smoothstep(sea - 6, sea - 8, ground)) * smoothstep(sea - 0.6, sea - 1.2, ground);
+    // (The coral grows on the reef itself, its tops and walls, hardly at all on the sand floor round it.)
+    return zone * patch * ocean * (0.15 + 0.85 * smoothstep(0.15, 0.5, this.#reefRaise(x, z))) * smoothstep(sea - 0.6, sea - 1.2, ground);
   }
 
   /**
@@ -3536,6 +3547,25 @@ export class TerrainGenerator {
     const ocean = smoothstep(0.4, 0.7, this.getOceanness(x, z));
     const depth = smoothstep(sea - 2.5, sea - 4, ground) * (1 - smoothstep(sea - 13, sea - 16, ground));
     return beds * cool * ocean * depth * (1 - this.#reefZone(x, z, w));
+  }
+
+  /**
+   * How far the reef at (x, z) stands up off the sand (0 the floor, 1 the
+   * reef's top): broad tables of reef cut through by narrow canyons, and
+   * out on the sand the lone coral heads.
+   */
+  #reefRaise(x, z) {
+    const N = this.coastNoise;
+    const tables = smoothstep(0.0, 0.25, N.noise2D(x * 0.007 - 21, z * 0.007 + 44));
+    const canyon = 1 - smoothstep(0.05, 0.2, Math.abs(N.noise2D(x * 0.017 + 7, z * 0.017 - 3)));
+    const b = N.noise2D(x * 0.06 + 13, z * 0.06 - 9) * 0.7 + N.noise2D(x * 0.15 - 5, z * 0.15 + 2) * 0.3;
+    const heads = smoothstep(0.28, 0.48, b) * (1 - 0.5 * tables);
+    return Math.max(tables * (1 - canyon), heads);
+  }
+
+  /** How much (x, z) of the open sea floor is rocky ground (0 sand .. 1), its ridges and knolls rising out of the sand (see landHeight). */
+  getSeaRock(x, z) {
+    return smoothstep(0.05, 0.35, this.coastNoise.fbm(x * 0.006 + 311, z * 0.006 - 97, 2));
   }
 
   /** Stretches of the open coast with coral reefs off them (0..1). */
@@ -3749,12 +3779,17 @@ export class TerrainGenerator {
       if (steep > 0) out.lerp(ICY_ROCK, 0.55 * steep * up);
       if (glacier > 0) out.lerp(ICE, 0.75 * glacier * up);
     }
-    // Coral reefs in the warm shallows: rubble and coral bases in browns,
-    // tans and olives, cut through by channels of pale sand.
+    // The rocky ground of the sea floor: crusted over with weed, sponge and
+    // coralline algae, dull greens, rose and purple, in patches.
+    if (ground < this.rivers.seaLevel - 4 && this.getOceanness(x, z) > 0.4) {
+      const rock = this.getSeaRock(x, z) * smoothstep(this.rivers.seaLevel - 4, this.rivers.seaLevel - 7, ground);
+      if (rock > 0.05) out.lerp(SEA_CRUST[Math.floor(hash2(Math.floor(x / 2), Math.floor(z / 2), this.seed ^ 0x5ea1) * SEA_CRUST.length)], 0.55 * rock);
+    }
+    // Coral reefs in the warm shallows: the reef grown over in patches of
+    // colour, the sand floor round it left pale.
     if (ground < this.rivers.seaLevel - 0.6) {
       const reef = this.getReef(x, z, ground);
-      const channel = smoothstep(0.75, 0.9, 1 - Math.abs(this.coastNoise.noise2D(x * 0.04 + 9, z * 0.012 - 4)));
-      if (reef > 0) out.lerp(CORALS[Math.floor(hash2(Math.floor(x / 3), Math.floor(z / 3), this.seed ^ 0xc0a1) * CORALS.length)], 0.6 * reef * (1 - channel));
+      if (reef > 0) out.lerp(CORALS[Math.floor(hash2(Math.floor(x / 1.6), Math.floor(z / 1.6), this.seed ^ 0xc0a1) * CORALS.length)], 0.8 * reef);
     }
     // Round hot springs and geysers: orange mats of heat-loving microbes at
     // the water's edge, then pale crusts of sinter.

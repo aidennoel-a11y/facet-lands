@@ -1,7 +1,7 @@
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, DynamicDrawUsage, Euler, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2, hashSeed } from '../noise/random.js';
 
-const MAX = 160;
+const MAX = 400;
 const smoothstep = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -142,6 +142,7 @@ const SALMON = 0xc0584a;
 const SEA_KINDS = [[0xb8c8d8, 6], [0x9fb4c8, 6], [0xc8c0a8, 6]];
 // Over the coral: bright reef fish, banded (yellow, blue, orange, green-gold).
 const REEF_KINDS = [[0xf0d040, 8], [0x3a8ad8, 8], [0xf08a30, 8], [0x8ad060, 8], [0xe86aa0, 8]];
+const ANTHIAS = 0xf06a30;
 // Out in the deep water: big fish cruising alone, a tuna, a grouper, a shark now and then.
 const BIG_KINDS = [[0x8a9cb8, 6, 1.2, 1.9], [0x6a5a40, 2, 1.0, 1.6], [0x7c8890, 7, 1.9, 3.0]];
 
@@ -231,9 +232,15 @@ export class Fish {
       if (deep) {
         const depth = w.level - bed, sea = !!w.lake, reef = sea && (ctx.generator?.getReef?.(x, z, bed) ?? 0) > 0.15;
         found = {
+          wander: 1, small: 1,
           x, z, level: w.level, y: reef ? bed + Math.min(1.4, depth * 0.4) : w.level - Math.min(depth * (sea ? 0.5 : 0.4), sea ? 8 : 1.4) - 0.3, n: (reef ? 10 : 8) + Math.floor(this.#h(i, j, 0xf157) * 8),
           ...pick(reef ? REEF_KINDS : sea ? SEA_KINDS : RIVER_KINDS, this.#h(i, j, 0xf158)), speed: 0.6 + 0.6 * this.#h(i, j, 0xf159), phase: this.#h(i, j, 0xf15a) * TAU,
         };
+        if (reef && this.#h(i, j, 0xf15c) < 0.6) {
+          // A cloud of anthias: dozens of little orange fish hanging over the
+          // coral, hardly wandering from it.
+          Object.assign(found, { tint: ANTHIAS, kind: 6, n: 30 + Math.floor(this.#h(i, j, 0xf15d) * 16), y: bed + Math.min(1.1, depth * 0.35), wander: 0.35, small: 0.45, speed: 0.4 });
+        }
       }
     }
     if (kind === 'b' && this.#h(i, j, 0xf180) < 0.5 && w?.lake && w.level - bed > 6) {
@@ -348,7 +355,7 @@ export class Fish {
             const sh = this.#cell('s', i, j, S, ctx);
             if (!sh || Math.hypot(sh.x - cam.x, sh.z - cam.z) > 90) continue;
             const u = T * 0.12 * sh.speed + sh.phase;
-            let cx = sh.x + Math.sin(u) * 5, cz = sh.z + Math.sin(u * 0.7 + 1.3) * 4;
+            let cx = sh.x + Math.sin(u) * 5 * sh.wander, cz = sh.z + Math.sin(u * 0.7 + 1.3) * 4 * sh.wander;
             let heading = Math.atan2(Math.cos(u) * 5, Math.cos(u * 0.7 + 1.3) * 0.7 * 4);
             const sp = fled(`s${i},${j}`, { x: cx, z: cz, level: sh.level });
             let spread = 1, beat = 2.2;
@@ -365,7 +372,7 @@ export class Fish {
               const wx = Math.sin(T * 0.6 + k * 1.7) * 0.5, wz = Math.cos(T * 0.47 + k * 2.3) * 0.5;
               list.push({
                 id: `s${i},${j},${k}`, ax: sh.x, az: sh.z, x: cx + Math.sin(heading + k * 2.4) * off + wx, y: sh.y + (this.#h(i, j * 17 + k, 0xf163) - 0.5) * 0.6 + Math.sin(T * 0.4 + k) * 0.12, z: cz + Math.cos(heading + k * 2.4) * off + wz,
-                level: sh.level, heading: heading + Math.cos(T * 0.6 + k * 1.7) * 0.25, size: 0.22 + 0.12 * this.#h(i + k, j, 0xf164), tint: sh.tint, kind: sh.kind, beat: beat * (0.9 + 0.2 * this.#h(k, j, 0xf167)), amp: 1, shoal: true, spooked: !!sp,
+                level: sh.level, heading: heading + Math.cos(T * 0.6 + k * 1.7) * 0.25, size: (0.22 + 0.12 * this.#h(i + k, j, 0xf164)) * sh.small, tint: sh.tint, kind: sh.kind, beat: beat * (0.9 + 0.2 * this.#h(k, j, 0xf167)), amp: 1, shoal: true, spooked: !!sp,
               });
             }
           }

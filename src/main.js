@@ -2424,6 +2424,7 @@ function perfNote(text) {
 // Under the water: a murky blue-green haze closing in (darker at night and
 // in the depths), the sky gone, the sounds muffled.
 const UNDERWATER = new THREE.Color(0x14505c);
+const SEA_BLUE = new THREE.Color(0x1868a8), underwaterClear = { at: false, x: 0, z: 0, v: 0 };
 let underwater = false;
 function applyUnderwater() {
   const w = sheltered ? null : waterAt(camera.position.x, camera.position.z);
@@ -2434,9 +2435,18 @@ function applyUnderwater() {
   }
   const depth = w.level - camera.position.y;
   const light = (0.25 + 0.75 * smoothstep(-0.1, 0.3, dayNight.sunDir.y)) * (1 - 0.5 * smoothstep(2, 25, depth));
-  scene.fog.color.copy(UNDERWATER).multiplyScalar(light);
-  scene.fog.near = 0.5;
-  scene.fog.far = 38 - 14 * smoothstep(5, 30, depth);
+  // (The open sea is blue and clear, clearest in the warm seas over the
+  // reefs; lakes, rivers and the cold seas murkier and greener.)
+  if (!underwaterClear.at || Math.hypot(camera.position.x - underwaterClear.x, camera.position.z - underwaterClear.z) > 20) {
+    const sea = w.lake ? smoothstep(0.35, 0.65, generator.getOceanness(camera.position.x, camera.position.z)) : 0;
+    const warm = 1 - generator.getSeasonality(camera.position.x, camera.position.z);
+    underwaterClear.v = sea * (0.45 + 0.55 * warm);
+    Object.assign(underwaterClear, { at: true, x: camera.position.x, z: camera.position.z });
+  }
+  const clear = underwaterClear.v;
+  scene.fog.color.copy(UNDERWATER).lerp(SEA_BLUE, clear).multiplyScalar(light);
+  scene.fog.near = 0.5 + 3 * clear;
+  scene.fog.far = (38 + 34 * clear) - (14 + 10 * clear) * smoothstep(5, 30, depth);
   dayNight.sky.visible = false;
   scene.background = scene.fog.color;
 }
