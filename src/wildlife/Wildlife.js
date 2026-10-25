@@ -1267,6 +1267,7 @@ export class Wildlife {
     for (const a of this.animals) for (const st of a.stuck ?? []) st.mesh.visible = !hidden;
     for (const a of this.animals) if (a.id === undefined) a.id = this.nextId = (this.nextId ?? 0) + 1;
     const views = this.#views(ctx);
+    globalThis.__prof?.mark('  an: views');
     // (Online: its cries when wounded, its growl, a tamed sheep's baa go out to the others too.)
     this.ctx = views[0];
     this.wait -= dt;
@@ -1297,10 +1298,12 @@ export class Wildlife {
       }
       this.pendingTame = left;
     }
+    globalThis.__prof?.mark('  an: populate, tame');
     this.calming = null; // (the wild horse you're settling, if any: see #walker)
     // (Each one minds whoever is nearest it: you, or, online, one of the others.)
     for (const herd of this.herds) this.#herd(herd, dt, this.#near(herd.members[0] ?? herd.mid, views));
     for (const flock of this.flocks) this.#flock(flock, dt, this.#near(flock.centre, views));
+    globalThis.__prof?.mark('  an: herds & flocks');
     // (For testing: `profile` set to {}, the time each kind takes, ms, summed.)
     const prof = this.profile;
     // (Far off, they think less often: thirty times a second past 60 m, ten
@@ -1324,6 +1327,7 @@ export class Wildlife {
       }
       const step = Math.min(a.owed, 0.25);
       a.owed = 0;
+      globalThis.__prof?.mark('  an: loop overhead');
       // (Caught: carried off in an owl's talons, kicking; dropped, if the owl's shot.)
       if (a.carriedBy) {
         const o = a.carriedBy;
@@ -1339,7 +1343,7 @@ export class Wildlife {
           continue;
         }
       }
-      if (SPECIES[a.kind].ground) this.#walker(a, step, c);
+      if (SPECIES[a.kind].ground) (this.#walker(a, step, c), globalThis.__prof?.mark('  an: walkers'));
       else if (SPECIES[a.kind].serpent) this.#snake(a, SPECIES[a.kind], step, c);
       else if (a.flock) this.#flockBird(a, step, c);
       else if (a.kind === 'owl') this.#owl(a, step, c);
@@ -1348,9 +1352,12 @@ export class Wildlife {
       else if (a.kind === 'monkey') this.#monkey(a, step, c);
       else this.#songbird(a, step, c);
       if (SPECIES[a.kind].bird && !SPECIES[a.kind].climber) this.#overTrees(a, step, c);
+      globalThis.__prof?.mark('  an: others');
       this.#prints(a, c);
+      globalThis.__prof?.mark('  an: prints');
       if (prof) prof[a.kind] = (prof[a.kind] ?? 0) + performance.now() - t0;
     }
+    globalThis.__prof?.mark('  an: each animal');
     // (No walking through anyone: a creature standing in the way of one of you is pushed aside.)
     for (const a of this.animals) {
       const sp = SPECIES[a.kind];
@@ -1362,6 +1369,7 @@ export class Wildlife {
         if (d < min && d > 1e-4) (a.x = c.x + (dx / d) * min), (a.z = c.z + (dz / d) * min);
       }
     }
+    globalThis.__prof?.mark('  an: pushing aside');
     const tv = prof ? performance.now() : 0;
     this.#vocalize(dt, views);
     if (prof) prof.vocalize = (prof.vocalize ?? 0) + performance.now() - tv;
@@ -1370,8 +1378,10 @@ export class Wildlife {
       for (const a of this.animals) if (a.gone) this.#unstick(a);
       this.animals = this.animals.filter((a) => !a.gone);
     }
+    globalThis.__prof?.mark('  an: calls, gone');
     const td = prof ? performance.now() : 0;
     this.#draw();
+    globalThis.__prof?.mark('  an: draw');
     if (prof) prof.draw = (prof.draw ?? 0) + performance.now() - td;
   }
 

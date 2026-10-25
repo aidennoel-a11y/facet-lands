@@ -2832,6 +2832,7 @@ function tick(now) {
   });
   sync.update();
   prof.mark('online');
+  fish.shared = game.items.taken; // (the fish caught, online: shared like what's picked up)
   fish.update(dt, { ...life, traces, autumn, ground: (x, z) => chunks.groundHeightAt(x, z) });
   prof.mark('fish');
   traces.update(dt);
@@ -2935,6 +2936,11 @@ function tick(now) {
   profLayers = { ...chunks.stats.layers };
   profTerrain = chunks.stats.terrainMs;
   prof.end(elapsed, extra);
+  // (What's spare of the next frame for the land to be built in: the frame's
+  // length, as the screen gives them, less what everything but the land
+  // took this time, and a little to keep in hand.)
+  frameLength += (Math.min(0.034, Math.max(0.0069, elapsed)) - frameLength) * 0.05;
+  chunks.spare = frameLength * 1000 - 2.5 - (performance.now() - started - (chunks.spent ?? 0));
   frames++;
   fpsTime += elapsed;
   cpuTime += performance.now() - started;
@@ -2982,6 +2988,7 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 let describing = false;
+var frameLength = 1 / 60;
 var ruinMarks = { wait: 0, list: [], testing: null };
 requestAnimationFrame(tick);
 

@@ -263,6 +263,8 @@ export class Fish {
   /** A fish caught (speared, or landed on a line): gone, and the rest of its shoal off in a fright. */
   take(f) {
     this.caught.set(f.id, this.time);
+    // (Online: gone for everyone, for the same quarter of an hour by the room's clock: see WorldSync's 'taken'.)
+    if (this.netTime !== undefined && this.shared) this.shared.add(`fish:${f.id}:${Math.floor(this.netTime / 900)}`);
     this.sim?.delete(f.id);
     const T = this.lastT ?? this.time, shoal = f.id[0] === 's' ? f.id.split(',').slice(0, 2).join(',') : null;
     if (shoal) this.spooked.set(shoal, { at: T, dx: Math.sin(f.heading ?? 0), dz: Math.cos(f.heading ?? 0) });
@@ -448,6 +450,12 @@ export class Fish {
     if (this.caught.size) {
       for (const [id, at] of this.caught) if (this.time - at > 900) this.caught.delete(id);
       for (let k = list.length - 1; k >= 0; k--) if (this.caught.has(list[k].id)) list.splice(k, 1);
+    }
+    // (Online: those the others have caught, too.)
+    this.netTime = ctx.netTime ?? undefined;
+    if (this.netTime !== undefined && this.shared?.size) {
+      const q = Math.floor(this.netTime / 900);
+      for (let k = list.length - 1; k >= 0; k--) if (this.shared.has(`fish:${list[k].id}:${q}`)) list.splice(k, 1);
     }
         this.#swim(list, dt, T, ctx, cam);
     // Salmon at the falls, in summer and autumn: one after another up the

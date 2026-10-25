@@ -64,6 +64,7 @@ export const LANDMARKS = {
     basin: { r: 14, d: 1.2, steep: 0.35 }, what: '', fits: (w, m, f) => w.temperate + w.pine + (w.parkland ?? 0) + (w.smoky ?? 0) + (w.cascades ?? 0) * 0.8 > 0.6 && m < 0.55 && f > 0.12 },
 };
 export const LANDMARK_KINDS = Object.keys(LANDMARKS);
+const KIND_INDEX = Object.fromEntries(LANDMARK_KINDS.map((k, n) => [k, n])); // (asked a great deal: see glacierAt, in every height of the high land)
 /** The ones to be found (on the map, an achievement each). */
 export const FOUND_KINDS = LANDMARK_KINDS.filter((k) => !LANDMARKS[k].hidden);
 const BASIN_KINDS = LANDMARK_KINDS.filter((k) => LANDMARKS[k].basin || LANDMARKS[k].falls);
@@ -84,7 +85,7 @@ export class LandmarkSites {
 
   /** A square's site, as a worker worked it out (see lazy). */
   prime(kind, i, k, s) {
-    const key = (LANDMARK_KINDS.indexOf(kind) * 100003 + i) * 100019 + k;
+    const key = (KIND_INDEX[kind] * 100003 + i) * 100019 + k;
     this.wanted?.delete(key);
     if (!this.cache.has(key)) this.cache.set(key, s);
   }
@@ -103,12 +104,12 @@ export class LandmarkSites {
 
   /** Whether the square's been worked out already (the site's cheap to ask for, then). */
   known(kind, i, k) {
-    return this.cache.has((LANDMARK_KINDS.indexOf(kind) * 100003 + i) * 100019 + k);
+    return this.cache.has((KIND_INDEX[kind] * 100003 + i) * 100019 + k);
   }
 
   /** The site of `kind` in its square (i, k), or null. */
   site(kind, i, k) {
-    const ki = LANDMARK_KINDS.indexOf(kind);
+    const ki = KIND_INDEX[kind];
     const key = (ki * 100003 + i) * 100019 + k;
     let s = this.cache.get(key);
     if (s !== undefined) return s;

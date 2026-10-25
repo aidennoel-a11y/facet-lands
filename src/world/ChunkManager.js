@@ -287,7 +287,13 @@ export class ChunkManager {
     this.lastProcess = start;
     this.slow = gap > 19 ? Math.min(1, (this.slow ?? 0) + 0.2) : Math.max(0, (this.slow ?? 0) - 0.05);
     const backlog = this.ready.length > 6;
-    const deadline = start + this.config.chunkBuildBudgetMs * (backlog ? 2.5 - 1.5 * this.slow : 1 - 0.5 * this.slow) * this.budgetScale;
+    let budget = this.config.chunkBuildBudgetMs * (backlog ? 2.5 - 1.5 * this.slow : 1 - 0.5 * this.slow);
+    // (And whatever's spare of the frame besides, when there's land waiting:
+    // the time the rest of the last frame's work left before the next is
+    // due (see main's tick). Never more than that, so it fills in as fast as
+    // it can without a frame running long.)
+    if (this.ready.length || this.queue.length) budget = Math.max(budget, Math.min(12, this.spare ?? 0));
+    const deadline = start + budget * this.budgetScale;
     this.#dispatch();
     // Put together what's ready (at least one, so progress is guaranteed).
     let steps = 0;
@@ -319,6 +325,7 @@ export class ChunkManager {
         this.stats.builds++;
       }
     }
+    this.spent = performance.now() - start;
   }
 
   // A chunk part way put together, no longer wanted: what was made for it thrown away.
