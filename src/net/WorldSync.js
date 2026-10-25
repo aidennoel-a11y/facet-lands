@@ -200,6 +200,7 @@ export class WorldSync {
       return;
     }
     if (f.k === 'shot') return this.game.ghostShot(f);
+    if (f.k === 'mow') return this.mow?.(f.x, f.z, f.r); // (someone's sickle through the grass)
     if (f.k === 'bolt') return this.lightning.strikeAt(f.x, f.z, f.seed, f.pulses);
     if (!f.n) return;
     const cam = this.game.camera.position;

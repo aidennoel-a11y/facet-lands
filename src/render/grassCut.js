@@ -27,7 +27,8 @@ export class GrassCut {
     let fresh = 0;
     for (let k = Math.floor(z - r); k <= Math.floor(z + r); k++) {
       for (let i = Math.floor(x - r); i <= Math.floor(x + r); i++) {
-        if (Math.hypot(i + 0.5 - x, k + 0.5 - z) > r) continue;
+        // (Every metre the sweep touches, not only those whose middle it reaches.)
+        if (Math.hypot(Math.max(0, Math.abs(i + 0.5 - x) - 0.5), Math.max(0, Math.abs(k + 0.5 - z) - 0.5)) > r) continue;
         if (!this.cells.has(`${i},${k}`)) fresh++;
         this.cells.set(`${i},${k}`, day);
       }

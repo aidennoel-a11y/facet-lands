@@ -36,6 +36,7 @@ import { createSnowLayer } from './world/layers/SnowLayer.js';
 import { createUnderstoryLayer } from './world/layers/UnderstoryLayer.js';
 import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
+import { placeTrees } from './world/treePlacement.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
 import { Game } from './survival/Game.js';
@@ -1401,6 +1402,7 @@ const game = new Game({
   // (How much standing grass the blade went through: none on rock, sand, snow or in the water.)
   cutGrass: (x, z, r) => {
     const fresh = grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24);
+    if (sync.online) sync.fx.push({ k: 'mow', x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, r });
     const kind = fresh ? stepSurface(x, z) : null;
     return kind === 'grass' || kind === 'dirt' || kind === 'leaves' ? fresh : 0;
   },
@@ -1447,6 +1449,7 @@ const sync = new WorldSync({
   windStrength: () => windStrength.value,
   dayNight, dayLength: () => WORLD.dayLengthMinutes,
 });
+sync.mow = (x, z, r) => grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24);
 chunks.addLayer(game.items.layer);
 // (The world's time of day, moon and season, kept with its save.)
 game.clock = {
@@ -3018,7 +3021,7 @@ requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
 globalThis.__prof = prof;
-window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

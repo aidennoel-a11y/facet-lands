@@ -216,9 +216,11 @@ export function createGrassLayer(config, { far = false } = {}) {
           float spared = step(0.8, fract(sin(dot(floor(tuft * 3.0), vec2(12.9898, 78.233))) * 43758.5453));
           keep *= mix(1.0, spared * 0.35, burnt);
           vBurnt = burnt;
-          vec2 cuv = (tuft - uCutOrigin) / uCutSize;
+          // (Read at the middle of the tuft's own metre, not blended with
+          // the next: a tuft at the edge of a cut metre is cut, not half cut.)
+          vec2 cuv = (floor(tuft) + 0.5 - uCutOrigin) / uCutSize;
           float cut = (cuv.x > 0.0 && cuv.y > 0.0 && cuv.x < 1.0 && cuv.y < 1.0) ? texture2D(uCutMap, cuv).r : 0.0;
-          transformed.y *= 1.0 - 0.85 * cut;
+          transformed.y *= 1.0 - 0.9 * cut;
           transformed *= keep;
         }
         #include <project_vertex>`,

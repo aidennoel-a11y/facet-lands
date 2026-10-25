@@ -1331,7 +1331,7 @@ export class Game {
     if (s.id === 'sickle') {
       // Cutting the long grass: round where you look, on the ground ahead.
       const at = this.solidHit?.(origin, direction, 4)?.point ?? origin.clone().addScaledVector(direction.clone().setY(0).normalize(), 1.8);
-      const mown = this.cutGrass?.(at.x, at.z, 1.5) ?? 0;
+      const mown = this.cutGrass?.(at.x, at.z, 1.8) ?? 0;
       this.inventory.wear(i, 1);
       // (Wild crops in the sweep of the blade: their grain or roots, and maybe their seed.)
       const reaped = this.items.wildNear?.(at.x, at.z, 2.4) ?? []; // (anywhere in a patch)

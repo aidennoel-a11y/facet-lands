@@ -446,10 +446,7 @@ export function createFarTreeLayer(config) {
         diffuseColor.rgb *= vec3(vShade * (0.96 + (vShade - 0.82) * 0.27), vShade, vShade * 0.95);
         vec4 impKind = texture2D(uImpostor, vImpUv - vec2(0.0, 0.5));
         #define vSeason vec3(impKind.r, impKind.g, 0.0)
-        // (Less of the picture taken as facing up than it seems, blurred as it
-        // is: else a far wood high on a mountain goes all white in its
-        // snow, and vanishes against the snow on the ground.)
-        #define vSeasonUp ((impKind.b * 2.0 - 1.0) * 0.8 - 0.25)
+        #define vSeasonUp (impKind.b * 2.0 - 1.0)
         #include <color_fragment>`,
       );
   };
@@ -497,6 +494,11 @@ export function createFarTreeLayer(config) {
     p.geometry.setAttribute('aSpot', p.spot);
     p.geometry.setAttribute('aShape', p.shape);
     p.geometry.setAttribute('aFade', p.fade);
+    // (three.js caps how many it'll draw at the count of the attributes it
+    // first saw, and never looks again: without this, a pool that's grown
+    // past its first 256 trees only ever drew those 256, and most of a
+    // far forest went missing, chunk by chunk.)
+    delete p.geometry._maxInstanceCount;
     p.capacity = capacity;
     p.lo = 0;
     p.hi = p.count - 1;

@@ -438,15 +438,45 @@ export const hoeModel = () =>
     .add(new BoxGeometry(0.18, 0.04, 0.14), 0x8e8a84, [0, 1.08, 0.08], [0.2, 0, 0])
     .build();
 
-/** A sickle: a short handle, a thin blade curving round in a crescent. */
-export const sickleModel = () => {
-  const b = new Parts(86).add(new CylinderGeometry(0.02, 0.024, 0.3, 5), 0x8a6038, [0, 0.15, 0]);
-  for (let k = 0; k < 7; k++) {
-    const a = 0.2 + (k / 6) * 2.6, r = 0.16;
-    b.add(new BoxGeometry(0.075, 0.012, 0.022), 0xc8ccd0, [Math.sin(a) * r * 0.9, 0.3 + r - Math.cos(a) * r, 0], [0, 0, -a], [1, 1, 1], 0.04);
+/**
+ * A sickle's blade: one piece of metal, a flat crescent swept round from
+ * the handle's top, broad at its heel and tapering to a sharp point, the
+ * cutting edge on the inside of the curve.
+ */
+function crescentGeometry(radius = 0.16, heel = 0.042, thick = 0.012, from = 0.12, to = 2.95, steps = 16) {
+  const h = thick / 2, cy = 0.3 + radius, rim = [], edge = [];
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps, a = from + (to - from) * t;
+    const w = heel * Math.pow(1 - t, 0.75) + 0.003;
+    const sx = Math.sin(a), sy = -Math.cos(a);
+    rim.push([sx * radius, cy + sy * radius]);
+    edge.push([sx * (radius - w), cy + sy * (radius - w)]);
   }
-  return b.build();
-};
+  const pos = [];
+  const quad = (a, b, c, d) => pos.push(...a, ...c, ...b, ...a, ...d, ...c);
+  for (let k = 0; k < steps; k++) {
+    const [o0, o1, i0, i1] = [rim[k], rim[k + 1], edge[k], edge[k + 1]];
+    quad([o0[0], o0[1], h], [i0[0], i0[1], h], [i1[0], i1[1], h], [o1[0], o1[1], h]); // front
+    quad([o0[0], o0[1], -h], [o1[0], o1[1], -h], [i1[0], i1[1], -h], [i0[0], i0[1], -h]); // back
+    quad([o0[0], o0[1], -h], [o0[0], o0[1], h], [o1[0], o1[1], h], [o1[0], o1[1], -h]); // back of the blade
+    // (The cutting edge: the two faces meeting in a thin bevel.)
+    quad([i0[0], i0[1], h], [i0[0], i0[1], -h], [i1[0], i1[1], -h], [i1[0], i1[1], h]);
+  }
+  // (The heel, where it's set into the handle.)
+  const [o, i] = [rim[0], edge[0]];
+  quad([o[0], o[1], h], [o[0], o[1], -h], [i[0], i[1], -h], [i[0], i[1], h]);
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  return g;
+}
+
+/** A sickle: a short wooden handle, an iron collar, and one curved steel blade. */
+export const sickleModel = () =>
+  new Parts(86)
+    .add(new CylinderGeometry(0.02, 0.024, 0.3, 6), 0x8a6038, [0, 0.15, 0])
+    .add(new CylinderGeometry(0.025, 0.025, 0.04, 6), 0x6a7078, [0, 0.29, 0], [0, 0, 0], [1, 1, 1], 0.02)
+    .add(crescentGeometry(), 0xc8ccd0, [0, 0, 0], [0, 0, 0], [1, 1, 1], 0.03)
+    .build();
 
 /** Shears: two blades on a spring of iron. */
 export const shearsModel = () =>
