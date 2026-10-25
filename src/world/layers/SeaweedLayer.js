@@ -125,16 +125,26 @@ export function createSeaweedLayer(config) {
           const wx = x0 + lx, wz = z0 + lz, roll = hash2(gi, gj, seed);
           const rock = generator.getSeaRock(wx, wz);
           let kind = -1;
-          if (rock < 0.35 && depth < 12) {
-            // Seagrass meadows, in great patches over the sand, thinning at their edges.
-            const meadow = (N.noise2D(wx * 0.018 + 41, wz * 0.018 - 13) * 0.5 + 0.5) * (1 - smoothstep(8, 12, depth)) * (1 - rock * 2);
-            if (roll < smoothstep(0.42, 0.62, meadow) * 0.85) kind = 0;
+          let clumps = 1;
+          if (rock < 0.35 && depth < 28) {
+            // Seagrass meadows, in great patches over the sand, thinning at
+            // their edges, down to twenty-odd metres; and here and there
+            // whole fields of it, thick and tall, the sand hidden under it.
+            const meadow = (N.noise2D(wx * 0.018 + 41, wz * 0.018 - 13) * 0.5 + 0.5) * (1 - smoothstep(22, 28, depth)) * (1 - rock * 2);
+            const thick = smoothstep(0.5, 0.7, N.noise2D(wx * 0.007 - 77, wz * 0.007 + 29) * 0.5 + 0.5) * (1 - smoothstep(24, 28, depth)) * (1 - rock * 2.5);
+            if (roll < Math.max(smoothstep(0.42, 0.62, meadow) * 0.85, thick)) kind = 0;
+            if (thick > 0.3) clumps = 1 + Math.round(thick * 3);
           } else if (rock >= 0.35 && roll < 0.1 * rock) {
             // On the rock: lettuce up in the light, the red and brown weed deeper.
             kind = depth < 10 ? (hash2(gi, gj, seed + 5) < 0.75 ? 1 : 2) : hash2(gi, gj, seed + 5) < 0.25 ? 1 : 2;
           }
           if (kind < 0) continue;
-          placed[kind].push([lx, y - 0.04, lz, hash2(gi, gj, seed + 3), hash2(gi, gj, seed + 4)]);
+          for (let c = 0; c < clumps; c++) {
+            const ox = c ? (hash2(gi + c * 7, gj, seed + 6) - 0.5) * G : 0, oz = c ? (hash2(gi, gj + c * 7, seed + 7) - 0.5) * G : 0;
+            const yy = c ? groundHeightAt(Math.min(size - 0.01, Math.max(0, lx + ox)), Math.min(size - 0.01, Math.max(0, lz + oz))) : y;
+            // (The thick fields' grass stands taller.)
+            placed[kind].push([lx + ox, yy - 0.04, lz + oz, hash2(gi + c, gj, seed + 3), hash2(gi, gj + c, seed + 4), clumps > 1 ? 1.35 : 1]);
+          }
         }
       }
       if (!placed.some((l) => l.length)) return null;
@@ -143,8 +153,8 @@ export function createSeaweedLayer(config) {
       placed.forEach((list, k) => {
         if (!list.length) return;
         const mesh = new InstancedMesh(shapes[k], material, list.length);
-        list.forEach(([x, y, z, r, c], i) => {
-          const sz = k === 0 ? 0.8 + 0.6 * c : 0.8 + 0.8 * r;
+        list.forEach(([x, y, z, r, c, tall], i) => {
+          const sz = (k === 0 ? 0.8 + 0.6 * c : 0.8 + 0.8 * r) * tall;
           mesh.setMatrixAt(i, m4.compose(p.set(x, y, z), q.setFromAxisAngle(yAxis, r * Math.PI * 2), s.set(sz, sz * (0.85 + 0.3 * r), sz)));
           mesh.setColorAt(i, COLORS[k][Math.floor(c * COLORS[k].length)]);
         });

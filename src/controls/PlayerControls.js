@@ -406,54 +406,72 @@ export class PlayerControls {
   }
 
   /**
-   * Swimming: along the way you look under the water (level at the
-   * surface, where your head stays above it), Space up and Ctrl / Q / C
-   * down; floating back up to the surface when you stop; carried along by
-   * a river's current; never down through the bottom; out onto a bank low
+   * Swimming, as in Minecraft: in the water you sink, slowly, unless you
+   * swim; Space swims you up (and keeps you bobbing at the surface), C /
+   * Ctrl down; forward and to the sides you swim level, unhurried; Shift
+   * and forward, a fast crawl the way you look, diving or rising with it;
+   * down on the bottom you stand and walk along it. The water holds you
+   * back: you speed up and slow down gently, you drift on a moment when
+   * you stop. Carried along by a river's current; out onto a bank low
    * enough to reach.
    */
   #updateSwim(dt, input, water, under) {
     const pos = this.camera.position;
-    const fast = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
-    const speed = this.swimSpeed * (fast ? 1.7 : 1);
+    const v = (this.swimVel ??= { x: 0, y: 0, z: 0 });
+    const fast = (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && input.forward > 0;
     const yaw = this.euler.y, pitch = this.euler.x;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-    const float = water.level + 0.3; // (eyes just above the surface)
-    const atSurface = pos.y > water.level - 0.4;
-    // Looking down, swimming forward takes you down; up, back up (no higher than floating).
-    const tilt = atSurface && pitch > 0 ? 0 : Math.sin(pitch);
-    const level = Math.cos(atSurface && pitch > 0 ? 0 : pitch);
-    let mx = (fx * input.forward * level - fz * input.strafe) * speed;
-    let mz = (fz * input.forward * level + fx * input.strafe) * speed;
-    let vy = (input.up + tilt * input.forward) * speed;
-    // Floating back up, unless diving.
-    if (input.up === 0 && !(input.forward && tilt < -0.1)) vy += Math.max(-1, Math.min(1.2, (float - pos.y) * 1.5));
+    const float = water.level + 0.25; // (eyes just above the surface)
+    const atSurface = pos.y > water.level - 0.5;
+    this.swimSprint = fast;
+    // What you're swimming for: level, at an easy pace; or a sprint, along where you look.
+    let tx, ty, tz;
+    if (fast) {
+      const sp = this.swimSpeed * 2.1, up = atSurface && pitch > 0 ? 0 : Math.sin(pitch), lv = Math.cos(atSurface && pitch > 0 ? 0 : pitch);
+      tx = (fx * lv * input.forward - fz * input.strafe * 0.5) * sp;
+      tz = (fz * lv * input.forward + fx * input.strafe * 0.5) * sp;
+      ty = up * sp + input.up * this.swimSpeed;
+    } else {
+      const sp = this.swimSpeed * 0.8;
+      tx = (fx * input.forward - fz * input.strafe) * sp;
+      tz = (fz * input.forward + fx * input.strafe) * sp;
+      // (Space up, C down; nothing: sinking slowly; held at the top, bobbing.)
+      ty = input.up > 0 ? (atSurface ? (float - pos.y) * 4 + Math.sin(performance.now() * 0.004) * 0.15 : this.swimSpeed * 0.9) : input.up < 0 ? -this.swimSpeed * 0.9 : -0.55;
+    }
+    // (The water's drag: eased towards it, quicker to slow down than to speed up.)
+    const ease = (cur, want) => cur + (want - cur) * Math.min(1, dt * (Math.abs(want) > Math.abs(cur) ? 3.5 : 2.5));
+    v.x = ease(v.x, tx);
+    v.z = ease(v.z, tz);
+    v.y = ease(v.y, ty);
     // The current.
-    mx += (water.fx ?? 0) * (water.speed ?? 0) * 0.7;
-    mz += (water.fz ?? 0) * (water.speed ?? 0) * 0.7;
-    const dx = mx * dt, dz = mz * dt;
+    const dx = (v.x + (water.fx ?? 0) * (water.speed ?? 0) * 0.7) * dt, dz = (v.z + (water.fz ?? 0) * (water.speed ?? 0) * 0.7) * dt;
     if (dx || dz) {
       const next = this.world.groundAt(pos.x + dx, pos.y - this.eyeHeight, pos.z + dz);
       const under = next.height < water.level - 0.3;
       // Under the water, the bed rising ahead (a ridge, a rock, the slope up
-      // to the shore): over it, gliding up along it; only rock standing
-      // well up above your head stops you. At the surface, a low bank: climb
-      // out onto it; one above your head: no further.
-      if (next.inCave || (under ? next.height < pos.y + 0.8 : next.height < pos.y - 0.2)) {
+      // to the shore): over it if it's no more than a step up from your
+      // feet; rock standing higher stops you. At the surface, a low bank:
+      // climb out onto it; one above your head: no further.
+      const feet = pos.y - this.eyeHeight;
+      if (next.inCave || (under ? next.height < Math.max(feet + 0.9, pos.y - 0.45) : next.height < pos.y - 0.2)) {
         pos.x += dx;
         pos.z += dz;
-        if (under) pos.y = Math.max(pos.y, next.height + 0.35);
-        else if (next.height > pos.y - this.eyeHeight) pos.y = next.height + this.eyeHeight;
-      }
+        if (!under && next.height > pos.y - this.eyeHeight) pos.y = next.height + this.eyeHeight;
+      } else (v.x *= 0.3), (v.z *= 0.3);
     }
     this.world.collide?.(pos, this.radius);
-    pos.y = Math.min(float + 0.05, pos.y + vy * dt);
-    // Never down through the bottom.
+    pos.y = Math.min(float + 0.05, pos.y + v.y * dt);
+    if (pos.y >= float + 0.04 && v.y > 0) v.y = 0;
+    // Down on the bottom: standing on it, walking along it.
     const below = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z);
-    const floor = (below.inCave ? below.height : this.#bedAround(pos.x, pos.y, pos.z, below.height)) + 0.7;
-    // (Eased up over a sudden rise, not jolted; but never into it.)
-    if (pos.y < floor) pos.y = Math.max(floor - 0.35, pos.y + (floor - pos.y) * Math.min(1, dt * 12));
-    this.velocityY = 0;
+    const stand = (below.inCave ? below.height : this.#bedAround(pos.x, pos.y, pos.z, below.height)) + this.eyeHeight * 0.92;
+    if (pos.y < stand) {
+      // (Eased up a rise underfoot, not jolted; never into it.)
+      pos.y = Math.max(stand - 0.35, pos.y + (stand - pos.y) * Math.min(1, dt * 12));
+      if (v.y < 0) v.y = 0;
+    }
+    this.onBottom = pos.y <= stand + 0.05;
+    this.velocityY = v.y;
     this.underwater = pos.y < water.level - 0.05;
   }
 
