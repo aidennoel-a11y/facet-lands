@@ -506,11 +506,15 @@ export class Game {
     const reach = REACH;
     const found = [];
     const held = this.inventory.slots[this.hotbar?.index ?? 0];
+    globalThis.__prof?.mark('  t: before items');
     const item = this.items.pick(origin, direction, reach);
+    globalThis.__prof?.mark('  t: items');
     if (item && ITEMS[item.id]?.wild) found.push({ kind: 'vein', distance: item.distance, item, text: `${ITEMS[item.id].name}: cut it with a sickle` });
     else if (item?.item.node) found.push({ kind: 'vein', distance: item.distance, item, text: `${ITEMS[item.id].name} in the rock: break it out with a pickaxe` });
     else if (item) found.push({ kind: 'item', distance: item.distance, item, text: `Pick up ${ITEMS[item.id].name.toLowerCase()}` });
+    globalThis.__prof?.mark('  t: before animals');
     const carcass = this.wildlife.aim(origin, direction, reach, true);
+    globalThis.__prof?.mark('  t: animals');
     if (carcass && !carcass.animal.alive) found.push({ kind: 'carcass', distance: carcass.distance, animal: carcass.animal, text: `Butcher the ${NAMES[carcass.animal.kind] ?? 'animal'}` });
     // A tame sheep: to shear, or to feed.
     const beast = carcass?.animal.alive ? carcass.animal : null;
@@ -541,7 +545,9 @@ export class Game {
         : beast.saddled ? 'Ride (Shift+Q: lead it)' : beast.led ? 'Let it go' : donkey ? 'Lead it (saddlebags for it to carry)' : 'Lead it (a saddle to ride it)';
       found.push({ kind: 'horse', distance: carcass.distance, animal: beast, text: needs ? `${text} · ${needs}` : text });
     }
+    globalThis.__prof?.mark('  t: before trees');
     const tree = this.trees.pick(origin, direction, reach);
+    globalThis.__prof?.mark('  t: trees');
     // (Ripe from midsummer: berries till the fourth day of autumn, apples till the ninth.)
     const year = seasonUniforms.uSeasonTime.value, days = this.config.daysPerSeason ?? 12;
     const ripe = tree && FRUIT[tree.type] && year >= 1.45 && year < 2 + (FRUIT[tree.type] === 'apple' ? 9 : 4) / days;
@@ -553,7 +559,9 @@ export class Game {
       const pulled = this.vined?.has(tree.key) && this.time - this.vined.get(tree.key) < 600;
       found.push({ kind: 'vine', distance: tree.distance, tree, pulled, text: pulled ? 'No good vines left on it' : 'Pull plant vines' });
     }
+    globalThis.__prof?.mark('  t: before nests');
     const tf = this.treeFinds.pick(origin, direction, reach + 2.5);
+    globalThis.__prof?.mark('  t: nests');
     if (tf) {
       const f = tf.find, empty = this.treeFinds.empty(f, this.worldDays ?? 0), season = seasonUniforms.uSeasonTime.value;
       const torch = held?.id === 'torch' || held?.id === 'coalTorch';
@@ -562,26 +570,38 @@ export class Game {
         : empty ? 'A wild bees\' nest: no honey left in it yet' : torch ? 'A wild bees\' nest: smoke them quiet and take the honey' : 'A wild bees\' nest: take the honey (they\'ll sting: a lit torch in hand smokes them quiet)';
       found.push({ kind: 'treeFind', distance: tf.distance, find: f, empty, text });
     }
+    globalThis.__prof?.mark('  t: before mushrooms');
     const mushroom = this.mushrooms?.pick(origin, direction, reach);
+    globalThis.__prof?.mark('  t: mushrooms');
     if (mushroom) found.push({ kind: 'mushroom', distance: mushroom.distance, mushroom, text: 'Pick the mushroom' });
+    globalThis.__prof?.mark('  t: before built');
     const built = this.structures.pick(origin, direction, reach);
+    globalThis.__prof?.mark('  t: built');
     if (built) {
       const s = built.structure;
       found.push({ kind: 'structure', distance: built.distance, structure: s, text: down ? `Take down the ${ITEMS[s.type].name.toLowerCase()}` : this.#structureText(s, held) });
     }
+    globalThis.__prof?.mark('  t: before water');
     const water = this.underwater ? null : this.#waterAlong(origin, direction, reach);
+    globalThis.__prof?.mark('  t: water');
     if (water) {
       const fill = held?.id === 'waterskin';
       found.push({ kind: 'water', distance: water.distance, ...water, text: water.salty && held?.id === 'pot' ? 'Fill the pot with sea water (boil it for salt)' : water.salty ? 'Sea water: too salty to drink' : fill ? `Fill the waterskin${water.clean ? '' : ' (still water: boil it)'}` : `Drink${water.clean ? '' : ' (still water: it may make you ill)'}` });
     }
     // The ground itself: salt to scrape up on the salt flats, sand to scoop up on a beach or in the desert.
-    if (!found.length) {
-      const hit = this.solidHit?.(origin, direction, reach);
-      if (hit && !hit.cave) {
-        const what = this.#groundStuff(hit.point.x, hit.point.z);
-        if (what) found.push({ kind: 'scoop', distance: hit.point.distanceTo(origin), id: what, text: what === 'salt' ? 'Scrape up salt' : 'Scoop up sand' });
+    // (Where the line of sight meets the land: stepped along it over the
+    // land's heights, not cast against its every triangle. Not in a cave.)
+    if (!found.length && !this.lastCtx?.cave) {
+      for (let d = 0.25; d <= reach; d += 0.25) {
+        const x = origin.x + direction.x * d, y = origin.y + direction.y * d, z = origin.z + direction.z * d;
+        const g = this.chunks.groundHeightAt(x, z);
+        if (!Number.isFinite(g) || y > g) continue;
+        const what = this.#groundStuff(x, z);
+        if (what) found.push({ kind: 'scoop', distance: d, id: what, text: what === 'salt' ? 'Scrape up salt' : 'Scoop up sand' });
+        break;
       }
     }
+    globalThis.__prof?.mark('  t: ground');
     found.sort((a, b) => a.distance - b.distance);
     return found[0] ?? null;
   }
@@ -698,6 +718,17 @@ export class Game {
 
   // What the bare ground at (x, z) gives by the handful: 'salt' on the salt flats, 'sand' on a beach or the desert's sand, else null.
   #groundStuff(x, z) {
+    // (Remembered for each square metre: it's asked every frame you look at the ground.)
+    if (this.stuffGen !== this.generator()) (this.stuffGen = this.generator()), this.stuffMemo?.clear();
+    const key = `${Math.floor(x)},${Math.floor(z)}`, memo = (this.stuffMemo ??= new Map());
+    if (memo.has(key)) return memo.get(key);
+    if (memo.size > 4000) memo.clear();
+    const v = this.#groundStuffAt(x, z);
+    memo.set(key, v);
+    return v;
+  }
+
+  #groundStuffAt(x, z) {
     const g = this.generator();
     const w = g.getBiomeWeights(x, z, {});
     if ((w.saltFlat ?? 0) > 0.45) return 'salt';
@@ -3123,6 +3154,7 @@ export class Game {
     for (const p of this.pending.filter((p) => p.time <= 0)) p.fn();
     this.pending = this.pending.filter((p) => p.time > 0);
     const cam = this.camera.position;
+    globalThis.__prof?.mark('  g: start');
     const ground = (x, z) => this.groundAt(x, z);
     // (The trees and bushes picked clean lately, nearest first: drawn without their fruit.)
     if (this.pickedAt?.size && (this.pickWait = (this.pickWait ?? 0) - dt) <= 0) {
@@ -3167,19 +3199,27 @@ export class Game {
       this.sound?.call('treefall', 0, Math.min(1, 0.4 + size / 20) / (1 + d / 30));
     });
     this.#flyAll(dt);
+    globalThis.__prof?.mark('  g: flyAll');
     this.#flyGhosts(dt);
+    globalThis.__prof?.mark('  g: flyGhosts');
     const lights = this.structures.update(dt, ctx);
     const walking = this.walking;
     const i = this.hotbar.index;
     const held = this.inventory.slots[i];
     if (this.sleeping) this.#sleepStep(dt);
     this.#coops(dt);
+    globalThis.__prof?.mark('  g: coops');
     this.#beeBoxes(dt);
+    globalThis.__prof?.mark('  g: beeBoxes');
     this.#hintStep();
+    globalThis.__prof?.mark('  g: hintStep');
     this.treeFinds.update(dt, this.camera, this.config.chunkSize, this.worldDays ?? 0, seasonUniforms.uSeasonTime.value, this.sound, (x, z) => this.panAt?.(x, z) ?? 0);
     this.#fishing(dt, held);
+    globalThis.__prof?.mark('  g: fishing');
     this.#wind(dt, held);
+    globalThis.__prof?.mark('  g: wind');
     this.#snares(dt);
+    globalThis.__prof?.mark('  g: snares');
     if (this.drawing && !BOWS.has(held?.id)) this.drawing = null;
 
     // Warm by a fire? How hot and thirsty the country is, and how cold its winters.
@@ -3307,12 +3347,14 @@ export class Game {
     // (In creative there's no hunger, thirst or cold: you stay as you are.)
     if (this.mode !== 'creative') this.survival.update(dt, e);
     this.#progressStep(dt, e);
+    globalThis.__prof?.mark('  g: progressStep');
     if (this.mode !== 'survival') this.hud.skillsButton(null);
     if (this.survival.retched) {
       this.survival.retched = false;
       this.sound?.call('hurt', 0, 0.4);
       this.hotbar?.flash('You are sick');
     }
+    globalThis.__prof?.mark('  g: before food');
     // Food spoils (not in a chest; jerky keeps).
     this.spoilWait = (this.spoilWait ?? 0) - dt;
     if (this.spoilWait <= 0) {
@@ -3326,6 +3368,7 @@ export class Game {
     // (However it came: hunger or cold here, or a bite, a fall, a blow since the last frame.)
     if (!this.survival.alive && !this.dead) this.#die();
 
+    globalThis.__prof?.mark('  g: before crosshair');
     // What's under the crosshair: what Q would do, and where a thing to be built would go.
     let prompt = null;
     this.plan = null;
@@ -3644,6 +3687,57 @@ export class Game {
     }
   }
 
+  /**
+   * Swimming, your arms before you: a breaststroke, both hands reaching
+   * out ahead together, sweeping wide and back, drawn in to the chest and
+   * shot forward again; quicker the faster you swim, a slow scull treading
+   * water. (What's in your hand put by meanwhile, but for using it.)
+   */
+  #swimArms(dt, busy) {
+    const on = this.controls.swimming && this.controls.mode === 'walk' && !busy && this.survival.alive && this.hand.visible;
+    if (!this.swimArmsMesh) {
+      if (!on) return;
+      const skin = new MeshLambertMaterial({ color: 0xd8a47a, flatShading: true }), sleeve = new MeshLambertMaterial({ color: 0xb8864e, flatShading: true });
+      const arm = () => {
+        const g = new Group();
+        const parts = [
+          [new BoxGeometry(0.1, 0.1, 0.24), sleeve, 0.2],
+          [new BoxGeometry(0.075, 0.075, 0.26), skin, -0.03],
+          [new BoxGeometry(0.1, 0.035, 0.12), skin, -0.21],
+        ];
+        for (const [geo, mat, z] of parts) {
+          const m = new Mesh(geo, mat);
+          m.position.z = z;
+          m.renderOrder = 999;
+          m.onBeforeRender = this.nearest.before;
+          m.onAfterRender = this.nearest.after;
+          g.add(m);
+        }
+        this.camera.add(g);
+        return g;
+      };
+      this.swimArmsMesh = [arm(), arm()];
+      this.swimT = 0;
+    }
+    for (const g of this.swimArmsMesh) g.visible = on;
+    this.grip.visible = !on;
+    if (!on) return;
+    const v = this.controls.swimVel ?? { x: 0, y: 0, z: 0 }, speed = Math.hypot(v.x, v.y, v.z);
+    const swimming = speed > 0.4;
+    this.swimT += dt * (swimming ? 4 + speed * 1.2 : 2.2);
+    const T = this.swimT % (Math.PI * 2), u = T / (Math.PI * 2);
+    // (Out ahead, together; wide and back; in to the chest; and forward. A scull: small circles low in front.)
+    const keys = [[0.08, -0.2, -0.62, 0], [0.42, -0.26, -0.48, 0.5], [0.2, -0.36, -0.28, 0.2], [0.08, -0.2, -0.62, 0]];
+    const seg = Math.min(2, Math.floor(u * 3)), f = u * 3 - seg, e = f * f * (3 - 2 * f), A = keys[seg], B = keys[seg + 1];
+    let x = A[0] + (B[0] - A[0]) * e, y = A[1] + (B[1] - A[1]) * e, z = A[2] + (B[2] - A[2]) * e, yaw = A[3] + (B[3] - A[3]) * e;
+    if (!swimming) (x = 0.22 + Math.cos(T) * 0.08), (y = -0.3 + Math.sin(T) * 0.03), (z = -0.5 + Math.sin(T) * 0.06), (yaw = 0.15 + Math.cos(T) * 0.25);
+    this.swimArmsMesh.forEach((g, k) => {
+      const s = k ? -1 : 1;
+      g.position.set(x * s, y, z);
+      g.rotation.set(-0.15, -yaw * s, 0.4 * s * (x - 0.08));
+    });
+  }
+
   #drawHeld(dt, held, walking) {
     const id = walking && this.survival.alive && !this.hud.busy ? held?.id ?? null : null;
     if (id !== this.heldId) {
@@ -3754,6 +3848,7 @@ export class Game {
     if (this.winding && id === 'crossbow') (rx += 0.7 * Math.min(1, this.winding.t * 4)), (py -= 0.08), (pz += 0.04 * Math.sin(this.winding.t * 14));
     this.grip.rotation.set(rx, ry, rz);
     this.grip.position.set(px, py, pz);
+    this.#swimArms(dt, !!this.anim);
     if (TORCHES.has(this.heldId)) {
       const f = 0.85 + 0.15 * Math.sin(this.time * 17) * Math.sin(this.time * 7);
       this.handFlame.scale.set(f, 1.7 * f, f);

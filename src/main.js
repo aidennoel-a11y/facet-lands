@@ -129,6 +129,7 @@ const viewDistance = () => WORLD.viewDistance * WORLD.chunkSize;
 scene.fog = new THREE.Fog(0xd6e8f7, viewDistance() * 0.45, viewDistance() * 0.95);
 
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, drawDistance * 1.5);
+const fullFar = camera.far; // (see applyUnderwater: drawn only as far as you can see under the water)
 scene.add(camera); // (so what you hold, drawn in front of you, is in the scene)
 
 // Sky dome, sun, moon, stars, lighting and shadows, driven by the time of day.
@@ -1784,10 +1785,10 @@ function solidTargets(built = false) {
   const out = [];
   for (const chunk of chunks.chunks.values()) {
     const near = Math.abs(chunk.cx - ccx) <= reachChunks && Math.abs(chunk.cz - ccz) <= reachChunks;
-    chunk.group.traverse((o) => {
-      // Caves can reach far from the chunk that owns them, so always include those.
-      if (o.userData.solid && (near || o.name.startsWith('cave'))) out.push(o);
-    });
+    // Caves can reach far from the chunk that owns them, so always include those.
+    // (Only the near chunks looked all through; of the rest, only their caves, which hang straight off them.)
+    if (near) chunk.group.traverse((o) => o.userData.solid && out.push(o));
+    else for (const c of chunk.group.children) if (c.name.startsWith('cave')) c.traverse((o) => o.userData.solid && out.push(o));
   }
   // (And what's built near you: a torch, a lantern on a wall of your house, a candle on its table.)
   const p = camera.position;
@@ -2447,6 +2448,11 @@ let underwater = false;
 function applyUnderwater() {
   const w = sheltered ? null : waterAt(camera.position.x, camera.position.z);
   underwater = !!w && camera.position.y < w.level - 0.02;
+  // (Under the water nothing shows past the murk: so nothing past it is
+  // drawn at all, the land, the trees, the far hills; back up, the whole
+  // view again.)
+  const far = underwater ? null : fullFar;
+  if (!underwater && camera.far !== far) (camera.far = far), camera.updateProjectionMatrix();
   if (!underwater) {
     scene.background = null;
     return;
@@ -2467,6 +2473,8 @@ function applyUnderwater() {
   scene.fog.far = (38 + 34 * clear) - (14 + 10 * clear) * smoothstep(5, 30, depth);
   dayNight.sky.visible = false;
   scene.background = scene.fog.color;
+  const murk = scene.fog.far + 25;
+  if (Math.abs(camera.far - murk) > 1) (camera.far = murk), camera.updateProjectionMatrix();
 }
 
 // The blue haze that hangs over the Smoky Mountains (from the trees): the
@@ -2744,7 +2752,9 @@ function tick(now) {
   if (!underwater) fallingLeaves.update(dt, camera, trees.crowns, WORLD.chunkSize, (x, z) => chunks.groundHeightAt(x, z), { autumn: autumn * turning, spring, winter: winter * turning, summer: Math.max(0, 1 - (autumn + winter) * turning - spring) }, wind, windDirection.value, sheltered);
   prof.mark('falling leaves');
   body.update(controls, dt);
+  prof.mark('  body');
   geese.update(dt, camera, { spring, autumn: autumn * turning }, sound, (x, z) => (sound.from(x, z), panTowards(camera, x, z)));
+  prof.mark('  geese');
   const gameLights = game.update(dt, {
     time: now / 1000, wind: clouds.wind, light: ambientLight, day: around.env.day, night: 1 - around.env.day, rain: localRain, underwater,
     snowing: weather.rain > 0.2 && seasonUniforms.uWinter.value > 0.5 && cold.value > 0.3,

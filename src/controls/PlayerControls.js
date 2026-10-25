@@ -197,12 +197,36 @@ export class PlayerControls {
 
   update(dt) {
     if (this.frozen) this.keys.clear();
+    this.#swimTilt(dt);
     if (this.mode === 'fly') this.#updateFly(dt);
     else if (this.vehicle) {
       this.swimming = false;
       this.crouch = false;
       this.vehicle(dt, this.#input());
     } else this.#updateWalk(dt);
+  }
+
+  /**
+   * Swimming, the view leans with you: banking over as you swim off to the
+   * side (or slanting across), dipping a little as you go down and lifting
+   * as you come up, and rolling gently to each stroke. Only the view: where
+   * you look and aim is as the mouse has it.
+   */
+  #swimTilt(dt) {
+    const v = this.swimVel ?? { x: 0, y: 0, z: 0 };
+    const on = this.swimming && this.mode === 'walk';
+    const input = on ? this.#input() : { forward: 0, strafe: 0 };
+    const speed = Math.hypot(v.x, v.z);
+    const stroke = (this.strokePhase = (this.strokePhase ?? 0) + dt * (1.2 + speed * 0.9));
+    const roll = on ? -input.strafe * 0.13 * (input.forward ? 0.8 : 1) + Math.sin(stroke) * 0.025 * Math.min(1, speed / 1.5) : 0;
+    const dip = on ? Math.max(-0.12, Math.min(0.12, -v.y * 0.05)) : 0;
+    const k = Math.min(1, dt * 4);
+    this.tiltRoll = (this.tiltRoll ?? 0) + (roll - (this.tiltRoll ?? 0)) * k;
+    this.tiltDip = (this.tiltDip ?? 0) + (dip - (this.tiltDip ?? 0)) * k;
+    if (Math.abs(this.tiltRoll) < 1e-4 && Math.abs(this.tiltDip) < 1e-4 && !this.tilted) return;
+    this.tilted = Math.abs(this.tiltRoll) > 1e-4 || Math.abs(this.tiltDip) > 1e-4;
+    (this._tilt ??= new Euler(0, 0, 0, 'YXZ')).set(Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, this.euler.x + this.tiltDip)), this.euler.y, this.tiltRoll, 'YXZ');
+    this.camera.quaternion.setFromEuler(this._tilt);
   }
 
   #input() {
