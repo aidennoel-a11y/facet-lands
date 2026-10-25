@@ -1971,14 +1971,12 @@ function coldHere(dt) {
 // sampled every second from the land round about.
 const around = { wait: 0, surf: { x: 0, z: 0 }, env: { woods: 0, jungle: 0, grass: 0, wetland: 0, ocean: 0, lava: 0, high: 0, snowy: 0, day: 1, dawn: 0, dusk: 0, wind: 0, rain: 0,
   exposure: 0, hollow: 0, canopy: 0, bare: 0, gust: 0, fall: 0, fallPan: 0, brook: 0, brookPan: 0, river: 0, riverPan: 0, surfPan: 0 } };
-function surroundings(dt, snow) {
-  const e = around.env;
-  around.wait -= dt;
-  if (around.wait <= 0) {
-    around.wait = 1;
+function* lookAround(e) {
+  {
     const { x, z } = camera.position;
     let woods = 0, jungle = 0, grass = 0, wetland = 0, ocean = 0, desert = 0, pine = 0;
     const pts = [[0, 0], [60, 0], [-60, 0], [0, 60], [0, -60]];
+    yield;
     for (const [dx, dz] of pts) {
       const w = generator.getBiomeWeights(x + dx, z + dz, {});
       const forest = generator.getForestDensity(x + dx, z + dz);
@@ -1989,20 +1987,22 @@ function surroundings(dt, snow) {
       desert += (w.desert + w.saltFlat + 0.6 * w.badlands) / pts.length;
       pine += (w.pine + w.redwood) / pts.length;
     }
-    around.surf.x = around.surf.z = 0;
+    yield;
+    const surf = { x: 0, z: 0 };
     for (let k = 0; k < 8; k++) {
       const a = (k / 8) * Math.PI * 2;
       for (const d of [40, 120]) {
         const px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
         if (generator.getBaseHeight(px, pz) < WORLD.seaLevel - 0.5 && generator.getOceanness(px, pz) > 0.5) {
           ocean = Math.max(ocean, d < 100 ? 1 : 0.6);
-          around.surf.x += Math.cos(a) / d; // (which way the sea is)
-          around.surf.z += Math.sin(a) / d;
+          surf.x += Math.cos(a) / d; // (which way the sea is)
+          surf.z += Math.sin(a) / d;
         }
       }
     }
     // The lie of the land: up on a ridge or a peak (the wind blows harder
     // and whistles), or down in a valley or a canyon (hushed).
+    yield;
     const here = generator.getBaseHeight(x, z);
     let ring = 0;
     for (let k = 0; k < 8; k++) {
@@ -2011,12 +2011,14 @@ function surroundings(dt, snow) {
     }
     const above = camera.position.y - here;
     // (A still lake or a big pond close by; and is it the cool north, for the loons.)
+    yield;
     let lake = 0;
     for (let k = 0; k < 8 && !lake; k++) {
       const a = (k / 8) * Math.PI * 2, px = x + Math.cos(a) * 70, pz = z + Math.sin(a) * 70, w = waterAt(px, pz, true);
       if (w && (w.pond || (w.lake && generator.getOceanness(px, pz) < 0.4))) lake = 1;
     }
     const cool = smoothstep(0.35, 0.65, generator.getSeasonality(x, z)) * Math.min(1, pine * 2 + woods);
+    Object.assign(around.surf, surf);
     Object.assign(e, {
       lake, cool,
       woods, jungle, grass, wetland, desert, pine, ocean: ocean * (1 - smoothstep(30, 90, camera.position.y - WORLD.seaLevel)), lava: heat.lava,
@@ -2025,6 +2027,17 @@ function surroundings(dt, snow) {
       canopy: Math.min(1, woods + jungle) * (1 - smoothstep(12, 50, above)),
     });
   }
+}
+
+function surroundings(dt, snow) {
+  const e = around.env;
+  around.wait -= dt;
+  // (Looked at about you once a second; the looking spread over a few frames, a little each, so no frame stalls on it.)
+  if (around.wait <= 0 && !around.job) {
+    around.wait = 1;
+    around.job = lookAround(e);
+  }
+  if (around.job && around.job.next().done) around.job = null;
   const sun = dayNight.sunDir.y;
   e.day = smoothstep(-0.05, 0.12, sun);
   e.dawn = dayNight.hour < 12 ? smoothstep(-0.08, 0.02, sun) * (1 - smoothstep(0.12, 0.3, sun)) : 0;

@@ -175,7 +175,7 @@ export class Insects {
     this.time += dt;
     this.seed = ctx.seed | 0;
     this.T = ctx.netTime ?? this.time; // (online, the room's clock)
-    this.budget = 40;
+    this.budget = 12; // (new cells worked out a frame, at most: flying fast, the rest come in over the next few)
     if (this.cells.size > 6000) this.cells.clear();
     // (Underground, or down under the water: none of them to be seen, nothing to work out.)
     const hidden = ctx.sheltered || ctx.underwater;
@@ -488,7 +488,7 @@ globalThis.__prof?.mark('  ins: bees');
   // through the night, each at its own times.
   #frogs(dt, ctx) {
     const cam = ctx.camera.position, T = this.T;
-    this.frogBudget = 4;
+    this.frogBudget = 2;
     const season = (ctx.summer + ctx.spring) * (1 - ctx.winter);
     const share = Math.min(1, season * (1 - 0.5 * ctx.day));
     const chorus = Math.max(ctx.dusk, ctx.night) * season * (1 - 0.6 * ctx.rain);

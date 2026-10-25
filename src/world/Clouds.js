@@ -254,17 +254,26 @@ export class Clouds {
       p.x = nx;
       p.z = nz;
       if (wrapped) cloud.userData.snap = true;
-      if (wrapped || cloud.userData.generator !== generator) {
+      if (cloud.userData.generator !== generator) {
         cloud.userData.targetY = this.#targetHeight(cloud, generator);
         cloud.userData.generator = generator;
-        p.y = cloud.userData.targetY; // out of sight in the fog, so just jump
-      }
+        p.y = cloud.userData.targetY;
+      } else if (wrapped) cloud.userData.due = true; // (its height over the land there: worked out in a moment, below; out in the fog meanwhile)
       // Ease towards the height that clears the land.
       p.y += (cloud.userData.targetY - p.y) * Math.min(1, dt * 0.6);
     }
     // Re-check the land under a couple of clouds each frame (all of them
     // every second or two: the land's height is slow to work out).
-    for (let k = 0; k < 2; k++) {
+    // (Those just wrapped round first, a few a frame, each jumping straight
+    // to its height: still out of sight in the fog.)
+    let due = 0;
+    for (const cloud of this.clouds) {
+      if (!cloud.userData.due || due >= 3) continue;
+      due++;
+      cloud.userData.due = false;
+      cloud.position.y = cloud.userData.targetY = this.#targetHeight(cloud, generator);
+    }
+    for (let k = due; k < 2; k++) {
       const cloud = this.clouds[this._next];
       cloud.userData.targetY = this.#targetHeight(cloud, generator);
       this._next = (this._next + 1) % this.clouds.length;
