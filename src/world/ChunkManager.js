@@ -1,5 +1,6 @@
 import { Box3, BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { buildChunkGeometry, chunkFromData } from './ChunkMesher.js';
+import { FADE_SECONDS, fadeCopy, fadeOpacity } from '../render/chunkFade.js';
 
 const LOOKAHEAD = 3; // seconds: the land where you'll be by then is made ready ahead of you
 const NEIGHBOURS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
@@ -40,6 +41,7 @@ export class ChunkManager {
     scene.add(this.root);
 
     this.chunks = new Map(); // "cx,cz" -> chunk record
+    this.fades = []; // chunks melting from one level of detail to another (see #crossFade)
     this.queue = []; // chunks waiting to be built, nearest first
     this.layers = [];
     this.centerKey = null;
@@ -153,6 +155,7 @@ export class ChunkManager {
     this.scouted = false;
     this.rugged = new Map(); // "cx,cz" -> how rugged its land is (see #rugged)
     if (this.current) (this.#abort(this.current.job), (this.current = null));
+    this.#tickFades(true);
     for (const chunk of this.chunks.values()) this.#unload(chunk);
     this.chunks.clear();
     this.queue.length = 0;
@@ -177,6 +180,7 @@ export class ChunkManager {
    */
   update(position, time = 0, forward = null) {
     for (const layer of this.layers) layer.update?.(time);
+    this.#tickFades();
     // (Rivers worked out here, on the main thread, for the workers too.)
     const fresh = this.workers.length ? this.generator.rivers?.takeFresh() : null;
     if (fresh) this.#shareRivers({ seed: this.generator.seedText, delta: fresh });
@@ -620,7 +624,11 @@ export class ChunkManager {
 
     // Replace an older LOD of the same chunk only once the new one is ready,
     // so there is never a hole.
-    if (previous) this.#unload(previous, sameMesh ? geometry : null, kept);
+    // (Melting from one to the other over half a second, not popping: see
+    // chunkFade. Far off, where the ground's merged into tiles, the far
+    // trees fade themselves.)
+    if (previous && !merged && !previous.merged && this.fadeChanges !== false) this.#crossFade(previous, chunk, sameMesh, kept);
+    else if (previous) this.#unload(previous, sameMesh ? geometry : null, kept);
 
     this.chunks.set(key, chunk);
     if (merged) this.#tileOf(chunk, true);
@@ -814,6 +822,52 @@ export class ChunkManager {
       if (t.chunk.group.visible === hidden) t.chunk.group.visible = !hidden;
       if (hidden) this.culled++;
     }
+  }
+
+  /**
+   * The old chunk (at its old detail) fading out as the new one fades in;
+   * what the new one took over from the old (`kept`) just stays.
+   */
+  #crossFade(previous, chunk, sameMesh, kept) {
+    const start = performance.now();
+    // (Its ground, if it's the same, moved over: the old mesh of it goes now.)
+    if (sameMesh) previous.group.remove(previous.mesh);
+    const fadeIn = [], fadeOut = [];
+    const collect = (root, list, skip) => root.traverse((o) => {
+      if (!o.isMesh || skip?.has(o)) return;
+      const original = o.material?.userData?.fadeOf ?? o.material;
+      const copy = fadeCopy(original);
+      if (!copy) return;
+      list.push({ mesh: o, original, copy });
+      o.material = copy;
+    });
+    if (!sameMesh) collect(chunk.mesh, fadeIn);
+    for (const { object } of chunk.layerObjects) if (!kept.has(object)) collect(object, fadeIn);
+    collect(previous.group, fadeOut);
+    for (const { layer, object } of previous.layerObjects) if (!kept.has(object)) layer.fadeOut?.(object);
+    for (const f of fadeIn) f.copy.opacity = fadeOpacity(0, false);
+    for (const f of fadeOut) f.copy.opacity = fadeOpacity(0, true);
+    this.fades.push({ start, fadeIn, fadeOut, done: () => this.#unload(previous, sameMesh ? chunk.mesh.geometry : null, kept) });
+  }
+
+  /** The fades under way, moved on (see #crossFade); `all`: finished now. */
+  #tickFades(all = false) {
+    if (!this.fades.length) return;
+    const now = performance.now();
+    this.fades = this.fades.filter((fade) => {
+      const v = all ? 1 : (now - fade.start) / 1000 / FADE_SECONDS;
+      if (v < 1) {
+        for (const f of fade.fadeIn) f.copy.opacity = fadeOpacity(v, false);
+        for (const f of fade.fadeOut) f.copy.opacity = fadeOpacity(v, true);
+        return true;
+      }
+      for (const f of [...fade.fadeIn, ...fade.fadeOut]) {
+        if (f.mesh.material === f.copy) f.mesh.material = f.original;
+        f.copy.dispose();
+      }
+      fade.done();
+      return false;
+    });
   }
 
   /** Removes a chunk; `keepGeometry` and `keep` (layer objects) were handed on to its replacement. */

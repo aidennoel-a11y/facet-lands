@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import './render/splitShadow.js'; // (first: the sun's shadow in two maps, before any material copies the shader code)
+import './render/chunkFade.js'; // (likewise: the dither that fades the land's changes of detail)
 import { WORLD } from './config.js';
 import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';

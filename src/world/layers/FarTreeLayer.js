@@ -17,6 +17,7 @@ import {
   Sphere,
   Vector3,
 } from 'three';
+import { FADE_SECONDS } from '../../render/chunkFade.js';
 import { seasonalTrees } from '../../render/Seasons.js';
 import { FALL, TREE_GEOMETRIES } from '../trees.js';
 import { packFarTrees, placeTrees } from '../treePlacement.js';
@@ -332,6 +333,45 @@ function impostorGeometry(type) {
 }
 
 /**
+ * Far trees coming and going (a chunk's changing its detail, its trees
+ * handed between the full ones and these, or these and their cards) fade
+ * in and out over half a second, dithered like the land's own changes (see
+ * chunkFade), rather than popping. `aFade`: when the instance's fade began
+ * (seconds, on `fadeNow`'s clock), negative if it's fading out.
+ */
+const fadeNow = { value: 0 };
+const clockStart = performance.now();
+function fadingInstances(material) {
+  const previous = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    previous?.call(material, shader, renderer);
+    shader.uniforms.uFadeNow = fadeNow;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aFade;\nuniform float uFadeNow;\nvarying float vFade;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        {
+          float v = clamp((uFadeNow - abs(aFade)) / ${FADE_SECONDS.toFixed(3)}, 0.0, 1.0);
+          vFade = aFade >= 0.0 ? v : 2.0 + v; // (in: shown on pixels below v; out: on those above)
+        }`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vFade;')
+      .replace(
+        '#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>
+        {
+          float fadeAt = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+          if (vFade < 1.5 ? fadeAt >= vFade : fadeAt < vFade - 2.0) discard;
+        }`,
+      );
+  };
+  const previousKey = material.customProgramCacheKey?.bind(material);
+  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|fading`;
+}
+
+/**
  * Trees out to the edge of the view, beyond the full-detail ones: a
  * handful of triangles each (see farGeometry), standing exactly where the
  * real trees do (see placeTrees), so as you come closer they simply gain
@@ -369,6 +409,7 @@ export function createFarTreeLayer(config) {
   };
   material.customProgramCacheKey = () => 'far-trees';
   seasonalTrees(material, false, 'aShape.z', 'aShape.w', 'aSpot.y');
+  fadingInstances(material);
 
   // The furthest: the cards (see buildImpostors), turned about their upright to face you.
   const impostorUniform = { value: null };
@@ -405,12 +446,16 @@ export function createFarTreeLayer(config) {
         diffuseColor.rgb *= vec3(vShade * (0.96 + (vShade - 0.82) * 0.27), vShade, vShade * 0.95);
         vec4 impKind = texture2D(uImpostor, vImpUv - vec2(0.0, 0.5));
         #define vSeason vec3(impKind.r, impKind.g, 0.0)
-        #define vSeasonUp (impKind.b * 2.0 - 1.0)
+        // (Less of the picture taken as facing up than it seems, blurred as it
+        // is: else a far wood high on a mountain goes all white in its
+        // snow, and vanishes against the snow on the ground.)
+        #define vSeasonUp ((impKind.b * 2.0 - 1.0) * 0.8 - 0.25)
         #include <color_fragment>`,
       );
   };
   cardMaterial.customProgramCacheKey = () => 'far-tree-cards';
   seasonalTrees(cardMaterial, false, 'aShape.z', 'aShape.w', 'aSpot.y');
+  fadingInstances(cardMaterial);
 
   // One pool per kind of tree in each square of the land (TILE chunks a
   // side): instances packed at the front, a chunk's handle knowing which
@@ -418,6 +463,7 @@ export function createFarTreeLayer(config) {
   // isn't drawn at all: its pool's bounds are the square's.
   const TILE = 6;
   const pools = new Map();
+  const leaving = []; // ({ handle, at }) trees fading out, oldest first
   function pool(type, detailed, tx, tz) {
     // (The furthest, the cards, once their pictures are drawn.)
     const card = !detailed && impostors.cells.has(type);
@@ -425,7 +471,7 @@ export function createFarTreeLayer(config) {
     let p = pools.get(key);
     if (!p) {
       const geometry = card ? impostorGeometry(type) : farGeometry(type, detailed);
-      p = { geometry, mesh: null, capacity: 0, count: 0, spot: null, shape: null, owner: [], slot: [], lo: Infinity, hi: -1 };
+      p = { geometry, mesh: null, capacity: 0, count: 0, spot: null, shape: null, fade: null, owner: [], slot: [], lo: Infinity, hi: -1 };
       grow(p, 256);
       const size = TILE * config.chunkSize;
       // (The square, from well below the sea to above the highest trees on the highest peaks.)
@@ -439,15 +485,18 @@ export function createFarTreeLayer(config) {
     return p;
   }
   function grow(p, capacity) {
-    const spot = new Float32Array(capacity * 4), shape = new Float32Array(capacity * 4);
+    const spot = new Float32Array(capacity * 4), shape = new Float32Array(capacity * 4), fade = new Float32Array(capacity);
     if (p.spot) {
       spot.set(p.spot.array.subarray(0, p.count * 4));
       shape.set(p.shape.array.subarray(0, p.count * 4));
+      fade.set(p.fade.array.subarray(0, p.count));
     }
     p.spot = new InstancedBufferAttribute(spot, 4).setUsage(DynamicDrawUsage);
     p.shape = new InstancedBufferAttribute(shape, 4).setUsage(DynamicDrawUsage);
+    p.fade = new InstancedBufferAttribute(fade, 1).setUsage(DynamicDrawUsage);
     p.geometry.setAttribute('aSpot', p.spot);
     p.geometry.setAttribute('aShape', p.shape);
+    p.geometry.setAttribute('aFade', p.fade);
     p.capacity = capacity;
     p.lo = 0;
     p.hi = p.count - 1;
@@ -465,6 +514,7 @@ export function createFarTreeLayer(config) {
       const i = p.count++;
       p.spot.array.set([data[k * 8], data[k * 8 + 1], data[k * 8 + 2], data[k * 8 + 3]], i * 4);
       p.shape.array.set([data[k * 8 + 4], data[k * 8 + 5], data[k * 8 + 6], data[k * 8 + 7]], i * 4); // (w: how warm: see seasonalTrees)
+      p.fade.array[i] = fadeNow.value; // (fading in from now)
       p.owner[i] = slots;
       p.slot[i] = k;
       slots.push(i);
@@ -481,6 +531,7 @@ export function createFarTreeLayer(config) {
           // Move the last instance into the gap.
           p.spot.array.copyWithin(i * 4, last * 4, last * 4 + 4);
           p.shape.array.copyWithin(i * 4, last * 4, last * 4 + 4);
+          p.fade.array[i] = p.fade.array[last];
           const owner = p.owner[last], at = p.slot[last];
           owner[at] = i;
           p.owner[i] = owner;
@@ -506,6 +557,9 @@ export function createFarTreeLayer(config) {
     },
 
     update() {
+      fadeNow.value = (performance.now() - clockStart) / 1000;
+      // (Trees faded out: gone now.)
+      while (leaving.length && fadeNow.value - leaving[0].at > FADE_SECONDS) remove(leaving.shift().handle);
       for (const [key, p] of pools) {
         p.geometry.instanceCount = p.count;
         p.mesh.visible = p.count > 0;
@@ -518,9 +572,9 @@ export function createFarTreeLayer(config) {
           continue;
         }
         if (p.hi < p.lo) continue;
-        for (const a of [p.spot, p.shape]) {
+        for (const a of [p.spot, p.shape, p.fade]) {
           a.clearUpdateRanges();
-          a.addUpdateRange(p.lo * 4, (p.hi - p.lo + 1) * 4);
+          a.addUpdateRange(p.lo * a.itemSize, (p.hi - p.lo + 1) * a.itemSize);
           a.needsUpdate = true;
         }
         p.lo = Infinity;
@@ -553,9 +607,23 @@ export function createFarTreeLayer(config) {
       return stub;
     },
 
+    /** The chunk's trees starting to fade out (the chunk is changing its detail: see ChunkManager.#crossFade). */
+    fadeOut(stub) {
+      if (stub.userData.fadingSince !== undefined) return;
+      const at = (stub.userData.fadingSince = fadeNow.value);
+      for (const { p, slots } of stub.userData.handle) for (const i of slots) {
+        p.fade.array[i] = -Math.max(at, 1e-3);
+        touch(p, i);
+      }
+    },
+
     dispose(stub) {
       layer.count -= stub.userData.count;
-      remove(stub.userData.handle);
+      // (Faded out first: see fadingInstances.)
+      layer.fadeOut(stub);
+      const at = stub.userData.fadingSince;
+      if (fadeNow.value - at > FADE_SECONDS) remove(stub.userData.handle);
+      else leaving.push({ handle: stub.userData.handle, at });
     },
   };
   return layer;
