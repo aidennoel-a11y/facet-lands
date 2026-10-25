@@ -28,6 +28,7 @@ import { createMushroomLayer } from './world/layers/MushroomLayer.js';
 import { createSeaCoastLayer } from './world/layers/SeaCoastLayer.js';
 import { createKelpLayer } from './world/layers/KelpLayer.js';
 import { createSeaweedLayer } from './world/layers/SeaweedLayer.js';
+import { Profiler } from './render/Profiler.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
 import { createFlowerLayer } from './world/layers/FlowerLayer.js';
 import { createSnowLayer } from './world/layers/SnowLayer.js';
@@ -73,6 +74,9 @@ import { applyQuality, MAX_VIEW } from './quality.js';
 let QUALITY = applyQuality();
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.antialias, powerPreference: 'high-performance' }); // (the strong graphics chip, on a laptop with two)
+// (Where each frame's time goes: see Profiler; U shows it, testing.)
+const prof = new Profiler(renderer);
+let profLayers = {}, profTerrain = 0;
 renderer.shadowMap.enabled = true;
 // The solid things close round you (within 60 m) drawn first, then the
 // rest (and in each, those sharing a material together, nearest first):
@@ -606,6 +610,10 @@ const fires = new Wildfires(scene);
 // (Big spiders in the dark of the caves: see CaveSpiders. Killed, one leaves its silk.)
 const spiders = new CaveSpiders(scene);
 const landmarks = new Landmarks(scene, generator); // (the twelve kinds of landmark: see landmarkSites)
+// (Where the landmarks lie: worked out by the chunk workers, which know the
+// land and its rivers already, not here: see LandmarkSites.lazy.)
+landmarks.askSites = (squares) => chunks.task({ kind: 'sites', squares });
+generator.landmarks.lazy = chunks.workers.length > 0;
 const mineProps = new MineProps(scene); // (the old mines' timbers, rails and carts)
 let mineWait = 0;
 spiders.onKill = (s) => {
@@ -1532,6 +1540,7 @@ ui.seed.value = WORLD.seed;
 function setSeed(seed, saveKey = null, place = true, later = false) {
   WORLD.seed = seed;
   generator = new TerrainGenerator(seed, WORLD);
+  generator.landmarks.lazy = chunks.workers.length > 0;
   game.trees.removed.clear(); // (the new world's felled trees are loaded below)
   chunks.setGenerator(generator);
   minimap.invalidate();
@@ -1669,6 +1678,11 @@ ui.fly.addEventListener('change', () => {
 const peaceful = document.getElementById('peaceful');
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
+  // U: where each frame's time goes (see Profiler).
+  if (e.code === 'KeyU' && !e.metaKey && !e.ctrlKey) {
+    prof.toggle();
+    return;
+  }
   // F3 (or O: on a Mac, F3 is the windows' key): seen from behind, or through your own eyes.
   if (e.code === 'F3' || (e.code === 'KeyO' && !e.metaKey && !e.ctrlKey)) {
     e.preventDefault();
@@ -2602,6 +2616,7 @@ function tick(now) {
   }
   menuFrame = now;
   const started = performance.now();
+  prof.begin();
   renderer.info.reset();
   const elapsed = (now - lastTime) / 1000;
   // (Big hitches shouldn't teleport the player; and never backwards: a frame
@@ -2622,8 +2637,10 @@ function tick(now) {
   controls.update(dt);
   playerTraces(dt);
   camera.getWorldDirection(dir);
+  prof.mark('you (moving)');
   const worldNow = mp.roomTime() ?? now / 1000; // (online, the room's clock: the same for everyone)
   chunks.update(camera.position, worldNow, dir); // (online, by the room's clock: the lava creeping, the water rippling, the same for all)
+  prof.mark('land (chunks)');
   weather.spring = seasonUniforms.uSpring.value;
   weather.winter = seasonUniforms.uWinter.value;
   weather.summer = Math.max(0, 1 - seasonUniforms.uSpring.value - seasonUniforms.uAutumn.value - seasonUniforms.uWinter.value);
@@ -2659,6 +2676,7 @@ function tick(now) {
   const sunshine = smooth(0.05, 0.25, dayNight.sunDir.y) * (1 - smooth(0.5, 0.8, weather.cover)) * (weather.rain > 0.05 ? 0 : 1);
   const thaw = sunshine * (1 - smooth(0.6, 0.9, winterNow)) / 240 + (winterNow < 0.05 ? 1 / 120 : 0);
   seasonUniforms.uSnowfall.value = Math.min(1, Math.max(0, seasonUniforms.uSnowfall.value + (snowing ? dt / 60 : -dt * thaw)));
+  prof.mark('sky, weather, light');
   shadowReach(dt);
   northernLights(dt);
   // Rain closes the view in, and so does the mist that lies over the
@@ -2678,6 +2696,7 @@ function tick(now) {
   applyCaveHaze(dt);
   applyUnderwater();
   applySandstorm();
+  prof.mark('fog, haze, water look');
   cloudSky.cover = weather.cover;
   cloudSky.storm = weather.storm;
   cloudSky.weather = weather;
@@ -2691,12 +2710,14 @@ function tick(now) {
   showers.update(dt, camera, clouds.wind, wind, dayNight.horizon, scene.fog);
   // (Under one of the showers you can see, it's raining on you too.)
   localRain = Math.max(weather.rain * Math.min(1, climate.wet), showers.rainAt(camera.position)); // (the desert hardly gets any: see climateHere)
+  prof.mark('clouds & showers');
   tornadoUpdate(dt);
   seasons.update(dayNight.playing ? dt / (WORLD.dayLengthMinutes * 60) : 0, dt);
   if (dayNight.playing) game.passDays(dt / (WORLD.dayLengthMinutes * 60));
   // In a cold winter, it snows (over the lands that have one).
   const snow = Math.max(seasonUniforms.uWinter.value, firstSnowing ? (seasons.highSnowing ? smoothstep(60, 85, camera.position.y) : 1) : 0, seasonUniforms.uHighSnow.value * smoothstep(80, 100, camera.position.y)) * coldHere(dt);
   rain.update(worldNow, camera.position, localRain, clouds.wind, wind, dayNight.horizon, snow);
+  prof.mark('rain, snow, tornado');
   // Water: the sun's glitter on it (not behind cloud), rings where the rain falls; the waterfalls' mist in the daylight.
   sparkleUniforms.uSunView.value.copy(dayNight.lightDirection).transformDirection(camera.matrixWorldInverse);
   sparkleUniforms.uSunColor.value.copy(dayNight.light.color);
@@ -2707,7 +2728,8 @@ function tick(now) {
   const autumn = seasonUniforms.uAutumn.value, spring = seasonUniforms.uSpring.value, winter = seasonUniforms.uWinter.value;
   // (In and near the jungle no leaves turn and fall.)
   const turning = smoothstep(0.3, 0.6, cold.value);
-  fallingLeaves.update(dt, camera, trees.crowns, WORLD.chunkSize, (x, z) => chunks.groundHeightAt(x, z), { autumn: autumn * turning, spring, winter: winter * turning, summer: Math.max(0, 1 - (autumn + winter) * turning - spring) }, wind, windDirection.value, sheltered);
+  if (!underwater) fallingLeaves.update(dt, camera, trees.crowns, WORLD.chunkSize, (x, z) => chunks.groundHeightAt(x, z), { autumn: autumn * turning, spring, winter: winter * turning, summer: Math.max(0, 1 - (autumn + winter) * turning - spring) }, wind, windDirection.value, sheltered);
+  prof.mark('falling leaves');
   body.update(controls, dt);
   geese.update(dt, camera, { spring, autumn: autumn * turning }, sound, (x, z) => (sound.from(x, z), panTowards(camera, x, z)));
   const gameLights = game.update(dt, {
@@ -2724,6 +2746,7 @@ function tick(now) {
     cave: sheltered ? generator.caves.biomeAt(camera.position.x, camera.position.y, camera.position.z) : null,
     lava: sheltered && !!waterAt(camera.position.x, camera.position.z)?.lava && camera.position.y - controls.eyeHeight < (waterAt(camera.position.x, camera.position.z)?.level ?? -1e9) + 0.3,
   });
+  prof.mark('game (survival, building)');
   caveSounds(dt);
   torches.update(worldNow, camera.position, caveGlowLights.length ? [...gameLights, ...caveGlowLights] : gameLights);
   updateCaveLife(now / 1000, sheltered ? camera.position : null);
@@ -2731,17 +2754,22 @@ function tick(now) {
   // The landmarks near you (found, the first time you come to one), and the old mines' timbers.
   if (landmarks.generator !== generator) (landmarks.generator = generator), landmarks.built.forEach((b) => scene.remove(b.group)), landmarks.built.clear();
   landmarks.winter = seasonUniforms.uWinter.value;
+  prof.mark('torches & cave life');
   denLife(dt);
   thinIce(dt);
+  prof.mark('  lm: dens & ice');
   landmarks.update(dt, camera.position.x, camera.position.z);
+  prof.mark('  lm: landmarks.update');
   game.landmarkHere = sheltered ? null : landmarks.at(camera.position.x, camera.position.z);
   if (game.landmarkHere && controls.mode === 'walk' && game.mode !== 'creative') game.discoverLandmark(game.landmarkHere);
+  prof.mark('  lm: dens, ice, discover');
   if ((mineWait -= dt) <= 0) {
     mineWait = 1;
     mineProps.update(camera.position.x, camera.position.z, generator.caves.field);
     for (const c of mineProps.chests) if (Math.hypot(c.x - camera.position.x, c.y - camera.position.y, c.z - camera.position.z) < 30) game.ruinChest(c);
     if (sheltered) for (const m of generator.caves.field.minesNear(camera.position.x, camera.position.z, camera.position.x, camera.position.z)) if (generator.caves.field.mineAt(m, camera.position.x, camera.position.y - 1, camera.position.z) < 0) game.inMine(m.id);
   }
+  prof.mark('landmarks & mines');
   spiders.update(Math.min(dt, 0.1), {
     eye: camera.position, under: caveFocus.under && controls.mode === 'walk', caves: generator.caves, terrain: (x, z) => chunks.groundHeightAt(x, z),
     hurt: (d) => game.hurt(d, 'a cave spider'), poison: () => game.survival.poison(25), fear: game.fearLights(),
@@ -2749,6 +2777,7 @@ function tick(now) {
     chamberAt: (x, z) => generator.caves.field.chamberAt(x, z),
     broodGone: (key) => { const died = game.wildlife.bossDeaths?.[key]; return died !== undefined && dayNight.day + dayNight.hour / 24 - died < 6; },
   });
+  prof.mark('cave spiders');
   updateVisibility();
   const haze = heatHaze(dt);
   sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater);
@@ -2793,15 +2822,20 @@ function tick(now) {
     others: sync.others(), people: sync.people(), netTime: mp.roomTime(),
     emit: (n, x, z, v, d, heard) => sync.emit(n, x, z, v, d, heard), emitTo: (id, what) => sync.emitTo(id, what),
   };
+  prof.mark('sound & surroundings');
   wildlife.update(dt, life);
+  prof.mark('animals');
   mp.update(dt, {
     x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x, // (the way you look: yaw first, then pitch)
     crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk',
     pose: game.pose(), // (what's in your hand, what you're doing with it)
   });
   sync.update();
+  prof.mark('online');
   fish.update(dt, { ...life, traces, autumn, ground: (x, z) => chunks.groundHeightAt(x, z) });
+  prof.mark('fish');
   traces.update(dt);
+  prof.mark('tracks & splashes');
   // Fire, smoke and dust, lit by the light of the sky.
   ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
   const night = dayNight._w?.night ?? 0;
@@ -2811,6 +2845,7 @@ function tick(now) {
   updateFloods(dt);
   const air = { time: worldNow, netTime: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, dryness: fireSeason.dryness, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
+  prof.mark('fires');
   // (Where you walk, over and over, a path wears into the grass.)
   if (controls.mode === 'walk' && !controls.swimming && !sheltered && controls.moving && !game.riding) {
     const fx = camera.position.x, fz = camera.position.z, cell = `${Math.floor(fx)},${Math.floor(fz)}`;
@@ -2824,9 +2859,11 @@ function tick(now) {
   sandstorm.update(dt, { ...air, desert: sheltered ? 0 : mistState.desert ?? 0, ground: (x, z) => chunks.groundHeightAt(x, z) || camera.position.y, fog: scene.fog.color });
   devils.update(dt, { ...air, seed: generator.seed, hour: dayNight.hour, winter: seasonUniforms.uWinter.value, ground: (x, z) => chunks.groundHeightAt(x, z) });
   shootingStars.update(dt, camera, sheltered || underwater ? 0 : (dayNight._w?.night ?? 0) * (1 - smooth(0.3, 0.6, weather.cover)), worldNow, dayNight.meteors ?? 0, dayNight.radiant ?? 0);
+  prof.mark('dust, volcanoes, stars');
   skyNews();
   life.beeBoxes = game.structures.list.filter((st) => st.type === 'beeBox' && st.data?.bees);
   insects.update(dt, life);
+  prof.mark('insects');
   env.tornado = tornadoes.sound?.loud ?? 0;
   env.tornadoPan = tornadoes.sound?.pan ?? 0;
   env.hail = tornadoes.sound?.hail ?? 0;
@@ -2842,10 +2879,12 @@ function tick(now) {
   lavaHeat(dt);
   const tremble = !controls.swimming ? (volcanoes.shake > 0 ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0) + (quake.shake > 0 ? (Math.sin(now * 0.041) + 0.6 * Math.sin(now * 0.097 + 1.3)) * 0.16 * quake.shake : 0) : 0;
   camera.position.y += tremble;
+  prof.mark('ambient sound');
   const eye = thirdPersonView(dt, now);
   camera.updateMatrixWorld();
   chunks.sunHigh = dayNight.sunDir.y > 0.6; // (the sun high: shadows short)
   chunks.cull(camera.position); // (the land behind the hills not drawn)
+  prof.mark('culling');
   // (Every other frame, for what can wait a frame: see the clouds.)
   shadowTurn = (shadowTurn + 1) % 2;
   // (Animals only, for testing: everything else hidden, each animal labelled.)
@@ -2855,6 +2894,7 @@ function tick(now) {
     for (const child of scene.children) if (child.visible && !child.isLight && !child.userData.wildlife) (child.visible = false), hidden.push(child);
   }
   labelAnimals(animalsOnly);
+  prof.gpuBegin();
   if (ui.rays.checked && !animalsOnly) {
     light.strength = dayNight.lightStrength;
     light.reach = dayNight.shaftReach;
@@ -2864,6 +2904,8 @@ function tick(now) {
     renderer.render(scene, camera);
   }
   for (const child of hidden) child.visible = true;
+  prof.gpuEnd();
+  prof.mark('drawing (CPU side)');
 
   if (eye) camera.position.copy(eye); // (back to your own eyes, for everything else)
   camera.position.y -= tremble;
@@ -2871,10 +2913,28 @@ function tick(now) {
   // (Testing: every ruin for 2 km round, the far ones pointed to from the map's edge.)
   const testing = game.mode === 'testing';
   const keepMark = testing ? { ...ruins.keep(generator), r: 0 } : game.keep?.mark;
-  minimap.marks = [...(keepMark ? [{ x: keepMark.x, z: keepMark.z, r: keepMark.r, kind: 'keep' }] : []), ...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...(testing ? ruins.sitesNear(camera.position.x, camera.position.z, 2000, generator, 4) : ruins.sitesOf(game.ruinsSeen, generator)).filter((r) => !r.keep).map((r) => ({ x: r.x, z: r.z, kind: 'ruin', edge: testing }))];
+  // (The ruins round about: looked for twice a second, not every frame; a few new squares at a time.)
+  if ((ruinMarks.wait -= elapsed) <= 0 || ruinMarks.testing !== testing) {
+    ruinMarks.wait = 0.5;
+    ruinMarks.testing = testing;
+    ruinMarks.list = (testing ? ruins.sitesNear(camera.position.x, camera.position.z, 2000, generator, 4) : ruins.sitesOf(game.ruinsSeen, generator)).filter((r) => !r.keep).map((r) => ({ x: r.x, z: r.z, kind: 'ruin', edge: testing }));
+  }
+  minimap.marks = [...(keepMark ? [{ x: keepMark.x, z: keepMark.z, r: keepMark.r, kind: 'keep' }] : []), ...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...ruinMarks.list];
+  prof.mark('map marks (ruins)');
   minimap.fog = game.mode === 'survival' ? { explored: game.explored, size: WORLD.chunkSize, version: game.exploredVersion ?? 0 } : null;
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
+  prof.mark('minimap');
 
+  // (And within the land's share: each layer's building, and the terrain's.)
+  const extra = {};
+  for (const [k, ms] of Object.entries(chunks.stats.layers)) {
+    const d = ms - (profLayers[k] ?? 0);
+    if (d > 0) extra[`  land: ${k}`] = d;
+  }
+  extra['  land: terrain mesh'] = chunks.stats.terrainMs - profTerrain;
+  profLayers = { ...chunks.stats.layers };
+  profTerrain = chunks.stats.terrainMs;
+  prof.end(elapsed, extra);
   frames++;
   fpsTime += elapsed;
   cpuTime += performance.now() - started;
@@ -2922,10 +2982,12 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 let describing = false;
+var ruinMarks = { wait: 0, list: [], testing: null };
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
-window.world = { flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
+globalThis.__prof = prof;
+window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

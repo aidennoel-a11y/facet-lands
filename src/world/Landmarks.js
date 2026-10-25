@@ -1029,10 +1029,33 @@ export class Landmarks {
     // where the landmarks are never stalls a frame for long.)
     const L = this.generator.landmarks;
     let todo = 2;
-    for (const kind of Object.keys(LANDMARKS)) {
-      const C = LANDMARKS[kind].cell;
-      for (let k = Math.floor((z - 900) / C); k <= Math.floor((z + 900) / C) && todo > 0; k++) {
-        for (let i = Math.floor((x - 900) / C); i <= Math.floor((x + 900) / C) && todo > 0; i++) if (!L.known(kind, i, k)) (L.site(kind, i, k), todo--);
+    if (L.lazy) {
+      // (Worked out by the chunk workers, all the squares round about at
+      // once, a batch at a time; and any others asked about meanwhile.)
+      for (const kind of Object.keys(LANDMARKS)) {
+        const C = LANDMARKS[kind].cell;
+        for (let k = Math.floor((z - 900) / C); k <= Math.floor((z + 900) / C); k++) {
+          for (let i = Math.floor((x - 900) / C); i <= Math.floor((x + 900) / C); i++) if (!L.known(kind, i, k)) (L.site(kind, i, k), todo = 0);
+        }
+      }
+      if (!this.asking && this.askSites) {
+        const squares = L.takeWanted(48);
+        if (squares.length) {
+          this.asking = true;
+          const g = this.generator;
+          this.askSites(squares)
+            .then((sites) => g === this.generator && squares.forEach(([kind, i, k], n) => L.prime(kind, i, k, sites[n])))
+            .catch(() => (L.lazy = false)) // (no workers after all: worked out here)
+            .finally(() => (this.asking = false));
+        }
+      }
+      todo = 1; // (what's known is built meanwhile)
+    } else {
+      for (const kind of Object.keys(LANDMARKS)) {
+        const C = LANDMARKS[kind].cell;
+        for (let k = Math.floor((z - 900) / C); k <= Math.floor((z + 900) / C) && todo > 0; k++) {
+          for (let i = Math.floor((x - 900) / C); i <= Math.floor((x + 900) / C) && todo > 0; i++) if (!L.known(kind, i, k)) (L.site(kind, i, k), todo--);
+        }
       }
     }
     this.bigWait = (this.bigWait ?? 0) - dt;

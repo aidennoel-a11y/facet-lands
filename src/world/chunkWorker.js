@@ -7,7 +7,7 @@ import { chunkDataBuffers, chunkSurface, computeChunkData } from './ChunkMesher.
 import { rockCandidates } from './rockCandidates.js';
 import { packFarTrees, placeTrees } from './treePlacement.js';
 import { placeGrass } from './grassPlacement.js';
-import { placeCorals, placeFlowers, placeLogs, placeUnderstory, surfSpots } from './decorPlacement.js';
+import { placeCorals, placeFlowers, placeLogs, placeSeaweed, placeUnderstory, surfSpots } from './decorPlacement.js';
 import { waterData } from './waterData.js';
 import { riverData, riverGrid } from './riverData.js';
 import { reedData } from './reedData.js';
@@ -34,6 +34,12 @@ self.onmessage = (event) => {
     rocks.clear();
   }
   const g = world.generator;
+  if (event.data.kind === 'sites') {
+    // Where the landmarks lie in some squares of the map (for the main
+    // thread, so it needn't work out the land and its rivers there itself).
+    self.postMessage({ id, result: event.data.squares.map(([kind, i, k]) => g.landmarks.site(kind, i, k)) });
+    return;
+  }
   if (event.data.kind === 'describe') {
     // What kind of country the player is in (for the panel).
     self.postMessage({ id, result: g.describe(event.data.x, event.data.z) });
@@ -138,6 +144,8 @@ self.onmessage = (event) => {
     if (out.logs) transfer.push(out.logs.pieces.buffer);
     out.corals = placeCorals(g, config, cx, cz, groundHeightAt, heights.gridY);
     if (out.corals) transfer.push(out.corals.buffer);
+    out.seaweed = placeSeaweed(g, config, cx, cz, groundHeightAt);
+    if (out.seaweed) transfer.push(out.seaweed.buffer);
     // (The surf: only by the sea, any of the chunk's own ground under it; see SeaCoastLayer.)
     if (g.seaCaves && heights.gridY.some((y) => y < config.seaLevel - 0.5)) out.surf = surfSpots(g, cx * config.chunkSize, cz * config.chunkSize, config.chunkSize, config.seaLevel);
   }

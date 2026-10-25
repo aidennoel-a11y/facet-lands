@@ -59,10 +59,11 @@ export class ChunkManager {
     this.wanted = new Map(); // "cx,cz" -> the LOD it should be at
     this.inFlight = new Map(); // "cx,cz" -> job handed to a worker
     this.ready = []; // jobs back from a worker, to put together
-    // (As many as the processor has cores to spare, leaving two for the page
-    // itself and the browser: 2 on a 4-thread laptop, 10 on a 16-thread one.)
+    // (As many as the processor has cores to spare, leaving one for the page
+    // itself: 3 on a 4-thread laptop, 14 on a 16-thread one. They sleep
+    // when there's no land to build, so they cost nothing standing still.)
     const count = typeof Worker !== 'undefined' && typeof window !== 'undefined'
-      ? Math.max(1, Math.min(10, (navigator.hardwareConcurrency || 4) - 2))
+      ? Math.max(1, Math.min(14, (navigator.hardwareConcurrency || 4) - 1))
       : 0;
     for (let k = 0; k < count; k++) {
       try {

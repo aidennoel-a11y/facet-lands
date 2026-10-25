@@ -118,8 +118,8 @@ export class Insects {
   #cell(key, make) {
     const c = this.cells.get(key);
     // (Nothing there is looked at again now and then: the water may not have been worked out yet.)
-    if (c && (c.v || this.time - c.at < 3)) return c.v;
-    if (this.budget-- <= 0) return null;
+    if (c && (c.v || this.time - c.at < 20)) return c.v;
+    if (this.budget-- <= 0) return c?.v ?? null;
     const v = make();
     if (v !== undefined) this.cells.set(key, { v, at: this.time });
     return v ?? null;
@@ -177,14 +177,18 @@ export class Insects {
     this.T = ctx.netTime ?? this.time; // (online, the room's clock)
     this.budget = 40;
     if (this.cells.size > 6000) this.cells.clear();
-    const hidden = ctx.sheltered;
+    // (Underground, or down under the water: none of them to be seen, nothing to work out.)
+    const hidden = ctx.sheltered || ctx.underwater;
     for (const m of [this.hiveMesh, this.beeMesh, this.flyMesh, this.haloMesh, ...this.dragonMeshes, this.frogMesh, this.gnatMesh, this.fly2Mesh]) m.visible = !hidden;
     if (hidden) return;
     if (ctx.waterAt) {
       this.#dragonflies(dt, ctx);
+globalThis.__prof?.mark('  ins: dragonflies');
       this.#frogs(dt, ctx);
+globalThis.__prof?.mark('  ins: frogs');
     }
     this.#bugs(dt, ctx);
+globalThis.__prof?.mark('  ins: bugs');
     const cam = ctx.camera.position;
     this.wait -= dt;
     if (this.wait <= 0) {
@@ -194,6 +198,7 @@ export class Insects {
       for (const b of ctx.beeBoxes ?? []) if (Math.hypot(b.x - cam.x, b.z - cam.z) < 70) found.set(`box${Math.round(b.x * 10)},${Math.round(b.z * 10)}`, { x: b.x, y: b.y + 0.75, z: b.z, tx: b.x, tz: b.z, box: true });
       for (const [key, h] of found) if (!this.hives.has(key)) this.hives.set(key, { ...h, base: ctx.ground(h.tx, h.tz), bees: [] });
     }
+globalThis.__prof?.mark('  ins: hives search');
     // Bees: out by day in the warm and dry.
     const busy = ctx.day * (1 - ctx.rain) * (1 - ctx.winter) * (1 - 0.5 * Math.max(0, ctx.wind - 0.6));
     let n = 0, b = 0, level = 0, panSum = 0;
@@ -239,6 +244,7 @@ export class Insects {
     this.buzz.level = Math.min(1, level);
     this.buzz.pan = level ? panSum / level : 0;
 
+globalThis.__prof?.mark('  ins: bees');
     // Fireflies: warm, still nights, over the grass and the marshes. (Each
     // has its own spot, one to a cell of 11 m, out to 90 m: out or not as
     // the night is; drifting about it, rising and sinking, flashing.)
@@ -482,6 +488,7 @@ export class Insects {
   // through the night, each at its own times.
   #frogs(dt, ctx) {
     const cam = ctx.camera.position, T = this.T;
+    this.frogBudget = 4;
     const season = (ctx.summer + ctx.spring) * (1 - ctx.winter);
     const share = Math.min(1, season * (1 - 0.5 * ctx.day));
     const chorus = Math.max(ctx.dusk, ctx.night) * season * (1 - 0.6 * ctx.rain);
@@ -491,7 +498,8 @@ export class Insects {
     for (let j = cj - 6; j <= cj + 6; j++) {
       for (let i = ci - 6; i <= ci + 6; i++) {
         if (this.#h(i, j, 0xf709) >= share) continue;
-        const home = this.#cell(`r${i},${j}`, () => this.#bank(i, j, R, ctx));
+        // (A bank's search is long: only a few new ones a frame.)
+        const home = this.cells.has(`r${i},${j}`) || this.frogBudget-- > 0 ? this.#cell(`r${i},${j}`, () => this.#bank(i, j, R, ctx)) : null;
         if (!home || Math.hypot(home.x - cam.x, home.z - cam.z) > 38) continue;
         const key = `${i},${j}`;
         let near = Infinity;
@@ -588,6 +596,10 @@ export class Insects {
   // whether it's out in the shallows instead; or null (no bank there), or
   // undefined (the land's not there yet).
   #bank(i, j, R, ctx) {
+    // (First, quickly: any fresh water in the cell or at its edges at all? Most have none.)
+    let wet = false;
+    for (let v = 0; v <= 4 && !wet; v++) for (let u = 0; u <= 4 && !wet; u++) if (this.#freshWater((i - 0.2 + u * 0.35) * R, (j - 0.2 + v * 0.35) * R, ctx)) wet = true; // (every metre and a half or so: no creek slips between)
+    if (!wet) return null;
     const a = this.#h(i, j, 0xf703) * TAU;
     return this.#search(i, j, R, 8, 0xf701, (x, z) => {
       const g = ctx.ground(x, z);

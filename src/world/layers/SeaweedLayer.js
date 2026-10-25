@@ -1,6 +1,7 @@
 import { BufferAttribute, BufferGeometry, Color, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../../noise/random.js';
 import { windTime } from '../../render/wind.js';
+import { placeSeaweed } from '../decorPlacement.js';
 
 // A strip of quads up a curving blade: from `base`, `len` long, `w` wide,
 // leaning out along (cx, cz) more the higher it goes.
@@ -97,56 +98,13 @@ export function createSeaweedLayer(config) {
 
     reuseKey: ({ lod }) => (lod > 0 ? 'none' : 'near'),
 
-    build({ cx, cz, lod, generator, groundHeightAt }) {
+    build({ cx, cz, lod, generator, groundHeightAt, prepared }) {
       if (lod > 0 || !generator.getSeaRock) return null;
-      const size = config.chunkSize, sea = config.seaLevel;
-      const x0 = cx * size, z0 = cz * size;
-      // (A quick look first: is any of this chunk under the sea?)
-      let any = false;
-      for (let j = 0; j <= 4 && !any; j++) for (let i = 0; i <= 4 && !any; i++) {
-        const y = groundHeightAt(Math.min(size - 0.01, (i * size) / 4), Math.min(size - 0.01, (j * size) / 4));
-        if (y < sea - 0.8) any = true;
-      }
-      if (!any) return null;
-      const N = generator.coastNoise, seed = generator.seed ^ 0x5ea9;
-      const G = 1.3, n = Math.round(size / G);
+      // (Where they go: worked out by a chunk worker; here only if it wasn't.)
+      const data = prepared && prepared.seaweed !== undefined ? prepared.seaweed : placeSeaweed(generator, config, cx, cz, groundHeightAt);
+      if (!data) return null;
       const placed = shapes.map(() => []);
-      let oceanAt = null;
-      for (let j = 0; j < n; j++) {
-        for (let i = 0; i < n; i++) {
-          const gi = cx * n + i, gj = cz * n + j;
-          const lx = (i + hash2(gi, gj, seed + 1)) * G, lz = (j + hash2(gi, gj, seed + 2)) * G;
-          const y = groundHeightAt(lx, lz);
-          const depth = sea - y;
-          if (!(depth > 0.8 && depth < 30)) continue;
-          // (The open sea or a sea inlet: not a mountain lake.)
-          oceanAt ??= generator.getOceanness(x0 + size / 2, z0 + size / 2);
-          if (oceanAt < 0.3) return null;
-          const wx = x0 + lx, wz = z0 + lz, roll = hash2(gi, gj, seed);
-          const rock = generator.getSeaRock(wx, wz);
-          let kind = -1;
-          let clumps = 1;
-          if (rock < 0.35 && depth < 28) {
-            // Seagrass meadows, in great patches over the sand, thinning at
-            // their edges, down to twenty-odd metres; and here and there
-            // whole fields of it, thick and tall, the sand hidden under it.
-            const meadow = (N.noise2D(wx * 0.018 + 41, wz * 0.018 - 13) * 0.5 + 0.5) * (1 - smoothstep(22, 28, depth)) * (1 - rock * 2);
-            const thick = smoothstep(0.5, 0.7, N.noise2D(wx * 0.007 - 77, wz * 0.007 + 29) * 0.5 + 0.5) * (1 - smoothstep(24, 28, depth)) * (1 - rock * 2.5);
-            if (roll < Math.max(smoothstep(0.42, 0.62, meadow) * 0.85, thick)) kind = 0;
-            if (thick > 0.3) clumps = 1 + Math.round(thick * 3);
-          } else if (rock >= 0.35 && roll < 0.1 * rock) {
-            // On the rock: lettuce up in the light, the red and brown weed deeper.
-            kind = depth < 10 ? (hash2(gi, gj, seed + 5) < 0.75 ? 1 : 2) : hash2(gi, gj, seed + 5) < 0.25 ? 1 : 2;
-          }
-          if (kind < 0) continue;
-          for (let c = 0; c < clumps; c++) {
-            const ox = c ? (hash2(gi + c * 7, gj, seed + 6) - 0.5) * G : 0, oz = c ? (hash2(gi, gj + c * 7, seed + 7) - 0.5) * G : 0;
-            const yy = c ? groundHeightAt(Math.min(size - 0.01, Math.max(0, lx + ox)), Math.min(size - 0.01, Math.max(0, lz + oz))) : y;
-            // (The thick fields' grass stands taller.)
-            placed[kind].push([lx + ox, yy - 0.04, lz + oz, hash2(gi + c, gj, seed + 3), hash2(gi, gj + c, seed + 4), clumps > 1 ? 1.35 : 1]);
-          }
-        }
-      }
+      for (let k = 0; k < data.length; k += 7) placed[data[k]].push([data[k + 1], data[k + 2], data[k + 3], data[k + 4], data[k + 5], data[k + 6]]);
       if (!placed.some((l) => l.length)) return null;
       const group = new Group();
       group.name = 'seaweed';
@@ -168,9 +126,4 @@ export function createSeaweedLayer(config) {
       for (const mesh of group.children) mesh.dispose(); // (the shapes are shared)
     },
   };
-}
-
-function smoothstep(a, b, x) {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
 }

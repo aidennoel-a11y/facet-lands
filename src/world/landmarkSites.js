@@ -82,6 +82,25 @@ export class LandmarkSites {
     this.cache = new Map();
   }
 
+  /** A square's site, as a worker worked it out (see lazy). */
+  prime(kind, i, k, s) {
+    const key = (LANDMARK_KINDS.indexOf(kind) * 100003 + i) * 100019 + k;
+    this.wanted?.delete(key);
+    if (!this.cache.has(key)) this.cache.set(key, s);
+  }
+
+  /** The squares asked about and not yet known (see lazy), taken off the list: [[kind, i, k]]. */
+  takeWanted(max = 64) {
+    const out = [];
+    if (!this.wanted) return out;
+    for (const [key, sq] of this.wanted) {
+      this.wanted.delete(key);
+      if (!this.cache.has(key)) out.push(sq);
+      if (out.length >= max) break;
+    }
+    return out;
+  }
+
   /** Whether the square's been worked out already (the site's cheap to ask for, then). */
   known(kind, i, k) {
     return this.cache.has((LANDMARK_KINDS.indexOf(kind) * 100003 + i) * 100019 + k);
@@ -93,6 +112,13 @@ export class LandmarkSites {
     const key = (ki * 100003 + i) * 100019 + k;
     let s = this.cache.get(key);
     if (s !== undefined) return s;
+    // (On the main thread, with workers to ask: not worked out here, which
+    // would mean working out the land and its rivers round it; asked of
+    // them instead, see wanted and prime. Till they answer, none.)
+    if (this.lazy) {
+      (this.wanted ??= new Map()).set(key, [kind, i, k]);
+      return null;
+    }
     s = null;
     const L = LANDMARKS[kind], C = L.cell, seed = (this.g.seed ^ 0x1a7d) + ki * 7919;
     // (Some squares have none: the landmarks are found, not met at every turn.)

@@ -200,7 +200,9 @@ export class Fish {
     const key = `${kind}${i},${j}`;
     const c = this.cells.get(key);
     // (Nothing there is looked at again now and then: the water may not have been worked out yet.)
-    if (c && (c.v || this.time - c.at < 3)) return c.v;
+    if (c && (c.v || this.time - c.at < 20)) return c.v;
+    // (Only so many squares worked out a frame: flying fast over new water, the rest wait a frame or two.)
+    if (this.cellBudget-- <= 0) return c?.v ?? null;
     let found = null;
     let x = (i + 0.15 + 0.7 * this.#h(i, j, 0xf151)) * size, z = (j + 0.15 + 0.7 * this.#h(i, j, 0xf152)) * size;
     let w = ctx.waterAt(x, z), bed = ctx.ground(x, z);
@@ -301,6 +303,7 @@ export class Fish {
    */
   update(dt, ctx) {
     this.time += dt;
+    this.cellBudget = 14;
     this.seed = ctx.seed | 0;
     const T = ctx.netTime ?? this.time; // (online, the room's clock)
     fishTime.value = T;
