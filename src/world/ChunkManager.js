@@ -297,7 +297,12 @@ export class ChunkManager {
     // due (see main's tick). Never more than that, so it fills in as fast as
     // it can without a frame running long.)
     if (this.ready.length || this.queue.length) budget = Math.max(budget, Math.min(12, this.spare ?? 0));
-    const deadline = start + budget * this.budgetScale;
+    // (A world starting, behind the loading screen: nothing moving, so most
+    // of each frame, whatever it cost the last; and the land nearest you,
+    // the land you're waiting on, put together first.)
+    const rush = this.budgetScale > 1;
+    const deadline = rush ? start + 90 : start + budget;
+    if (rush && this.ready.length > 1) this.ready.sort((a, b) => a.distance - b.distance);
     this.#dispatch();
     // Put together what's ready (at least one, so progress is guaranteed).
     let steps = 0;

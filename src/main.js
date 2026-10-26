@@ -2557,8 +2557,52 @@ const RINGS = 2; // (5 x 5 chunks: 640 m across)
 const loadScreen = document.createElement('div');
 loadScreen.className = 'load-screen';
 loadScreen.hidden = true;
-loadScreen.innerHTML = `<div class="ls-card"><h2 class="ls-head">Building the land</h2><p class="ls-name"></p><div class="ls-bar"><span></span></div><p class="ls-note">Getting ready…</p></div>`;
+loadScreen.innerHTML = `<div class="ls-card"><h2 class="ls-head">Creating world</h2><p class="ls-name"></p><div class="ls-bar"><span></span></div><p class="ls-note"></p></div>`;
 document.body.append(loadScreen);
+// (Under the bar while you wait: a few words about the world you're coming into, a new one every few seconds.)
+const LOAD_LINES = [
+  'Teaching the deer to be suspicious of you…',
+  'Hiding the good flint just out of reach…',
+  'Counting every tree. Lost count. Starting again…',
+  'Reminding the crocodiles to be patient…',
+  'Sharpening the rocks. Well, some of them…',
+  'Planting forests one acorn at a time…',
+  'Convincing the rivers to run downhill…',
+  'Telling the wolves it’s not night yet…',
+  'Folding the mountains into neat triangles…',
+  'Polishing the pearls in the oyster beds…',
+  'The fish are rehearsing their escape…',
+  'Raspberries ripening (please don’t eat them all at once)…',
+  'Lighting the volcanoes. Carefully…',
+  'Tip: a cave is a fine roof on a rainy night.',
+  'Tip: cooked meat is much kinder to your stomach.',
+  'Tip: the Lost Keep wants a relic from every boss.',
+  'Tip: rabbits are fast, but they do run in circles.',
+  'Tip: a sickle cuts grass. A tornado does too, but less politely.',
+  'Tip: follow the river and you’ll find the sea.',
+  'Tip: winter is coming. It comes every twelve days, in fact.',
+  'Ruins are full of chests. Chests are full of ruins’ secrets.',
+  'Making sure no two snowflakes are the same. Mostly…',
+  'The goats are climbing things they shouldn’t…',
+  'Giant spiders are told to stay in the big caves. They promised…',
+  'Mixing a fresh batch of fog for the mornings…',
+  'Every leaf here has exactly three corners. We checked.',
+  'Somewhere out there, a beaver is building a dam just for you…',
+  'Ducks are lining up in a row…',
+  'Bees are rehearsing their buzz…',
+  'Every world grows from its seed: share yours with a friend…',
+];
+let loadLine = { at: 0, order: [], k: 0 };
+function loadingJoke(now) {
+  if (now - loadLine.at < 3800) return;
+  if (loadLine.k >= loadLine.order.length) (loadLine.order = LOAD_LINES.map((s) => [Math.random(), s]).sort((a, b) => a[0] - b[0]).map((p) => p[1])), (loadLine.k = 0);
+  loadLine.at = now;
+  const note = loadScreen.querySelector('.ls-note');
+  note.classList.remove('ls-fresh');
+  void note.offsetWidth; // (so the fade-in plays again)
+  note.textContent = loadLine.order[loadLine.k++];
+  note.classList.add('ls-fresh');
+}
 let loading = null; // { since, drawn }
 function startLoading(name, waiting = false) {
   loading = { since: performance.now(), drawn: 0, waiting }; // (waiting: the world's still to be set up)
@@ -2566,12 +2610,15 @@ function startLoading(name, waiting = false) {
   loadScreen.querySelector('.ls-bar span').style.width = '0%';
   loadScreen.classList.remove('ls-done');
   loadScreen.hidden = false;
+  loadLine.at = 0;
+  loadingJoke(performance.now());
   chunks.budgetScale = 8; // (no need to keep it smooth: nothing's moving)
+  chunks.fadeChanges = false; // (and no fading between levels of detail, unseen)
 }
 function loadingFrame(now) {
+  loadingJoke(now);
   if (spawnSearch) {
     // (A slice of the search for where you start, each frame, till it's found.)
-    loadScreen.querySelector('.ls-note').textContent = 'Finding a good place to start…';
     const end = performance.now() + 30;
     let r;
     do r = spawnSearch.steps.next();
@@ -2609,7 +2656,6 @@ function loadingFrame(now) {
   // stall the moment you come in. Said first, then done the frame after.)
   if (done >= 1 && loading.warm === undefined) {
     loading.warm = 0;
-    loadScreen.querySelector('.ls-note').textContent = 'Laying out the rivers…';
     return;
   }
   if (loading.warm === 0) {
@@ -2620,11 +2666,46 @@ function loadingFrame(now) {
     performance.measure('rivers warm', { start: t });
     return;
   }
-  loadScreen.querySelector('.ls-note').textContent = done < total ? `${done} of ${total} pieces of land` : 'Ready';
   // (In when it's all there; or, if something's gone wrong, after two minutes anyway.)
   if (done < total && waited < 120) return;
+  // Then onto your feet, on the ground (or the floor you'd laid), not
+  // dropped in from the sky; and a moment more behind this screen with the
+  // world running as it will (the animals about, the land further out
+  // filling in), so all's ready when you come in.
+  loading.settle = now;
+  standOnGround();
+}
+
+/** You (walking), set down on whatever's under you: not left in the air, nor in the ground. */
+function standOnGround() {
+  if (controls.mode !== 'walk') return;
+  const p = camera.position, eye = controls.eyeHeight, feet = p.y - eye;
+  // (What's right under your feet, if anything is: a floor you've laid, a
+  // cave's floor; else the land itself, looked for from just above it, not
+  // from high in the air, where the ground underfoot can't be told.)
+  let g = groundAt(p.x, feet + 0.6, p.z);
+  if (!(g.height > feet - 3)) {
+    const land = chunks.groundHeightAt(p.x, p.z);
+    if (!Number.isFinite(land)) return;
+    g = groundAt(p.x, land + 2, p.z);
+  }
+  if (!Number.isFinite(g.height)) return;
+  const water = waterAt(p.x, p.z);
+  if (water && water.level > g.height + 0.5) return; // (swimming: left afloat)
+  p.y = g.height + eye;
+  controls.velocityY = 0;
+}
+
+/** The moment behind the loading screen with the world running (see loadingFrame), then in. */
+function settleFrame(now) {
+  loadingJoke(now);
+  const since = now - loading.settle;
+  const { done, total } = chunks.readyNear(camera.position, RINGS + 1);
+  if (since < 1500 || (done < total && since < 6000)) return;
+  standOnGround();
   loading = null;
   chunks.budgetScale = 1;
+  chunks.fadeChanges = true;
   loadScreen.classList.add('ls-done');
   setTimeout(() => loading || (loadScreen.hidden = true), 600);
 }
@@ -2654,11 +2735,12 @@ function tick(now) {
   if (!lightsWarmed && startMenu?.world && chunks.pendingCount === 0) (lightsWarmed = true), torches.prewarm(renderer, scene, camera);
   lastTime = now;
   // (A world starting: only the land built, behind the loading screen.)
-  if (loading) {
+  if (loading && !loading.settle) {
     loadingFrame(now);
     requestAnimationFrame(tick);
     return;
   }
+  if (loading) settleFrame(now);
   controls.update(dt);
   playerTraces(dt);
   camera.getWorldDirection(dir);
