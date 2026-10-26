@@ -112,6 +112,11 @@ const SPECIES = {
   camel: { ground: true, grade: 0.41, model: Models.camel, max: 16, walk: 1.2, run: 10, flee: 22, calm: 60, radius: 0.6, height: 2.2, health: 180, stride: 2.0, turn: 1.8, size: 1.0, gaits: HOOF, trotBand: 0.4, call: 'camel' },
   scorpion: { ground: true, grade: 0.9, model: Models.scorpion, max: 10, fearless: true, walk: 0.25, run: 1.4, flee: 0, calm: 3, radius: 0.12, height: 0.12, health: 3, stride: 0.06, turn: 4, size: 1.6, gaits: DOG, trotBand: 0.5 },
   // A python, by the jungle's water and in its trees' roots (see #snake).
+  // The shore's crabs, scuttling sideways about the beaches and the rocks at the water's edge; sea
+  // turtles, come up the warm beaches in the summer to dig their nests; the giant salamanders of the cave lakes.
+  crab: { ground: true, grade: 0.9, model: Models.crab, max: 40, fearless: true, walk: 0.35, run: 1.8, flee: 3, calm: 6, radius: 0.1, height: 0.1, health: 3, stride: 0.07, turn: 5, size: 1.5, gaits: DOG, trotBand: 0.5, swims: true },
+  seaTurtle: { ground: true, grade: 0.4, model: Models.seaTurtle, max: 16, fearless: true, walk: 0.18, run: 0.4, flee: 2, calm: 4, radius: 0.45, height: 0.45, health: 60, stride: 0.25, turn: 0.8, size: 1.3, gaits: DOG, trotBand: 0.9, swims: true },
+  salamander: { ground: true, grade: 0.8, model: Models.salamander, max: 10, fearless: true, walk: 0.2, run: 1.0, flee: 2, calm: 5, radius: 0.2, height: 0.17, health: 40, stride: 0.12, turn: 1.2, size: 0.6, gaits: DOG, trotBand: 0.7, swims: true },
   python: { serpent: true, model: Models.python, max: 6, walk: 0.3, run: 1.0, flee: 3, calm: 10, radius: 0.15, height: 0.2, health: 60, size: 1.0 },
   // Bats from the caves (at dusk, or startled by a torch), and eagles high
   // over the Smoky Mountains and the Black Hills.
@@ -144,7 +149,7 @@ export const EQUINE = new Set(['horse', 'donkey', 'mule']);
 // come for you (`predator`: how far off they see you, how near you can come
 // before they come for you anyway, how hard they bite or swipe, how often,
 // and from how far; a cougar ambushes).
-const BULK = { horse: 'large', donkey: 'large', mule: 'large', lion: 'large', hyena: 'medium', elephant: 'huge', hippo: 'huge', camel: 'large', scorpion: 'small', python: 'medium', deer: 'large', elk: 'large', moose: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', boar: 'large', wolf: 'medium', coyote: 'medium', sheep: 'medium', goat: 'medium', cougar: 'medium', fox: 'small', rabbit: 'small', hare: 'small', wolfPup: 'small', turkey: 'small', duck: 'small', snake: 'small' };
+const BULK = { horse: 'large', donkey: 'large', mule: 'large', lion: 'large', hyena: 'medium', elephant: 'huge', hippo: 'huge', camel: 'large', scorpion: 'small', crab: 'small', seaTurtle: 'medium', salamander: 'medium', python: 'medium', deer: 'large', elk: 'large', moose: 'large', bison: 'large', blackBear: 'large', grizzly: 'large', boar: 'large', wolf: 'medium', coyote: 'medium', sheep: 'medium', goat: 'medium', cougar: 'medium', fox: 'small', rabbit: 'small', hare: 'small', wolfPup: 'small', turkey: 'small', duck: 'small', snake: 'small' };
 for (const [kind, sp] of Object.entries(SPECIES)) sp.bulk = BULK[kind] ?? 'small';
 SPECIES.wolf.predator = { sight: 70, close: 22, bite: 11, every: 1.3, reach: 1.4 };
 SPECIES.grizzly.predator = { sight: 55, close: 25, bite: 30, every: 1.7, reach: 2.0 };
@@ -251,6 +256,7 @@ const YIELD = {
   tiger: { rawMeat: 6, fur: 2 }, jaguar: { rawMeat: 4, fur: 1 }, monkey: { rawMeat: 1 }, panther: { rawMeat: 3, fur: 1 }, panda: { rawMeat: 5, fur: 2 }, crocodile: { rawMeat: 6, hide: 2 }, mountainGoat: { rawMeat: 3, wool: 1, hide: 1 }, goat: { rawMeat: 3, hide: 1 },
   turkey: { rawFowl: 2, feather: 3 }, duck: { rawFowl: 1, feather: 2 }, owl: { rawFowl: 1, feather: 2 }, snake: { rawMeat: 1 },
   lion: { rawMeat: 5, fur: 2 }, hyena: { rawMeat: 2, fur: 1 }, elephant: { rawMeat: 20, hide: 4 }, hippo: { rawMeat: 14, hide: 3 }, camel: { rawMeat: 7, hide: 2 },
+  crab: { rawMeat: 1 }, seaTurtle: { rawMeat: 4 }, salamander: { rawMeat: 2 },
   python: { rawMeat: 3, hide: 1 }, eagle: { feather: 4 }, bat: {}, scorpion: {}, horse: { rawMeat: 8, hide: 2 }, donkey: { rawMeat: 6, hide: 2 }, mule: { rawMeat: 7, hide: 2 },
 };
 // Those that are small enough to be fed on by the scavengers (and those
@@ -716,7 +722,7 @@ export class Wildlife {
       const dx = a.x - from.x, dz = a.z - from.z, d = Math.hypot(dx, dz) || 1;
       a.jolt = { x: dx / d, z: dz / d, t: 0.3 };
     }
-    let [lame, down, dead] = sp.bird || a.kind === 'rabbit' || a.kind === 'snake' || a.kind === 'duck' || a.kind === 'scorpion' ? [1, 1, 1] : BLOWS[sp.bulk];
+    let [lame, down, dead] = sp.bird || a.kind === 'rabbit' || a.kind === 'snake' || a.kind === 'duck' || a.kind === 'scorpion' || a.kind === 'crab' ? [1, 1, 1] : BLOWS[sp.bulk];
     // (A great beast takes many times the blows, never lamed or brought
     // down before the end; a blow to its head is only a harder one.)
     if (a.boss) {
@@ -2368,6 +2374,34 @@ export class Wildlife {
         const from = this.animals.length;
         for (let n = 1 + Math.floor(rand() * 2), j = 0; j < n; j++) this.#spawnWalker('scorpion', q.x + rnd(-8, 8), q.z + rnd(-8, 8), null);
         own(from);
+      }
+    }
+    // Crabs on the beaches and the rocks at the sea's edge, a few together; the black sand and the atolls' too.
+    for (let k = 0; k < 4; k++) {
+      const p = at();
+      if (p.y < ctx.seaLevel + 0.5 || p.y > ctx.seaLevel + 3 || g.getOceanness(p.x, p.z) < 0.25 || rand() > 0.5) continue;
+      const w = g.getBiomeWeights(p.x, p.z, {});
+      if ((w.tundra ?? 0) + (w.glacier ?? 0) > 0.4 || ctx.winter > 0.7) continue;
+      const from = this.animals.length;
+      for (let n = 2 + Math.floor(rand() * 4), j = 0; j < n; j++) this.#spawnWalker('crab', p.x + rnd(-5, 5), p.z + rnd(-5, 5), null);
+      own(from);
+    }
+    // Sea turtles, up the warm beaches in the summer to lay their eggs; late in the summer, the hatchlings
+    // making for the sea.
+    if ((ctx.summer ?? 0) > 0.4) {
+      for (let k = 0; k < 3; k++) {
+        const p = at();
+        if (p.y < ctx.seaLevel + 0.5 || p.y > ctx.seaLevel + 2.5 || g.getOceanness(p.x, p.z) < 0.3 || rand() > 0.45) continue;
+        const w = g.getBiomeWeights(p.x, p.z, {});
+        if (w.jungle + w.savanna + w.desert + (w.mangrove ?? 0) + w.volcanic + 0.5 * w.temperate < 0.5) continue; // (warm shores only)
+        const from = this.animals.length;
+        for (let n = 1 + Math.floor(rand() * 3), j = 0; j < n; j++) {
+          const t = this.#spawnWalker('seaTurtle', p.x + rnd(-8, 8), p.z + rnd(-8, 8), null);
+          if (t) (t.state = 'rest'), (t.timer = rnd(30, 90)); // (dug in at her nest)
+        }
+        if (rand() < 0.6) for (let n = 4 + Math.floor(rand() * 8), j = 0; j < n; j++) this.#spawnWalker('seaTurtle', p.x + rnd(-4, 4), p.z + rnd(-4, 4), null, { young: 0.12 });
+        own(from);
+        break;
       }
     }
     // A python, by the jungle's water or among the roots of its trees.

@@ -1481,6 +1481,101 @@ export function scorpion() {
 }
 
 /**
+ * A crab: a broad flat shell, red-orange, walking sideways (its long axis
+ * along the way it goes: so it scuttles), the two claws held up at one
+ * side, eyes on stalks.
+ */
+export function crab() {
+  const shell = 0xc8502a, dark = 0x8a2e16, pale = 0xe8b890;
+  const body = new Blocks()
+    .box(0.1, 0.045, 0.16, shell, [0, 0.06, 0], [0, 0, 0], [0.8, 0.85])
+    .box(0.08, 0.012, 0.13, pale, [0, 0.036, 0]);
+  return {
+    body: body.build(),
+    headPivot: [0.05, 0.06, 0],
+    head: new Blocks()
+      .box(0.02, 0.02, 0.06, shell, [0.01, 0, 0])
+      .box(0.05, 0.03, 0.035, dark, [0.05, 0.01, 0.05], [0, 0.4, 0.3]) // the claws
+      .box(0.05, 0.03, 0.035, dark, [0.05, 0.01, -0.05], [0, -0.4, 0.3])
+      .box(0.008, 0.03, 0.008, shell, [0.015, 0.025, 0.018])
+      .box(0.008, 0.03, 0.008, shell, [0.015, 0.025, -0.018])
+      .box(0.014, 0.014, 0.014, 0x0a0806, [0.015, 0.044, 0.018])
+      .box(0.014, 0.014, 0.014, 0x0a0806, [0.015, 0.044, -0.018])
+      .build(),
+    antlers: null,
+    fore: limb(0.03, 0.04, { top: [0.014, 0.014], knee: [0.012, 0.012], ankle: [0.008, 0.008], color: shell, foot: [0.01, 0.008, 0.012, dark, 0] }),
+    hind: limb(0.03, 0.04, { top: [0.014, 0.014], knee: [0.012, 0.012], ankle: [0.008, 0.008], color: shell, foot: [0.01, 0.008, 0.012, dark, 0] }),
+    legs: [[0.06, 0.06, 0.05], [-0.06, 0.06, 0.05], [0.06, 0.06, -0.05], [-0.06, 0.06, -0.05]],
+    torso: [[0, 0.06, 0, 0.1, 0.05, 0.16]],
+    skull: [0.04, 0.0, 0, 0.05, 0.03, 0.08],
+  };
+}
+
+/**
+ * A sea turtle: the high domed shell, olive-brown, plated; the broad
+ * front flippers it rows itself up the beach with, a blunt beaked head.
+ */
+export function seaTurtle() {
+  const shell = 0x5a5a32, plate = 0x7a6a3a, skin = 0x8a8a6a, belly = 0xd8c890;
+  const body = new Blocks()
+    .box(0.62, 0.16, 0.8, shell, [0, 0.24, 0], [0, 0, 0], [0.75, 0.8])
+    .box(0.44, 0.1, 0.6, plate, [0, 0.35, -0.02], [0, 0, 0], [0.6, 0.65])
+    .box(0.24, 0.06, 0.3, shell, [0, 0.42, -0.02], [0, 0, 0], [0.6, 0.6])
+    .box(0.52, 0.06, 0.7, belly, [0, 0.15, 0])
+    .box(0.12, 0.05, 0.14, skin, [0, 0.18, -0.44], [0, 0, 0], [0.4, 1]); // tail
+  for (const side of [-1, 1]) body.box(0.06, 0.03, 0.08, plate, [side * 0.18, 0.37, 0.12]).box(0.06, 0.03, 0.08, plate, [side * 0.18, 0.37, -0.14]);
+  return {
+    body: body.build(),
+    headPivot: [0, 0.24, 0.4],
+    head: new Blocks()
+      .box(0.14, 0.11, 0.18, skin, [0, 0, 0.08])
+      .box(0.11, 0.08, 0.07, skin, [0, -0.005, 0.19], [0, 0, 0], [0.8, 0.7])
+      .box(0.02, 0.02, 0.02, 0x0a0806, [0.06, 0.03, 0.14])
+      .box(0.02, 0.02, 0.02, 0x0a0806, [-0.06, 0.03, 0.14])
+      .build(),
+    antlers: null,
+    // (The flippers: broad and flat, swept out to the sides.)
+    fore: limb(0.08, 0.1, { top: [0.1, 0.06], knee: [0.12, 0.04], ankle: [0.18, 0.03], color: skin, foot: [0.28, 0.03, 0.14, skin, 0.02] }),
+    hind: limb(0.06, 0.08, { top: [0.08, 0.05], knee: [0.08, 0.04], ankle: [0.12, 0.03], color: skin, foot: [0.16, 0.03, 0.12, skin, 0] }),
+    legs: [[0.3, 0.2, 0.26], [-0.3, 0.2, 0.26], [0.22, 0.2, -0.3], [-0.22, 0.2, -0.3]],
+    torso: [[0, 0.26, 0, 0.6, 0.3, 0.8]],
+    skull: [0, 0.0, 0.1, 0.14, 0.11, 0.24],
+  };
+}
+
+/**
+ * A giant cave salamander: long and low, a broad flat head, mottled
+ * grey-brown, folds of loose skin down its sides, a paddle of a tail.
+ */
+export function salamander() {
+  const skin = 0x6a5e4e, dark = 0x3e362c, pale = 0x9a8a72;
+  const body = new Blocks()
+    .box(0.34, 0.14, 0.7, skin, [0, 0.14, 0], [0, 0, 0], [0.9, 0.95])
+    .box(0.3, 0.04, 0.62, pale, [0, 0.07, 0])
+    .box(0.06, 0.06, 0.6, pale, [0.18, 0.11, 0]) // the folds of skin
+    .box(0.06, 0.06, 0.6, pale, [-0.18, 0.11, 0])
+    .box(0.2, 0.1, 0.4, skin, [0, 0.13, -0.5], [0, 0, 0], [0.6, 0.7]) // the tail...
+    .box(0.06, 0.14, 0.4, skin, [0, 0.13, -0.86], [0, 0, 0], [0.4, 0.6]); // ...flattened to a paddle
+  for (let k = 0; k < 6; k++) body.box(0.07, 0.015, 0.08, dark, [((k * 37) % 5) * 0.05 - 0.1, 0.215, k * 0.11 - 0.3]);
+  return {
+    body: body.build(),
+    headPivot: [0, 0.14, 0.36],
+    head: new Blocks()
+      .box(0.3, 0.09, 0.26, skin, [0, 0, 0.12], [0, 0, 0], [0.8, 0.75])
+      .box(0.26, 0.03, 0.22, pale, [0, -0.045, 0.12])
+      .box(0.02, 0.02, 0.02, 0x0a0806, [0.1, 0.04, 0.16])
+      .box(0.02, 0.02, 0.02, 0x0a0806, [-0.1, 0.04, 0.16])
+      .build(),
+    antlers: null,
+    fore: limb(0.06, 0.06, { top: [0.06, 0.06], knee: [0.05, 0.05], ankle: [0.04, 0.04], color: skin, foot: [0.08, 0.02, 0.07, dark, 0.02] }),
+    hind: limb(0.06, 0.06, { top: [0.07, 0.07], knee: [0.05, 0.05], ankle: [0.04, 0.04], color: skin, foot: [0.08, 0.02, 0.07, dark, 0.02] }),
+    legs: [[0.19, 0.13, 0.24], [-0.19, 0.13, 0.24], [0.19, 0.13, -0.24], [-0.19, 0.13, -0.24]],
+    torso: [[0, 0.14, 0, 0.34, 0.14, 0.7]],
+    skull: [0, 0.0, 0.12, 0.3, 0.09, 0.26],
+  };
+}
+
+/**
  * A python: long and thick, olive-brown with dark blotches, a narrow head;
  * no rattle (see snake: drawn the same way, far bigger).
  */

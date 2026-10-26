@@ -11,6 +11,7 @@ import { createGrassLayer, grassClearings, grassPushers } from './world/layers/G
 import { Geese } from './render/Geese.js';
 import { createWreckLayer } from './world/layers/WreckLayer.js';
 import { createSunkenCityLayer } from './world/layers/SunkenCityLayer.js';
+import { createCraterLakeLayer } from './world/layers/CraterLakeLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
@@ -745,6 +746,7 @@ chunks.addLayer(createFlowerLayer(WORLD));
 const wonders = createWonderLayer(WORLD);
 scene.add(wonders.swarm);
 chunks.addLayer(wonders);
+chunks.addLayer(createCraterLakeLayer(WORLD)); // (the crater lakes' water: see TerrainGenerator.craterLakeAt)
 chunks.addLayer(createUnderstoryLayer(WORLD));
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
@@ -932,6 +934,9 @@ function waterAt(x, z, ice = false) {
   const r = generator.rivers.waterAt(x, z, rise > 0.02 ? 4.5 : 0);
   const up = r && !r.pond && r.level > WORLD.seaLevel + 0.35 ? rise : 0;
   if (r && (rise <= 0.02 || r.level + up > ground + 0.02) && (!found || r.level + up > found.level)) found = { level: r.level + up, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : (0.6 + Math.min(2.4, Math.max(0, r.drop) * 6)) * (1 + riverFlood.value), pond: r.pond, hot: r.tint === 2, flood: up > 0.05 };
+  // (A crater lake, in its bowl.)
+  const cl = generator.craterLakeAt(x, z);
+  if (cl && cl.d < cl.r * 1.06 && cl.level > ground + 0.02 && (!found || cl.level > found.level)) found = { level: cl.level, fx: 0, fz: 0, speed: 0, pond: true };
   // (A landmark's lake or pool: the crystal lake, the falls' basin, the hot pools...)
   const lw = landmarks.waterAt(x, z, ground);
   if (lw && (!found || lw.level > found.level)) found = lw;
@@ -1192,7 +1197,7 @@ const ANIMAL_PRINTS = {
   sheep: [PRINT.hoof, 0.08], boar: [PRINT.hoof, 0.1], cougar: [PRINT.paw, 0.12], turkey: [PRINT.paw, 0.1], duck: [PRINT.paw, 0.05],
   tiger: [PRINT.paw, 0.15], lion: [PRINT.paw, 0.14], jaguar: [PRINT.paw, 0.12], panther: [PRINT.paw, 0.12], hyena: [PRINT.paw, 0.1], panda: [PRINT.paw, 0.18],
   mountainGoat: [PRINT.hoof, 0.07], horse: [PRINT.hoof, 0.13], camel: [PRINT.paw, 0.17], elephant: [PRINT.square, 0.4], hippo: [PRINT.square, 0.26],
-  crocodile: [PRINT.paw, 0.14], scorpion: [PRINT.square, 0.025],
+  crocodile: [PRINT.paw, 0.14], scorpion: [PRINT.square, 0.025], crab: [PRINT.square, 0.02], seaTurtle: [PRINT.square, 0.12], salamander: [PRINT.paw, 0.05],
   // (Those without legs of their own to step with: see Wildlife.#prints. A snake's a smooth trail; a bird on the ground, its little forked feet.)
   snake: [PRINT.square, 0.06], python: [PRINT.square, 0.12], monkey: [PRINT.paw, 0.06],
   songbird: [PRINT.paw, 0.025], starling: [PRINT.paw, 0.025], crow: [PRINT.paw, 0.04], gull: [PRINT.paw, 0.045], hawk: [PRINT.paw, 0.05], owl: [PRINT.paw, 0.05], eagle: [PRINT.paw, 0.06],
@@ -1461,6 +1466,7 @@ floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 ruins.onChest = (c) => game.ruinChest(c);
 wrecks.onChest = (c) => game.ruinChest(c); // (a wreck's sea chest)
 cities.onChest = (c) => game.ruinChest(c); // (a drowned city's strongroom)
+game.mineCarts = mineProps; // (the old mines' carts, to ride: see Game.#rideCart)
 game.onKeep = (open) => ruins.openKeep(open);
 game.keepAt = () => ruins.keep(generator);
 game.ruinsNear = (x, z, r) => ruins.sitesNear(x, z, r, generator);
@@ -2338,7 +2344,7 @@ const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, g
 // (Walls and fences: a strip of clearings along their length; see clearGrass.)
 const CLEARED_LINE = { wall: 0.55, gate: 0.55, stoneWall: 0.6, fence: 0.4, fenceGate: 0.4, stoneFence: 0.5, woodWindow: 0.55, stoneWindow: 0.6, logWall: 0.55, plankWall: 0.5, cutStoneWall: 0.6, logWindow: 0.55, logDoor: 0.55, plankWindow: 0.5, plankDoor: 0.5, stoneDoor: 0.6, cutWindow: 0.6, cutDoor: 0.6, barnWall: 0.5, barnWindow: 0.5, barnDoor: 0.5 };
 // The grass round you and the bigger animals near you bends away from them.
-const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'starling', 'crow', 'gull', 'hawk', 'wolfPup', 'bat', 'eagle', 'scorpion']);
+const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'starling', 'crow', 'gull', 'hawk', 'wolfPup', 'bat', 'eagle', 'scorpion', 'crab']);
 function pushGrass() {
   const p = camera.position, list = [];
   if (controls.mode === 'walk') list.push([0, p.x, p.z, 0.9]);

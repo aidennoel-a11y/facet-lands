@@ -38,6 +38,32 @@ export class MineProps {
     this.o = new Object3D();
     this.m = new Matrix4();
     this.chests = []; // ({ key, x, y, z, rot }): the far end's chest, for Game.ruinChest
+    this.mines = []; // (the mines laid out now)
+    this.cartAt = new Map(); // mine id -> { x, y, z, yaw, index }: where its cart is (pushed along: see Game.#rideCart)
+  }
+
+  /** The cart within `r` of (x, y, z), if any: { mine, cart }. */
+  cartNear(x, y, z, r = 2.4) {
+    for (const mine of this.mines) {
+      const c = this.cartAt.get(mine.id);
+      if (c && Math.hypot(c.x - x, c.z - z) < r && Math.abs(c.y - y) < 3) return { mine, cart: c };
+    }
+    return null;
+  }
+
+  /** Moves a mine's cart to (x, y, z), facing `yaw`, tipped `pitch` down the slope. */
+  moveCart(mine, x, y, z, yaw, pitch = 0) {
+    const c = this.cartAt.get(mine.id);
+    if (!c) return;
+    Object.assign(c, { x, y, z, yaw, pitch });
+    if (c.index == null) return;
+    const o = this.o;
+    o.position.set(x, y + 0.1, z);
+    o.rotation.set(pitch, yaw, 0, 'YXZ');
+    o.scale.set(1, 1, 1);
+    o.updateMatrix();
+    this.carts.setMatrixAt(c.index, o.matrix);
+    this.carts.instanceMatrix.needsUpdate = true;
   }
 
   #put(mesh, x, y, z, ry, sx = 1, sy = 1, sz = 1, rz = 0) {
@@ -58,6 +84,7 @@ export class MineProps {
     this.key = key;
     for (const mesh of [this.posts, this.caps, this.sleepers, this.rails, this.carts, this.lanterns]) mesh.count = 0;
     this.chests = [];
+    this.mines = mines;
     const HW = CaveField.MINE_HW, HT = CaveField.MINE_HT;
     for (const mine of mines) {
       let n = 0;
@@ -96,8 +123,17 @@ export class MineProps {
           }
         }
       }
-      const c = mine.cart;
-      this.#put(this.carts, c.x, c.y + 0.1, c.z, mine.yaw + Math.PI / 2 + 0.15);
+      // Its cart: where it was left (or where it's been pushed to).
+      const first = mine.segments[0];
+      if (!this.cartAt.has(mine.id)) this.cartAt.set(mine.id, { x: mine.cart.x, y: mine.cart.y, z: mine.cart.z, yaw: Math.atan2(first.bx - first.ax, first.bz - first.az), pitch: 0 });
+      const c = this.cartAt.get(mine.id);
+      c.index = this.carts.count < this.carts.instanceMatrix.count ? this.carts.count : null;
+      const o = this.o;
+      o.position.set(c.x, c.y + 0.1, c.z);
+      o.rotation.set(c.pitch ?? 0, c.yaw, 0, 'YXZ');
+      o.scale.set(1, 1, 1);
+      o.updateMatrix();
+      if (c.index != null) this.carts.setMatrixAt(this.carts.count++, o.matrix);
       // The chest at the far end of the workings.
       const last = mine.segments[mine.segments.length - 1];
       const lx = last.bx - last.ax, lz = last.bz - last.az, ll = Math.hypot(lx, lz);

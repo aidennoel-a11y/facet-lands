@@ -281,7 +281,7 @@ export const SPAWNABLE = {
   deer: 'Deer', elk: 'Elk', moose: 'Moose', bison: 'Bison', blackBear: 'Black bear', grizzly: 'Grizzly bear', wolf: 'Wolf', coyote: 'Coyote', fox: 'Fox',
   cougar: 'Cougar', boar: 'Wild boar', sheep: 'Sheep', rabbit: 'Rabbit', hare: 'Hare', turkey: 'Turkey', mountainGoat: 'Mountain goat', snake: 'Rattlesnake',
   tiger: 'Tiger', jaguar: 'Jaguar', panther: 'Black panther', panda: 'Giant panda', crocodile: 'Crocodile', python: 'Python',
-  horse: 'Horse', lion: 'Lioness', maleLion: 'Lion (male)', hyena: 'Hyena', elephant: 'Elephant', hippo: 'Hippo', camel: 'Camel', scorpion: 'Scorpion',
+  horse: 'Horse', lion: 'Lioness', maleLion: 'Lion (male)', hyena: 'Hyena', elephant: 'Elephant', hippo: 'Hippo', camel: 'Camel', scorpion: 'Scorpion', crab: 'Crab', seaTurtle: 'Sea turtle', salamander: 'Giant salamander',
 };
 for (const [kind, name] of Object.entries(SPAWNABLE)) {
   ITEMS[`spawn_${kind}`] = { name: `${name} spawner`, tool: true, spawns: kind === 'maleLion' ? 'lion' : kind, male: kind === 'maleLion', weight: 0, group: 'Spawners' };

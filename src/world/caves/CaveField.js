@@ -155,6 +155,12 @@ export class CaveField {
         c.floor = c.y - c.ry * 0.5;
         c.lake = c.floor + lake;
       }
+      // (About one in four, flooded: a deep, still underground lake filling
+      // the cavern's low half, its rises standing out of it as islands.)
+      if (rand() < 0.26) {
+        c.flooded = true;
+        c.lake = c.floor + 3.5 + rand() * 4;
+      }
     }
     this.chambers.set(key, c);
     return c;

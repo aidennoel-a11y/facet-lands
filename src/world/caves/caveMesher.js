@@ -582,7 +582,7 @@ export function liquidChunk(grid, field, pools) {
       // rock hides the sheet: so its edge is where the water meets the floor.
       let level = null, levelAt = null;
       const ch = col.chamber;
-      if (ch && ch.e < 1 && !(f(x, ch.c.lake - 4, z) < 0 && f(x, ch.c.lake - 8, z) < 0)) (level = ch.c.lake), (levelAt = () => ch.c.lake);
+      if (ch && ch.e < 1 && (ch.c.flooded ? !(f(x, ch.c.floor - 9, z) < 0) : !(f(x, ch.c.lake - 4, z) < 0 && f(x, ch.c.lake - 8, z) < 0))) (level = ch.c.lake), (levelAt = () => ch.c.lake);
       const rv = field.riverAt(x, z, gridHeight(grid, x, z));
       if (rv && rv.across < rv.half * 0.92 && rv.fade > 0.5 && f(x, rv.level - 2.6, z) >= 0 && rv.level - 0.2 > (level ?? -Infinity)) {
         level = rv.level - 0.2;

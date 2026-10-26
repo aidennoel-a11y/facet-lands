@@ -50,7 +50,7 @@ const NAMES = {
   rabbit: 'rabbit', hare: 'hare', sheep: 'sheep', boar: 'boar', cougar: 'cougar', turkey: 'turkey', duck: 'duck', snake: 'rattlesnake',
   tiger: 'tiger', jaguar: 'jaguar', monkey: 'monkey', panther: 'black panther', panda: 'giant panda', crocodile: 'crocodile', mountainGoat: 'mountain goat',
   songbird: 'bird', starling: 'starling', crow: 'crow', gull: 'gull', hawk: 'hawk',
-  lion: 'lion', hyena: 'hyena', elephant: 'elephant', hippo: 'hippo', camel: 'camel', scorpion: 'scorpion', python: 'python', bat: 'bat', eagle: 'eagle',
+  lion: 'lion', hyena: 'hyena', elephant: 'elephant', hippo: 'hippo', camel: 'camel', scorpion: 'scorpion', crab: 'crab', seaTurtle: 'sea turtle', salamander: 'giant salamander', python: 'python', bat: 'bat', eagle: 'eagle',
   horse: 'horse', donkey: 'donkey', mule: 'mule', vulture: 'vulture', goat: 'goat',
 };
 const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a black bear', cougar: 'a cougar', moose: 'a moose', boar: 'a wild boar', elk: 'a bull elk', deer: 'a buck', bison: 'a bison', snake: 'a rattlesnake', tiger: 'a tiger', jaguar: 'a jaguar', panther: 'a black panther', crocodile: 'a crocodile', panda: 'a giant panda', mountainGoat: 'a mountain goat', lion: 'a lion', hyena: 'a hyena', elephant: 'an elephant', hippo: 'a hippo', camel: 'a camel', scorpion: 'a scorpion', python: 'a python' };
@@ -781,6 +781,9 @@ export class Game {
     if (this.riding) return this.#getOff(true);
     if (this.climbing) return this.#letGo(true);
     const t = this.#target(ray, down);
+    // (An old mine cart on its rails, close by: in you get.)
+    const cartAt = !t || t.kind !== 'item' ? this.mineCarts?.cartNear(this.camera.position.x, this.camera.position.y - this.controls.eyeHeight, this.camera.position.z) : null;
+    if (cartAt) return this.#rideCart(cartAt);
     if (!t) return this.hotbar?.flash('Nothing to pick up here');
     if (t.kind === 'vein') return this.hotbar?.flash(t.text);
     if (t.kind === 'item') {
@@ -3009,6 +3012,100 @@ export class Game {
 
   // --- A raft -----------------------------------------------------------------------
 
+  /**
+   * Into an old mine cart: it runs along the mine's rails, pushed on (W)
+   * or braked and pushed back (S), rolling on by itself down the inclines
+   * and slowing on the level. Where a drift branches off, it takes the
+   * branch you're looking down; at the end of the line it stops with a bump.
+   */
+  #rideCart({ mine, cart }) {
+    const segs = mine.segments, props = this.mineCarts;
+    // (Which stretch of rail it's on, and how far along.)
+    let seg = 0, u = 0, best = Infinity;
+    segs.forEach((q, k) => {
+      const ex = q.bx - q.ax, ez = q.bz - q.az, len = Math.hypot(ex, ez);
+      const t = Math.max(0, Math.min(len, ((cart.x - q.ax) * ex + (cart.z - q.az) * ez) / len));
+      const d = Math.hypot(q.ax + (ex * t) / len - cart.x, q.az + (ez * t) / len - cart.z);
+      if (d < best) (best = d), (seg = k), (u = t);
+    });
+    const length = (q) => Math.hypot(q.bx - q.ax, q.bz - q.az);
+    const point = (q, t) => {
+      const len = length(q), f = Math.max(0, Math.min(1, t / len));
+      return { x: q.ax + (q.bx - q.ax) * f, y: q.ay + (q.by - q.ay) * f, z: q.az + (q.bz - q.az) * f };
+    };
+    // (Facing the way you look along it.)
+    const look = this.controls.euler.y, lx = -Math.sin(look), lz = -Math.cos(look);
+    const q0 = segs[seg];
+    let dir = (q0.bx - q0.ax) * lx + (q0.bz - q0.az) * lz >= 0 ? 1 : -1;
+    let speed = 0, clack = 0;
+    const ride = { cart, mine, x: cart.x, z: cart.z, type: 'mineCart' };
+    this.riding = ride;
+    this.controls.velocityY = 0;
+    this.sound?.call('creak', 0, 0.45);
+    // Where the rails go on from the point `p` (the end of one stretch, or a drift's start along it): [{ seg, u, dir }].
+    const onFrom = (p, not) => {
+      const out = [];
+      segs.forEach((q, k) => {
+        if (k === not) return;
+        if (Math.hypot(q.ax - p.x, q.az - p.z) < 1.6) out.push({ seg: k, u: 0, dir: 1 });
+        else if (Math.hypot(q.bx - p.x, q.bz - p.z) < 1.6) out.push({ seg: k, u: length(q), dir: -1 });
+      });
+      return out;
+    };
+    const heading = (q, d) => ({ x: (q.bx - q.ax) * d, z: (q.bz - q.az) * d });
+    this.controls.vehicle = (dt, input) => {
+      const look = this.controls.euler.y, lx = -Math.sin(look), lz = -Math.cos(look);
+      let q = segs[seg], len = length(q);
+      // (Down an incline it rolls by itself; on the level it slows; S brakes, and from a stop pushes it back the other way.)
+      const fall = ((q.ay - q.by) / len) * dir; // (> 0: going down)
+      if (speed < 0.05 && input.forward < 0) (dir = -dir), (speed = 0.6);
+      speed += (fall * 9.8 * 0.6 + Math.max(0, input.forward) * 2.2) * dt;
+      speed -= Math.min(speed, (0.35 + (input.forward < 0 ? 4 : 0)) * dt);
+      speed = Math.max(0, Math.min(11, speed));
+      const before = u;
+      u += speed * dt * dir;
+      // (Passing where a drift branches off: into it, if that's the way you look.)
+      for (const [k, b] of segs.entries()) {
+        if (k === seg || speed < 0.2) continue;
+        const ex = q.bx - q.ax, ez = q.bz - q.az;
+        const t = ((b.ax - q.ax) * ex + (b.az - q.az) * ez) / len, off = Math.abs((b.ax - q.ax) * ez - (b.az - q.az) * ex) / len;
+        if (off > 1.6 || t < Math.min(before, u) || t > Math.max(before, u) || t < 2 || t > len - 2) continue;
+        const bh = heading(b, 1);
+        if ((bh.x * lx + bh.z * lz) / Math.hypot(bh.x, bh.z) > 0.75) {
+          (seg = k), (u = Math.abs(u - t)), (dir = 1);
+          this.sound?.call('creak', 0, 0.4);
+          break;
+        }
+      }
+      q = segs[seg];
+      len = length(q);
+      if (u > len || u < 0) {
+        // (Off the end of this stretch: on along the next, the one most the way you look; else a bump to a stop.)
+        const end = point(q, u > len ? len : 0), over = u > len ? u - len : -u;
+        let pick = null, score = -0.3;
+        for (const w of onFrom(end, seg)) {
+          const h = heading(segs[w.seg], w.dir), v = (h.x * lx + h.z * lz) / Math.hypot(h.x, h.z);
+          if (v > score) (score = v), (pick = w);
+        }
+        if (pick) (seg = pick.seg), (dir = pick.dir), (u = pick.u + over * pick.dir);
+        else {
+          u = u > len ? len : 0;
+          if (speed > 1.5) this.sound?.call('crash', 0, Math.min(0.5, 0.06 * speed)), this.hotbar?.flash('The end of the line');
+          speed = 0;
+        }
+      }
+      const r = segs[seg], at = point(r, u), h = heading(r, dir);
+      props.moveCart(mine, at.x, at.y, at.z, Math.atan2(h.x, h.z), Math.atan2(r.ay - r.by, length(r)) * dir);
+      (ride.x = at.x), (ride.z = at.z);
+      this.camera.position.set(at.x, at.y + 0.55 + this.controls.eyeHeight * 0.75, at.z);
+      this.controls.grounded = true;
+      this.controls.moving = speed > 0.2;
+      // (The wheels clacking over the rail joints, quicker the faster it goes.)
+      if (speed > 0.5 && (clack -= dt * speed) <= 0) (clack = 3), this.sound?.call('click', 0, Math.min(0.35, 0.05 + 0.03 * speed));
+    };
+    this.hotbar?.flash('In the mine cart: W to push on, S to brake; it rolls down the inclines. Look down a branch to take it. Q to get out');
+  }
+
   #board(s) {
     this.riding = s;
     this.sound?.call('splash', 0, 0.35);
@@ -3072,6 +3169,17 @@ export class Game {
   #getOff(say = false) {
     const s = this.riding;
     if (!s) return;
+    if (s.cart) {
+      // (Out of the cart: down beside it, on the gallery floor.)
+      this.riding = null;
+      this.controls.vehicle = null;
+      const c = s.cart, side = c.yaw + Math.PI / 2;
+      this.camera.position.set(c.x + Math.sin(side) * 1.4, c.y + this.controls.eyeHeight + 0.15, c.z + Math.cos(side) * 1.4);
+      this.controls.velocityY = 0;
+      this.sound?.call('creak', 0, 0.3);
+      if (say) this.hotbar?.flash('Out of the cart');
+      return;
+    }
     this.riding = null;
     this.controls.vehicle = null;
     this.dirty = true;
@@ -3475,6 +3583,7 @@ export class Game {
         if (!onPlot) prompt = this.plan.ok ? `<kbd>Click</kbd> ${placing === 'plot' ? 'Dig a plot' : `Build ${item.name.toLowerCase()}`}` : this.plan.why;
       } else this.structures.preview(null);
       if (!prompt && t) prompt = `<kbd>Q</kbd> ${t.text}`;
+      if (!prompt && this.mineCarts?.cartNear(cam.x, cam.y - this.controls.eyeHeight, cam.z)) prompt = '<kbd>Q</kbd> Get in the mine cart';
       // Crouched, looking at the ground: the tracks there, read (the better your tracking, the older the tracks you can make out).
       if (!prompt && this.controls.crouch && this.readTracks) {
         const hit = this.solidHit?.(origin, direction, 8);
@@ -3493,7 +3602,7 @@ export class Game {
         if (PICKS[held.id] && this.#boulderAlong(origin, direction, REACH)) prompt = '<kbd>Click</kbd> Break rock';
       }
     } else this.structures.preview(null);
-    if (this.riding) prompt = '<kbd>W</kbd> Paddle · <kbd>Q</kbd> Get off';
+    if (this.riding) prompt = this.riding.cart ? '<kbd>W</kbd> Push on · <kbd>S</kbd> Brake / back · look to choose a branch · <kbd>Q</kbd> Get out' : '<kbd>W</kbd> Paddle · <kbd>Q</kbd> Get off';
     if (this.mount) prompt = '<kbd>W</kbd> Ride · <kbd>Shift</kbd> Gallop · <kbd>Space</kbd> Jump · <kbd>Q</kbd> Get down';
     if (this.climbing) prompt = '<kbd>W</kbd> Climb · <kbd>S</kbd> Down · <kbd>Q</kbd> Let go';
     this.hud.stations = { anvil: !!this.structures.nearest('anvil', cam.x, cam.z, 5), fire: this.structures.warmthAt(cam.x, cam.y - this.controls.eyeHeight, cam.z) > 0.05 };

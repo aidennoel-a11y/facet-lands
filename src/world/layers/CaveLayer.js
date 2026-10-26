@@ -2,6 +2,7 @@ import { boundsOf } from '../../render/cullBounds.js';
 import { BoxGeometry, BufferAttribute, Color, DoubleSide, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Sphere, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bonesModel } from '../../survival/models.js';
+import { salamander as salamanderModel } from '../../wildlife/models.js';
 import { shroomGeometry, shroomOf, shroomPieces } from '../caves/giantShrooms.js';
 
 /**
@@ -60,6 +61,25 @@ const fishGeometry = (() => {
   return g;
 })();
 const fishMaterial = new MeshBasicMaterial({ color: 0xc8ccd0, transparent: true, opacity: 0.85 });
+// And in the bigger stretches of it, now and then, a giant salamander, half
+// as long as you are tall: lying still on the bottom in the shallows, or
+// pulling itself slowly along, its tail swaying.
+const salamanderGeometry = (() => {
+  const m = salamanderModel(), parts = [m.body.index ? m.body.toNonIndexed() : m.body.clone()];
+  const head = (m.head.index ? m.head.toNonIndexed() : m.head.clone()).translate(...m.headPivot);
+  parts.push(head);
+  for (const [x, y, z] of m.legs) parts.push(new BoxGeometry(0.06, y, 0.07).toNonIndexed().translate(x, y / 2, z));
+  const keep = (g) => {
+    for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(name)) g.deleteAttribute(name);
+    if (!g.attributes.color) g.setAttribute('color', new BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(0.4), 3));
+    return g;
+  };
+  const g = mergeGeometries(parts.map(keep));
+  g.scale(0.6, 0.6, 0.6);
+  g.computeVertexNormals();
+  return g;
+})();
+const salamanderMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
 const fm = new Matrix4(), fq = new Quaternion(), fp = new Vector3(), fs = new Vector3(1, 1, 1), fUp = new Vector3(0, 1, 0);
 
 // Bats flitting about under their roosts in the dark: a few awake at any
@@ -402,6 +422,16 @@ export function updateCaveLife(time, eye = null) {
       shoal.mesh.setMatrixAt(k, fm.compose(fp, fq, fs));
     });
     shoal.mesh.instanceMatrix.needsUpdate = true;
+    if (shoal.newtMesh) {
+      shoal.newts.forEach((f, k) => {
+        // (Long stops, lying still; then a slow pull onward.)
+        const a = time * f.speed + f.phase + 0.6 * Math.sin(time * 0.05 + f.phase);
+        fp.set(f.x + Math.cos(a) * f.r - shoal.x0, f.y, f.z + Math.sin(a) * f.r - shoal.z0);
+        fq.setFromAxisAngle(fUp, -a + (f.speed > 0 ? 0 : Math.PI) + 0.12 * Math.sin(time * 0.8 + f.phase));
+        shoal.newtMesh.setMatrixAt(k, fm.compose(fp, fq, fs));
+      });
+      shoal.newtMesh.instanceMatrix.needsUpdate = true;
+    }
   }
 }
 
@@ -490,11 +520,25 @@ export function createCaveLayer(config) {
       fish.push({ x: pos.getX(t) + x0, y: pos.getY(t) - 0.25, z: pos.getZ(t) + z0, r: 0.5 + (k % 3) * 0.4, speed: (k % 2 ? 1 : -1) * (0.25 + (k % 4) * 0.08), phase: k * 1.7 });
     }
     if (!fish.length) return null;
+    // (A salamander or two in the bigger lakes, about half of them.)
+    const newts = [];
+    if (tris > 50 && ((Math.sin(seed * 7.7) * 9871.3) % 1 + 1) % 1 < 0.5) {
+      for (let k = 0; k < 1 + Math.floor(tris / 400) && k < 3; k++) {
+        const t = Math.floor(((Math.sin(seed * 3.1 + k * 41.7) * 24634.6) % 1 + 1) % 1 * tris) * 3;
+        newts.push({ x: pos.getX(t) + x0, y: pos.getY(t) - 0.55, z: pos.getZ(t) + z0, r: 1.5 + k, speed: (k % 2 ? 1 : -1) * 0.05, phase: k * 2.3 + seed });
+      }
+    }
+    let newtMesh = null;
+    if (newts.length) {
+      newtMesh = new InstancedMesh(salamanderGeometry, salamanderMaterial, newts.length);
+      newtMesh.name = 'cave salamanders';
+      newtMesh.boundingSphere = boundsOf(newts.flatMap((f) => [f.x - x0, f.y, f.z - z0]), 5);
+    }
     const mesh = new InstancedMesh(fishGeometry, fishMaterial, fish.length);
     mesh.name = 'cave fish';
     // (Its bounds: round the circles they swim, so it's left out when off the screen.)
     mesh.boundingSphere = boundsOf(fish.flatMap((f) => [f.x - x0, f.y, f.z - z0]), 2.2);
-    return { mesh, fish, x0, z0 };
+    return { mesh, fish, x0, z0, newts, newtMesh };
   };
 
   const waiting = new Set(); // (chunk groups whose caves aren't asked for yet)
@@ -625,6 +669,7 @@ export function createCaveLayer(config) {
           const sh = shoal(data.water, cx * size, cz * size, cx * 31 + cz);
           if (sh) {
             group.add(detail(sh.mesh));
+            if (sh.newtMesh) group.add(detail(sh.newtMesh));
             shoals.add(sh);
             group.userData.shoal = sh;
           }

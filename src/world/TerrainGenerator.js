@@ -1214,7 +1214,8 @@ export class TerrainGenerator {
     try {
       // (Let down where a landmark's a hollow: the great sinkhole, a lake's bowl.)
       const h = this.rivers.carve(x, z, base, rough);
-      const g = h - this.landmarks.basinAt(x, z, h);
+      let g = h - this.landmarks.basinAt(x, z, h);
+      if (!this._probing) g = this.#craterCarve(x, z, g);
       // (Built up where a glacier lies: its ice is the land's top there.)
       return g + (g > this.rivers.seaLevel + 60 ? this.landmarks.glacierAt(x, z, g)?.ice ?? 0 : 0);
     } finally {
@@ -3809,6 +3810,69 @@ export class TerrainGenerator {
     return w.wetland * smoothstep(0.22, 0.36, this.wetNoise.fbm(x * 0.0008 + 77, z * 0.0008 - 41, 2));
   }
 
+  /**
+   * The crater lake country: by the volcanic land (never up on the cones),
+   * in a few regions, a scatter of small round volcanic lakes, each in its
+   * own bowl with a low rim round it, each its own colour (turquoise,
+   * emerald, milky blue, rust red, sulphur yellow-green, ink blue).
+   * Returns the lake whose bowl reaches (x, z): { x, z, r, level, colour, d }, or null.
+   */
+  craterLakeAt(x, z) {
+    const G = 170, I = Math.floor(x / G), K = Math.floor(z / G);
+    let best = null;
+    for (let dk = -1; dk <= 1; dk++) for (let di = -1; di <= 1; di++) {
+      const c = this.#craterLake(I + di, K + dk);
+      if (!c) continue;
+      const d = Math.hypot(x - c.x, z - c.z);
+      if (d < c.r * 1.7 && (!best || d / c.r < best.d / best.r)) best = { ...c, d };
+    }
+    return best;
+  }
+
+  #craterLake(I, K) {
+    const cache = (this._craterLakes ??= new Map()), key = I * 100003 + K;
+    if (cache.has(key)) return cache.get(key);
+    if (cache.size > 40000) cache.clear();
+    this._craterNew = true; // (other points looked at: see #craterCarve)
+    let c = null;
+    const G = 170, h = (k) => hash2(I * 7 + k * 1013, K * 13 - k * 619, this.seed ^ 0x6c1a);
+    if (h(0) < 0.6) {
+      const x = (I + 0.25 + 0.5 * h(1)) * G, z = (K + 0.25 + 0.5 * h(2)) * G;
+      const zone = this.volcanoNoise.fbm(x * 0.0004 + 333, z * 0.0004 - 91, 2);
+      if (zone > 0.08) {
+        const w = this.getBiomeWeights(x, z, {});
+        // (By volcanic land: on it, or in the country next to it.)
+        const near = Math.max(w.volcanic, ...[[600, 0], [-600, 0], [0, 600], [0, -600]].map(([dx, dz]) => this.getBiomeWeights(x + dx, z + dz, {}).volcanic * 0.8));
+        const sea = this.rivers.seaLevel;
+        if (near > 0.3 && this.getMountainness(x, z) < 0.5 && this.getVolcanic(x, z).cone < 0.05 && w.desert + w.saltFlat < 0.3) {
+          const r = 14 + 24 * h(3);
+          let lo = Infinity, hi = -Infinity;
+          for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2, b = this.getBaseHeight(x + Math.cos(a) * r * 1.3, z + Math.sin(a) * r * 1.3);
+            lo = Math.min(lo, b), hi = Math.max(hi, b);
+          }
+          if (lo > sea + 4 && hi - lo < r * 0.35) c = { x, z, r, level: lo - 0.4, depth: 3 + r * 0.18, colour: Math.floor(h(4) * 6) };
+        }
+      }
+    }
+    cache.set(key, c);
+    return c;
+  }
+
+  /** The land at (x, z), `g` high, with the crater lakes' bowls dug and their rims heaped. */
+  #craterCarve(x, z, g) {
+    if (this.volcanoNoise.fbm(x * 0.0004 + 333, z * 0.0004 - 91, 2) < 0.04) return g; // (not crater lake country)
+    this._craterNew = false;
+    const c = this.craterLakeAt(x, z);
+    // (Lakes just laid out looked at other land, leaving its weights behind: worked out again for this point.)
+    if (this._craterNew) this.landHeight(x, z);
+    if (!c) return g;
+    const t = c.d / c.r;
+    if (t < 1) return Math.min(g, c.level - 0.25 - c.depth * (1 - t * t)); // (the bowl, under the water)
+    // (The rim: a low ring, heaped up round it, a metre or two.)
+    return Math.max(g, c.level + 0.3) + (1 + 0.04 * c.r) * Math.max(0, 1 - Math.abs(t - 1.15) / 0.55) ** 2;
+  }
+
   /** Black sand on the beach (0..1): the coasts by volcanic country, and here and there a stretch of dark volcanic shore elsewhere. */
   blackSandAt(x, z) {
     const w = this.getBiomeWeights(x, z, {});
@@ -3950,6 +4014,7 @@ export class TerrainGenerator {
     if (top === 'saltFlat') return 'Salt flats';
     // (Forest: the woods, and the hill country they stand in, wooded or not.)
     if (this.getForestDensity(x, z) > 0.55 || smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Forest';
+    if (this.volcanoNoise.fbm(x * 0.0004 + 333, z * 0.0004 - 91, 2) > 0.08 && this.craterLakeAt(x, z)) return 'Crater lakes';
     if (this.giantMeadowAt(x, z) > 0.5) return 'Giant flower meadow';
     return this.getMeadow(x, z) > 0.5 ? 'Wildflower meadow' : 'Plains';
   }
