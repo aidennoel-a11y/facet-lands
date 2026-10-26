@@ -344,7 +344,8 @@ export const BIOMES = {
       density: 0.85,
       clumped: true,
       species: [
-        { type: 'cherryBlossom', weight: 2.6, minHeight: -99, maxHeight: 999 },
+        { type: 'cherryBlossom', weight: 1.4, minHeight: -99, maxHeight: 999 },
+        { type: 'cherryRound', weight: 1.2, minHeight: -99, maxHeight: 999 }, // (the older, rounder kind: the two together)
         { type: 'maple', weight: 0.5, minHeight: 20, maxHeight: 999 },
         { type: 'pine', weight: 0.45, minHeight: 60, maxHeight: 999 },
         { type: 'bush', weight: 0.5, minHeight: -99, maxHeight: 999 },
@@ -367,11 +368,11 @@ export const BIOMES = {
       { height: 4, color: 0x6f9a44 },
       { height: 20, color: 0x5c9a3a }, // (fern and moss under the trees)
       { height: 90, color: 0x52883a },
-      { height: 180, color: 0x5a8a40 }, // (green right up the mountains...)
+      { height: 180, color: 0x5a8a40 }, 
       { height: 260, color: 0x667a52 },
     ],
-    cliff: 0x6e7066, // (...with grey rock, mossed, showing on all the steeper faces)
-    cliffSlope: [0.74, 0.52],
+    cliff: 0x6e7066, // (mossed grey rock on the steepest faces)
+    cliffSlope: [0.66, 0.46],
     snowLine: 9999,
     snow: 0xf1f4f7,
     grass: 0.8,
@@ -385,6 +386,39 @@ export const BIOMES = {
         { type: 'treeFern', weight: 0.5, minHeight: -99, maxHeight: 999 },
         { type: 'junglePalm', weight: 0.35, minHeight: -99, maxHeight: 90 },
         { type: 'bush', weight: 0.5, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // Jungle mountains: the mountains of a jungle range, rising out of its
+  // foothills jungle: green right up to their tops, moss and ferns over
+  // them, grey rock showing on every steeper face; trees thinning out up
+  // them, palms and tree ferns clinging on.
+  jungleMountains: {
+    id: 'jungleMountains',
+    name: 'Jungle mountains',
+    palette: [
+      { height: -Infinity, color: 0x6d7456 },
+      { height: 0, color: 0xb7aa7c },
+      { height: 4, color: 0x6f9a44 },
+      { height: 40, color: 0x5c9a3a },
+      { height: 110, color: 0x4f8a36 },
+      { height: 170, color: 0x5e8a44 },
+      { height: 240, color: 0x6a7e58 },
+    ],
+    cliff: 0x6c6e66,
+    cliffSlope: [0.78, 0.55],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.6,
+    trees: {
+      density: 0.45,
+      clumped: true,
+      species: [
+        { type: 'jungleCanopy', weight: 1.2, minHeight: -99, maxHeight: 999 },
+        { type: 'treeFern', weight: 0.8, minHeight: -99, maxHeight: 999 },
+        { type: 'junglePalm', weight: 0.4, minHeight: -99, maxHeight: 160 },
+        { type: 'bush', weight: 0.8, minHeight: -99, maxHeight: 999 },
       ],
     },
   },

@@ -37,6 +37,7 @@ export const MAP_LABELS = [
   ['Mangrove coast', '#4d7a3c'],
   ['Jungle', '#1f5a24'],
   ['Mountain foothills jungle', '#2f7a2c'],
+  ['Jungle mountains', '#5a7a4a'],
   ['Bamboo forest', '#8ab83a'],
   ['Cherry blossom highlands', '#e8a8c4'],
   ['Savanna', '#d2bf6a'],

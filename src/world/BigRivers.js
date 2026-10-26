@@ -26,6 +26,7 @@ const JOIN = 260; // a river coming this close to a bigger one runs into it
 const GRID = 128; // spacing of the broad land's remembered grid (m: it's smooth)
 const LOW = 15; // open water is looked for only where the broad land (see #land) lies less than this above the sea
 const LAKE_CLEAR = 8; // a river that would come to a lake rises this many points (STEP apart) beyond it instead
+const MAX_CUT = 28; // the deepest a river cuts down into the mountains (m; twice that through lower hills): no gorges through them
 const BEND = (20 * Math.PI) / 180; // the most it turns at any one point (STEP apart): bends some 350 m round, or wider
 
 /**
@@ -419,6 +420,18 @@ export class BigRivers {
     for (let k = points.length - 2; k >= 0; k--) points[k].level = Math.min(points[k].level, points[k + 1].level + STEP * 0.0025);
     // (Never below the water it runs into.)
     for (const p of points) p.level = Math.max(p.level, end);
+    // (Nor cutting a gorge through the mountains: where its water would lie
+    // more than a few tens of metres down in the land, it doesn't run. It
+    // rises below the last such place instead.)
+    let rise = 0;
+    for (let k = 0; k < points.length - 1; k++) {
+      const cut = points[k].ground - points[k].level;
+      if (cut > MAX_CUT * 2 || (cut > MAX_CUT && g.getMountainness(points[k].x, points[k].z) > 0.3)) rise = k + 1;
+    }
+    if (rise) {
+      points.splice(0, rise);
+      if (points.length * STEP < MIN_LENGTH * (into ? 0.6 : 1)) return null;
+    }
     // Broadening downstream, from a stream at its spring to about 40 m
     // within the first kilometre, and on to 120.
     const n = points.length;

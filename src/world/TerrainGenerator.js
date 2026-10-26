@@ -417,14 +417,18 @@ export class TerrainGenerator {
         out.temperate += j;
       }
       const own = Math.min(1, out.temperate + out.parkland + out.cascades + out.pine + out.redwood + out.jungle + out.wetland + out.smoky);
-      const kj = band * jr * own;
+      // (The jungle range's mountains themselves, its middle: the jungle mountains, green, rocky.)
+      const core = smoothstep(0.55, 0.7, mtn);
+      const km = jr * core * Math.max(own, 0.6);
+      const kj = band * jr * own * (1 - core);
       const cl = this.#cherryLand(x, z), bl = this.#bambooLand(x, z);
-      const kc = cl * own * (1 - kj), kb = bl * own * (1 - kj - kc);
-      if (kj + kc + kb > 0) for (const id of BIOME_IDS) out[id] *= 1 - kj - kc - kb;
+      const kc = cl * own * (1 - kj - km), kb = bl * own * (1 - kj - km - kc);
+      if (kj + km + kc + kb > 0) for (const id of BIOME_IDS) out[id] *= 1 - kj - km - kc - kb;
       out.jungleFoothills = kj;
+      out.jungleMountains = km;
       out.cherry = kc;
       out.bamboo = kb;
-    } else (out.cherry = 0), (out.bamboo = 0), (out.jungleFoothills = 0);
+    } else (out.cherry = 0), (out.bamboo = 0), (out.jungleFoothills = 0), (out.jungleMountains = 0);
     // On the open sea's warm coasts: mangroves. They take over whatever
     // was there.
     // (Not over the wetlands: they stay as they are.)
@@ -929,6 +933,8 @@ export class TerrainGenerator {
             for (const d of [800, 1600, 2400]) top = Math.max(top, pr.getBaseHeight(px + Math.cos(a) * d, pz + Math.sin(a) * d));
           }
           v *= 1 - smoothstep(150, 172, top);
+          // (And real mountains in it, not only hills: peaks a hundred metres up or so.)
+          v *= smoothstep(85, 110, top);
         }
         if (cache.size > 40000) cache.clear();
         cache.set(key, v);
@@ -4029,6 +4035,7 @@ export class TerrainGenerator {
       // Mountains are bare rock: above the trees, or sheer. Wooded slopes
       // lower down are the foothills.
       const steep = Math.abs(heightAt(x + 3, z) - heightAt(x - 3, z)) / 6 + Math.abs(heightAt(x, z + 3) - heightAt(x, z - 3)) / 6;
+      if (w.jungleMountains > 0.5) return 'Jungle mountains';
       if (height + this.getColorJitter(x, z) > T.mountainsAbove || steep > 0.72) return 'Mountains';
       // (A cherry grove, the foothills jungle, a bamboo forest: on the range's lower slopes, theirs.)
       if (w.cherry > 0.5) return 'Cherry blossom highlands';
@@ -4053,6 +4060,7 @@ export class TerrainGenerator {
       return this.getVolcanic(x, z).cone > 0.5 ? 'Volcano' : 'Volcanic highlands';
     }
     if (top === 'cherry') return 'Cherry blossom highlands';
+    if (top === 'jungleMountains') return 'Jungle mountains';
     if (top === 'jungleFoothills') return 'Mountain foothills jungle';
     if (top === 'bamboo') return 'Bamboo forest';
     if (top === 'wetland' && this.glowSwampAt(x, z) > 0.5) return 'Glowing swamp';
