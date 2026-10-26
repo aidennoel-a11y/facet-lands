@@ -3690,10 +3690,10 @@ export class Wildlife {
     }
     // (Trying to go and getting nowhere for a while: it gives up on where
     // it was going. A herd's is chosen again, somewhere it can get to.)
-    if (a.speed > sp.walk * 0.4 && moved < a.speed * dt * 0.2) a.stuck = (a.stuck ?? 0) + dt;
-    else a.stuck = Math.max(0, (a.stuck ?? 0) - dt * 2);
-    if (a.stuck > 3) {
-      a.stuck = 0;
+    if (a.speed > sp.walk * 0.4 && moved < a.speed * dt * 0.2) a.stuckFor = (a.stuckFor ?? 0) + dt;
+    else a.stuckFor = Math.max(0, (a.stuckFor ?? 0) - dt * 2);
+    if (a.stuckFor > 3) {
+      a.stuckFor = 0;
       if (herd && herd.fleeTime <= 0 && !fleeing) herd.goalWait = 0;
       const open = this.#openWay(a, sp, ctx, a.heading + Math.PI, 9);
       if (open !== null) a.detour = { heading: open, time: rnd(2, 4) };
