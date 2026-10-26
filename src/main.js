@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import './render/splitShadow.js'; // (first: the sun's shadow in two maps, before any material copies the shader code)
 import './render/chunkFade.js'; // (likewise: the dither that fades the land's changes of detail)
 import { WORLD } from './config.js';
+import { settings } from './settings.js';
 import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer, seaStorm } from './world/layers/WaterLayer.js';
@@ -12,7 +13,7 @@ import { createWreckLayer } from './world/layers/WreckLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
-import { fellShroom, pickShroom, shroomCapAt, shroomCollide, shroomsCut } from './world/layers/CaveLayer.js';
+import { cutShroomKey, fellShroom, pickShroom, shroomCapAt, shroomCollide, shroomsCut } from './world/layers/CaveLayer.js';
 import { caveFocus, caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
@@ -414,7 +415,10 @@ function spawnTornado({ near = null, delay = 50, back = null } = {}) {
   const miss = near ?? (Math.random() < 0.45 ? (Math.random() - 0.5) * 120 : (Math.random() - 0.5) * 900);
   back ??= 700 + Math.random() * 500;
   const x = p.x - Math.sin(heading) * back + Math.cos(heading) * miss, z = p.z - Math.cos(heading) * back - Math.sin(heading) * miss;
-  return tornadoes.spawn(x, z, heading, { speed: 10 + Math.random() * 7, life: 170 + Math.random() * 170, R: 50 + Math.random() * 70, delay });
+  const o = { speed: 10 + Math.random() * 7, life: 170 + Math.random() * 170, R: 50 + Math.random() * 70, delay, seed: Math.floor(Math.random() * 1e9) };
+  // (Online: the same one for everyone, on its way.)
+  if (sync.online) sync.fx.push({ k: 'tornado', x: Math.round(x), z: Math.round(z), heading, ...o });
+  return tornadoes.spawn(x, z, heading, o);
 }
 
 // Avalanches: after heavy snow, on the steep snowy slopes high above you,
@@ -1398,7 +1402,10 @@ const game = new Game({
   panAt: (x, z) => (sound.from(x, z), panTowards(camera, x, z)),
   wind: () => clouds.wind,
   // (A campfire left burning in the dry sets the grass alight.)
-  ignite: (x, y, z) => fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
+  ignite: (x, y, z) => {
+    fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
+    if (sync.online) sync.fx.push({ k: 'ignite', x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, z: Math.round(z * 10) / 10 }); // (for the others: the same fire, running the same way)
+  },
   // (Standing in a burning wood or on burning ground: see Wildfires.heatAt.)
   fireHeat: (x, y, z) => fires.heatAt(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
   // (The burnt ground, saved with the world; and the days, for the burnt woods growing back.)
@@ -1457,6 +1464,11 @@ const sync = new WorldSync({
   dayNight, dayLength: () => WORLD.dayLengthMinutes,
 });
 sync.mow = (x, z, r) => grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24);
+sync.shrooms = shroomsCut;
+sync.tornado = (f) => tornadoes.spawn(f.x, f.z, f.heading, { speed: f.speed, life: f.life, R: f.R, delay: f.delay, seed: f.seed });
+sync.ignite = (x, y, z) => fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
+sync.cutShroom = cutShroomKey;
+game.treeFinds.onStir = (f) => sync.online && sync.fx.push({ k: 'bees', x: Math.round((f.tx ?? f.x) * 10) / 10, z: Math.round((f.tz ?? f.z) * 10) / 10 });
 chunks.addLayer(game.items.layer);
 // (The world's time of day, moon and season, kept with its save.)
 game.clock = {
@@ -2962,7 +2974,7 @@ function tick(now) {
   seaCoast.storm = weather.storm;
   seaStorm.value = weather.storm;
   updateFloods(dt);
-  const air = { time: worldNow, netTime: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, dryness: fireSeason.dryness, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
+  const air = { time: worldNow, netTime: worldNow, clock: worldNow, day: dayNight.day + dayNight.hour / 24, camera, generator, wind: clouds.wind, rain: localRain, dryness: fireSeason.dryness, light: ambientLight, night, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), ground: (x, z) => generator.getBaseHeight(x, z) };
   fires.update(dt, air);
   prof.mark('fires');
   // (Where you walk, over and over, a path wears into the grass.)
@@ -3165,6 +3177,20 @@ if (TEST.get('mp')) {
   go.catch((e) => console.error('online:', e.message));
 }
 if (!TESTING) {
+  // Your settings (see settings.js): put into effect now, and as you change them.
+  const useSettings = (s, live) => {
+    controls.lookSensitivity = 0.0035 * s.sensitivity;
+    camera.fov = s.fov;
+    camera.updateProjectionMatrix();
+    if ((s.shadows === 'off') === ui.shadows.checked) ui.shadows.click();
+    if (live && startMenu?.world) {
+      // (In a world: the view and shadows' detail changed at once, the fog with them.)
+      useQuality();
+      scene.fog.near = openFog.near;
+      scene.fog.far = openFog.far;
+    }
+  };
+  useSettings(settings(), false);
   const menu = new StartMenu({
     onPlay: (world) => {
       // (The loading screen up first, then the world set up behind it: working
@@ -3207,6 +3233,7 @@ if (!TESTING) {
       }),
   });
   menu.onlineCode = () => (mp.connected ? mp.code : null);
+  menu.onSettings = (s) => useSettings(s, true);
   // Survival is for keeps: when you die (but online), that life's world is
   // wiped at once, before the death screen shows (see Game.#die), and the
   // way out is back to the menu, where the seed waits for a new life.

@@ -188,6 +188,19 @@ export function pickShroom(origin, dir, reach) {
 export const addShroomSet = (set) => shroomSets.add(set);
 export const removeShroomSet = (set) => shroomSets.delete(set);
 
+/** A giant mushroom cut down by someone else (online): gone here too, without the tumble. */
+export function cutShroomKey(key) {
+  shroomsCut.add(key);
+  for (const set of shroomSets) {
+    const g = set.list.find((o) => o.key === key);
+    if (!g || g.cut) continue;
+    g.cut = true;
+    g.mesh.setMatrixAt(g.index, dm.makeScale(0, 0, 0));
+    g.mesh.instanceMatrix.needsUpdate = true;
+    set.caves?.clearObstacle?.(g.x, g.z);
+  }
+}
+
 /** Pushes a walker (circle at `position`, feet at `feetY`) out of the giant mushrooms' stems. */
 export function shroomCollide(position, radius, feetY) {
   for (const set of shroomSets) {

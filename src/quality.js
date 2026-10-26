@@ -1,4 +1,5 @@
 import { WORLD } from './config.js';
+import { fitWorld } from './settings.js';
 
 // How much the game asks of your computer: how far the land is drawn and
 // in how much detail, the grass, the trees' shadows, the shadow map and the
@@ -145,6 +146,7 @@ export function setQuality(q) {
 // The full (High) settings, as config.js has them, to go back to.
 const BASE = {};
 for (const p of Object.values(QUALITY)) for (const k of Object.keys(p.world)) BASE[k] = structuredClone(WORLD[k]);
+for (const k of ['farGrassSpacing', 'grassSpacing', 'shadowMapSize', 'viewDistance']) BASE[k] = structuredClone(WORLD[k]); // (and what your settings change: see fitWorld)
 /** The furthest the land is ever drawn (High's view distance, in chunks). */
 export const MAX_VIEW = WORLD.viewDistance;
 
@@ -158,6 +160,8 @@ export function applyQuality() {
   const hw = hardware();
   WORLD.chunkBuildBudgetMs = hw.threads >= 12 ? 4.5 : hw.threads <= 4 ? 2.5 : 3.5;
   if (hw.memory && hw.memory <= 4) WORLD.viewDistance = Math.min(WORLD.viewDistance, 11);
+  // (And your own settings on top: see settings.js.)
+  fitWorld(WORLD, MAX_VIEW);
   return preset;
 }
 

@@ -5,7 +5,8 @@
 // never saved.
 
 import { DEFAULT_SERVER, VERSION, openWorlds } from '../net/Multiplayer.js';
-import { describeHardware, graphicsInfo, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
+import { describeHardware, graphicsInfo, MAX_VIEW, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
+import { DEFAULTS, saveSettings, settings } from '../settings.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
 // The seeds whose land has claimed a survival life: never played in survival again.
@@ -202,6 +203,7 @@ export class StartMenu {
       <h1 class="sm-logo">Facet<span>Lands</span></h1>
       <p class="sm-tag">A low-poly world to survive in</p>
       <button class="sm-btn sm-primary" data-go="start">Start</button>
+      <button class="sm-btn" data-go="settings">Settings</button>
       <div class="sm-quality" role="radiogroup" aria-label="Graphics">
         <span>Graphics</span>
         ${Object.entries(QUALITY).map(([id, q]) => `<button type="button" class="sm-q${id === quality() ? ' sm-picked' : ''}" data-q="${id}" role="radio" aria-checked="${id === quality()}" title="${q.blurb}">${q.name}</button>`).join('')}
@@ -212,6 +214,7 @@ export class StartMenu {
       ${graphicsInfo().integrated ? `<p class="sm-warn"><strong>The game is on your processor's built-in graphics.</strong> If this computer also has a graphics card of its own (an NVIDIA GeForce, say), the browser isn't using it. On Windows: Settings, System, Display, Graphics; pick your browser (add it if it's not listed), Options, "High performance"; then close every browser window and open it again.</p>` : ''}
       <a class="sm-credits" href="sounds/CREDITS.md" target="_blank" rel="noopener">Sound credits</a>`);
     this.#on('[data-go="start"]', () => this.choose());
+    this.#on('[data-go="settings"]', () => this.settings(() => this.title()));
     // (Put into effect when a world starts: see main's useQuality.)
     for (const b of this.card.querySelectorAll('.sm-q')) {
       b.addEventListener('click', () => {
@@ -427,9 +430,11 @@ export class StartMenu {
       ${code ? `<p class="sm-code">Online · world code <strong>${code}</strong></p>` : ''}
       <button class="sm-btn sm-primary" data-go="resume">Resume</button>
       ${testing ? '' : '<button class="sm-btn" data-go="save">Save world</button>'}
+      <button class="sm-btn" data-go="settings">Settings</button>
       <button class="sm-btn" data-go="quit">${testing ? 'Quit to title' : 'Save and quit to title'}</button>
       <p class="sm-note" aria-live="polite"></p>`);
     this.#on('[data-go="resume"]', () => this.resume());
+    this.#on('[data-go="settings"]', () => this.settings(() => this.pause()));
     this.#on('[data-go="save"]', () => {
       this.onSave(this.world);
       card.querySelector('.sm-note').textContent = 'Saved.';
@@ -441,6 +446,52 @@ export class StartMenu {
       this.pauseButton.hidden = true;
       this.title();
     });
+  }
+
+  // Your settings: each put into effect as you change it, where it can be
+  // (see main's onSettings); the grass, as the land's next built.
+  settings(back) {
+    const s = settings();
+    const preset = QUALITY[quality()].world.viewDistance ?? MAX_VIEW;
+    const view = s.view ?? preset;
+    const km = (v) => `${((v + 0.5) * 128 / 1000).toFixed(1)} km`;
+    const pick = (name, options, value) => `<div class="sm-quality sm-set" role="radiogroup" aria-label="${name}"><span>${name}</span>${options.map(([id, label]) => `<button type="button" class="sm-q${id === value ? ' sm-picked' : ''}" data-set="${name}" data-v="${id}" role="radio" aria-checked="${id === value}">${label}</button>`).join('')}</div>`;
+    const card = this.#show(`
+      <h2 class="sm-head">Settings</h2>
+      <label class="sm-field sm-slide">View distance <output>${km(view)}</output><input type="range" data-k="view" min="5" max="${MAX_VIEW}" step="1" value="${view}" /></label>
+      ${pick('Grass', [[0.5, 'Less'], [1, 'Normal'], [1.6, 'More']], s.grass)}
+      ${pick('Shadows', [['off', 'Off'], ['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], s.shadows)}
+      <label class="sm-field sm-slide">Mouse sensitivity <output>${s.sensitivity.toFixed(2)}×</output><input type="range" data-k="sensitivity" min="0.25" max="2.5" step="0.05" value="${s.sensitivity}" /></label>
+      <label class="sm-field sm-slide">Field of view <output>${s.fov}°</output><input type="range" data-k="fov" min="50" max="100" step="1" value="${s.fov}" /></label>
+      <p class="sm-note">More view and grass look better but ask more of your computer. Grass changes show as the land round you is next built.</p>
+      <button class="sm-btn" data-go="reset">Back to the defaults</button>
+      <button class="sm-btn sm-primary" data-go="back">Done</button>`);
+    const changed = () => {
+      saveSettings(s);
+      this.onSettings?.(s);
+    };
+    for (const input of card.querySelectorAll('input[type=range]')) {
+      input.addEventListener('input', () => {
+        const k = input.dataset.k, v = +input.value;
+        s[k] = k === 'view' ? (v === preset ? null : v) : v;
+        input.previousElementSibling.textContent = k === 'view' ? km(v) : k === 'fov' ? `${v}°` : `${v.toFixed(2)}×`;
+        changed();
+      });
+    }
+    for (const b of card.querySelectorAll('[data-set]')) {
+      b.addEventListener('click', () => {
+        const k = b.dataset.set === 'Grass' ? 'grass' : 'shadows';
+        s[k] = k === 'grass' ? +b.dataset.v : b.dataset.v;
+        changed();
+        this.settings(back);
+      });
+    }
+    this.#on('[data-go="reset"]', () => {
+      Object.assign(s, DEFAULTS);
+      changed();
+      this.settings(back);
+    });
+    this.#on('[data-go="back"]', back);
   }
 
   /** Out of a survival life that's over, back to the title (nothing saved). */

@@ -29,7 +29,7 @@ const BUILT = {
   logWindow: () => M.openWallModel('log', 'window'), logDoor: () => M.openWallModel('log', 'door'), plankWindow: () => M.openWallModel('plank', 'window'), plankDoor: () => M.openWallModel('plank', 'door'),
   stoneDoor: () => M.openWallModel('stone', 'door'), cutWindow: () => M.openWallModel('cut', 'window'), cutDoor: () => M.openWallModel('cut', 'door'),
   chair: M.chairModel, table: M.tableModel, shelf: M.shelfModel, trophyRack: M.trophyRackModel, coop: M.coopModel, logBridge: () => M.bridgeModel('log', 2.5, 0), ropeBridge: () => M.bridgeModel('rope', 2.5, 0),
-  beeBox: M.beeBoxModel, sign: M.signModel, canoe: M.canoeModel,
+  beeBox: M.beeBoxModel, sign: M.signModel, canoe: M.canoeModel, sailboat: M.sailboatModel,
   leanTo: M.leanToModel, waterFilter: M.waterFilterModel, repairBench: M.repairBenchModel,
   logRoof: M.logRoofModel, shingleRoof: M.shingleRoofModel, tileRoof: M.tileRoofModel, bedroll: M.bedrollModel, strawBed: M.strawBedModel, fancyBed: M.fancyBedModel,
 };

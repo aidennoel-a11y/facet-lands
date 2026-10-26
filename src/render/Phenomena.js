@@ -118,7 +118,7 @@ export class Wildfires {
     const x0 = i * CELL, z0 = k * CELL, cx = x0 + CELL / 2, cz = z0 + CELL / 2;
     const ground = this.ground ?? (() => 0);
     const trees = (this.fuel?.(cx, cz, CELL * 0.72) ?? []).slice(0, 4).map((t) => ({ t, burnt: 0, scorched: false }));
-    const cell = { i, k, state: 1, t: 0, dur: 18 + 22 * Math.min(1, fuel) + (trees.length ? 45 : 0) + Math.random() * 10, fuel, day: this.day, flames: [], smoke: [], trees };
+    const cell = { i, k, state: 1, t: 0, dur: 18 + 22 * Math.min(1, fuel) + (trees.length ? 45 : 0) + ((Math.sin(i * 91.7 + k * 47.3) * 43758.5453) % 1 + 1) % 1 * 10, fuel, day: this.day, flames: [], smoke: [], trees };
     this.cells.set(key, cell);
     this.burning.add(cell);
     // The flames: low over the grass, more where there's more to burn.
@@ -264,6 +264,11 @@ export class Wildfires {
     if (this.spreadWait <= 0 && this.burning.size) {
       const step = 0.25 - this.spreadWait;
       this.spreadWait = 0.25;
+      // (Which cells catch, and when one dies in the rain: by the cells and
+      // the shared clock (online, the room's), not by chance, so a fire runs
+      // the same way for everyone in the world.)
+      const tick = Math.floor((ctx.clock ?? performance.now() / 1000) * 4);
+      const roll = (a, b, c, d) => { const s = Math.sin(a * 12.9898 + b * 78.233 + c * 37.719 + d * 4.581 + tick * 0.6173) * 43758.5453; return s - Math.floor(s); };
       const wl = Math.hypot(ctx.wind.x, ctx.wind.z), wx = wl > 0.1 ? ctx.wind.x / wl : 0, wz = wl > 0.1 ? ctx.wind.z / wl : 0, windy = Math.min(1, wl / 7);
       for (const c of [...this.burning]) {
         c.t += step * (1 + 2 * rain);
@@ -273,7 +278,7 @@ export class Wildfires {
           b.burnt += step;
           if (b.burnt > (b.t.bush ? 14 : 32)) (b.scorched = true), this.onScorch?.(b.t);
         }
-        if (c.t >= c.dur || (rain > 0.5 && Math.random() < step * 0.04 * rain)) {
+        if (c.t >= c.dur || (rain > 0.5 && roll(c.i, c.k, 0, 0) < step * 0.04 * rain)) {
           this.#out(c);
           continue;
         }
@@ -296,7 +301,7 @@ export class Wildfires {
           // creep against the wind; faster up a slope, slower down one.)
           // (In a long dry spell in the hot months, it all goes up far faster.)
           const rate = 0.032 * (1 + 2.2 * (ctx.dryness ?? 0)) * Math.min(1, fuel) * strength * (0.35 + windy * (3 * Math.max(0, along) - 0.25 * Math.max(0, -along)) + (1 - windy) * 0.6) * (1 + 1.2 * up) / dl;
-          if (Math.random() < rate * step) this.#light(ni, nk);
+          if (roll(c.i, c.k, ni, nk) < rate * step) this.#light(ni, nk);
         }
       }
     }

@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, ladderModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -167,6 +167,13 @@ const KINDS = {
   snare: { make: snareModel, circle: 0 },
   raft: { make: raftModel, circle: 0, boat: true },
   canoe: { make: canoeModel, circle: 0, boat: true },
+  // (A sailing boat, built afloat in stages; it has a hold to keep things in.)
+  sailboat: { make: sailboatModel, box: [1.2, 3.6], tall: 7.2, boat: true, deep: 1, stages: [
+    { name: 'the keel and ribs', needs: { log: 4, stick: 6 }, upTo: 0.06 },
+    { name: 'the hull planking', needs: { log: 8 }, upTo: 0.14 },
+    { name: 'the deck and the hold', needs: { log: 3, stick: 8, rope: 1 }, upTo: 0.17 },
+    { name: 'the mast and sail', needs: { log: 1, rope: 4, deerSkin: 4 }, upTo: 1 },
+  ] },
   ladder: { make: () => ladderModel(3), circle: 0 },
 };
 
@@ -498,7 +505,7 @@ export class Structures {
     }
     let ok = true, why = '';
     if (kind.boat) {
-      if (wet < corners.length || deep < 0.4) (ok = false), (why = `A ${type} needs open water`);
+      if (wet < corners.length || deep < (kind.deep ?? 0.4)) (ok = false), (why = kind.deep ? 'It needs deeper water: a metre or more' : `A ${type} needs open water`);
       y = wetLevel - 0.12;
     } else if (kind.water) {
       // (Set in the shallows, half under: at the water's edge or out in it.)
@@ -602,8 +609,8 @@ export class Structures {
   build(plan, extra = {}) {
     const s = { id: this.nextId++, type: plan.type, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, tilt: plan.tilt ?? null, upper: !!plan.upper, lit: false, fuel: 0, jobs: [], ...extra };
     s.jobs = (s.jobs ?? []).map((j) => ({ ...j }));
-    if (s.type === 'chest' || s.type === 'cellar' || s.type === 'shelf') {
-      const inv = new Inventory(s.type === 'cellar' ? 24 : s.type === 'shelf' ? 6 : 10);
+    if (s.type === 'chest' || s.type === 'cellar' || s.type === 'shelf' || s.type === 'sailboat') {
+      const inv = new Inventory(s.type === 'cellar' ? 24 : s.type === 'shelf' ? 6 : s.type === 'sailboat' ? 16 : 10);
       if (extra.contents) extra.contents.forEach((st, i) => (inv.slots[i] = st));
       s.contents = inv;
     }
@@ -1180,6 +1187,7 @@ export class Structures {
       else if (KINDS[s.type].stairs) for (const v of [-1.5, -0.5, 0.5, 1.5]) points.push([s.x + bx * v, s.y + (STAIRS_RISE * (v + 2)) / 4, s.z + bz * v, 0.8]);
       else if (s.type === 'raft') for (const v of [-0.8, 0, 0.8]) points.push([s.x + bx * v, s.y + 0.3, s.z + bz * v, 1]);
       else if (s.type === 'canoe') for (const v of [-1.5, -0.5, 0.5, 1.5]) points.push([s.x + bx * v, s.y + 0.25, s.z + bz * v, 0.45]);
+      else if (s.type === 'sailboat') for (const v of [-2.8, -1.6, -0.5, 0.6, 1.7, 2.8]) points.push([s.x + bx * v, s.y + 0.9, s.z + bz * v, Math.abs(v) > 2.5 ? 0.6 : 1.05]);
       else if (s.type === 'furnace') for (const h of [0.4, 1]) points.push([s.x, s.y + h, s.z, 0.75]);
       else if (s.type === 'dryingRack') for (const h of [0.5, 1.1]) points.push([s.x, s.y + h, s.z, 0.6]);
       else points.push([s.x, s.y + (s.type === 'chest' ? 0.35 : 0.25), s.z, s.type === 'campfire' ? 0.75 : 0.6]);

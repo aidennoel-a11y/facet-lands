@@ -2999,7 +2999,7 @@ export class Wildlife {
       const lead = herd.members[0];
       // (In the autumn the grazing herds drift south, in the spring back north.)
       const migrate = herd.kind === 'deer' || herd.kind === 'bison' || herd.kind === 'sheep' ? ((ctx.autumn ?? 0) - (ctx.spring ?? 0)) * 30 : 0;
-      if (lead) herd.goal = { x: lead.x + Math.sin(a) * d, z: lead.z + Math.cos(a) * d + migrate };
+      if (lead) herd.goal = this.#herdGoal(herd, lead, SPECIES[herd.kind], ctx, migrate) ?? { x: lead.x + Math.sin(a) * d * 0.4, z: lead.z + Math.cos(a) * d * 0.4 };
       if (herd.den && lead) { const k = herd.kind === 'hippo' ? 4 : 12; herd.goal = { x: herd.den.x + rnd(-k, k), z: herd.den.z + rnd(-k, k) }; } // (a pack keeps near its den; hippos to their pond)
     }
     // Where it is (its middle): the members keep together.
@@ -3013,6 +3013,49 @@ export class Wildlife {
    * a lake too deep for one that won't swim), 1 land (or water shallow
    * enough to wade), 2 water it must swim.
    */
+  /**
+   * The open way nearest `want` (a heading) for `a` to go: dry ground it
+   * can stand on, not too steep, for a good few metres on; or null. (So a
+   * creature blocked by water or a bank turns along it, the way that's
+   * actually clear, rather than at random, perhaps into more of the same.)
+   */
+  #openWay(a, sp, ctx, want, reach = 7) {
+    for (let k = 0; k <= 16; k++) {
+      const h = want + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 8);
+      const sx = Math.sin(h), sz = Math.cos(h);
+      let ok = true;
+      for (let d = 2; d <= reach && ok; d += 2.5) {
+        const x = a.x + sx * d, z = a.z + sz * d;
+        if (this.#footing(a, sp, x, z, ctx) !== 1 || this.#slope(x, z, ctx) > sp.grade * 1.1) ok = false;
+      }
+      if (ok) return h;
+    }
+    return null;
+  }
+
+  /**
+   * Somewhere for a herd to move on to, from (x, z): mostly on the way it's
+   * been going (so a herd keeps to a line of travel over the days, its own
+   * trail, rather than milling about), on open ground it can reach, the
+   * way there walkable all along. Null if nowhere suits.
+   */
+  #herdGoal(herd, lead, sp, ctx, migrate) {
+    for (let k = 0; k < 8; k++) {
+      const keep = herd.way !== undefined && Math.random() < 0.7;
+      const a = keep ? herd.way + rnd(-0.9, 0.9) : rnd(0, TAU), d = rnd(15, 45);
+      const gx = lead.x + Math.sin(a) * d, gz = lead.z + Math.cos(a) * d + migrate;
+      let ok = true;
+      for (let s = 5; s <= d && ok; s += 5) {
+        const x = lead.x + ((gx - lead.x) * s) / d, z = lead.z + ((gz - lead.z) * s) / d;
+        if (this.#footing(lead, sp, x, z, ctx) !== 1 || this.#slope(x, z, ctx) > sp.grade) ok = false;
+      }
+      if (!ok) continue;
+      herd.way = Math.atan2(gx - lead.x, gz - lead.z);
+      return { x: gx, z: gz };
+    }
+    return null;
+  }
+
   #footing(a, sp, x, z, ctx) {
     const y = ctx.ground(x, z);
     if (!(y === y)) return 0;
@@ -3355,7 +3398,9 @@ export class Wildlife {
       if (wet && !a.tame && (a.shelterAt === undefined || this.time - a.shelterAt > 25)) (a.shelterAt = this.time), (a.shelter = this.#shelterSpot(a, ctx));
       if (!wet) a.shelter = null;
       const spread = herd?.drinking ? 0.35 : cold ? 0.45 : 1;
-      const goal = a.shelter && !herd?.drinking ? a.shelter : herd ? { x: herd.goal.x + a.offset.x * spread, z: herd.goal.z + a.offset.z * spread } : a.goal ?? a.home;
+      // (One left well behind the rest makes its way back to them first.)
+      const behind = herd?.mid && herd.members.length > 2 && Math.hypot(a.x - herd.mid.x, a.z - herd.mid.z) > 22 + 2 * herd.members.length;
+      const goal = a.shelter && !herd?.drinking ? a.shelter : behind ? herd.mid : herd ? { x: herd.goal.x + a.offset.x * spread, z: herd.goal.z + a.offset.z * spread } : a.goal ?? a.home;
       const far = Math.hypot(goal.x - a.x, goal.z - a.z);
       // Safe again: it stops and looks back the way it came.
       if (a.state === 'flee') (a.state = 'alert'), (a.timer = rnd(3, 6)), (a.alertCool = rnd(10, 20));
@@ -3630,7 +3675,11 @@ export class Wildlife {
       const blocked = sunk ? false : !kind || !ahead || (steep && !wet) || (wet && !(fleeing || swimming || a.hunting || a.ridden || a.led));
       if (blocked) {
         if (fleeing) (a.herd ?? a).escapeAt = 0; // (another way, then)
-        else if (!a.detour) a.detour = { heading: a.heading + (Math.random() < 0.5 ? 1 : -1) * rnd(1.4, 2.2), time: rnd(1.5, 3) };
+        else if (!a.detour) {
+          // (Round it, the way that's clear: along the bank, round the foot of the slope.)
+          const open = this.#openWay(a, sp, ctx, a.heading);
+          a.detour = { heading: open ?? a.heading + (Math.random() < 0.5 ? 1 : -1) * rnd(1.4, 2.2), time: rnd(1.5, 3) };
+        }
         a.speed *= Math.max(0, 1 - dt * 3);
         if (herd && herd.fleeTime <= 0 && !fleeing) herd.goal = { x: a.x - sx * 20, z: a.z - sz * 20 };
       } else {
@@ -3638,6 +3687,16 @@ export class Wildlife {
         a.x = nx;
         a.z = nz;
       }
+    }
+    // (Trying to go and getting nowhere for a while: it gives up on where
+    // it was going. A herd's is chosen again, somewhere it can get to.)
+    if (a.speed > sp.walk * 0.4 && moved < a.speed * dt * 0.2) a.stuck = (a.stuck ?? 0) + dt;
+    else a.stuck = Math.max(0, (a.stuck ?? 0) - dt * 2);
+    if (a.stuck > 3) {
+      a.stuck = 0;
+      if (herd && herd.fleeTime <= 0 && !fleeing) herd.goalWait = 0;
+      const open = this.#openWay(a, sp, ctx, a.heading + Math.PI, 9);
+      if (open !== null) a.detour = { heading: open, time: rnd(2, 4) };
     }
     a.cycle = (a.cycle ?? Math.random()) + moved / a.strideLen;
     a.phase += (moved / sp.stride) * TAU;

@@ -1841,7 +1841,7 @@ kbd {
   font: 700 11px/1 var(--display);
   color: #f4ecd6;
 }
-.skills-ui {
+.skills-ui, .journal-ui {
   position: fixed;
   top: 50%;
   left: 50%;
@@ -1856,9 +1856,9 @@ kbd {
   pointer-events: auto;
   z-index: 50;
 }
-.skills-ui header h2, .skills-ui .ach-head { margin: 0 0 2px; font: 700 18px/1.2 var(--display); }
-.skills-ui header p { margin: 0 0 10px; font-size: 12px; color: rgba(236, 230, 216, 0.65); }
-.skills-ui .ach-head { margin-top: 14px; margin-bottom: 8px; }
+.skills-ui header h2, .skills-ui .ach-head, .journal-ui header h2, .journal-ui .ach-head { margin: 0 0 2px; font: 700 18px/1.2 var(--display); }
+.skills-ui header p, .journal-ui header p { margin: 0 0 10px; font-size: 12px; color: rgba(236, 230, 216, 0.65); }
+.skills-ui .ach-head, .journal-ui .ach-head { margin-top: 14px; margin-bottom: 8px; }
 .skill-list, .ach-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .skill-list li { padding: 8px 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.06); }
 .sk-top { display: flex; justify-content: space-between; gap: 8px; }
@@ -1963,3 +1963,31 @@ kbd {
     flex: none;
   }
 }
+
+/* Settings (see StartMenu.settings): sliders, and rows of choices. */
+.sm-slide {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+.sm-slide output {
+  color: #f4ecd6;
+  font: 500 15px 'Barlow', sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.sm-slide input[type='range'] {
+  grid-column: 1 / -1;
+  padding: 0;
+  accent-color: #e0823a;
+  background: none;
+  clip-path: none;
+}
+.sm-set {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* The journal (see Hud.toggleJournal): its pages under the skills panel's look. */
+.journal-pages h2 { margin: 14px 0 8px; font: 700 18px/1.2 var(--display); }
+.journal-pages h2:first-child { margin-top: 4px; }

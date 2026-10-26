@@ -140,7 +140,7 @@ export class TreeFinds {
         if (d < 35 && season < 3) {
           for (let k = 0; k < BEES; k++) {
             const t = this.time * (1.5 + (k % 5) * 0.4) * (mad ? 2.2 : 1) + k * 2.3, r = 0.4 + (k % 4) * 0.25;
-            const chase = mad && k % 3 !== 0 ? Math.min(1, (this.time - this.angry.from) * 0.8) : 0; // (most of them come for you; a few stay by the nest)
+            const chase = mad && k % 3 !== 0 && (!this.angry.remote || d < 8) ? Math.min(1, (this.time - this.angry.from) * 0.8) : 0; // (most of them come for you; a few stay by the nest)
             const hx = f.x + (c.x - f.x) * chase, hy = f.y + (c.y - 0.3 - f.y) * chase, hz = f.z + (c.z - f.z) * chase;
             p.set(hx + Math.cos(t) * r * (1 + chase), hy - 0.1 + Math.sin(t * 1.7 + k) * 0.35, hz + Math.sin(t * 1.2) * r * (1 + chase));
             m4.compose(p, q.identity(), s.set(1, 1, 1));
@@ -148,7 +148,7 @@ export class TreeFinds {
           }
           if (d < 12 && (this.buzzWait = (this.buzzWait ?? 0) - dt) <= 0) (this.buzzWait = 2.2), sound?.call('flybuzz', pan(f.x, f.z), Math.min(0.5, 3 / (d + 2)));
           // (Stirred up: they sting you, again and again, till you're well away or they settle.)
-          if (mad && d < 18 && (this.stingWait = (this.stingWait ?? 0) - dt) <= 0) {
+          if (mad && d < (this.angry.remote ? 8 : 18) && (this.stingWait = (this.stingWait ?? 0) - dt) <= 0) {
             this.stingWait = 1.1 + Math.random() * 0.8;
             sound?.call('flybuzz', 0, 0.9);
             this.onSting?.();
@@ -177,12 +177,15 @@ export class TreeFinds {
   }
 
   /** A tree struck at (x, z) (`smoked`: a lit torch in hand): a wild bees' nest in it is stirred up, and comes for you. Returns whether. */
-  stir(x, z, season, smoked) {
+  // (`remote`: someone else's doing, online: the bees are up round the nest,
+  // and only come for you if you're close by it.)
+  stir(x, z, season, smoked, remote = false) {
     if (smoked || season >= 3) return false;
     const f = this.near.find((h) => h.kind === 'hive' && Math.hypot((h.tx ?? h.x) - x, (h.tz ?? h.z) - z) < 3);
     if (!f) return false;
     const fresh = !(this.angry?.key === f.key && this.time < this.angry.until);
-    this.angry = { key: f.key, from: fresh ? this.time : this.angry.from, until: this.time + 9 };
+    this.angry = { key: f.key, from: fresh ? this.time : this.angry.from, until: this.time + 9, remote: remote && (fresh || this.angry.remote) };
+    if (fresh && !remote) this.onStir?.(f);
     return fresh;
   }
 

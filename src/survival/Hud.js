@@ -74,6 +74,10 @@ export class Hud {
       <div class="cold-vignette"></div>
       <div class="sleep-fade"></div>
       <button type="button" class="skills-button" hidden title="Skills and achievements (K)" aria-label="Skills and achievements"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.6 8 8.4.8-6.4 5.6 1.9 8.4L16 21.4 8.5 25.8l1.9-8.4L4 11.8l8.4-.8z" fill="#f2d880"/></svg><b></b></button>
+      <section class="journal-ui" hidden aria-label="Journal">
+        <header><h2>Journal</h2><p>What you've found on your travels · Y or Esc to close</p></header>
+        <div class="journal-pages"></div>
+      </section>
       <section class="skills-ui" hidden aria-label="Skills and achievements">
         <header><h2>Skills</h2><p>Better the more you do them · K or Esc to close</p></header>
         <ol class="skill-list"></ol>
@@ -157,7 +161,7 @@ export class Hud {
   }
 
   get busy() {
-    return ['.craft', '.creative', '.chest-ui', '.inv-ui', '.death', '.won', '.skills-ui', '.ask-ui', '.emotes'].some((sel) => !this.el(sel).hidden);
+    return ['.craft', '.creative', '.chest-ui', '.inv-ui', '.death', '.won', '.skills-ui', '.journal-ui', '.ask-ui', '.emotes'].some((sel) => !this.el(sel).hidden);
   }
 
   /**
@@ -287,6 +291,25 @@ export class Hud {
       const day = record.done.get(a.id);
       return `<li class="${day ? 'got' : ''}"><b>${day ? '★' : '☆'} ${a.name}</b><p>${a.what}${day ? ` · day ${day}` : ''}</p></li>`;
     }).join('');
+  }
+
+  // --- Journal -----------------------------------------------------------------------
+
+  toggleJournal(page) {
+    const panel = this.el('.journal-ui');
+    if (!panel.hidden) return this.closeAll();
+    this.closeAll();
+    panel.hidden = false;
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const list = (rows, empty) => (rows.length ? rows.map(([name, note]) => `<li><b>${esc(name)}</b><p>${esc(note)}</p></li>`).join('') : `<li><p>${empty}</p></li>`);
+    this.el('.journal-pages').innerHTML = `
+      <h2>Places · ${page.places.length}</h2>
+      <ol class="ach-list">${list(page.places.map(([n, d]) => [n, `first seen on day ${d}`]), 'Nowhere yet: go and look round!')}</ol>
+      <h2>Creatures · ${page.animals.length} of ${page.animalsOf}</h2>
+      <ol class="ach-list">${list(page.animals.map(([n, d]) => [n, `first seen on day ${d}`]), 'None yet: get a good look at one, close by.')}</ol>
+      <h2>Landmarks · ${page.landmarks.length} of ${page.landmarksOf}</h2>
+      <ol class="ach-list">${list(page.landmarks, 'None found yet: the standing stones show where others lie.')}</ol>`;
+    return true;
   }
 
   // --- Crafting ------------------------------------------------------------------
@@ -503,7 +526,7 @@ export class Hud {
   }
 
   closeAll() {
-    for (const sel of ['.craft', '.creative', '.chest-ui', '.skills-ui', '.inv-ui', '.ask-ui', '.emotes']) this.el(sel).hidden = true;
+    for (const sel of ['.craft', '.creative', '.chest-ui', '.skills-ui', '.journal-ui', '.inv-ui', '.ask-ui', '.emotes']) this.el(sel).hidden = true;
     this.chest = null;
     this.invSel = null;
     return false;

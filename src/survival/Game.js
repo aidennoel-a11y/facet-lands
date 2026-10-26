@@ -288,6 +288,8 @@ export class Game {
     this.ruinsSeen = new Set(saved?.ruins?.seen ?? []);
     this.explored = new Set(saved?.explored ?? []);
     this.landmarksFound = new Set(saved?.landmarks?.found ?? []); // (the landmarks' keys: found, by you or, online, another)
+    // (Your journal: the kinds of country you've been in, the creatures you've seen, by the day each was first.)
+    this.journal = { places: new Map(saved?.journal?.places ?? []), animals: new Map(saved?.journal?.animals ?? []) };
     this.landmarkHints = new Set(saved?.landmarks?.hints ?? []); // (those the standing stones showed you)
     this.keep = { open: false, won: false, clues: 0, mark: null, ...(saved?.keep ?? {}) };
     this.onKeep?.(this.keep.open);
@@ -338,6 +340,7 @@ export class Game {
       ruins: { chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
       explored: [...this.explored],
       landmarks: { found: [...this.landmarksFound], hints: [...this.landmarkHints] },
+      journal: { places: [...this.journal.places], animals: [...this.journal.animals] },
       keep: this.keep,
       player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), record: this.record.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
@@ -358,6 +361,10 @@ export class Game {
         e.preventDefault();
         if (!this.survival.alive) return;
         this.#menu(this.hud.toggleCraft(this.inventory));
+        return;
+      }
+      if (e.code === 'KeyY' && this.survival.alive) {
+        this.#menu(this.hud.toggleJournal(this.#journalPage()));
         return;
       }
       if (e.code === 'KeyK' && this.survival.alive && this.mode === 'survival') {
@@ -687,6 +694,7 @@ export class Game {
       case 'fancyBed': return 'Sleep';
       case 'raft': return 'Climb aboard';
       case 'canoe': return 'Climb in (Shift+Q: carry it)';
+      case 'sailboat': return this.controls.crouch ? 'Open the hold' : 'Go aboard (crouch and click: open the hold)';
       case 'zipLine': return Math.hypot(this.camera.position.x - s.x, this.camera.position.z - s.z) < 5 ? `Ride the zip line down (${Math.round(s.len)} m)` : 'The foot of the zip line: ride it from the top';
       case 'stoneRoad': return 'A paved road: quicker going on it (Shift+Q: take it up)';
       case 'ditch': return s.data?.fed ? 'A ditch running from the water: plots beside it never need watering' : 'A ditch (dry: it needs to start at water)';
@@ -1151,6 +1159,14 @@ export class Game {
       case 'strawBed':
       case 'fancyBed':
         return this.#sleep(s);
+      case 'sailboat':
+        if (!this.structures.isBuilt(s)) return this.hotbar?.flash('She isn\'t finished yet');
+        if (this.controls.crouch) {
+          this.sound?.call('creak', 0, 0.4);
+          this.hud.openChest(s.contents, this.inventory, 'The hold', 'Click to move a stack across · E or Esc to close');
+          return this.#menu(true);
+        }
+        return this.#board(s);
       case 'raft':
       case 'canoe':
         return this.#board(s);
@@ -2999,8 +3015,8 @@ export class Game {
     const p = this.camera.position;
     // (A raft: poled along, slow, steady. A canoe: sat low in it, quick
     // under the paddle, gliding on between strokes, turning as you steer.)
-    const canoe = s.type === 'canoe';
-    const top = canoe ? 4.8 : 3, grip = canoe ? 0.55 : 0.8, turn = canoe ? 1.1 : 1.5, seat = canoe ? 0.22 : 0.45, sink = canoe ? -0.05 : 0.12; // (a canoe rides high: its floor well above the water)
+    const canoe = s.type === 'canoe', sail = s.type === 'sailboat';
+    const top = canoe ? 4.8 : 3, grip = sail ? 0.22 : canoe ? 0.55 : 0.8, turn = sail ? 0.5 : canoe ? 1.1 : 1.5, seat = sail ? 1.0 : canoe ? 0.22 : 0.45, sink = sail ? 0.05 : canoe ? -0.05 : 0.12; // (a canoe rides high: its floor well above the water)
     const eye = canoe ? this.controls.eyeHeight * 0.55 : this.controls.eyeHeight;
     p.set(s.x, s.y + seat + eye, s.z);
     this.controls.velocityY = 0;
@@ -3010,15 +3026,27 @@ export class Game {
     this.controls.vehicle = (dt, input) => {
       const w = this.waterAt(s.x, s.z) ?? { level: s.y + sink };
       const yaw = this.controls.euler.y;
-      s.speed = (s.speed ?? 0) + (input.forward * top - (s.speed ?? 0)) * Math.min(1, dt * (input.forward ? grip : grip * 0.35));
+      // (Under sail: as fast as the wind and the way it blows across her
+      // allow: best with it on the beam or the quarter, a crawl head to
+      // wind; the sail let fly (S), she drifts to a stop. W hauls it in.)
+      let want = input.forward * top;
+      if (sail) {
+        const wv = this.wind?.() ?? { x: 0, z: 0 }, ws = Math.hypot(wv.x, wv.z);
+        s.heading ??= s.rot + Math.PI;
+        const bowX = -Math.sin(s.heading), bowZ = -Math.cos(s.heading), from = ws > 0.1 ? (bowX * wv.x + bowZ * wv.z) / ws : 0; // (1: wind dead behind; -1: dead ahead)
+        const point = from < -0.75 ? 0.08 : 0.55 + 0.45 * Math.sin(Math.acos(Math.max(-1, Math.min(1, from))) * 0.9 + 0.35);
+        s.sheet = Math.max(0, Math.min(1, (s.sheet ?? 0) + (input.forward > 0 ? 0.6 : input.forward < 0 ? -0.8 : 0) * dt));
+        want = s.sheet * point * Math.min(9, 1.2 + ws * 0.75);
+      }
+      s.speed = (s.speed ?? 0) + (want - (s.speed ?? 0)) * Math.min(1, dt * (input.forward || sail ? grip : grip * 0.35));
       const drift = (w.speed ?? 0) * (canoe ? 0.85 : 0.7);
       // (Its heading is the way it goes, bow first: the model's bow is the way it was set down facing.)
       s.heading ??= s.rot + Math.PI;
       const nx = s.x - Math.sin(s.heading) * s.speed * dt + (w.fx ?? 0) * drift * dt, nz = s.z - Math.cos(s.heading) * s.speed * dt + (w.fz ?? 0) * drift * dt;
       const next = this.waterAt(nx, nz);
-      if (next && this.groundAt(nx, nz) < next.level - (canoe ? 0.12 : 0.2)) {
+      if (next && this.groundAt(nx, nz) < next.level - (sail ? 0.9 : canoe ? 0.12 : 0.2)) {
         // (It comes round to where you look as you paddle; adrift, it hardly turns.)
-        const pull = Math.min(1, dt * turn * (canoe ? Math.min(1, 0.25 + Math.abs(s.speed) / 2) : 1));
+        const pull = Math.min(1, dt * turn * (canoe || sail ? Math.min(1, 0.25 + Math.abs(s.speed) / 2) : 1));
         s.heading += Math.atan2(Math.sin(yaw - s.heading), Math.cos(yaw - s.heading)) * pull;
         this.structures.move(s, nx, next.level - sink, nz, s.heading + Math.PI);
       } else s.speed = 0;
@@ -3031,12 +3059,13 @@ export class Game {
       s.mesh.rotation.x = Math.atan(fx * wave.nx + fz * wave.nz) * 0.8;
       s.mesh.rotation.z = -Math.atan(fz * wave.nx - fx * wave.nz) * 0.8;
       // (The dip of the paddle, stroke by stroke.)
-      if (input.forward && (stroke -= dt) <= 0) (stroke = canoe ? 0.85 : 1.3), this.sound?.call('paddle', (Math.random() - 0.5) * 0.6, canoe ? 0.35 : 0.3);
+      if (!sail && input.forward && (stroke -= dt) <= 0) (stroke = canoe ? 0.85 : 1.3), this.sound?.call('paddle', (Math.random() - 0.5) * 0.6, canoe ? 0.35 : 0.3);
+      if (sail && Math.abs(s.speed) > 1 && (stroke -= dt) <= 0) (stroke = 2.2 + Math.random()), this.sound?.call('splash', (Math.random() - 0.5) * 0.6, Math.min(0.3, 0.06 * s.speed)); // (the bow wave)
       p.set(s.x, w.level - sink + seat + eye + wave.y, s.z);
       this.controls.grounded = true;
       this.controls.moving = Math.abs(s.speed) > 0.2;
     };
-    this.hotbar?.flash(canoe ? 'In the canoe: W to paddle (it glides on), look where to go, S to back-paddle, Q to get out' : 'On the raft: W to paddle, Q to get off');
+    this.hotbar?.flash(sail ? 'Aboard: W hauls in the sail, S lets it fly; look where to steer. Fastest with the wind across or behind you. Q to go ashore' : canoe ? 'In the canoe: W to paddle (it glides on), look where to go, S to back-paddle, Q to get out' : 'On the raft: W to paddle, Q to get off');
   }
 
   // Off the raft: onto land close by, if there's any, else into the water.
@@ -3188,6 +3217,29 @@ export class Game {
           const key = `${cx + dx},${cz + dz}`;
           if (!this.explored.has(key)) (this.explored.add(key), (this.dirty = true), (this.exploredVersion = (this.exploredVersion ?? 0) + 1));
         }
+      }
+    }
+    // Your journal, kept as you go: where you are (every few seconds), and
+    // the creatures you've had a good look at (near, and in front of you).
+    this.journalWait = (this.journalWait ?? 0) - dt;
+    if (this.journalWait <= 0 && this.generator) {
+      this.journalWait = 2.5;
+      const day = Math.floor(this.worldDays ?? 0) + 1, g = this.generator();
+      const place = g?.describe?.(cam.x, cam.z, true);
+      if (place && !this.journal.places.has(place)) {
+        this.journal.places.set(place, day);
+        this.dirty = true;
+        if (this.journal.places.size > 1 && this.mode === 'survival') this.hud.toast(`New in your journal: ${place} (Y)`);
+      }
+      const look = new Vector3();
+      this.camera.getWorldDirection(look);
+      for (const a of this.wildlife?.animals ?? []) {
+        if (this.journal.animals.has(a.kind) || !NAMES[a.kind]) continue;
+        const dx = a.x - cam.x, dz = a.z - cam.z, d = Math.hypot(dx, dz);
+        if (d > 40 || (dx * look.x + dz * look.z) / (d || 1) < 0.5) continue;
+        this.journal.animals.set(a.kind, day);
+        this.dirty = true;
+        if (this.mode === 'survival') this.hud.toast(`New in your journal: the ${NAMES[a.kind]} (Y)`);
       }
     }
     this.ruinWait = (this.ruinWait ?? 0) - dt;
@@ -3926,6 +3978,19 @@ export class Game {
    * land round about on your map; the standing stones: where the other
    * landmarks are).
    */
+  // Your journal's pages (see Hud.renderJournal): places, creatures, landmarks.
+  #journalPage() {
+    const kinds = Object.keys(NAMES).filter((k) => !['wolfPup', 'songbird'].includes(k));
+    const found = [...this.landmarksFound].map((k) => k.split(':')[0]).filter((k) => LANDMARKS[k]);
+    return {
+      places: [...this.journal.places].sort((a, b) => a[1] - b[1]),
+      animals: [...this.journal.animals].sort((a, b) => a[1] - b[1]).map(([k, day]) => [NAMES[k][0].toUpperCase() + NAMES[k].slice(1), day]),
+      animalsOf: kinds.length,
+      landmarks: [...new Set(found)].map((k) => [LANDMARKS[k].name, LANDMARKS[k].what]),
+      landmarksOf: FOUND_KINDS.length,
+    };
+  }
+
   discoverLandmark(site) {
     if (LANDMARKS[site.kind]?.hidden || this.landmarksFound.has(site.key)) return;
     this.landmarksFound.add(site.key);

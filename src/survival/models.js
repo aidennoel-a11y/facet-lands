@@ -2216,6 +2216,46 @@ export function canoeModel() {
 }
 
 /**
+ * A sailing boat, some 7 m long, its bow to +z: a plank-built hull on a
+ * keel, a deck with a hatch to the hold, a mast with a boom and a broad
+ * leather sail, and a tiller at the stern.
+ */
+export function sailboatModel() {
+  const b = new Parts(205);
+  const wood = 0x8a5a34, dark = 0x6a4428, plank = 0x9a6a40, deck = 0xb08050;
+  const L = 7, n = 14;
+  for (let k = 0; k < n; k++) {
+    const u = -L / 2 + (L * (k + 0.5)) / n, t = (u + L / 2) / L; // (t: 0 stern .. 1 bow)
+    // (Fullest a little aft of the middle, drawn in to a sharp bow and a narrower transom.)
+    const w = 1.1 * Math.sqrt(Math.max(0.04, 1 - Math.pow(Math.abs(t - 0.45) / (t > 0.45 ? 0.55 : 0.6), 2.2))) + (t < 0.1 ? 0.25 : 0), lift = 0.35 * Math.pow(Math.max(0, t - 0.7) / 0.3, 2);
+    b.add(new BoxGeometry(0.16, 0.25, L / n + 0.02), dark, [0, -0.05 + lift, u]); // (the keel)
+    b.add(new BoxGeometry(w * 1.4, 0.1, L / n + 0.02), wood, [0, 0.12 + lift, u]); // (the bottom)
+    for (const sx of [-1, 1]) {
+      b.add(new BoxGeometry(0.08, 0.45, L / n + 0.02), plank, [sx * w * 0.82, 0.38 + lift, u], [0, 0, sx * -0.35]); // (the bilge strake)
+      b.add(new BoxGeometry(0.08, 0.45, L / n + 0.02), wood, [sx * (w - 0.04), 0.82 + lift, u], [0, 0, sx * -0.08]); // (the topside)
+      b.add(new BoxGeometry(0.12, 0.06, L / n + 0.02), dark, [sx * (w - 0.04), 1.06 + lift, u]); // (the gunwale)
+    }
+    if (k > 0 && k < n - 1) b.add(new BoxGeometry(w * 2 - 0.16, 0.05, L / n), deck, [0, 0.98 + lift * 0.9, u], [0, 0, 0], [1, 1, 1], 0.06); // (the deck)
+  }
+  b.add(new BoxGeometry(1.0, 0.12, 0.9), dark, [0, 1.05, -0.6]); // (the hatch to the hold)
+  b.add(new BoxGeometry(0.85, 0.04, 0.75), 0x5a3a20, [0, 1.12, -0.6]);
+  b.add(new BoxGeometry(0.3, 0.9, 0.12), wood, [0, 1.1, L / 2 + 0.05], [0.3, 0, 0]); // (the stem)
+  b.add(new BoxGeometry(1.6, 0.8, 0.1), wood, [0, 0.75, -L / 2 - 0.02]); // (the transom)
+  b.add(new BoxGeometry(0.05, 0.05, 1.1), dark, [0, 1.2, -L / 2 + 0.35], [0.15, 0, 0]); // (the tiller)
+  // The mast, its boom, and the sail between them.
+  b.add(new CylinderGeometry(0.07, 0.1, 6.6, 6), 0x9a7048, [0, 4.2, 0.9]);
+  b.add(new CylinderGeometry(0.05, 0.05, 3.2, 5), 0x9a7048, [0, 1.85, -0.65], [Math.PI / 2, 0, 0]);
+  const sail = new BufferGeometry();
+  // (A gaff-less, four-sided sail: luff up the mast, foot along the boom, the head peaked aft.)
+  const P = [[0, 2.0, 0.85], [0, 7.1, 0.85], [0, 5.6, -1.9], [0, 2.0, -2.2]];
+  const tri = [0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2];
+  sail.setAttribute('position', new BufferAttribute(new Float32Array(tri.flatMap((i) => [P[i][0] + (i === 2 ? 0.25 : i === 3 ? 0.15 : 0), P[i][1], P[i][2]])), 3));
+  b.add(sail, 0xe8dcc0, [0, 0, 0], [0, 0, 0], [1, 1, 1], 0.05);
+  for (const sx of [-1, 1]) b.add(new CylinderGeometry(0.012, 0.012, 7, 3), 0x5a4a3a, [sx * 0.55, 4.0, 0.9], [0, 0, sx * 0.08]); // (the shrouds)
+  return b.build();
+}
+
+/**
  * A ladder `len` m long, its feet at the origin, leaning in towards +z (on
  * a wall or a rock face): two rails, a rung every 30 cm.
  */

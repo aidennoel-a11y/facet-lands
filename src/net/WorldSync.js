@@ -21,7 +21,7 @@ import { Torches } from '../items/Torches.js';
 const EDIT_EVERY = 0.5;
 const SKY_EVERY = 2;
 const WILD_EVERY = 1 / 5;
-const SETS = ['felled', 'taken', 'mushrooms', 'broken', 'landmarks'];
+const SETS = ['felled', 'taken', 'mushrooms', 'broken', 'landmarks', 'shrooms', 'finds'];
 const MAPS = ['stumps', 'structures', 'torches', 'drops'];
 
 // A structure's record, without what changes by the second (a fire's fuel
@@ -76,6 +76,8 @@ export class WorldSync {
     const g = this.game;
     const now = {
       felled: this.trees.removed, taken: g.items.taken, mushrooms: this.mushrooms?.taken ?? new Set(), broken: g.rocks?.removed ?? new Set(), landmarks: g.landmarksFound ?? new Set(),
+      // (The giant mushrooms cut down; the nests and bees' nests robbed, and when.)
+      shrooms: this.shrooms ?? new Set(), finds: new Set([...g.treeFinds.taken].map(([k, at]) => `${k}|${Math.round(at * 100) / 100}`)),
       stumps: new Map(), structures: new Map(), torches: new Map(), drops: new Map(),
     };
     for (const st of g.felling.stumpsJSON()) now.stumps.set(st.key, [{ k: st.key, ...st }, st.key]);
@@ -122,6 +124,12 @@ export class WorldSync {
     for (const key of e.add?.mushrooms ?? []) (this.sent.mushrooms.add(key), this.mushrooms?.takeKey(key));
     for (const key of e.add?.broken ?? []) (this.sent.broken.add(key), g.rocks?.removeKey(key));
     for (const key of e.add?.landmarks ?? []) (this.sent.landmarks.add(key), g.landmarkShared?.(key)); // (found by someone else: on your map too)
+    for (const key of e.add?.shrooms ?? []) (this.sent.shrooms.add(key), this.cutShroom?.(key));
+    for (const key of e.add?.finds ?? []) {
+      this.sent.finds.add(key);
+      const at = key.lastIndexOf('|'), k = key.slice(0, at), when = +key.slice(at + 1);
+      if (Number.isFinite(when) && !(g.treeFinds.taken.get(k) >= when)) g.treeFinds.taken.set(k, when);
+    }
     for (const st of e.put?.stumps ?? []) (this.sent.stumps.set(st.k, st.k), g.felling.addStump(st));
     for (const rec of e.put?.structures ?? []) (this.sent.structures.set(rec.k, structureSign(rec)), g.structures.apply(rec));
     for (const key of e.del?.structures ?? []) (this.sent.structures.delete(key), g.structures.removeKey(key));
@@ -200,7 +208,10 @@ export class WorldSync {
       return;
     }
     if (f.k === 'shot') return this.game.ghostShot(f);
+    if (f.k === 'tornado') return void this.tornado?.(f);
+    if (f.k === 'ignite') return this.ignite?.(f.x, f.y, f.z); // (someone's fire, set going)
     if (f.k === 'mow') return this.mow?.(f.x, f.z, f.r); // (someone's sickle through the grass)
+    if (f.k === 'bees') return void this.game.treeFinds.stir(f.x, f.z, 0, false, true); // (someone's axe in a tree with a bees' nest: they're up, there)
     if (f.k === 'bolt') return this.lightning.strikeAt(f.x, f.z, f.seed, f.pulses);
     if (!f.n) return;
     const cam = this.game.camera.position;
