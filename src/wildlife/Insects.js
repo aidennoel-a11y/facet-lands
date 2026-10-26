@@ -11,6 +11,7 @@ const smoothstep = (a, b, x) => {
 };
 const m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s = new Vector3();
 const glow = new Color(0.78, 1, 0.3), dim = new Color(0.12, 0.16, 0.06), col = new Color();
+const swampGlow = new Color(0.35, 1, 0.85), swampDim = new Color(0.05, 0.14, 0.12), haloWarm = new Color(0.72, 1, 0.31), haloCool = new Color(0.3, 1, 0.85);
 
 /**
  * The small life of the world:
@@ -42,8 +43,8 @@ export class Insects {
     const lambert = materialHook(new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
     this.hiveMesh = new InstancedMesh(Models.hive(), lambert, 64);
     this.beeMesh = new InstancedMesh(Models.bee(), lambert, 400);
-    this.flyMesh = new InstancedMesh(Models.firefly(), new MeshBasicMaterial({ color: 0xffffff }), 260);
-    this.haloMesh = new InstancedMesh(Models.firefly(), new MeshBasicMaterial({ color: 0xb8ff50, transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false }), 260);
+    this.flyMesh = new InstancedMesh(Models.firefly(), new MeshBasicMaterial({ color: 0xffffff }), 460);
+    this.haloMesh = new InstancedMesh(Models.firefly(), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false }), 460); // (each its own colour: see the fireflies)
     for (const m of [this.hiveMesh, this.beeMesh, this.flyMesh, this.haloMesh]) {
       m.instanceMatrix.setUsage(DynamicDrawUsage);
       m.frustumCulled = false;
@@ -280,12 +281,48 @@ globalThis.__prof?.mark('  ins: bees');
         this.flyMesh.setColorAt(f, col.copy(glow).lerp(dim, 1 - on));
         m4.compose(p, q, s.setScalar(on > 0.05 ? 4 + 5 * on : 0));
         this.haloMesh.setMatrixAt(f, m4);
+        this.haloMesh.setColorAt(f, haloWarm);
+        f++;
+      }
+    }
+    // Over a glowing swamp: swarms of them, blue-green, thick over the water,
+    // spring to autumn (not only in the summer), on every night but the wettest.
+    const swamp = ctx.glowSwamp ?? 0;
+    const thick = Math.min(1, ctx.night * (1 - ctx.winter) * (1 - 0.7 * ctx.rain) * swamp * 1.6);
+    const S = 4.5, si = Math.floor(cam.x / S), sj = Math.floor(cam.z / S);
+    for (let j = sj - 11; j <= sj + 11 && thick > 0.02; j++) {
+      for (let i = si - 11; i <= si + 11 && f < this.flyMesh.instanceMatrix.count; i++) {
+        if (this.#h(i, j, 0x5f10) >= thick) continue;
+        const spot = this.#cell(`s${i},${j}`, () => {
+          const x = (i + this.#h(i, j, 0x5f11)) * S, z = (j + this.#h(i, j, 0x5f12)) * S, g = ctx.ground(x, z);
+          if (!Number.isFinite(g)) return undefined;
+          if ((ctx.generator?.glowSwampAt?.(x, z) ?? 0) < 0.3) return null;
+          const w = ctx.waterAt?.(x, z), over = w && w.level > g ? w.level : g;
+          // (Most over the water; a few over the moss.)
+          if (!(w && w.level > g) && this.#h(i, j, 0x5f16) > 0.3) return null;
+          return { x, z, g: over, seed: this.#h(i, j, 0x5f13) * 100, period: 1.2 + 2 * this.#h(i, j, 0x5f14), offset: this.#h(i, j, 0x5f15) * 5 };
+        });
+        if (!spot) continue;
+        const d = Math.hypot(spot.x - cam.x, spot.z - cam.z);
+        if (d < 3 || d > 50) continue;
+        const fx = spot.x + Math.sin(T * 0.17 + spot.seed) * 1.6 + Math.sin(T * 0.41 + spot.seed * 2) * 0.6;
+        const fz = spot.z + Math.cos(T * 0.19 + spot.seed * 1.3) * 1.6 + Math.cos(T * 0.37 + spot.seed) * 0.6;
+        const fy = spot.g + 0.5 + 1.2 * (0.5 + 0.5 * Math.sin(T * 0.5 + spot.seed));
+        const phase = ((T + spot.offset) % spot.period) / spot.period;
+        const on = 0.35 + 0.65 * (phase < 0.3 ? Math.sin((phase / 0.3) * Math.PI) : 0);
+        m4.compose(p.set(fx, fy, fz), q.identity(), s.setScalar(0.7 + 0.5 * on));
+        this.flyMesh.setMatrixAt(f, m4);
+        this.flyMesh.setColorAt(f, col.copy(swampGlow).lerp(swampDim, 1 - on));
+        m4.compose(p, q, s.setScalar(2.5 + 4 * on));
+        this.haloMesh.setMatrixAt(f, m4);
+        this.haloMesh.setColorAt(f, haloCool);
         f++;
       }
     }
     this.flyMesh.count = this.haloMesh.count = f;
     this.flyMesh.instanceMatrix.needsUpdate = this.haloMesh.instanceMatrix.needsUpdate = true;
     if (this.flyMesh.instanceColor) this.flyMesh.instanceColor.needsUpdate = true;
+    if (this.haloMesh.instanceColor) this.haloMesh.instanceColor.needsUpdate = true;
   }
 
   // A bee: milling round the nest; now and then off to the flowers nearby, a

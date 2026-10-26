@@ -18,7 +18,7 @@ export const MAP_LABELS = [
   ['Redwood forest', '#8a3b24'],
   ['Wildflower meadow', '#d98ac9'],
   ['Giant flower meadow', '#f0a0e0'],
-  ['Crater lakes', '#3ac8b8'],
+  ['Meteor crater', '#8a7a6a'],
   ['Escarpment', '#6f7f5a'],
   ['Cascades', '#3f9a7a'],
   ['Mountain foothills', '#6e8f4a'],

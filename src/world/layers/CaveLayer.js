@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bonesModel } from '../../survival/models.js';
 import { salamander as salamanderModel } from '../../wildlife/models.js';
 import { shroomGeometry, shroomOf, shroomPieces } from '../caves/giantShrooms.js';
+import { caveQueueFocus } from '../caves/CaveSystem.js';
 
 /**
  * Cave material: vertex-coloured rock whose *daylight* (sun, moon and sky
@@ -14,7 +15,8 @@ import { shroomGeometry, shroomOf, shroomPieces } from '../caves/giantShrooms.js
 /** Night vision (testing): 1 lifts the cave darkening completely. */
 export const caveNightVision = { value: 0 };
 /** Where you are, and whether underground: which caves are wanted (see the layer's update; set by main). */
-export const caveFocus = { under: false, x: 0, z: 0 };
+export const caveFocus = { under: false, atMouth: false, x: 0, z: 0 };
+let caveRescue = null; // (see CaveSystem.rescue)
 /** The time, for the water's shimmer and the fish (see updateCaveLife). */
 export const caveTime = { value: 0 };
 
@@ -375,7 +377,7 @@ export function updateCaveLife(time, eye = null) {
     // (The lava's light first, the nearest few spots of it, as far as it
     // reaches; then the nearest of the rest.)
     let lava = 0;
-    for (const [d, g] of near) if (g.lava && lava < 3 && d < 70 * 70) caveGlowLights.push(g), lava++;
+    for (const [d, g] of near) if (g.lava && lava < 5 && d < 70 * 70) caveGlowLights.push(g), lava++;
     // (The rest by how near they are for how far each reaches: a strong one a
     // way off before a faint one close by.)
     near.sort((a, b) => Math.sqrt(a[0]) / a[1].reach - Math.sqrt(b[0]) / b[1].reach);
@@ -553,6 +555,7 @@ export function createCaveLayer(config) {
     build({ cx, cz, lod, generator }) {
       if (lod > config.caveMaxLod || !generator.caves) return null;
       const caves = generator.caves;
+      caveRescue = (x, z) => caves.rescue(x, z);
       const group = new Group();
       group.name = 'caves';
       group.userData.chunk = [cx, cz];
@@ -574,12 +577,14 @@ export function createCaveLayer(config) {
     // by a cave mouth you're near (to see down into it). Elsewhere on the
     // surface, no cave work at all.
     update() {
+      (caveQueueFocus.x = caveFocus.x), (caveQueueFocus.z = caveFocus.z); // (the caves nearest you built first)
+      if (caveFocus.under || caveFocus.atMouth) caveRescue?.(caveFocus.x, caveFocus.z);
       if (!waiting.size) return;
       const size = config.chunkSize, f = caveFocus;
       // (Coming up to a cave mouth: the caves all round you get built too,
       // ahead of time, so the way in isn't a black void when you get there.)
       const any = waiting.values().next().value;
-      const approaching = !f.under && any.userData.caves.mouthsNear(f.x - 120, f.z - 120, f.x + 120, f.z + 120).length > 0;
+      const approaching = !f.under && any.userData.caves.mouthsNear(f.x - 220, f.z - 220, f.x + 220, f.z + 220).length > 0;
       const wanted = [];
       for (const group of waiting) {
         const [cx, cz] = group.userData.chunk;

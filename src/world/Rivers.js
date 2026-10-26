@@ -672,6 +672,7 @@ export class Rivers {
       if (!pond) continue;
       pond.tint = 2;
       pond.hot = true;
+      pond.hue = sp.hue ?? 0;
       this.#put({ points: [], pond, tarn: null, kind: 'lake' });
     }
   }
@@ -1021,7 +1022,7 @@ export class Rivers {
         ({ d, half, level, fx, fz, drop, along, end } = m);
       }
       if (d > half + margin) continue;
-      const found = { level, fx, fz, drop, along, across: d / half, inset: half - d, pond, tint: pond ? item.pond.tint || 0 : 0 };
+      const found = { level, fx, fz, drop, along, across: d / half, inset: half - d, pond, tint: pond ? item.pond.tint || 0 : 0, hue: pond ? item.pond.hue ?? 0 : 0 };
       if (d - half < bestGap) {
         bestGap = d - half;
         best = found;

@@ -85,7 +85,7 @@ function cap(r, depth, round) {
     const a = (k / 7) * (Math.PI / 2);
     pts.push(new Vector2(Math.max(0.01, r * Math.cos(a)), depth * Math.pow(Math.sin(a), round)));
   }
-  const top = new LatheGeometry(pts.reverse(), 12);
+  const top = new LatheGeometry(pts, 12); // (rim up to the crown: its faces outward, seen from above)
   const gills = new CylinderGeometry(r * 0.96, r * 0.2, depth * 0.25, 12, 1);
   gills.translate(0, -depth * 0.12, 0);
   return [top, gills];

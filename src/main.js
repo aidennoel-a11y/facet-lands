@@ -11,7 +11,6 @@ import { createGrassLayer, grassClearings, grassPushers } from './world/layers/G
 import { Geese } from './render/Geese.js';
 import { createWreckLayer } from './world/layers/WreckLayer.js';
 import { createSunkenCityLayer } from './world/layers/SunkenCityLayer.js';
-import { createCraterLakeLayer } from './world/layers/CraterLakeLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
@@ -746,7 +745,6 @@ chunks.addLayer(createFlowerLayer(WORLD));
 const wonders = createWonderLayer(WORLD);
 scene.add(wonders.swarm);
 chunks.addLayer(wonders);
-chunks.addLayer(createCraterLakeLayer(WORLD)); // (the crater lakes' water: see TerrainGenerator.craterLakeAt)
 chunks.addLayer(createUnderstoryLayer(WORLD));
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
@@ -934,9 +932,6 @@ function waterAt(x, z, ice = false) {
   const r = generator.rivers.waterAt(x, z, rise > 0.02 ? 4.5 : 0);
   const up = r && !r.pond && r.level > WORLD.seaLevel + 0.35 ? rise : 0;
   if (r && (rise <= 0.02 || r.level + up > ground + 0.02) && (!found || r.level + up > found.level)) found = { level: r.level + up, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : (0.6 + Math.min(2.4, Math.max(0, r.drop) * 6)) * (1 + riverFlood.value), pond: r.pond, hot: r.tint === 2, flood: up > 0.05 };
-  // (A crater lake, in its bowl.)
-  const cl = generator.craterLakeAt(x, z);
-  if (cl && cl.d < cl.r * 1.06 && cl.level > ground + 0.02 && (!found || cl.level > found.level)) found = { level: cl.level, fx: 0, fz: 0, speed: 0, pond: true };
   // (A landmark's lake or pool: the crystal lake, the falls' basin, the hot pools...)
   const lw = landmarks.waterAt(x, z, ground);
   if (lw && (!found || lw.level > found.level)) found = lw;
@@ -1903,6 +1898,7 @@ function updateVisibility() {
   sheltered = underground;
   // (Which caves to build: all round you underground; on the surface only those by a mouth near you.)
   caveFocus.under = underground;
+  caveFocus.atMouth = mouths.some((e) => Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z) < 14);
   chunks.underground = underground && !nearMouth; // (the surface not loaded further while you're down there: see ChunkManager)
   caveFocus.x = p.x;
   caveFocus.z = p.z;
@@ -1945,6 +1941,7 @@ function caveSounds(dt) {
 }
 
 let sheltered = false; // underground: no rain or lightning, sounds muffled
+const glowSwampHere = { v: 0, next: 0 };
 let indoorDim = 0; // (indoors: how much of the daylight the walls keep out, eased)
 const caveSight = { next: 0 }; // (see updateVisibility)
 let shadowTurn = 0, cloudOwed = 0; // (see the frame: the clouds moved every other frame)
@@ -2742,6 +2739,10 @@ function settleFrame(now) {
   if (since < 1500 || (done < total && since < 6000)) return;
   standOnGround();
   loading = null;
+  // (The cave builders made ready now, in the background, each with the
+  // cave nearest you: else each's first cave, the first you walk into,
+  // waits on it working out the lie of the land from scratch.)
+  generator.caves.warm(Math.floor(camera.position.x / WORLD.chunkSize), Math.floor(camera.position.z / WORLD.chunkSize));
   chunks.budgetScale = 1;
   chunks.fadeChanges = true;
   loadScreen.classList.add('ls-done');
@@ -2895,7 +2896,8 @@ function tick(now) {
   });
   prof.mark('game (survival, building)');
   caveSounds(dt);
-  torches.update(worldNow, camera.position, caveGlowLights.length ? [...gameLights, ...caveGlowLights] : gameLights);
+  const swampLamps = glowSwampHere.v > 0.05 ? wonders.lightsNear(camera.position) : [];
+  torches.update(worldNow, camera.position, caveGlowLights.length || swampLamps.length ? [...gameLights, ...caveGlowLights, ...swampLamps] : gameLights);
   updateCaveLife(now / 1000, sheltered ? camera.position : null);
   // The spiders in the dark, round you when you're down in the caves.
   // The landmarks near you (found, the first time you come to one), and the old mines' timbers.
@@ -2936,7 +2938,10 @@ function tick(now) {
     const g = chunks.groundHeightAt(x, z), w = waterAt(x, z, true);
     return w?.frozen ? Math.max(g, w.level) : g;
   } : (x, z) => chunks.groundHeightAt(x, z);
+  // (How much of a glowing swamp you're in, looked at again now and then: its fireflies, its mist, its lights.)
+  if (!(worldNow < glowSwampHere.next && glowSwampHere.next - worldNow < 1)) (glowSwampHere.next = worldNow + 0.7), (glowSwampHere.v = sheltered ? 0 : generator.glowSwampAt(camera.position.x, camera.position.z));
   const life = {
+    glowSwamp: glowSwampHere.v,
     bloodMoon: dayNight.bloodMoon ?? 0,
     waterAt: (x, z) => waterAt(x, z),
     splash: (x, y, z, size = 1) => traces.splash(x, y, z, 6, 1.2 * size, 0.6 * size),

@@ -56,6 +56,8 @@ const SEA_CRUST = [0x4a6a3a, 0x5a7a42, 0x3e5e36, 0x66784a, 0x546a50, 0x6a5a58, 0
 const CORALS = [0xb08a58, 0xc8a070, 0xd8ccb0, 0xc8708a, 0xd88a5a, 0xa4b058, 0x9a7ab0, 0x5aa0a0, 0x8a6a44, 0xc0b070].map((c) => new Color(c));
 const SINTER = new Color(0xe6dcc4); // crusts round hot springs
 const MAT = new Color(0xd2803a); // microbial mats at a hot spring's edge
+// (Each pool's own: the heat-loving microbes' colours change with the water's heat: see HOT_POOLS in riverData.)
+const MATS = [0xd2803a, 0xe0a030, 0xb8b040, 0xc86a2a, 0xd8c060, 0x9a7a40].map((c) => new Color(c));
 const WASH = new Color(0xcdb592); // a canyon's dry wash
 const LAVA = new Color(0x2b2827); // old lava
 const CINDER = new Color(0x6e3b2c); // red cinders
@@ -86,6 +88,7 @@ const SHORE = {
 };
 // Black sand, the banded ground of a petrified forest, a glowing swamp's moss (see surfaceColor).
 const BLACK_SAND = new Color(0x2e2c2e);
+const CRATER_SCORCH = new Color(0x4a443e), CRATER_DUST = new Color(0xa49a8a); // (a meteor crater's blasted bowl, and the dust thrown out round it)
 const PETRIFIED_BANDS = [new Color(0x9a948e), new Color(0xa88ea8), new Color(0xb47860), new Color(0xd8c8a8)];
 const GLOW_MOSS = new Color(0x2e5248);
 // Mushroom islands' ground (see surfaceColor).
@@ -927,22 +930,18 @@ export class TerrainGenerator {
   }
 
   /**
-   * The highlands' own lie of the land (m, to add): steep rounded peaks,
-   * tower-like in the bamboo country; in the cherry country stepped into
-   * old terraces on the gentler slopes.
+   * The highlands' own lie of the land (m, to add): green foothills, the
+   * ground rolling up towards the ranges in broad, rounded hills and
+   * spurs with soft valleys between (the mountains' own slopes rise
+   * behind them as anywhere). A little rounder and gentler in the cherry
+   * country, a little steeper-sided in the bamboo.
    */
   highlandRelief(x, z, cherry) {
-    const wx = x + this.mesaNoise.noise2D(x * 0.003 + 5, z * 0.003) * 40, wz = z + this.mesaNoise.noise2D(x * 0.003, z * 0.003 + 5) * 40;
-    const peaks = Math.pow(Math.max(0, this.jungleNoise.noise2D(wx * 0.0055 + 13, wz * 0.0055 + 71) * 0.5 + 0.5), 2.4 - 0.6 * (1 - cherry));
-    const ridge = 1 - Math.abs(this.mesaNoise.noise2D(wx * 0.0035 + 91, wz * 0.0035 - 37));
-    let h = 14 + 70 * peaks + 16 * ridge * ridge;
-    if (cherry > 0) {
-      // (Terraces: the hillside stepped every few metres, the steps' edges softened.)
-      const step = 3.2, f = h / step - Math.floor(h / step);
-      const terraced = (Math.floor(h / step) + smoothstep(0.55, 0.95, f)) * step;
-      h += (terraced - h) * 0.55 * cherry;
-    }
-    return h;
+    const wx = x + this.mesaNoise.noise2D(x * 0.002 + 5, z * 0.002) * 60, wz = z + this.mesaNoise.noise2D(x * 0.002, z * 0.002 + 5) * 60;
+    const hills = this.jungleNoise.noise2D(wx * 0.0028 + 13, wz * 0.0028 + 71) * 0.5 + 0.5;
+    const knolls = this.jungleNoise.noise2D(wx * 0.007 - 41, wz * 0.007 + 9) * 0.5 + 0.5;
+    const shape = 1.6 - 0.3 * cherry; // (how sharply the hills rise: the cherry country's softer)
+    return 4 + 22 * Math.pow(hills, shape) + 6 * knolls * hills;
   }
 
   #jungleZone(x, z, range, aridity) {
@@ -2731,13 +2730,14 @@ export class TerrainGenerator {
       const v = this.getVolcanic(x, z);
       return v.cone < 0.2 && v.lava < 0.1;
     };
-    if (hash2(i, j, s) < 0.38) {
+    if (hash2(i, j, s) < 0.5) {
       const x = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * C, z = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * C;
       if (ok(x, z)) {
         springs.push({
           x, z,
           r: 4 + 4 * hash2(i, j, s + 3),
           geyser: hash2(i, j, s + 4) < 0.35,
+          hue: Math.floor(hash2(i, j, s + 8) * 6), // (its colours: see Rivers' hot pools, and the mats round it)
           period: 45 + 60 * hash2(i, j, s + 5),
           phase: hash2(i, j, s + 6),
           strength: 0.7 + 0.3 * hash2(i, j, s + 7),
@@ -2757,7 +2757,7 @@ export class TerrainGenerator {
         if (Math.hypot(x - field.x, z - field.z) > field.r) continue;
         if (springs.some((o) => Math.hypot(o.x - x, o.z - z) < 13)) continue;
         if (!ok(x, z, 0.6)) continue;
-        springs.push({ x, z, r: 2.5 + 2.5 * rand(), geyser: rand() < 0.4, period: 30 + 60 * rand(), phase: rand(), strength: 0.6 + 0.4 * rand() });
+        springs.push({ x, z, r: 2.5 + 2.5 * rand(), geyser: rand() < 0.4, period: 30 + 60 * rand(), phase: rand(), strength: 0.6 + 0.4 * rand(), hue: Math.floor(rand() * 6) });
       }
     }
     if (cache.size > 20000) cache.clear();
@@ -3775,7 +3775,7 @@ export class TerrainGenerator {
    * lavender and rust (see PetrifiedLayer).
    */
   petrifiedAt(x, z) {
-    const zone = smoothstep(0.44, 0.56, this.mesaNoise.fbm(x * 0.0008 + 300, z * 0.0008 - 120, 2));
+    const zone = smoothstep(0.58, 0.66, this.mesaNoise.fbm(x * 0.0008 + 300, z * 0.0008 - 120, 2)); // (rare: a few patches in all the dry country)
     if (zone <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
     return zone * smoothstep(0.45, 0.8, w.savanna + w.badlands + 0.6 * w.desert) * (1 - w.saltFlat) * (1 - w.mangrove);
@@ -3811,66 +3811,59 @@ export class TerrainGenerator {
   }
 
   /**
-   * The crater lake country: by the volcanic land (never up on the cones),
-   * in a few regions, a scatter of small round volcanic lakes, each in its
-   * own bowl with a low rim round it, each its own colour (turquoise,
-   * emerald, milky blue, rust red, sulphur yellow-green, ink blue).
-   * Returns the lake whose bowl reaches (x, z): { x, z, r, level, colour, d }, or null.
+   * Meteor craters: uncommon (one in a few kilometres' stretch of land, and
+   * not every stretch), anywhere on the land but the steepest mountains. A
+   * round bowl blasted out, 70 to 220 m across, its rim heaped up, and the
+   * ground thrown out round it for a long way (see WonderLayer: the rocks
+   * and boulders flung out; GroundItems: the iron of the meteorite itself).
+   * Returns the crater whose reach (`reach` times its radius) takes in (x, z):
+   * { x, z, r, depth, rim, d }, or null.
    */
-  craterLakeAt(x, z) {
-    const G = 170, I = Math.floor(x / G), K = Math.floor(z / G);
+  meteorCraterAt(x, z, reach = 3.5) {
+    const G = 2600, I = Math.floor(x / G), K = Math.floor(z / G);
     let best = null;
     for (let dk = -1; dk <= 1; dk++) for (let di = -1; di <= 1; di++) {
-      const c = this.#craterLake(I + di, K + dk);
+      const c = this.#meteorCrater(I + di, K + dk);
       if (!c) continue;
       const d = Math.hypot(x - c.x, z - c.z);
-      if (d < c.r * 1.7 && (!best || d / c.r < best.d / best.r)) best = { ...c, d };
+      if (d < c.r * reach && (!best || d / c.r < best.d / best.r)) best = { ...c, d };
     }
     return best;
   }
 
-  #craterLake(I, K) {
-    const cache = (this._craterLakes ??= new Map()), key = I * 100003 + K;
+  #meteorCrater(I, K) {
+    const cache = (this._meteors ??= new Map()), key = I * 100003 + K;
     if (cache.has(key)) return cache.get(key);
-    if (cache.size > 40000) cache.clear();
+    if (cache.size > 20000) cache.clear();
     this._craterNew = true; // (other points looked at: see #craterCarve)
     let c = null;
-    const G = 170, h = (k) => hash2(I * 7 + k * 1013, K * 13 - k * 619, this.seed ^ 0x6c1a);
-    if (h(0) < 0.6) {
-      const x = (I + 0.25 + 0.5 * h(1)) * G, z = (K + 0.25 + 0.5 * h(2)) * G;
-      const zone = this.volcanoNoise.fbm(x * 0.0004 + 333, z * 0.0004 - 91, 2);
-      if (zone > 0.08) {
-        const w = this.getBiomeWeights(x, z, {});
-        // (By volcanic land: on it, or in the country next to it.)
-        const near = Math.max(w.volcanic, ...[[600, 0], [-600, 0], [0, 600], [0, -600]].map(([dx, dz]) => this.getBiomeWeights(x + dx, z + dz, {}).volcanic * 0.8));
-        const sea = this.rivers.seaLevel;
-        if (near > 0.3 && this.getMountainness(x, z) < 0.5 && this.getVolcanic(x, z).cone < 0.05 && w.desert + w.saltFlat < 0.3) {
-          const r = 14 + 24 * h(3);
-          let lo = Infinity, hi = -Infinity;
-          for (let k = 0; k < 8; k++) {
-            const a = (k / 8) * Math.PI * 2, b = this.getBaseHeight(x + Math.cos(a) * r * 1.3, z + Math.sin(a) * r * 1.3);
-            lo = Math.min(lo, b), hi = Math.max(hi, b);
-          }
-          if (lo > sea + 4 && hi - lo < r * 0.35) c = { x, z, r, level: lo - 0.4, depth: 3 + r * 0.18, colour: Math.floor(h(4) * 6) };
-        }
+    const G = 2600, h = (k) => hash2(I * 7 + k * 1013, K * 13 - k * 619, this.seed ^ 0x3e7e);
+    if (h(0) < 0.32) {
+      const x = (I + 0.2 + 0.6 * h(1)) * G, z = (K + 0.2 + 0.6 * h(2)) * G;
+      const r = 35 + 75 * h(3) * h(3), depth = 0.24 * r, rim = 0.07 * r, sea = this.rivers.seaLevel;
+      // (Dry land all round it, high enough that its bowl stays above the water, and not up among the peaks.)
+      let ok = this.getMountainness(x, z) < 0.6;
+      for (let k = 0; k < 9 && ok; k++) {
+        const a = (k / 8) * Math.PI * 2, d = k ? r * 1.2 : 0;
+        if (!(this.getBaseHeight(x + Math.cos(a) * d, z + Math.sin(a) * d) > sea + depth + 4)) ok = false;
       }
+      if (ok) c = { x, z, r, depth, rim };
     }
     cache.set(key, c);
     return c;
   }
 
-  /** The land at (x, z), `g` high, with the crater lakes' bowls dug and their rims heaped. */
+  /** The land at (x, z), `g` high, with the meteor craters' bowls blasted out and their rims and ejecta heaped. */
   #craterCarve(x, z, g) {
-    if (this.volcanoNoise.fbm(x * 0.0004 + 333, z * 0.0004 - 91, 2) < 0.04) return g; // (not crater lake country)
     this._craterNew = false;
-    const c = this.craterLakeAt(x, z);
-    // (Lakes just laid out looked at other land, leaving its weights behind: worked out again for this point.)
+    const c = this.meteorCraterAt(x, z, 3.2);
+    // (Craters just laid out looked at other land, leaving its weights behind: worked out again for this point.)
     if (this._craterNew) this.landHeight(x, z);
     if (!c) return g;
     const t = c.d / c.r;
-    if (t < 1) return Math.min(g, c.level - 0.25 - c.depth * (1 - t * t)); // (the bowl, under the water)
-    // (The rim: a low ring, heaped up round it, a metre or two.)
-    return Math.max(g, c.level + 0.3) + (1 + 0.04 * c.r) * Math.max(0, 1 - Math.abs(t - 1.15) / 0.55) ** 2;
+    // (The bowl, its floor rounded; the rim; the thrown-out ground thinning away outside it.)
+    if (t < 1) return g + c.depth * (t * t - 1) + c.rim * t * t * t;
+    return g + c.rim * Math.max(0, 1 / (t * t * t) - 1 / 32.8) * 1.03;
   }
 
   /** Black sand on the beach (0..1): the coasts by volcanic country, and here and there a stretch of dark volcanic shore elsewhere. */
@@ -3954,6 +3947,7 @@ export class TerrainGenerator {
     const water = quick ? null : this.rivers.at(x, z, 0);
     if (water) return water.crater ? 'Crater lake' : water.hot ? 'Hot spring' : water.alpine ? 'Alpine lake' : water.oasis ? 'Oasis' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : water.big ? 'River' : 'Creek';
     if (this.mushroomIslandAt(x, z) > 0.5) return 'Mushroom island';
+    if (this.meteorCraterAt(x, z, 1.3)) return 'Meteor crater';
     if (this.atollAt?.(x, z) > 0.5) return 'Coral atoll';
     if (this.islandAt(x, z) > 0.5) return 'Island';
     const w = this.getBiomeWeights(x, z, {});
@@ -4014,7 +4008,6 @@ export class TerrainGenerator {
     if (top === 'saltFlat') return 'Salt flats';
     // (Forest: the woods, and the hill country they stand in, wooded or not.)
     if (this.getForestDensity(x, z) > 0.55 || smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Forest';
-    if (this.volcanoNoise.fbm(x * 0.0004 + 333, z * 0.0004 - 91, 2) > 0.08 && this.craterLakeAt(x, z)) return 'Crater lakes';
     if (this.giantMeadowAt(x, z) > 0.5) return 'Giant flower meadow';
     return this.getMeadow(x, z) > 0.5 ? 'Wildflower meadow' : 'Plains';
   }
@@ -4064,6 +4057,13 @@ export class TerrainGenerator {
       if (pf > 0.01) {
         const band = ground * 0.28 + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 1.4;
         out.lerp(PETRIFIED_BANDS[((Math.floor(band) % 4) + 4) % 4], 0.55 * smoothstep(0.1, 0.6, pf));
+      }
+      // A meteor crater: its bowl scorched dark, the thrown-out ground round it pale with rock dust.
+      const mc = this.meteorCraterAt(x, z, 2.6);
+      if (mc) {
+        const t = mc.d / mc.r;
+        if (t < 1.05) out.lerp(CRATER_SCORCH, 0.55 * (1 - smoothstep(0.85, 1.05, t)) + 0.1);
+        else out.lerp(CRATER_DUST, 0.45 * (1 - smoothstep(1.05, 2.6, t)) * (0.7 + 0.3 * this.detailNoise.noise2D(x * 0.08, z * 0.08)));
       }
       // A glowing swamp: its moss darker, blue-green.
       const gs = w.wetland > 0.2 ? this.glowSwampAt(x, z) : 0;
@@ -4122,7 +4122,9 @@ export class TerrainGenerator {
       if (n) {
         const r = n.spring.geyser ? 3 : n.spring.r;
         const q = n.d / r;
-        if (q < 3) out.lerp(q < 1.5 ? MAT : SINTER, 0.85 * (1 - smoothstep(2.2, 3, q)));
+        // (Rings of colour out from the water: the mats, streaked, then the pale crust.)
+        const mat = MATS[n.spring.hue ?? 0], streak = 0.5 + 0.5 * Math.sin(Math.atan2(z - n.spring.z, x - n.spring.x) * 7 + q * 3);
+        if (q < 3) out.lerp(q < 1.2 ? mat : q < 1.7 ? (streak > 0.4 ? mat : MAT) : SINTER, 0.85 * (1 - smoothstep(2.2, 3, q)));
       }
     }
     // Lake shores: mud, dirt, grass and rock; rocky outcrops on beaches.

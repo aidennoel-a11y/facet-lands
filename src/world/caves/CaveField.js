@@ -35,6 +35,9 @@ import { hash2, mulberry32 } from '../../noise/random.js';
  *    ledge into a short arched tunnel, and a winding tunnel carries on from
  *    there down into the network (see #makeEntrance and EntranceLayer).
  */
+/** Below this height every cave is volcanic: lava and dark rock (see biomeAt). */
+export const VOLCANIC_BELOW = -100;
+
 export class CaveField {
   static MINE_HW = 2.5; // a mine gallery's half-width (m)
   static MINE_HT = 4.4; // ...and its height
@@ -373,6 +376,7 @@ export class CaveField {
    * very deep turns volcanic; the crystals only grow well down).
    */
   static biomeAt(s, y) {
+    if (y < VOLCANIC_BELOW) return 2; // (deep down, every cave is volcanic)
     const volcanic = s.volcanic + Math.min(1, Math.max(0, (-88 - y) / 20)) * 0.9;
     const crystal = (s.crystal ?? 0) * Math.min(1, Math.max(0, (-28 - y) / 14));
     const mushroom = s.mushroom ?? 0;

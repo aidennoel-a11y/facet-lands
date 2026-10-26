@@ -11,6 +11,16 @@ const LAKE_SHALLOW = new Color(0x4fbfc4);
 const LAKE_DEEP = new Color(0x2c67b0);
 // Tinted ponds: alpine lakes (milky turquoise), hot springs (clear blue, bright at the rim).
 const TINTS = [null, [new Color(0x57c9bf), new Color(0x2b98a0)], [new Color(0x7fd6d0), new Color(0x1f86c4)]];
+// The hot pools, each its own colours (as in Yellowstone's): from the rim, where the water's cooler and
+// the microbes colour it, in to the deep middle. Sapphire, prismatic, morning glory, emerald, rusty, milky.
+const HOT_POOLS = [
+  [0x8ad8d8, 0x56b8d8, 0x1a6ac0],
+  [0xe08a30, 0xd8c050, 0x2a78c8],
+  [0xd8d070, 0x6ac8b0, 0x2a88c0],
+  [0xb8d878, 0x48b088, 0x1a8a78],
+  [0xd88a48, 0xc87a40, 0x8a5a38],
+  [0xc8eae0, 0x9ad8d8, 0x58b0c8],
+].map((p) => p.map((c) => new Color(c)));
 const color = new Color();
 const lakeColor = new Color();
 const GRID = 2; // metres between the surface's vertices (close by: further off, see riverGrid)
@@ -184,7 +194,12 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
       // gives way to one; see-through, more so at the edges. (Smooth from
       // point to point: no patchwork of faces.)
       const deep = smoothstep(0, 3, w.inset);
-      if (w.tint) {
+      if (w.tint === 2) {
+        // (A hot pool: its own rings of colour, rim to middle; boiling, the surface always astir.)
+        const [rim, mid, core] = HOT_POOLS[w.hue ?? 0], t = smoothstep(0, 4, w.inset);
+        color.copy(rim).lerp(mid, Math.min(1, t * 2)).lerp(core, Math.max(0, t * 2 - 1));
+        flow[k * 4 + 3] = Math.max(flow[k * 4 + 3], 0.18 + 0.3 * t);
+      } else if (w.tint) {
         color.copy(TINTS[w.tint][0]).lerp(TINTS[w.tint][1], deep);
       } else {
         color.copy(SHALLOW).lerp(DEEP, deep);

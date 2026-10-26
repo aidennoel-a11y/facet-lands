@@ -10,20 +10,34 @@ const MAX_CACHED = 72; // chunks of cave data kept around (least recently used g
 // chunks are built synchronously instead.
 let workers = null;
 let nextId = 1;
-let turn = 0;
 const requests = new Map(); // id -> (data) => void
-// (Two or three of them, taking turns: a cave of many chunks fills in sooner.)
+// (The chunks waiting their turn, and how many each worker has in hand. A
+// worker is given one at a time, the waiting one nearest you first: so the
+// cave you're walking into is never stuck behind ones you've left behind.)
+const waiting = [];
+const busy = [];
+const inFlight = new Map(); // id -> job, handed to a worker and not back yet
+/** Where you are, for which cave to build next (set each frame: see CaveLayer.update). */
+export const caveQueueFocus = { x: 0, z: 0 };
+// (Three or four of them, sharing the work: a cave of many chunks fills in sooner.)
 function getWorker() {
   if (workers === null) {
     workers = [];
     try {
       if (typeof Worker !== 'undefined' && typeof window !== 'undefined') {
-        for (let k = 0; k < ((navigator.hardwareConcurrency ?? 4) >= 8 ? 3 : 2); k++) {
+        const cores = navigator.hardwareConcurrency ?? 4;
+        for (let k = 0; k < (cores >= 8 ? 4 : cores >= 4 ? 3 : 2); k++) {
           const w = new Worker(new URL('./caveWorker.js', import.meta.url), { type: 'module' });
+          const index = k;
+          busy.push(0);
           w.onmessage = (event) => {
             const done = requests.get(event.data.id);
+            if (!done) return; // (a warm-up's answer)
             requests.delete(event.data.id);
-            done?.(event.data.data);
+            inFlight.delete(event.data.id);
+            busy[index] = Math.max(0, busy[index] - 1);
+            done(event.data.data);
+            dispatch();
           };
           workers.push(w);
         }
@@ -32,7 +46,28 @@ function getWorker() {
       workers = [];
     }
   }
-  return workers.length ? workers[turn++ % workers.length] : false;
+  return workers.length ? workers : false;
+}
+
+// Hands the nearest waiting chunks to the idle workers.
+function dispatch() {
+  for (let k = 0; k < workers.length && waiting.length; k++) {
+    if (busy[k] > 0) continue;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < waiting.length; i++) {
+      const d = Math.hypot(waiting[i].x - caveQueueFocus.x, waiting[i].z - caveQueueFocus.z);
+      if (d < bestD) (bestD = d), (best = i);
+    }
+    const job = waiting.splice(best, 1)[0];
+    if (job.cancelled?.()) {
+      requests.delete(job.message.id);
+      k--;
+      continue;
+    }
+    busy[k]++;
+    inFlight.set(job.message.id, job);
+    workers[k].postMessage(job.message);
+  }
 }
 
 /** Rivers worked out on another thread, for the cave workers to take in too (see ChunkManager.#shareRivers). */
@@ -94,6 +129,29 @@ export class CaveSystem {
   }
 
   /**
+   * The cave you're in (or at the mouth of), if the workers still haven't
+   * built it after a few seconds (a worker's first cave can take a long
+   * while: it has the lie of the land to work out first), built here and
+   * now instead: one short hitch rather than a long wait in the dark.
+   * Call every frame with where you are.
+   */
+  rescue(x, z) {
+    const now = performance.now();
+    if (now < (this.rescueAt ?? 0)) return;
+    const S = this.chunkSize;
+    for (const list of [waiting, [...inFlight.values()]]) {
+      for (const job of list) {
+        if (now - job.at < 6000 || job.cancelled?.() || Math.abs(job.x - x) > S * 1.01 || Math.abs(job.z - z) > S * 1.01) continue;
+        const i = waiting.indexOf(job);
+        if (i >= 0) waiting.splice(i, 1);
+        this.rescueAt = now + 1500; // (one at a time, a moment apart)
+        job.build();
+        return;
+      }
+    }
+  }
+
+  /**
    * Cave data for a chunk, requesting it if needed. `acquire` marks it in use
    * (pair with release()). The entry may still be loading; see whenReady().
    */
@@ -121,7 +179,7 @@ export class CaveSystem {
 
   #request(key, entry, cx, cz) {
     const apply = (data) => {
-      if (this.cache.get(key) !== entry) return; // evicted meanwhile
+      if (this.cache.get(key) !== entry || entry.ready) return; // evicted meanwhile (or built here already: see rescue)
       entry.grid = data.grid;
       entry.rock = toGeometry(data.rock);
       entry.rockFar = toGeometry(data.rockFar);
@@ -141,11 +199,12 @@ export class CaveSystem {
       entry.ready = true;
       for (const fn of entry.listeners.splice(0)) fn(entry);
     };
-    const w = getWorker();
-    if (w) {
+    if (getWorker()) {
       const id = nextId++;
       requests.set(id, apply);
-      w.postMessage({ id, seed: this.generator.seedText, config: this.config, cx, cz });
+      const size = this.chunkSize;
+      waiting.push({ x: (cx + 0.5) * size, z: (cz + 0.5) * size, at: performance.now(), message: { id, seed: this.generator.seedText, config: this.config, cx, cz }, cancelled: () => this.cache.get(key) !== entry, build: () => apply(buildChunkData(this.field, cx, cz, this.chunkSize)) });
+      dispatch();
     } else {
       apply(buildChunkData(this.field, cx, cz, this.chunkSize));
     }

@@ -12,7 +12,10 @@ import { hash2, mulberry32 } from '../../noise/random.js';
  * people had (see Game.ruinChest: the `city` ones). A long, deep dive.
  */
 const CELL = 5000;
-const STONE = [0x8a9088, 0x7a8478, 0x9aa094, 0x6e786c];
+// (The old ruins' own grey stone (see RuinLayer), gone darker and green under the sea.)
+const STONE = [0xb4b0a6, 0xa6a298, 0xc2beb2, 0x9a978e, 0xb0aa94, 0xc6c0b2, 0xa29e92];
+const MORTAR = 0x6a6c64;
+let coarse = false; // (building far off: each wall one plain block, not its stones)
 const shade = new Color();
 
 /** The drowned city in cell (I, K), if there is one: { x, z, y, r, key, seed }, or null. */
@@ -41,8 +44,8 @@ function stone(geometry, rand, green = 0) {
   g.deleteAttribute('uv');
   const col = new Float32Array(g.attributes.position.count * 3);
   for (let v = 0; v < col.length / 3; v += 6) {
-    shade.set(STONE[Math.floor(rand() * STONE.length)]).multiplyScalar(0.7 + 0.25 * rand());
-    const weed = green + 0.25 * rand();
+    shade.set(green < 0 ? MORTAR : STONE[Math.floor(rand() * STONE.length)]).multiplyScalar(0.62 + 0.22 * rand());
+    const weed = Math.max(0, green) + 0.3 * rand();
     shade.r *= 1 - 0.45 * weed, shade.b *= 1 - 0.35 * weed;
     for (let k = v; k < Math.min(v + 6, col.length / 3); k++) col.set([shade.r, shade.g, shade.b], k * 3);
   }
@@ -58,6 +61,51 @@ function cityPieces(s) {
   let pr = mulberry32(s.seed);
   const rand = () => pr(), pieces = [];
   const box = (w, h, d, x, y, z, ry = 0, rx = 0, rz = 0, green) => stone(new BoxGeometry(w, h, d).rotateX(rx).rotateZ(rz).rotateY(ry).translate(x, y, z), rand, green);
+  // Masonry: a block (w by d, h high, its middle at x, y, z, turned ry) laid
+  // in courses of cut stones, each other course set off by half a stone,
+  // round its outside (a thick one has a core of mortar and rubble behind),
+  // the stones a little out of true, weed on the top course. (Far off, one plain block.)
+  const bricks = (w, h, d, x, y, z, ry = 0, big = 1) => {
+    if (coarse) return [box(w, h, d, x, y, z, ry)];
+    const out = [];
+    const L = 1.0 * big, H = 0.5 * big, n = Math.max(1, Math.round(h / H)), ch = h / n, y0 = y - h / 2;
+    const stoneAt = (lx, lz, len, deep, alongX, row, top) => {
+      const g = new BoxGeometry(alongX ? len - 0.04 : deep, ch - 0.03, alongX ? deep : len - 0.04);
+      g.rotateY((rand() - 0.5) * 0.04).rotateZ((rand() - 0.5) * 0.03);
+      g.translate(lx, y0 + ch * (row + 0.5), lz).rotateY(ry).translate(x, 0, z);
+      out.push(stone(g, rand, top ? 0.55 : 0.12));
+    };
+    // (A run of stones from a to b along one side.)
+    const run = (ax, az, bx, bz, deep, row, top) => {
+      const len = Math.hypot(bx - ax, bz - az), k = Math.max(1, Math.round(len / L)), step = len / k, alongX = Math.abs(bx - ax) > Math.abs(bz - az);
+      const off = row % 2 ? step / 2 : 0;
+      for (let i = -1; i < k; i++) {
+        const t0 = Math.max(0, i * step + off), t1 = Math.min(len, (i + 1) * step + off);
+        if (t1 - t0 < 0.1) continue;
+        if (rand() < 0.03 && !top) continue; // (one fallen out)
+        const m = (t0 + t1) / 2 / len;
+        stoneAt(ax + (bx - ax) * m, az + (bz - az) * m, t1 - t0, deep, alongX, row, top);
+      }
+    };
+    const thin = Math.min(w, d) <= 1.2;
+    for (let row = 0; row < n; row++) {
+      const top = row === n - 1;
+      if (thin) {
+        if (w >= d) run(-w / 2, 0, w / 2, 0, d, row, top);
+        else run(0, -d / 2, 0, d / 2, w, row, top);
+      } else {
+        const t = 0.7 * big;
+        run(-w / 2, -d / 2 + t / 2, w / 2, -d / 2 + t / 2, t, row, top);
+        run(-w / 2, d / 2 - t / 2, w / 2, d / 2 - t / 2, t, row, top);
+        run(-w / 2 + t / 2, -d / 2 + t, -w / 2 + t / 2, d / 2 - t, t, row, top);
+        run(w / 2 - t / 2, -d / 2 + t, w / 2 - t / 2, d / 2 - t, t, row, top);
+      }
+    }
+    // (Mortar behind, so no light shows between the stones; a big block's core, its top paved.)
+    const cw = thin ? (w >= d ? w - 0.05 : w * 0.4) : w - 0.3, cd = thin ? (w >= d ? d * 0.4 : d - 0.05) : d - 0.3;
+    out.push(box(cw, h - 0.06, cd, x, y - 0.02, z, ry, 0, 0, -1));
+    return out;
+  };
   const column = (x, y, z, h, fallen, ry) => {
     const g = new CylinderGeometry(0.55, 0.65, h, 8);
     if (fallen) g.rotateZ(Math.PI / 2).rotateY(ry).translate(x, y + 0.6, z);
@@ -68,7 +116,7 @@ function cityPieces(s) {
   pieces.push({
     x: s.x, z: s.z, chest: { dx: 0, dz: 0, top: 6.6 },
     parts: (y) => {
-      const out = [box(34, 2.2, 34, s.x, y + 1.1, s.z), box(26, 2.2, 26, s.x, y + 3.3, s.z), box(18, 2.2, 18, s.x, y + 5.5, s.z)];
+      const out = [...bricks(34, 2.2, 34, s.x, y + 1.1, s.z, 0, 1.6), ...bricks(26, 2.2, 26, s.x, y + 3.3, s.z, 0, 1.6), ...bricks(18, 2.2, 18, s.x, y + 5.5, s.z, 0, 1.6)];
       for (let k = 0; k < 12; k++) {
         const a = (k / 12) * Math.PI * 2, broken = rand() < 0.35;
         out.push(...column(s.x + Math.cos(a) * 7.5, y + 6.6, s.z + Math.sin(a) * 7.5, broken ? 2 + rand() * 3 : 8, false, 0));
@@ -96,9 +144,9 @@ function cityPieces(s) {
           walls.forEach(([ox, oz, ww, ll], k) => {
             const h = tall * (0.3 + 0.7 * rand());
             if (k === 0) {
-              out.push(box(ww * 0.38, h, ll, hx + ox - ww * 0.31, y + h / 2, hz + oz, ry), box(ww * 0.38, h, ll, hx + ox + ww * 0.31, y + h / 2, hz + oz, ry));
+              out.push(...bricks(ww * 0.38, h, ll, hx + ox - ww * 0.31, y + h / 2, hz + oz, ry), ...bricks(ww * 0.38, h, ll, hx + ox + ww * 0.31, y + h / 2, hz + oz, ry));
               if (h > 2.5) out.push(box(ww * 0.3, 0.6, ll, hx + ox, y + h - 0.3, hz + oz, ry)); // (the lintel)
-            } else if (rand() < 0.85) out.push(box(ww, h, ll, hx + ox, y + h / 2, hz + oz, ry));
+            } else if (rand() < 0.85) out.push(...bricks(ww, h, ll, hx + ox, y + h / 2, hz + oz, ry));
           });
           // (Rubble about it.)
           for (let k = 0; k < 4; k++) out.push(box(0.6 + rand(), 0.4 + rand() * 0.6, 0.6 + rand(), hx + (rand() - 0.5) * (w + 4), y + 0.2, hz + (rand() - 0.5) * (l + 4), rand() * 3, rand() * 0.4, rand() * 0.4, 0.5));
@@ -121,7 +169,7 @@ function cityPieces(s) {
   for (let k = 0; k < 40; k++) {
     if (rand() < 0.25) continue;
     const a = (k / 40) * Math.PI * 2, x = s.x + Math.cos(a) * (R + 6), z = s.z + Math.sin(a) * (R + 6), h = 3 + rand() * 5;
-    pieces.push({ x, z, parts: (y) => [box(2.2, h, (Math.PI * 2 * (R + 6)) / 40 - 0.8, x, y + h / 2 - 0.5, z, -a)] });
+    pieces.push({ x, z, parts: (y) => bricks(2.2, h, (Math.PI * 2 * (R + 6)) / 40 - 0.8, x, y + h / 2 - 0.5, z, -a, 1.3) });
   }
   // (Each piece built the same every time: its own run of numbers.)
   pieces.forEach((piece, n) => {
@@ -172,6 +220,7 @@ export function createSunkenCityLayer(config) {
         const gy = groundHeightAt?.(piece.x - x0, piece.z - z0);
         const y = (Number.isFinite(gy) ? gy : s.y) - 0.4;
         // (Far off, only the bigger shapes: every other bit of rubble left out.)
+        coarse = lod > 0;
         for (const g of piece.parts(y)) if (lod === 0 || g.attributes.position.count > 36 || rand() < 0.5) parts.push(g.translate(-x0, 0, -z0));
         if (piece.chest && lod === 0) layer.onChest?.({ key: `${s.key}:${n}`, x: piece.x + piece.chest.dx, y: y + 0.4 + piece.chest.top, z: piece.z + piece.chest.dz, rot: 0, city: true });
       });

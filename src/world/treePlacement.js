@@ -110,6 +110,9 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (!trees || keep > likely) continue;
       if (generator.mushroomIslandAt?.(wx, wz) > 0.4) continue; // (a mushroom island grows giant mushrooms instead: see MushroomIslandLayer)
       if (generator.petrifiedAt?.(wx, wz) > 0.45) continue; // (a petrified forest: its trees all stone: see WonderLayer)
+      // (A meteor crater: none in its bowl or on its rim, few on the blasted ground round it, more further out.)
+      const mc = generator.meteorCraterAt?.(wx, wz, 2.6);
+      if (mc && (mc.d < mc.r * 1.25 || keep > (mc.d / mc.r - 1.25) / 1.35)) continue;
       // (A coral atoll's islets: coconut palms, leaning out over the sand.)
       const atoll = generator.atollAt?.(wx, wz) > 0.5;
       if (atoll && keep > 0.35) continue;
@@ -205,15 +208,15 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (species.type === 'bamboo') {
         // A thicket: a clump of separate canes, each of its own height and lean.
         const list = (placed.bamboo ??= []);
-        // (In the bamboo forest, giant bamboo: thick stands of canes many times your height.)
+        // (In the bamboo forest, tall bamboo: canes standing each on its own, a metre or two apart.)
         const giant = biome.id === 'bamboo' ? 1 : 0;
-        const canes = 5 + Math.floor(hash2(gi, gj, seed + 19) * 5) + giant * 6;
+        const canes = giant ? 2 + Math.floor(hash2(gi, gj, seed + 19) * 2) : 5 + Math.floor(hash2(gi, gj, seed + 19) * 5);
         for (let c = 0; c < canes; c++) {
-          const a = hash2(gi + c * 17, gj, seed + 20) * Math.PI * 2, d = c ? (0.3 + 1.1 * hash2(gi, gj + c * 17, seed + 21)) * (1 + 0.7 * giant) : 0;
+          const a = hash2(gi + c * 17, gj, seed + 20) * Math.PI * 2, d = c ? (giant ? 1.2 + 1.6 * hash2(gi, gj + c * 17, seed + 21) : 0.3 + 1.1 * hash2(gi, gj + c * 17, seed + 21)) : 0;
           const cx = lx + Math.cos(a) * d, cz = lz + Math.sin(a) * d;
-          const cs = (0.8 + 0.4 * hash2(gi + c, gj - c, seed + 22)) * treeScale * (1 + 0.35 * giant);
+          const cs = (0.8 + 0.4 * hash2(gi + c, gj - c, seed + 22)) * treeScale * (1 + 0.2 * giant);
           list.push({
-            x: cx, y: ground - 0.2, z: cz, s: cs * 0.9, sy: cs * (0.7 + 0.45 * hash2(gi - c, gj + c, seed + 23)) * (1 + 1.6 * giant),
+            x: cx, y: ground - 0.2, z: cz, s: cs * 0.9, sy: cs * (0.7 + 0.45 * hash2(gi - c, gj + c, seed + 23)) * (1 + 0.3 * giant),
             rot: a + (hash2(gi + c, gj + c, seed + 24) - 0.5) * 1.2, shade: hash2(gi + c * 3, gj, seed + 25),
             leanX: Math.cos(a) * 0.03 - gradX * 0.1, leanZ: Math.sin(a) * 0.03 - gradZ * 0.1, warm,
           });

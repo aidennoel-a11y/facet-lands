@@ -319,8 +319,8 @@ export const BIOMES = {
     },
   },
 
-  // Cherry blossom highlands: steep, rounded green hills stepped with old
-  // terraces, between a jungle and the mountains, wooded with cherry trees
+  // Cherry blossom highlands: lush rolling foothills at the mountains' feet,
+  // between a jungle and the ranges, wooded with cherry trees
   // in clouds of pink blossom, maples and pines among them.
   cherry: {
     id: 'cherry',
@@ -330,16 +330,16 @@ export const BIOMES = {
       { height: -10, color: 0xa99c72 },
       { height: 0, color: 0xc9b98a },
       { height: 4, color: 0x8fb45c },
-      { height: 20, color: 0x7cab52 }, // (bright terrace grass)
-      { height: 70, color: 0x6c9c4a },
-      { height: 130, color: 0x5f8a44 },
-      { height: 190, color: 0x768a5a },
+      { height: 20, color: 0x78b04e }, // (lush, bright foothill grass)
+      { height: 70, color: 0x68a248 },
+      { height: 130, color: 0x5e9244 },
+      { height: 190, color: 0x6e8a56 },
     ],
     cliff: 0x7a7a6c, // (grey granite, mossy)
     cliffSlope: [0.62, 0.42],
     snowLine: 9999,
     snow: 0xf1f4f7,
-    grass: 0.75,
+    grass: 0.95,
     trees: {
       density: 0.85,
       clumped: true,
@@ -353,8 +353,8 @@ export const BIOMES = {
     },
   },
 
-  // Giant bamboo forest: steep, tower-like green hills between a jungle and
-  // the mountains, crowded with stands of bamboo many times your height.
+  // Bamboo forest: lush green foothills between a jungle and the
+  // mountains, thick with tall canes, each standing on its own.
   bamboo: {
     id: 'bamboo',
     name: 'Bamboo forest',
@@ -363,17 +363,17 @@ export const BIOMES = {
       { height: -10, color: 0x9a9068 },
       { height: 0, color: 0xb7aa7c },
       { height: 4, color: 0x6f9a44 },
-      { height: 20, color: 0x5a8a38 }, // (leaf litter and fern under the canes)
-      { height: 90, color: 0x4f7e34 },
+      { height: 20, color: 0x5c9a3a }, // (fern and moss under the canes)
+      { height: 90, color: 0x52883a },
       { height: 180, color: 0x5c7c42 },
     ],
     cliff: 0x6a6e58,
     cliffSlope: [0.66, 0.46],
     snowLine: 9999,
     snow: 0xf1f4f7,
-    grass: 0.45,
+    grass: 0.8,
     trees: {
-      density: 1.25,
+      density: 1.0,
       clumped: false,
       species: [
         { type: 'bamboo', weight: 3.2, minHeight: -99, maxHeight: 999 },

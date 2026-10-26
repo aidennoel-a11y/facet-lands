@@ -1770,7 +1770,7 @@ export const shingleRoofModel = () => roofPiece(159, { style: 'shingle' });
 /** The colours a barn can be painted (see dyes, items): its boards, and the trim round its corners and openings. */
 export const BARN_DYES = {
   natural: [0x9a7448, 0xe8e2d4], red: [0x9a2a22, 0xece6da], white: [0xe2dccf, 0x8a2a22], black: [0x34302c, 0xe8e2d4],
-  green: [0x3e6a3a, 0xece6da], yellow: [0xc8a038, 0x5a3a24],
+  green: [0x3e6a3a, 0xece6da], yellow: [0xc8a038, 0x5a3a24], glow: [0x3a9a8a, 0xc8f4e8],
 };
 
 /** A barn wall, 4 m: tall boards stood on end, battens over the joints, painted; trim at its ends (and round a window or a door's opening). */

@@ -711,9 +711,11 @@ function junglePalm() {
   return withCrown(wood, fronds);
 }
 
-// Bamboo (on the jungle's edges): one tall, slender, jointed cane, leaning
-// a little, sprays of narrow leaves up its top half. (They grow in
-// thickets: several are set close together; see placeTrees.)
+// Bamboo (on the jungle's edges, and the bamboo forests): one tall,
+// square-sided, jointed cane, leaning a little, a darker ring at each
+// joint and a few narrow leaves off the top half. Kept light: they stand
+// by the thousand. (In thickets on the jungle's edge; alone in the bamboo
+// forest: see placeTrees.)
 function bamboo() {
   const rand = mulberry32(2101);
   const cane = 0x6f8f3a, caneTop = 0x9aae4c, node = 0x4f6a2a;
@@ -722,19 +724,24 @@ function bamboo() {
   const base = [0, 0, 0];
   const tip = [h * lean * 2, h, 0];
   const r = 0.09;
-  // The cane in lengths, with a darker ring at each joint.
   const joints = 5;
   for (let j = 0; j < joints; j++) {
     const t0 = j / joints, t1 = (j + 1) / joints;
     const p0 = base.map((v, i) => v + (tip[i] - v) * t0), p1 = base.map((v, i) => v + (tip[i] - v) * t1);
     wood.push(limb(p0, p1, r * (1 - 0.3 * t0), r * (1 - 0.3 * t1), cane, caneTop, 2110 + j));
-    if (j) wood.push(part(new CylinderGeometry(r * 1.25, r * 1.25, 0.12, 5), node, node, { x: p0[0], y: p0[1], z: p0[2], seed: 2200 + j }));
+    if (j) wood.push(part(new CylinderGeometry(r * 1.3, r * 1.3, 0.12, 4, 1, true), node, node, { x: p0[0], y: p0[1], z: p0[2], seed: 2200 + j }));
   }
-  // Leaf sprays up the top half.
-  for (let j = 0; j < 4; j++) {
-    const t = 0.5 + 0.13 * j + rand() * 0.04;
+  // Leaves: narrow blades off the joints of the top half, angled out and down.
+  for (let k = 0; k < 7; k++) {
+    const t = 0.5 + 0.075 * k;
     const at = base.map((v, i) => v + (tip[i] - v) * t);
-    sprays.push(frond(at, rand() * Math.PI * 2, 1.3 + rand() * 0.5, 0.2, 0.25, 0.7, 0x4f8a34, 0x86b454, 2300 + j));
+    const a = k * 2.4 + rand() * 0.5;
+    const leaf = new ConeGeometry(0.11, 1.1, 3, 1, true);
+    leaf.scale(1, 1, 0.25);
+    leaf.translate(0, 0.55, 0);
+    leaf.rotateZ(-1.9 + rand() * 0.4);
+    leaf.rotateY(a);
+    sprays.push(part(leaf, 0x4f8a34, 0x86b454, { x: at[0], y: at[1], z: at[2], seed: 2300 + k }));
   }
   return withCrown(wood, sprays);
 }

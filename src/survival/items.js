@@ -112,6 +112,7 @@ export const ITEMS = {
   carrot: { name: 'Carrot', food: { hunger: 9, thirst: 2, full: 100 }, spoils: 3600, weight: 0.15, group: 'Food' },
   dough: { name: 'Dough', food: { hunger: 4, health: -1, full: 90 }, spoils: 1200, cooks: 'bread', weight: 0.5, group: 'Food' },
   bread: { name: 'Bread', food: { hunger: 32, health: 3, full: 480 }, spoils: 6000, weight: 0.4, group: 'Food' },
+  glowTonic: { name: 'Glowcap tonic', food: { thirst: 18, health: 18, cure: true, full: 240 }, weight: 0.3, group: 'Food' }, // (swamp glowcaps steeped with berries: it settles a sick stomach)
   stew: { name: 'Stew', food: { hunger: 50, thirst: 25, health: 12, cure: true, full: 720 }, spoils: 1800, weight: 1, group: 'Food' },
   // Tools and weapons.
   axe: { name: 'Stone axe', tool: true, durability: 90, weight: 1.5, sharp: 1, group: 'Tools' },
@@ -260,6 +261,7 @@ export const ITEMS = {
   blackDye: { name: 'Black paint', dye: 'black', weight: 0.4, group: 'Materials' },
   greenDye: { name: 'Green paint', dye: 'green', weight: 0.4, group: 'Materials' },
   yellowDye: { name: 'Yellow ochre', dye: 'yellow', weight: 0.4, group: 'Materials' },
+  glowDye: { name: 'Glow paint', dye: 'glow', weight: 0.4, group: 'Materials' }, // (glowcaps from the glowing swamps, crushed: a pale blue-green)
   stoneDoor: { name: 'Stone wall, door', place: 'stoneDoor', weight: 28, group: 'Building' },
   cutWindow: { name: 'Cut stone wall, window', place: 'cutWindow', weight: 28, group: 'Building' },
   cutDoor: { name: 'Cut stone wall, door', place: 'cutDoor', weight: 28, group: 'Building' },
@@ -340,6 +342,8 @@ export const RECIPES = [
   { id: 'blackDye', needs: { charcoal: 2 }, makes: 2, note: 'Charcoal ground to a black paint: click a barn piece with it' },
   { id: 'greenDye', needs: { vine: 3 }, makes: 2, note: 'Green leaves and vines steeped to a paint: click a barn piece with it' },
   { id: 'yellowDye', needs: { corn: 2 }, makes: 2, note: 'Yellow ochre from corn husk and clay: click a barn piece with it' },
+  { id: 'glowDye', needs: { glowcap: 3 }, makes: 2, note: 'Glowcaps from the glowing swamps, crushed to a pale blue-green paint: click a barn piece with it' },
+  { id: 'glowTonic', needs: { glowcap: 2, berries: 2 }, note: 'Glowcaps steeped with berries: a drink that mends a little and settles sickness' },
   { id: 'plankWall', needs: { log: 3, stick: 4 }, uses: ['forgedAxe'], note: 'Boards lapped on a squared frame: neat and tight. Needs a steel axe to cut the planks' },
   { id: 'plankStairs', needs: { log: 2, stick: 4 }, uses: ['forgedAxe'], note: 'A flight of plank steps with a rail, up to the top of your walls. Needs a steel axe' },
   { id: 'shingleRoof', needs: { log: 3, stick: 2 }, uses: ['forgedAxe'], note: 'Cedar shingles in even courses, set on top of your walls. Needs a steel axe' },
@@ -451,6 +455,7 @@ export const RECIPES = [
   { id: 'greatSaddle', needs: { greatHide: 1, steelBar: 1, rope: 1 }, note: "Thunderhead's hide: a horse under it gallops further and faster" },
   { id: 'hideRoof', needs: { greatHide: 1, log: 4 }, note: "A shelter roofed with Thunderhead's hide" },
   { id: 'caveLamp', needs: { crystal: 2, glowcap: 2, rock: 1 }, note: 'Crystals and glowcaps set in a stone: a cold blue light that never goes out' },
+  { id: 'caveLamp', needs: { glowcap: 5, ironBar: 1 }, note: 'A lantern of glowcaps from the glowing swamps, packed in an iron cage: their cold light never goes out' },
   { id: 'paleCloak', needs: { paleFur: 1, pelt: 2 }, note: 'Pale and soft: warm, and the wild notice you less' },
   { id: 'caveCloak', needs: { caveBearPelt: 1, rope: 1 }, note: 'The warmest thing to wear there is' },
 ];
@@ -462,7 +467,7 @@ export const RECIPES = [
  */
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'sailboat', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor', 'stoneRoad', 'zipLine'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
@@ -641,6 +646,8 @@ ICONS.coalTorch = `<path d="M14 30l3-17h2l-1 17z" fill="#7a5634"/><path d="M14 1
 // (The cave finds.)
 ICONS.crystal = `<path d="M10 27l3-14 3-9 3 9 1 14z" fill="#9ae8ff"/><path d="M16 4l3 9 1 14h-4z" fill="#c8f4ff"/><path d="M19 27l3-10 4-5 0 9-2 6z" fill="#c0a0ff"/><path d="M6 28h22v-2H6z" fill="#6a6572"/>`;
 ICONS.caveLamp = `<path d="M8 29h16l-2-5H10z" fill="#5a5058"/><path d="M12 24l2-12 2-6 2 6 2 12z" fill="#a8ecff"/><path d="M16 6l2 6 2 12h-4z" fill="#d8f8ff"/><circle cx="16" cy="16" r="11" fill="#7ac8ff" opacity="0.18"/>`;
+ICONS.glowDye = `<path d="M10 10h12v16H10z" fill="#2e8a7a"/><path d="M10 10h12v4H10z" fill="#b8f0e0"/><circle cx="16" cy="19" r="9" fill="#7affc8" opacity="0.25"/>`;
+ICONS.glowTonic = `<path d="M13 6h6v5l4 6v9H9v-9l4-6z" fill="#5ad8b8"/><path d="M12 4h8v3h-8z" fill="#8a6a4a"/><circle cx="16" cy="20" r="8" fill="#7affc8" opacity="0.3"/>`;
 ICONS.glowcap = `<path d="M14 28h4l-1-12h-2z" fill="#d8f0e8"/><path d="M6 17c0-6 5-10 10-10s10 4 10 10z" fill="#7affc8"/><circle cx="16" cy="13" r="10" fill="#7affc8" opacity="0.2"/>`;
 ICONS.caveMushroom = `<path d="M14 28h4l-1-12h-2z" fill="#ece4d0"/><path d="M5 17c0-6 5-10 11-10s11 4 11 10z" fill="#d8ccb8"/><path d="M9 14c2-3 5-4 8-4" stroke="#f4ecdc" fill="none"/>`;
 ICONS.deathcap = `<path d="M14 28h4l-1-12h-2z" fill="#f4f0e0"/><path d="M5 17c0-6 5-10 11-10s11 4 11 10z" fill="#e8e4c8"/><path d="M13 21h6" stroke="#c8c4a8"/><path d="M13 23h6" stroke="#c8c4a8"/>`;

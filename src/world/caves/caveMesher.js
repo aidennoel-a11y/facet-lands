@@ -2,7 +2,7 @@ import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, Cyli
 import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
-import { CaveField } from './CaveField.js';
+import { CaveField, VOLCANIC_BELOW } from './CaveField.js';
 import { shroomHeight, shroomOf } from './giantShrooms.js';
 
 const UP = new Vector3(0, 1, 0);
@@ -286,6 +286,31 @@ function gridHeight(grid, x, z) {
   return (H[c] * (1 - tx) + H[c + 1] * tx) * (1 - tz) + (H[c + n] * (1 - tx) + H[c + n + 1] * tx) * tz;
 }
 
+// A Float32Array that grows as it's filled (quicker than a plain array pushed to).
+class Grow {
+  constructor(size = 1 << 15) {
+    this.a = new Float32Array(size);
+    this.n = 0;
+  }
+  get length() {
+    return this.n;
+  }
+  /** Room for `k` more: returns where they go. */
+  need(k) {
+    if (this.n + k > this.a.length) {
+      const b = new Float32Array(Math.max(this.a.length * 2, this.n + k));
+      b.set(this.a);
+      this.a = b;
+    }
+    const at = this.n;
+    this.n += k;
+    return at;
+  }
+  out() {
+    return this.a.slice(0, this.n);
+  }
+}
+
 /**
  * Marching cubes over the chunk grid, with the ground surface folded in
  * (field = min(ground - y, caves)) so cave walls end where they meet the
@@ -296,13 +321,13 @@ function gridHeight(grid, x, z) {
 export function meshChunk(grid, field, out = {}) {
   const { x0, z0, cell, n, ny, yMin, values, H, entrances } = grid;
   const seed = field.seed;
-  const positions = [];
-  const colors = [];
-  const sky = [];
-  const glows = [];
+  const positions = new Grow();
+  const colors = new Grow();
+  const sky = new Grow();
+  const glows = new Grow();
   // (And the same rock plainer, each triangle left whole: for the chunks
   // further off, where the fine facets can't be made out: see CaveLayer.)
-  const far = { positions: [], colors: [], glows: [], sky: [] };
+  const far = { positions: new Grow(), colors: new Grow(), glows: new Grow(), sky: new Grow() };
   const color = new Color();
   // The lava's glow on the rock round a lava lake: strongest just over the
   // lava, fading up the walls and away from its shore, smooth from corner
@@ -321,6 +346,12 @@ export function meshChunk(grid, field, out = {}) {
         if (f.floor < f.lava - 0.2 && field.volcAt(x + dx, z + dz) > 0.45) lit += w;
       }
       v = lit * Math.exp(-Math.max(0, h) / 6);
+    }
+    // (And a great chamber's lake, where it's lava: in volcanic country, or deep down where all of it is.)
+    const ch = field.chamberAt(x, z);
+    if (ch && ch.e < 1.1) {
+      const h2 = y - ch.c.lake;
+      if (h2 > -2 && h2 < 22 && (ch.c.lake < VOLCANIC_BELOW || field.volcAt(x, z) > 0.45)) v = Math.max(v, (1 - Math.min(1, ch.e) * 0.6) * Math.exp(-Math.max(0, h2) / 7));
     }
     lavaLit.set(key, v);
     return v;
@@ -351,7 +382,7 @@ export function meshChunk(grid, field, out = {}) {
     }
   }
 
-  const tri = [0, 0, 0], rim = [false, false, false], corner = new Float64Array(9);
+  const tri = [0, 0, 0], rim = [false, false, false], corner = new Float64Array(9), vG = new Float64Array(18), vS = new Float64Array(6);
   // (Which corners lie on the chunk's sides, x and z: see mid.)
   const onX = [false, false, false], onZ = [false, false, false], span = (n - 1) * cell;
   for (let k = 0; k < n - 1; k++) {
@@ -492,23 +523,8 @@ export function meshChunk(grid, field, out = {}) {
           // rough and craggy close to. (The push depends only on where the
           // middle is, so the triangle beside it, sharing that side, moves
           // it the same way: no gaps.)
-          const emit = (a, b, c, shade, to = null) => {
-            const P = to ? to.positions : positions, C = to ? to.colors : colors, G = to ? to.glows : glows, S = to ? to.sky : sky;
-            // (The nudges can turn a small thin triangle inside out, facing
-            // into the rock, where it's drawn from behind: not at all. Turned
-            // back round, it faces the air again.)
-            const u1 = b[0] - a[0], u2 = b[1] - a[1], u3 = b[2] - a[2], v1 = c[0] - a[0], v2 = c[1] - a[1], v3 = c[2] - a[2];
-            if ((u2 * v3 - u3 * v2) * nx + (u3 * v1 - u1 * v3) * nyv + (u1 * v2 - u2 * v1) * nz < 0) [b, c] = [c, b];
-            for (const v of [a, b, c]) {
-              P.push(v[0], v[1], v[2]);
-              C.push(color.r * shade, color.g * shade, color.b * shade);
-              if (v[1] > -118 && v[1] < -76) {
-                const l = lavaGlow(x0 + v[0], v[1], z0 + v[2]);
-                G.push(gr + 0.5 * l, gg + 0.16 * l, gb + 0.03 * l);
-              } else G.push(gr, gg, gb);
-              S.push(entrances.length ? CaveField.skyLight(entrances, x0 + v[0], v[1], z0 + v[2]) : 0.03);
-            }
-          };
+          // (The six corners of the four smaller triangles: the light on each
+          // worked out once, not again for each triangle it's a corner of.)
           const A = [corner[0], corner[1], corner[2]], B = [corner[3], corner[4], corner[5]], Cc = [corner[6], corner[7], corner[8]];
           const mid = (P, Q, rimmed) => {
             const m = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2, (P[2] + Q[2]) / 2];
@@ -525,29 +541,61 @@ export function meshChunk(grid, field, out = {}) {
           // they must still meet without a gap.)
           const side = (a, b) => rim[a] || rim[b] || (onX[a] && onX[b]) || (onZ[a] && onZ[b]);
           const AB = mid(A, B, side(0, 1)), BC = mid(B, Cc, side(1, 2)), CA = mid(Cc, A, side(2, 0));
+          const V = [A, B, Cc, AB, BC, CA];
+          for (let i = 0; i < 6; i++) {
+            const v = V[i];
+            if (v[1] < -60) {
+              const l = lavaGlow(x0 + v[0], v[1], z0 + v[2]);
+              (vG[i * 3] = gr + 0.5 * l), (vG[i * 3 + 1] = gg + 0.16 * l), (vG[i * 3 + 2] = gb + 0.03 * l);
+            } else (vG[i * 3] = gr), (vG[i * 3 + 1] = gg), (vG[i * 3 + 2] = gb);
+            vS[i] = entrances.length ? CaveField.skyLight(entrances, x0 + v[0], v[1], z0 + v[2]) : 0.03;
+          }
+          const emit = (ia, ib, ic, shade, to = null) => {
+            const P = to ? to.positions : positions, C = to ? to.colors : colors, G = to ? to.glows : glows, S = to ? to.sky : sky;
+            const a = V[ia];
+            let b = V[ib], c = V[ic];
+            // (The nudges can turn a small thin triangle inside out, facing
+            // into the rock, where it's drawn from behind: not at all. Turned
+            // back round, it faces the air again.)
+            const u1 = b[0] - a[0], u2 = b[1] - a[1], u3 = b[2] - a[2], v1 = c[0] - a[0], v2 = c[1] - a[1], v3 = c[2] - a[2];
+            if ((u2 * v3 - u3 * v2) * nx + (u3 * v1 - u1 * v3) * nyv + (u1 * v2 - u2 * v1) * nz < 0) {
+              (b = V[ic]), (c = V[ib]);
+              const t = ib;
+              (ib = ic), (ic = t);
+            }
+            const r = color.r * shade, g = color.g * shade, bl = color.b * shade;
+            let n = P.need(9), o = P.a;
+            (o[n] = a[0]), (o[n + 1] = a[1]), (o[n + 2] = a[2]), (o[n + 3] = b[0]), (o[n + 4] = b[1]), (o[n + 5] = b[2]), (o[n + 6] = c[0]), (o[n + 7] = c[1]), (o[n + 8] = c[2]);
+            (n = C.need(9)), (o = C.a);
+            for (let k = 0; k < 9; k += 3) (o[n + k] = r), (o[n + k + 1] = g), (o[n + k + 2] = bl);
+            (n = G.need(9)), (o = G.a);
+            for (let k = 0, i = ia; k < 9; k += 3, i = k === 3 ? ib : ic) (o[n + k] = vG[i * 3]), (o[n + k + 1] = vG[i * 3 + 1]), (o[n + k + 2] = vG[i * 3 + 2]);
+            (n = S.need(3)), (o = S.a);
+            (o[n] = vS[ia]), (o[n + 1] = vS[ib]), (o[n + 2] = vS[ic]);
+          };
           const sh = (n) => 0.92 + hash2(Math.round(wx * 3 + n), Math.round(cy * 3 - n), seed + 14) * 0.16;
-          emit(A, AB, CA, sh(1));
-          emit(AB, B, BC, sh(2));
-          emit(CA, BC, Cc, sh(3));
-          emit(AB, BC, CA, sh(4));
-          emit(A, B, Cc, sh(0), far);
+          emit(0, 3, 5, sh(1));
+          emit(3, 1, 4, sh(2));
+          emit(5, 4, 2, sh(3));
+          emit(3, 4, 5, sh(4));
+          emit(0, 1, 2, sh(0), far);
         }
       }
     }
   }
   if (!positions.length) return null;
   const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
-  geometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
-  geometry.setAttribute('skyLight', new BufferAttribute(new Float32Array(sky), 1));
-  geometry.setAttribute('glow', new BufferAttribute(new Float32Array(glows), 3));
+  geometry.setAttribute('position', new BufferAttribute(positions.out(), 3));
+  geometry.setAttribute('color', new BufferAttribute(colors.out(), 3));
+  geometry.setAttribute('skyLight', new BufferAttribute(sky.out(), 1));
+  geometry.setAttribute('glow', new BufferAttribute(glows.out(), 3));
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   const plain = new BufferGeometry();
-  plain.setAttribute('position', new BufferAttribute(new Float32Array(far.positions), 3));
-  plain.setAttribute('color', new BufferAttribute(new Float32Array(far.colors), 3));
-  plain.setAttribute('skyLight', new BufferAttribute(new Float32Array(far.sky), 1));
-  plain.setAttribute('glow', new BufferAttribute(new Float32Array(far.glows), 3));
+  plain.setAttribute('position', new BufferAttribute(far.positions.out(), 3));
+  plain.setAttribute('color', new BufferAttribute(far.colors.out(), 3));
+  plain.setAttribute('skyLight', new BufferAttribute(far.sky.out(), 1));
+  plain.setAttribute('glow', new BufferAttribute(far.glows.out(), 3));
   plain.computeVertexNormals();
   out.far = plain;
   return geometry;
