@@ -319,6 +319,71 @@ export const BIOMES = {
     },
   },
 
+  // Cherry blossom highlands: steep, rounded green hills stepped with old
+  // terraces, between a jungle and the mountains, wooded with cherry trees
+  // in clouds of pink blossom, maples and pines among them.
+  cherry: {
+    id: 'cherry',
+    name: 'Cherry blossom highlands',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -10, color: 0xa99c72 },
+      { height: 0, color: 0xc9b98a },
+      { height: 4, color: 0x8fb45c },
+      { height: 20, color: 0x7cab52 }, // (bright terrace grass)
+      { height: 70, color: 0x6c9c4a },
+      { height: 130, color: 0x5f8a44 },
+      { height: 190, color: 0x768a5a },
+    ],
+    cliff: 0x7a7a6c, // (grey granite, mossy)
+    cliffSlope: [0.62, 0.42],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.75,
+    trees: {
+      density: 0.85,
+      clumped: true,
+      species: [
+        { type: 'cherryBlossom', weight: 2.6, minHeight: -99, maxHeight: 999 },
+        { type: 'maple', weight: 0.5, minHeight: 20, maxHeight: 999 },
+        { type: 'pine', weight: 0.45, minHeight: 60, maxHeight: 999 },
+        { type: 'bush', weight: 0.5, minHeight: -99, maxHeight: 999 },
+        { type: 'bamboo', weight: 0.15, minHeight: -99, maxHeight: 60 },
+      ],
+    },
+  },
+
+  // Giant bamboo forest: steep, tower-like green hills between a jungle and
+  // the mountains, crowded with stands of bamboo many times your height.
+  bamboo: {
+    id: 'bamboo',
+    name: 'Bamboo forest',
+    palette: [
+      { height: -Infinity, color: 0x6d7456 },
+      { height: -10, color: 0x9a9068 },
+      { height: 0, color: 0xb7aa7c },
+      { height: 4, color: 0x6f9a44 },
+      { height: 20, color: 0x5a8a38 }, // (leaf litter and fern under the canes)
+      { height: 90, color: 0x4f7e34 },
+      { height: 180, color: 0x5c7c42 },
+    ],
+    cliff: 0x6a6e58,
+    cliffSlope: [0.66, 0.46],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.45,
+    trees: {
+      density: 1.25,
+      clumped: false,
+      species: [
+        { type: 'bamboo', weight: 3.2, minHeight: -99, maxHeight: 999 },
+        { type: 'treeFern', weight: 0.35, minHeight: -99, maxHeight: 999 },
+        { type: 'broadleaf', weight: 0.3, minHeight: -99, maxHeight: 999 },
+        { type: 'bush', weight: 0.5, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
   // Birch and aspen parkland: open, tall, golden-green grassland with
   // white-trunked groves of birch and aspen scattered over it, between the
   // plains and the forests.

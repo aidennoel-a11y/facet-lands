@@ -48,6 +48,7 @@ export const ACHIEVEMENTS = [
   { id: 'skill5', name: 'Seasoned', what: 'Reach level 5 in a skill' },
   { id: 'skill10', name: 'Master', what: 'Reach level 10 in a skill' },
   { id: 'mine', name: 'The old workings', what: 'Find an abandoned mine' },
+  { id: 'sunkenCity', name: 'Atlantis', what: 'Find a strongroom in a drowned city' },
   { id: 'lm_elderTree', name: 'The Elder Tree', what: 'Find the oldest tree in the forest' },
   { id: 'lm_stoneArch', name: 'The Stone Arch', what: 'Find the great arch of red rock' },
   { id: 'lm_crystalLake', name: 'Crystal Lake', what: 'Find the lake ringed with crystals' },

@@ -113,6 +113,7 @@ export class GroundItems {
         armour: () => M.coatModel(0x7a5230, 0x5a3a20, 0x8a6038), steelArmour: () => M.coatModel(0x5a4a3a, 0x4a3a2a, 0xb8c0c8),
         scarArmour: () => M.coatModel(0x4a3426, 0x3a281c, 0xb8c0c8), lionArmour: () => M.coatModel(0xc89a5a, 0x6a4026, 0xb8c0c8),
         tigerArmour: () => M.coatModel(0xd8823a, 0x1e1612, 0xb8c0c8), crocArmour: () => M.coatModel(0x5a6a44, 0x3a4a2e, 0xb8c0c8),
+        fossil: M.seashellModel, petrifiedWood: () => new M.Parts(11).log([-0.35, 0.12, 0], [0.35, 0.12, 0], 0.12, 0x9a84a0, 0xc89a5a).build(),
         crystal: M.crystalItemModel, silk: M.woolModel, silkRope: M.ropeModel, glowcap: () => M.mushroomModel(0x7affc8, 0xd8f0e8), caveLamp: M.caveLampModel, guano: M.guanoModel,
         beeswax: M.beeswaxModel, pail: () => M.pailModel(false), milk: () => M.pailModel(true), cheese: M.cheeseModel,
         boots: () => M.bootsModel(), furBoots: () => M.bootsModel(0x6a4a30, 0x2a2018, 0xa89070), gloves: () => M.glovesModel(), furHat: () => M.hatModel('fur'), strawHat: () => M.hatModel('straw'),
@@ -132,7 +133,7 @@ export class GroundItems {
     const seed = generator.seed ^ 0x9e3779;
     const G = 6, cells = Math.floor(size / G);
     const surface = { normalY: 1 };
-    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], iron: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [], oyster: [], seashell: [] };
+    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], iron: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [], oyster: [], seashell: [], honey: [], fossil: [], petrifiedWood: [] };
     const items = [];
     // (The country, sampled every 32 m.)
     const land = new Map();
@@ -143,7 +144,8 @@ export class GroundItems {
         const w = generator.getBiomeWeights(x, z, {});
         // (On top of a mesa, the caprock: gold lies about up there.)
         const f = generator.getFeatures(x, z);
-        v = { w, forest: generator.getForestDensity(x, z), mount: generator.getMountainness(x, z), mesaTop: f.mesa > 0.35 && f.mesaHeight > 17 * f.mesa, snowLine: generator.getBiome(x, z).snowLine ?? 9999 };
+        const meadow = generator.giantMeadowAt?.(x, z) ?? 0, petrified = generator.petrifiedAt?.(x, z) ?? 0;
+        v = { meadow, petrified, w, forest: generator.getForestDensity(x, z), mount: generator.getMountainness(x, z), mesaTop: f.mesa > 0.35 && f.mesaHeight > 17 * f.mesa, snowLine: generator.getBiome(x, z).snowLine ?? 9999 };
         land.set(k, v);
       }
       return v;
@@ -153,7 +155,7 @@ export class GroundItems {
         const gi = cx * 100 + i, gj = cz * 100 + j;
         const h = hash2(gi, gj, seed);
         const lx = (i + 0.15 + 0.7 * hash2(gi, gj, seed + 1)) * G, lz = (j + 0.15 + 0.7 * hash2(gi, gj, seed + 2)) * G;
-        const { w, forest, mount, mesaTop, snowLine } = at(x0 + lx, z0 + lz);
+        const { w, forest, mount, mesaTop, snowLine, meadow, petrified } = at(x0 + lx, z0 + lz);
         const wooded = Math.max(forest * (w.temperate + w.smoky + w.pine + w.blackHills + w.wetland), w.jungle, 0.6 * w.pine, 0.6 * w.smoky);
         // (Sticks only where trees grow to drop them: none on the salt
         // flats, the open desert or the dunes, nor up on the bare peaks.)
@@ -169,8 +171,13 @@ export class GroundItems {
         const pGold = mesaTop ? 0.005 : 0;
         // Wild crops out on the open plains (and the parkland's meadows), now and then: wheat the likeliest.
         const pWild = 0.005 * (1 - Math.min(1, forest * 1.8)) * Math.min(1, w.temperate + 0.6 * w.parkland);
+        // In the giant flower meadows, wild honey everywhere (dripped from the bees' nests in the stalks);
+        // in the petrified forests, fossils and chips of the stone wood.
+        const pHoney = meadow > 0.3 ? 0.06 * meadow : 0, pFossil = petrified > 0.3 ? 0.05 * petrified : 0;
         if (h > 1 - pGold) id = 'goldOre';
-        else if (h > 1 - pGold - pWild) {
+        else if (h > 1 - pGold - pHoney) id = 'honey';
+        else if (h > 1 - pGold - pHoney - pFossil) id = hash2(gi, gj, seed + 11) < 0.4 ? 'fossil' : 'petrifiedWood';
+        else if (h > 1 - pGold - pHoney - pFossil - pWild) {
           const r = hash2(gi, gj, seed + 7);
           id = r < 0.45 ? 'wildWheat' : r < 0.65 ? 'wildCarrot' : r < 0.85 ? 'wildPotato' : 'wildCorn';
         }

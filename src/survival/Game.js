@@ -4102,6 +4102,25 @@ export class Game {
       this.dirty = true;
       return;
     }
+    if (c.city) {
+      // A strongroom of the drowned city: its people's gold, pearls, old blades and a map.
+      const contents = [];
+      const roll = (id, lo, hi, chance) => Math.random() < chance && contents.push(Inventory.stack(id, lo + Math.floor(Math.random() * (hi - lo + 1))));
+      roll('goldBar', 2, 5, 0.9);
+      roll('pearl', 2, 6, 0.8);
+      roll('crystal', 1, 3, 0.5);
+      roll('oldSword', 1, 1, 0.5);
+      roll('oldMap', 1, 1, 0.5);
+      roll('steelBar', 1, 3, 0.4);
+      roll('seashell', 3, 8, 0.6);
+      roll('lantern', 1, 1, 0.3);
+      if (!contents.length) contents.push(Inventory.stack('goldBar', 2));
+      const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents: contents.slice(0, 10), ruinKey: c.key });
+      s.ruinKey = c.key;
+      this.dirty = true;
+      this.#achieve('sunkenCity');
+      return;
+    }
     if (c.wreck) {
       // A wrecked ship's sea chest: rope, iron, a cutlass, salted stores, a little gold.
       const contents = [];

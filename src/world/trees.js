@@ -1153,8 +1153,35 @@ function berryBush(blobs, low, high, berries, seed) {
 const raspberryBush = () => berryBush(BERRY_BLOBS, 0x3f7a34, 0x74ae50, [0xc01830, 0xa8142a, 0xd82a40], 730);
 const blueberryBush = () => berryBush(BLUEBERRY_BLOBS, 0x365f34, 0x5f8c48, [0x3a3a8a, 0x2c2c6e, 0x4a4a9e], 760);
 
+// Cherry blossom: a short, dark, twisting trunk forking low into wide,
+// spreading boughs, under a broad, flat-topped cloud of pink blossom.
+const CHERRY_BLOBS = [
+  [0, 3.5, 0, 1.7, 0.7],
+  [1.6, 3.2, 0.3, 1.35, 0.65],
+  [-1.5, 3.1, -0.4, 1.4, 0.65],
+  [0.3, 3.0, 1.5, 1.2, 0.65],
+  [-0.2, 3.3, -1.5, 1.2, 0.65],
+  [0.4, 4.1, -0.2, 1.1, 0.6],
+];
+function cherryBlossom() {
+  const BARK = 0x4a3430;
+  return withCrown(
+    [
+      part(new CylinderGeometry(0.2, 0.34, 1.6, 6), BARK, 0x5a403a, { y: 0.8, rz: 0.1, seed: 900 }),
+      part(new CylinderGeometry(0.09, 0.15, 1.9, 5), BARK, BARK, { x: 0.65, y: 2.1, rz: -0.75, seed: 901 }),
+      part(new CylinderGeometry(0.09, 0.15, 1.9, 5), BARK, BARK, { x: -0.6, y: 2.05, rz: 0.8, seed: 902 }),
+      part(new CylinderGeometry(0.07, 0.12, 1.5, 4), BARK, BARK, { x: 0.1, y: 2.2, z: 0.5, rx: 0.7, seed: 903 }),
+      ...boughs(CHERRY_BLOBS, 1.6, 2.6, BARK, 904),
+    ],
+    CHERRY_BLOBS.map(([x, y, z, r, sy], i) =>
+      part(new IcosahedronGeometry(r, 0), 0xd88aa8, 0xf8d0e0, { x, y, z, sy, lump: 0.22, seed: 910 + i }),
+    ),
+  );
+}
+
 /** Built once and shared by every chunk. */
 export const TREE_GEOMETRIES = {
+  cherryBlossom: cherryBlossom(),
   cypress: cypress(),
   swampWillow: swampWillow(),
   pine: pine(),
@@ -1204,6 +1231,7 @@ const SEASONAL = {
   jungleGiant: [0, 0, 0], jungleCanopy: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
   appleTree: [1, 1, 1], raspberryBush: [1, 1, 1], blueberryBush: [1, 1, 1],
   redwood: [0, 1, 0],
+  cherryBlossom: [1, 1, 1], // (its blossom thickest in spring; red-gold in autumn; bare in winter)
 };
 // Each deciduous species' own autumn colour (linear RGB), so every tree of
 // a kind turns the same: birches a vibrant yellow, maples scarlet, oaks russet...
@@ -1212,6 +1240,7 @@ export const FALL = {
   maple: [0.82, 0.07, 0.03], broadleaf: [0.95, 0.4, 0.03], oak: [0.5, 0.2, 0.05], larch: [0.9, 0.55, 0.06],
   cypress: [0.62, 0.22, 0.06], swampWillow: [0.72, 0.68, 0.14], weepingWillow: [0.85, 0.78, 0.22],
   bush: [0.68, 0.08, 0.05], appleTree: [0.85, 0.5, 0.08], raspberryBush: [0.45, 0.05, 0.1], blueberryBush: [0.75, 0.06, 0.12],
+  cherryBlossom: [0.85, 0.25, 0.08],
 };
 function markSeasons(geometries) {
   for (const [type, full] of Object.entries(geometries)) for (const g of [full, full.userData.lean].filter(Boolean)) {
@@ -1283,5 +1312,6 @@ export const LEAF_GEOMETRIES = {
   mangrove: leaves(50, [0.35, 0.6], [0x3a6a33, 0x4d7d3e, 0x5f8f48], crown('mangrove'), 31),
   jungleGiant: leaves(70, [0.6, 1.0], [0x2f6b2a, 0x3f7d33, 0x4f8f3c, 0x5a9a3a], crown('jungleGiant'), 32),
   jungleCanopy: leaves(60, [0.5, 0.9], [0x2a5e27, 0x3a7431, 0x4a863a, 0x55923c], crown('jungleCanopy'), 33),
+  cherryBlossom: leaves(70, [0.35, 0.65], [0xf4b8cc, 0xf8d0e0, 0xe89ab4, 0xfce4ec, 0xd884a4], crown('cherryBlossom'), 37),
 };
 markSeasons(LEAF_GEOMETRIES);

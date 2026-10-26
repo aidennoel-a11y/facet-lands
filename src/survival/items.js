@@ -41,6 +41,8 @@ export const ITEMS = {
   goldBar: { name: 'Gold bar', weight: 2.5, group: 'Materials' },
   // (Found in the caves.)
   crystal: { name: 'Cave crystal', weight: 0.3, group: 'Materials' },
+  fossil: { name: 'Fossil', weight: 0.6, group: 'Materials' }, // (a shell or a bone turned to stone: found in the petrified forests)
+  petrifiedWood: { name: 'Petrified wood', weight: 1.2, group: 'Materials' }, // (stone, banded like the tree it was)
   silk: { name: 'Spider silk', weight: 0.1, group: 'Materials' }, // (from the big spiders in the caves)
   silkRope: { name: 'Silk rope', weight: 0.3, place: 'rope', group: 'Materials' }, // (as a rope, lighter)
   guano: { name: 'Bat guano', weight: 1, group: 'Farming' }, // (dug into a plot: the crop grows twice as fast a while)
@@ -516,6 +518,8 @@ export const ICONS = {
   coop: `<path d="M4 14l12-9 12 9z" fill="#6a4a30"/><path d="M6 14h20v10H6z" fill="#9a7048"/><path d="M14 18h5v6h-5z" fill="#2a2018"/><path d="M6 24v5M26 24v5" stroke="#6e4c32" stroke-width="2"/>`,
   oyster: `<path d="M5 17c2-7 20-9 22-1-3 6-19 8-22 1z" fill="#7a7468"/><path d="M8 16c3-4 14-5 16-1-3 3-13 4-16 1z" fill="#d8d0c4"/><path d="M5 17c4 3 18 2 22-1" stroke="#5a5448" fill="none"/>`,
   seashell: `<path d="M16 6l10 16c-6 4-14 4-20 0z" fill="#f0d8c4"/><path d="M16 6l-4 18M16 6l4 18M16 6v19" stroke="#c8a088" fill="none"/>`,
+  fossil: `<path d="M16 6c7 0 11 5 11 10s-5 10-11 10S5 21 5 16 9 6 16 6z" fill="#b8aa94"/><path d="M16 16m-2 0a2 2 0 1 0 4 0a4 4 0 1 0-8 0a6 6 0 1 0 12 0" stroke="#7a6a58" stroke-width="1.5" fill="none"/>`,
+  petrifiedWood: `<path d="M6 12l20-4v12L6 24z" fill="#9a84a0"/><path d="M6 15l20-4M6 19l20-4" stroke="#c89a5a" stroke-width="2"/>`,
   pearl: `<circle cx="16" cy="17" r="7" fill="#f4f0ea"/><circle cx="13.5" cy="14.5" r="2.2" fill="#ffffff"/><circle cx="18" cy="20" r="3" fill="#e4dcd4"/>`,
   rawEgg: `<ellipse cx="16" cy="17" rx="8" ry="10" fill="#f0e6d2"/><ellipse cx="13" cy="13" rx="2.5" ry="3.5" fill="#fffaf0"/>`,
   cookedEgg: `<ellipse cx="16" cy="17" rx="12" ry="9" fill="#fafaf4"/><circle cx="16" cy="16" r="5" fill="#f0b830"/>`,

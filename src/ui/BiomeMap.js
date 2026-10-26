@@ -305,6 +305,20 @@ export class BiomeMap {
     for (const s of this.wrecks?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? []) {
       const sx = (s.x - x0) / scale, sy = (s.z - z0) / scale;
       if (sx < -6 || sy < -6 || sx > w + 6 || sy > n + 6) continue;
+      if (s.city) {
+        // (A drowned city: a ringed column.)
+        ctx.beginPath();
+        ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+        ctx.strokeStyle = '#6ab8e8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#c8ccc0';
+        ctx.fillRect(sx - 5, sy - 5, 10, 2);
+        ctx.fillRect(sx - 3, sy - 3, 2, 7);
+        ctx.fillRect(sx + 1, sy - 3, 2, 7);
+        ctx.fillRect(sx - 5, sy + 4, 10, 2);
+        continue;
+      }
       if (s.sunken) {
         ctx.beginPath();
         ctx.arc(sx, sy, 7, 0, Math.PI * 2);

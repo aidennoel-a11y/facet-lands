@@ -109,6 +109,10 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (oasis > 0.2) likely = Math.max(likely, 0.45 * oasis);
       if (!trees || keep > likely) continue;
       if (generator.mushroomIslandAt?.(wx, wz) > 0.4) continue; // (a mushroom island grows giant mushrooms instead: see MushroomIslandLayer)
+      if (generator.petrifiedAt?.(wx, wz) > 0.45) continue; // (a petrified forest: its trees all stone: see WonderLayer)
+      // (A coral atoll's islets: coconut palms, leaning out over the sand.)
+      const atoll = generator.atollAt?.(wx, wz) > 0.5;
+      if (atoll && keep > 0.35) continue;
       if (biome.id === 'desert' && oasis <= 0.2 && generator.getFeatures(wx, wz).erg > 0.3) continue; // nothing grows in a dune sea
       if (biome.id === 'volcanic' && hash2(gi, gj, seed + 15) < 0.92 * generator.getVolcanic(wx, wz).cone) continue; // cinder cones are nearly bare
       if (biome.id === 'volcanic' && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
@@ -177,6 +181,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       }
       species ??= trees.species[trees.species.length - 1];
       if (oasis > 0.2) species = { type: hash2(gi, gj, seed + 17) < 0.8 ? 'junglePalm' : 'dryBush' };
+      if (atoll) species = { type: hash2(gi, gj, seed + 17) < 0.85 ? 'junglePalm' : 'bush' };
       // Round an awake volcano: nothing on its cone, and only dead trees
       // (burnt snags, dead pines) down its foot and beside its lava flows.
       const scorch = generator.scorchAt ? generator.scorchAt(wx, wz) : 0; // (whatever country it's burnt into)
@@ -200,13 +205,15 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (species.type === 'bamboo') {
         // A thicket: a clump of separate canes, each of its own height and lean.
         const list = (placed.bamboo ??= []);
-        const canes = 5 + Math.floor(hash2(gi, gj, seed + 19) * 5);
+        // (In the bamboo forest, giant bamboo: thick stands of canes many times your height.)
+        const giant = biome.id === 'bamboo' ? 1 : 0;
+        const canes = 5 + Math.floor(hash2(gi, gj, seed + 19) * 5) + giant * 6;
         for (let c = 0; c < canes; c++) {
-          const a = hash2(gi + c * 17, gj, seed + 20) * Math.PI * 2, d = c ? 0.3 + 1.1 * hash2(gi, gj + c * 17, seed + 21) : 0;
+          const a = hash2(gi + c * 17, gj, seed + 20) * Math.PI * 2, d = c ? (0.3 + 1.1 * hash2(gi, gj + c * 17, seed + 21)) * (1 + 0.7 * giant) : 0;
           const cx = lx + Math.cos(a) * d, cz = lz + Math.sin(a) * d;
-          const cs = (0.8 + 0.4 * hash2(gi + c, gj - c, seed + 22)) * treeScale;
+          const cs = (0.8 + 0.4 * hash2(gi + c, gj - c, seed + 22)) * treeScale * (1 + 0.35 * giant);
           list.push({
-            x: cx, y: ground - 0.2, z: cz, s: cs * 0.9, sy: cs * (0.7 + 0.45 * hash2(gi - c, gj + c, seed + 23)),
+            x: cx, y: ground - 0.2, z: cz, s: cs * 0.9, sy: cs * (0.7 + 0.45 * hash2(gi - c, gj + c, seed + 23)) * (1 + 1.6 * giant),
             rot: a + (hash2(gi + c, gj + c, seed + 24) - 0.5) * 1.2, shade: hash2(gi + c * 3, gj, seed + 25),
             leanX: Math.cos(a) * 0.03 - gradX * 0.1, leanZ: Math.sin(a) * 0.03 - gradZ * 0.1, warm,
           });
@@ -239,7 +246,7 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 /** The kinds of tree, in a fixed order (far trees are packed by index). */
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
   'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm', 'bamboo', 'jungleCanopy',
-  'appleTree', 'raspberryBush', 'blueberryBush', 'redwood'];
+  'appleTree', 'raspberryBush', 'blueberryBush', 'redwood', 'cherryBlossom'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

@@ -9,7 +9,7 @@ const tint2 = new Color();
  * Builds a low-poly model from coloured parts (each face its part's colour,
  * a little darker underneath), merged into one flat-shaded geometry.
  */
-class Parts {
+export class Parts {
   constructor(seed = 1) {
     this.list = [];
     this.rand = mulberry32(seed);

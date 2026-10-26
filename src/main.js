@@ -10,6 +10,7 @@ import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { Geese } from './render/Geese.js';
 import { createWreckLayer } from './world/layers/WreckLayer.js';
+import { createSunkenCityLayer } from './world/layers/SunkenCityLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
@@ -38,6 +39,7 @@ import { createSnowLayer } from './world/layers/SnowLayer.js';
 import { createUnderstoryLayer } from './world/layers/UnderstoryLayer.js';
 import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
+import { createWonderLayer, wonderCollide } from './world/layers/WonderLayer.js';
 import { placeTrees } from './world/treePlacement.js';
 import { Torches } from './items/Torches.js';
 import { Hotbar } from './ui/Hotbar.js';
@@ -739,6 +741,10 @@ chunks.addLayer(createSeaweedLayer(WORLD));
 const logs = createLogLayer(WORLD);
 chunks.addLayer(logs);
 chunks.addLayer(createFlowerLayer(WORLD));
+// Petrified forests, giant flower meadows, glowing swamps (see WonderLayer).
+const wonders = createWonderLayer(WORLD);
+scene.add(wonders.swarm);
+chunks.addLayer(wonders);
 chunks.addLayer(createUnderstoryLayer(WORLD));
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
@@ -757,6 +763,9 @@ chunks.addLayer(rocks);
 // Ships wrecked on the beaches (see WreckLayer): their sea chests set out by the Game.
 const wrecks = createWreckLayer(WORLD);
 chunks.addLayer(wrecks);
+// Drowned cities far out at sea (see SunkenCityLayer): their strongrooms' chests set out by the Game.
+const cities = createSunkenCityLayer(WORLD);
+chunks.addLayer(cities);
 // The ruins of old strongholds, here and there (see RuinLayer): their chests set out by the Game.
 const ruins = createRuinLayer(WORLD);
 chunks.addLayer(ruins);
@@ -1343,6 +1352,7 @@ const controls = new PlayerControls(camera, canvas, {
     const bx = position.x, bz = position.z;
     trees.collide(position, radius, WORLD.chunkSize);
     shroomCollide(position, radius, feet);
+    wonderCollide(position, radius, feet, WORLD.chunkSize);
     treeBump(position.x - bx, position.z - bz);
     // (Into the leaves a little way, not through them; and they slow you.)
     controls.speedFactor = trees.leaves(position, radius, feet, controls.eyeHeight + 0.1) * (game.structures.onRoad(position.x, position.z) ? 1.3 : 1); // (quicker on a paved road)
@@ -1450,6 +1460,7 @@ game.waveAt = (x, z) => water.waveAt(x, z, WORLD.seaLevel - chunks.groundHeightA
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 ruins.onChest = (c) => game.ruinChest(c);
 wrecks.onChest = (c) => game.ruinChest(c); // (a wreck's sea chest)
+cities.onChest = (c) => game.ruinChest(c); // (a drowned city's strongroom)
 game.onKeep = (open) => ruins.openKeep(open);
 game.keepAt = () => ruins.keep(generator);
 game.ruinsNear = (x, z, r) => ruins.sitesNear(x, z, r, generator);
@@ -1516,7 +1527,7 @@ const bigMap = new BiomeMap({
   more: () => game.mode === 'testing' && !!game.landmarkMore, // (testing: the landmarks still being found, drawn again in a moment)
   ruins: (x, z, r, labelAt) => (game.mode === 'testing' ? ruins.sitesRoughly(x, z, Math.min(r, 20000), generator, labelAt) : ruins.sitesOf(game.ruinsSeen, generator)),
   // (Testing: the shipwrecks too, on the beaches and sunk out at sea.)
-  wrecks: (x, z, r) => (game.mode === 'testing' ? [...wrecks.near(x, z, Math.min(r, 4000), generator), ...wrecks.sunkenNear(x, z, Math.min(r, 3000), generator)] : []),
+  wrecks: (x, z, r) => (game.mode === 'testing' ? [...wrecks.near(x, z, Math.min(r, 4000), generator), ...wrecks.sunkenNear(x, z, Math.min(r, 3000), generator), ...cities.near(x, z, Math.min(r, 20000), generator).map((c) => ({ ...c, sunken: true, city: true }))] : []),
   teleport: (x, z) => {
     if (!ui.fly.checked) ui.fly.click();
     camera.position.set(x, Math.max(generator.getBaseHeight(x, z), WORLD.seaLevel) + 45, z);
@@ -2970,6 +2981,8 @@ function tick(now) {
   // Fire, smoke and dust, lit by the light of the sky.
   ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
   const night = dayNight._w?.night ?? 0;
+  wonders.night = night;
+  wonders.eye = camera.position;
   updateFireSeason(weather.rain > 0.3 && !snowing);
   seaCoast.storm = weather.storm;
   seaStorm.value = weather.storm;
