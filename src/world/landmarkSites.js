@@ -56,11 +56,12 @@ export const LANDMARKS = {
   // Cascades' cliffs, lily pads on them, reeds round them.)
   mere: { name: 'Pond', cell: 110, hidden: true, chance: 0.65, tries: 5, riverWater: true, needs: { forest: false }, land: (h, slope, rise) => h > 3 && slope < 0.06 && Math.abs(rise) < 1.5,
     basin: { r: 10, d: 1.8, steep: 0.35 }, what: '', fits: (w) => (w.cascades ?? 0) > 0.85 },
+  // (No longer made: chance 0. The beaver ponds were taken out, dam and all.)
   // (Nor this: a beaver pond. A dam of sticks and mud across a slow
   // creek in the woods, the water backed up behind it into a pond, the
   // beavers' lodge out in it, drowned trees standing grey in the water,
   // gnawed stumps round its banks: see beaverPool.)
-  beaverPond: { name: 'Beaver pond', cell: 800, hidden: true, chance: 0.7, tries: 4, riverWater: true, spread: true, land: (h) => h > 4,
+  beaverPond: { name: 'Beaver pond', cell: 800, hidden: true, chance: 0, tries: 4, riverWater: true, spread: true, land: (h) => h > 4,
     basin: { r: 14, d: 1.2, steep: 0.35 }, what: '', fits: (w, m, f) => w.temperate + w.pine + (w.parkland ?? 0) + (w.smoky ?? 0) + (w.cascades ?? 0) * 0.8 > 0.6 && m < 0.55 && f > 0.12 },
 };
 export const LANDMARK_KINDS = Object.keys(LANDMARKS);

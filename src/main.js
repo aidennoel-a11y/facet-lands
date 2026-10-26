@@ -2620,7 +2620,6 @@ const LOAD_LINES = [
   'Giant spiders are told to stay in the big caves. They promised…',
   'Mixing a fresh batch of fog for the mornings…',
   'Every leaf here has exactly three corners. We checked.',
-  'Somewhere out there, a beaver is building a dam just for you…',
   'Ducks are lining up in a row…',
   'Bees are rehearsing their buzz…',
   'Every world grows from its seed: share yours with a friend…',

@@ -319,8 +319,8 @@ export const BIOMES = {
     },
   },
 
-  // Cherry blossom highlands: lush rolling foothills at the mountains' feet,
-  // between a jungle and the ranges, wooded with cherry trees
+  // Cherry blossom highlands: in some ranges, a band of lush rolling
+  // foothills right at the mountains' feet, wooded with cherry trees
   // in clouds of pink blossom, maples and pines among them.
   cherry: {
     id: 'cherry',
@@ -353,11 +353,12 @@ export const BIOMES = {
     },
   },
 
-  // Bamboo forest: lush green foothills between a jungle and the
-  // mountains, thick with tall canes, each standing on its own.
+  // Mountain foothills jungle: where a jungle comes up to the mountains,
+  // their lower slopes, lush rolling foothills thick with jungle trees,
+  // palms and tree ferns, and tall bamboo canes standing each on its own.
   bamboo: {
     id: 'bamboo',
-    name: 'Bamboo forest',
+    name: 'Mountain foothills jungle',
     palette: [
       { height: -Infinity, color: 0x6d7456 },
       { height: -10, color: 0x9a9068 },
@@ -376,9 +377,11 @@ export const BIOMES = {
       density: 1.0,
       clumped: false,
       species: [
-        { type: 'bamboo', weight: 3.2, minHeight: -99, maxHeight: 999 },
-        { type: 'treeFern', weight: 0.35, minHeight: -99, maxHeight: 999 },
-        { type: 'broadleaf', weight: 0.3, minHeight: -99, maxHeight: 999 },
+        { type: 'jungleCanopy', weight: 1.4, minHeight: -99, maxHeight: 999 },
+        { type: 'jungleGiant', weight: 0.5, minHeight: -99, maxHeight: 140 },
+        { type: 'bamboo', weight: 1.2, minHeight: -99, maxHeight: 999 },
+        { type: 'treeFern', weight: 0.5, minHeight: -99, maxHeight: 999 },
+        { type: 'junglePalm', weight: 0.35, minHeight: -99, maxHeight: 90 },
         { type: 'bush', weight: 0.5, minHeight: -99, maxHeight: 999 },
       ],
     },

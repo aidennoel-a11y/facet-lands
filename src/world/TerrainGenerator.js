@@ -401,17 +401,19 @@ export class TerrainGenerator {
     out.blackHills = hills;
     out.smoky = smoky;
     out.volcanic = volcanic;
-    // Between a jungle and the mountains (where the jungle comes up to
-    // them: see #tropicRange), steep green highlands: giant bamboo, and
-    // cherry blossom on terraced hills. They take over the green country there.
+    // Mountain foothills where a jungle comes up to the ranges (see
+    // #tropicRange): the foothills jungle, thick with jungle trees and tall
+    // bamboo. And in some ranges, right up against the mountains, a band of
+    // cherry blossom highlands (see #cherryLand): nowhere else. They take
+    // over the green country there.
     const hl = this._probing ? 0 : this.#highland(x, z);
-    if (hl > 0) {
+    const cl = this._probing ? 0 : this.#cherryLand(x, z);
+    if (hl > 0 || cl > 0) {
       const own = Math.min(1, out.temperate + out.parkland + out.cascades + out.pine + out.redwood + out.jungle + out.wetland);
-      const k = hl * own;
-      for (const id of BIOME_IDS) out[id] *= 1 - k;
-      const cherry = smoothstep(-0.18, 0.18, this.jungleNoise.noise2D(x * 0.0011 + 61, z * 0.0011 - 83));
-      out.cherry = k * cherry;
-      out.bamboo = k * (1 - cherry);
+      const kj = hl * own, kc = cl * own * (1 - kj);
+      for (const id of BIOME_IDS) out[id] *= 1 - kj - kc;
+      out.bamboo = kj;
+      out.cherry = kc;
     } else (out.cherry = 0), (out.bamboo = 0);
     // On the open sea's warm coasts: mangroves. They take over whatever
     // was there.
@@ -927,6 +929,37 @@ export class TerrainGenerator {
     const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
     const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
     return smoothstep(0.08, 0.5, a + (b - a) * fz);
+  }
+
+  // How much (x, z) is in the cherry blossom band (0..1): in some ranges
+  // (a regional noise picks them), the lower slopes and the ground right at
+  // the mountains' feet, never up on the peaks. Worked out on a 64 m grid
+  // (remembered) and blended between its points, so its edges are soft.
+  #cherryLand(x, z) {
+    if (this.jungleNoise.fbm(x * 0.00008 + 77, z * 0.00008 - 55, 2) < 0.08) return 0; // (not a cherry range)
+    const G = 64;
+    const gx = Math.floor(x / G), gz = Math.floor(z / G);
+    const fx = x / G - gx, fz = z / G - gz;
+    const cache = this._cherry ?? (this._cherry = new Map());
+    const at = (i, j) => {
+      const key = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.get(key);
+      if (v === undefined) {
+        const px = i * G, pz = j * G;
+        const region = smoothstep(0.1, 0.28, this.jungleNoise.fbm(px * 0.00008 + 77, pz * 0.00008 - 55, 2));
+        v = 0;
+        if (region > 0) {
+          const m = this.getMountainness(px, pz);
+          v = region * smoothstep(0.25, 0.5, this.#mountainsAround(px, pz)) * smoothstep(0.15, 0.4, m) * (1 - smoothstep(0.66, 0.82, m));
+        }
+        if (cache.size > 60000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
+    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return smoothstep(0.08, 0.45, a + (b - a) * fz);
   }
 
   /**
@@ -3887,7 +3920,11 @@ export class TerrainGenerator {
   /** Black sand on the beach (0..1): the coasts by volcanic country, and here and there a stretch of dark volcanic shore elsewhere. */
   blackSandAt(x, z) {
     const w = this.getBiomeWeights(x, z, {});
-    const volc = smoothstep(0.02, 0.2, w.volcanic + this.#volcanoZone(x, z, this.#rangeField(x, z, {}).value) * 0.5);
+    // (Volcanic country here, or within half a kilometre inland: its shore. Three
+    // stretches of such shore in four are black sand, the rest pale.)
+    let v = w.volcanic + this.#volcanoZone(x, z, this.#rangeField(x, z, {}).value) * 0.5;
+    if (v < 0.2 && this.getOceanness(x, z) > 0.3) for (const [dx, dz] of [[450, 0], [-450, 0], [0, 450], [0, -450]]) v = Math.max(v, 0.9 * this.getBiomeWeights(x + dx, z + dz, {}).volcanic);
+    const volc = smoothstep(0.02, 0.2, v) * smoothstep(-0.44, -0.36, this.coastNoise.noise2D(x * 0.0004 + 71, z * 0.0004 - 19));
     const stretch = smoothstep(0.42, 0.54, this.coastNoise.fbm(x * 0.0005 + 500, z * 0.0005 - 200, 2)) * (1 - w.desert - w.saltFlat);
     return Math.max(volc, stretch) * (1 - w.mangrove);
   }
@@ -3988,6 +4025,9 @@ export class TerrainGenerator {
       // lower down are the foothills.
       const steep = Math.abs(heightAt(x + 3, z) - heightAt(x - 3, z)) / 6 + Math.abs(heightAt(x, z + 3) - heightAt(x, z - 3)) / 6;
       if (height + this.getColorJitter(x, z) > T.mountainsAbove || steep > 0.72) return 'Mountains';
+      // (The cherry band and the foothills jungle: on the range's lower slopes, theirs.)
+      if (w.cherry > 0.5) return 'Cherry blossom highlands';
+      if (w.bamboo > 0.5) return 'Mountain foothills jungle';
       // (The lower slopes of a range read as the country they are: hills,
       // plains, woods.)
       if (mountains > 0.62) {
@@ -4007,7 +4047,7 @@ export class TerrainGenerator {
       return this.getVolcanic(x, z).cone > 0.5 ? 'Volcano' : 'Volcanic highlands';
     }
     if (top === 'cherry') return 'Cherry blossom highlands';
-    if (top === 'bamboo') return 'Bamboo forest';
+    if (top === 'bamboo') return 'Mountain foothills jungle';
     if (top === 'wetland' && this.glowSwampAt(x, z) > 0.5) return 'Glowing swamp';
     if (top === 'wetland') return height < sea + 2 ? 'Marsh' : 'Wetlands';
     if (top === 'jungle') return 'Jungle';
