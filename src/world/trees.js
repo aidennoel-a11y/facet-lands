@@ -1160,30 +1160,43 @@ function berryBush(blobs, low, high, berries, seed) {
 const raspberryBush = () => berryBush(BERRY_BLOBS, 0x3f7a34, 0x74ae50, [0xc01830, 0xa8142a, 0xd82a40], 730);
 const blueberryBush = () => berryBush(BLUEBERRY_BLOBS, 0x365f34, 0x5f8c48, [0x3a3a8a, 0x2c2c6e, 0x4a4a9e], 760);
 
-// Cherry blossom: a short, dark, twisting trunk forking low into wide,
-// spreading boughs, under a broad, flat-topped cloud of pink blossom.
-const CHERRY_BLOBS = [
-  [0, 3.5, 0, 1.7, 0.7],
-  [1.6, 3.2, 0.3, 1.35, 0.65],
-  [-1.5, 3.1, -0.4, 1.4, 0.65],
-  [0.3, 3.0, 1.5, 1.2, 0.65],
-  [-0.2, 3.3, -1.5, 1.2, 0.65],
-  [0.4, 4.1, -0.2, 1.1, 0.6],
-];
+// Cherry blossom: a short, dark, leaning trunk forking low into many long
+// boughs that reach out wide and droop at their ends, each splitting into
+// smaller branches, the blossom in many small clusters along their outer
+// halves and heavy at their tips: open between them, the dark wood showing.
 function cherryBlossom() {
-  const BARK = 0x4a3430;
-  return withCrown(
-    [
-      part(new CylinderGeometry(0.2, 0.34, 1.6, 6), BARK, 0x5a403a, { y: 0.8, rz: 0.1, seed: 900 }),
-      part(new CylinderGeometry(0.09, 0.15, 1.9, 5), BARK, BARK, { x: 0.65, y: 2.1, rz: -0.75, seed: 901 }),
-      part(new CylinderGeometry(0.09, 0.15, 1.9, 5), BARK, BARK, { x: -0.6, y: 2.05, rz: 0.8, seed: 902 }),
-      part(new CylinderGeometry(0.07, 0.12, 1.5, 4), BARK, BARK, { x: 0.1, y: 2.2, z: 0.5, rx: 0.7, seed: 903 }),
-      ...boughs(CHERRY_BLOBS, 1.6, 2.6, BARK, 904),
-    ],
-    CHERRY_BLOBS.map(([x, y, z, r, sy], i) =>
-      part(new IcosahedronGeometry(r, 0), 0xd88aa8, 0xf8d0e0, { x, y, z, sy, lump: 0.22, seed: 910 + i }),
-    ),
-  );
+  const rand = mulberry32(905);
+  const BARK = 0x4a3430, BARK_TOP = 0x5a403a;
+  const wood = [], crown = [];
+  const fork = [0.35, 2.1, 0.1];
+  wood.push(limb([0, 0, 0], fork, 0.36, 0.26, BARK, BARK_TOP, 900));
+  let seed = 920;
+  // (A branch from `from`, out the way `a` faces, `len` long, rising `rise` then drooping; splitting `depth` more times.)
+  const branch = (from, a, len, rise, r, depth) => {
+    const out = [Math.cos(a), Math.sin(a)];
+    const mid = [from[0] + out[0] * len * 0.55, from[1] + rise, from[2] + out[1] * len * 0.55];
+    const end = [from[0] + out[0] * len, from[1] + rise * 0.55 - len * 0.22, from[2] + out[1] * len]; // (drooping at the end)
+    wood.push(limb(from, mid, r, r * 0.75, BARK, BARK_TOP, seed++));
+    wood.push(limb(mid, end, r * 0.75, r * 0.45, BARK, BARK_TOP, seed++));
+    // The blossom: clusters along the outer part, and a heavier one at the tip.
+    const n = 2;
+    for (let k = 0; k < n; k++) {
+      const t = 0.45 + 0.55 * ((k + 1) / n);
+      const p = t < 0.55 ? mid : [mid[0] + (end[0] - mid[0]) * (t - 0.55) / 0.45, mid[1] + (end[1] - mid[1]) * (t - 0.55) / 0.45, mid[2] + (end[2] - mid[2]) * (t - 0.55) / 0.45];
+      const cr = (depth ? 0.45 : 0.4) + rand() * 0.22 + (k === n - 1 ? 0.12 : 0);
+      crown.push(part(new IcosahedronGeometry(cr, 0), 0xd88aa8, 0xf8d0e0, { x: p[0] + (rand() - 0.5) * 0.4, y: p[1] + 0.15 + rand() * 0.25, z: p[2] + (rand() - 0.5) * 0.4, sy: 0.7, lump: 0.25, seed: seed++ }));
+    }
+    if (depth > 0) for (const turn of [-0.55, 0.6]) branch(mid, a + turn + (rand() - 0.5) * 0.3, len * 0.55, rise * 0.45, r * 0.6, depth - 1);
+  };
+  const boughs = 5;
+  for (let k = 0; k < boughs; k++) {
+    const a = (k / boughs) * Math.PI * 2 + (rand() - 0.5) * 0.6;
+    const from = [fork[0] + Math.cos(a) * 0.15, fork[1] + rand() * 0.5, fork[2] + Math.sin(a) * 0.15];
+    branch(from, a, 2.8 + rand() * 1.4, 1.2 + rand() * 1.0, 0.16, 1);
+  }
+  // (A few clusters up over the middle, so it isn't bare on top.)
+  for (let k = 0; k < 3; k++) crown.push(part(new IcosahedronGeometry(0.6 + rand() * 0.3, 0), 0xd88aa8, 0xf8d0e0, { x: (rand() - 0.5) * 1.2, y: 3.4 + rand() * 0.6, z: (rand() - 0.5) * 1.2, sy: 0.7, lump: 0.25, seed: seed++ }));
+  return withCrown(wood, crown);
 }
 
 /** Built once and shared by every chunk. */

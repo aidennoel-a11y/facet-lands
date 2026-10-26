@@ -353,23 +353,25 @@ export const BIOMES = {
     },
   },
 
-  // Mountain foothills jungle: where a jungle comes up to the mountains,
-  // their lower slopes, lush rolling foothills thick with jungle trees,
-  // palms and tree ferns, and tall bamboo canes standing each on its own.
-  bamboo: {
-    id: 'bamboo',
+  // Mountain foothills jungle: the foothills all round one of the few warm
+  // ranges without snowy peaks: thick with jungle trees, palms and tree
+  // ferns, bamboo among them; the mountains themselves green too, with
+  // more bare rock showing on their steeper faces.
+  jungleFoothills: {
+    id: 'jungleFoothills',
     name: 'Mountain foothills jungle',
     palette: [
       { height: -Infinity, color: 0x6d7456 },
       { height: -10, color: 0x9a9068 },
       { height: 0, color: 0xb7aa7c },
       { height: 4, color: 0x6f9a44 },
-      { height: 20, color: 0x5c9a3a }, // (fern and moss under the canes)
+      { height: 20, color: 0x5c9a3a }, // (fern and moss under the trees)
       { height: 90, color: 0x52883a },
-      { height: 180, color: 0x5c7c42 },
+      { height: 180, color: 0x5a8a40 }, // (green right up the mountains...)
+      { height: 260, color: 0x667a52 },
     ],
-    cliff: 0x6a6e58,
-    cliffSlope: [0.66, 0.46],
+    cliff: 0x6e7066, // (...with grey rock, mossed, showing on all the steeper faces)
+    cliffSlope: [0.74, 0.52],
     snowLine: 9999,
     snow: 0xf1f4f7,
     grass: 0.8,
@@ -379,10 +381,41 @@ export const BIOMES = {
       species: [
         { type: 'jungleCanopy', weight: 1.4, minHeight: -99, maxHeight: 999 },
         { type: 'jungleGiant', weight: 0.5, minHeight: -99, maxHeight: 140 },
-        { type: 'bamboo', weight: 1.2, minHeight: -99, maxHeight: 999 },
+        { type: 'bamboo', weight: 0.6, minHeight: -99, maxHeight: 999 },
         { type: 'treeFern', weight: 0.5, minHeight: -99, maxHeight: 999 },
         { type: 'junglePalm', weight: 0.35, minHeight: -99, maxHeight: 90 },
         { type: 'bush', weight: 0.5, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // Bamboo forest: now and then by a jungle's edge, or by a jungle range's
+  // foothills: tall canes standing each on its own, ferns between them.
+  bamboo: {
+    id: 'bamboo',
+    name: 'Bamboo forest',
+    palette: [
+      { height: -Infinity, color: 0x6d7456 },
+      { height: -10, color: 0x9a9068 },
+      { height: 0, color: 0xb7aa7c },
+      { height: 4, color: 0x6f9a44 },
+      { height: 20, color: 0x5c9a3a },
+      { height: 90, color: 0x52883a },
+      { height: 180, color: 0x5c7c42 },
+    ],
+    cliff: 0x6a6e58,
+    cliffSlope: [0.66, 0.46],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.7,
+    trees: {
+      density: 1.0,
+      clumped: false,
+      species: [
+        { type: 'bamboo', weight: 3.2, minHeight: -99, maxHeight: 999 },
+        { type: 'treeFern', weight: 0.35, minHeight: -99, maxHeight: 999 },
+        { type: 'broadleaf', weight: 0.25, minHeight: -99, maxHeight: 999 },
+        { type: 'bush', weight: 0.4, minHeight: -99, maxHeight: 999 },
       ],
     },
   },
