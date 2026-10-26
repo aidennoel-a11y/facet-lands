@@ -322,6 +322,7 @@ export class Rivers {
    */
   #pond(x, z, r, rand, maxSlope) {
     const g = this.generator;
+    if (g.meteorCraterAt?.(x, z, 1.8)) return null; // (nor a pond in one)
     const gx = (g.getBaseHeight(x + 4, z) - g.getBaseHeight(x - 4, z)) / 8;
     const gz = (g.getBaseHeight(x, z + 4) - g.getBaseHeight(x, z - 4)) / 8;
     if (Math.hypot(gx, gz) > maxSlope) return null;
@@ -484,6 +485,8 @@ export class Rivers {
       }
       // (The lowest of the land here, across a pool's breadth.)
       const low = cascade ? Math.min(b, g.getBaseHeight(px - dir[1] * 3.6, pz + dir[0] * 3.6), g.getBaseHeight(px + dir[1] * 3.6, pz - dir[0] * 3.6)) : b;
+      // (Never through a meteor crater, its bowl and rim: no creek there at all. See TerrainGenerator.meteorCraterAt.)
+      if (g.meteorCraterAt?.(px, pz, 1.8)) return null;
       points.push({ x: px, z: pz, level, width: 0, cascade, base: b, low });
 
       // Reaching a lake up in the hills (an alpine lake, a tarn...): it
