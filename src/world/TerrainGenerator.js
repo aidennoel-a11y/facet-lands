@@ -84,6 +84,9 @@ const SHORE = {
   grass: new Color(0x8fbc5c),
   rock: new Color(0x8a8597),
 };
+// Mushroom islands' ground (see surfaceColor).
+const MYCELIUM = new Color(0x8a7a86), MYCELIUM_PALE = new Color(0xa898a0), MYCELIUM_DARK = new Color(0x6e5e70);
+
 // Sandstone strata on mesa walls, bottom to top, repeating.
 // Each biome's own lake and river banks: the mud at the water's edge, the
 // grass of the bank (greener than the land round about) and, where the
@@ -1620,7 +1623,12 @@ export class TerrainGenerator {
         const a = (k / 8) * Math.PI * 2;
         ok = probe.getBaseHeight(x + Math.cos(a) * r * 1.5, z + Math.sin(a) * r * 1.5) < sea - 1;
       }
-      if (ok) isl = { x, z, r, top: sea + 2.5 + 10 * (r / 170) + 4 * hash2(i, j, seed + 4) };
+      if (ok) {
+        isl = { x, z, r, top: sea + 2.5 + 10 * (r / 170) + 4 * hash2(i, j, seed + 4) };
+        // (Far out in the deep sea, some are mushroom islands: grey-violet
+        // mycelium for ground, giant mushrooms for trees. See MushroomIslandLayer.)
+        if (probe.getBaseHeight(x, z) < sea - 22 && hash2(i, j, seed + 5) < 0.45) isl.mushroom = true;
+      }
     }
     if (this._islands.size > 4000) this._islands.clear();
     this._islands.set(key, isl);
@@ -1647,6 +1655,17 @@ export class TerrainGenerator {
         } else h = sea - 1.5 - (t - 1) * isl.r * 0.3 - Math.pow(Math.max(0, t - 1.6), 2) * isl.r * 0.6; // (the underwater skirt: steepening on down, so it's well under the sea floor round it before it ends)
         if (h > best) best = h;
       }
+    }
+    return best;
+  }
+
+  /** Whether (x, z) is on a mushroom island (see #island): 0..1. */
+  mushroomIslandAt(x, z) {
+    const C = 640, ci = Math.floor(x / C), cj = Math.floor(z / C);
+    let best = 0;
+    for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) {
+      const isl = this.#island(i, j);
+      if (isl?.mushroom) best = Math.max(best, 1 - smoothstep(isl.r * 0.9, isl.r * 1.4, Math.hypot(x - isl.x, z - isl.z)));
     }
     return best;
   }
@@ -3691,6 +3710,7 @@ export class TerrainGenerator {
     }
     const water = quick ? null : this.rivers.at(x, z, 0);
     if (water) return water.crater ? 'Crater lake' : water.hot ? 'Hot spring' : water.alpine ? 'Alpine lake' : water.oasis ? 'Oasis' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : water.big ? 'River' : 'Creek';
+    if (this.mushroomIslandAt(x, z) > 0.5) return 'Mushroom island';
     if (this.islandAt(x, z) > 0.5) return 'Island';
     const w = this.getBiomeWeights(x, z, {});
     const f = this.getFeatures(x, z);
@@ -3775,6 +3795,14 @@ export class TerrainGenerator {
       }
     }
     blendedFaceColor(this.biomes, w, height, upness, out);
+    // A mushroom island: its ground a mat of grey-violet mycelium, above the beach.
+    if (land > 0 && ground < sea + 40) {
+      const myc = this.mushroomIslandAt(x, z) * land;
+      if (myc > 0.01) {
+        const k = hash2(Math.floor(x * 0.7), Math.floor(z * 0.7), this.seed ^ 0x3c1);
+        out.lerp(k < 0.15 ? MYCELIUM_PALE : k < 0.3 ? MYCELIUM_DARK : MYCELIUM, smoothstep(0.2, 0.7, myc));
+      }
+    }
     // Salt flats: the white crust cracked into plates, each a little
     // different, with darker seams between them.
     if (w.saltFlat > 0.05 && upness > 0.9) {

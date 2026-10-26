@@ -108,6 +108,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const oasis = biome.id === 'desert' && generator.oasisAt ? generator.oasisAt(wx, wz) : 0;
       if (oasis > 0.2) likely = Math.max(likely, 0.45 * oasis);
       if (!trees || keep > likely) continue;
+      if (generator.mushroomIslandAt?.(wx, wz) > 0.4) continue; // (a mushroom island grows giant mushrooms instead: see MushroomIslandLayer)
       if (biome.id === 'desert' && oasis <= 0.2 && generator.getFeatures(wx, wz).erg > 0.3) continue; // nothing grows in a dune sea
       if (biome.id === 'volcanic' && hash2(gi, gj, seed + 15) < 0.92 * generator.getVolcanic(wx, wz).cone) continue; // cinder cones are nearly bare
       if (biome.id === 'volcanic' && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust

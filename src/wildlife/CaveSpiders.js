@@ -8,6 +8,7 @@ const MAX = 8; // (spiders about you at once, at most)
 export const BROOD = { name: 'The Broodmother', size: 3.1, health: 1100, bite: 30 };
 const BROOD_TINT = new Color(0.95, 0.55, 0.5), PLAIN = new Color(1, 1, 1);
 const LEGS = 8;
+const PIVOT = 0.5; // (its middle, up from its feet: what it turns over about, dying)
 
 // One piece of the body, coloured.
 function part(geometry, colour, [x, y, z] = [0, 0, 0], [sx, sy, sz] = [1, 1, 1]) {
@@ -275,41 +276,48 @@ export class CaveSpiders {
   }
 
   #draw(ctx) {
-    const m = new Matrix4(), q = new Quaternion(), p = new Vector3(), sc = new Vector3(), a = new Vector3(), b = new Vector3(), dir = new Vector3(), UP = new Vector3(0, 1, 0);
+    const m = new Matrix4(), q = new Quaternion(), q2 = new Quaternion(), p = new Vector3(), sc = new Vector3(), a = new Vector3(), b = new Vector3(), dir = new Vector3(), UP = new Vector3(0, 1, 0);
     let n = 0, l = 0;
     for (const s of this.spiders) {
       if (n >= MAX) break;
       const k = s.size, rear = s.state === 'lunge' ? 0.25 : Math.min(1, s.rear * 2.2) * 0.3;
-      // (Dead: on its back, legs curled.)
+      // Dead: it goes over like the other creatures do, all of a piece (its
+      // legs stay on it): toppling sideways onto its back, a little hop as
+      // it goes and a bounce as it lands, the legs curling in as it dies.
       const dead = !s.alive;
+      const t = dead ? Math.min(1, s.dead / 0.7) : 0, over = t * t * (3 - 2 * t);
+      const curl = dead ? Math.min(1, s.dead / 1.2) : 0;
+      const side = s.side ??= Math.random() < 0.5 ? 1 : -1;
       q.setFromAxisAngle(UP, s.heading);
-      if (dead) q.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI));
+      if (dead) q.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), side * Math.PI * (over + 0.06 * Math.sin(Math.min(1, s.dead / 1.1) * Math.PI * 3) * (1 - curl * 0.5))));
       else if (rear) q.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -rear));
-      const bob = dead ? 0.55 * k : Math.abs(Math.sin(s.gait * 2)) * 0.04 * k;
-      m.compose(p.set(s.x, s.y + bob, s.z), q, sc.setScalar(k));
+      const bob = dead ? (0.35 * Math.sin(Math.PI * t) - 0.05 * over) * k : Math.abs(Math.sin(s.gait * 2)) * 0.04 * k;
+      // (Everything turned about its middle, PIVOT up from its feet.)
+      const pivot = p.set(s.x, s.y + PIVOT * k + bob, s.z).clone();
+      const world = (lx, ly, lz, out) => out.set(lx * k, (ly - PIVOT) * k, lz * k).applyQuaternion(q).add(pivot);
+      m.compose(world(0, 0, 0, new Vector3()), q, sc.setScalar(k));
       this.bodies.setColorAt(n, s.boss ? BROOD_TINT : PLAIN);
       this.bodies.setMatrixAt(n++, m);
       // The legs: four a side, each a thigh up and out to the knee and a
-      // shank down to the foot, stepping by turns as it goes.
-      const c = Math.cos(s.heading), sn = Math.sin(s.heading);
-      const world = (lx, ly, lz, out) => out.set(s.x + (lx * c + lz * sn) * k, s.y + ly * k + (dead ? 0.55 * k : 0), s.z + (-lx * sn + lz * c) * k);
+      // shank down to the foot, stepping by turns as it goes; dead, drawn in.
+      const mix = (live, gone) => live + (gone - live) * curl;
       for (let i = 0; i < LEGS; i++) {
-        const side = i < 4 ? 1 : -1, j = i % 4;
+        const sd = i < 4 ? 1 : -1, j = i % 4;
         const along = 0.22 - j * 0.14, spread = [0.6, 0.15, -0.25, -0.65][j];
-        const phase = s.gait + ((j % 2) ^ (side > 0 ? 0 : 1)) * Math.PI;
+        const phase = s.gait + ((j % 2) ^ (sd > 0 ? 0 : 1)) * Math.PI;
         const lift = dead ? 0 : Math.max(0, Math.sin(phase)) * 0.25, swing = dead ? 0 : Math.cos(phase) * 0.22;
-        const hipX = side * 0.18, hipZ = along;
-        const footX = side * (dead ? 0.35 : 1.0), footZ = along + spread + swing * (s.speed > 0.1 ? 1 : 0);
-        const kneeX = side * (dead ? 0.3 : 0.62), kneeZ = (hipZ + footZ) / 2;
-        const kneeY = dead ? 0.3 : 0.95 + lift * 0.5, footY = dead ? 0.55 : lift;
+        const hipX = sd * 0.18, hipZ = along;
+        const footX = sd * mix(1.0, 0.3), footZ = mix(along + spread + swing * (s.speed > 0.1 ? 1 : 0), along + spread * 0.35);
+        const kneeX = sd * mix(0.62, 0.42), kneeZ = (hipZ + footZ) / 2;
+        const kneeY = mix(0.95 + lift * 0.5, 0.15), footY = mix(lift, 0.35);
         world(hipX, 0.5, hipZ, a);
         world(kneeX, kneeY, kneeZ, b);
         for (const [from, to, thick] of [[a, b, 0.07], [b, world(footX, footY, footZ, new Vector3()), 0.05]]) {
           if (l >= this.legs.instanceMatrix.count) break;
           dir.subVectors(to, from);
           const len = dir.length();
-          q.setFromUnitVectors(UP, dir.normalize());
-          m.compose(from, q, sc.set(thick * k, len, thick * k));
+          q2.setFromUnitVectors(UP, dir.normalize());
+          m.compose(from, q2, sc.set(thick * k, len, thick * k));
           this.legs.setColorAt(l, s.boss ? BROOD_TINT : PLAIN);
           this.legs.setMatrixAt(l++, m);
         }

@@ -1,9 +1,11 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, LatheGeometry, TetrahedronGeometry, Vector2 } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, LatheGeometry, Quaternion, TetrahedronGeometry, Vector2, Vector3 } from 'three';
 import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from '../../noise/random.js';
 import { CaveField } from './CaveField.js';
 import { shroomHeight, shroomOf } from './giantShrooms.js';
+
+const UP = new Vector3(0, 1, 0);
 
 export const CELLS = 40; // grid cells per chunk edge (3.2 m each for 128 m chunks)
 
@@ -97,7 +99,7 @@ export function sampleChunk(field, cx, cz, chunkSize) {
   const H = new Float32Array(n * n);
   const region = new Float32Array(n * n);
   const cols = new Array(n * n);
-  let anyCave = entrances.length > 0, anyDeep = false;
+  let anyCave = entrances.length > 0, anyDeep = false, bottom = field.bottom;
   let maxTop = field.bottom;
   for (let k = 0; k < n; k++) {
     for (let i = 0; i < n; i++) {
@@ -108,7 +110,7 @@ export function sampleChunk(field, cx, cz, chunkSize) {
       region[c] = field.regionRock(x, z);
       cols[c] = field.column(x, z, H[c]);
       if (region[c] < 10) anyCave = true;
-      if (field.deepRock(cols[c]) < 10) (anyCave = true), (anyDeep = true);
+      if (field.deepRock(cols[c]) < 10) (anyCave = true), (anyDeep = true), (bottom = Math.min(bottom, field.deepBottom(cols[c], x, z)));
       maxTop = Math.max(maxTop, Math.min(field.top, H[c] - field.cover));
     }
   }
@@ -118,7 +120,7 @@ export function sampleChunk(field, cx, cz, chunkSize) {
   // here), plus any entrance tunnel.
   let top = maxTop + 4;
   for (const e of entrances) top = Math.max(top, e.maxY + 3);
-  const yMin = Math.floor(((anyDeep ? field.deep : field.bottom) - 6) / cell) * cell;
+  const yMin = Math.floor(((anyDeep ? bottom : field.bottom) - 6) / cell) * cell;
   const ny = Math.min(140, Math.ceil((top - yMin) / cell) + 1);
 
   const values = new Float32Array(n * n * ny);
@@ -463,7 +465,7 @@ export function meshChunk(grid, field, out = {}) {
           let gr = 0, gg = 0, gb = 0;
           // (Volcanic rock glows only where the lava is: see the lava, and its light.)
           if (kind === 3) (gr = 0.02), (gg = 0.05), (gb = 0.08);
-          else if (kind === 5) (gr = 0.025), (gg = 0.012), (gb = 0.05); // (a violet shimmer in the crystal stone)
+          // (The crystal caverns' stone too is dark of itself: what lights them is their glowing crystals.)
 
           for (let q = 0; q < 3; q++) {
             const ev = tri[q];
@@ -845,7 +847,8 @@ export function decorateChunk(grid, field) {
   // Crystal caverns, under the high roofs: great beams of crystal, like
   // the cave of the giant crystals, lying across one another at all angles,
   // milk-white, pale blue, rose or honey, the size of trees.
-  const BEAMS = [[0xd8e4ea, 0xf8fcff, [0.1, 0.12, 0.14]], [0xb8d8ec, 0xe8f6ff, [0.06, 0.12, 0.18]], [0xe8c8d4, 0xfff0f4, [0.14, 0.08, 0.1]], [0xe8d0a0, 0xfff4dc, [0.14, 0.11, 0.06]], [0xc0e8d8, 0xf0fff8, [0.07, 0.15, 0.12]]];
+  // (Lit by what glows round them, not glowing themselves.)
+  const BEAMS = [[0xd8e4ea, 0xf8fcff, null], [0xb8d8ec, 0xe8f6ff, null], [0xe8c8d4, 0xfff0f4, null], [0xe8d0a0, 0xfff4dc, null], [0xc0e8d8, 0xf0fff8, null]];
   const beam = (x, y, z, len, r, yaw, pitch, s) => {
     const [lo, hi, glow] = BEAMS[Math.floor(s * 997) % BEAMS.length];
     const body = new CylinderGeometry(r, r * 1.08, len, 6, 1).toNonIndexed();
@@ -1002,12 +1005,25 @@ export function decorateChunk(grid, field) {
           // Lush: ferns, moss in soft clumps and small glowing growths over the floor.
           if (kind === 1 && !inEntrance && gap > 1.6) {
             into = plants;
+            // (Each growing out square from the rock it's on: leaning with
+            // the slope, not all bolt upright. `from`: where its pieces start.)
+            const lean = (from, px, py, pz) => {
+              const e = 0.4, fy0 = py + 0.15;
+              const n = new Vector3(f(px - e, fy0, pz) - f(px + e, fy0, pz), f(px, fy0 - e, pz) - f(px, fy0 + e, pz), f(px, fy0, pz - e) - f(px, fy0, pz + e));
+              if (!(n.lengthSq() > 1e-9)) return;
+              n.normalize();
+              if (n.y < 0.25) return; // (a wall: left as it is)
+              n.lerp(UP, 0.2).normalize();
+              const q = new Quaternion().setFromUnitVectors(UP, n), bx = px - x0, bz = pz - z0;
+              for (let k = from; k < plants.length; k++) plants[k].translate(-bx, -py, -bz).applyQuaternion(q).translate(bx, py, bz);
+            };
             for (let k = 0; k < 7; k++) {
               const ox = (hash2(k, Math.round(x * 11), seed + 15) - 0.5) * step, oz = (hash2(k + 3, Math.round(z * 11), seed + 15) - 0.5) * step;
               let fy = floor + 0.5;
               while (fy > floor - 1.5 && f(x + ox, fy, z + oz) < 0) fy -= 0.15;
               if (fy <= floor - 1.5 || f(x + ox, fy + 0.6, z + oz) >= 0) continue;
               const pick = hash2(k + 7, Math.round((x + z) * 5), seed + 16);
+              const from = plants.length;
               // (Mostly moss: soft cushions of it all over the floor; ferns among it.)
               if (pick < 0.2) fern(x + ox, fy, z + oz, 0.8 + pick * 4, pick * 9);
               else if (pick < 0.32) sprout(x + ox, fy, z + oz, pick);
@@ -1047,6 +1063,7 @@ export function decorateChunk(grid, field) {
                 }
                 lights.push(x + ox, fy + 0.4, z + oz, 1);
               }
+              lean(from, x + ox, fy, z + oz);
             }
             into = parts;
           }
@@ -1155,6 +1172,106 @@ export function decorateChunk(grid, field) {
   return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights, geysers, giants };
 }
 
+// What each kind of glowing thing (see decorateChunk's `lights`) casts on
+// the rock round it: its colour, and how far it reaches.
+const GLOW_LIGHTS = [
+  [new Color(0x7ae8e0), 16], // glow-worms on the roof
+  [new Color(0x8affc8), 12], // a clump of glowcaps
+  [new Color(0xb69aff), 14], // a crystal cluster
+  [new Color(0x6ae0d0), 22], // a glowing giant mushroom's cap
+];
+
+/**
+ * The light of everything that glows in a chunk, laid into its rock and
+ * all on it (added to the `glow` each vertex already gives off): so every
+ * glowing thing lights the cave round it however far off you are, not only
+ * the few nearest you that are lent real lights (see CaveLayer). Each
+ * light falls off with distance and lights the faces turned towards it.
+ */
+function bakeGlow(geometries, lights, x0, z0) {
+  if (!lights.length) return;
+  // (The lights gathered into 4 m cells first: the glow-worms' are thick on a lush cave's roof.)
+  const cells = new Map();
+  for (let k = 0; k < lights.length; k += 4) {
+    const type = lights[k + 3], x = lights[k] - x0, y = lights[k + 1], z = lights[k + 2] - z0;
+    const key = `${type},${Math.floor(x / 4)},${Math.floor(y / 4)},${Math.floor(z / 4)}`;
+    const c = cells.get(key);
+    if (c) (c.x += x), (c.y += y), (c.z += z), c.n++;
+    else cells.set(key, { type, x, y, z, n: 1 });
+  }
+  const list = [...cells.values()].map((c) => {
+    const [colour, reach] = GLOW_LIGHTS[c.type] ?? GLOW_LIGHTS[1];
+    return { x: c.x / c.n, y: c.y / c.n, z: c.z / c.n, reach, colour, power: 0.08 * Math.min(2.5, Math.sqrt(c.n)) };
+  });
+  // (The light worked out on a 4 m lattice through the chunk, not at every
+  // vertex: its colour, and the way it mostly comes from; each vertex then
+  // reads it there, lit as it faces that way.)
+  let yMin = Infinity, yMax = -Infinity, size = 0;
+  for (const g of geometries) {
+    if (!g) continue;
+    const a = g.attributes.position.array;
+    for (let v = 0; v < a.length; v += 3) {
+      const y = a[v + 1];
+      if (y < yMin) yMin = y;
+      if (y > yMax) yMax = y;
+      const h = Math.max(Math.abs(a[v]), Math.abs(a[v + 2]));
+      if (h > size) size = h;
+    }
+  }
+  if (!(yMax >= yMin)) return;
+  const S = 4, nx = Math.ceil(size / S) + 2, ny = Math.ceil((yMax - yMin) / S) + 2;
+  const at = (i, j, k) => ((k * ny + j) * nx + i) * 6;
+  const field = new Float32Array(nx * ny * nx * 6);
+  for (const l of list) {
+    const i0 = Math.max(0, Math.floor((l.x - l.reach) / S)), i1 = Math.min(nx - 1, Math.ceil((l.x + l.reach) / S));
+    const k0 = Math.max(0, Math.floor((l.z - l.reach) / S)), k1 = Math.min(nx - 1, Math.ceil((l.z + l.reach) / S));
+    const j0 = Math.max(0, Math.floor((l.y - l.reach - yMin) / S)), j1 = Math.min(ny - 1, Math.ceil((l.y + l.reach - yMin) / S));
+    for (let k = k0; k <= k1; k++) {
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const dx = l.x - i * S, dy = l.y - (yMin + j * S), dz = l.z - k * S, d = Math.hypot(dx, dy, dz) + 1e-3;
+          if (d > l.reach) continue;
+          const w = l.power * (1 - d / l.reach) ** 2, o = at(i, j, k);
+          field[o] += l.colour.r * w;
+          field[o + 1] += l.colour.g * w;
+          field[o + 2] += l.colour.b * w;
+          field[o + 3] += (dx / d) * w;
+          field[o + 4] += (dy / d) * w;
+          field[o + 5] += (dz / d) * w;
+        }
+      }
+    }
+  }
+  for (const g of geometries) {
+    if (!g) continue;
+    const pos = g.attributes.position.array, nor = g.attributes.normal?.array, glow = g.attributes.glow?.array;
+    if (!nor || !glow) continue;
+    for (let v = 0; v < pos.length; v += 3) {
+      const fx = Math.min(nx - 1.001, Math.max(0, pos[v] / S)), fy = Math.min(ny - 1.001, Math.max(0, (pos[v + 1] - yMin) / S)), fz = Math.min(nx - 1.001, Math.max(0, pos[v + 2] / S));
+      const i = fx | 0, j = fy | 0, k = fz | 0, tx = fx - i, ty = fy - j, tz = fz - k;
+      let r = 0, gg = 0, b = 0, lx = 0, ly = 0, lz = 0;
+      for (let c = 0; c < 8; c++) {
+        const di = c & 1, dj = (c >> 1) & 1, dk = c >> 2;
+        const o = at(i + di, j + dj, k + dk);
+        if (field[o] + field[o + 1] + field[o + 2] === 0) continue;
+        const w = (di ? tx : 1 - tx) * (dj ? ty : 1 - ty) * (dk ? tz : 1 - tz);
+        r += field[o] * w;
+        gg += field[o + 1] * w;
+        b += field[o + 2] * w;
+        lx += field[o + 3] * w;
+        ly += field[o + 4] * w;
+        lz += field[o + 5] * w;
+      }
+      if (r + gg + b < 1e-4) continue;
+      const len = Math.hypot(lx, ly, lz) || 1;
+      const facing = 0.35 + 0.65 * Math.max(0, (nor[v] * lx + nor[v + 1] * ly + nor[v + 2] * lz) / len);
+      glow[v] = Math.min(0.22, glow[v] + r * facing);
+      glow[v + 1] = Math.min(0.22, glow[v + 1] + gg * facing);
+      glow[v + 2] = Math.min(0.22, glow[v + 2] + b * facing);
+    }
+  }
+}
+
 /**
  * Builds everything for one chunk as plain arrays (so it can come back from
  * a Web Worker without copying): the field grid for collisions, the rock
@@ -1168,6 +1285,13 @@ export function buildChunkData(field, cx, cz, chunkSize) {
   const rock = meshChunk(grid, field, plain);
   const deco = decorateChunk(grid, field);
   const liquid = liquidChunk(grid, field, deco.pools);
+  // (The crystals and glowcaps lying about to be picked up glow too.)
+  const glowing = [...deco.lights];
+  for (let k = 0; k < deco.features.length; k += 6) {
+    const f = deco.features[k];
+    if (f === 2 || f === 3) glowing.push(deco.features[k + 1], deco.features[k + 2] + 0.5, deco.features[k + 3], f === 2 ? 2 : 1);
+  }
+  bakeGlow([rock, rock ? plain.far : null, deco.geometry, deco.plants], glowing, grid.x0, grid.z0);
   const pack = (g) =>
     g && {
       position: g.attributes.position.array,

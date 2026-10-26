@@ -12,13 +12,13 @@ let workers = null;
 let nextId = 1;
 let turn = 0;
 const requests = new Map(); // id -> (data) => void
-// (Two of them, taking turns: a cave of many chunks fills in sooner.)
+// (Two or three of them, taking turns: a cave of many chunks fills in sooner.)
 function getWorker() {
   if (workers === null) {
     workers = [];
     try {
       if (typeof Worker !== 'undefined' && typeof window !== 'undefined') {
-        for (let k = 0; k < 2; k++) {
+        for (let k = 0; k < ((navigator.hardwareConcurrency ?? 4) >= 8 ? 3 : 2); k++) {
           const w = new Worker(new URL('./caveWorker.js', import.meta.url), { type: 'module' });
           w.onmessage = (event) => {
             const done = requests.get(event.data.id);
@@ -33,6 +33,12 @@ function getWorker() {
     }
   }
   return workers.length ? workers[turn++ % workers.length] : false;
+}
+
+/** Rivers worked out on another thread, for the cave workers to take in too (see ChunkManager.#shareRivers). */
+export function shareCaveRivers(seed, config, delta) {
+  getWorker();
+  for (const w of workers) w.postMessage({ kind: 'rivers', seed, config, delta });
 }
 
 function toGeometry(part) {
@@ -80,6 +86,12 @@ export class CaveSystem {
   }
 
   // --- Chunk data --------------------------------------------------------------
+
+  /** The cave workers made ready for this world, each building a cave round (cx, cz) to start with. */
+  warm(cx, cz) {
+    getWorker();
+    for (const w of workers) w.postMessage({ kind: 'warm', seed: this.generator.seedText, config: this.config, cx, cz });
+  }
 
   /**
    * Cave data for a chunk, requesting it if needed. `acquire` marks it in use

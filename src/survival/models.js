@@ -655,7 +655,9 @@ export function nestEggsModel() {
 /** A wild bees' nest: a grey papery comb hanging in tiers under a bough. */
 export function beehiveModel() {
   const b = new Parts(173);
-  b.add(new BoxGeometry(0.06, 0.12, 0.06), 0x6e4c32, [0, 0.3, 0]);
+  // (Hung from the bough above on a short stalk of comb and twig, up into the leaves.)
+  b.add(new CylinderGeometry(0.035, 0.05, 0.7, 5), 0x6e4c32, [0, 0.55, 0]);
+  b.add(new CylinderGeometry(0.025, 0.035, 0.5, 4), 0x5e4028, [0.12, 0.85, 0], [0, 0, -1.1]);
   for (const [y, r] of [[0.15, 0.2], [0, 0.26], [-0.16, 0.24], [-0.3, 0.17], [-0.4, 0.08]]) b.add(new DodecahedronGeometry(r, 0), [0x9a8a70, 0x8a7a62, 0xa89878][Math.round(r * 100) % 3], [0, y, 0], [0, y * 3, 0], [1, 0.7, 1], 0.12);
   b.add(new CylinderGeometry(0.04, 0.04, 0.02, 6), 0x2a2018, [0.2, -0.05, 0.12], [0, 0, 1.2]);
   return b.build();

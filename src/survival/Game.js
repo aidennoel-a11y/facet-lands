@@ -155,6 +155,10 @@ export class Game {
     this.inventory.stackBonus = (id) => (QUIVERED.has(id) && this.inventory.slots.some((s) => s?.id === 'quiver') ? 3 : 1);
     this.progress = new Set(); // what's opened tiers of the crafting tree (see unlocked)
     this.treeFinds = new TreeFinds(this.scene, this.trees); // (birds' nests and wild bees' nests up in the trees)
+    this.treeFinds.onSting = () => {
+      this.survival.hurt((2 + Math.random() * 2.5) * (this.inventory.hands ? 0.6 : 1) * (this.inventory.head ? 0.7 : 1), 'bee stings');
+      this.survival.hurtFlash = Math.max(this.survival.hurtFlash ?? 0, 0.5);
+    };
     this.record = new Progress(); // (your skills, and what you've achieved, this life)
     this.survival = new Survival();
     this.hud = new Hud(o.hudRoot);
@@ -167,6 +171,7 @@ export class Game {
       if (d < 30) this.hotbar?.flash(`${ITEMS[out.id].name} ready at the ${ITEMS[s.type].name.toLowerCase()}`);
     };
     this.felling = new Felling(o.scene, o.trees, this.items);
+    this.treeFinds.felling = this.felling; // (a struck tree rocks its nests with it)
     // (What grows in an orchard planting: the same trees and bushes as the wild ones, at its size.)
     // (A water mill's wheel: turned by running water just off its side.)
     this.structures.flowAt = (s) => {
@@ -2264,6 +2269,11 @@ export class Game {
       // (Where along the trunk the blade bites: where you aimed.)
       const at = origin.y + direction.y * tree.distance;
       const result = this.felling.chop(tree, origin, at, this.wind?.() ?? { x: 0, z: 0 }, power);
+      // (A wild bees' nest up in it: stirred up by the blows, they come out after you.)
+      {
+        const held = this.inventory.slots[this.hotbar.index], smoked = held?.id === 'torch' || held?.id === 'coalTorch';
+        if (this.treeFinds.stir(tree.x, tree.z, seasonUniforms.uSeasonTime.value, smoked)) this.hotbar?.flash('The bees pour out of their nest, after you!');
+      }
       if (result === 'fell') {
         this.sound?.call('creak', 0, 0.7);
         // (Now and then a seedling from round its foot: to plant.)

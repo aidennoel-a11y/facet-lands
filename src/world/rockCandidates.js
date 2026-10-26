@@ -44,8 +44,9 @@ export function rockCandidates(generator, config, cx, cz) {
       const roll = hash2(gi, gj, seed);
       const m = generator.getMountainness(wx, wz);
       const foothill = Math.max(0, 1 - Math.abs(m - 0.45) / 0.35);
-      // Black Hills: granite boulders strewn everywhere among the pines,
-      // heaped up the steep granite too.
+      // Black Hills: granite boulders heaped up the steep granite, and
+      // strewn among the pines; the flatter valley floors between kept
+      // mostly open, the way the deer and the bison go.
       const bw = generator.getBiomeWeights(wx, wz, {});
       const granite = bw.blackHills;
       // Redwood forests: mossy boulders and stones here and there among the giants.
@@ -130,13 +131,13 @@ export function rockCandidates(generator, config, cx, cz) {
       const shoreRock = shore ? (shore.kind === 'rock' ? (shore.ocean ? 1.4 : 1) : shore.ocean ? 0 : 0.08) * Math.max(shore.fade, 0.6) : 0;
       // Open grassy plains: only the odd stone.
       const plain = generator.getPlainness(wx, wz);
-      const chance = ((0.025 + 0.2 * foothill * flat) * (1 - 0.8 * plain) + 0.75 * foot + 0.2 * cliff + 0.25 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.4 + 0.6 * smoothstep(0.2, 0.7, slope)) + 0.16 * red + 1.1 * blast + lavaRock) * soft + strewn + surf;
+      const chance = ((0.025 + 0.2 * foothill * flat) * (1 - 0.8 * plain) + 0.75 * foot + 0.2 * cliff + 0.25 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.12 + 0.88 * smoothstep(0.2, 0.7, slope)) + 0.16 * red + 1.1 * blast + lavaRock) * soft + strewn + surf;
       // (And on open grassland, plains and meadows, 70% fewer again.)
       const open = bw.temperate > 0.5 ? Math.max(plain, bw.temperate * (1 - smoothstep(0.45, 0.6, generator.getForestDensity(wx, wz))) * (1 - smoothstep(0.3, 0.5, foothill))) : 0;
       if (roll > chance * (1 - 0.7 * open)) continue;
 
       const r = hash2(gi, gj, seed + 3);
-      const boulder = surf > 0 || r < lavaRock || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite + 0.4 * red + 0.55 * blast + 0.35 * strewn + 0.4 * toe);
+      const boulder = surf > 0 || r < lavaRock || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite * smoothstep(0.12, 0.45, slope) + 0.4 * red + 0.55 * blast + 0.35 * strewn + 0.4 * toe);
       if (boulder && surf <= 0 && hash2(gi, gj, seed + 31) < 0.3 * open) continue; // (and a third fewer boulders out on the grassland)
       if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
       if (generator.nearTidePool?.(wx, wz)) continue; // and tide pools

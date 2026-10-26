@@ -2545,6 +2545,9 @@ export class Wildlife {
   }
 
   #spawnHerd(kind, s, n) {
+    // (Not up on a mesa's flat top: a herd couldn't have got up there.)
+    const f = this.ctx.generator?.getFeatures?.(s.x, s.z);
+    if (f && f.mesa > 0.35 && f.mesaHeight > 17 * f.mesa && !/goat/i.test(kind)) return null;
     const herd = { kind, goal: { x: s.x, z: s.z }, goalWait: rnd(15, 40), members: [], fear: null, fleeTime: 0 };
     for (let k = 0; k < n; k++) {
       const a = rnd(0, TAU), d = rnd(1, kind === 'bison' ? 16 : 9);
@@ -2798,7 +2801,7 @@ export class Wildlife {
         }
         const rocks = ctx.rocks?.boulders.get(key);
         if (rocks) for (let k = 0; k < rocks.length; k += 7) {
-          if (rocks[k + 4] < 0.35) continue; // (pebbles are stepped over)
+          if (rocks[k + 4] < 0.35 || rocks[k + 4] * 1.5 < tall * 0.4) continue; // (pebbles, and rocks low for its size, are stepped over)
           if (Math.abs(rocks[k] - x) < reach && Math.abs(rocks[k + 1] - z) < reach) out.push(rocks[k], rocks[k + 1], Math.max(rocks[k + 3], rocks[k + 5]) * 0.9);
         }
       }

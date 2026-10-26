@@ -12,7 +12,7 @@ import { createWreckLayer } from './world/layers/WreckLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
-import { fellShroom, pickShroom, shroomsCut } from './world/layers/CaveLayer.js';
+import { fellShroom, pickShroom, shroomCapAt, shroomCollide, shroomsCut } from './world/layers/CaveLayer.js';
 import { caveFocus, caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
@@ -29,6 +29,7 @@ import { createMushroomLayer } from './world/layers/MushroomLayer.js';
 import { createSeaCoastLayer } from './world/layers/SeaCoastLayer.js';
 import { createKelpLayer } from './world/layers/KelpLayer.js';
 import { createSeaweedLayer } from './world/layers/SeaweedLayer.js';
+import { createMushroomIslandLayer } from './world/layers/MushroomIslandLayer.js';
 import { Profiler } from './render/Profiler.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
 import { createFlowerLayer } from './world/layers/FlowerLayer.js';
@@ -720,6 +721,7 @@ chunks.addLayer(createLilyLayer(WORLD));
 chunks.addLayer(createVentLayer(WORLD));
 chunks.addLayer(createGeyserLayer(WORLD));
 chunks.addLayer(createCoralLayer(WORLD));
+chunks.addLayer(createMushroomIslandLayer(WORLD));
 chunks.addLayer(createLeafLayer());
 const mushrooms = createMushroomLayer();
 chunks.addLayer(mushrooms);
@@ -787,6 +789,9 @@ function groundAt(x, feetY, z) {
   // (On a floor you've laid: its boards or flags.)
   const floor = floorTop?.(x, z, feetY);
   if (floor !== null && floor !== undefined) g.height = Math.max(g.height, floor);
+  // (The giant mushrooms' caps, underground and on the mushroom islands: stood on, once you're up there.)
+  const cap = shroomCapAt(x, z, feetY);
+  if (cap > g.height) g.height = cap;
   // The roofs of sea caves and spans of sea arches: stood on from above,
   // swum or walked under from below.
   const over = g.height < WORLD.seaLevel + 40 ? generator.overhangAt(x, z) : null;
@@ -1326,12 +1331,14 @@ function thirdPersonView(dt, now) {
 
 const controls = new PlayerControls(camera, canvas, {
   groundAt,
+  terrainAt: (x, z) => chunks.groundHeightAt(x, z),
   seaLevel: WORLD.seaLevel,
   waterAt,
   collide: (position, radius) => {
     const feet = position.y - controls.eyeHeight;
     const bx = position.x, bz = position.z;
     trees.collide(position, radius, WORLD.chunkSize);
+    shroomCollide(position, radius, feet);
     treeBump(position.x - bx, position.z - bz);
     // (Into the leaves a little way, not through them; and they slow you.)
     controls.speedFactor = trees.leaves(position, radius, feet, controls.eyeHeight + 0.1) * (game.structures.onRoad(position.x, position.z) ? 1.3 : 1); // (quicker on a paved road)
@@ -2674,6 +2681,8 @@ function loadingFrame(now) {
   // filling in), so all's ready when you come in.
   loading.settle = now;
   standOnGround();
+  // (And the cave workers set going: ready, with the caves round here, before you come to one.)
+  generator.caves?.warm?.(Math.floor(camera.position.x / WORLD.chunkSize), Math.floor(camera.position.z / WORLD.chunkSize));
 }
 
 /** You (walking), set down on whatever's under you: not left in the air, nor in the ground. */
@@ -2984,7 +2993,7 @@ function tick(now) {
   env.cell = [Math.round(camera.position.x / 150), Math.round(camera.position.z / 150)];
   env.panTo = (a) => panTowards(camera, camera.position.x + Math.cos(a) * 40, camera.position.z + Math.sin(a) * 40);
   // (Underground the wind and the water above are shut out: only the river in the rock, if there's one near.)
-  sound.ambience(sheltered ? { ...env, wind: 0, gust: 0, fall: 0, river: 0, brook: caveSounds.brook ?? 0, brookPan: 0, canopy: 0, exposure: 0, storm: 0 } : env);
+  sound.ambience(sheltered ? { ...env, woods: 0, jungle: 0, grass: 0, wetland: 0, wind: 0, gust: 0, fall: 0, river: 0, brook: caveSounds.brook ?? 0, brookPan: 0, canopy: 0, exposure: 0, storm: 0 } : env);
   // (The ground trembles as a volcano rumbles.)
   lavaHeat(dt);
   const tremble = !controls.swimming ? (volcanoes.shake > 0 ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0) + (quake.shake > 0 ? (Math.sin(now * 0.041) + 0.6 * Math.sin(now * 0.097 + 1.3)) * 0.16 * quake.shake : 0) : 0;

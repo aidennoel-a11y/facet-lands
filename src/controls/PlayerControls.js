@@ -150,7 +150,7 @@ export class PlayerControls {
       if (e.code === 'Space') e.preventDefault(); // don't toggle focused checkboxes
       if (this.frozen) return;
       this.keys.add(e.code);
-      if (e.code === 'Space' && this.mode === 'walk' && this.grounded && !this.swimming) {
+      if (e.code === 'Space' && this.mode === 'walk' && this.grounded && !this.swimming && !this.#onSteep()) {
         this.velocityY = this.jumpSpeed * (this.crouch ? 0.8 : 1);
         this.grounded = false;
         this.jumps++;
@@ -504,6 +504,22 @@ export class PlayerControls {
    * rock (ground far above your feet), not a slope too steep to climb, and
    * with enough headroom in a cave.
    */
+  /**
+   * Standing on land steeper than you could walk up (a cliff face you've
+   * landed on): no jumping from there, or you'd hop your way up the cliff.
+   * (The land's own slope, not the rocks and logs and floors on it, which
+   * you can still jump up onto.)
+   */
+  #onSteep() {
+    const at = this.world.terrainAt;
+    if (!at || this.underground) return false;
+    const p = this.camera.position, d = 0.6;
+    const gx = Math.abs(at(p.x + d, p.z) - at(p.x - d, p.z)) / (2 * d), gz = Math.abs(at(p.x, p.z + d) - at(p.x, p.z - d)) / (2 * d);
+    const feet = p.y - this.eyeHeight, here = at(p.x, p.z);
+    if (!(Math.abs(feet - here) < 0.5)) return false; // (not on the land itself: on a rock, a floor, in a cave)
+    return Math.hypot(gx, gz) > this.maxClimb;
+  }
+
   #tryMove(dx, dz) {
     const pos = this.camera.position;
     const feet = pos.y - this.eyeHeight;

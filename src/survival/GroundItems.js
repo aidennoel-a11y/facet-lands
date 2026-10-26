@@ -143,7 +143,7 @@ export class GroundItems {
         const w = generator.getBiomeWeights(x, z, {});
         // (On top of a mesa, the caprock: gold lies about up there.)
         const f = generator.getFeatures(x, z);
-        v = { w, forest: generator.getForestDensity(x, z), mount: generator.getMountainness(x, z), mesaTop: f.mesa > 0.35 && f.mesaHeight > 17 * f.mesa };
+        v = { w, forest: generator.getForestDensity(x, z), mount: generator.getMountainness(x, z), mesaTop: f.mesa > 0.35 && f.mesaHeight > 17 * f.mesa, snowLine: generator.getBiome(x, z).snowLine ?? 9999 };
         land.set(k, v);
       }
       return v;
@@ -153,10 +153,14 @@ export class GroundItems {
         const gi = cx * 100 + i, gj = cz * 100 + j;
         const h = hash2(gi, gj, seed);
         const lx = (i + 0.15 + 0.7 * hash2(gi, gj, seed + 1)) * G, lz = (j + 0.15 + 0.7 * hash2(gi, gj, seed + 2)) * G;
-        const { w, forest, mount, mesaTop } = at(x0 + lx, z0 + lz);
+        const { w, forest, mount, mesaTop, snowLine } = at(x0 + lx, z0 + lz);
         const wooded = Math.max(forest * (w.temperate + w.smoky + w.pine + w.blackHills + w.wetland), w.jungle, 0.6 * w.pine, 0.6 * w.smoky);
-        const pStick = 0.03 + 0.4 * wooded;
-        const pRock = 0.05 + 0.12 * mount + 0.06 * (w.savanna + w.desert) + 0.04 * w.volcanic;
+        // (Sticks only where trees grow to drop them: none on the salt
+        // flats, the open desert or the dunes, nor up on the bare peaks.)
+        const treed = Math.min(1, w.temperate + w.smoky + w.pine + w.blackHills + w.wetland + w.jungle + w.parkland + w.redwood + w.cascades + w.mangrove + 0.5 * w.savanna + 0.3 * w.volcanic + 0.15 * w.badlands);
+        const pStick = (0.03 + 0.4 * wooded) * treed;
+        // (Loose stones, likewise, not out on the salt.)
+        const pRock = (0.05 + 0.12 * mount + 0.06 * (w.savanna + w.desert) + 0.04 * w.volcanic) * (1 - (w.saltFlat ?? 0));
         const pFlint = wooded > 0.35 || mount > 0.3 ? 0.02 : 0.004;
         // Wild seed in the open grass: wheat and carrot on the plains,
         // corn on the savanna, potatoes up in the hills and the cold.
@@ -193,6 +197,8 @@ export class GroundItems {
         y ??= groundHeightAt(lx, lz, surface);
         const wet = id === 'oyster' || id === 'seashell';
         if (wet ? !(y < sea - 0.8) : !(y > sea + 0.3) || surface.normalY < 0.72) continue;
+        // (No sticks above the trees, and none on a sandy shore.)
+        if (id === 'stick' && (y > 150 || y > snowLine - 25 || y < sea + 2.5)) continue;
         // High in the mountains, some of the loose stone is coal, or the dark
         // ore that steel is made from (see Game.#mine).
         // Now and then, among the loose stones, a lump of rusty iron ore showing
@@ -204,6 +210,7 @@ export class GroundItems {
           if (r > 0.82) id = 'mountainOre';
           else if (r > 0.6) id = 'coal';
         }
+        if ((id === 'rock' || id === 'flint') && y > snowLine - 10) continue; // (nor plain stones lying out on the snow: the ore and coal up there show through it)
         if (!wet && generator.rivers?.at(x0 + lx, z0 + lz, 0.5)) continue;
         const turn = hash2(gi, gj, seed + 3) * Math.PI * 2;
         const item = { key, id, x: x0 + lx, y, z: z0 + lz, turn, index: found[id].length, node: ORE_NODES.has(id) };

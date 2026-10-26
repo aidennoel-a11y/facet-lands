@@ -1,6 +1,7 @@
 import { Box3, BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { buildChunkGeometry, chunkFromData } from './ChunkMesher.js';
 import { FADE_SECONDS, fadeCopy, fadeOpacity } from '../render/chunkFade.js';
+import { shareCaveRivers } from './caves/CaveSystem.js';
 
 const LOOKAHEAD = 3; // seconds: the land where you'll be by then is made ready ahead of you
 const NEIGHBOURS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
@@ -149,6 +150,7 @@ export class ChunkManager {
     if (message.seed !== this.generator.seedText) return;
     if (from) this.generator.rivers.share(message.delta);
     for (const w of this.workers) if (w !== from) w.postMessage({ kind: 'rivers', seed: message.seed, config: this.config, delta: message.delta });
+    shareCaveRivers(message.seed, this.config, message.delta);
   }
 
   rebuildAll() {

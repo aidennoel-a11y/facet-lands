@@ -61,7 +61,8 @@ export class CaveField {
     this.bottom = -30; // deepest cave floor (m)
     this.top = 55; // highest cave roof, away from entrances (m)
     this.cover = 7; // rock kept between caves and the ground above
-    this.deep = -125; // the deepest floor of the deep caves (chambers, spaghetti, rivers)
+    this.deep = -200; // the deepest floor of the deep caves (the great chambers, the volcanic halls)
+    this.spagDeep = -125; // (the spaghetti tunnels and rivers, not so deep)
     this.chamberCell = 520; // one possible great chamber per square this size
 
     this.entranceRegion = 256; // one possible entrance per region this size
@@ -145,6 +146,15 @@ export class CaveField {
       };
       c.floor = c.y - c.ry * 0.5;
       c.lake = c.floor + 0.6 + rand() * 1.4; // (still water in the low places of the floor, under this)
+      // (Some sunk far deeper, and the taller for it: the great caverns of the deep.)
+      const deeper = rand();
+      if (deeper < 0.4) {
+        const sink = 30 + deeper * 100, lake = c.lake - c.floor;
+        c.y -= sink;
+        c.ry += sink * 0.5;
+        c.floor = c.y - c.ry * 0.5;
+        c.lake = c.floor + lake;
+      }
     }
     this.chambers.set(key, c);
     return c;
@@ -235,11 +245,21 @@ export class CaveField {
 
   /** A volcanic cavern's floor under (x, z) (its rough lie), and the level its lava lies at. */
   volcanicFloor(x, z) {
-    const base = -104 + 7 * this.riverLevel.noise2D(x / 400 + 70, z / 400 - 70);
+    const base = -150 + 10 * this.riverLevel.noise2D(x / 400 + 70, z / 400 - 70); // (deep down: halls up to 90 m high)
     return {
       floor: base + 4.5 * this.chamberWall.noise2D(x / 40 + 90, z / 40 - 90) + 1.5 * this.chamberWall.noise2D(x / 11 - 40, z / 11),
       lava: base + 0.8,
     };
+  }
+
+  /** How deep this column's caves could go (m): so a chunk's caves are sampled no deeper than they need. */
+  deepBottom(col, x, z) {
+    let b = this.bottom;
+    if (col.spag > -0.05 || col.river) b = Math.min(b, this.spagDeep);
+    if (col.lush > 0.45) b = Math.min(b, -72);
+    if (col.volc > 0.45) b = Math.min(b, (col.vfloor ??= this.volcanicFloor(x, z)).floor - 10);
+    if (col.chamber) b = Math.min(b, col.chamber.c.floor - 10);
+    return Math.max(this.deep, b);
   }
 
   /** Could this column hold any deep cave? (Cheap: to skip work.) */
@@ -306,13 +326,13 @@ export class CaveField {
       d = Math.min(d, vd);
     }
     // Spaghetti: long thin tunnels winding on and on.
-    if (col.spag > -0.05 && y > this.deep) {
+    if (col.spag > -0.05 && y > this.spagDeep) {
       // (Some 12 m across: narrow for a cave, but always room to walk;
       // running near level, sloping gently, rather than plunging: see vs.)
       const fy = y / col.vs;
       const a = this.spagA.noise3D(col.sx, fy, col.sz), b = this.spagB.noise3D(col.sx, fy, col.sz);
       let sd = (Math.sqrt(a * a + b * b) - 0.19) * 40;
-      sd = Math.max(sd, -col.spag * 40, this.deep - y);
+      sd = Math.max(sd, -col.spag * 40, this.spagDeep - y);
       d = Math.min(d, sd);
     }
     return Math.max(d, y - ceiling);
@@ -511,6 +531,7 @@ export class CaveField {
       const z = (rz + 0.2 + rand() * 0.6) * R;
       const top = g.getHeight(x, z);
       if (top < this.seaLevel + 10) continue;
+      if ((g.getBiomeWeights(x, z, {}).saltFlat ?? 0) > 0.15) continue; // (none out on the salt flats: dead flat crust over brine)
       const gx = (g.getHeight(x + 3, z) - g.getHeight(x - 3, z)) / 6;
       const gz = (g.getHeight(x, z + 3) - g.getHeight(x, z - 3)) / 6;
       const grade = Math.hypot(gx, gz);

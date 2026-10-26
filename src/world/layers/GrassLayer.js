@@ -210,7 +210,7 @@ export function createGrassLayer(config, { far = false } = {}) {
             transformed.xz += lp * transformed.y * 0.9;
             transformed.y *= 1.0 - 0.45 * pushed;
           }
-          // Burnt: most of it gone, the rest charred black stubble. Cut with a sickle: stubble.
+          // Burnt: most of it gone, the rest charred black stubble. Cut with a sickle: gone.
           vec2 buv = (tuft - uBurnOrigin) / uBurnSize;
           float burnt = (buv.x > 0.0 && buv.y > 0.0 && buv.x < 1.0 && buv.y < 1.0) ? smoothstep(0.35, 0.8, texture2D(uBurnMap, buv).r) : 0.0;
           float spared = step(0.8, fract(sin(dot(floor(tuft * 3.0), vec2(12.9898, 78.233))) * 43758.5453));
@@ -220,7 +220,8 @@ export function createGrassLayer(config, { far = false } = {}) {
           // the next: a tuft at the edge of a cut metre is cut, not half cut.)
           vec2 cuv = (floor(tuft) + 0.5 - uCutOrigin) / uCutSize;
           float cut = (cuv.x > 0.0 && cuv.y > 0.0 && cuv.x < 1.0 && cuv.y < 1.0) ? texture2D(uCutMap, cuv).r : 0.0;
-          transformed.y *= 1.0 - 0.9 * cut;
+          // (Cut: gone, down to the ground, coming back as it grows again.)
+          keep *= 1.0 - cut;
           transformed *= keep;
         }
         #include <project_vertex>`,

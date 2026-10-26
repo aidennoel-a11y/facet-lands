@@ -184,6 +184,56 @@ export function pickShroom(origin, dir, reach) {
   return best;
 }
 
+/** Giant mushrooms out on the surface too (see MushroomIslandLayer): to stand on, cut down and walk round as the cave ones are. */
+export const addShroomSet = (set) => shroomSets.add(set);
+export const removeShroomSet = (set) => shroomSets.delete(set);
+
+/** Pushes a walker (circle at `position`, feet at `feetY`) out of the giant mushrooms' stems. */
+export function shroomCollide(position, radius, feetY) {
+  for (const set of shroomSets) {
+    if (Math.abs(set.cx - position.x) > 80 || Math.abs(set.cz - position.z) > 80) continue;
+    for (const g of set.list) {
+      if (g.cut || Math.abs(g.x - position.x) > 3 || Math.abs(g.z - position.z) > 3) continue;
+      if (feetY > g.y + g.height * 0.8 || feetY < g.y - 2) continue; // (over its cap, or a floor below)
+      const r = Math.max(0.35, g.height * (g.kind === 2 ? 0.17 : 0.08)) + radius;
+      const dx = position.x - g.x, dz = position.z - g.z, d = Math.hypot(dx, dz);
+      if (d < r && d > 1e-4) (position.x = g.x + (dx / d) * r), (position.z = g.z + (dz / d) * r);
+    }
+  }
+}
+
+// Each kind's caps (see giantShrooms: at height 1): [out from the stem, rim height, radius, dome height].
+const CAP_TOPS = [
+  [[0, 0.97, 0.42, 0.18]],
+  [[0.32, 0.95, 0.38, 0.16]],
+  [[0, 0.55, 0.62, 0.42]],
+  [[0, 0.99, 0.58, 0.1]],
+  [[0, 0.98, 0.3, 0.12], [Math.sin(0.42) * 0.72, Math.cos(0.42) * 0.72 - 0.02, 0.24, 0.12], [-Math.sin(0.38) * 0.6, Math.cos(0.38) * 0.6 - 0.02, 0.22, 0.12]],
+];
+
+/**
+ * The top of a giant mushroom's cap under (x, z), for standing on: the
+ * highest no more than a step above your feet (`feetY`), or -Infinity.
+ */
+export function shroomCapAt(x, z, feetY) {
+  let best = -Infinity;
+  for (const set of shroomSets) {
+    if (Math.abs(set.cx - x) > 80 || Math.abs(set.cz - z) > 80) continue;
+    for (const g of set.list) {
+      if (g.cut || Math.abs(g.x - x) > g.height || Math.abs(g.z - z) > g.height) continue;
+      const c = Math.cos(g.turn), s = Math.sin(g.turn);
+      for (const [out, rim, r, dome] of CAP_TOPS[g.kind] ?? CAP_TOPS[0]) {
+        const px = g.x + out * c * g.height, pz = g.z - out * s * g.height, R = r * g.height;
+        const d = Math.hypot(x - px, z - pz);
+        if (d >= R) continue;
+        const top = g.y - 0.3 + (rim + dome * Math.sqrt(1 - (d / R) ** 2)) * g.height;
+        if (top <= feetY + 0.5 && top > best) best = top;
+      }
+    }
+  }
+  return best;
+}
+
 /**
  * Down it comes, falling apart: hidden, out of the way (its obstacle
  * taken away), and its pieces tumbling to the floor; remembered as cut.

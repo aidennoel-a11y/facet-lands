@@ -7,8 +7,14 @@ import { buildChunkData, chunkDataBuffers } from './caveMesher.js';
 let world = null; // { seed, generator }
 
 self.onmessage = (event) => {
-  const { id, seed, config, cx, cz } = event.data;
+  const { id, kind, seed, config, cx, cz } = event.data;
   if (!world || world.seed !== seed) world = { seed, generator: new TerrainGenerator(seed, config) };
+  // (The rivers the land's workers have worked out: taken in, so they needn't
+  // be worked out again here before a cave can be. See ChunkManager.#shareRivers.)
+  if (kind === 'rivers') return world.generator.rivers.share(event.data.delta);
+  // (A world starting: made ready, with a cave by where you are, ahead of
+  // the first you come to, rather than then.)
+  if (kind === 'warm') return void buildChunkData(world.generator.caves.field, cx, cz, config.chunkSize);
   const data = buildChunkData(world.generator.caves.field, cx, cz, config.chunkSize);
   self.postMessage({ id, data }, chunkDataBuffers(data));
 };
