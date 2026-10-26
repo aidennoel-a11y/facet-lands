@@ -18,6 +18,8 @@ const STYLE = `
 .biome-map .legend button { all: unset; display: flex; align-items: center; gap: 7px; padding: 2px 4px; border-radius: 5px; cursor: pointer; }
 .biome-map .legend button:hover, .biome-map .legend button.on { background: rgba(255, 255, 255, 0.14); }
 .biome-map .legend i { width: 14px; height: 14px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3); }
+.biome-map .shows { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+.biome-map .shows label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .biome-map .close { all: unset; position: absolute; top: 14px; right: 18px; font-size: 22px; cursor: pointer; opacity: 0.8; }
 @media (max-width: 760px) { .biome-map { flex-direction: column; } .biome-map .side { max-height: 32vh; } }
 `;
@@ -58,11 +60,29 @@ export class BiomeMap {
     this.root = document.createElement('div');
     this.root.className = 'biome-map';
     this.root.innerHTML = `<button class="close" aria-label="Close map">✕</button><canvas></canvas><div class="side"><div class="title">Map</div>
-      <div class="hint">Drag to look around · scroll to zoom · click to fly there · <b>B</b> closes</div><div class="where"></div><div class="legend"></div></div>`;
+      <div class="hint">Drag to look around · scroll to zoom · click to fly there · <b>B</b> closes</div><div class="where"></div><div class="shows"></div><div class="legend"></div></div>`;
     document.body.append(this.root);
     this.canvas = this.root.querySelector('canvas');
     this.ctx = this.canvas.getContext('2d');
     this.whereEl = this.root.querySelector('.where');
+    // What's marked on it, each to show or hide (remembered): see draw.
+    this.show = { ruins: true, keep: true, wrecks: true, landmarks: true };
+    try {
+      Object.assign(this.show, JSON.parse(localStorage.getItem('facet-lands:mapShow') ?? '{}'));
+    } catch {}
+    const shows = this.root.querySelector('.shows');
+    for (const [key, name] of [['ruins', 'Ruins'], ['keep', 'Lost Keep'], ['landmarks', 'Landmarks'], ['wrecks', 'Wrecks']]) {
+      const l = document.createElement('label');
+      l.innerHTML = `<input type="checkbox"${this.show[key] ? ' checked' : ''}> ${name}`;
+      l.querySelector('input').addEventListener('change', (e) => {
+        this.show[key] = e.target.checked;
+        try {
+          localStorage.setItem('facet-lands:mapShow', JSON.stringify(this.show));
+        } catch {}
+        this.draw();
+      });
+      shows.append(l);
+    }
     const legend = this.root.querySelector('.legend');
     MAP_LABELS.forEach(([name, colour], k) => {
       const b = document.createElement('button');
@@ -265,8 +285,8 @@ export class BiomeMap {
     const fog = this.fog?.();
     if (fog) ctx.drawImage(paintFog((this.fogMask ??= document.createElement('canvas')), w, n, fog.explored, fog.size, (x, z) => [(x - x0) / scale, (z - z0) / scale], scale), 0, 0);
     // The ruins, as little orange keeps.
-    const found = this.ruins?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5, (x, z) => this.labelAtWorld(x, z)) ?? [];
-    const km = this.keep?.();
+    const found = !this.show.ruins ? [] : this.ruins?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5, (x, z) => this.labelAtWorld(x, z)) ?? [];
+    const km = this.show.keep ? this.keep?.() : null;
     if (km) {
       const kx = (km.x - x0) / scale, ky = (km.z - z0) / scale;
       if (km.r) {
@@ -302,7 +322,7 @@ export class BiomeMap {
       ctx.fillRect(rx + 1.6, ry - 6, 2.4, 3);
     }
     // The shipwrecks: a little hull, brown on the beaches, ringed in blue where it's sunk out at sea.
-    for (const s of this.wrecks?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? []) {
+    for (const s of (this.show.wrecks && this.wrecks?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5)) || []) {
       const sx = (s.x - x0) / scale, sy = (s.z - z0) / scale;
       if (sx < -6 || sy < -6 || sx > w + 6 || sy > n + 6) continue;
       if (s.city) {
@@ -339,7 +359,7 @@ export class BiomeMap {
       ctx.stroke();
     }
     // The landmarks: a gold star and its name (a hollow one, only shown you by the standing stones).
-    for (const l of this.landmarks?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5) ?? []) {
+    for (const l of (this.show.landmarks && this.landmarks?.(this.centre.x, this.centre.z, Math.hypot(w, n) * scale * 0.5)) || []) {
       const lx = (l.x - x0) / scale, ly = (l.z - z0) / scale;
       if (lx < -6 || ly < -6 || lx > w + 6 || ly > n + 6) continue;
       ctx.beginPath();

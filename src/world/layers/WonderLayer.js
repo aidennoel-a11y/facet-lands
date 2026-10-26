@@ -311,7 +311,7 @@ export function createWonderLayer(config) {
         const stalks = [], blooms = [[], [], []], centres = [], tops = [];
         placed(lod === 0 ? 3.2 : 5.5, 20, (lx, lz, gi, gj, r) => {
           const gm = generator.giantMeadowAt(x0 + lx, z0 + lz);
-          if (gm < 0.15 || r(0) > 0.85 * gm) return;
+          if (gm < 0.15 || r(0) > 0.85 * gm || !generator.inGiantMeadow(x0 + lx, z0 + lz)) return; // (only in the meadow as the map shows it)
           const y = groundHeightAt(lx, lz);
           if (!(y > config.seaLevel + 1)) return;
           const h = 2.4 + r(1) * 2.4, kind = Math.floor(r(2) * 3), turn = r(3) * 6.28;

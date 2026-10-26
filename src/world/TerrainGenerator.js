@@ -3803,6 +3803,24 @@ export class TerrainGenerator {
     return zone * around;
   }
 
+  /**
+   * Whether (x, z) is in a giant flower meadow as the map has it (the map's
+   * own reading of the country there, on a 16 m grid, remembered): where
+   * the giant flowers grow, and nowhere else (see WonderLayer, GroundItems).
+   */
+  inGiantMeadow(x, z) {
+    if (this.giantMeadowAt(x, z) < 0.4) return false; // (quick: nowhere near one)
+    const G = 16, i = Math.floor(x / G), k = Math.floor(z / G), key = i * 1000003 + k;
+    const cache = (this._inMeadow ??= new Map());
+    let v = cache.get(key);
+    if (v === undefined) {
+      if (cache.size > 50000) cache.clear();
+      v = this.describe((i + 0.5) * G, (k + 0.5) * G, true) === 'Giant flower meadow';
+      cache.set(key, v);
+    }
+    return v;
+  }
+
   /** A glowing swamp (0..1): part of some of the wetlands, where at night the water, the moss and the fungi glow blue-green. */
   glowSwampAt(x, z) {
     const w = this.getBiomeWeights(x, z, {});

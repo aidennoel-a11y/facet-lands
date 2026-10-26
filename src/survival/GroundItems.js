@@ -173,7 +173,7 @@ export class GroundItems {
         const pWild = 0.005 * (1 - Math.min(1, forest * 1.8)) * Math.min(1, w.temperate + 0.6 * w.parkland);
         // In the giant flower meadows, wild honey everywhere (dripped from the bees' nests in the stalks);
         // in the petrified forests, fossils and chips of the stone wood.
-        const pHoney = meadow > 0.3 ? 0.06 * meadow : 0, pFossil = petrified > 0.3 ? 0.05 * petrified : 0, pGlow = glowSwamp > 0.3 ? 0.07 * glowSwamp : 0; // (and in the glowing swamps, glowcaps to pick)
+        const pHoney = meadow > 0.3 && generator.inGiantMeadow?.(x0 + lx, z0 + lz) ? 0.06 * meadow : 0, pFossil = petrified > 0.3 ? 0.05 * petrified : 0, pGlow = glowSwamp > 0.3 ? 0.07 * glowSwamp : 0; // (and in the glowing swamps, glowcaps to pick)
         if (h > 1 - pGold) id = 'goldOre';
         else if (h > 1 - pGold - pHoney) id = 'honey';
         else if (h > 1 - pGold - pHoney - pFossil) id = hash2(gi, gj, seed + 11) < 0.4 ? 'fossil' : 'petrifiedWood';

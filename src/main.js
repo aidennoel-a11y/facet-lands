@@ -3074,7 +3074,9 @@ function tick(now) {
     ruinMarks.testing = testing;
     ruinMarks.list = (testing ? ruins.sitesNear(camera.position.x, camera.position.z, 2000, generator, 4) : ruins.sitesOf(game.ruinsSeen, generator)).filter((r) => !r.keep).map((r) => ({ x: r.x, z: r.z, kind: 'ruin', edge: testing }));
   }
-  minimap.marks = [...(keepMark ? [{ x: keepMark.x, z: keepMark.z, r: keepMark.r, kind: 'keep' }] : []), ...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...ruinMarks.list];
+  // (The ruins and the Keep as the map's set to show them: see BiomeMap.show.)
+  const shown = bigMap?.show ?? {};
+  minimap.marks = [...(keepMark && shown.keep !== false ? [{ x: keepMark.x, z: keepMark.z, r: keepMark.r, kind: 'keep' }] : []), ...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...(shown.ruins !== false ? ruinMarks.list : [])];
   prof.mark('map marks (ruins)');
   minimap.fog = game.mode === 'survival' ? { explored: game.explored, size: WORLD.chunkSize, version: game.exploredVersion ?? 0 } : null;
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
