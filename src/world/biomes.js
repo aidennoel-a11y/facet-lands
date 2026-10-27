@@ -427,7 +427,7 @@ export const BIOMES = {
   },
 
   // Bamboo forest: now and then by a jungle's edge, or by a jungle range's
-  // foothills: tall canes standing each on its own, ferns between them.
+  // foothills: tall canes standing each on its own, a few broadleaf trees and bushes among them.
   bamboo: {
     id: 'bamboo',
     name: 'Bamboo forest',
@@ -450,7 +450,6 @@ export const BIOMES = {
       clumped: false,
       species: [
         { type: 'bamboo', weight: 3.2, minHeight: -99, maxHeight: 999 },
-        { type: 'treeFern', weight: 0.35, minHeight: -99, maxHeight: 999 },
         { type: 'broadleaf', weight: 0.25, minHeight: -99, maxHeight: 999 },
         { type: 'bush', weight: 0.4, minHeight: -99, maxHeight: 999 },
       ],

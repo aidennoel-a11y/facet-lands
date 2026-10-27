@@ -369,6 +369,8 @@ export class TerrainGenerator {
       const ring = smoothstep(0.13, 0.19, suit) * (1 - smoothstep(0.27, 0.33, suit));
       if (ring > 0) wz = Math.max(wz, ring * smoothstep(-0.35, -0.05, this.wetNoise.noise2D(x * 0.0012 + 17, z * 0.0012 - 3)));
     }
+    // (No swamp of either kind ever in or right by the mountains: there it would be a pit.)
+    if (wz > 0) wz *= 1 - smoothstep(0.05, 0.2, this.#mountainsAround(x, z));
     // Pine forests: in the hill country leading up to the mountain ranges
     // (see #pineZone).
     const rest = green * (1 - wz) * (1 - jz);
@@ -393,13 +395,15 @@ export class TerrainGenerator {
     // Badlands: patches of eroded, banded clay and sandstone in the
     // savanna, the desert and the salt flats.
     const bl = savanna + desert > 0.02 ? this.#badlands(x, z) : 0;
-    out.savanna = savanna * (1 - bl);
+    // (And now and then out in the savanna too: the Black Hills rising out of the dry grassland, as they do.)
+    const dh = savanna > 0.3 && !this._probing ? this.#dryHills(x, z, range) * (1 - bl) : 0;
+    out.savanna = savanna * (1 - bl) * (1 - dh);
     // Salt flats: the dry beds of old lakes in the heart of the deserts.
     const sf = desert > 0.5 ? this.#saltFlat(x, z) : 0;
     out.desert = desert * (1 - sf) * (1 - bl);
     out.saltFlat = desert * sf * (1 - bl);
     out.badlands = (savanna + desert) * bl;
-    out.blackHills = hills;
+    out.blackHills = hills + savanna * dh;
     out.smoky = smoky;
     out.volcanic = volcanic;
     // Round the mountains: their foothills. In a few warm ranges without
@@ -971,11 +975,13 @@ export class TerrainGenerator {
           if (c < minKey) minKey = c;
           if (n % step) continue;
           const x = (Math.floor(c / 65536) - 32768 + 0.5) * G, z = ((c % 65536) - 32768 + 0.5) * G;
-          if (pr.#tropicRange(x, z) > 0.2) warm++;
+          if (pr.getAridity(x, z) < 0.42) warm++; // (green, well-watered country: not the dry)
           if (pr.getMountainness(x, z) > 0.45) top = Math.max(top, pr.landHeight(x, z));
         }
         const mi = Math.floor(minKey / 65536) - 32768, mk = (minKey % 65536) - 32768;
-        range = { jungle: warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && top < 168 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.5 };
+        // (Three ranges in ten, of those in green country with real mountains in them. Their peaks are
+        // held down below the snow: see landHeight.)
+        range = { jungle: warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.3 };
       }
     }
     if (ranges.size > 400000) ranges.clear();
@@ -1134,8 +1140,10 @@ export class TerrainGenerator {
   #wetZone(x, z, range, aridity) {
     let zone = smoothstep(0, 0.35, this.#wetZoneRaw(x, z, range, aridity, false));
     if (zone <= 0) return 0;
-    // (Not in the land rising into the Smoky Mountains: a marsh there would be a pit.)
+    // (Not in the land rising into the Smoky Mountains: a marsh there would be a pit. Nor anywhere
+    // in or by a range: no swamp ever lies in the mountains.)
     if (!this._probing) zone *= 1 - smoothstep(0.02, 0.25, this.#smokyLift(x, z));
+    zone *= 1 - smoothstep(0.05, 0.2, this.#mountainsAround(x, z));
     if (zone <= 0) return 0;
     return zone * this.#blobs('wet', x, z, 3500, 1, 1100 * T.wetland, 2000 * T.wetland, 0x3e7a, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
@@ -1560,6 +1568,9 @@ export class TerrainGenerator {
     const hw = (w.cherry ?? 0) + (w.bamboo ?? 0);
     const highland = hw > 0.005 ? hw * this.highlandRelief(x, z, (w.cherry ?? 0) / hw) * (1 - smoothstep(0.5, 6, lakes)) : 0;
     let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + volcanic + badlands + cascades + highland + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
+    // (A jungle range's peaks held down below the snow line: rounded off, never white.)
+    const jw = (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0);
+    if (jw > 0 && height > 135) height -= (height - (135 + 32 * Math.tanh((height - 135) / 32))) * Math.min(1, jw);
     // (Valleys only in land well above the water: never new lakes.)
     if (valleys > 0) height -= valleys * smoothstep(seaLevel + 3, seaLevel + 30, height);
     // Canyons cut down into it (their floors kept above the sea).
@@ -3354,6 +3365,15 @@ export class TerrainGenerator {
     return clear > 0 ? blob * clear * this.#broadFit(x, z, range, 0.12) * this.#greenBuffer(x, z, 0.04) : 0;
   }
 
+  /** The Black Hills out in the savanna (0..1): rounded stretches a few kilometres across, now and then. */
+  #dryHills(x, z, range) {
+    return this.#blobs('hillsDry', x, z, 7500, 1, 1900, 3200, 0xd4b1, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value, a = this.getAridity(px, pz, r);
+      // (The open savanna, well short of the desert, clear of the ranges and of volcanic country.)
+      return a > T.savannaStart + 0.12 && a < T.desertStart - 0.02 && r < 0.12 && this.#volcanoNoise(px, pz) < 0.26 ? 1 : 0;
+    }) * (1 - smoothstep(0.15, 0.4, range));
+  }
+
   /** Where the Black Hills' blobs lie (0..1), before they're fitted to the land. */
   #hillsBlob(x, z) {
     return this.#blobs('hills', x, z, 8000, 1, 1500, 2600, 0xb1ac, (px, pz) => this.#greenFit(px, pz));
@@ -3690,6 +3710,10 @@ export class TerrainGenerator {
     if (small > 0) value += small * this.mountainMaskNoise.fbm(x * f * 2 + 311, z * f * 2 - 173, 2);
     if (usual > 0) value += usual * this.mountainMaskNoise.fbm(x * f, z * f, 2);
     if (large > 0) value += large * this.mountainMaskNoise.fbm(x * f * 0.5 - 517, z * f * 0.5 + 229, 2);
+    // Now and then a horseshoe of mountains: a range curving most of the way round in a ring a few
+    // kilometres across, open on one side, a broad valley in the middle (see #horseshoe).
+    const hs = this.#horseshoe(x, z);
+    if (hs > value) value += (hs - value) * smoothstep(0, 0.25, hs);
     // No mountain ranges in the green belt round volcanic country (fading
     // out gently, over a kilometre or two, from the broad, smooth lie of
     // it: never a range cut off in a wall at its edge).
@@ -3701,6 +3725,47 @@ export class TerrainGenerator {
     out.size = 0.5 * small + usual + 2 * large;
     out.large = large;
     return out;
+  }
+
+  /**
+   * The horseshoe ranges' share of the range field at (x, z): one in three
+   * 16 km cells of dry land has one, a ring 5 to 10 km across of mountains
+   * a kilometre or two wide, curving round two-thirds or more of the way
+   * and open on one side, its line wavering. (Remembered cell by cell.)
+   */
+  #horseshoe(x, z) {
+    const C = 16000, ci = Math.floor(x / C), ck = Math.floor(z / C);
+    const cache = (this._horseshoes ??= new Map());
+    let best = 0;
+    for (let dk = -1; dk <= 1; dk++) for (let di = -1; di <= 1; di++) {
+      const i = ci + di, k = ck + dk, key = (i + 32768) * 65536 + (k + 32768);
+      let h = cache.get(key);
+      if (h === undefined) {
+        h = null;
+        const r = (t) => hash2(i * 3 + t, k * 5 - t, this.seed ^ 0x45e5);
+        if (r(0) < 0.33) {
+          const cx = (i + 0.3 + 0.4 * r(1)) * C, cz = (k + 0.3 + 0.4 * r(2)) * C;
+          // (On the continent, not out in an ocean basin.)
+          const basin = smoothstep(0.15, 0.35, this.continentNoise.fbm(cx * 0.00005 + 500, cz * 0.00005 - 700, 2));
+          const cont = this.continentNoise.fbm(cx * 0.0004, cz * 0.0004, 3) + 0.015 + 0.45 * (1 - basin) - 0.8 * basin;
+          if (basin < 0.3 && cont > 0.05) h = { x: cx, z: cz, R: 2600 + 2400 * r(3), w: 700 + 500 * r(4), gap: r(5) * Math.PI * 2, open: 0.8 + 0.5 * r(6), s: r(7) * 10 };
+        }
+        if (cache.size > 2000) cache.clear();
+        cache.set(key, h);
+      }
+      if (!h) continue;
+      const dx = x - h.x, dz = z - h.z, d = Math.hypot(dx, dz);
+      if (d > h.R * 1.4 + h.w * 2) continue;
+      const a = Math.atan2(dz, dx);
+      const R = h.R * (1 + 0.1 * Math.sin(a * 3 + h.s) + 0.05 * Math.sin(a * 7 + h.s * 2));
+      const across = Math.abs(d - R) / h.w;
+      if (across > 2) continue;
+      // (Fading out round the open side.)
+      const off = Math.abs(Math.atan2(Math.sin(a - h.gap), Math.cos(a - h.gap)));
+      const arm = smoothstep(h.open - 0.25, h.open + 0.25, off);
+      best = Math.max(best, 0.6 * arm * Math.max(0, 1 - across * across * 0.5) * (0.85 + 0.15 * Math.sin(a * 11 + h.s)));
+    }
+    return best;
   }
 
   /** How mountainous an area is: 0 = lowland, 1 = in a range. Foothills lie in between. */

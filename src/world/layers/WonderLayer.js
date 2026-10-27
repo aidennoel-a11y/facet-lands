@@ -323,6 +323,20 @@ export function createWonderLayer(config) {
           centres.push([m]);
           tops.push(x0 + lx, y + h, z0 + lz);
         });
+        // And here and there a few great ones, standing over the rest (as the giant mushrooms do on the mushroom
+        // islands): two or three times their height, their blooms as broad as a tree's crown.
+        placed(26, 21, (lx, lz, gi, gj, r) => {
+          if (r(0) > 0.3 || !generator.inGiantMeadow(x0 + lx, z0 + lz)) return;
+          const y = groundHeightAt(lx, lz);
+          if (!(y > config.seaLevel + 1)) return;
+          const h = 8 + r(1) * 5, kind = Math.floor(r(2) * 3);
+          q.setFromAxisAngle(UP, r(3) * 6.28).multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), (r(4) - 0.5) * 0.12));
+          const m = m4.compose(p.set(lx, y - 0.1, lz), q, s.set(h * 1.35, h, h * 1.35)).clone(); // (a stouter stalk to hold it up)
+          stalks.push([m]);
+          blooms[kind].push([m, FLOWER_COLOURS[Math.floor(r(5) * FLOWER_COLOURS.length)]]);
+          centres.push([m]);
+          tops.push(x0 + lx, y + h, z0 + lz);
+        });
         instanced(STALK, plant, stalks, 'giant flower stalks', lod === 0);
         blooms.forEach((list, k) => instanced(PETALS[k], plant, list, 'giant flower blooms', lod === 0));
         instanced(CENTRE, plant, centres, 'giant flower centres', false);
