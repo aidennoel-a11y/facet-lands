@@ -89,7 +89,6 @@ const SHORE = {
 };
 // Black sand, the banded ground of a petrified forest, a glowing swamp's moss (see surfaceColor).
 const BLACK_SAND = new Color(0x2e2c2e);
-const DUNE_SAND = new Color(0xdccba0); // (the coastal dunes' pale sand)
 const CRATER_SCORCH = new Color(0x4a443e), CRATER_DUST = new Color(0xa49a8a); // (a meteor crater's blasted bowl, and the dust thrown out round it)
 const PETRIFIED_BANDS = [new Color(0x9a948e), new Color(0xa88ea8), new Color(0xb47860), new Color(0xd8c8a8)];
 const GLOW_MOSS = new Color(0x2e5248);
@@ -986,7 +985,7 @@ export class TerrainGenerator {
         const mi = Math.floor(minKey / 65536) - 32768, mk = (minKey % 65536) - 32768;
         // (About one range in five, of those in green country with real mountains in them. No snow lies on
         // their peaks: green and earth to the tops, see biomes' jungleMountains.)
-        range = { jungle: warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.225 };
+        range = { jungle: warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.169 };
       }
     }
     if (ranges.size > 400000) ranges.clear();
@@ -1638,14 +1637,6 @@ export class TerrainGenerator {
         const t = (height - seaLevel) / 8;
         height += (seaLevel + 8 * Math.pow(t, 2.6) - height) * beachy;
       }
-    }
-    // Dunes behind some long sandy beaches, on the low, flat coastal plain:
-    // ridges of sand lying along the coast one behind another, each rising
-    // gently from the seaward side and dropping off steeply behind, the
-    // wind having blown them in off the sea; hollows and blowouts between.
-    if (height > seaLevel + 0.8 && height < seaLevel + 18 && !this._riverWork && continent > -0.05) {
-      const d = this.#dunesZone(x, z, w, this.#openSea(x, z), soft) * smoothstep(seaLevel + 0.8, seaLevel + 2.5, height) * (1 - smoothstep(seaLevel + 10, seaLevel + 18, height));
-      if (d > 0) height += d * this.#duneRelief(x, z);
     }
     // Coral reefs off the open coast (not off cliffs, wetlands or volcanic
     // shores): built up off a sandy floor seven to eleven metres down, the
@@ -4062,49 +4053,6 @@ export class TerrainGenerator {
     return g + c.rim * Math.max(0, 1 / (t * t * t) - 1 / 32.8) * 1.03;
   }
 
-  // How much (x, z) is in a coastal dune belt (0..1): along some stretches
-  // of the open sea's sandy coast (where the broad beaches are: see
-  // landHeight), in the temperate country, the savanna and the desert;
-  // never under sea cliffs, nor on jungle, swamp, mangrove or volcanic
-  // shores, nor on a pine coast.
-  #dunesZone(x, z, w, ocean, soft = w.wetland + w.mangrove) {
-    const stretch = smoothstep(0.3, 0.45, this.coastNoise.fbm(x * 0.00035 - 91, z * 0.00035 + 37, 2));
-    if (stretch <= 0) return 0;
-    const fits = Math.max(0, 1 - soft - w.jungle - w.volcanic - (w.jungleMountains ?? 0) - (w.jungleFoothills ?? 0) - w.pine - w.redwood - w.blackHills) * (1 - this.#cliffZone(x, z, w));
-    return stretch * fits * smoothstep(0.4, 0.7, ocean); // (`ocean`: how much the water nearby is the open sea, see #openSea)
-  }
-
-  // The dunes' own lie (m): ridges lying along the coast, 40 to 70 m apart,
-  // each rising gently on its seaward side and falling steeply behind (the
-  // way the sea wind builds them), their crests wavering and breaking up
-  // into hummocks, here and there a blowout scooped out of one.
-  #duneRelief(x, z) {
-    // (Ridges lying across the prevailing wind, the one the clouds drift on (see render/wind.js), as
-    // dunes do: each built up by it and slipping off downwind.)
-    const across = x * 0.95 + z * 0.31;
-    const N = this.duneNoise;
-    // (A ridge every 75 m or so, their lines wavering, bending and joining: an offset that wanders over the ground.)
-    const phase = across / 75 + 1.2 * N.noise2D(x * 0.0022, z * 0.0022 + 40) + 0.3 * N.noise2D(x * 0.006 + 9, z * 0.006);
-    const f = phase - Math.floor(phase);
-    // (Upwind the gentle back of the dune; downwind, past its crest, its steep slip face.)
-    const ridge = f > 0.25 ? smoothstep(0.25, 1, f) : 1 - smoothstep(0, 0.25, f);
-    const tall = 4 + 8 * (N.noise2D(x * 0.0025 - 31, z * 0.0025 + 7) * 0.5 + 0.5);
-    const hummock = 0.9 + 0.1 * N.noise2D(x * 0.02, z * 0.02);
-    const blowout = smoothstep(0.6, 0.85, N.noise2D(x * 0.008 + 70, z * 0.008 - 70));
-    return Math.max(0, tall * Math.pow(ridge, 1.6) * hummock * (1 - 0.8 * blowout) + 0.8);
-  }
-
-  /** Whether (x, z) is in the coastal dunes (0..1): for their sand, the map, and fewer trees. */
-  coastalDunesAt(x, z, h = null) {
-    const sea = this.rivers.seaLevel;
-    if (h !== null && (h < sea + 0.8 || h > sea + 30)) return 0;
-    const ocean = this.#openSea(x, z);
-    if (ocean <= 0.4) return 0;
-    h ??= this.getBaseHeight(x, z);
-    if (h < sea + 0.8 || h > sea + 30) return 0;
-    return this.#dunesZone(x, z, this.getBiomeWeights(x, z, {}), ocean) * smoothstep(sea + 0.8, sea + 2.5, h);
-  }
-
   /** Black sand on the beach (0..1): the coasts by volcanic country, and here and there a stretch of dark volcanic shore elsewhere. */
   blackSandAt(x, z) {
     const w = this.getBiomeWeights(x, z, {});
@@ -4172,12 +4120,13 @@ export class TerrainGenerator {
    * What kind of country (x, z) is, in a word or two, for showing where
    * you are: "Forest", "Rolling hills", "Mountains", "Dune sea", "Lake"...
    */
-  describe(x, z, quick = false) {
+  describe(x, z, quick = false, known = null) {
     const sea = this.rivers.seaLevel;
     // (`quick`, for the big map: the land before rivers, and none of the
-    // small features, so a whole map's worth is quick to work out.)
+    // small features, so a whole map's worth is quick to work out. It may
+    // pass the height, `known`, already worked out for its shading.)
     const heightAt = quick ? (px, pz) => this.getBaseHeight(px, pz) : (px, pz) => this.getHeight(px, pz);
-    const height = heightAt(x, z);
+    const height = known ?? heightAt(x, z);
     if (height < sea - 0.3) {
       if (this.getOceanness(x, z) <= 0.5) return 'Lake';
       if (!quick && height > sea - 3 && this.getSeaCliff(x, z) > 0.5) {
@@ -4203,7 +4152,6 @@ export class TerrainGenerator {
     }
     if (w.mangrove > 0.5) return 'Mangrove coast';
     if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return this.blackSandAt(x, z) > 0.5 ? 'Black sand beach' : 'Beach';
-    if (this.coastalDunesAt(x, z, height) > 0.4) return 'Coastal dunes';
     if (f.canyon > 0.5) return f.canyonFloor > 0.5 ? 'Canyon floor' : 'Canyon';
     const mountains = this.getMountainness(x, z);
     // (Land the Smoky Mountains lift is theirs, never a range's snowy peaks.)
@@ -4310,14 +4258,6 @@ export class TerrainGenerator {
       if (pf > 0.01) {
         const band = ground * 0.28 + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 1.4;
         out.lerp(PETRIFIED_BANDS[((Math.floor(band) % 4) + 4) % 4], 0.55 * smoothstep(0.1, 0.6, pf));
-      }
-      // Coastal dunes: all pale sand (a little lighter and darker in drifts).
-      if (ground < sea + 40) {
-        const dn = this.coastalDunesAt(x, z, ground);
-        if (dn > 0.02) {
-          out.lerp(DUNE_SAND, smoothstep(0.02, 0.12, dn));
-          out.multiplyScalar(1 + 0.05 * this.detailNoise.noise2D(x * 0.06, z * 0.06));
-        }
       }
       // A meteor crater: its bowl scorched dark, the thrown-out ground round it pale with rock dust.
       const mc = this.meteorCraterAt(x, z, 2.6);

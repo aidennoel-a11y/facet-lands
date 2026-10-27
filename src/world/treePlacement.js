@@ -135,8 +135,6 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (!(ground >= seaLevel + (marsh ? -0.8 : 1.2))) continue; // outside the chunk, in water or over a cave mouth
       if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
       if (generator.rivers.at(wx, wz, 1.5)) continue; // nor in a river or right on its bank
-      // (On the coastal dunes, hardly any.)
-      if (ground < seaLevel + 40 && keep > 0.2 && generator.coastalDunesAt?.(wx, wz, ground) > 0.3) continue;
       // How high and how steep, from the land itself rather than this level
       // of detail's mesh (far off, its big triangles can pass metres above
       // or below the ground on a mountainside), so trees don't come and go

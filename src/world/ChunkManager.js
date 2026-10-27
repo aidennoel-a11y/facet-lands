@@ -85,6 +85,7 @@ export class ChunkManager {
     }
     this.nextId = 1;
     this.tasks = new Map(); // id -> { resolve, reject } for other work handed to the workers (see task)
+    this.#makeMapWorkers(); // (the big map's: see mapTask)
     // For tuning: main-thread time spent putting chunks together, per layer.
     this.stats = { builds: 0, ms: 0, terrainMs: 0, layers: {} };
     // (How much more of each frame than usual goes to putting chunks
@@ -147,12 +148,33 @@ export class ChunkManager {
    * it's done once, not once on every thread.
    */
   /**
-   * Like task, but on workers of the map's own (made the first time it's
-   * asked, two or three of them), so the big map never waits behind the
-   * land being built. They take in the rivers the others work out, as the
-   * others do theirs.
+   * Like task, but for the big map: on workers of its own (two or three,
+   * made with the others, so they've taken in every river the others have
+   * worked out by the time it's opened), or on any of the land's own
+   * workers sitting idle, so the map never waits behind the land being built.
    */
   mapTask(message) {
+    this.#makeMapWorkers();
+    const idle = this.queue?.length ? null : this.workers.find((w) => w.busy === 0);
+    if (idle) {
+      const id = this.nextId++;
+      idle.busy++;
+      return new Promise((resolve, reject) => {
+        this.tasks.set(id, { resolve, reject });
+        idle.postMessage({ ...message, id, seed: this.generator.seedText, config: this.config });
+      });
+    }
+    const worker = this.mapWorkers.reduce((best, w) => (!best || w.busy < best.busy ? w : best), null);
+    if (!worker) return this.task(message);
+    const id = this.nextId++;
+    worker.busy++;
+    return new Promise((resolve, reject) => {
+      this.tasks.set(id, { resolve, reject });
+      worker.postMessage({ ...message, id, seed: this.generator.seedText, config: this.config });
+    });
+  }
+
+  #makeMapWorkers() {
     if (!this.mapWorkers) {
       this.mapWorkers = [];
       const count = typeof Worker !== 'undefined' && typeof window !== 'undefined' ? ((navigator.hardwareConcurrency || 4) >= 8 ? 3 : 2) : 0;
@@ -174,14 +196,6 @@ export class ChunkManager {
         }
       }
     }
-    const worker = this.mapWorkers.reduce((best, w) => (!best || w.busy < best.busy ? w : best), null);
-    if (!worker) return this.task(message);
-    const id = this.nextId++;
-    worker.busy++;
-    return new Promise((resolve, reject) => {
-      this.tasks.set(id, { resolve, reject });
-      worker.postMessage({ ...message, id, seed: this.generator.seedText, config: this.config });
-    });
   }
 
   #shareRivers(message, from = null) {

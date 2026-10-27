@@ -19,7 +19,6 @@ export const MAP_LABELS = [
   ['Wildflower meadow', '#d98ac9'],
   ['Giant flower meadow', '#f0a0e0'],
   ['Meteor crater', '#8a7a6a'],
-  ['Coastal dunes', '#e6d4a0'],
   ['Escarpment', '#6f7f5a'],
   ['Cascades', '#3f9a7a'],
   ['Mountain foothills', '#6e8f4a'],
@@ -70,7 +69,7 @@ export function mapTile(generator, x0, z0, n, s) {
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const x = x0 + i * s, z = z0 + j * s;
-      let label = generator.describe(x, z, true);
+      let label = generator.describe(x, z, true, heights[j * (n + 1) + i]);
       // Rivers drawn at least a pixel wide at any scale; creeks when
       // zoomed in far enough to see them (they're slow to work out).
       if (generator.bigRivers?.waterAt(x, z, s * 0.6)) label = 'River';

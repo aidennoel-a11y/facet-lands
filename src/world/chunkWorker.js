@@ -73,14 +73,8 @@ self.onmessage = (event) => {
   }
   if (event.data.kind === 'map') {
     // A tile of the big map.
-    // (Worked out at every other point and filled in between: a quarter of the work, near enough for a map.)
     const { x0, z0, n, s } = event.data;
-    const half = mapTile(g, x0, z0, n / 2, s * 2), result = { labels: new Uint8Array(n * n), shade: new Uint8Array(n * n) };
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-      const k = (j >> 1) * (n / 2) + (i >> 1);
-      result.labels[j * n + i] = half.labels[k];
-      result.shade[j * n + i] = half.shade[k];
-    }
+    const result = mapTile(g, x0, z0, n, s);
     self.postMessage({ id, result }, [result.labels.buffer, result.shade.buffer]);
     return;
   }
