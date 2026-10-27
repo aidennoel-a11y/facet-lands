@@ -426,8 +426,8 @@ export class TerrainGenerator {
         out.temperate += j;
       }
       const own = Math.min(1, out.temperate + out.parkland + out.cascades + out.pine + out.redwood + out.jungle + out.wetland + out.smoky);
-      // (The jungle range's mountains themselves, its middle: the jungle mountains, green, rocky.)
-      const core = smoothstep(0.55, 0.7, mtn);
+      // (The jungle range's mountains themselves, all its higher ground: the jungle mountains, green, rocky.)
+      const core = smoothstep(0.34, 0.46, mtn);
       const km = jr * core;
       const kj = band * jr * (1 - core); // (the whole of a jungle range is its own: nothing else mixed in)
       const cl = this.#cherryLand(x, z), bl = this.#bambooLand(x, z);
@@ -983,9 +983,10 @@ export class TerrainGenerator {
           if (pr.getMountainness(x, z) > 0.45) top = Math.max(top, pr.landHeight(x, z));
         }
         const mi = Math.floor(minKey / 65536) - 32768, mk = (minKey % 65536) - 32768;
-        // (About one range in five, of those in green country with real mountains in them. No snow lies on
-        // their peaks: green and earth to the tops, see biomes' jungleMountains.)
-        range = { jungle: warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.169 };
+        // (About one range in five, of those in green country with real mountains in them, and
+        // big enough to be a range of them, not a lone hill or two (some 6 km² or more). No snow
+        // lies on their peaks: green and earth to the tops, see biomes' jungleMountains.)
+        range = { jungle: cells.length >= 60 && warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.169 };
       }
     }
     if (ranges.size > 400000) ranges.clear();

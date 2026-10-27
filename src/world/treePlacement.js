@@ -157,11 +157,12 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // rock band and no tree line there, only thinner woods up high, half
       // as thick on the highest tops.)
       const smoky = biome.id === 'smoky';
-      // (A jungle range's mountains: jungle thick up their lower slopes, as a jungle is, thinning only high up.)
+      // (A jungle range's mountains: jungle thick up their lower slopes, as a jungle is, thinning higher up,
+      // their steeper faces bare.)
       const jungleMtn = biome.id === 'jungleMountains';
-      if (r < Math.max(cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(200, 240, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
+      if (r < Math.max(jungleMtn ? 1 - smoothstep(0.62, 0.8, upness) : cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(150, 190, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
       // And ever fewer the higher you go (the tree line).
-      if (!lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.9 * smoothstep(140, 240, land) : smoothstep(85, 150, land) * 0.9)) continue;
+      if (!lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.9 * smoothstep(110, 190, land) : smoothstep(85, 150, land) * 0.9)) continue;
 
       // Too steep for roots? (height change per metre)
       if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
