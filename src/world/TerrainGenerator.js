@@ -35,14 +35,17 @@ export const BIOME_TUNING = {
   mesa: 0.06,
   // Wetlands and marshes: their size: higher, more.
   wetland: 1.6,
+  // How much of the wetlands is glowing swamp: lower, more.
+  glowSwamp: 0.22,
   // Badlands in the savanna and the desert: the chance of a patch per 6 km square, and their size.
   badlands: 0.2,
   badlandsSize: 0.78, // (radius: 0.78 ≈ 40% smaller patches)
   // The Cascades (escarpment country with falls): the chance of a patch per 3.2 km square.
   cascades: 0.75,
   // How much of the green country is forest rather than plains: higher, more forest.
-  forest: 0,
+  forest: -0.11, // (-0.11: 1% of the map from forest to plains)
 };
+const JUNGLE_REACH = 4000; // (m: how far a great jungle range's jungle reaches from its middle, some 50 km²: see #rangeOf)
 const RANGE_CELL = 320; // the grid a mountain range is taken in on, to tell one range from another (m: see #rangeOf)
 const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
 // The Cascades' tiers: where each steps up (on its noise), and how far (m).
@@ -419,17 +422,18 @@ export class TerrainGenerator {
     // They take over the green country where they are.
     if (!this._probing) {
       const mtn = this.getMountainness(x, z), band = smoothstep(0.32, 0.5, mtn);
-      const jr = band > 0 ? this.#jungleRange(x, z) : 0;
+      const jr = mtn > 0.18 ? this.#jungleRange(x, z) : 0;
       if (band > 0 && out.jungle > 0) {
         const j = out.jungle * band * (1 - jr);
         out.jungle -= j;
         out.temperate += j;
       }
       const own = Math.min(1, out.temperate + out.parkland + out.cascades + out.pine + out.redwood + out.jungle + out.wetland + out.smoky);
-      // (The jungle range's mountains themselves, all its higher ground: the jungle mountains, green, rocky.)
-      const core = smoothstep(0.34, 0.46, mtn);
+      // (The jungle range's mountains themselves, its high ground: the jungle mountains, green, rocky. Its
+      // lower ground round them, the foothills jungle.)
+      const core = smoothstep(0.46, 0.58, mtn);
       const km = jr * core;
-      const kj = band * jr * (1 - core); // (the whole of a jungle range is its own: nothing else mixed in)
+      const kj = smoothstep(0.18, 0.34, mtn) * jr * (1 - core); // (the whole of a jungle range is its own: nothing else mixed in)
       const cl = this.#cherryLand(x, z), bl = this.#bambooLand(x, z);
       const kc = cl * own * (1 - kj - km), kb = bl * own * (1 - kj - km - kc);
       if (kj + km + kc + kb > 0) for (const id of BIOME_IDS) out[id] *= 1 - kj - km - kc - kb;
@@ -923,10 +927,17 @@ export class TerrainGenerator {
   #jungleRange(x, z) {
     const G = RANGE_CELL, gx = Math.floor(x / G - 0.5), gz = Math.floor(z / G - 0.5);
     const fx = x / G - 0.5 - gx, fz = z / G - 0.5 - gz;
-    const j = (i, k) => (this.#rangeOf(i, k)?.jungle ? 1 : 0);
+    // (In a great range, only the part round its middle: see #rangeOf.)
+    let reach = 1;
+    const j = (i, k) => {
+      const r = this.#rangeOf(i, k);
+      if (!r?.jungle) return 0;
+      if (r.mid) reach = Math.min(reach, 1 - smoothstep(JUNGLE_REACH * 0.8, JUNGLE_REACH, Math.hypot(x - r.mid[0], z - r.mid[1])));
+      return 1;
+    };
     const a = j(gx, gz) + (j(gx + 1, gz) - j(gx, gz)) * fx;
     const b = j(gx, gz + 1) + (j(gx + 1, gz + 1) - j(gx, gz + 1)) * fx;
-    return a + (b - a) * fz;
+    return (a + (b - a) * fz) * reach;
   }
 
   /**
@@ -987,6 +998,19 @@ export class TerrainGenerator {
         // big enough to be a range of them, not a lone hill or two (some 6 km² or more). No snow
         // lies on their peaks: green and earth to the tops, see biomes' jungleMountains.)
         range = { jungle: cells.length >= 60 && warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.169 };
+        // (A great one, more than some 50 km², is jungle only round its middle, out to JUNGLE_REACH:
+        // the cell of it nearest the middle of all its cells.)
+        if (range.jungle && cells.length > 500) {
+          let sx = 0, sz = 0;
+          for (const c of cells) (sx += Math.floor(c / 65536) - 32768), (sz += (c % 65536) - 32768);
+          sx /= cells.length;
+          sz /= cells.length;
+          let best = Infinity;
+          for (const c of cells) {
+            const ci = Math.floor(c / 65536) - 32768, ck = (c % 65536) - 32768, d = (ci - sx) ** 2 + (ck - sz) ** 2;
+            if (d < best) (best = d), (range.mid = [(ci + 0.5) * G, (ck + 0.5) * G]);
+          }
+        }
       }
     }
     if (ranges.size > 400000) ranges.clear();
@@ -3993,7 +4017,7 @@ export class TerrainGenerator {
   glowSwampAt(x, z) {
     const w = this.getBiomeWeights(x, z, {});
     if (w.wetland < 0.2) return 0;
-    return w.wetland * smoothstep(0.22, 0.36, this.wetNoise.fbm(x * 0.0008 + 77, z * 0.0008 - 41, 2));
+    return w.wetland * smoothstep(T.glowSwamp, T.glowSwamp + 0.14, this.wetNoise.fbm(x * 0.0008 + 77, z * 0.0008 - 41, 2));
   }
 
   /**
