@@ -2,6 +2,7 @@ import { Box3, BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { buildChunkGeometry, chunkFromData } from './ChunkMesher.js';
 import { FADE_SECONDS, fadeCopy, fadeOpacity } from '../render/chunkFade.js';
 import { shareCaveRivers } from './caves/CaveSystem.js';
+import { REGION as RIVER_REGION } from './BigRivers.js';
 
 const LOOKAHEAD = 3; // seconds: the land where you'll be by then is made ready ahead of you
 const NEIGHBOURS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
@@ -172,6 +173,31 @@ export class ChunkManager {
       this.tasks.set(id, { resolve, reject });
       worker.postMessage({ ...message, id, seed: this.generator.seedText, config: this.config });
     });
+  }
+
+  /**
+   * While there's no land waiting to be built, has one of the big map's
+   * workers lay out the great rivers of the nearest stretch round (x, z)
+   * not yet done (out to some 25 km), one at a time: shared with every
+   * worker, so neither the map nor the land has to wait for them there.
+   */
+  planAhead(x, z) {
+    if (this.queue.length || this.inFlight.size) return;
+    const worker = this.mapWorkers?.find((w) => w.busy === 0);
+    if (!worker) return;
+    if (this.plannedSeed !== this.generator.seedText) (this.plannedSeed = this.generator.seedText), (this.planned = new Set());
+    const ci = Math.floor(x / RIVER_REGION), cj = Math.floor(z / RIVER_REGION);
+    let best = null;
+    for (let dj = -3; dj <= 3; dj++) for (let di = -3; di <= 3; di++) {
+      const key = `${ci + di},${cj + dj}`, d = di * di + dj * dj;
+      if (!this.planned.has(key) && (!best || d < best.d)) best = { key, i: ci + di, j: cj + dj, d };
+    }
+    if (!best) return;
+    this.planned.add(best.key);
+    const id = this.nextId++;
+    worker.busy++;
+    this.tasks.set(id, { resolve: () => {}, reject: () => {} });
+    worker.postMessage({ kind: 'plan', x: (best.i + 0.5) * RIVER_REGION, z: (best.j + 0.5) * RIVER_REGION, id, seed: this.generator.seedText, config: this.config });
   }
 
   #makeMapWorkers() {

@@ -71,6 +71,12 @@ self.onmessage = (event) => {
     self.postMessage({ id, result: { falls: falls.slice(0, 8), runs: runs.slice(0, 6) } });
     return;
   }
+  if (event.data.kind === 'plan') {
+    // The great rivers round (x, z) laid out ahead of time (shared with the others as it's sent back).
+    g.getBaseHeight(event.data.x, event.data.z);
+    self.postMessage({ id, result: null });
+    return;
+  }
   if (event.data.kind === 'map') {
     // A tile of the big map.
     const { x0, z0, n, s } = event.data;

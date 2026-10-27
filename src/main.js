@@ -1534,6 +1534,8 @@ const bigMap = new BiomeMap({
     camera.position.set(x, Math.max(generator.getBaseHeight(x, z), WORLD.seaLevel) + 45, z);
   },
 });
+// (The great rivers round you laid out ahead of time, while no land's waiting to be built: see ChunkManager.planAhead.)
+setInterval(() => chunks.planAhead(camera.position.x, camera.position.z), 2000);
 // (Testing: the map worked out round you ahead of time while it's shut, so it opens mostly filled in.)
 setInterval(() => game.mode === 'testing' && bigMap.prefetch(camera.position.x, camera.position.z), 1500);
 const ui = {

@@ -13,7 +13,7 @@ function smin(a, b, k) {
   return Math.min(a, b) - h * h * k * 0.25;
 }
 
-const REGION = 8500; // at most one river rises in each region this size
+export const REGION = 8500; // at most one river rises in each region this size
 const SOURCE = 0.25; // it rises within this fraction of the region's size from its middle
 const CHANCE = 1; // how many regions try for one (most find a way to the water)
 const STEP = 48; // metres between a river's points
@@ -25,7 +25,7 @@ const VALLEY = 650; // how far out past its flood plain a river's valley reaches
 const JOIN = 260; // a river coming this close to a bigger one runs into it
 const GRID = 128; // spacing of the broad land's remembered grid (m: it's smooth)
 const LOW = 15; // open water is looked for only where the broad land (see #land) lies less than this above the sea
-const LAKE_CLEAR = 8; // a river that would come to a lake rises this many points (STEP apart) beyond it instead
+const LAKE_NARROW = 0.45; // a river ending in a lake is this much as wide as one reaching the sea
 const MAX_CUT = 28; // the deepest a river cuts down into the mountains (m; twice that through lower hills): no gorges through them
 const BEND = (20 * Math.PI) / 180; // the most it turns at any one point (STEP apart): bends some 350 m round, or wider
 
@@ -192,9 +192,10 @@ export class BigRivers {
     return v <= 0.5 ? 1 : 0;
   }
 
-  /** How wide a river is `k` points (of STEP) down from its spring: a stream there, some 40 m within the first kilometre, on to 120. */
-  static width(k) {
-    return 6 + (Math.min(120, 40 + k * STEP * 0.011) - 6) * smoothstep(0, 22, k);
+  /** How wide a river is `k` points (of STEP) down from its spring: a stream there, some 40 m within the first kilometre, on to 120 (`lake`: not half that, one ending in a lake). */
+  static width(k, lake = false) {
+    const w = 6 + (Math.min(120, 40 + k * STEP * 0.011) - 6) * smoothstep(0, 22, k);
+    return lake ? 6 + (w - 6) * LAKE_NARROW : w;
   }
 
   /** The real land (TerrainGenerator.landHeight) exactly, remembered in `memo` (a Map). */
@@ -231,7 +232,7 @@ export class BigRivers {
     for (const trunk of g.smokyTrunks(i * REGION, j * REGION, (i + 1) * REGION, (j + 1) * REGION)) {
       const course = this.#trace(trunk[0].x, trunk[0].z, rand, trunk);
       // (Only one that, settled into the land and smoothed as it will be,
-      // still runs out into the open sea, touching no lake on the way.)
+      // still runs out into the open sea or a lake.)
       if (course && this.#keep(k, course)) return course;
     }
     // Candidate springs, the highest (furthest from the sea) tried first.
@@ -325,10 +326,8 @@ export class BigRivers {
         if (w.desert + w.saltFlat > 0.5) return null;
       }
       // (The real land's looked at only where the broad lie is low enough for water.)
-      // It ends where it reaches the open sea. (One that would run into a
-      // lake on the way is no river: there's none from here.)
+      // It ends where it reaches the open sea, or a lake.
       if (this.#land(px, pz) < this.seaLevel + 3 && this.#real(px, pz) < this.seaLevel - 0.3) {
-        if (g.getOceanness(px, pz) <= 0.5) return null;
         points.push({ x: px + dir[0] * STEP, z: pz + dir[1] * STEP });
         return points.length * STEP >= MIN_LENGTH ? points : null;
       }
@@ -433,10 +432,11 @@ export class BigRivers {
       if (points.length * STEP < MIN_LENGTH * (into ? 0.6 : 1)) return null;
     }
     // Broadening downstream, from a stream at its spring to about 40 m
-    // within the first kilometre, and on to 120.
-    const n = points.length;
+    // within the first kilometre, and on to 120 (not half that, one that
+    // runs only as far as a lake).
+    const n = points.length, lake = shape.lake || !!into?.river.lake; // (and a river running into one of those)
     points.forEach((p, k) => {
-      p.width = BigRivers.width(k);
+      p.width = BigRivers.width(k, lake);
     });
     if (into) points[n - 1].width = Math.max(points[n - 2].width, into.river.points[into.b].width * 0.6);
     // (Its mouth opens out into the sea: see carve.)
@@ -445,7 +445,7 @@ export class BigRivers {
     // fifty to eighty metres across, at the level of its water there.
     const head = points[0];
     const source = { x: head.x, z: head.z, r: 26 + 16 * hash2(i, j, this.seed ^ 0x50c3), level: head.level };
-    const river = { points, pond: null, tarn: null, kind: 'river', big: true, region: [i, j], joins: !!into, source, mouth };
+    const river = { points, pond: null, tarn: null, kind: 'river', big: true, region: [i, j], joins: !!into, source, mouth, lake };
     this.finals.set(k, river);
     return river;
   }
@@ -455,12 +455,11 @@ export class BigRivers {
    * another river, `into`, which its last point is the middle of): settled
    * into the real land (see #settle) and smoothed (see #smooth), then cut
    * short where it first comes to open water, beside its channel or under
-   * it. That must be the open sea: it ends there, its mouth running on out
-   * a little way into the sea. Where it would come to a lake on the way, it
-   * rises beyond the lake instead, well clear of it (LAKE_CLEAR), so no river
-   * ever runs into or through a lake. Returns { path: [[x, z], ...] STEP
-   * apart, into (null if it now reaches the sea before the river it was to
-   * join) }, or null if it never reaches the sea (or the river it joins),
+   * it, the open sea or a lake: it ends there, its mouth running on out a
+   * little way into the water. Returns { path: [[x, z], ...] STEP apart,
+   * into (null if it now reaches the water before the river it was to
+   * join), lake (whether that water's a lake) }, or null if it never
+   * reaches the water (or the river it joins),
    * or too little of it is left. (`land`: see #firstWater. `quick`: a first
    * look, for #raw, not settled into the land, under its middle only, on
    * the remembered grid's nearest points.)
@@ -483,21 +482,20 @@ export class BigRivers {
         extended = true;
         continue;
       }
-      if (!wet || wet.ocean) break;
-      from = wet.k + LAKE_CLEAR;
+      break;
     }
     if (!wet) {
       if (!into) return null;
       path = path.slice(from);
       return path.length * STEP >= MIN_LENGTH * 0.6 ? { path, into } : null;
     }
-    // It ends where it reaches the sea: its last stretch carries straight
-    // on out into the water, for half its width and a little more.
-    const [x, z] = wet.at, [ux, uz] = wet.dir;
+    // It ends where it reaches the water: its last stretch carries straight
+    // on out into it, for half its width and a little more.
+    const [x, z] = wet.at, [ux, uz] = wet.dir, lake = !wet.ocean;
     path = path.slice(from, wet.k + 1);
     if (!path.length) return null;
     if (Math.hypot(path[path.length - 1][0] - x, path[path.length - 1][1] - z) > STEP * 0.3) path.push([x, z]);
-    const out = BigRivers.width(wet.k - from) / 2 + 24;
+    const out = BigRivers.width(wet.k - from, lake) / 2 + 24;
     for (let d = Math.min(STEP, out); ; d = Math.min(d + STEP, out)) {
       path.push([x + ux * d, z + uz * d]);
       if (d >= out) break;
@@ -505,7 +503,7 @@ export class BigRivers {
     // (Short enough that it, its valley and its mouth never reach past the
     // regions two out from its own: see REACH.)
     if (path.length * STEP < MIN_LENGTH || from + path.length - 1 > MAX_STEPS + 6) return null;
-    return { path, into: null };
+    return { path, into: null, lake };
   }
 
   /**
