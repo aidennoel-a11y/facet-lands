@@ -89,6 +89,7 @@ const SHORE = {
 };
 // Black sand, the banded ground of a petrified forest, a glowing swamp's moss (see surfaceColor).
 const BLACK_SAND = new Color(0x2e2c2e);
+const DUNE_SAND = new Color(0xdccba0); // (the coastal dunes' pale sand)
 const CRATER_SCORCH = new Color(0x4a443e), CRATER_DUST = new Color(0xa49a8a); // (a meteor crater's blasted bowl, and the dust thrown out round it)
 const PETRIFIED_BANDS = [new Color(0x9a948e), new Color(0xa88ea8), new Color(0xb47860), new Color(0xd8c8a8)];
 const GLOW_MOSS = new Color(0x2e5248);
@@ -979,8 +980,8 @@ export class TerrainGenerator {
           if (pr.getMountainness(x, z) > 0.45) top = Math.max(top, pr.landHeight(x, z));
         }
         const mi = Math.floor(minKey / 65536) - 32768, mk = (minKey % 65536) - 32768;
-        // (Three ranges in ten, of those in green country with real mountains in them. Their peaks are
-        // held down below the snow: see landHeight.)
+        // (Three ranges in ten, of those in green country with real mountains in them. No snow lies on
+        // their peaks: green and earth to the tops, see biomes' jungleMountains.)
         range = { jungle: warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.3 };
       }
     }
@@ -1302,6 +1303,11 @@ export class TerrainGenerator {
       const h = this.rivers.carve(x, z, base, rough);
       let g = h - this.landmarks.basinAt(x, z, h);
       if (!this._probing) g = this.#craterCarve(x, z, g);
+      // (The mountain lakes' beds, the land round them holding the water in.)
+      if (!this._probing && g > this.rivers.seaLevel + 2) {
+        const ml = this.mountainLakeAt(x, z);
+        if (ml) g = ml.t < 1 ? Math.min(g, ml.level - 0.6 - ml.depth * (1 - ml.t * ml.t)) : Math.max(g, ml.level + 0.4 + (g - ml.level - 0.4) * smoothstep(1, 1.25, ml.t));
+      }
       // (Built up where a glacier lies: its ice is the land's top there.)
       return g + (g > this.rivers.seaLevel + 60 ? this.landmarks.glacierAt(x, z, g)?.ice ?? 0 : 0);
     } finally {
@@ -1568,9 +1574,6 @@ export class TerrainGenerator {
     const hw = (w.cherry ?? 0) + (w.bamboo ?? 0);
     const highland = hw > 0.005 ? hw * this.highlandRelief(x, z, (w.cherry ?? 0) / hw) * (1 - smoothstep(0.5, 6, lakes)) : 0;
     let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + volcanic + badlands + cascades + highland + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
-    // (A jungle range's peaks held down below the snow line: rounded off, never white.)
-    const jw = (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0);
-    if (jw > 0 && height > 135) height -= (height - (135 + 32 * Math.tanh((height - 135) / 32))) * Math.min(1, jw);
     // (Valleys only in land well above the water: never new lakes.)
     if (valleys > 0) height -= valleys * smoothstep(seaLevel + 3, seaLevel + 30, height);
     // Canyons cut down into it (their floors kept above the sea).
@@ -1636,6 +1639,19 @@ export class TerrainGenerator {
         const t = (height - seaLevel) / 8;
         height += (seaLevel + 8 * Math.pow(t, 2.6) - height) * beachy;
       }
+    }
+    // Dunes behind some long sandy beaches: a belt of rounded sand hills a
+    // few to a dozen metres high, the land rising out of the beach into them.
+    if (ocean > 0 && height > seaLevel + 1 && height < seaLevel + 40 && !this._riverWork) {
+      const d = this.#dunesZone(x, z, w, ocean, soft);
+      if (d > 0) height += d * this.#duneRelief(x, z) * smoothstep(seaLevel + 1, seaLevel + 5, height);
+    }
+    // Fjords: where a range of mountains comes down to the sea, here and
+    // there a long, narrow arm of the sea winding in between them, its sides
+    // steep, a few kilometres in, its head rising out of the water as a valley.
+    if (mask > 0.25 && !this._riverWork) {
+      const fj = this.#fjord(x, z, mask);
+      if (fj) height = Math.min(height, fj.floor + (height - fj.floor) * fj.wall);
     }
     // Coral reefs off the open coast (not off cliffs, wetlands or volcanic
     // shores): built up off a sandy floor seven to eleven metres down, the
@@ -3735,8 +3751,32 @@ export class TerrainGenerator {
    */
   #horseshoe(x, z) {
     const C = 16000, ci = Math.floor(x / C), ck = Math.floor(z / C);
-    const cache = (this._horseshoes ??= new Map());
+    // (The horseshoes that could reach this cell, kept for the cell last asked about: asked a great deal.)
+    if (ci !== this._hsCi || ck !== this._hsCk) {
+      this._hsCi = ci;
+      this._hsCk = ck;
+      this._hsNear = this.#horseshoesNear(ci, ck);
+    }
     let best = 0;
+    for (const h of this._hsNear) {
+      if (Math.abs(x - h.x) > h.reach || Math.abs(z - h.z) > h.reach) continue;
+      const dx = x - h.x, dz = z - h.z, d = Math.hypot(dx, dz);
+      if (d > h.reach) continue;
+      const a = Math.atan2(dz, dx);
+      const R = h.R * (1 + 0.1 * Math.sin(a * 3 + h.s) + 0.05 * Math.sin(a * 7 + h.s * 2));
+      const across = Math.abs(d - R) / h.w;
+      if (across > 2) continue;
+      // (Fading out round the open side.)
+      const off = Math.abs(Math.atan2(Math.sin(a - h.gap), Math.cos(a - h.gap)));
+      const arm = smoothstep(h.open - 0.25, h.open + 0.25, off);
+      best = Math.max(best, 0.6 * arm * Math.max(0, 1 - across * across * 0.5) * (0.85 + 0.15 * Math.sin(a * 11 + h.s)));
+    }
+    return best;
+  }
+
+  // The horseshoes of the cells round cell (ci, ck): those that are there.
+  #horseshoesNear(ci, ck) {
+    const C = 16000, cache = (this._horseshoes ??= new Map()), out = [];
     for (let dk = -1; dk <= 1; dk++) for (let di = -1; di <= 1; di++) {
       const i = ci + di, k = ck + dk, key = (i + 32768) * 65536 + (k + 32768);
       let h = cache.get(key);
@@ -3748,24 +3788,17 @@ export class TerrainGenerator {
           // (On the continent, not out in an ocean basin.)
           const basin = smoothstep(0.15, 0.35, this.continentNoise.fbm(cx * 0.00005 + 500, cz * 0.00005 - 700, 2));
           const cont = this.continentNoise.fbm(cx * 0.0004, cz * 0.0004, 3) + 0.015 + 0.45 * (1 - basin) - 0.8 * basin;
-          if (basin < 0.3 && cont > 0.05) h = { x: cx, z: cz, R: 2600 + 2400 * r(3), w: 700 + 500 * r(4), gap: r(5) * Math.PI * 2, open: 0.8 + 0.5 * r(6), s: r(7) * 10 };
+          if (basin < 0.3 && cont > 0.05) {
+            const R = 2600 + 2400 * r(3), w = 700 + 500 * r(4);
+            h = { x: cx, z: cz, R, w, reach: R * 1.4 + w * 2, gap: r(5) * Math.PI * 2, open: 0.8 + 0.5 * r(6), s: r(7) * 10 };
+          }
         }
         if (cache.size > 2000) cache.clear();
         cache.set(key, h);
       }
-      if (!h) continue;
-      const dx = x - h.x, dz = z - h.z, d = Math.hypot(dx, dz);
-      if (d > h.R * 1.4 + h.w * 2) continue;
-      const a = Math.atan2(dz, dx);
-      const R = h.R * (1 + 0.1 * Math.sin(a * 3 + h.s) + 0.05 * Math.sin(a * 7 + h.s * 2));
-      const across = Math.abs(d - R) / h.w;
-      if (across > 2) continue;
-      // (Fading out round the open side.)
-      const off = Math.abs(Math.atan2(Math.sin(a - h.gap), Math.cos(a - h.gap)));
-      const arm = smoothstep(h.open - 0.25, h.open + 0.25, off);
-      best = Math.max(best, 0.6 * arm * Math.max(0, 1 - across * across * 0.5) * (0.85 + 0.15 * Math.sin(a * 11 + h.s)));
+      if (h) out.push(h);
     }
-    return best;
+    return out;
   }
 
   /** How mountainous an area is: 0 = lowland, 1 = in a range. Foothills lie in between. */
@@ -4022,6 +4055,62 @@ export class TerrainGenerator {
     return c;
   }
 
+  /**
+   * Mountain lakes: in some of the broad valleys between the ranges (one in
+   * two 6 km cells that has such a valley), a long, narrow lake lying along
+   * the valley floor, one to three kilometres long and a few hundred metres
+   * across, the mountains rising on either side. Returns the lake whose
+   * shore reaches (x, z): { x, z, a (its long axis), L, W (half length and
+   * width), level, depth, t (how far out, 1 at the shore) }, or null.
+   */
+  mountainLakeAt(x, z) {
+    const C = 6000, I = Math.floor(x / C), K = Math.floor(z / C);
+    let best = null;
+    for (let dk = -1; dk <= 1; dk++) for (let di = -1; di <= 1; di++) {
+      const c = this.#mountainLake(I + di, K + dk);
+      if (!c) continue;
+      const dx = x - c.x, dz = z - c.z, u = (dx * Math.cos(c.a) + dz * Math.sin(c.a)) / c.L, v = (-dx * Math.sin(c.a) + dz * Math.cos(c.a)) / c.W;
+      // (Its shore wavering a little, its ends rounded.)
+      const t = Math.hypot(u, v) * (1 + 0.06 * Math.sin(Math.atan2(v, u) * 5 + c.s));
+      if (t < 1.25 && (!best || t < best.t)) best = { ...c, t };
+    }
+    return best;
+  }
+
+  #mountainLake(I, K) {
+    const cache = (this._mountainLakes ??= new Map()), key = I * 100003 + K;
+    if (cache.has(key)) return cache.get(key);
+    if (cache.size > 20000) cache.clear();
+    let c = null;
+    const C = 6000, h = (k) => hash2(I * 11 + k * 733, K * 17 - k * 389, this.seed ^ 0x1a4e);
+    if (h(0) < 0.5) {
+      // (Looked at as the land lies before its rivers: quick, and the same everywhere. See #probe.)
+      const pr = this.#probe();
+      for (let t = 0; t < 10 && !c; t++) {
+        const x = (I + 0.15 + 0.7 * h(1 + t * 3)) * C, z = (K + 0.15 + 0.7 * h(40 + t * 3)) * C;
+        // (A valley floor: low ground with mountains close round it, in green country.)
+        if (pr.getMountainness(x, z) > 0.4 || pr.#mountainsAround(x, z) < 0.35 || pr.getAridity(x, z) > 0.44) continue;
+        // (Along the valley: across the way the mountains rise.)
+        const gx = pr.getMountainness(x + 400, z) - pr.getMountainness(x - 400, z), gz = pr.getMountainness(x, z + 400) - pr.getMountainness(x, z - 400);
+        const a = Math.atan2(gz, gx) + Math.PI / 2;
+        const L = (600 + 900 * h(20)) * (t > 5 ? 0.6 : 1), W = 130 + 120 * h(21); // (the later tries, shorter lakes)
+        const ca = Math.cos(a), sa = Math.sin(a);
+        let low = Infinity, high = -Infinity;
+        for (let k = 0; k < 16; k++) {
+          const b = (k / 16) * Math.PI * 2, u = Math.cos(b) * L * 1.12, v = Math.sin(b) * W * 1.3;
+          low = Math.min(low, pr.landHeight(x + u * ca - v * sa, z + u * sa + v * ca));
+        }
+        for (const f of [-0.7, -0.35, 0, 0.35, 0.7]) high = Math.max(high, pr.landHeight(x + f * L * ca, z + f * L * sa));
+        const level = low - 1;
+        const sea = this.rivers.seaLevel;
+        // (Water held in by the land all round, and the valley floor not so far above it that the lake would sit in a pit.)
+        if (level > sea + 4 && high - level < 28 && pr.getOceanness(x, z) < 0.05) c = { x, z, a, L, W, level, depth: 6 + 6 * h(22), s: h(23) * 10 };
+      }
+    }
+    cache.set(key, c);
+    return c;
+  }
+
   /** The land at (x, z), `g` high, with the meteor craters' bowls blasted out and their rims and ejecta heaped. */
   #craterCarve(x, z, g) {
     this._craterNew = false;
@@ -4033,6 +4122,99 @@ export class TerrainGenerator {
     // (The bowl, its floor rounded; the rim; the thrown-out ground thinning away outside it.)
     if (t < 1) return g + c.depth * (t * t - 1) + c.rim * t * t * t;
     return g + c.rim * Math.max(0, 1 / (t * t * t) - 1 / 32.8) * 1.03;
+  }
+
+  // How much (x, z) is in a coastal dune belt (0..1): along stretches of the
+  // open sea's coast (about one in four), a few hundred metres back from it,
+  // in the temperate country and the savanna (not jungle, swamp, mangrove,
+  // volcanic or under sea cliffs).
+  #dunesZone(x, z, w, ocean, soft = w.wetland + w.mangrove) {
+    const stretch = smoothstep(0.2, 0.4, this.coastNoise.fbm(x * 0.00045 - 91, z * 0.00045 + 37, 2));
+    if (stretch <= 0) return 0;
+    const fits = Math.max(0, 1 - soft - w.jungle - w.volcanic - (w.jungleMountains ?? 0) - (w.jungleFoothills ?? 0) - 0.7 * w.pine) * (1 - this.#cliffZone(x, z, w));
+    return stretch * fits * smoothstep(0.04, 0.2, ocean);
+  }
+
+  // The dunes' own lie (m): rounded ridges running along the coast, broken
+  // into hummocks, the tallest a dozen metres.
+  #duneRelief(x, z) {
+    const wx = x + this.duneNoise.noise2D(x * 0.004, z * 0.004) * 30, wz = z + this.duneNoise.noise2D(x * 0.004 + 50, z * 0.004) * 30;
+    const ridge = this.duneNoise.ridged(wx * 0.011 + 400, wz * 0.011 - 200, 2, 2, 0.5, 0.05);
+    const hummock = this.duneNoise.noise2D(x * 0.03 - 70, z * 0.03 + 10) * 0.5 + 0.5;
+    return 2 + 10 * Math.pow(ridge, 1.5) * (0.6 + 0.4 * hummock);
+  }
+
+  /** Whether (x, z) is in the coastal dunes (0..1): for their sand, the map, and fewer trees. */
+  coastalDunesAt(x, z, h = null) {
+    const sea = this.rivers.seaLevel;
+    if (h !== null && (h < sea + 1 || h > sea + 40)) return 0;
+    const ocean = this.getOceanness(x, z);
+    if (ocean <= 0.04) return 0;
+    h ??= this.getBaseHeight(x, z);
+    if (h < sea + 1 || h > sea + 40) return 0;
+    return this.#dunesZone(x, z, this.getBiomeWeights(x, z, {}), ocean) * smoothstep(sea + 1, sea + 5, h);
+  }
+
+  // How near the open sea a point in the mountains is (0..1): 1 with the sea
+  // a kilometre or so off, nothing beyond five. On a 256 m grid, remembered.
+  #fjordCoast(x, z) {
+    const G = 256, gx = Math.floor(x / G), gz = Math.floor(z / G), fx = x / G - gx, fz = z / G - gz;
+    const cache = (this._fjordCoast ??= new Map());
+    // (The continent's sea basins, worked out here without the remembered point: see #continentBase.)
+    const sea = (px, pz) => {
+      const basin = smoothstep(0.15, 0.35, this.continentNoise.fbm(px * 0.00005 + 500, pz * 0.00005 - 700, 2));
+      const cont = this.continentNoise.fbm(px * 0.0004, pz * 0.0004, 3) + 0.015 + 0.45 * (1 - basin) - 0.8 * basin;
+      return basin * smoothstep(-0.02, -0.25, cont);
+    };
+    const at = (i, j) => {
+      const key = (i + 32768) * 65536 + (j + 32768);
+      let v = cache.get(key);
+      if (v === undefined) {
+        v = 0;
+        for (let k = 0; k < 12 && v < 1; k++) {
+          const a = (k / 12) * Math.PI * 2;
+          for (const [d, f] of [[1200, 1], [2600, 0.75], [4200, 0.4]]) v = Math.max(v, f * smoothstep(0.3, 0.7, sea(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d)));
+        }
+        if (cache.size > 60000) cache.clear();
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
+    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return a + (b - a) * fz;
+  }
+
+  // A fjord at (x, z), in the mountains `mask` (0..1): { floor, wall } (the
+  // land comes down to floor + (land - floor) * wall), or null. Its line
+  // winds between the ranges' ridges, a couple of hundred metres across,
+  // steep-sided; its floor well under the sea at the coast, rising as it
+  // runs inland until it comes up out of the water as a valley.
+  #fjord(x, z, mask) {
+    const coast = this.#fjordCoast(x, z);
+    if (coast <= 0.05) return null;
+    // (Only along some mountain coasts.)
+    const region = smoothstep(0.0, 0.2, this.coastNoise.fbm(x * 0.00012 + 911, z * 0.00012 - 313, 2));
+    if (region <= 0) return null;
+    const qx = x + this.coastNoise.noise2D(x * 0.0009 + 17, z * 0.0009) * 160, qz = z + this.coastNoise.noise2D(x * 0.0009, z * 0.0009 - 17) * 160;
+    const n = this.coastNoise.noise2D(qx * 0.00032 + 300, qz * 0.00032 - 120);
+    const across = Math.abs(n) / 0.055;
+    if (across >= 1.3) return null;
+    const sea = this.rivers.seaLevel;
+    const floor = sea - 26 * coast + 34 * (1 - coast);
+    const strength = smoothstep(0.25, 0.5, mask) * smoothstep(0.05, 0.35, coast) * region;
+    // (U-shaped: a flat floor, the sides rising steeply.)
+    const wall = across < 1 ? Math.pow(across, 3) : 1;
+    const out = 1 - smoothstep(1, 1.3, across);
+    return { floor, wall: 1 - (1 - wall) * strength * Math.max(out, across < 1 ? 1 : 0) };
+  }
+
+  /** How much (x, z) is in a fjord's water (0..1): for the map. */
+  fjordAt(x, z) {
+    const m = this.getMountainness(x, z);
+    if (m < 0.25) return 0;
+    const fj = this.#fjord(x, z, m);
+    return fj ? 1 - fj.wall : 0;
   }
 
   /** Black sand on the beach (0..1): the coasts by volcanic country, and here and there a stretch of dark volcanic shore elsewhere. */
@@ -4109,7 +4291,8 @@ export class TerrainGenerator {
     const heightAt = quick ? (px, pz) => this.getBaseHeight(px, pz) : (px, pz) => this.getHeight(px, pz);
     const height = heightAt(x, z);
     if (height < sea - 0.3) {
-      if (this.getOceanness(x, z) <= 0.5) return 'Lake';
+      if (!quick && this.fjordAt(x, z) > 0.4) return 'Fjord';
+      if (this.getOceanness(x, z) <= 0.5) return quick && this.fjordAt(x, z) > 0.4 ? 'Fjord' : 'Lake';
       if (!quick && height > sea - 3 && this.getSeaCliff(x, z) > 0.5) {
         const over = this.overhangAt(x, z);
         if (over) return over.cave ? 'Sea cave' : 'Sea arch';
@@ -4121,6 +4304,10 @@ export class TerrainGenerator {
     if (water) return water.crater ? 'Crater lake' : water.hot ? 'Hot spring' : water.alpine ? 'Alpine lake' : water.oasis ? 'Oasis' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : water.big ? 'River' : 'Creek';
     if (this.mushroomIslandAt(x, z) > 0.5) return 'Mushroom island';
     if (this.meteorCraterAt(x, z, 1.3)) return 'Meteor crater';
+    if (height > sea + 2) {
+      const ml = this.mountainLakeAt(x, z);
+      if (ml && ml.t < 1) return 'Mountain lake';
+    }
     if (this.atollAt?.(x, z) > 0.5) return 'Coral atoll';
     if (this.islandAt(x, z) > 0.5) return 'Island';
     const w = this.getBiomeWeights(x, z, {});
@@ -4133,11 +4320,14 @@ export class TerrainGenerator {
     }
     if (w.mangrove > 0.5) return 'Mangrove coast';
     if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return this.blackSandAt(x, z) > 0.5 ? 'Black sand beach' : 'Beach';
+    if (this.coastalDunesAt(x, z, height) > 0.4) return 'Coastal dunes';
     if (f.canyon > 0.5) return f.canyonFloor > 0.5 ? 'Canyon floor' : 'Canyon';
     const mountains = this.getMountainness(x, z);
     // (Land the Smoky Mountains lift is theirs, never a range's snowy peaks.)
     if (mountains > 0.45 && w.smoky > 0.2 && this.#smokyLift(x, z) > 0.5) return 'Smoky Mountains';
     if (mountains > 0.45) {
+      // (A jungle range's mountains are green to their tops, however high: no snow on them.)
+      if (w.jungleMountains > 0.5) return 'Jungle mountains';
       if (height > 181) return 'Snowy peaks';
       // Mountains are bare rock: above the trees, or sheer. Wooded slopes
       // lower down are the foothills.
@@ -4237,6 +4427,11 @@ export class TerrainGenerator {
       if (pf > 0.01) {
         const band = ground * 0.28 + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 1.4;
         out.lerp(PETRIFIED_BANDS[((Math.floor(band) % 4) + 4) % 4], 0.55 * smoothstep(0.1, 0.6, pf));
+      }
+      // Coastal dunes: pale sand, marram grass in tufts over the older ones.
+      if (ground < sea + 40) {
+        const dn = this.coastalDunesAt(x, z, ground);
+        if (dn > 0.05) out.lerp(DUNE_SAND, 0.85 * smoothstep(0.05, 0.4, dn) * (0.75 + 0.25 * this.detailNoise.noise2D(x * 0.06, z * 0.06)));
       }
       // A meteor crater: its bowl scorched dark, the thrown-out ground round it pale with rock dust.
       const mc = this.meteorCraterAt(x, z, 2.6);

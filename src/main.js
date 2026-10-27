@@ -11,6 +11,7 @@ import { createGrassLayer, grassClearings, grassPushers } from './world/layers/G
 import { Geese } from './render/Geese.js';
 import { createWreckLayer } from './world/layers/WreckLayer.js';
 import { createSunkenCityLayer } from './world/layers/SunkenCityLayer.js';
+import { createMountainLakeLayer } from './world/layers/MountainLakeLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
@@ -745,6 +746,7 @@ chunks.addLayer(createFlowerLayer(WORLD));
 const wonders = createWonderLayer(WORLD);
 scene.add(wonders.swarm);
 chunks.addLayer(wonders);
+chunks.addLayer(createMountainLakeLayer(WORLD)); // (the mountain lakes' water: see TerrainGenerator.mountainLakeAt)
 chunks.addLayer(createUnderstoryLayer(WORLD));
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
@@ -932,6 +934,11 @@ function waterAt(x, z, ice = false) {
   const r = generator.rivers.waterAt(x, z, rise > 0.02 ? 4.5 : 0);
   const up = r && !r.pond && r.level > WORLD.seaLevel + 0.35 ? rise : 0;
   if (r && (rise <= 0.02 || r.level + up > ground + 0.02) && (!found || r.level + up > found.level)) found = { level: r.level + up, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : (0.6 + Math.min(2.4, Math.max(0, r.drop) * 6)) * (1 + riverFlood.value), pond: r.pond, hot: r.tint === 2, flood: up > 0.05 };
+  // (A mountain lake, along its valley floor.)
+  if (ground > WORLD.seaLevel + 2) {
+    const ml = generator.mountainLakeAt(x, z);
+    if (ml && ml.t < 1.04 && ml.level > ground + 0.02 && (!found || ml.level > found.level)) found = { level: ml.level, fx: 0, fz: 0, speed: 0, pond: true };
+  }
   // (A landmark's lake or pool: the crystal lake, the falls' basin, the hot pools...)
   const lw = landmarks.waterAt(x, z, ground);
   if (lw && (!found || lw.level > found.level)) found = lw;

@@ -3,6 +3,7 @@ import { MAP_LABELS } from './mapLabels.js';
 
 const TILE = 64; // samples per tile edge
 const SCALES = [4, 8, 16, 32, 64, 128]; // metres per sample (per map pixel)
+const MAX_PENDING = 14; // map tiles being worked out at once (spread over the land's workers)
 const RGB = MAP_LABELS.map(([, c]) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]);
 
 const STYLE = `
@@ -241,6 +242,16 @@ export class BiomeMap {
       });
   }
 
+  // The nearest coarser tile already in that covers tile (tx, tz) at `scale`, and where in it: { tile, sx, sy, size }, or null.
+  #coarser(tx, tz, scale) {
+    for (let s2 = scale * 2; s2 <= SCALES[SCALES.length - 1] * 4; s2 *= 2) {
+      const f = s2 / scale, ctx = Math.floor(tx / f), ctz = Math.floor(tz / f);
+      const tile = this.tiles.get(`${s2}:${ctx}:${ctz}`);
+      if (tile && tile !== 'pending') return { tile, sx: ((tx - ctx * f) * TILE) / f, sy: ((tz - ctz * f) * TILE) / f, size: TILE / f };
+    }
+    return null;
+  }
+
   // Colours a tile's picture (dimming all but the highlighted kind of country).
   #paint(tile) {
     const ctx = tile.canvas.getContext('2d');
@@ -266,19 +277,32 @@ export class BiomeMap {
     ctx.imageSmoothingEnabled = false;
     const span = TILE * scale;
     const x0 = this.centre.x - (w / 2) * scale, z0 = this.centre.z - (n / 2) * scale;
-    const want = [];
+    const want = [], wantCoarse = new Set();
     for (let tz = Math.floor(z0 / span); tz * span < z0 + n * scale; tz++) {
       for (let tx = Math.floor(x0 / span); tx * span < x0 + w * scale; tx++) {
         const tile = this.tiles.get(`${scale}:${tx}:${tz}`);
         const px = Math.round((tx * span - x0) / scale), py = Math.round((tz * span - z0) / scale); // (whole pixels: no seams)
         if (tile && tile !== 'pending') ctx.drawImage(tile.canvas, px, py, TILE + 1, TILE + 1);
-        else if (!tile) want.push([tx, tz, Math.hypot(px + TILE / 2 - w / 2, py + TILE / 2 - n / 2)]);
+        else {
+          // (Not in yet: the same ground from a coarser tile, blockier, till it is.)
+          const coarse = this.#coarser(tx, tz, scale);
+          if (coarse) ctx.drawImage(coarse.tile.canvas, coarse.sx, coarse.sy, coarse.size, coarse.size, px, py, TILE + 1, TILE + 1);
+          else if (scale * 4 <= SCALES[SCALES.length - 1]) wantCoarse.add(`${Math.floor((tx * span) / (span * 4))}:${Math.floor((tz * span) / (span * 4))}`);
+          if (!tile) want.push([tx, tz, Math.hypot(px + TILE / 2 - w / 2, py + TILE / 2 - n / 2)]);
+        }
       }
     }
-    // Nearest the middle first, a few at a time.
+    // First a quick, coarse picture of the whole view (each tile four times the
+    // ground: a sixteenth of the work), then the fine tiles, nearest the
+    // middle first, as many at once as the workers can take.
+    for (const k of wantCoarse) {
+      if (this.pending >= MAX_PENDING) break;
+      const [cx, cz] = k.split(':').map(Number);
+      if (!this.tiles.has(`${scale * 4}:${cx}:${cz}`)) this.#request(cx, cz, scale * 4);
+    }
     want.sort((a, b) => a[2] - b[2]);
     for (const [tx, tz] of want) {
-      if (this.pending >= 8) break;
+      if (this.pending >= MAX_PENDING) break;
       this.#request(tx, tz, scale);
     }
     // (In survival: only the land you've explored.)

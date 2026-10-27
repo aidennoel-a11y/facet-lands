@@ -44,7 +44,7 @@ export const LANDMARKS = {
   // (Not a landmark to find: the great glaciers lying in the high valleys
   // of the snowy peaks. Placed the same way; never on the map.)
   glacier: { name: 'Glacier', cell: 1500, hidden: true, chance: 0.85, tries: 14, land: (h, slope, rise) => h > 120 && rise < -2.5 && slope < 0.7,
-    what: '', fits: (w, m, f, open, cold) => m > 0.6 && cold > 0.4 },
+    what: '', fits: (w, m, f, open, cold) => m > 0.6 && cold > 0.4 && (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) < 0.2 }, // (never in a jungle range)
   // (Not a landmark to find: the falls of the Cascades. On a cliff top a
   // pond, spilling through a notch in its bank over the edge in a fall
   // into a pool at the cliff's foot, and that pool on over the next cliff

@@ -58,6 +58,10 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       if (keep > density) continue;
       const ground = groundHeightAt(lx, lz, surface);
       if (!(ground >= seaLevel + 0.7) || surface.normalY < 0.8) continue; // also skips cave mouths
+      if (ground > seaLevel + 2) {
+        const ml = generator.mountainLakeAt?.(wx, wz);
+        if (ml && ml.t < 1.03 && ground < ml.level + 0.3) continue; // (nor under a mountain lake)
+      }
       // Near the water only on a lake's grassy shore patches.
       const shore = ground < seaLevel + 5.5 ? generator.getShore(wx, wz, ground) : null;
       if (ground < seaLevel + 3.5 && !(shore && shore.kind === 'grass')) continue;
