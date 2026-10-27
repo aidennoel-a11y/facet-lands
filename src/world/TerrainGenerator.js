@@ -31,12 +31,19 @@ export const BIOME_TUNING = {
   redwood: 0.0,
   // Mangrove coasts on the warm green coasts: lower, more mangrove.
   mangrove: -0.7,
+  // How dry a green coast may be and still have mangroves (below where the savanna starts): higher, more.
+  mangroveDry: 0.06,
+  // How far in from the open sea the mangroves reach (m): higher, more.
+  mangroveReach: 1500,
   // Mesas in the dry country: lower, more mesas.
   mesa: 0.06,
   // Wetlands and marshes: their size: higher, more.
   wetland: 1.6,
   // How much of the wetlands is glowing swamp: lower, more.
   glowSwamp: 0.22,
+  // Glowing swamps of their own in the green lowlands: the chance of one per square this size (m).
+  glowCell: 8000,
+  glowChance: 0.55,
   // Badlands in the savanna and the desert: the chance of a patch per 6 km square, and their size.
   badlands: 0.2,
   badlandsSize: 0.78, // (radius: 0.78 ≈ 40% smaller patches)
@@ -442,6 +449,13 @@ export class TerrainGenerator {
       out.cherry = kc;
       out.bamboo = kb;
     } else (out.cherry = 0), (out.bamboo = 0), (out.jungleFoothills = 0), (out.jungleMountains = 0);
+    // And now and then a glowing swamp of its own out in the green lowlands
+    // (see #glowBlob): wetland, taking over whatever was there.
+    const gb = this._probing ? 0 : this.#glowBlob(x, z);
+    if (gb > 0) {
+      for (const id of BIOME_IDS) out[id] *= 1 - gb;
+      out.wetland += gb;
+    }
     // On the open sea's warm coasts: mangroves. They take over whatever
     // was there.
     // (Not over the wetlands: they stay as they are.)
@@ -593,14 +607,15 @@ export class TerrainGenerator {
 
   /**
    * How much the open sea's shore is near (x, z) (0..1): on the land within
-   * half a kilometre or so of it, and the shallows just off it. On a 64 m
-   * grid (remembered) and blended between its points.
+   * half a kilometre or so of it (`reach` m), and the shallows just off it.
+   * On a 64 m grid (remembered) and blended between its points.
    */
-  #seaCoast(x, z) {
+  #seaCoast(x, z, reach = 600) {
     const G = 64;
     const gx = Math.floor(x / G), gz = Math.floor(z / G);
     const fx = x / G - gx, fz = z / G - gz;
-    const cache = this._seaCoast ?? (this._seaCoast = new Map());
+    const caches = this._seaCoast ?? (this._seaCoast = new Map());
+    const cache = caches.get(reach) ?? (caches.set(reach, new Map()), caches.get(reach));
     const basin = (px, pz) => this.#seaBasin(px, pz, this.#rangeField(px, pz, {}), this.#rawAridityAt(px, pz));
     const at = (i, j) => {
       const key = (i + 32768) * 65536 + (j + 32768);
@@ -613,7 +628,7 @@ export class TerrainGenerator {
           let near = here;
           for (let k = 0; k < 8 && near < 0.5; k++) {
             const a = (k / 8) * Math.PI * 2;
-            near = Math.max(near, basin(cx + Math.cos(a) * 600, cz + Math.sin(a) * 600));
+            near = Math.max(near, basin(cx + Math.cos(a) * reach, cz + Math.sin(a) * reach));
           }
           v = smoothstep(0.15, 0.5, near) * (1 - smoothstep(0.75, 0.95, here));
           if (v > 0) v *= smoothstep(0.3, 0.6, this.#openSea(cx, cz));
@@ -634,10 +649,10 @@ export class TerrainGenerator {
    */
   #mangrove(x, z, a, range) {
     // (Warm, but on the green coasts: never next to a savanna or a desert.)
-    let m = (1 - smoothstep(T.savannaStart - 0.1, T.savannaStart - 0.03, a)) * (1 - smoothstep(0.02, 0.32, range)); // (fading out slowly up into hills: no wall where they meet)
+    let m = (1 - smoothstep(T.savannaStart + T.mangroveDry, T.savannaStart + T.mangroveDry + 0.07, a)) * (1 - smoothstep(0.02, 0.32, range)); // (fading out slowly up into hills: no wall where they meet)
     if (m > 0) m *= smoothstep(T.mangrove, T.mangrove + 0.2, this.coastNoise.fbm(x * 0.00028 + 310, z * 0.00028 - 170, 2));
     if (m <= 0 || this.#volcanoBelt(x, z) > 0.3) return 0;
-    return m * smoothstep(0, 0.45, this.#seaCoast(x, z)); // (eased in over a good distance from the coast: no wall where the hills behind meet it)
+    return m * smoothstep(0, 0.45, this.#seaCoast(x, z, T.mangroveReach)); // (eased in over a good distance from the coast: no wall where the hills behind meet it)
   }
 
   /**
@@ -663,9 +678,9 @@ export class TerrainGenerator {
         let coast = this.coastNoise.fbm(cx * 0.00028 + 310, cz * 0.00028 - 170, 2) > T.mangrove - 0.1 ? 1 : 0;
         if (coast) {
           const range = this.#rangeField(cx, cz, {}).value;
-          coast = range < 0.5 && this.getAridity(cx, cz, range) < T.savannaStart + 0.06 ? this.#seaCoast(cx, cz) : -1;
+          coast = range < 0.5 && this.getAridity(cx, cz, range) < T.savannaStart + 0.06 ? this.#seaCoast(cx, cz, T.mangroveReach) : -1;
         }
-        for (let k = 0; k < 8 && coast === 0; k++) coast = this.#seaCoast(cx + Math.cos((k / 8) * Math.PI * 2) * 400, cz + Math.sin((k / 8) * Math.PI * 2) * 400);
+        for (let k = 0; k < 8 && coast === 0; k++) coast = this.#seaCoast(cx + Math.cos((k / 8) * Math.PI * 2) * 400, cz + Math.sin((k / 8) * Math.PI * 2) * 400, T.mangroveReach);
         v = 0;
         if (coast > 0) {
           const one = (px, pz) => {
@@ -1164,6 +1179,19 @@ export class TerrainGenerator {
   }
 
 
+
+  /**
+   * A glowing swamp standing on its own (0..1): now and then (one to a
+   * glowCell square or so) a rounded one, half a kilometre to a kilometre
+   * across, out in the flat, well-watered green country, well away from the
+   * ranges, volcanic country and the sea.
+   */
+  #glowBlob(x, z) {
+    return this.#blobs('glow', x, z, T.glowCell, T.glowChance, 450, 850, 0x610b, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      return r < 0.05 && this.getAridity(px, pz, r) < 0.36 && this.#volcanoBelt(px, pz) < 0.3 && this.#mountainsAround(px, pz) < 0.05 && this.#seaCoast(px, pz) < 0.05 && this.getOceanness(px, pz) < 0.1 ? 1 : 0;
+    });
+  }
 
   /** Where wetlands lie (0..1): patches of the wettest, low-lying, flat country. */
   #wetZone(x, z, range, aridity) {
@@ -4017,7 +4045,7 @@ export class TerrainGenerator {
   glowSwampAt(x, z) {
     const w = this.getBiomeWeights(x, z, {});
     if (w.wetland < 0.2) return 0;
-    return w.wetland * smoothstep(T.glowSwamp, T.glowSwamp + 0.14, this.wetNoise.fbm(x * 0.0008 + 77, z * 0.0008 - 41, 2));
+    return Math.max(w.wetland * smoothstep(T.glowSwamp, T.glowSwamp + 0.14, this.wetNoise.fbm(x * 0.0008 + 77, z * 0.0008 - 41, 2)), this.#glowBlob(x, z));
   }
 
   /**
