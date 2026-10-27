@@ -135,9 +135,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (!(ground >= seaLevel + (marsh ? -0.8 : 1.2))) continue; // outside the chunk, in water or over a cave mouth
       if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
       if (generator.rivers.at(wx, wz, 1.5)) continue; // nor in a river or right on its bank
-      // (Nothing in a mountain lake's water; on the coastal dunes, only now and then.)
-      const ml = ground > seaLevel + 2 ? generator.mountainLakeAt?.(wx, wz) : null;
-      if (ml && ml.t < 1.03 && ground < ml.level + 0.3) continue;
+      // (On the coastal dunes, hardly any.)
       if (ground < seaLevel + 40 && keep > 0.2 && generator.coastalDunesAt?.(wx, wz, ground) > 0.3) continue;
       // How high and how steep, from the land itself rather than this level
       // of detail's mesh (far off, its big triangles can pass metres above
@@ -161,9 +159,11 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // rock band and no tree line there, only thinner woods up high, half
       // as thick on the highest tops.)
       const smoky = biome.id === 'smoky';
-      if (r < Math.max(cliff, lakeside || smoky ? 0 : smoothstep(128, 146, colourHeight))) continue;
+      // (A jungle range's mountains: jungle thick up their lower slopes, as a jungle is, thinning only high up.)
+      const jungleMtn = biome.id === 'jungleMountains';
+      if (r < Math.max(cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(200, 240, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
       // And ever fewer the higher you go (the tree line).
-      if (!lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : smoothstep(85, 150, land) * 0.9)) continue;
+      if (!lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.9 * smoothstep(140, 240, land) : smoothstep(85, 150, land) * 0.9)) continue;
 
       // Too steep for roots? (height change per metre)
       if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;

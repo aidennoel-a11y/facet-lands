@@ -19,8 +19,6 @@ export const MAP_LABELS = [
   ['Wildflower meadow', '#d98ac9'],
   ['Giant flower meadow', '#f0a0e0'],
   ['Meteor crater', '#8a7a6a'],
-  ['Mountain lake', '#2a7a9a'],
-  ['Fjord', '#2a5a9a'],
   ['Coastal dunes', '#e6d4a0'],
   ['Escarpment', '#6f7f5a'],
   ['Cascades', '#3f9a7a'],

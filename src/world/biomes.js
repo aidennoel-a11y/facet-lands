@@ -392,8 +392,8 @@ export const BIOMES = {
 
   // Jungle mountains: the mountains of a jungle range, rising out of its
   // foothills jungle: green right up to their tops, moss and ferns over
-  // them, grey rock showing on every steeper face; trees thinning out up
-  // them, palms and tree ferns clinging on.
+  // them, grey rock showing on every steeper face; thick jungle up their
+  // lower slopes, thinning out only high up to tree ferns and scrub.
   jungleMountains: {
     id: 'jungleMountains',
     name: 'Jungle mountains',
@@ -413,15 +413,17 @@ export const BIOMES = {
     cliffSlope: [0.78, 0.55],
     snowLine: 9999,
     snow: 0xf1f4f7,
-    grass: 0.6,
+    grass: 0.8,
     trees: {
-      density: 0.45,
-      clumped: true,
+      density: 1.0, // (as thick as a jungle's on the lower slopes: see placeTrees, the tree line high up)
+      clumped: false,
       species: [
-        { type: 'jungleCanopy', weight: 1.2, minHeight: -99, maxHeight: 999 },
+        { type: 'jungleCanopy', weight: 1.6, minHeight: -99, maxHeight: 200 },
+        { type: 'jungleGiant', weight: 0.6, minHeight: -99, maxHeight: 130 },
         { type: 'treeFern', weight: 0.8, minHeight: -99, maxHeight: 999 },
-        { type: 'junglePalm', weight: 0.4, minHeight: -99, maxHeight: 160 },
-        { type: 'bush', weight: 0.8, minHeight: -99, maxHeight: 999 },
+        { type: 'junglePalm', weight: 0.3, minHeight: -99, maxHeight: 120 },
+        { type: 'bamboo', weight: 0.25, minHeight: -99, maxHeight: 150 },
+        { type: 'bush', weight: 0.6, minHeight: -99, maxHeight: 999 },
       ],
     },
   },

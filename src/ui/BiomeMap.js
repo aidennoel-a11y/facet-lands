@@ -124,6 +124,25 @@ export class BiomeMap {
     this.root.classList.remove('open');
   }
 
+  /**
+   * While the map's shut, works out a few tiles round (x, z) ahead of time
+   * (the coarse picture first, then the usual fine one, nearest first, a
+   * couple at once), so it's mostly there already when it's opened.
+   */
+  prefetch(x, z) {
+    if (this.isOpen || this.pending >= 2) return;
+    for (const [scale, reach] of [[64, 2], [16, 4]]) {
+      const span = TILE * scale, cx = Math.floor(x / span), cz = Math.floor(z / span);
+      const want = [];
+      for (let tz = cz - reach; tz <= cz + reach; tz++) for (let tx = cx - reach; tx <= cx + reach; tx++) if (!this.tiles.has(`${scale}:${tx}:${tz}`)) want.push([tx, tz, Math.hypot(tx - cx, tz - cz)]);
+      want.sort((a, b) => a[2] - b[2]);
+      for (const [tx, tz] of want) {
+        if (this.pending >= 2) return;
+        this.#request(tx, tz, scale);
+      }
+    }
+  }
+
   /** Forgets every tile (a new world: the seed changed), redrawing if open. */
   reset() {
     this.epoch++;

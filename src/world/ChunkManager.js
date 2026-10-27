@@ -146,10 +146,48 @@ export class ChunkManager {
    * them out is most of the time a new stretch of land takes; this way
    * it's done once, not once on every thread.
    */
+  /**
+   * Like task, but on workers of the map's own (made the first time it's
+   * asked, two or three of them), so the big map never waits behind the
+   * land being built. They take in the rivers the others work out, as the
+   * others do theirs.
+   */
+  mapTask(message) {
+    if (!this.mapWorkers) {
+      this.mapWorkers = [];
+      const count = typeof Worker !== 'undefined' && typeof window !== 'undefined' ? ((navigator.hardwareConcurrency || 4) >= 8 ? 3 : 2) : 0;
+      for (let k = 0; k < count; k++) {
+        try {
+          const worker = new Worker(new URL('./chunkWorker.js', import.meta.url), { type: 'module' });
+          worker.busy = 0;
+          worker.onmessage = (event) => {
+            const m = event.data;
+            if (m.kind === 'rivers') return this.#shareRivers(m, worker);
+            const task = this.tasks.get(m.id);
+            worker.busy--;
+            if (task) this.tasks.delete(m.id), task.resolve(m.result);
+          };
+          worker.onerror = () => (this.mapWorkers = this.mapWorkers.filter((w) => w !== worker));
+          this.mapWorkers.push(worker);
+        } catch {
+          break;
+        }
+      }
+    }
+    const worker = this.mapWorkers.reduce((best, w) => (!best || w.busy < best.busy ? w : best), null);
+    if (!worker) return this.task(message);
+    const id = this.nextId++;
+    worker.busy++;
+    return new Promise((resolve, reject) => {
+      this.tasks.set(id, { resolve, reject });
+      worker.postMessage({ ...message, id, seed: this.generator.seedText, config: this.config });
+    });
+  }
+
   #shareRivers(message, from = null) {
     if (message.seed !== this.generator.seedText) return;
     if (from) this.generator.rivers.share(message.delta);
-    for (const w of this.workers) if (w !== from) w.postMessage({ kind: 'rivers', seed: message.seed, config: this.config, delta: message.delta });
+    for (const w of [...this.workers, ...(this.mapWorkers ?? [])]) if (w !== from) w.postMessage({ kind: 'rivers', seed: message.seed, config: this.config, delta: message.delta });
     shareCaveRivers(message.seed, this.config, message.delta);
   }
 
