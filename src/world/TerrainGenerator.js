@@ -615,7 +615,7 @@ export class TerrainGenerator {
           v = smoothstep(0.15, 0.5, near) * (1 - smoothstep(0.75, 0.95, here));
           if (v > 0) v *= smoothstep(0.3, 0.6, this.#openSea(cx, cz));
         }
-        if (cache.size > 60000) cache.clear();
+        if (cache.size > 400000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -676,7 +676,7 @@ export class TerrainGenerator {
           }
           v = sum / 22.8;
         }
-        if (cache.size > 60000) cache.clear();
+        if (cache.size > 400000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -895,7 +895,7 @@ export class TerrainGenerator {
           const a = ((k + (d > 300 ? 0.5 : 0)) / 8) * Math.PI * 2;
           v = Math.max(v, jz(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d));
         }
-        if (cache.size > 60000) cache.clear();
+        if (cache.size > 400000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1062,7 +1062,7 @@ export class TerrainGenerator {
           v += jz(i * G + Math.cos(a) * 250, j * G + Math.sin(a) * 250);
         }
         v /= 10;
-        if (cache.size > 60000) cache.clear();
+        if (cache.size > 400000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1083,7 +1083,7 @@ export class TerrainGenerator {
 
   // (Both at once: [driest within 600 m, driest within 300 m], from the point and rings 300 m and 600 m out.)
   #aridRange(x, z, which) {
-    const G = 64;
+    const G = 128; // (smooth: it takes in 600 m all round)
     const gx = Math.floor(x / G), gz = Math.floor(z / G);
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._aridAround ?? (this._aridAround = new Map());
@@ -1099,7 +1099,7 @@ export class TerrainGenerator {
           if (q > hi) hi = q;
           if (d === 300 && q > near) near = q;
         }
-        if (cache.size > 60000) cache.clear();
+        if (cache.size > 400000) cache.clear();
         cache.set(key, (v = [hi, near]));
       }
       return v[which];
@@ -1192,7 +1192,7 @@ export class TerrainGenerator {
           const a = (k / 6) * Math.PI * 2;
           v = Math.max(v, this.#rawAridityAt(i * G + Math.cos(a) * 800, j * G + Math.sin(a) * 800));
         }
-        if (cache.size > 60000) cache.clear();
+        if (cache.size > 400000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1210,7 +1210,7 @@ export class TerrainGenerator {
    * dry plains rather than switching on in a wall.
    */
   #drySuppress(x, z) {
-    const G = 64;
+    const G = 128; // (smooth: it takes in 450 m all round)
     const gx = Math.floor(x / G), gz = Math.floor(z / G);
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._drySup ?? (this._drySup = new Map());
@@ -1224,7 +1224,7 @@ export class TerrainGenerator {
           sum += this.#rawAridityAt(i * G + Math.cos(a) * 450, j * G + Math.sin(a) * 450);
         }
         v = 0.9 * smoothstep(0.8, 1.3, sum / 10);
-        if (cache.size > 60000) cache.clear();
+        if (cache.size > 400000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1254,7 +1254,7 @@ export class TerrainGenerator {
           const a = (k / 8) * Math.PI * 2;
           for (const d of [170, 380]) v = Math.max(v, m(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d));
         }
-        if (cache.size > 60000) cache.clear();
+        if (cache.size > 400000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1284,7 +1284,7 @@ export class TerrainGenerator {
           const a = (k / 8) * Math.PI * 2;
           for (const d of [200, 400]) v = Math.min(v, m(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d));
         }
-        if (cache.size > 60000) cache.clear();
+        if (cache.size > 400000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -2517,10 +2517,10 @@ export class TerrainGenerator {
             out.flowSide = Math.max(out.flowSide, smoothstep(lp.half * 1.7, lp.half * 2.3, dl) * (1 - smoothstep(lp.half * 4, lp.half * 9, dl)));
           }
           // (Where it ends: a broad lobe of black rubble it's pushed up, the front of the flow.)
-          // (Not while rivers or a flow's end are being worked out: they
-          // don't need it, and it would set off working out more of them,
-          // and more, far and wide.)
-          const e = this._noToe ? null : this.lavaEnd(c), de = e ? Math.hypot(x - e.x, z - e.z) : Infinity;
+          // (Not while rivers or a flow's end are being worked out, nor in a
+          // quick look (see #probe): they don't need it, and it would set off
+          // working out more of them, and more, far and wide.)
+          const e = this._noToe || this._probing || this._riverWork ? null : this.lavaEnd(c), de = e ? Math.hypot(x - e.x, z - e.z) : Infinity;
           if (de < 70) {
             out.toe = Math.max(out.toe, 1 - smoothstep(15, 65, de));
             h += 2.2 * (1 - smoothstep(8, 45, de)) * (0.7 + 0.3 * this.volcanoNoise.ridged(x * 0.08, z * 0.08, 2, 2, 0.5, 0.02));
@@ -2973,7 +2973,7 @@ export class TerrainGenerator {
   jungleNear(x, z) {
     const G = 128, gx = Math.floor(x / G), gz = Math.floor(z / G), fx = x / G - gx, fz = z / G - gz;
     const cache = (this._jungleNear ??= new Map());
-    if (cache.size > 60000) cache.clear();
+    if (cache.size > 400000) cache.clear();
     const corner = (i, j) => {
       const key = i * 65536 + j;
       let v = cache.get(key);
@@ -4311,10 +4311,13 @@ export class TerrainGenerator {
         const band = ground * 0.28 + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 1.4;
         out.lerp(PETRIFIED_BANDS[((Math.floor(band) % 4) + 4) % 4], 0.55 * smoothstep(0.1, 0.6, pf));
       }
-      // Coastal dunes: pale sand, marram grass in tufts over the older ones.
+      // Coastal dunes: all pale sand (a little lighter and darker in drifts).
       if (ground < sea + 40) {
         const dn = this.coastalDunesAt(x, z, ground);
-        if (dn > 0.05) out.lerp(DUNE_SAND, 0.85 * smoothstep(0.05, 0.4, dn) * (0.75 + 0.25 * this.detailNoise.noise2D(x * 0.06, z * 0.06)));
+        if (dn > 0.02) {
+          out.lerp(DUNE_SAND, smoothstep(0.02, 0.12, dn));
+          out.multiplyScalar(1 + 0.05 * this.detailNoise.noise2D(x * 0.06, z * 0.06));
+        }
       }
       // A meteor crater: its bowl scorched dark, the thrown-out ground round it pale with rock dust.
       const mc = this.meteorCraterAt(x, z, 2.6);

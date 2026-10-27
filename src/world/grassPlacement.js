@@ -75,6 +75,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       const river = generator.rivers?.at(wx, wz, 3);
       if (river && river.d < river.water + 2.5) continue; // nor on a river's muddy banks (reeds grow there)
       if (generator.landmarks?.underWater(wx, wz, ground)) continue; // (nor under a landmark's lake or pools)
+      if (ground < seaLevel + 40 && generator.coastalDunesAt?.(wx, wz, ground) > 0.1) continue; // (nor on the coastal dunes: bare sand)
 
       generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color, jitter);
       // (Bare grey rock and snow are all but colourless; grassland isn't.)
