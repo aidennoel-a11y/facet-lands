@@ -63,6 +63,25 @@ export const LANDMARKS = {
   // gnawed stumps round its banks: see beaverPool.)
   beaverPond: { name: 'Beaver pond', cell: 800, hidden: true, chance: 0, tries: 4, riverWater: true, spread: true, land: (h) => h > 4,
     basin: { r: 14, d: 1.2, steep: 0.35 }, what: '', fits: (w, m, f) => w.temperate + w.pine + (w.parkland ?? 0) + (w.smoky ?? 0) + (w.cascades ?? 0) * 0.8 > 0.6 && m < 0.55 && f > 0.12 },
+  // (Added last, so the kinds before keep their places: see KIND_INDEX.)
+  // (Its jungle cousin, smaller and more common, a cenote: the jungle's
+  // low country, so its floor lies under the water's level, and a clear
+  // pool fills its bottom; its walls hung with vines, a spring's fall into it.)
+  jungleSinkhole: { name: 'Jungle Sinkhole', cell: 2400, chance: 0.6, tries: 12, land: (h, slope) => h > 10 && slope < 0.25,
+    basin: { r: 34, d: 40, steep: 0.3, dry: true, rough: 4, floor: -6 }, what: 'A great round pit in the jungle: down its vine-hung walls, a hidden jungle and a waterfall into a clear pool',
+    fits: (w, m) => w.jungle > 0.5 && m < 0.35 },
+  // (Black tar welling up in a hollow out on the savanna, the bones of what
+  // it caught sticking up out of it. Few: one to a 10 km square at most, and
+  // few of those, so a savanna has one or two.)
+  tarPits: { name: 'Tar Pits', cell: 10000, chance: 0.3, tries: 8, land: (h, slope) => h > 4 && slope < 0.1,
+    basin: { r: 9, d: 1.5, steep: 0.4 }, what: 'Black tar welling up out of the savanna: the bones of the beasts it caught stick up out of it',
+    fits: (w) => w.savanna > 0.65 },
+  // (An old volcano's crater on a hill in the green country right by the
+  // volcanic highlands: a round lake filling it to its lowest rim, the hill's
+  // top an island in the middle. Its shores and walls the country's own.)
+  craterLake: { name: 'Crater Lake', cell: 5000, chance: 0.7, tries: 12, land: (h, slope, rise) => h > 12 && slope < 0.3 && rise > 4,
+    basin: { r: 110, d: 16, steep: 0.5, island: 0.24 }, what: "An old volcano's round crater, filled with a still, deep blue lake, an island in its middle",
+    fits: (w) => w.volcanic < 0.05, near: (g, x, z) => g.volcanicNear(x, z) > 0.5 && [0, 1, 2, 3, 4, 5, 6, 7].every((k) => g.getOceanness(x + Math.cos(k * 0.785) * 160, z + Math.sin(k * 0.785) * 160) < 0.02 && g.getBaseHeight(x + Math.cos(k * 0.785) * 160, z + Math.sin(k * 0.785) * 160) > g.rivers.seaLevel + 6) },
 };
 export const LANDMARK_KINDS = Object.keys(LANDMARKS);
 const KIND_INDEX = Object.fromEntries(LANDMARK_KINDS.map((k, n) => [k, n])); // (asked a great deal: see glacierAt, in every height of the high land)
@@ -136,6 +155,7 @@ export class LandmarkSites {
         const open = w.temperate > 0.5 ? 1 - Math.min(1, f * 1.6) : 0;
         const cold = kind === 'glacier' ? this.g.getSeasonality(x, z) : 0;
         if (!L.fits(w, m, f, open, cold)) continue;
+        if (L.near && !L.near(this.g, x, z)) continue;
         if (this.g.getOceanness(x, z) > 0.05) continue;
         // (Then the lie of the land: high or low, steep or level, standing up
         // over the country round or down in a hollow.)
@@ -245,7 +265,8 @@ export class LandmarkSites {
         s.pools = [p];
       }
       // (A dry pit no deeper than keeps its floor above the sea's level.)
-      if (L.basin.dry) s.pools[0].d = Math.min(L.basin.d, this.#probe((H) => H(s.x, s.z)) - (this.g.rivers?.seaLevel ?? 2) - 8);
+      // (`floor`: how far over the sea's level its floor's kept; under it, and water fills its bottom.)
+      if (L.basin.dry) s.pools[0].d = Math.min(L.basin.d, this.#probe((H) => H(s.x, s.z)) - (this.g.rivers?.seaLevel ?? 2) - (L.basin.floor ?? 8));
     } else if (L.falls) s.pools = this.#fallsPools(s);
     else s.pools = [];
     for (const p of s.pools) if (!p.dry && p.level === undefined) p.level = this.#rimLevel(p);
@@ -851,8 +872,11 @@ export class LandmarkSites {
           continue;
         }
         // (A lake or a pool: dug down to below its water, level from bank to
-        // bank; on a slope the uphill side is a cut bank, a cliff.)
-        d = Math.max(d, h - Math.min(h, p.level + 0.7 - dip));
+        // bank; on a slope the uphill side is a cut bank, a cliff. A crater
+        // lake's middle left standing, an island, where the land's high enough.)
+        let target = p.level + 0.7 - dip;
+        if (p.island && r < p.island) target = Math.max(target, p.level - 1.5 + 7 * (1 - (r / p.island) ** 2));
+        d = Math.max(d, h - Math.min(h, target));
       }
     }
     return d;

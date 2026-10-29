@@ -164,6 +164,18 @@ export class CaveField {
         c.flooded = true;
         c.lake = c.floor + 3.5 + rand() * 4;
       }
+      // (Very rarely, one of the deepest a giant crystal shaft: narrower, far
+      // taller, dry, its height crossed by enormous beams of crystal. See
+      // decorateChunk.)
+      if (c.y < -140 && rand() < 0.12) {
+        c.shaft = true;
+        c.rx *= 0.5;
+        c.rz *= 0.5;
+        c.ry += 50;
+        c.floor = c.y - c.ry * 0.5;
+        c.flooded = false;
+        c.lake = c.floor + 0.3;
+      }
     }
     this.chambers.set(key, c);
     return c;
@@ -367,12 +379,21 @@ export class CaveField {
       // them: the crystal caverns, deep down; the mushroom forests.)
       crystal: patch(70, 40, 2000),
       mushroom: patch(-120, 90, 1900) + 0.12 * (w.wetland + w.temperate),
+      // (Under the jungles, close under the ground: the root caves, the
+      // great trees' roots through their roofs and walls. Under the
+      // wetlands: the firefly hollows. And anywhere, in their own patches:
+      // the silver mist caverns; the spiders' dens, rarer.)
+      roots: 1.4 * (w.jungle + (w.jungleFoothills ?? 0) + 0.6 * (w.bamboo ?? 0)),
+      firefly: 1.6 * (w.wetland + 0.6 * w.mangrove),
+      mist: 0.8 * patch(400, -80, 1700),
+      spider: 0.75 * patch(-260, 330, 1500),
     };
   }
 
   /**
    * 0 plain rock, 1 lush, 2 volcanic, 3 ice, 4 dry sandstone, 5 crystal
-   * caverns, 6 mushroom forest: from the scores, and how deep (everything
+   * caverns, 6 mushroom forest, 7 root caves, 8 spiders' dens, 9 silver
+   * mist caverns, 10 firefly hollows: from the scores, and how deep (everything
    * very deep turns volcanic; the crystals only grow well down).
    */
   static biomeAt(s, y) {
@@ -380,9 +401,11 @@ export class CaveField {
     const volcanic = s.volcanic + Math.min(1, Math.max(0, (-88 - y) / 20)) * 0.9;
     const crystal = (s.crystal ?? 0) * Math.min(1, Math.max(0, (-28 - y) / 14));
     const mushroom = s.mushroom ?? 0;
-    const best = Math.max(s.lush, volcanic, s.ice, s.dry, crystal, mushroom);
+    const roots = (s.roots ?? 0) * Math.min(1, Math.max(0, (y + 32) / 12)); // (only some 20 m down at most)
+    const firefly = s.firefly ?? 0, mist = s.mist ?? 0, spider = s.spider ?? 0;
+    const best = Math.max(s.lush, volcanic, s.ice, s.dry, crystal, mushroom, roots, firefly, mist, spider);
     if (best < 0.5) return 0;
-    return best === volcanic ? 2 : best === crystal ? 5 : best === mushroom ? 6 : best === s.ice ? 3 : best === s.lush ? 1 : 4;
+    return best === volcanic ? 2 : best === crystal ? 5 : best === mushroom ? 6 : best === roots ? 7 : best === spider ? 8 : best === mist ? 9 : best === firefly ? 10 : best === s.ice ? 3 : best === s.lush ? 1 : 4;
   }
 
   // --- Entrances ---------------------------------------------------------------

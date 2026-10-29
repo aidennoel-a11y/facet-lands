@@ -356,7 +356,7 @@ export class CaveSystem {
   biomeAt(x, y, z) {
     // (A great chamber is all one kind, through and through.)
     const ch = this.field.chamberAt(x, z);
-    if (ch && ch.e < 1.1 && y < ch.c.y + ch.c.ry && y > ch.c.floor - 12) return CaveField.biomeAt(ch.c.scores ??= this.field.biomeScores(ch.c.x, ch.c.z), ch.c.y);
+    if (ch && ch.e < 1.1 && y < ch.c.y + ch.c.ry && y > ch.c.floor - 12) return ch.c.shaft ? 5 : CaveField.biomeAt(ch.c.scores ??= this.field.biomeScores(ch.c.x, ch.c.z), ch.c.y);
     const key = `${Math.round(x / 24)},${Math.round(z / 24)}`;
     this.kinds ??= new Map();
     let s = this.kinds.get(key);

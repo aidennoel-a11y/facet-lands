@@ -243,9 +243,9 @@ export function createSeaCoastLayer(config, terrainMaterial) {
         }
       }
 
-      // Arches, in the mesas and out in the sea: one band of rock bowed over
+      // Arches, in the mesas and out in the sea, and the canyons' natural bridges: one band of rock bowed over
       // from foot to foot (see mesaArchAt), lumpy all round.
-      for (const arch of [...generator.seaArches(x0, z0, x0 + size, z0 + size), ...(generator.mesaArches?.(x0, z0, x0 + size, z0 + size) ?? [])]) {
+      for (const arch of [...generator.seaArches(x0, z0, x0 + size, z0 + size), ...(generator.mesaArches?.(x0, z0, x0 + size, z0 + size) ?? []), ...(generator.canyonBridges?.(x0, z0, x0 + size, z0 + size) ?? [])]) {
         const K = 30, M = 10;
         const rings = [];
         for (let k = 0; k <= K; k++) {

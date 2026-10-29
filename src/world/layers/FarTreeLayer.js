@@ -24,6 +24,8 @@ import { packFarTrees, placeTrees } from '../treePlacement.js';
 import { SMALL_PLANTS } from './TreeLayer.js';
 
 const CONES = new Set(['pine', 'spruce', 'larch', 'redwood']);
+// (Drawn as their real model however far off: the redwoods, giants seen from far away, and few.)
+const FULL = new Set(['redwood']);
 const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag', 'bamboo']); // (bamboo: a single cane)
 const CLUMPS = new Set();
 // Crowns held high on a bare trunk (and its bark colour).
@@ -42,6 +44,11 @@ const BARK = { ...UMBRELLAS, birch: 0xd9d6cc, silverBirch: 0xe0ddd2, aspen: 0xcf
  */
 function farGeometry(type, detailed) {
   const real = TREE_GEOMETRIES[type];
+  if (FULL.has(type)) {
+    const g = new InstancedBufferGeometry();
+    for (const k of ['position', 'normal', 'color', 'aSeason', 'aFall']) g.setAttribute(k, real.attributes[k].clone());
+    return g;
+  }
   const crown = real.userData.crown ?? real;
   crown.computeBoundingBox();
   const box = crown.boundingBox;
@@ -463,7 +470,7 @@ export function createFarTreeLayer(config) {
   const leaving = []; // ({ handle, at }) trees fading out, oldest first
   function pool(type, detailed, tx, tz) {
     // (The furthest, the cards, once their pictures are drawn.)
-    const card = !detailed && impostors.cells.has(type);
+    const card = !detailed && impostors.cells.has(type) && !FULL.has(type);
     const key = `${type}:${card ? 2 : detailed ? 1 : 0}:${tx},${tz}`;
     let p = pools.get(key);
     if (!p) {

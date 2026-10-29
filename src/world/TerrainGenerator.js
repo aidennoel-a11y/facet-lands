@@ -52,7 +52,6 @@ export const BIOME_TUNING = {
   // How much of the green country is forest rather than plains: higher, more forest.
   forest: -0.11, // (-0.11: 1% of the map from forest to plains)
 };
-const JUNGLE_REACH = 4000; // (m: how far a great jungle range's jungle reaches from its middle, some 50 km²: see #rangeOf)
 const RANGE_CELL = 320; // the grid a mountain range is taken in on, to tell one range from another (m: see #rangeOf)
 const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
 // The Cascades' tiers: where each steps up (on its noise), and how far (m).
@@ -744,6 +743,12 @@ export class TerrainGenerator {
     return smoothstep(0.32, 0.5, this.#volcanoNoise(x, z));
   }
 
+  /** How much (x, z) is right by volcanic country, in the green round it but not in it (0..1). */
+  volcanicNear(x, z) {
+    const n = this.#volcanoNoise(x, z);
+    return smoothstep(0.42, 0.46, n) * (1 - smoothstep(0.48, 0.51, n));
+  }
+
   /**
    * Where volcanic highlands lie (0..1): rare, broad stretches in the heart
    * of their green belt, only where the belt is at its fullest for a good
@@ -942,17 +947,10 @@ export class TerrainGenerator {
   #jungleRange(x, z) {
     const G = RANGE_CELL, gx = Math.floor(x / G - 0.5), gz = Math.floor(z / G - 0.5);
     const fx = x / G - 0.5 - gx, fz = z / G - 0.5 - gz;
-    // (In a great range, only the part round its middle: see #rangeOf.)
-    let reach = 1;
-    const j = (i, k) => {
-      const r = this.#rangeOf(i, k);
-      if (!r?.jungle) return 0;
-      if (r.mid) reach = Math.min(reach, 1 - smoothstep(JUNGLE_REACH * 0.8, JUNGLE_REACH, Math.hypot(x - r.mid[0], z - r.mid[1])));
-      return 1;
-    };
+    const j = (i, k) => (this.#rangeOf(i, k)?.jungle ? 1 : 0);
     const a = j(gx, gz) + (j(gx + 1, gz) - j(gx, gz)) * fx;
     const b = j(gx, gz + 1) + (j(gx + 1, gz + 1) - j(gx, gz + 1)) * fx;
-    return (a + (b - a) * fz) * reach;
+    return a + (b - a) * fz;
   }
 
   /**
@@ -1010,22 +1008,11 @@ export class TerrainGenerator {
         }
         const mi = Math.floor(minKey / 65536) - 32768, mk = (minKey % 65536) - 32768;
         // (About one range in five, of those in green country with real mountains in them, and
-        // big enough to be a range of them, not a lone hill or two (some 6 km² or more). No snow
+        // big enough to be a range of them, not a lone hill or two (some 6 km² or more), and not
+        // one of the great ranges (no more than some 50 km², cells and all), so a jungle range is
+        // the whole of its range, never touching another's mountains. No snow
         // lies on their peaks: green and earth to the tops, see biomes' jungleMountains.)
-        range = { jungle: cells.length >= 60 && warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.169 };
-        // (A great one, more than some 50 km², is jungle only round its middle, out to JUNGLE_REACH:
-        // the cell of it nearest the middle of all its cells.)
-        if (range.jungle && cells.length > 500) {
-          let sx = 0, sz = 0;
-          for (const c of cells) (sx += Math.floor(c / 65536) - 32768), (sz += (c % 65536) - 32768);
-          sx /= cells.length;
-          sz /= cells.length;
-          let best = Infinity;
-          for (const c of cells) {
-            const ci = Math.floor(c / 65536) - 32768, ck = (c % 65536) - 32768, d = (ci - sx) ** 2 + (ck - sz) ** 2;
-            if (d < best) (best = d), (range.mid = [(ci + 0.5) * G, (ck + 0.5) * G]);
-          }
-        }
+        range = { jungle: cells.length >= 60 && cells.length <= 500 && warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && top < 175 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.25 };
       }
     }
     if (ranges.size > 400000) ranges.clear();
@@ -2124,6 +2111,61 @@ export class TerrainGenerator {
     return arch;
   }
 
+  /**
+   * The natural bridge of 700 m cell (i, j), or null: now and then a
+   * canyon is spanned by a broad band of its own rock from rim to rim, its
+   * ends rooted back in the walls, its top level with the rims (you can
+   * walk across it, and along the floor under it). Found on the land as it
+   * is without it (the probe): a spot on a canyon's floor, and the shortest
+   * way across from there to both rims.
+   */
+  #canyonBridge(i, j) {
+    const cache = this._bridges ?? (this._bridges = new Map());
+    const key = (i + 32768) * 65536 + (j + 32768);
+    if (cache.has(key)) return cache.get(key);
+    const s = this.seed ^ 0xb81d, G = 700;
+    let bridge = null;
+    const probe = this.#probe();
+    for (let t = 0; t < 8 && !bridge && hash2(i, j, s) < 0.8; t++) {
+      const px = (i + 0.15 + 0.7 * hash2(i + t * 37, j, s + 1)) * G, pz = (j + 0.15 + 0.7 * hash2(i, j + t * 37, s + 2)) * G;
+      const f = probe.getFeatures(px, pz);
+      if (!(f.canyonFloor > 0.6 && f.canyonCut > 20)) continue;
+      const floor = probe.getBaseHeight(px, pz), rimAt = floor + f.canyonCut * 0.85;
+      // (How far to the rim, each way round.)
+      const out = (a) => {
+        for (let d = 4; d < 70; d += 2) if (probe.getBaseHeight(px + Math.cos(a) * d, pz + Math.sin(a) * d) > rimAt) return d;
+        return Infinity;
+      };
+      let best = null;
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI, d1 = out(a), d2 = out(a + Math.PI);
+        if (d1 + d2 < 120 && (!best || d1 + d2 < best.d1 + best.d2)) best = { a, d1, d2 };
+      }
+      if (!best) continue;
+      const ca = Math.cos(best.a), sa = Math.sin(best.a), back = 0.3 * (best.d1 + best.d2) + 6;
+      const ax = px - ca * (best.d2 + back), az = pz - sa * (best.d2 + back), bx = px + ca * (best.d1 + back), bz = pz + sa * (best.d1 + back);
+      const rim = Math.min(probe.getBaseHeight(px - ca * (best.d2 + 4), pz - sa * (best.d2 + 4)), probe.getBaseHeight(px + ca * (best.d1 + 4), pz + sa * (best.d1 + 4)));
+      const leg = 4.5 + 2 * hash2(i, j, s + 3);
+      bridge = { x: (ax + bx) / 2, z: (az + bz) / 2, ax, az, bx, bz, angle: best.a, leg, H: rim - floor, r: (best.d1 + best.d2) / 2, base: rim - f.canyonCut * 0.35, top: rim + 0.6, sandstone: true,
+        lean: 0, bend: (hash2(i, j, s + 4) * 2 - 1) * 0.4, seed: Math.floor(hash2(i, j, s + 5) * 1e6), band: true, bridge: true };
+    }
+    if (cache.size > 4000) cache.clear();
+    cache.set(key, bridge);
+    return bridge;
+  }
+
+  /** Natural bridges over the canyons whose middle lies in a box (see #canyonBridge). */
+  canyonBridges(minX, minZ, maxX, maxZ) {
+    const G = 700, out = [];
+    for (let j = Math.floor(minZ / G); j <= Math.floor(maxZ / G); j++) {
+      for (let i = Math.floor(minX / G); i <= Math.floor(maxX / G); i++) {
+        const b = this.#canyonBridge(i, j);
+        if (b && b.x >= minX && b.z >= minZ && b.x < maxX && b.z < maxZ) out.push(b);
+      }
+    }
+    return out;
+  }
+
   /** Sandstone arches whose centre lies in a box (see #mesaArch). */
   mesaArches(minX, minZ, maxX, maxZ) {
     const G = 260, out = [];
@@ -2383,7 +2425,7 @@ export class TerrainGenerator {
       return { cave: true, bottom: sea + roof, top: this.getBaseHeight(c.x + c.nx * a - c.nz * (c.w + 1.5), c.z + c.nz * a + c.nx * (c.w + 1.5)) };
     }
     const S = 36;
-    for (const arch of [...this.seaArches(x - S * 1.5, z - S * 1.5, x + S * 1.5, z + S * 1.5), ...this.mesaArches(x - 300, z - 300, x + 300, z + 300)]) {
+    for (const arch of [...this.seaArches(x - S * 1.5, z - S * 1.5, x + S * 1.5, z + S * 1.5), ...this.mesaArches(x - 300, z - 300, x + 300, z + 300), ...this.canyonBridges(x - 120, z - 120, x + 120, z + 120)]) {
       const vx = arch.bx - arch.ax, vz = arch.bz - arch.az, L2 = vx * vx + vz * vz;
       const t = ((x - arch.ax) * vx + (z - arch.az) * vz) / L2;
       if (t < 0 || t > 1) continue;

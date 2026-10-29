@@ -32,6 +32,11 @@ const PALETTES = [
   // (Crystal caverns: dark violet-grey stone. Mushroom forests: dark earthy rock, the floor pale with the mould's threads.)
   { wall: [0x46405a, 0x504a66, 0x3c374e, 0x5a5470, 0x433e56], floor: [0x4a4660, 0x55506c, 0x403c54], ceiling: 0x34304a, low: 0x7a6aa8, tip: 0xd8c8ff },
   { wall: [0x56483e, 0x605246, 0x4c4038, 0x6a5a4c, 0x52463c], floor: [0x9a8e78, 0x8a7e6a, 0xa89c84, 0x7e725e], ceiling: 0x3e3430, low: 0x8a7a68, tip: 0xc8b8a0 },
+  // (Root caves: dark earth and brown rock. Spiders' dens: dusty grey. Silver mist caverns: pale silvery stone. Firefly hollows: dark, mossy.)
+  { wall: [0x5a4a38, 0x64523e, 0x4e4032, 0x6e5c46, 0x544634], floor: [0x4a3a28, 0x564430, 0x3e3222], ceiling: 0x463828, low: 0x6a5a44, tip: 0x9a8a6a },
+  { wall: [0x4a4644, 0x524e4a, 0x423e3c, 0x5a5652, 0x46423f], floor: [0x5e5a54, 0x52504a, 0x666058], ceiling: 0x383432, low: 0x6a6660, tip: 0xa8a49a },
+  { wall: [0x8a8c96, 0x969aa4, 0x7e808a, 0xa2a6b0, 0x868892], floor: [0x8e9098, 0x80848c, 0x9a9ca4], ceiling: 0x6e707a, low: 0x9ea2ac, tip: 0xd8dce4 },
+  { wall: [0x4e5040, 0x585a46, 0x46483a, 0x62644e, 0x4a4c3c], floor: [0x4a5a30, 0x546838, 0x405028], ceiling: 0x3e4034, low: 0x5a5e48, tip: 0x8a8e70 },
 ];
 const STONE_LOW = new Color(0x857d71);
 const STONE_TIP = new Color(0xbdb4a4);
@@ -61,7 +66,7 @@ export function caveAt(grid, x, y, z) {
     const col = cols[Math.min(n - 1, Math.max(0, Math.round((z - z0) / cell))) * n + Math.min(n - 1, Math.max(0, Math.round((x - x0) / cell)))];
     const ch = col?.chamber;
     if (ch && ch.e < 1.1 && ch.c.scores && y < ch.c.y + ch.c.ry && y > ch.c.floor - 12) {
-      const kind = CaveField.biomeAt(ch.c.scores, ch.c.y);
+      const kind = ch.c.shaft ? 5 : CaveField.biomeAt(ch.c.scores, ch.c.y);
       return { kind, green: kind === 1 ? 1 : 0 };
     }
   }
@@ -69,7 +74,7 @@ export function caveAt(grid, x, y, z) {
   const i = Math.floor(fx), k = Math.floor(fz), tx = fx - i, tz = fz - k;
   const a = kinds[k * 5 + i], b = kinds[k * 5 + i + 1], c = kinds[(k + 1) * 5 + i], d = kinds[(k + 1) * 5 + i + 1];
   const mix = (key) => ((a[key] ?? 0) * (1 - tx) + (b[key] ?? 0) * tx) * (1 - tz) + ((c[key] ?? 0) * (1 - tx) + (d[key] ?? 0) * tx) * tz;
-  const scores = { lush: mix('lush'), volcanic: mix('volcanic'), ice: mix('ice'), dry: mix('dry'), crystal: mix('crystal'), mushroom: mix('mushroom') };
+  const scores = { lush: mix('lush'), volcanic: mix('volcanic'), ice: mix('ice'), dry: mix('dry'), crystal: mix('crystal'), mushroom: mix('mushroom'), roots: mix('roots'), firefly: mix('firefly'), mist: mix('mist'), spider: mix('spider') };
   const kind = CaveField.biomeAt(scores, y);
   // (Green where the lush outweighs the rest, fading out below the line the kind changes at.)
   const other = Math.max(scores.volcanic + Math.max(0, (-88 - y) / 20) * 0.9, scores.ice, scores.dry, scores.crystal * Math.min(1, Math.max(0, (-28 - y) / 14)), scores.mushroom);
@@ -688,7 +693,8 @@ export function decorateChunk(grid, field) {
   const pools = [];
   const vines = [];
   const geysers = []; // [x, lip y, z, strength, ...]: the steaming ones
-  const lights = []; // [x, y, z, kind, ...]: glowing things that light the cave round them (0 glow-worms, 1 glowcaps)
+  const lights = []; // [x, y, z, kind, ...]: glowing things that light the cave round them (0 glow-worms, 1 glowcaps, 4 fireflies)
+  const drift = []; // [x, y, z, kind, ...]: things drifting in the air (see CaveLayer): 0 a bank of mist, 1 a swarm of fireflies
   const step = cell * 2;
   const f = (x, y, z) => Math.min(gridHeight(grid, x, z) - y, sampleGrid(grid, x, y, z));
   const tmp = new Color(), low = new Color(), tip = new Color();
@@ -892,6 +898,42 @@ export function decorateChunk(grid, field) {
     if (shroom.glows) lights.push(x, y + height * 0.85, z, 3);
     obstacles.push(x, z, Math.max(0.25, height * (shroom.kind === 2 ? 0.17 : 0.08)), y - 0.3, y + height);
   };
+  // A rod from (ax, ay, az) to (bx, by, bz), tapering from r0 to r1: a root, a strand of web.
+  const rod = (ax, ay, az, bx, by, bz, r0, r1, colour, glow = null, sides = 6) => {
+    const len = Math.hypot(bx - ax, by - ay, bz - az);
+    if (len < 0.05) return;
+    const g = new CylinderGeometry(r1, r0, len, sides, 1).toNonIndexed();
+    g.deleteAttribute('uv');
+    g.translate(0, len / 2, 0);
+    g.applyQuaternion(new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), new Vector3(bx - ax, by - ay, bz - az).normalize()));
+    g.translate(ax - x0, ay, az - z0);
+    piece(g, ax, ay, az, (c, cyv, v) => c.set(colour).multiplyScalar(0.85 + hash2(v, Math.round(ax * 7), seed + 61) * 0.25), glow);
+  };
+  // A spider's web: strands out from its middle, rings round them, hung
+  // upright across the passage at (x, y, z), `R` across, turned `yaw`.
+  const web = (x, y, z, R, yaw, s) => {
+    const ux = Math.cos(yaw), uz = Math.sin(yaw), N = 8, pt = (a, r) => [x + ux * Math.cos(a) * r, y + Math.sin(a) * r, z + uz * Math.cos(a) * r];
+    const silk = 0xd8d6cc, faint = [0.05, 0.05, 0.05];
+    for (let k = 0; k < N; k++) {
+      const a = (k / N) * Math.PI * 2 + s, [bx, by, bz] = pt(a, R * (0.85 + 0.15 * Math.sin(k * 3 + s * 9)));
+      rod(x, y, z, bx, by, bz, 0.012, 0.012, silk, faint, 3);
+    }
+    for (const q of [0.3, 0.55, 0.8]) {
+      for (let k = 0; k < N; k++) {
+        const a0 = (k / N) * Math.PI * 2 + s, a1 = ((k + 1) / N) * Math.PI * 2 + s, [ax, ay, az] = pt(a0, R * q), [bx, by, bz] = pt(a1, R * q);
+        rod(ax, ay, az, bx, by, bz, 0.01, 0.01, silk, faint, 3);
+      }
+    }
+  };
+  // An egg sac: a pale lumpy ball of silk.
+  const egg = (x, y, z, r, s) => {
+    const g = new IcosahedronGeometry(r, 0).toNonIndexed();
+    g.deleteAttribute('uv');
+    g.scale(1, 1.25, 1);
+    g.translate(x - x0, y + r, z - z0);
+    piece(g, x, y, z, (c, cyv, v) => c.set(0xe8e2d0).multiplyScalar(0.85 + hash2(v, s, seed + 71) * 0.2), [0.03, 0.03, 0.025]);
+  };
+
   // Crystal caverns, under the high roofs: great beams of crystal, like
   // the cave of the giant crystals, lying across one another at all angles,
   // milk-white, pale blue, rose or honey, the size of trees.
@@ -959,6 +1001,15 @@ export function decorateChunk(grid, field) {
             }
             if (gap > 4 && r2 < 0.35) crystalCluster(x + 0.4, roof, z - 0.3, Math.min(gap * 0.35, 0.6 + r3 * 2.2), r2, true);
             // (And the great beams, where the cavern's big enough for them.)
+            // (In a giant crystal shaft, far up its height, enormous ones crossing it.)
+            if (gap > 45 && r3 < 0.3) {
+              const n = 1 + Math.floor(r1 * 2);
+              for (let k = 0; k < n; k++) {
+                const yaw = (r2 + k * 0.41) * Math.PI * 2, pitch = 1.0 + ((r1 * 5 + k * 0.27) % 1) * 0.5;
+                const len = Math.min(gap * 0.9, 20 + ((r3 * 17 + k * 0.61) % 1) * 30), r = 0.9 + len * 0.03;
+                beam(x + k * 1.2, floor + ((r2 * 11 + k * 0.3) % 1) * gap * 0.35, z - k, len, r, yaw, pitch, (r1 + k * 0.23) % 1);
+              }
+            }
             if (gap > 9 && r3 < 0.1 && !inEntrance) {
               const n = 1 + Math.floor(r1 * 3);
               for (let k = 0; k < n; k++) {
@@ -981,6 +1032,43 @@ export function decorateChunk(grid, field) {
                 const [cd, , cg] = CAPS[Math.floor(r3 * 991 + m) % CAPS.length];
                 piece(capG, mx, floor, mz, (c) => c.set(cd), cg);
               }
+              into = parts;
+            }
+          } else if (kind === 7 && gap > 2.5 && r1 < 0.55) {
+            // Root caves: the jungle's great roots down through the roof,
+            // thick as trunks, curving down the walls into the floor; finer
+            // ones hanging (see the vines below).
+            const n = 1 + Math.floor(r2 * 3);
+            for (let k = 0; k < n; k++) {
+              const ox = (hash2(k, Math.round(x * 5), seed + 31) - 0.5) * step, oz = (hash2(k + 3, Math.round(z * 5), seed + 31) - 0.5) * step;
+              const ex = x + ox * 1.6 + (r3 - 0.5) * 3, ez = z + oz * 1.6 + (r1 - 0.5) * 3;
+              const r = 0.25 + ((r2 * 7 + k * 0.37) % 1) * 0.6;
+              rod(x + ox, roof + 0.8, z + oz, (x + ox + ex) / 2, roof - gap * 0.45, (z + oz + ez) / 2, r, r * 0.85, 0x5a4230);
+              rod((x + ox + ex) / 2, roof - gap * 0.45, (z + oz + ez) / 2, ex, floor - 0.4, ez, r * 0.85, r * 0.6, 0x4e3a2a);
+              obstacles.push(ex, ez, r * 0.9, floor - 0.3, floor + gap * 0.5);
+            }
+          } else if (kind === 8 && gap > 2.2) {
+            // Spiders' dens: webs strung across the passage, wall to roof, and
+            // clusters of pale egg sacs stuck to the floor and walls.
+            if (r1 < 0.5) web(x, floor + Math.min(gap * 0.55, 1.2 + r2 * 3), z, Math.min(gap * 0.45, 1.6 + r3 * 2.4), r2 * Math.PI, r3);
+            if (r2 < 0.3 && !inEntrance) {
+              for (let k = 0; k < 3 + Math.floor(r3 * 5); k++) {
+                const a = k * 2.3 + r1 * 9, d = 0.2 + (k % 3) * 0.25, ex = x + Math.cos(a) * d, ez = z + Math.sin(a) * d;
+                egg(ex, floor + 0.12, ez, 0.16 + ((r3 * 13 + k * 0.41) % 1) * 0.18, k);
+              }
+            }
+          } else if (kind === 9 || kind === 10) {
+            // Silver mist caverns: banks of low drifting fog over the floors.
+            // Firefly hollows: swarms of fireflies drifting in the dark, and
+            // moss and ferns on the floor. (Drawn and moved in CaveLayer.)
+            if (kind === 9 && gap > 2 && r1 < 0.6) drift.push(x, floor + 0.6, z, 0);
+            if (kind === 10 && gap > 2.5 && r1 < 0.5) {
+              drift.push(x, floor + Math.min(gap * 0.5, 1 + r2 * 2.5), z, 1);
+              lights.push(x, floor + 1.5, z, 4);
+            }
+            if (kind === 10 && !inEntrance && r2 < 0.4) {
+              into = plants;
+              fern(x + 0.3, floor, z - 0.2, 0.8 + r3, r1);
               into = parts;
             }
           } else if (h < 0.55) {
@@ -1021,8 +1109,8 @@ export function decorateChunk(grid, field) {
           // [x, top, z, length, kind, width, turn]: kinds 0 a thin strand, 1 a
           // leafy vine, 2 a wide curtain of them, 3 one hung with glowberries.
           // (A few pale root strands in the plain caves too.)
-          if ((kind === 1 && gap > 3 && r3 < 0.85) || (kind === 0 && gap > 3 && r3 < 0.06)) {
-            for (let k = 0; k < (kind === 1 ? 6 : 2); k++) {
+          if ((kind === 1 && gap > 3 && r3 < 0.85) || (kind === 7 && gap > 3 && r3 < 0.7) || (kind === 0 && gap > 3 && r3 < 0.06)) {
+            for (let k = 0; k < (kind === 1 ? 6 : kind === 7 ? 4 : 2); k++) {
               const hv = hash2(k, Math.round(x * 9), seed + 6);
               const len = Math.min(gap - 1.4, 1.5 + hv * hv * 9);
               const ox = (hash2(k, Math.round(z * 9), seed + 7) - 0.5) * step, oz = (hash2(k + 5, Math.round(x * 9), seed + 7) - 0.5) * step;
@@ -1031,7 +1119,7 @@ export function decorateChunk(grid, field) {
               let top = roof - 0.3;
               while (top < roof + 2 && f(x + ox, top + 0.2, z + oz) < 0) top += 0.2;
               const pick = hash2(k + 9, Math.round((x - z) * 7), seed + 8);
-              const vk = kind === 0 ? 0 : pick < 0.3 ? 0 : pick < 0.62 ? 1 : pick < 0.82 ? 2 : 3;
+              const vk = kind === 0 || kind === 7 ? 0 : pick < 0.3 ? 0 : pick < 0.62 ? 1 : pick < 0.82 ? 2 : 3;
               vines.push(x + ox, top + 0.1, z + oz, Math.min(len, top - floor - 1.2), vk, vk === 2 ? 0.8 + pick : 0.8 + hv * 0.6, pick * 6.28);
             }
           }
@@ -1217,7 +1305,7 @@ export function decorateChunk(grid, field) {
     g.computeBoundingSphere();
     return g;
   };
-  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights, geysers, giants };
+  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights, geysers, giants, drift };
 }
 
 // What each kind of glowing thing (see decorateChunk's `lights`) casts on
@@ -1227,6 +1315,7 @@ const GLOW_LIGHTS = [
   [new Color(0x8affc8), 12], // a clump of glowcaps
   [new Color(0xb69aff), 14], // a crystal cluster
   [new Color(0x6ae0d0), 22], // a glowing giant mushroom's cap
+  [new Color(0xffc850), 14], // a swarm of fireflies
 ];
 
 /**

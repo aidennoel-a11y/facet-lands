@@ -115,6 +115,8 @@ export class Landmarks {
       dark: new MeshLambertMaterial({ color: 0x2a4a3a, transparent: true, opacity: 0.86, depthWrite: false }),
       hot: new MeshLambertMaterial({ color: 0x5ac8c0, transparent: true, opacity: 0.8, depthWrite: false }),
       turq: new MeshLambertMaterial({ color: 0x3ab4b0, transparent: true, opacity: 0.8, depthWrite: false }),
+      tar: new MeshLambertMaterial({ color: 0x0d0c0b, emissive: 0x050505, transparent: true, opacity: 0.97, depthWrite: false }),
+      deep: new MeshLambertMaterial({ color: 0x1d4f86, transparent: true, opacity: 0.84, depthWrite: false }),
     };
     this.wait = 0;
     this.time = 0;
@@ -743,7 +745,10 @@ export class Landmarks {
         steam = { r: B * 0.85, level: lake.level };
         break;
       }
-      case 'greatSinkhole': {
+      case 'greatSinkhole':
+      case 'jungleSinkhole': {
+        // (The jungle's: greener all down its walls, hung thick with vines, a clear turquoise pool.)
+        const jungle = site.kind === 'jungleSinkhole';
         // A vast round pit where the limestone gave way, 100 m across and
         // 80 m deep: the land itself (see landmarkSites.basinAt), its walls
         // rough, ledged and gullied, banded grey and cream, green with moss
@@ -751,11 +756,12 @@ export class Landmarks {
         // spring's thin fall down one side; at the bottom, trees fallen in,
         // mossy boulders, a dark pool. (Its walls drawn here finer than the
         // land round about, so their roughness shows.)
-        const b = LANDMARKS.greatSinkhole.basin;
+        const b = LANDMARKS[site.kind].basin;
         const floor = y0;
         g.add(this.#surface(site, b.r * 1.06, (x, z, y, slope, t) => {
           const band = Math.floor((y - floor) / 3.2 + wob2(x, z) * 0.6);
-          if (slope < 0.55 && t < 0.97) return y - floor < 3 ? 0x5a4e3e : pick2([0x4a6a34, 0x56783a, 0x3e5e2c], x, z);
+          if (slope < (jungle ? 0.75 : 0.55) && t < 0.97) return y - floor < 3 && !jungle ? 0x5a4e3e : pick2(jungle ? [0x3a6a28, 0x2e5e22, 0x467a30] : [0x4a6a34, 0x56783a, 0x3e5e2c], x, z);
+          if (jungle) return [0x7a7462, 0x6a6452, 0x8a826a, 0x5e5a4a, 0x56704a, 0x4a6a3a][((band % 6) + 6) % 6];
           return [0x9a968c, 0x8a867c, 0xb0aa9a, 0x7a766e, 0xc8c0aa, 0x6e6a62][((band % 6) + 6) % 6];
         }, 0.6));
         for (let i = 0; i < 40; i++) {
@@ -764,8 +770,8 @@ export class Landmarks {
             const d = r(0.55, 0.85) * b.r, x = Math.cos(a) * d, z = Math.sin(a) * d;
             fern(x, gy(x, z), z, r(0.8, 1.4));
           }
-          if (i % 3 === 0) {
-            const x0 = Math.cos(a) * b.r, z0 = Math.sin(a) * b.r, len = r(10, 30);
+          if (i % (jungle ? 1 : 3) === 0) {
+            const x0 = Math.cos(a) * b.r, z0 = Math.sin(a) * b.r, len = jungle ? r(14, 38) : r(10, 30);
             k.limb([x0, top, z0], [x0 * 0.94, top - len, z0 * 0.94], 0.08, 0.04, pick([0x3e6a2a, 0x4a7a32]), 4);
           }
         }
@@ -780,7 +786,54 @@ export class Landmarks {
           blob(k, pick([0x9a968c, 0x8a867c, 0x7a766e]), [x, y + 0.3, z], sz, [1, 0.7, 1], 0.25);
           k.add(new BoxGeometry(sz * 1.1, 0.14, sz * 1.1), 0x4a6a34, [x, y + 0.3 + sz * 0.62, z], [0, r(0, 3), 0]);
         }
-        waters.push({ level: floor + 1.2, r: b.r * 0.3, clean: false, mat: 'dark' });
+        waters.push({ level: floor + 1.2, r: b.r * 0.3, clean: jungle, mat: jungle ? 'turq' : 'dark' });
+        break;
+      }
+      case 'tarPits': {
+        // Black tar welling up in a hollow in the savanna, glossy, bubbling;
+        // the bones of what it caught sticking up out of it: a great ribcage
+        // half sunk, a skull, tusks, leg bones; tar seeping out over the
+        // ground round it in black stains; the dry grass round about.
+        const lake = this.#lake(site);
+        waters.push({ ...lake, clean: false, mat: 'tar' });
+        const bone = [0xd8ceb6, 0xc8bea4, 0xb8ae94, 0xe0d6c0];
+        // (The ribs, arching up out of the tar in a row.)
+        const ra = site.rot, ru = [Math.cos(ra), Math.sin(ra)], rv = [-ru[1], ru[0]];
+        for (let i = 0; i < 7; i++) {
+          const u = (i - 3) * 0.9 + 1.5;
+          for (const sd of [-1, 1]) {
+            const bx = ru[0] * u, bz = ru[1] * u, span = 1.8 + Math.sin(((i + 1) / 8) * Math.PI) * 1.2;
+            const top = [bx + rv[0] * sd * span * 0.5, lake.level + 1.3 + span * 0.4, bz + rv[1] * sd * span * 0.5];
+            k.limb([bx, lake.level - 0.4, bz], top, 0.16, 0.12, pick(bone), 5);
+            k.limb(top, [bx + rv[0] * sd * span, lake.level - 0.3, bz + rv[1] * sd * span], 0.12, 0.08, pick(bone), 5);
+          }
+        }
+        // (The skull and its tusks, by the edge; a leg bone or two.)
+        const sx = -ru[0] * 4.5, sz = -ru[1] * 4.5;
+        blob(k, bone[0], [sx, lake.level + 0.5, sz], 1.1, [1.3, 0.8, 1], 0.15);
+        for (const sd of [-1, 1]) k.limb([sx + rv[0] * sd * 0.6, lake.level + 0.3, sz + rv[1] * sd * 0.6], [sx - ru[0] * 2.6 + rv[0] * sd * 1.4, lake.level + 1.6, sz - ru[1] * 2.6 + rv[1] * sd * 1.4], 0.18, 0.06, bone[3], 6);
+        for (let i = 0; i < 3; i++) {
+          const a = r(0, Math.PI * 2), d = r(3, 7), x = Math.cos(a) * d, z = Math.sin(a) * d;
+          k.limb([x, lake.level - 0.2, z], [x + r(-1.5, 1.5), lake.level + r(0.4, 1.2), z + r(-1.5, 1.5)], 0.14, 0.12, pick(bone), 5);
+        }
+        // (Bubbles welling up on the tar: glossy black domes.)
+        for (let i = 0; i < 14; i++) {
+          const a = r(0, Math.PI * 2), d = Math.sqrt(R()) * lake.r * 0.8;
+          blob(k, 0x141210, [Math.cos(a) * d, lake.level + 0.02, Math.sin(a) * d], r(0.15, 0.45), [1, 0.55, 1], 0.05);
+        }
+        // (Tar seeping out over the ground round it.)
+        for (let i = 0; i < 10; i++) {
+          const a = r(0, Math.PI * 2), d = lake.r * r(1.0, 1.6), x = Math.cos(a) * d, z = Math.sin(a) * d;
+          blob(k, 0x181614, [x, gy(x, z) + 0.03, z], r(0.8, 2.2), [1.4, 0.06, 1], 0.05);
+        }
+        tufts(26, lake.r * 2.4, [0xb8a25a, 0xa89048, 0xc8b06a]);
+        break;
+      }
+      case 'craterLake': {
+        // An old volcano's crater: its round lake, deep blue, filling it to
+        // the lowest point of its rim, the island in its middle (the land
+        // itself: see landmarkSites.basinAt). Its shores the country's own.
+        waters.push({ ...this.#lake(site), clean: true, mat: 'deep' });
         break;
       }
       case 'beaverPond': {

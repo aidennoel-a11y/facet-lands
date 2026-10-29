@@ -321,6 +321,16 @@ const steamMaterial = new MeshBasicMaterial({ color: 0xd8d4d0, transparent: true
 const PUFFS = 14;
 // (And the smoke off the lava lakes: slow, dark, rising high into the roof.)
 const smokeMaterial = new MeshBasicMaterial({ color: 0x3e3834, transparent: true, opacity: 0.26, depthWrite: false });
+// Things drifting in the air (see decorateChunk's `drift`): the silver mist
+// caverns' banks of fog, low over the floors, slowly rolling (lit by your
+// torch, faintly glowing of themselves); the firefly hollows' swarms,
+// specks of warm light wandering in the dark.
+const drifts = new Set();
+const mistGeometry = new OctahedronGeometry(1, 1);
+const mistMaterial = new MeshLambertMaterial({ color: 0xd0d4e0, emissive: 0x2c2e38, transparent: true, opacity: 0.13, depthWrite: false });
+const flyGeometry = new OctahedronGeometry(0.045, 0);
+const flyMaterial = new MeshBasicMaterial({ color: 0xffe27a });
+const DRIFT_EACH = [4, 12]; // (puffs of mist to a bank; fireflies to a swarm)
 
 /** Swims the cave fish and flies the bats (call every frame); `eye`: where you are, if underground. */
 export function updateCaveLife(time, eye = null) {
@@ -397,6 +407,31 @@ export function updateCaveLife(time, eye = null) {
       }
     }
     st.mesh.instanceMatrix.needsUpdate = true;
+  }
+  for (const set of drifts) {
+    if (!eye || Math.abs(eye.x - set.cx) > 160 || Math.abs(eye.z - set.cz) > 160) continue;
+    for (const { kind, items, mesh } of set.kinds) {
+      let k = 0;
+      const n = DRIFT_EACH[kind];
+      for (const v of items) {
+        for (let p = 0; p < n; p++) {
+          const q = v.phase + p * 1.7;
+          if (kind === 0) {
+            // (A puff of mist: broad and flat, rolling slowly round.)
+            const t = time * 0.05 + q;
+            bp.set(v.x - set.x0 + Math.sin(t) * 3.2, v.y + Math.sin(t * 1.3) * 0.25, v.z - set.z0 + Math.cos(t * 0.8) * 3.2);
+            bs.set(3.2 + Math.sin(q) * 0.8, 0.7, 2.6 + Math.cos(q) * 0.7);
+          } else {
+            // (A firefly: wandering, and blinking on and off.)
+            const t = time * 0.35 + q;
+            bp.set(v.x - set.x0 + Math.sin(t * 1.1) * 2.6 + Math.sin(t * 2.7) * 0.5, v.y + Math.sin(t * 0.9 + q) * 1.1, v.z - set.z0 + Math.cos(t * 0.8) * 2.6 + Math.cos(t * 3.1) * 0.5);
+            bs.setScalar(Math.max(0.01, Math.sin(time * 1.6 + q * 3) > -0.3 ? 1 : 0.01));
+          }
+          mesh.setMatrixAt(k++, fm.compose(bp, bq.identity(), bs));
+        }
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
   }
   for (const flock of roostFlocks) {
     if (!flock.mesh.visible) continue;
@@ -616,6 +651,7 @@ export function createCaveLayer(config) {
       if (group.userData.vineSet) vineSets.delete(group.userData.vineSet);
       if (group.userData.steam) steams.delete(group.userData.steam);
       if (group.userData.smoke) steams.delete(group.userData.smoke);
+      if (group.userData.drift) drifts.delete(group.userData.drift);
       if (group.userData.shroomSet) shroomSets.delete(group.userData.shroomSet);
       if (group.userData.glowSet) glowSets.delete(group.userData.glowSet);
       group.traverse((m) => (details.delete(m), rocks.delete(m)));
@@ -746,6 +782,22 @@ export function createCaveLayer(config) {
           steams.add(st);
           group.userData.steam = st;
         }
+        if (data.drift?.length) {
+          const set = { x0: cx * size, z0: cz * size, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size, kinds: [] };
+          for (const kind of [0, 1]) {
+            const items = [];
+            for (let k = 0; k < data.drift.length; k += 4) if (data.drift[k + 3] === kind) items.push({ x: data.drift[k], y: data.drift[k + 1], z: data.drift[k + 2], phase: ((k * 0.618) % 1) * 6.28 });
+            if (!items.length) continue;
+            const mesh = new InstancedMesh(kind ? flyGeometry : mistGeometry, kind ? flyMaterial : mistMaterial, items.length * DRIFT_EACH[kind]);
+            mesh.name = kind ? 'cave fireflies' : 'cave mist';
+            mesh.boundingSphere = boundsOf(items.flatMap((v) => [v.x - set.x0 - 6, v.y - 2, v.z - set.z0 - 6, v.x - set.x0 + 6, v.y + 3, v.z - set.z0 + 6]), 4);
+            mesh.renderOrder = 3;
+            group.add(detail(mesh));
+            set.kinds.push({ kind, items, mesh });
+          }
+          drifts.add(set);
+          group.userData.drift = set;
+        }
         if (data.vines?.length) {
           const counts = [0, 0, 0, 0], list = [];
           for (let k = 0; k < data.vines.length; k += 7) {
@@ -777,6 +829,7 @@ export function createCaveLayer(config) {
             if (li[k + 3] === 0) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 12, reach: 24, colour: 0x7ae8e0, steady: true });
             else if (li[k + 3] === 2) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 16, reach: 28, colour: 0xb69aff, steady: true }); // (a crystal cluster)
             else if (li[k + 3] === 3) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 18, reach: 32, colour: 0x6ae0d0, steady: true }); // (a glowing mushroom cap)
+            else if (li[k + 3] === 4) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 10, reach: 16, colour: 0xffc850, steady: true }); // (a swarm of fireflies)
             else list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 12, reach: 20, colour: 0x8affc8, steady: true });
           }
           const v = data.vines ?? [];
