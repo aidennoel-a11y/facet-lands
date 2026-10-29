@@ -729,16 +729,182 @@ export class CaveField {
     return null;
   }
 
+  // --- Natural openings -----------------------------------------------------------
+  //
+  // Ways into the caves the land has made itself, not the built entrances:
+  //  - a hole: a round hole in level ground, its shaft dropping straight
+  //    down into a cave that lies under it;
+  //  - a mouth: an opening in a steep slope or cliff, a tunnel running on
+  //    into the hill, falling gently, to a cave;
+  //  - the abyss (very rare): a great round shaft from the surface straight
+  //    down into one of the deep volcanic caverns, a ledge spiralling down
+  //    its walls, smoke rising out of it off the lava far below;
+  //  - a waterfall hall (rare): a skylight in the land over one of the great
+  //    caverns, daylight falling down into it, a stream pouring over its lip.
+  // Each is shaped like an entrance (`natural`: see entrancesNear), so the
+  // land is cut, the caves meshed and the physics run the same way; its
+  // collar of rock at the top drawn by EntranceLayer.
+  static NATURAL = 400;
+
+  /** The natural opening in one region (or null), cached. */
+  natural(rx, rz) {
+    const key = rx * 65536 + rz;
+    const cache = (this.naturals ??= new Map());
+    let e = cache.get(key);
+    if (e === undefined) {
+      e = this.#makeNatural(rx, rz);
+      cache.set(key, e);
+    }
+    return e;
+  }
+
+  #makeNatural(rx, rz) {
+    const g = this.generator, N = CaveField.NATURAL, sea = this.seaLevel;
+    const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x4e7a1) * 4294967296);
+    const roll = rand();
+    if (roll > 0.55) return null;
+    const H = (x, z) => g.getHeight(x, z);
+    const pick = () => [(rx + 0.15 + rand() * 0.7) * N, (rz + 0.15 + rand() * 0.7) * N];
+    // (The lowest and highest of the ground round (x, z), r out.)
+    const rim = (x, z, r) => {
+      let lo = Infinity, hi = -Infinity;
+      for (let k = 0; k < 12; k++) {
+        const h = H(x + Math.cos((k / 12) * Math.PI * 2) * r, z + Math.sin((k / 12) * Math.PI * 2) * r);
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
+      return [lo, hi];
+    };
+    const dry = (x, z) => g.getOceanness(x, z) < 0.05 && !((g.getBiomeWeights(x, z, {}).saltFlat ?? 0) > 0.15) && !this.nearEntrance(x, z, 30) && !g.rivers?.at?.(x, z, 10);
+    for (let t = 0; t < 14; t++) {
+      const [x, z] = pick();
+      if (!dry(x, z)) continue;
+      if (roll < 0.06) {
+        // The abyss and the waterfall halls: over a great cavern.
+        const ch = this.chamberAt(x, z);
+        if (!ch || ch.e > 0.45 || ch.c.shaft || ch.c.flooded) continue;
+        const deep = ch.c.y < -110;
+        if ((roll < 0.012) !== deep) continue; // (the abyss only over the deepest; the halls over the rest)
+        const r = deep ? 13 + rand() * 7 : 5 + rand() * 3.5;
+        const [lo, hi] = rim(x, z, r + 1);
+        if (hi - lo > (deep ? 8 : 4) || lo < sea + 6) continue;
+        if (!deep && lo - (ch.c.y + ch.c.ry * 0.5) < 12) continue; // (a good roof of rock over the hall)
+        const extra = {};
+        if (!deep) {
+          // (The stream over its lip, falling to the cavern's floor, or its lake.)
+          const a = rand() * Math.PI * 2, fx = x + Math.cos(a) * (r - 0.6), fz = z + Math.sin(a) * (r - 0.6);
+          extra.fall = { x: fx, z: fz, top: H(x + Math.cos(a) * (r + 0.5), z + Math.sin(a) * (r + 0.5)) - 0.2, bottom: Math.max(this.chamberFloor(ch.c, fx, fz), ch.c.lake), yaw: a };
+        }
+        return this.#naturalShaft(deep ? 'abyss' : 'hall', rx, rz, x, z, r, lo, ch.c.y, rand, extra);
+      }
+      const h0 = H(x, z);
+      if (h0 < sea + 6) continue;
+      const gx = (H(x + 3, z) - H(x - 3, z)) / 6, gz = (H(x, z + 3) - H(x, z - 3)) / 6, grade = Math.hypot(gx, gz);
+      if (grade < 0.25) {
+        // A hole: on level ground, over a cave.
+        const r = 2.4 + rand() * 2.2;
+        const [lo, hi] = rim(x, z, r + 1);
+        if (hi - lo > 3) continue;
+        const rr = this.regionRock(x, z);
+        let bottom = null;
+        for (let y = lo - 8; y > Math.max(this.bottom + 2, lo - 75) && bottom === null; y -= 1.5) if (this.legacy(x, y, z, h0, rr) < -1.2) bottom = y;
+        if (bottom === null) continue;
+        return this.#naturalShaft('hole', rx, rz, x, z, r, lo, bottom, rand, {});
+      }
+      if (grade > 0.9) {
+        // A mouth: in the face of a steep slope, a tunnel on into the hill
+        // (uphill), falling gently, till it comes to a cave.
+        const dx = gx / grade, dz = gz / grade, r = 2.2 + rand() * 1.3, cy = h0 + r * 0.55;
+        let uTop = null;
+        for (let u = 0; u <= 9 && uTop === null; u += 0.5) if (H(x + dx * u, z + dz * u) > cy + r + 0.6) uTop = u;
+        if (uTop === null) continue;
+        let end = null;
+        for (let u = uTop + 4; u < 80 && end === null; u += 2) {
+          const px = x + dx * u, pz = z + dz * u, py = cy - Math.max(0, u - uTop - 4) * 0.3, ph = H(px, pz);
+          if (ph < py + r + 3) break; // (it would break out of the hill)
+          if (this.legacy(px, py, pz, ph, this.regionRock(px, pz)) < -1.2) end = u;
+        }
+        if (end === null) continue;
+        const L = uTop + 3;
+        const P = (u) => ({ x: x + dx * u, y: cy - Math.max(0, u - uTop - 4) * 0.3, z: z + dz * u });
+        const pts = [P(-1.5), P(L), P(uTop + 4), P(end + 2)];
+        const segments = [[pts[0], pts[1]], [pts[1], pts[2]], [pts[2], pts[3]]];
+        const w = r + 0.4;
+        const holePieces = [[[-1.5, -w], [uTop + 0.5, -w], [uTop + 0.5, w], [-1.5, w]]];
+        const wx = (u, v) => x + dx * u - dz * v, wz = (u, v) => z + dz * u + dx * v;
+        const xs = [...pts.map((p) => p.x), ...holePieces[0].map(([u, v]) => wx(u, v))], zs = [...pts.map((p) => p.z), ...holePieces[0].map(([u, v]) => wz(u, v))];
+        const ys = pts.map((p) => p.y);
+        return {
+          id: `n${rx},${rz}`, natural: true, kind: 'mouth', x, z, r, cy, uTop, L, seed: Math.floor(rand() * 1e6),
+          shape: { ox: x, oz: z, dx, dz },
+          holePieces,
+          holeBounds: { minX: Math.min(...holePieces[0].map(([u, v]) => wx(u, v))), maxX: Math.max(...holePieces[0].map(([u, v]) => wx(u, v))), minZ: Math.min(...holePieces[0].map(([u, v]) => wz(u, v))), maxZ: Math.max(...holePieces[0].map(([u, v]) => wz(u, v))) },
+          mouth: { x: wx(1.5, 0), y: cy - r * 0.4, z: wz(1.5, 0) },
+          start: pts[0], end: pts[3], segments,
+          minY: Math.min(...ys) - r - 2, maxY: Math.max(...ys) + r + 3,
+          bounds: { minX: Math.min(...xs) - r - 3, maxX: Math.max(...xs) + r + 3, minZ: Math.min(...zs) - r - 3, maxZ: Math.max(...zs) + r + 3 },
+        };
+      }
+    }
+    return null;
+  }
+
+  // A shaft straight down (a hole, the abyss, a hall's skylight): its
+  // opening r across at the ground `top`, down to `bottom`.
+  #naturalShaft(kind, rx, rz, x, z, r, top, bottom, rand, extra) {
+    const holePieces = [Array.from({ length: 20 }, (_, k) => [Math.cos((k / 20) * Math.PI * 2) * r, Math.sin((k / 20) * Math.PI * 2) * r])];
+    const tubeTop = top - (kind === 'hole' ? 3.5 : 5);
+    const reach = r * 1.25 + 3;
+    return {
+      id: `n${rx},${rz}`, natural: true, kind, x, z, r, top, tubeTop, bottom, pitch: 9, seed: Math.floor(rand() * 1e6), ...extra,
+      shape: { ox: x, oz: z, dx: 1, dz: 0 },
+      holePieces,
+      holeBounds: { minX: x - r, maxX: x + r, minZ: z - r, maxZ: z + r },
+      mouth: { x, y: top - 2, z },
+      start: { x, y: top, z }, end: { x, y: bottom, z },
+      segments: [[{ x, y: top + 2, z }, { x, y: bottom, z }]],
+      minY: bottom - 6, maxY: top + 4,
+      bounds: { minX: x - reach, maxX: x + reach, minZ: z - reach, maxZ: z + reach },
+    };
+  }
+
+  /** How wide a natural shaft is at angle `a` round it and height y: never narrower than its opening. */
+  static shaftRadius(e, a, y) {
+    return e.r * (1 + 0.08 * (1 + Math.sin(a * 3 + e.seed)) + 0.04 * (1 + Math.sin(a * 7 - e.seed + y * 0.15)));
+  }
+
+  /** Signed distance to a natural shaft's space (negative inside): its ledge spiralling down, in the abyss. */
+  static shaft(e, x, y, z) {
+    const dx = x - e.x, dz = z - e.z, h = Math.hypot(dx, dz), a = Math.atan2(dz, dx);
+    const R = CaveField.shaftRadius(e, a, y);
+    let d = Math.max(h - R, e.bottom - 3 - y, y - (e.top + 4));
+    if (e.kind === 'abyss' && h > R - 3.4 && y < e.tubeTop - 4 && y > e.bottom + 8) {
+      const t = (e.tubeTop - y) / e.pitch + a / (Math.PI * 2);
+      if (t - Math.floor(t) < 0.12) d = Math.max(d, 0.6);
+    }
+    return d;
+  }
+
   /** The mines near a box (for their timbers, rails and chests: see MineProps). */
   minesNear(minX, minZ, maxX, maxZ) {
     return this.entrancesNear(minX, minZ, maxX, maxZ).filter((e) => e.mine).map((e) => e.mine);
   }
 
-  /** Entrances whose built part or winding tunnel comes near a box. */
+  /** Entrances whose built part or winding tunnel comes near a box (the natural openings too: see #makeNatural). */
   entrancesNear(minX, minZ, maxX, maxZ) {
     const R = this.entranceRegion;
     const reach = 300; // (a mine's workings reach a long way in)
     const out = [];
+    const N = CaveField.NATURAL, nr = 90;
+    for (let rz = Math.floor((minZ - nr) / N); rz <= Math.floor((maxZ + nr) / N); rz++) {
+      for (let rx = Math.floor((minX - nr) / N); rx <= Math.floor((maxX + nr) / N); rx++) {
+        const e = this.natural(rx, rz);
+        if (!e) continue;
+        const b = e.bounds;
+        if (b.maxX < minX || b.minX > maxX || b.maxZ < minZ || b.minZ > maxZ) continue;
+        out.push(e);
+      }
+    }
     for (let rz = Math.floor((minZ - reach) / R); rz <= Math.floor((maxZ + reach) / R); rz++) {
       for (let rx = Math.floor((minX - reach) / R); rx <= Math.floor((maxX + reach) / R); rx++) {
         const e = this.entrance(rx, rz);
@@ -819,6 +985,11 @@ export class CaveField {
 
   /** Is (x, z) inside an entrance's pit (where the terrain mesh has a hole)? */
   static inHole(e, x, z) {
+    if (e.natural) {
+      if (e.kind !== 'mouth') return Math.hypot(x - e.x, z - e.z) < e.r * 0.98;
+      const [u, v] = CaveField.local(e, x, z);
+      return u > -1.5 && u < e.uTop + 0.5 && Math.abs(v) < e.r + 0.4;
+    }
     const [u, v] = CaveField.across(e, x, z);
     return u > 0 && u < e.shape.L && Math.abs(v) < CaveField.halfWidth(e, u);
   }
@@ -829,6 +1000,7 @@ export class CaveField {
    * alongside the cave field.
    */
   static corridor(e, x, y, z) {
+    if (e.natural) return CaveField.ramp(e, x, y, z);
     const s = e.shape;
     const [u, v] = CaveField.across(e, x, z);
     const floor = CaveField.floorAt(e, u);
@@ -846,6 +1018,7 @@ export class CaveField {
    * short chamber where the tunnel hands over to the cave.
    */
   static hull(e, x, y, z) {
+    if (e.natural) return Infinity;
     const s = e.shape;
     const [u, v] = CaveField.across(e, x, z);
     const floor = CaveField.floorAt(e, u);
@@ -860,6 +1033,12 @@ export class CaveField {
    * mesh leaves this out (EntranceLayer draws it).
    */
   static inBuilt(e, x, y, z) {
+    if (e.natural) {
+      // (Its collar of rock, at the top: see EntranceLayer.)
+      if (e.kind !== 'mouth') return y > e.tubeTop - 3 && y < e.top + 40 && Math.hypot(x - e.x, z - e.z) < e.r * 1.25 + 2.5;
+      const [u, v] = CaveField.local(e, x, z);
+      return u > -2 && u < e.L && Math.abs(v) < e.r + 2.5 && y > e.cy - e.r - 3 && y < e.cy + e.r + 8;
+    }
     const s = e.shape;
     const [u, v] = CaveField.across(e, x, z);
     return u > -1.5 && u < s.E - 0.3 && Math.abs(v) < CaveField.halfWidth(e, u) + 2.5 && y > CaveField.floorAt(e, u) - 3;
@@ -872,12 +1051,17 @@ export class CaveField {
    */
   static skyLight(entrances, x, y, z) {
     let best = Infinity;
-    for (const e of entrances) best = Math.min(best, Math.hypot(x - e.mouth.x, y - e.mouth.y, z - e.mouth.z));
+    for (const e of entrances) {
+      // (Down a shaft open to the sky, daylight all the way down it, and spreading out under it.)
+      if (e.natural && e.kind !== 'mouth') best = Math.min(best, Math.max(0, Math.hypot(x - e.x, z - e.z) - e.r) * 1.4 + Math.max(0, e.bottom - y) + (e.kind === 'hole' ? Math.max(0, e.top - y) * 0.5 : 0));
+      else best = Math.min(best, Math.hypot(x - e.mouth.x, y - e.mouth.y, z - e.mouth.z));
+    }
     return Math.min(1, Math.max(0.03, 1.2 - best / 28));
   }
 
   /** Signed distance to an entrance's winding tunnel (a chain of capsules): negative inside. */
   static ramp(e, x, y, z) {
+    if (e.natural && e.kind !== 'mouth') return CaveField.shaft(e, x, y, z);
     let best = Infinity;
     const r = e.r;
     for (let s = 0; s < e.segments.length; s++) {
@@ -892,6 +1076,7 @@ export class CaveField {
       const widen = 1 - 0.18 * k * k * (3 - 2 * k);
       best = Math.min(best, Math.sqrt((qx * qx + qz * qz) * widen * widen + qy * qy) + floorLift - r);
     }
+    if (e.natural) return best; // (a natural mouth: no built floor)
     // Where it starts, inside the rock tunnel, keep it just under the floor
     // (so the cave mesh there stays hidden below the built floor).
     const [u, v] = CaveField.across(e, x, z);

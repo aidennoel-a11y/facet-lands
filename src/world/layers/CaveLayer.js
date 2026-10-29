@@ -1,5 +1,5 @@
 import { boundsOf } from '../../render/cullBounds.js';
-import { BoxGeometry, BufferAttribute, Color, DoubleSide, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, ShaderChunk, Sphere, Vector3 } from 'three';
+import { BoxGeometry, BufferAttribute, CircleGeometry, Color, DoubleSide, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, PlaneGeometry, Quaternion, ShaderChunk, Sphere, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bonesModel } from '../../survival/models.js';
 import { salamander as salamanderModel } from '../../wildlife/models.js';
@@ -331,6 +331,13 @@ const mistMaterial = new MeshLambertMaterial({ color: 0xd0d4e0, emissive: 0x2c2e
 const flyGeometry = new OctahedronGeometry(0.045, 0);
 const flyMaterial = new MeshBasicMaterial({ color: 0xffe27a });
 const DRIFT_EACH = [4, 12]; // (puffs of mist to a bank; fireflies to a swarm)
+// A waterfall hall's fall (see CaveField's natural openings): a ribbon of
+// white water from the skylight's lip down to the cavern's floor, foam
+// where it lands.
+const fallGeometry = new PlaneGeometry(1, 1);
+const fallMaterial = new MeshBasicMaterial({ color: 0xe6f2f6, transparent: true, opacity: 0.62, depthWrite: false, side: DoubleSide });
+const foamGeometry = new CircleGeometry(1, 14).rotateX(-Math.PI / 2);
+const foamMaterial = new MeshBasicMaterial({ color: 0xf4fafc, transparent: true, opacity: 0.55, depthWrite: false });
 
 /** Swims the cave fish and flies the bats (call every frame); `eye`: where you are, if underground. */
 export function updateCaveLife(time, eye = null) {
@@ -652,6 +659,7 @@ export function createCaveLayer(config) {
       if (group.userData.steam) steams.delete(group.userData.steam);
       if (group.userData.smoke) steams.delete(group.userData.smoke);
       if (group.userData.drift) drifts.delete(group.userData.drift);
+      for (const st of group.userData.openSmoke ?? []) steams.delete(st);
       if (group.userData.shroomSet) shroomSets.delete(group.userData.shroomSet);
       if (group.userData.glowSet) glowSets.delete(group.userData.glowSet);
       group.traverse((m) => (details.delete(m), rocks.delete(m)));
@@ -782,6 +790,42 @@ export function createCaveLayer(config) {
           steams.add(st);
           group.userData.steam = st;
         }
+        if (data.openings?.length) {
+          for (let k = 0; k < data.openings.length; k += 11) {
+            const [kind, x, z, top, bottom, r, fx, fz, ftop, fbottom, fyaw] = data.openings.subarray(k, k + 11);
+            if (kind === 1) {
+              // The abyss: smoke rising all the way up it off the lava far
+              // below, and out over its lip into the open air.
+              const vents = [];
+              for (let q = 0; q < 12; q++) {
+                const a = q * 2.4, d = r * 0.55 * ((q * 0.37) % 1);
+                vents.push({ x: x + Math.cos(a) * d, y: bottom + ((top + 6 - bottom) * q) / 12, z: z + Math.sin(a) * d, s: 3.2, phase: q * 0.7 });
+              }
+              const mesh = new InstancedMesh(steamGeometry, smokeMaterial, vents.length * PUFFS);
+              mesh.name = 'abyss smoke';
+              mesh.boundingSphere = new Sphere(new Vector3(x - cx * size, (top + bottom) / 2, z - cz * size), (top - bottom) / 2 + 40);
+              mesh.renderOrder = 3;
+              group.add(detail(mesh));
+              const st = { vents, mesh, x0: cx * size, z0: cz * size, cx: x, cz: z };
+              steams.add(st);
+              (group.userData.openSmoke ??= []).push(st);
+            } else if (ftop > fbottom + 2) {
+              const h = ftop - fbottom, turn = Math.atan2(-Math.cos(fyaw), -Math.sin(fyaw));
+              const fall = new Mesh(fallGeometry, fallMaterial);
+              fall.scale.set(2.4, h, 1);
+              fall.position.set(fx - cx * size, fbottom + h / 2, fz - cz * size);
+              fall.rotation.y = turn;
+              fall.renderOrder = 3;
+              fall.name = 'hall falls';
+              group.add(fall);
+              const foam = new Mesh(foamGeometry, foamMaterial);
+              foam.scale.setScalar(2.6);
+              foam.position.set(fx - cx * size, fbottom + 0.12, fz - cz * size);
+              foam.renderOrder = 3;
+              group.add(foam);
+            }
+          }
+        }
         if (data.drift?.length) {
           const set = { x0: cx * size, z0: cz * size, cx: (cx + 0.5) * size, cz: (cz + 0.5) * size, kinds: [] };
           for (const kind of [0, 1]) {
@@ -830,6 +874,11 @@ export function createCaveLayer(config) {
             else if (li[k + 3] === 2) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 16, reach: 28, colour: 0xb69aff, steady: true }); // (a crystal cluster)
             else if (li[k + 3] === 3) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 18, reach: 32, colour: 0x6ae0d0, steady: true }); // (a glowing mushroom cap)
             else if (li[k + 3] === 4) list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 10, reach: 16, colour: 0xffc850, steady: true }); // (a swarm of fireflies)
+          }
+          // (The lava's glow at the foot of the abyss, up its walls.)
+          const op = data.openings ?? [];
+          for (let k = 0; k < op.length; k += 11) {
+            if (op[k] === 1) list.push({ x: op[k + 1], y: op[k + 4] + 4, z: op[k + 2], strength: 30, reach: 80, colour: 0xff6420, lava: true });
             else list.push({ x: li[k], y: li[k + 1], z: li[k + 2], strength: 12, reach: 20, colour: 0x8affc8, steady: true });
           }
           const v = data.vines ?? [];

@@ -814,13 +814,14 @@ export class TerrainGenerator {
   /**
    * Keeps a patch of some kind of country (`raw` at a point, 0..1) only
    * where it's part of a real stretch of it, a rounded one: the patch is
-   * shrunk by about 650 m all round and grown back (a morphological
-   * opening), so anything narrower than about 1.3 km (a strip, a thin
-   * arm, a scrap) goes, and what stays is blobs, never lines. Worked out
-   * on a 128 m grid (remembered per kind) and blended between its points.
+   * shrunk by about 650 m all round (`R` cells of 128 m) and grown back
+   * (a morphological opening), so anything narrower than about 1.3 km (a
+   * strip, a thin arm, a scrap) goes, and what stays is blobs, never lines.
+   * Worked out on a 128 m grid (remembered per kind) and blended between
+   * its points.
    */
-  #minSize(key, x, z, raw, need) {
-    const G = 128, R = 5; // (grid cells: 640 m)
+  #minSize(key, x, z, raw, need, R = 5) {
+    const G = 128; // (R grid cells: 640 m by default)
     const gx = Math.floor(x / G), gz = Math.floor(z / G);
     const fx = x / G - gx, fz = z / G - gz;
     const all = this._minSize ?? (this._minSize = {});
@@ -996,7 +997,7 @@ export class TerrainGenerator {
         // Warm country? Its peaks real mountains, and none high enough for snow?
         // (Its cells in order: the same ones looked at, whichever cell it was found from.)
         cells.sort((a, b) => a - b);
-        let warm = 0, top = -Infinity, minKey = Infinity;
+        let warm = 0, top = -Infinity, minKey = Infinity, peaks = 0;
         const step = Math.max(1, Math.floor(cells.length / 120)); // (a hundred or so of its cells looked at closely)
         for (let n = 0; n < cells.length; n++) {
           const c = cells[n];
@@ -1004,15 +1005,18 @@ export class TerrainGenerator {
           if (n % step) continue;
           const x = (Math.floor(c / 65536) - 32768 + 0.5) * G, z = ((c % 65536) - 32768 + 0.5) * G;
           if (pr.getAridity(x, z) < 0.42) warm++; // (green, well-watered country: not the dry)
-          if (pr.getMountainness(x, z) > 0.45) top = Math.max(top, pr.landHeight(x, z));
+          const mtn = pr.getMountainness(x, z);
+          if (mtn > 0.45) top = Math.max(top, pr.landHeight(x, z));
+          if (mtn > 0.58) peaks++; // (its high ground: the jungle mountains' own, see #biomeWeights)
         }
         const mi = Math.floor(minKey / 65536) - 32768, mk = (minKey % 65536) - 32768;
         // (About one range in five, of those in green country with real mountains in them, and
-        // big enough to be a range of them, not a lone hill or two (some 6 km² or more), and not
-        // one of the great ranges (no more than some 50 km², cells and all), so a jungle range is
-        // the whole of its range, never touching another's mountains. No snow
+        // big enough to be a range of them, not a lone hill or two (some 10 km² or more), with
+        // peaks to it (real mountains over 140 m, some of them), and not one of the great ranges
+        // (no more than some 70 km², cells and all), so a jungle range is the whole of its range,
+        // never touching another's mountains. No snow
         // lies on their peaks: green and earth to the tops, see biomes' jungleMountains.)
-        range = { jungle: cells.length >= 60 && cells.length <= 500 && warm > Math.ceil(cells.length / step) * 0.5 && top > 120 && top < 175 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.25 };
+        range = { jungle: cells.length >= 100 && cells.length <= 700 && warm > Math.ceil(cells.length / step) * 0.5 && top > 140 && top < 178 && peaks >= 3 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.25 };
       }
     }
     if (ranges.size > 400000) ranges.clear();
@@ -1063,8 +1067,11 @@ export class TerrainGenerator {
   #jungleZone(x, z, range, aridity) {
     if (aridity > 0.5) return 0;
     // (Smoothed over a few hundred metres: a jungle is one rounded stretch
-    // of country, never a strip or a scatter of patches.)
-    return smoothstep(T.jungle, T.jungle + 0.2, this.#jungleSuit(x, z));
+    // of country, never a strip or a scatter of patches. And none smaller
+    // than half a square kilometre or so: shrunk by 380 m and grown back.)
+    const zone = (px, pz) => smoothstep(T.jungle, T.jungle + 0.2, this.#jungleSuit(px, pz));
+    const j = zone(x, z);
+    return j > 0 ? j * this.#minSize('jungle', x, z, zone, 0.5, 3) : 0;
   }
 
   // How suited to jungle the country round (x, z) is: its raw zone averaged

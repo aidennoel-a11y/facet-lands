@@ -1454,6 +1454,12 @@ export function buildChunkData(field, cx, cz, chunkSize) {
     lights: new Float32Array(deco.lights),
     geysers: new Float32Array(deco.geysers),
     giants: new Float32Array(deco.giants),
+    drift: new Float32Array(deco.drift),
+    // (The abyss and the waterfall halls whose middle is in this chunk: their
+    // smoke, their falls, see CaveLayer. [kind (1 abyss, 2 hall), x, z, top,
+    // bottom, r, fall x, fall z, fall top, fall bottom, fall yaw, ...])
+    openings: new Float32Array(grid.entrances.filter((e) => e.natural && (e.kind === 'abyss' || e.kind === 'hall') && Math.floor(e.x / chunkSize) === cx && Math.floor(e.z / chunkSize) === cz)
+      .flatMap((e) => [e.kind === 'abyss' ? 1 : 2, e.x, e.z, e.top, e.bottom, e.r, e.fall?.x ?? 0, e.fall?.z ?? 0, e.fall?.top ?? 0, e.fall?.bottom ?? 0, e.fall?.yaw ?? 0])),
     water: liquid.water ?? null,
     lava: liquid.lava ?? null,
   };
@@ -1472,5 +1478,7 @@ export function chunkDataBuffers(data) {
   if (data.lights) out.push(data.lights.buffer);
   if (data.geysers) out.push(data.geysers.buffer);
   if (data.giants) out.push(data.giants.buffer);
+  if (data.drift) out.push(data.drift.buffer);
+  if (data.openings) out.push(data.openings.buffer);
   return [...new Set(out)];
 }

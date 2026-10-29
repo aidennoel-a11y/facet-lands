@@ -397,6 +397,55 @@ function buildEntrance(e, generator, groundHeightAt, x0, z0) {
  * The built part of each cave entrance (walls, ramp, ledge, lined tunnel),
  * on full-detail chunks: the ones whose terrain has the entrance's hole.
  */
+/**
+ * The collar of rock at the top of a natural opening (see CaveField's
+ * natural openings): for a shaft, its rough round wall from the cut edge of
+ * the ground down to where the cave takes over, soil at the top and rock
+ * below, overhanging where the shaft widens under the lip; for a mouth in
+ * a cliff, a short rough arched tunnel into the face, its floor level.
+ */
+function buildNatural(e, generator, groundHeightAt, x0, z0) {
+  const P = coloursAt(generator, e.x, e.z);
+  const b = new Builder(e, x0, z0, generator.seed ^ 0x51ed27, P);
+  const ground = (u, v) => {
+    const [x, z] = CaveField.world(e, u, v);
+    const h = groundHeightAt(x - x0, z - z0);
+    return Number.isFinite(h) ? h : generator.getHeight(x, z);
+  };
+  if (e.kind !== 'mouth') {
+    const N = e.kind === 'abyss' ? 40 : 24, rows = 6, depth = e.top - e.tubeTop + 2.5;
+    const inward = (p, q, r) => [-(p[0] + q[0] + r[0]), -(p[1] + q[1] + r[1]), 0];
+    const ring = (k) => Array.from({ length: N + 1 }, (_, i) => {
+      const a = ((i % N) / N) * Math.PI * 2;
+      if (k === 0) return [Math.cos(a) * e.r, Math.sin(a) * e.r, ground(Math.cos(a) * (e.r + 0.25), Math.sin(a) * (e.r + 0.25)) + 0.02];
+      const y = e.top - (depth * k) / rows;
+      const R = CaveField.shaftRadius(e, a, y) * (1 + 0.08 * (hash2(i % N, k, e.seed) - 0.5));
+      return [Math.cos(a) * R, Math.sin(a) * R, y];
+    });
+    let upper = ring(0);
+    for (let k = 0; k < rows; k++) {
+      const lower = ring(k + 1);
+      for (let i = 0; i < N; i++) b.quad(upper[i], upper[i + 1], lower[i + 1], lower[i], k === 0 ? P.soil : P.rock, inward, k < 2);
+      upper = lower;
+    }
+  } else {
+    // (Rings round the tunnel every metre, its floor flattened, each a little rough.)
+    const M = 14, floor = e.cy - e.r * 0.55;
+    const ring = (u) => Array.from({ length: M + 1 }, (_, j) => {
+      const t = ((j % M) / M) * Math.PI * 2, R = e.r * (1 + 0.12 * (hash2(Math.round(u * 3), j % M, e.seed) - 0.5));
+      return [u, Math.cos(t) * R, Math.max(e.cy + Math.sin(t) * R, floor)];
+    });
+    const inward = (p, q, r) => [0, -(p[1] + q[1] + r[1]), e.cy * 3 - (p[2] + q[2] + r[2])];
+    let prev = ring(-1);
+    for (let u = 0; u <= e.L; u += 1) {
+      const next = ring(u);
+      for (let j = 0; j < M; j++) b.quad(prev[j], next[j], next[j + 1], prev[j + 1], prev[j][2] <= floor + 0.01 ? P.path : P.rock, inward, u < e.uTop + 1);
+      prev = next;
+    }
+  }
+  return [b.geometry()];
+}
+
 export function createEntranceLayer(config, material) {
   return {
     name: 'entrances',
@@ -411,7 +460,7 @@ export function createEntranceLayer(config, material) {
         .mouthsNear(x0, z0, x0 + size, z0 + size)
         .filter((e) => Math.floor(e.shape.ox / size) === cx && Math.floor(e.shape.oz / size) === cz);
       if (!entrances.length) return null;
-      const geometry = mergeGeometries(entrances.flatMap((e) => buildEntrance(e, generator, groundHeightAt, x0, z0)));
+      const geometry = mergeGeometries(entrances.flatMap((e) => (e.natural ? buildNatural : buildEntrance)(e, generator, groundHeightAt, x0, z0)));
       geometry.computeBoundingSphere();
       const mesh = new Mesh(geometry, material);
       mesh.name = 'cave entrance';
