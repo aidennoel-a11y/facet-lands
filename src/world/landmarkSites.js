@@ -644,22 +644,42 @@ export class LandmarkSites {
     return this.poolsOf(s)[0]?.level;
   }
 
-  /** The sites with hollows whose square (x, z) is in, with their pools. */
-  *#hollowsAt(x, z) {
-    for (const kind of BASIN_KINDS) {
-      const C = LANDMARKS[kind].cell, ci = Math.floor(x / C), ck = Math.floor(z / C);
-      // (The falls run on out of their squares: the ones round about asked too.)
-      const n = LANDMARKS[kind].falls || LANDMARKS[kind].spread ? 1 : 0;
-      for (let k = ck - n; k <= ck + n; k++) {
-        for (let i = ci - n; i <= ci + n; i++) {
-          const s = this.site(kind, i, k);
-          if (!s) continue;
-          const pools = this.poolsOf(s);
-          if (Math.abs(x - s.x) > s.extent || Math.abs(z - s.z) > s.extent) continue;
-          yield [s, pools];
-        }
+  /** The sites with hollows whose square (x, z) is in, with their pools. [[site, pools]...] */
+  #hollowsAt(x, z) {
+    const out = [];
+    for (let n = 0; n < BASIN_KINDS.length; n++) {
+      const kind = BASIN_KINDS[n], C = LANDMARKS[kind].cell;
+      for (const e of this.#hollowSquare(n, kind, Math.floor(x / C), Math.floor(z / C))) {
+        const s = e[0];
+        if (Math.abs(x - s.x) > s.extent || Math.abs(z - s.z) > s.extent) continue;
+        out.push(e);
       }
     }
+    return out;
+  }
+
+  // The sites with hollows of one kind that can reach into square (ci, ck),
+  // with their pools: remembered (asked for at every point of the land),
+  // but only once they're all worked out (see site's lazy).
+  #hollowSquare(n, kind, ci, ck) {
+    const near = (this.hollowNear ??= BASIN_KINDS.map(() => new Map()))[n];
+    const key = ((ci + 32768) << 16) | ((ck + 32768) & 0xffff);
+    let list = near.get(key);
+    if (list) return list;
+    list = [];
+    // (The falls run on out of their squares: the ones round about asked too.)
+    const r = LANDMARKS[kind].falls || LANDMARKS[kind].spread ? 1 : 0;
+    for (let k = ck - r; k <= ck + r; k++) {
+      for (let i = ci - r; i <= ci + r; i++) {
+        const s = this.site(kind, i, k);
+        if (s) list.push([s, this.poolsOf(s)]);
+      }
+    }
+    if (!this.lazy) {
+      if (near.size > 4000) near.clear();
+      near.set(key, list);
+    }
+    return list;
   }
 
   /** How far out a pool's edge lies that way (times its radius): lobed and uneven, like a lake's. */

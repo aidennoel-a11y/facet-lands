@@ -131,6 +131,9 @@ for (const b of Object.values(BANKS)) {
 }
 // The badlands' bands of clay and sandstone, bottom to top (repeating).
 const BADLANDS = [0xd9c9a8, 0xc7a07e, 0xe6dcc6, 0xb98b78, 0xa59a8c, 0xdcc49a, 0xc79a86].map((c) => new Color(c));
+/** A key for cell (i, j) of a grid, for a Map: a small integer, quick to look up. */
+const cellKey = (i, j) => ((i + 32768) << 16) | ((j + 32768) & 0xffff);
+
 const VOLCANIC_ROCK = new Color(0x5e5955); // the volcanic highlands' rocky ground
 const bankTmp = new Color();
 
@@ -617,7 +620,7 @@ export class TerrainGenerator {
     const cache = caches.get(reach) ?? (caches.set(reach, new Map()), caches.get(reach));
     const basin = (px, pz) => this.#seaBasin(px, pz, this.#rangeField(px, pz, {}), this.#rawAridityAt(px, pz));
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         const cx = i * G, cz = j * G;
@@ -637,8 +640,8 @@ export class TerrainGenerator {
       }
       return v;
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 
@@ -668,7 +671,7 @@ export class TerrainGenerator {
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._mangroveSpread ?? (this._mangroveSpread = new Map());
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         const cx = i * G, cz = j * G;
@@ -757,9 +760,9 @@ export class TerrainGenerator {
    */
   #volcanoZone(x, z, range) {
     if (smoothstep(0.51, 0.61, this.#volcanoNoise(x, z)) <= 0) return 0;
-    // (Never a little scrap of it: under about 2 km across, it goes.)
+    // (Never a little scrap of it: under about a square kilometre, it goes.)
     // (Mountain ranges cut into it too, so they count before it's sized.)
-    const keep = this.#minSize('volcanic', x, z, (px, pz) => this.#volcanoRaw(px, pz) * (1 - smoothstep(0.02, 0.2, this.#rangeField(px, pz, {}).value)), 0.5, 6);
+    const keep = this.#minSize('volcanic', x, z, (px, pz) => this.#volcanoRaw(px, pz) * (1 - smoothstep(0.02, 0.2, this.#rangeField(px, pz, {}).value)), 0.5, 4.5);
     return keep > 0 ? this.#volcanoRaw(x, z) * keep * (1 - smoothstep(0.02, 0.2, range)) : 0;
   }
 
@@ -786,39 +789,66 @@ export class TerrainGenerator {
   #blobs(key, x, z, C, chance, rmin, rmax, salt, suit, centre = null) {
     const all = this._blobs ?? (this._blobs = {});
     const cache = all[key] ?? (all[key] = new Map());
-    const s = this.seed ^ salt;
     const ci = Math.floor(x / C), cj = Math.floor(z / C);
-    let best = 0;
-    for (let dj = -1; dj <= 1; dj++) {
-      for (let di = -1; di <= 1; di++) {
-        const i = ci + di, j = cj + dj, k = (i + 32768) * 65536 + (j + 32768);
-        let b = cache.get(k);
-        if (b === undefined) {
-          b = null;
-          // (A few spots tried in the cell for its middle.)
-          for (let t = 0; t < 6 && !b && hash2(i, j, s) < chance; t++) {
-            const bx = (i + 0.2 + 0.6 * hash2(i + t * 71, j, s + 1)) * C, bz = (j + 0.2 + 0.6 * hash2(i, j + t * 71, s + 2)) * C;
-            const r = rmin + (rmax - rmin) * hash2(i, j, s + 3);
-            let ok = suit(bx, bz) > 0.5 && (!centre || centre(bx, bz, r));
-            // (And most of the way round, half way out.)
-            for (let q = 0, misses = 0; q < 8 && ok; q++) {
-              const a = (q / 8) * Math.PI * 2;
-              if (suit(bx + Math.cos(a) * r * 0.5, bz + Math.sin(a) * r * 0.5) < 0.2) ok = ++misses <= 4;
-            }
-            if (ok) b = { x: bx, z: bz, r, s: hash2(i, j, s + 4) * 100 };
+    // (The blobs of the cells round about, gathered once for the cell
+    // (x, z) is in: the next point asked for is most often in it too.)
+    let near = cache.near;
+    if (!near || cache.ci !== ci || cache.cj !== cj) {
+      const nears = cache.nears ?? (cache.nears = new Map()), k = cellKey(ci, cj);
+      near = nears.get(k);
+      if (!near) {
+        near = [];
+        for (let dj = -1; dj <= 1; dj++) {
+          for (let di = -1; di <= 1; di++) {
+            const b = this.#blobCell(cache, ci + di, cj + dj, C, chance, rmin, rmax, this.seed ^ salt, suit, centre);
+            if (b) near.push(b);
           }
-          if (cache.size > 4000) cache.clear();
-          cache.set(k, b);
         }
-        if (!b) continue;
-        const dx = x - b.x, dz = z - b.z, d = Math.hypot(dx, dz);
-        if (d > b.r * 1.35) continue;
-        const a = Math.atan2(dz, dx);
-        const r = b.r * (1 + 0.15 * Math.sin(a * 3 + b.s) + 0.08 * Math.sin(a * 5 + b.s * 2) + 0.04 * Math.sin(a * 9 + b.s * 3));
-        best = Math.max(best, 1 - smoothstep(r * 0.72, r, d));
+        if (nears.size > 2000) nears.clear();
+        nears.set(k, near);
       }
+      cache.near = near;
+      cache.ci = ci;
+      cache.cj = cj;
+    }
+    let best = 0;
+    for (let n = 0; n < near.length; n++) {
+      const b = near[n];
+      const dx = x - b.x, dz = z - b.z, reach = b.r * 1.35, d2 = dx * dx + dz * dz;
+      if (d2 > reach * reach * 1.000001) continue; // (quickly, before the exact distance)
+      // (Well inside, however its outline wobbles: wholly in it.)
+      const inner = b.r * 0.525;
+      if (d2 < inner * inner) return 1;
+      const d = Math.hypot(dx, dz);
+      if (d > reach) continue;
+      const a = Math.atan2(dz, dx);
+      const r = b.r * (1 + 0.15 * Math.sin(a * 3 + b.s) + 0.08 * Math.sin(a * 5 + b.s * 2) + 0.04 * Math.sin(a * 9 + b.s * 3));
+      best = Math.max(best, 1 - smoothstep(r * 0.72, r, d));
     }
     return best;
+  }
+
+  /** The blob of cell (i, j) for #blobs (or null), remembered. */
+  #blobCell(cache, i, j, C, chance, rmin, rmax, s, suit, centre) {
+    const k = cellKey(i, j);
+    let b = cache.get(k);
+    if (b !== undefined) return b;
+    b = null;
+    // (A few spots tried in the cell for its middle.)
+    for (let t = 0; t < 6 && !b && hash2(i, j, s) < chance; t++) {
+      const bx = (i + 0.2 + 0.6 * hash2(i + t * 71, j, s + 1)) * C, bz = (j + 0.2 + 0.6 * hash2(i, j + t * 71, s + 2)) * C;
+      const r = rmin + (rmax - rmin) * hash2(i, j, s + 3);
+      let ok = suit(bx, bz) > 0.5 && (!centre || centre(bx, bz, r));
+      // (And most of the way round, half way out.)
+      for (let q = 0, misses = 0; q < 8 && ok; q++) {
+        const a = (q / 8) * Math.PI * 2;
+        if (suit(bx + Math.cos(a) * r * 0.5, bz + Math.sin(a) * r * 0.5) < 0.2) ok = ++misses <= 4;
+      }
+      if (ok) b = { x: bx, z: bz, r, s: hash2(i, j, s + 4) * 100 };
+    }
+    if (cache.size > 4000) cache.clear();
+    cache.set(k, b);
+    return b;
   }
 
   /**
@@ -837,7 +867,7 @@ export class TerrainGenerator {
     const all = this._minSize ?? (this._minSize = {});
     const cache = all[key] ?? (all[key] = { raw: new Map(), eroded: new Map(), opened: new Map() });
     const memo = (map, i, j, f) => {
-      const k = (i + 32768) * 65536 + (j + 32768);
+      const k = cellKey(i, j);
       let v = map.get(k);
       if (v === undefined) {
         v = f(i, j);
@@ -917,7 +947,7 @@ export class TerrainGenerator {
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._jungleNear ?? (this._jungleNear = new Map());
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         const jz = (px, pz) => {
@@ -934,8 +964,8 @@ export class TerrainGenerator {
       }
       return v;
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 
@@ -1009,7 +1039,7 @@ export class TerrainGenerator {
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._jungleSuit ?? (this._jungleSuit = new Map());
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         const jz = (px, pz) => {
@@ -1027,8 +1057,8 @@ export class TerrainGenerator {
       }
       return v;
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 
@@ -1048,7 +1078,7 @@ export class TerrainGenerator {
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._aridAround ?? (this._aridAround = new Map());
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         const ar = (px, pz) => this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value);
@@ -1064,8 +1094,8 @@ export class TerrainGenerator {
       }
       return v[which];
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 
@@ -1185,7 +1215,7 @@ export class TerrainGenerator {
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._dry ?? (this._dry = new Map());
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         v = 0;
@@ -1198,8 +1228,8 @@ export class TerrainGenerator {
       }
       return v;
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 
@@ -1216,7 +1246,7 @@ export class TerrainGenerator {
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._drySup ?? (this._drySup = new Map());
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         let sum = this.#rawAridityAt(i * G, j * G) * 2;
@@ -1230,8 +1260,8 @@ export class TerrainGenerator {
       }
       return v;
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 
@@ -1247,7 +1277,7 @@ export class TerrainGenerator {
     const cache = this._mtnNear ?? (this._mtnNear = new Map());
     const m = (px, pz) => smoothstep(0.08, 0.55, this.#rangeField(px, pz, {}).value + MOUNTAIN_BIAS - this.#drySuppress(px, pz));
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         v = m(i * G, j * G);
@@ -1260,8 +1290,8 @@ export class TerrainGenerator {
       }
       return v;
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 
@@ -1277,7 +1307,7 @@ export class TerrainGenerator {
     const cache = this._rangeInner ?? (this._rangeInner = new Map());
     const m = (px, pz) => this.#rangeField(px, pz, {}).value + MOUNTAIN_BIAS - this.#drySuppress(px, pz);
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         v = m(i * G, j * G);
@@ -1290,8 +1320,8 @@ export class TerrainGenerator {
       }
       return v;
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 
@@ -2068,7 +2098,7 @@ export class TerrainGenerator {
    */
   #mesaArch(i, j) {
     const cache = this._mesaArches ?? (this._mesaArches = new Map());
-    const key = (i + 32768) * 65536 + (j + 32768);
+    const key = cellKey(i, j);
     if (cache.has(key)) return cache.get(key);
     const s = this.seed ^ 0xa4c2, G = 260;
     let arch = null;
@@ -2103,7 +2133,7 @@ export class TerrainGenerator {
    */
   #canyonBridge(i, j) {
     const cache = this._bridges ?? (this._bridges = new Map());
-    const key = (i + 32768) * 65536 + (j + 32768);
+    const key = cellKey(i, j);
     if (cache.has(key)) return cache.get(key);
     const s = this.seed ^ 0xb81d, G = 700;
     let bridge = null;
@@ -2244,7 +2274,7 @@ export class TerrainGenerator {
    */
   #oasis(i, j) {
     const cache = this._oases ?? (this._oases = new Map());
-    const key = (i + 32768) * 65536 + (j + 32768);
+    const key = cellKey(i, j);
     if (cache.has(key)) return cache.get(key);
     const s = this.seed ^ 0x0a515, G = 600;
     let oasis = null;
@@ -2335,7 +2365,7 @@ export class TerrainGenerator {
    */
   #seaCave(i, j) {
     const cache = this._seaCaves ?? (this._seaCaves = new Map());
-    const key = (i + 32768) * 65536 + (j + 32768);
+    const key = cellKey(i, j);
     if (cache.has(key)) return cache.get(key);
     let cave = null;
     const s = this.seed ^ 0x5eca;
@@ -2457,7 +2487,7 @@ export class TerrainGenerator {
    * (at most one per 1.1 km cell) and only well inside volcanic country.
    */
   #cone(i, j) {
-    const key = (i + 32768) * 65536 + (j + 32768);
+    const key = cellKey(i, j);
     if (!this._cones.has(key)) {
       if (this.#coneAt(i, j)) this.#rankRegion(i, j);
       else this._cones.set(key, null);
@@ -2474,7 +2504,7 @@ export class TerrainGenerator {
    */
   #rankRegion(i0, j0) {
     const C = 1100, s = this.seed ^ 0xc0e5;
-    const key = (i, j) => (i + 32768) * 65536 + (j + 32768);
+    const key = (i, j) => cellKey(i, j);
     const inside = (i, j) => !!this.#coneAt(i, j) || this.volcanoNoise.fbm((i + 0.5) * C * 0.00005 + 900, (j + 0.5) * C * 0.00005 - 300, 2) > 0.52;
     const seen = new Set([key(i0, j0)]);
     const stack = [i0, j0], found = [];
@@ -2494,7 +2524,7 @@ export class TerrainGenerator {
 
   /** The volcano (i, j)'s cell would have, if there were no limit to a stretch. */
   #coneAt(i, j) {
-    const key = (i + 32768) * 65536 + (j + 32768);
+    const key = cellKey(i, j);
     const cache = this._coneAt ?? (this._coneAt = new Map());
     if (cache.has(key)) return cache.get(key);
     let cone = null;
@@ -2888,7 +2918,7 @@ export class TerrainGenerator {
    * { x, z, r (pool radius), geyser, period (s between eruptions), phase, strength }
    */
   #springAt(i, j) {
-    const key = (i + 32768) * 65536 + (j + 32768);
+    const key = cellKey(i, j);
     const cache = this._springs ?? (this._springs = new Map());
     if (cache.has(key)) return cache.get(key);
     const springs = [];
@@ -3273,7 +3303,7 @@ export class TerrainGenerator {
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this._openSea ?? (this._openSea = new Map());
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         const cx = i * G, cz = j * G;
@@ -3292,8 +3322,8 @@ export class TerrainGenerator {
       }
       return v;
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 
@@ -3395,6 +3425,16 @@ export class TerrainGenerator {
    * rises into them gently rather than up a wall at the biome's edge.
    */
   #smokyLift(x, z) {
+    // (Often asked for the same point twice running: the last answer is remembered.)
+    if (x === this._liftX && z === this._liftZ) return this._lift;
+    const v = this.#smokyLiftAt(x, z);
+    this._liftX = x;
+    this._liftZ = z;
+    this._lift = v;
+    return v;
+  }
+
+  #smokyLiftAt(x, z) {
     // (Nothing at all unless a blob of them lies near: the spread reaches
     // at most some 640 m past where the biome is, and it's only in their blobs.)
     if (!this.#smokyBlobNear(x, z, 700)) return 0;
@@ -3402,7 +3442,7 @@ export class TerrainGenerator {
     const cache = this._smokyLift ?? (this._smokyLift = { raw: new Map(), blur: new Map() });
     const probe = this.#probe();
     const raw = (i, j) => {
-      const k = (i + 32768) * 65536 + (j + 32768);
+      const k = cellKey(i, j);
       let v = cache.raw.get(k);
       if (v === undefined) {
         v = probe.#smokyWeight(i * G, j * G);
@@ -3412,7 +3452,7 @@ export class TerrainGenerator {
       return v;
     };
     const blur = (i, j) => {
-      const k = (i + 32768) * 65536 + (j + 32768);
+      const k = cellKey(i, j);
       let v = cache.blur.get(k);
       if (v === undefined) {
         let sum = 0, weight = 0;
@@ -3514,7 +3554,7 @@ export class TerrainGenerator {
 
   /** The Smoky Mountains blob of cell (ci, cj) of their 4 km grid, or null. */
   #smokyBlobCell(ci, cj) {
-    const C = 4000, k = (ci + 32768) * 65536 + (cj + 32768);
+    const C = 4000, k = cellKey(ci, cj);
     let b = this._blobs?.smoky?.get(k);
     if (b === undefined) {
       this.#smokyBlob((ci + 0.5) * C, (cj + 0.5) * C);
@@ -3782,6 +3822,16 @@ export class TerrainGenerator {
    */
   #rangeField(x, z, out = this._range) {
     if (x === out.x && z === out.z) return out; // asked for several times per point
+    // (And the last point worked out, whatever it was asked for into.)
+    const last = this._rangeLast ?? (this._rangeLast = { x: NaN, z: NaN, value: 0, size: 1, large: 0 });
+    if (x === last.x && z === last.z) {
+      out.x = x;
+      out.z = z;
+      out.value = last.value;
+      out.size = last.size;
+      out.large = last.large;
+      return out;
+    }
     const t = Math.min(1, Math.max(0, 0.5 + this.rangeSizeNoise.fbm(x * 0.00007, z * 0.00007, 2) * 1.3));
     const small = 1 - smoothstep(0, 0.45, t);
     const large = smoothstep(0.55, 1, t);
@@ -3805,6 +3855,11 @@ export class TerrainGenerator {
     out.value = value;
     out.size = 0.5 * small + usual + 2 * large;
     out.large = large;
+    last.x = x;
+    last.z = z;
+    last.value = value;
+    last.size = out.size;
+    last.large = large;
     return out;
   }
 
@@ -3996,7 +4051,7 @@ export class TerrainGenerator {
     const fx = x / G - gx, fz = z / G - gz;
     const cache = this[name] ?? (this[name] = new Map());
     const at = (i, j) => {
-      const key = (i + 32768) * 65536 + (j + 32768);
+      const key = cellKey(i, j);
       let v = cache.get(key);
       if (v === undefined) {
         v = fn(i * G, j * G);
@@ -4005,8 +4060,8 @@ export class TerrainGenerator {
       }
       return v;
     };
-    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx;
-    const b = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    const a0 = at(gx, gz), a = a0 + (at(gx + 1, gz) - a0) * fx;
+    const b0 = at(gx, gz + 1), b = b0 + (at(gx + 1, gz + 1) - b0) * fx;
     return a + (b - a) * fz;
   }
 

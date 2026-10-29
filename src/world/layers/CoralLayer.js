@@ -33,10 +33,10 @@ function knobs(seed, n, radius, flat) {
 }
 
 // Finger coral: a thicket of stubby round-tipped fingers, all reaching up.
-function fingers(seed) {
+function fingers(seed, count = 14) {
   const rand = mulberry32(seed);
   const parts = [];
-  for (let k = 0; k < 14; k++) {
+  for (let k = 0; k < count; k++) {
     const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * 0.4, len = 0.3 + rand() * 0.45, lean = rand() * 0.35;
     const g = new CylinderGeometry(0.05, 0.065, len, 5);
     g.translate(0, len / 2, 0);
@@ -53,10 +53,10 @@ function fingers(seed) {
 }
 
 // Staghorn: thin antler-like branches, forking as they reach up and out.
-function staghorn(seed) {
+function staghorn(seed, count = 9) {
   const rand = mulberry32(seed);
   const parts = [];
-  for (let k = 0; k < 9; k++) {
+  for (let k = 0; k < count; k++) {
     const a = rand() * Math.PI * 2, lean = 0.3 + rand() * 0.5, len = 0.5 + rand() * 0.45;
     const g = new CylinderGeometry(0.03, 0.05, len, 4);
     g.translate(0, len / 2, 0);
@@ -89,18 +89,18 @@ function table() {
 }
 
 // Brain coral: a round dome (its grooves are in the knobbly facets).
-function brain() {
-  const g = new DodecahedronGeometry(0.5, 1);
+function brain(detail = 1) {
+  const g = new DodecahedronGeometry(0.5, detail);
   const p = g.attributes.position;
   for (let k = 0; k < p.count; k++) p.setY(k, Math.max(-0.06, p.getY(k)) * 0.7);
   return shaped(g);
 }
 
 // Lettuce coral: thin upright curling plates, crowded together like leaves.
-function lettuce(seed) {
+function lettuce(seed, count = 9) {
   const rand = mulberry32(seed);
   const parts = [];
-  for (let k = 0; k < 9; k++) {
+  for (let k = 0; k < count; k++) {
     const r = 0.12 + rand() * 0.18, h = 0.2 + rand() * 0.25, arc = 1.5 + rand() * 2;
     const g = new CylinderGeometry(r * 1.3, r * 0.7, h, 6, 1, true, rand() * Math.PI * 2, arc);
     g.translate((rand() - 0.5) * 0.6, h / 2, (rand() - 0.5) * 0.6);
@@ -127,10 +127,10 @@ function fan() {
 }
 
 // Tube sponges: a few hollow tubes standing open-topped.
-function sponge(seed) {
+function sponge(seed, count = 5) {
   const rand = mulberry32(seed);
   const parts = [];
-  for (let k = 0; k < 5; k++) {
+  for (let k = 0; k < count; k++) {
     const r = 0.07 + rand() * 0.07, h = 0.35 + rand() * 0.55, a = rand() * Math.PI * 2, d = rand() * 0.22;
     const g = new CylinderGeometry(r * 1.15, r, h, 6, 1, true);
     g.translate(0, h / 2, 0);
@@ -142,10 +142,10 @@ function sponge(seed) {
 }
 
 // Soft coral: a bushy clump of soft lobes on stems.
-function soft(seed) {
+function soft(seed, count = 7) {
   const rand = mulberry32(seed);
   const parts = [];
-  for (let k = 0; k < 7; k++) {
+  for (let k = 0; k < count; k++) {
     const a = rand() * Math.PI * 2, lean = 0.1 + rand() * 0.6, len = 0.25 + rand() * 0.3;
     const stem = new ConeGeometry(0.06, len, 4);
     stem.translate(0, len / 2, 0);
@@ -193,6 +193,11 @@ const normal = new Vector3();
  */
 export function createCoralLayer(config) {
   const shapes = [knobs(3, 14, 0.42, 0.7), knobs(17, 22, 0.75, 0.55), fingers(7), staghorn(5), table(), brain(), lettuce(11), fan(), sponge(13), soft(19)];
+  // (And plainer ones, the same outline with fewer knobs and branches, for
+  // the chunks further off, a hundred metres and more away through the
+  // water, where the difference can't be seen: a great many fewer
+  // triangles to draw.)
+  const plain = [knobs(3, 3, 0.42, 0.7), knobs(17, 4, 0.75, 0.55), fingers(7, 4), staghorn(5, 3), table(), brain(0), lettuce(11, 3), fan(), sponge(13, 2), soft(19, 2)];
   if (shapes.length !== CORAL_KINDS.length) throw new Error('coral shapes and kinds differ');
   const palettes = CORAL_KINDS.map((k) => PALETTES[k].map((c) => new Color(c)));
   const material = new MeshLambertMaterial({ vertexColors: false, side: DoubleSide });
@@ -201,7 +206,7 @@ export function createCoralLayer(config) {
     name: 'corals',
     material,
 
-    reuseKey: ({ lod }) => (lod > 1 ? 'none' : 'near'),
+    reuseKey: ({ lod }) => (lod > 1 ? 'none' : lod === 1 ? 'far' : 'near'),
 
     build({ cx, cz, lod, heights, generator, groundHeightAt, prepared }) {
       if (lod > 1) return null;
@@ -224,7 +229,7 @@ export function createCoralLayer(config) {
       group.name = 'corals';
       placed.forEach((list, k) => {
         if (!list.length) return;
-        const mesh = new InstancedMesh(shapes[k], material, list.length);
+        const mesh = new InstancedMesh((lod === 0 ? shapes : plain)[k], material, list.length);
         list.forEach(([m, c], n) => {
           mesh.setMatrixAt(n, m);
           mesh.setColorAt(n, c);

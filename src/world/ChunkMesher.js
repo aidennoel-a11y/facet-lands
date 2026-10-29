@@ -305,7 +305,8 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
   ];
   // Skirts are shallower than the rock over any cave, and stop short of an
   // entrance ramp running underneath, so they never wall a cave off.
-  const ramps = generator.caves ? generator.caves.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
+  // (Only near, where the caves are built: see caveMaxLod.)
+  const ramps = caveSystem ? caveSystem.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
   const skirtBottom = (x, y, z, depth = skirtDepth) =>
     ramps.length ? generator.caves.skirtBottom(ramps, originX + x, y, originZ + z, depth) : y - depth;
   // The edge each skirt segment hangs from, as a key into the midpoints of split edges.

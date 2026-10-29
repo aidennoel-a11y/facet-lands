@@ -81,10 +81,10 @@ export class Rivers {
    * work it all out again themselves. (With the great rivers': see BigRivers.)
    */
   takeFresh() {
-    const f = this.fresh, big = this.big.takeFresh();
-    if (!f.list.length && !f.rivers.length && !f.streams.length && !f.covered.length && !big) return null;
+    const f = this.fresh, big = this.big.takeFresh(), caves = this.generator.caves?.field?.takeFresh?.() ?? null;
+    if (!f.list.length && !f.rivers.length && !f.streams.length && !f.covered.length && !big && !caves) return null;
     this.fresh = { list: [], rivers: [], streams: [], covered: [] };
-    return { ...f, big };
+    return { ...f, big, caves }; // (and the cave openings found: see CaveField.share)
   }
 
   /**
@@ -94,6 +94,7 @@ export class Rivers {
    */
   share(d) {
     if (d.big) this.big.share(d.big);
+    if (d.caves) this.generator.caves?.field?.share?.(d.caves);
     const had = (src) => (src[0] === 'r' ? this.riverRegions : this.streamRegions).has(Number(src.slice(1)));
     for (const river of d.list) if (!had(river.src)) this.#put(river, true);
     for (const k of d.rivers) this.riverRegions.add(k);

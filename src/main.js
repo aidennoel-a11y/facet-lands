@@ -624,6 +624,7 @@ const landmarks = new Landmarks(scene, generator); // (the twelve kinds of landm
 // land and its rivers already, not here: see LandmarkSites.lazy.)
 landmarks.askSites = (squares) => chunks.mapTask({ kind: 'sites', squares }); // (on the map's workers, or any idle: see ChunkManager.mapTask)
 generator.landmarks.lazy = chunks.workers.length > 0;
+if (generator.caves) generator.caves.field.lazy = chunks.workers.length > 0; // (and the caves' natural openings: see CaveField.share)
 const mineProps = new MineProps(scene); // (the old mines' timbers, rails and carts)
 let mineWait = 0;
 spiders.onKill = (s) => {
@@ -1589,6 +1590,7 @@ function setSeed(seed, saveKey = null, place = true, later = false) {
   WORLD.seed = seed;
   generator = new TerrainGenerator(seed, WORLD);
   generator.landmarks.lazy = chunks.workers.length > 0;
+  if (generator.caves) generator.caves.field.lazy = chunks.workers.length > 0;
   game.trees.removed.clear(); // (the new world's felled trees are loaded below)
   chunks.setGenerator(generator);
   minimap.invalidate();

@@ -405,7 +405,14 @@ function buildEntrance(e, generator, groundHeightAt, x0, z0) {
  * a cliff, a short rough arched tunnel into the face, its floor level.
  */
 function buildNatural(e, generator, groundHeightAt, x0, z0) {
-  const P = coloursAt(generator, e.x, e.z);
+  let P = coloursAt(generator, e.x, e.z);
+  if (e.kind === 'mouth') {
+    // (A mouth in a cliff: lined with the cliff's own rock, whatever the country.)
+    const fx = e.x + e.shape.dx * e.uTop * 0.6, fz = e.z + e.shape.dz * e.uTop * 0.6;
+    const jitter = generator.getColorJitter(fx, fz), c = generator.surfaceColor(fx, fz, generator.getHeight(fx, fz) + jitter, 0.1, new Color(), jitter);
+    const hex = (k) => c.clone().multiplyScalar(k).getHex();
+    P = { ...P, rock: [hex(1), hex(0.92), hex(1.06), hex(0.86)] };
+  }
   const b = new Builder(e, x0, z0, generator.seed ^ 0x51ed27, P);
   const ground = (u, v) => {
     const [x, z] = CaveField.world(e, u, v);

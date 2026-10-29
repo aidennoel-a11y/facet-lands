@@ -29,7 +29,7 @@ function seagrass(seed) {
   const pos = [];
   for (let k = 0; k < 14; k++) {
     const a = hash2(k, 1, seed) * Math.PI * 2, d = hash2(k, 2, seed) * 0.12;
-    blade(pos, Math.cos(a) * d, Math.sin(a) * d, Math.cos(a), Math.sin(a), 0.5 + 0.5 * hash2(k, 3, seed), 0.035, 0.25 + 0.35 * hash2(k, 4, seed), 4);
+    blade(pos, Math.cos(a) * d, Math.sin(a) * d, Math.cos(a), Math.sin(a), 0.5 + 0.5 * hash2(k, 3, seed), 0.035, 0.25 + 0.35 * hash2(k, 4, seed), 3);
   }
   return geometry(pos);
 }

@@ -752,10 +752,54 @@ export class CaveField {
     const cache = (this.naturals ??= new Map());
     let e = cache.get(key);
     if (e === undefined) {
-      e = this.#makeNatural(rx, rz);
+      if (this.lazy) return null; // (worked out by the workers, and handed on: see share)
+      e = this.#finding(() => this.#makeNatural(rx, rz));
       cache.set(key, e);
+      this.#fresh('n', key, e);
     }
     return e;
+  }
+
+  // --- Handing on the openings found -------------------------------------------
+  //
+  // Finding the natural openings means asking for the land's height all
+  // round, costly where it's not been worked out yet: on the main thread
+  // (\`lazy\`) they're not worked out, but taken from the workers that
+  // build the chunks they're in (which find them as they cut the land), as
+  // the rivers are (see Rivers.takeFresh and share).
+
+  // (While an opening's being found, nearEntrance looks only at the built
+  // entrances: so it comes out the same whichever is found first.)
+  #finding(fn) {
+    const was = this.finding;
+    this.finding = true;
+    try {
+      return fn();
+    } finally {
+      this.finding = was;
+    }
+  }
+
+  #fresh(type, key, e) {
+    const f = (this.freshList ??= []);
+    if (f.length > 4000) f.length = 0;
+    f.push([type, key, e]);
+  }
+
+  /** The openings found here since last asked (or null). */
+  takeFresh() {
+    const f = this.freshList;
+    if (!f?.length) return null;
+    this.freshList = [];
+    return f;
+  }
+
+  /** The openings another thread found (from its takeFresh), taken in. */
+  share(list) {
+    for (const [type, key, e] of list) {
+      const cache = type === 'm' ? (this.mouths ??= new Map()) : (this.naturals ??= new Map());
+      if (!cache.has(key)) cache.set(key, e);
+    }
   }
 
   #makeNatural(rx, rz) {
@@ -852,6 +896,125 @@ export class CaveField {
     return null;
   }
 
+  // Mouths in the faces of cliffs and canyon walls (as many as the
+  // land has walls for): in each 160 m square, now and then, the steepest
+  // face is found and an opening made at its foot, a tunnel winding on
+  // into the rock, falling gently, till it comes to a cave, or, where
+  // there's none, to a cave of its own, a rough chamber at its end.
+  static MOUTH = 160;
+
+  /** The cliff mouth in one 160 m square (or null), cached. */
+  mouth(rx, rz) {
+    const key = ((rx + 32768) << 16) | ((rz + 32768) & 0xffff);
+    const cache = (this.mouths ??= new Map());
+    let e = cache.get(key);
+    if (e === undefined) {
+      if (this.lazy) return null; // (see share)
+      e = this.#finding(() => this.#makeMouth(rx, rz));
+      if (cache.size > 20000) cache.clear();
+      cache.set(key, e);
+      this.#fresh('m', key, e);
+    }
+    return e;
+  }
+
+  #makeMouth(rx, rz) {
+    const g = this.generator, M = CaveField.MOUTH, sea = this.seaLevel;
+    const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x6d07) * 4294967296);
+    if (rand() > 0.75) return null;
+    const H = (x, z) => g.getHeight(x, z);
+    // (The steepest face in the square, on a 32 m grid: the biggest rise
+    // from a point to the next one along or across.)
+    const S = 32, n = 6, x0 = rx * M - 8, z0 = rz * M - 8;
+    const hs = new Float64Array(n * n);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) hs[j * n + i] = H(x0 + i * S, z0 + j * S);
+    let best = 0, lo = null, hi = null;
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        for (const [a, b] of [[1, 0], [0, 1]]) {
+          if (i + a >= n || j + b >= n) continue;
+          const h0 = hs[j * n + i], h1 = hs[(j + b) * n + i + a], rise = Math.abs(h1 - h0);
+          if (rise <= best) continue;
+          best = rise;
+          const p = [x0 + i * S, z0 + j * S, h0], q = [x0 + (i + a) * S, z0 + (j + b) * S, h1];
+          [lo, hi] = h0 < h1 ? [p, q] : [q, p];
+        }
+      }
+    }
+    if (best < 12 || lo[2] < sea + 3) return null; // (no wall here: a rise of 12 m in 32 at least)
+    // (The foot of the face: from the low end towards the high, the first
+    // place it rises steeply.)
+    const ux = (hi[0] - lo[0]) / S, uz = (hi[1] - lo[1]) / S;
+    let foot = null;
+    for (let u = 0; u < S && !foot; u += 1) {
+      const px = lo[0] + ux * u, pz = lo[1] + uz * u;
+      if ((H(px + ux * 1.5, pz + uz * 1.5) - H(px - ux * 1.5, pz - uz * 1.5)) / 3 >= 0.8) foot = [px, pz];
+    }
+    if (!foot) return null;
+    const [x, z] = foot;
+    if (g.getOceanness(x, z) > 0.05 || this.nearEntrance(x, z, 30) || g.rivers?.at?.(x, z, 8)) return null;
+    const h0 = H(x, z);
+    if (h0 < sea + 3) return null;
+    // (Straight in, the way the face looks out.)
+    const gx = (H(x + 3, z) - H(x - 3, z)) / 6, gz = (H(x, z + 3) - H(x, z - 3)) / 6, grade = Math.hypot(gx, gz);
+    if (grade < 0.6) return null;
+    const dx = gx / grade, dz = gz / grade, r = 2.4 + rand() * 1.6, cy = h0 + r * 0.55;
+    let uTop = null;
+    for (let u = 0; u <= 9 && uTop === null; u += 0.5) if (H(x + dx * u, z + dz * u) > cy + r + 0.6) uTop = u;
+    if (uTop === null) return null;
+    const L = uTop + 3;
+    // (Then on into the rock, winding a little and falling gently: to a
+    // cave if it meets one, else as far as the rock over it allows.)
+    const pts = [{ x: x - dx * 1.5, y: cy, z: z - dz * 1.5 }, { x: x + dx * L, y: cy, z: z + dz * L }];
+    let a = Math.atan2(dz, dx), px = x + dx * L, pz = z + dz * L, py = cy;
+    const turn = (rand() - 0.5) * 0.06, want = 30 + rand() * 50;
+    let end = null, run = L, room = null;
+    for (let k = 0; k < 60 && !end; k++) {
+      a += turn + (rand() - 0.5) * 0.08;
+      const nx = px + Math.cos(a) * 3, nz = pz + Math.sin(a) * 3, ny = py - (run > uTop + 4 ? 0.45 + rand() * 0.5 : 0), nh = H(nx, nz);
+      if (nh < ny + r + 4) break; // (it would come out of the hill)
+      px = nx;
+      pz = nz;
+      py = ny;
+      run += 3;
+      if (k % 3 === 2) pts.push({ x: px, y: py, z: pz });
+      if (run > uTop + 8 && this.legacy(px, py, pz, nh, this.regionRock(px, pz)) < -1.2) end = 'cave';
+      else if (run >= want) end = 'room';
+    }
+    if (!end) {
+      if (run < uTop + 14) return null; // (too little rock for a cave)
+      end = 'room';
+    }
+    if (pts[pts.length - 1].x !== px || pts[pts.length - 1].z !== pz) pts.push({ x: px, y: py, z: pz });
+    if (end === 'room') {
+      // (A chamber at its end, under a good roof of rock.)
+      let R = 5 + rand() * 5;
+      const cover = (R) => [0, 1, 2, 3, 4, 5].every((k) => H(px + Math.cos(k * 1.047) * R * 0.8, pz + Math.sin(k * 1.047) * R * 0.8) > py - r * 0.55 + R * 1.3 + 3) && H(px, pz) > py - r * 0.55 + R * 1.3 + 3;
+      if (!cover(R)) R = 4;
+      if (!cover(R)) return null;
+      room = { x: px + Math.cos(a) * R * 0.5, y: py - r * 0.55 + R * 0.62, z: pz + Math.sin(a) * R * 0.5, r: R, floor: py - r * 0.55 - 0.3, seed: Math.floor(rand() * 1e6) };
+    }
+    const segments = [];
+    for (let k = 1; k < pts.length; k++) segments.push([pts[k - 1], pts[k]]);
+    const w = r + 0.4;
+    const holePieces = [[[-1.5, -w], [uTop + 0.5, -w], [uTop + 0.5, w], [-1.5, w]]];
+    const wx = (u, v) => x + dx * u - dz * v, wz = (u, v) => z + dz * u + dx * v;
+    const ext = room ? [[room.x - room.r, room.z - room.r], [room.x + room.r, room.z + room.r]] : [];
+    const xs = [...pts.map((p) => p.x), ...holePieces[0].map(([u, v]) => wx(u, v)), ...ext.map((q) => q[0])];
+    const zs = [...pts.map((p) => p.z), ...holePieces[0].map(([u, v]) => wz(u, v)), ...ext.map((q) => q[1])];
+    const ys = pts.map((p) => p.y);
+    return {
+      id: `m${rx},${rz}`, natural: true, kind: 'mouth', x, z, r, cy, uTop, L, seed: Math.floor(rand() * 1e6), room,
+      shape: { ox: x, oz: z, dx, dz },
+      holePieces,
+      holeBounds: { minX: Math.min(...holePieces[0].map(([u, v]) => wx(u, v))), maxX: Math.max(...holePieces[0].map(([u, v]) => wx(u, v))), minZ: Math.min(...holePieces[0].map(([u, v]) => wz(u, v))), maxZ: Math.max(...holePieces[0].map(([u, v]) => wz(u, v))) },
+      mouth: { x: wx(1.5, 0), y: cy - r * 0.4, z: wz(1.5, 0) },
+      start: pts[0], end: pts[pts.length - 1], segments,
+      minY: Math.min(...ys, room ? room.floor : Infinity) - r - 2, maxY: Math.max(...ys, room ? room.y + room.r : -Infinity) + r + 3,
+      bounds: { minX: Math.min(...xs) - r - 3, maxX: Math.max(...xs) + r + 3, minZ: Math.min(...zs) - r - 3, maxZ: Math.max(...zs) + r + 3 },
+    };
+  }
+
   // A shaft straight down (a hole, the abyss, a hall's skylight): its
   // opening r across at the ground `top`, down to `bottom`.
   #naturalShaft(kind, rx, rz, x, z, r, top, bottom, rand, extra) {
@@ -898,7 +1061,16 @@ export class CaveField {
     const R = this.entranceRegion;
     const reach = 300; // (a mine's workings reach a long way in)
     const out = [];
-    const N = CaveField.NATURAL, nr = 90;
+    const N = CaveField.NATURAL, nr = 90, Mo = CaveField.MOUTH, mr = 230; // (a mouth's tunnel and room reach some 200 m from its square)
+    for (let rz = Math.floor((minZ - mr) / Mo); rz <= Math.floor((maxZ + mr) / Mo); rz++) {
+      for (let rx = Math.floor((minX - mr) / Mo); rx <= Math.floor((maxX + mr) / Mo); rx++) {
+        const e = this.mouth(rx, rz);
+        if (!e) continue;
+        const b = e.bounds;
+        if (b.maxX < minX || b.minX > maxX || b.maxZ < minZ || b.minZ > maxZ) continue;
+        out.push(e);
+      }
+    }
     for (let rz = Math.floor((minZ - nr) / N); rz <= Math.floor((maxZ + nr) / N); rz++) {
       for (let rx = Math.floor((minX - nr) / N); rx <= Math.floor((maxX + nr) / N); rx++) {
         const e = this.natural(rx, rz);
@@ -927,9 +1099,24 @@ export class CaveField {
   nearEntrance(x, z, margin = 0) {
     const R = this.entranceRegion;
     const e = this.entrance(Math.floor(x / R), Math.floor(z / R));
-    if (!e) return false;
-    const [u, v] = CaveField.across(e, x, z);
-    return u > -margin && u < e.shape.back + margin && Math.abs(v) < CaveField.halfWidth(e, u) + e.shape.side + margin;
+    if (e) {
+      const [u, v] = CaveField.across(e, x, z);
+      if (u > -margin && u < e.shape.back + margin && Math.abs(v) < CaveField.halfWidth(e, u) + e.shape.side + margin) return true;
+    }
+    // (Nor a cliff mouth's opening: not while the openings are being found, which ask this too.)
+    if (this.finding) return false;
+    return this.#finding(() => {
+      const M = CaveField.MOUTH, ci = Math.floor(x / M), cj = Math.floor(z / M);
+      for (let j = cj - 1; j <= cj + 1; j++) {
+        for (let i = ci - 1; i <= ci + 1; i++) {
+          const m = this.mouth(i, j);
+          if (!m || Math.abs(x - m.x) > 20 || Math.abs(z - m.z) > 20) continue;
+          const [u, v] = CaveField.local(m, x, z);
+          if (u > -3 - margin && u < m.uTop + 1 + margin && Math.abs(v) < m.r + 1 + margin) return true;
+        }
+      }
+      return false;
+    });
   }
 
   /** World (x, z) to an entrance's own axes [u, v]. */
@@ -1078,6 +1265,12 @@ export class CaveField {
       const k = Math.min(1, Math.max(0, qy / 1.5));
       const widen = 1 - 0.18 * k * k * (3 - 2 * k);
       best = Math.min(best, Math.sqrt((qx * qx + qz * qz) * widen * widen + qy * qy) + floorLift - r);
+    }
+    if (e.room) {
+      // (The chamber at a cliff mouth's end: a rough dome over a level floor.)
+      const m = e.room, ox = x - m.x, oy = y - m.y, oz = z - m.z;
+      const wob = 1 + 0.12 * Math.sin(Math.atan2(oz, ox) * 3 + m.seed) + 0.06 * Math.sin(oy * 0.7 + m.seed);
+      best = Math.min(best, Math.max(Math.sqrt(ox * ox + oz * oz + oy * oy * 2.2) - m.r * wob, m.floor - y));
     }
     if (e.natural) return best; // (a natural mouth: no built floor)
     // Where it starts, inside the rock tunnel, keep it just under the floor

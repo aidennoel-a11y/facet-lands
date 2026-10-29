@@ -203,10 +203,23 @@ export class CaveSystem {
       const id = nextId++;
       requests.set(id, apply);
       const size = this.chunkSize;
-      waiting.push({ x: (cx + 0.5) * size, z: (cz + 0.5) * size, at: performance.now(), message: { id, seed: this.generator.seedText, config: this.config, cx, cz }, cancelled: () => this.cache.get(key) !== entry, build: () => apply(buildChunkData(this.field, cx, cz, this.chunkSize)) });
+      waiting.push({ x: (cx + 0.5) * size, z: (cz + 0.5) * size, at: performance.now(), message: { id, seed: this.generator.seedText, config: this.config, cx, cz }, cancelled: () => this.cache.get(key) !== entry, build: () => apply(this.#here(() => buildChunkData(this.field, cx, cz, this.chunkSize))) });
       dispatch();
     } else {
       apply(buildChunkData(this.field, cx, cz, this.chunkSize));
+    }
+  }
+
+  // Something worked out here on the main thread after all (a chunk built
+  // here in a hurry): the natural openings found here too, for it, rather
+  // than waited for from the workers (see CaveField.share).
+  #here(fn) {
+    const lazy = this.field.lazy;
+    this.field.lazy = false;
+    try {
+      return fn();
+    } finally {
+      this.field.lazy = lazy;
     }
   }
 
