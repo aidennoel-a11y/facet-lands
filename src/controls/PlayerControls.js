@@ -52,6 +52,7 @@ export class PlayerControls {
     this.speedFactor = 1; // slowed (pushing through leaves, say): set from outside
     this.burden = 1; // slowed by what you carry: set from outside
     this.noSprint = false; // too worn out or weighed down to run
+    this.noJump = false; // stuck fast (in tar, say): set from outside
     this.vehicle = null; // (dt, input) => void: something you're riding (a raft) moves you instead
     this.frozen = false; // not moving at all (a menu's open, or you're dead)
     this.jumps = 0; // jumps since last asked (see takeJumps)
@@ -150,7 +151,7 @@ export class PlayerControls {
       if (e.code === 'Space') e.preventDefault(); // don't toggle focused checkboxes
       if (this.frozen) return;
       this.keys.add(e.code);
-      if (e.code === 'Space' && this.mode === 'walk' && this.grounded && !this.swimming && !this.#onSteep()) {
+      if (e.code === 'Space' && this.mode === 'walk' && this.grounded && !this.swimming && !this.noJump && !this.#onSteep()) {
         this.velocityY = this.jumpSpeed * (this.crouch ? 0.8 : 1);
         this.grounded = false;
         this.jumps++;

@@ -917,6 +917,9 @@ function thinIce(dt) {
   game.hotbar?.flash('You went through the ice! Get out before the cold takes you');
 }
 
+// The kinds of cave, for the panel (in the order of CaveField.biomeAt).
+const CAVE_NAMES = ['Cave', 'Lush cave', 'Volcanic cave', 'Ice cave', 'Sandstone cave', 'Crystal caverns', 'Mushroom forest', 'Root cave', "Spiders' den", 'Silver Mist Caverns', 'Firefly Hollow'];
+
 function waterAt(x, z, ice = false) {
   // Underground: the still lakes of the great chambers, the rivers in the
   // rock, the pools on cave floors (or lava). Not the sea or the rivers
@@ -934,7 +937,8 @@ function waterAt(x, z, ice = false) {
   if (r && (rise <= 0.02 || r.level + up > ground + 0.02) && (!found || r.level + up > found.level)) found = { level: r.level + up, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : (0.6 + Math.min(2.4, Math.max(0, r.drop) * 6)) * (1 + riverFlood.value), pond: r.pond, hot: r.tint === 2, flood: up > 0.05 };
   // (A landmark's lake or pool: the crystal lake, the falls' basin, the hot pools...)
   const lw = landmarks.waterAt(x, z, ground);
-  if (lw && (!found || lw.level > found.level)) found = lw;
+  // (Tar's no water: you wade in it, stuck, never swim. See the collide hook.)
+  if (lw && !lw.tar && (!found || lw.level > found.level)) found = lw;
   if (found && (found.lake || (found.pond && !found.hot))) {
     const winter = smooth(0.35, 0.8, seasonUniforms.uWinter.value);
     if (winter > 0.5) {
@@ -1356,6 +1360,10 @@ const controls = new PlayerControls(camera, canvas, {
     treeBump(position.x - bx, position.z - bz);
     // (Into the leaves a little way, not through them; and they slow you.)
     controls.speedFactor = trees.leaves(position, radius, feet, controls.eyeHeight + 0.1) * (game.structures.onRoad(position.x, position.z) ? 1.3 : 1); // (quicker on a paved road)
+    // (Wading in a tar pit: stuck fast, a slow drag through it, no jumping out.)
+    const tar = landmarks.waterAt(position.x, position.z, feet - 0.05);
+    controls.noJump = !!tar?.tar;
+    if (tar?.tar) controls.speedFactor *= 0.3;
     game.structures.collide(position, radius, feet);
     ruins.collide(position, radius, feet);
     generator.caves.collide(position, radius, feet);
@@ -3131,7 +3139,11 @@ function tick(now) {
     ui.speed.textContent = `${Math.round(controls.currentSpeed)} m/s`;
     // (Worked out by a chunk worker, which knows the rivers already: the
     // main thread never has to.)
-    if (sheltered) ui.biome.textContent = 'Cave';
+    if (sheltered) {
+      // (Which kind of cave: see CaveField.biomeAt.)
+      const { x, y, z } = camera.position, ch = generator.caves.field.chamberAt(x, z);
+      ui.biome.textContent = ch?.c.shaft && ch.e < 1.1 && y < ch.c.y + ch.c.ry ? 'Giant Crystal Shaft' : CAVE_NAMES[generator.caves.biomeAt(x, y, z)] ?? 'Cave';
+    }
     else if (!describing) {
       describing = true;
       const { x, z } = camera.position;

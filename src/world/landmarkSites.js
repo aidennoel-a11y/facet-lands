@@ -64,17 +64,17 @@ export const LANDMARKS = {
   beaverPond: { name: 'Beaver pond', cell: 800, hidden: true, chance: 0, tries: 4, riverWater: true, spread: true, land: (h) => h > 4,
     basin: { r: 14, d: 1.2, steep: 0.35 }, what: '', fits: (w, m, f) => w.temperate + w.pine + (w.parkland ?? 0) + (w.smoky ?? 0) + (w.cascades ?? 0) * 0.8 > 0.6 && m < 0.55 && f > 0.12 },
   // (Added last, so the kinds before keep their places: see KIND_INDEX.)
-  // (Its jungle cousin, smaller and more common, a cenote: the jungle's
-  // low country, so its floor lies under the water's level, and a clear
-  // pool fills its bottom; its walls hung with vines, a spring's fall into it.)
-  jungleSinkhole: { name: 'Jungle Sinkhole', cell: 2400, chance: 0.6, tries: 12, land: (h, slope) => h > 10 && slope < 0.25,
-    basin: { r: 34, d: 40, steep: 0.3, dry: true, rough: 4, floor: -6 }, what: 'A great round pit in the jungle: down its vine-hung walls, a hidden jungle and a waterfall into a clear pool',
+  // (Its jungle cousin, a cenote: a great round pit filled nearly to the
+  // brim with clear deep water, a few metres of vine-hung wall all round
+  // over it, a spring's fall into it.)
+  jungleSinkhole: { name: 'Jungle Sinkhole', cell: 3000, chance: 0.6, tries: 12, land: (h, slope) => h > 10 && slope < 0.25,
+    basin: { r: 58, d: 34, steep: 0.3, rough: 4, below: 4 }, what: 'A great round pit in the jungle: down its vine-hung walls, a hidden jungle and a waterfall into a clear pool',
     fits: (w, m) => w.jungle > 0.5 && m < 0.35 },
   // (Black tar welling up in a hollow out on the savanna, the bones of what
   // it caught sticking up out of it. Few: one to a 10 km square at most, and
   // few of those, so a savanna has one or two.)
   tarPits: { name: 'Tar Pits', cell: 10000, chance: 0.3, tries: 8, land: (h, slope) => h > 4 && slope < 0.1,
-    basin: { r: 9, d: 1.5, steep: 0.4 }, what: 'Black tar welling up out of the savanna: the bones of the beasts it caught stick up out of it',
+    basin: { r: 16, d: 0.7, steep: 0.55 }, what: 'A pond of black tar welling up out of the savanna: sticky, slow going, no jumping out',
     fits: (w) => w.savanna > 0.65 },
   // (An old volcano's crater on a hill in the green country right by the
   // volcanic highlands: a round lake filling it to its lowest rim, the hill's
@@ -271,7 +271,8 @@ export class LandmarkSites {
       if (L.basin.dry) s.pools[0].d = Math.min(L.basin.d, this.#probe((H) => H(s.x, s.z)) - (this.g.rivers?.seaLevel ?? 2) - (L.basin.floor ?? 8));
     } else if (L.falls) s.pools = this.#fallsPools(s);
     else s.pools = [];
-    for (const p of s.pools) if (!p.dry && p.level === undefined) p.level = this.#rimLevel(p);
+    // (`below`: its water that many metres under its lowest rim, a wall round it.)
+    for (const p of s.pools) if (!p.dry && p.level === undefined) p.level = this.#rimLevel(p) - (p.below ?? 0);
     s.runs ??= [];
     s.drops ??= [];
     s.extent = Math.max(...s.pools.map((p) => Math.hypot(p.x - s.x, p.z - s.z) + p.r * (p.st ?? 1) * 1.3), ...s.runs.map((q) => Math.max(Math.hypot(q.x0 - s.x, q.z0 - s.z), Math.hypot(q.x1 - s.x, q.z1 - s.z)) + q.w), 0) * 1.15;

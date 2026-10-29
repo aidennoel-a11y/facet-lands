@@ -109,7 +109,7 @@ function swaying(material, key) {
         '#include <begin_vertex>',
         /* glsl */ `#include <begin_vertex>
         float phase = instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.29;
-        float bend = position.y * position.y * (0.05 + 0.08 * uWind);
+        float bend = position.y * position.y * (0.015 + 0.03 * uWind); // (a gentle sway: they're stout things)
         transformed.x += sin(uTime * 1.3 + phase) * bend;
         transformed.z += cos(uTime * 1.1 + phase * 1.4) * bend * 0.7;`,
       );
@@ -323,15 +323,15 @@ export function createWonderLayer(config) {
           centres.push([m]);
           tops.push(x0 + lx, y + h, z0 + lz);
         });
-        // And here and there a few great ones, standing over the rest (as the giant mushrooms do on the mushroom
+        // And all through it great ones, standing over the rest (as the giant mushrooms do on the mushroom
         // islands): two or three times their height, their blooms as broad as a tree's crown.
-        placed(26, 21, (lx, lz, gi, gj, r) => {
-          if (r(0) > 0.3 || !generator.inGiantMeadow(x0 + lx, z0 + lz)) return;
+        placed(16, 21, (lx, lz, gi, gj, r) => {
+          if (r(0) > 0.55 || !generator.inGiantMeadow(x0 + lx, z0 + lz)) return;
           const y = groundHeightAt(lx, lz);
           if (!(y > config.seaLevel + 1)) return;
           const h = 8 + r(1) * 5, kind = Math.floor(r(2) * 3);
           q.setFromAxisAngle(UP, r(3) * 6.28).multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), (r(4) - 0.5) * 0.12));
-          const m = m4.compose(p.set(lx, y - 0.1, lz), q, s.set(h * 1.35, h, h * 1.35)).clone(); // (a stouter stalk to hold it up)
+          const m = m4.compose(p.set(lx, y - 0.1, lz), q, s.set(h * 2.1, h, h * 2.1)).clone(); // (a stout stalk to hold it up, its bloom broad as a tree's crown)
           stalks.push([m]);
           blooms[kind].push([m, FLOWER_COLOURS[Math.floor(r(5) * FLOWER_COLOURS.length)]]);
           centres.push([m]);

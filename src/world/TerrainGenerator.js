@@ -8,6 +8,7 @@ import { LandmarkSites } from './landmarkSites.js';
 import { Color } from 'three';
 
 const RIVERBED = new Color(0x55493b);
+const LAKE_FLOOR = new Color(0x6a6658); // (stone and gravel under a landmark's lake: see surfaceColor)
 // How much more of the world is mountains than the range noise alone gives.
 /**
  * The knobs for how much of the world each biome takes (measure the result
@@ -427,8 +428,8 @@ export class TerrainGenerator {
     // They take over the green country where they are.
     if (!this._probing) {
       const mtn = this.getMountainness(x, z), band = smoothstep(0.32, 0.5, mtn);
-      // (The jungle mountains: country of their own, see #jungleMtnBlob.)
-      const jb = this.#jungleMtnBlob(x, z);
+      // (The jungle mountains: country of their own, see #jungleMtn.)
+      const jb = this.#jungleMtn(x, z, mtn);
       if (band > 0 && out.jungle > 0) {
         const j = out.jungle * band * (1 - jb);
         out.jungle -= j;
@@ -755,6 +756,15 @@ export class TerrainGenerator {
    * country between them and anything else).
    */
   #volcanoZone(x, z, range) {
+    if (smoothstep(0.51, 0.61, this.#volcanoNoise(x, z)) <= 0) return 0;
+    // (Never a little scrap of it: under about 2 km across, it goes.)
+    // (Mountain ranges cut into it too, so they count before it's sized.)
+    const keep = this.#minSize('volcanic', x, z, (px, pz) => this.#volcanoRaw(px, pz) * (1 - smoothstep(0.02, 0.2, this.#rangeField(px, pz, {}).value)), 0.5, 6);
+    return keep > 0 ? this.#volcanoRaw(x, z) * keep * (1 - smoothstep(0.02, 0.2, range)) : 0;
+  }
+
+  /** Volcanic highlands before they're kept to a good size (see #volcanoZone). */
+  #volcanoRaw(x, z) {
     const zone = smoothstep(0.51, 0.61, this.#volcanoNoise(x, z));
     if (zone <= 0) return 0;
     let ring = Infinity;
@@ -762,17 +772,18 @@ export class TerrainGenerator {
       const a = (k / 10) * Math.PI * 2;
       for (const d of [700, 1400]) ring = Math.min(ring, this.#volcanoNoise(x + Math.cos(a) * d, z + Math.sin(a) * d));
     }
-    return zone * smoothstep(0.4, 0.46, ring) * (1 - smoothstep(0.02, 0.2, range));
+    return zone * smoothstep(0.4, 0.46, ring);
   }
 
   /**
    * Rounded patches of some kind of country (0..1 at (x, z)): now and then
    * (`chance`) in each `C`-metre cell, a blob `rmin` to `rmax` metres in
    * radius, its outline wobbling, centred where the country suits it
-   * (`suit` at its middle, and fairly well most of the way out). Blobs,
+   * (`suit` at its middle, and fairly well most of the way out; and
+   * `centre`, if given, of its middle and radius). Blobs,
    * never strips or lines; and never smaller than `rmin` across. Remembered.
    */
-  #blobs(key, x, z, C, chance, rmin, rmax, salt, suit) {
+  #blobs(key, x, z, C, chance, rmin, rmax, salt, suit, centre = null) {
     const all = this._blobs ?? (this._blobs = {});
     const cache = all[key] ?? (all[key] = new Map());
     const s = this.seed ^ salt;
@@ -788,7 +799,7 @@ export class TerrainGenerator {
           for (let t = 0; t < 6 && !b && hash2(i, j, s) < chance; t++) {
             const bx = (i + 0.2 + 0.6 * hash2(i + t * 71, j, s + 1)) * C, bz = (j + 0.2 + 0.6 * hash2(i, j + t * 71, s + 2)) * C;
             const r = rmin + (rmax - rmin) * hash2(i, j, s + 3);
-            let ok = suit(bx, bz) > 0.5;
+            let ok = suit(bx, bz) > 0.5 && (!centre || centre(bx, bz, r));
             // (And most of the way round, half way out.)
             for (let q = 0, misses = 0; q < 8 && ok; q++) {
               const a = (q / 8) * Math.PI * 2;
@@ -839,7 +850,7 @@ export class TerrainGenerator {
     // (Stopping as soon as the answer's settled: past the thresholds below, it makes no difference.)
     const disc = (i, j, f, pick, done) => {
       let v = f(i, j);
-      for (const [d, n, off] of [[R / 2, 8, 0], [R, 12, 0.5]]) {
+      for (const [d, n, off] of R > 5 ? [[R / 3, 8, 0], [(R * 2) / 3, 14, 0.5], [R, 20, 0]] : [[R / 2, 8, 0], [R, 12, 0.5]]) {
         for (let q = 0; q < n && !done(v); q++) {
           const a = ((q + off) / n) * Math.PI * 2;
           v = pick(v, f(i + Math.round(Math.cos(a) * d), j + Math.round(Math.sin(a) * d)));
@@ -1104,18 +1115,30 @@ export class TerrainGenerator {
   }
 
   /**
-   * Where the jungle mountains stand (0..1): now and then (one to a 6.5 km
-   * square or so, in jungle country) a rounded stretch of them, three to six
-   * kilometres across, well clear of the ranges, the volcanic country and the
+   * Where the jungle mountains stand (0..1): now and then (one to a 3.5 km
+   * square or so, in the green, well-watered country) a rounded stretch of them, two and a
+   * half to four and a half kilometres across, well clear of the ranges, the volcanic country and the
    * Smoky Mountains. Their own country, not a range's: see landHeight.
    */
+  #jungleMtn(x, z, mtn = null) {
+    const b = this.#jungleMtnBlob(x, z);
+    // (Fading out before any mountain range's own ground: never running into one.)
+    return b > 0 ? b * (1 - smoothstep(0.08, 0.24, mtn ?? this.getMountainness(x, z))) : 0;
+  }
+
   #jungleMtnBlob(x, z) {
-    return this.#blobs('jmtn', x, z, 6500, 0.9, 1600, 3000, 0x7a12, (px, pz) => {
+    return this.#blobs('jmtn', x, z, 3500, 1, 1300, 2200, 0x7a12, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
-      if (r > 0.12 || this.#volcanoBelt(px, pz) > 0.3 || this.#smokyBlob(px, pz) > 0.05) return 0;
-      // (In the jungles' country: where the jungle noise has it, warm and wet.)
-      if (this.jungleNoise.fbm(px * 0.00018 + 70, pz * 0.00018 - 30, 2) < -0.45) return 0;
-      return this.getAridity(px, pz, r) < 0.38 && this.#continentBase(px, pz) - this._contLift > -0.25 ? 1 : 0;
+      if (this.getMountainness(px, pz) > 0.35 || this.#volcanoBelt(px, pz) > 0.6 || this.#smokyBlob(px, pz) > 0.05) return 0;
+      // (In the green, well-watered country: they bring their own jungle with them, see #biomeWeights.)
+      return this.getAridity(px, pz, r) < 0.36 && this.#continentBase(px, pz) - this._contLift > -0.25 ? 1 : 0;
+    }, (px, pz, rad) => {
+      // (No mountain range within 2 km of its edge, so it never runs into one. See also #jungleMtn.)
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        for (const d of [rad + 1000, rad + 2000]) if (this.getMountainness(px + Math.cos(a) * d, pz + Math.sin(a) * d) > 0.6) return false;
+      }
+      return true;
     });
   }
 
@@ -1550,18 +1573,22 @@ export class TerrainGenerator {
     const cascades = cw > 0.005 ? cw * this.cascadesRelief(x, z, cw) * (1 - smoothstep(0.5, 6, lakes)) : 0;
     const hw = (w.cherry ?? 0) + (w.bamboo ?? 0);
     const highland = hw > 0.005 ? hw * this.highlandRelief(x, z, (w.cherry ?? 0) / hw) * (1 - smoothstep(0.5, 6, lakes)) : 0;
-    // The jungle mountains (see #jungleMtnBlob): steep, sharp-ridged peaks
-    // and spires, rising out of the jungle wherever they stand, low country
-    // or high (the higher the land, the taller they grow).
+    // The jungle mountains (see #jungleMtnBlob): a massif of steep green
+    // mountains, several summits to it, sharp ridges running down from them
+    // between deep valleys, rising out of the jungle wherever they stand, low
+    // country or high (the higher the land, the taller they grow).
     let jungleMtn = 0;
-    const jb = this._probing ? 0 : this.#jungleMtnBlob(x, z);
+    const jb = this._probing ? 0 : this.#jungleMtn(x, z);
     if (jb > 0) {
       const N = this.jungleMtnNoise;
-      const qx = x + N.noise2D(x * 0.0007 + 31, z * 0.0007) * 160, qz = z + N.noise2D(x * 0.0007, z * 0.0007 - 31) * 160;
-      const peak = Math.pow(N.ridged(qx * 0.0021, qz * 0.0021, 3, 2.1, 0.5, 0.015), 2.2);
-      const spires = Math.pow(N.ridged(qx * 0.006 + 50, qz * 0.006 - 50, 2, 2, 0.5, 0.01), 3);
-      const high = 0.6 + 0.6 * smoothstep(0, 60, 14 + (continent - contLift) * 16);
-      jungleMtn = smoothstep(0, 0.9, jb) * (8 + (170 * peak + 35 * spires) * high * smoothstep(0.15, 0.7, jb));
+      const qx = x + N.noise2D(x * 0.0005 + 31, z * 0.0005) * 260, qz = z + N.noise2D(x * 0.0005, z * 0.0005 - 31) * 260;
+      // (The mass of it: broad mountains, their summits a kilometre or so apart.)
+      const mass = smoothstep(-0.45, 0.75, N.fbm(qx * 0.0009 + 13, qz * 0.0009 - 7, 3));
+      // (Ridges down their flanks, sharp along their crests.)
+      const ridges = Math.pow(N.ridged(qx * 0.0024, qz * 0.0024, 3, 2.1, 0.5, 0.02), 1.5);
+      const rough = N.fbm(qx * 0.012 + 50, qz * 0.012 - 50, 2) * 6;
+      const high = 0.65 + 0.55 * smoothstep(0, 60, 14 + (continent - contLift) * 16);
+      jungleMtn = smoothstep(0, 0.9, jb) * (8 + (140 * mass * (0.55 + 0.45 * ridges) + 30 * ridges + rough) * high * smoothstep(0.15, 0.75, jb));
     }
     let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + jungleMtn + volcanic + badlands + cascades + highland + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // (Valleys only in land well above the water: never new lakes.)
@@ -2009,6 +2036,9 @@ export class TerrainGenerator {
         const px = (i + 0.2 + 0.6 * hash2(i, j, s + 1)) * S, pz = (j + 0.2 + 0.6 * hash2(i, j, s + 2)) * S;
         if (px < minX || pz < minZ || px >= maxX || pz >= maxZ) continue;
         if (this.getSeaCliff(px, pz) < 0.3) continue;
+        // (Only on the dry coasts: desert, savanna, badlands.)
+        const aw = this.getBiomeWeights(px, pz, {});
+        if (aw.desert + aw.savanna + aw.badlands < 0.5) continue;
         const C = 14 + 16 * (this.coastNoise.noise2D(px * 0.002, pz * 0.002) * 0.5 + 0.5);
         const r = 6 + 6 * hash2(i, j, s + 3);
         const H = Math.min(C * (0.3 + 0.35 * hash2(i, j, s + 4)), r * 2.2);
@@ -2082,6 +2112,9 @@ export class TerrainGenerator {
       const px = (i + 0.15 + 0.7 * hash2(i + t * 37, j, s + 1)) * G, pz = (j + 0.15 + 0.7 * hash2(i, j + t * 37, s + 2)) * G;
       const f = probe.getFeatures(px, pz);
       if (!(f.canyonFloor > 0.6 && f.canyonCut > 20)) continue;
+      // (Only in the dry country: desert, savanna, badlands.)
+      const bw = this.getBiomeWeights(px, pz, {});
+      if (bw.desert + bw.savanna + bw.badlands < 0.5) continue;
       const floor = probe.getBaseHeight(px, pz), rimAt = floor + f.canyonCut * 0.85;
       // (How far to the rim, each way round.)
       const out = (a) => {
@@ -4286,6 +4319,9 @@ export class TerrainGenerator {
       }
     }
     blendedFaceColor(this.biomes, w, height, upness, out);
+    // Under a landmark's lake or pool (the crystal lake, a crater lake, a
+    // cenote): stone and gravel, never the grass of the land round it.
+    if (ground > sea && this.landmarks?.underWater(x, z, ground - 0.3)) out.lerp(LAKE_FLOOR, 0.85);
     // A mushroom island: its ground a mat of grey-violet mycelium, above the beach.
     if (land > 0 && ground < sea + 40) {
       const myc = this.mushroomIslandAt(x, z) * land;

@@ -757,7 +757,9 @@ export class Landmarks {
         // mossy boulders, a dark pool. (Its walls drawn here finer than the
         // land round about, so their roughness shows.)
         const b = LANDMARKS[site.kind].basin;
-        const floor = y0;
+        // (The jungle's filled with water nearly to the brim: its floor, for what's built, the water.)
+        const lake = jungle ? this.#lake(site) : null;
+        const floor = jungle ? lake.level - 1.2 : y0;
         g.add(this.#surface(site, b.r * 1.06, (x, z, y, slope, t) => {
           const band = Math.floor((y - floor) / 3.2 + wob2(x, z) * 0.6);
           if (slope < (jungle ? 0.75 : 0.55) && t < 0.97) return y - floor < 3 && !jungle ? 0x5a4e3e : pick2(jungle ? [0x3a6a28, 0x2e5e22, 0x467a30] : [0x4a6a34, 0x56783a, 0x3e5e2c], x, z);
@@ -786,47 +788,26 @@ export class Landmarks {
           blob(k, pick([0x9a968c, 0x8a867c, 0x7a766e]), [x, y + 0.3, z], sz, [1, 0.7, 1], 0.25);
           k.add(new BoxGeometry(sz * 1.1, 0.14, sz * 1.1), 0x4a6a34, [x, y + 0.3 + sz * 0.62, z], [0, r(0, 3), 0]);
         }
-        waters.push({ level: floor + 1.2, r: b.r * 0.3, clean: jungle, mat: jungle ? 'turq' : 'dark' });
+        waters.push(jungle ? { ...lake, clean: true, mat: 'turq' } : { level: floor + 1.2, r: b.r * 0.3, clean: false, mat: 'dark' });
         break;
       }
       case 'tarPits': {
-        // Black tar welling up in a hollow in the savanna, glossy, bubbling;
-        // the bones of what it caught sticking up out of it: a great ribcage
-        // half sunk, a skull, tusks, leg bones; tar seeping out over the
-        // ground round it in black stains; the dry grass round about.
+        // A pond of black tar welling up in a hollow in the savanna, glossy,
+        // bubbling here and there; its shore stained dark with it; the dry
+        // grass round about. (You wade in it, stuck: see the collide hook.)
         const lake = this.#lake(site);
         waters.push({ ...lake, clean: false, mat: 'tar' });
-        const bone = [0xd8ceb6, 0xc8bea4, 0xb8ae94, 0xe0d6c0];
-        // (The ribs, arching up out of the tar in a row.)
-        const ra = site.rot, ru = [Math.cos(ra), Math.sin(ra)], rv = [-ru[1], ru[0]];
-        for (let i = 0; i < 7; i++) {
-          const u = (i - 3) * 0.9 + 1.5;
-          for (const sd of [-1, 1]) {
-            const bx = ru[0] * u, bz = ru[1] * u, span = 1.8 + Math.sin(((i + 1) / 8) * Math.PI) * 1.2;
-            const top = [bx + rv[0] * sd * span * 0.5, lake.level + 1.3 + span * 0.4, bz + rv[1] * sd * span * 0.5];
-            k.limb([bx, lake.level - 0.4, bz], top, 0.16, 0.12, pick(bone), 5);
-            k.limb(top, [bx + rv[0] * sd * span, lake.level - 0.3, bz + rv[1] * sd * span], 0.12, 0.08, pick(bone), 5);
-          }
-        }
-        // (The skull and its tusks, by the edge; a leg bone or two.)
-        const sx = -ru[0] * 4.5, sz = -ru[1] * 4.5;
-        blob(k, bone[0], [sx, lake.level + 0.5, sz], 1.1, [1.3, 0.8, 1], 0.15);
-        for (const sd of [-1, 1]) k.limb([sx + rv[0] * sd * 0.6, lake.level + 0.3, sz + rv[1] * sd * 0.6], [sx - ru[0] * 2.6 + rv[0] * sd * 1.4, lake.level + 1.6, sz - ru[1] * 2.6 + rv[1] * sd * 1.4], 0.18, 0.06, bone[3], 6);
-        for (let i = 0; i < 3; i++) {
-          const a = r(0, Math.PI * 2), d = r(3, 7), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          k.limb([x, lake.level - 0.2, z], [x + r(-1.5, 1.5), lake.level + r(0.4, 1.2), z + r(-1.5, 1.5)], 0.14, 0.12, pick(bone), 5);
-        }
         // (Bubbles welling up on the tar: glossy black domes.)
-        for (let i = 0; i < 14; i++) {
-          const a = r(0, Math.PI * 2), d = Math.sqrt(R()) * lake.r * 0.8;
-          blob(k, 0x141210, [Math.cos(a) * d, lake.level + 0.02, Math.sin(a) * d], r(0.15, 0.45), [1, 0.55, 1], 0.05);
+        for (let i = 0; i < 22; i++) {
+          const a = r(0, Math.PI * 2), d = Math.sqrt(R()) * lake.r * 0.85;
+          blob(k, 0x141210, [Math.cos(a) * d, lake.level + 0.02, Math.sin(a) * d], r(0.15, 0.5), [1, 0.55, 1], 0.05);
         }
-        // (Tar seeping out over the ground round it.)
-        for (let i = 0; i < 10; i++) {
-          const a = r(0, Math.PI * 2), d = lake.r * r(1.0, 1.6), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          blob(k, 0x181614, [x, gy(x, z) + 0.03, z], r(0.8, 2.2), [1.4, 0.06, 1], 0.05);
+        // (Its shore: a dark rim of tar-soaked earth, all round it.)
+        for (let i = 0; i < 36; i++) {
+          const a = (i / 36) * Math.PI * 2 + r(-0.06, 0.06), d = lake.r * r(0.98, 1.12), x = Math.cos(a) * d, z = Math.sin(a) * d;
+          blob(k, pick([0x1e1a16, 0x2a241c, 0x231e18]), [x, gy(x, z) + 0.02, z], r(1.4, 2.4), [1.3, 0.05, 1], 0.05);
         }
-        tufts(26, lake.r * 2.4, [0xb8a25a, 0xa89048, 0xc8b06a]);
+        tufts(30, lake.r * 1.8, [0xb8a25a, 0xa89048, 0xc8b06a]);
         break;
       }
       case 'craterLake': {
@@ -1177,7 +1158,7 @@ export class Landmarks {
           continue;
         }
         if (Math.abs(w.cx - x) > w.r || Math.abs(w.cz - z) > w.r) continue;
-        if (Math.hypot(w.cx - x, w.cz - z) < w.r && ground < w.level) return { level: w.level, fx: 0, fz: 0, speed: 0, clean: w.clean, hot: !!w.hot, pond: !w.clean, landmark: b.site.kind };
+        if (Math.hypot(w.cx - x, w.cz - z) < w.r && ground < w.level) return { level: w.level, fx: 0, fz: 0, speed: 0, clean: w.clean, hot: !!w.hot, pond: !w.clean, landmark: b.site.kind, tar: w.mat === 'tar' };
       }
     }
     return null;

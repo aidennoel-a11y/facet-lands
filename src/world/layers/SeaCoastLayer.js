@@ -258,7 +258,8 @@ export function createSeaCoastLayer(config, terrainMaterial) {
             const dx = b.n[0] * cn + b.side[0] * cs, dy = b.n[1] * cn, dz = b.n[2] * cn + b.side[2] * cs;
             const x = b.x + dx, y = b.y + dy, z = b.z + dz;
             const up = dy / (Math.hypot(dx, dy, dz) || 1);
-            ring.push([x, y, z, shade(x, z, y, Math.max(0, up), up < -0.3 ? 0.7 : 1), up > 0.5 ? generator.getSeasonality(x, z) : 0]);
+            // (Its own stone all over, the country's: no grass or sand on its top.)
+            ring.push([x, y, z, shade(x, z, y, Math.min(0.5, Math.max(0, up)), up < -0.3 ? 0.7 : 1), 0]);
           }
           rings.push(ring);
         }
