@@ -52,7 +52,6 @@ export const BIOME_TUNING = {
   // How much of the green country is forest rather than plains: higher, more forest.
   forest: -0.11, // (-0.11: 1% of the map from forest to plains)
 };
-const RANGE_CELL = 320; // the grid a mountain range is taken in on, to tell one range from another (m: see #rangeOf)
 const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
 // The Cascades' tiers: where each steps up (on its noise), and how far (m).
 const CASCADE_TIERS = [[-0.24, 12], [-0.04, 15], [0.16, 13]];
@@ -224,6 +223,7 @@ export class TerrainGenerator {
     this.massifNoise = new SimplexNoise(this.seed + 17);
     this.hillsNoise = new SimplexNoise(this.seed + 18); // Black Hills country
     this.smokyNoise = new SimplexNoise(this.seed + 149); // Smoky Mountains country
+    this.jungleMtnNoise = new SimplexNoise(this.seed + 171); // the jungle mountains' peaks
     this.valleyNoise = new SimplexNoise(this.seed + 151); // the valleys through the hills
     this._islands = new Map(); // (see #island)
     this.mesaNoise = new SimplexNoise(this.seed + 19);
@@ -419,27 +419,26 @@ export class TerrainGenerator {
     out.savanna -= smokySavanna;
     out.smoky = smoky + smokySavanna;
     out.volcanic = volcanic;
-    // Round the mountains: their foothills. In a few warm ranges without
-    // snowy peaks (see #jungleRange) all the foothills are jungle, the
-    // foothills jungle; anywhere else, never jungle (it gives way to the
-    // ordinary woods there). And here and there in the foothills, a grove
+    // Round the mountains: their foothills, never jungle (it gives way to the
+    // ordinary woods there). The jungle mountains are country of their own,
+    // ringed by the foothills jungle (see #jungleMtnBlob). And here and there in the foothills, a grove
     // of cherry blossom highlands (see #cherryLand); by the jungles and the
     // foothills jungle, now and then a bamboo forest (see #bambooLand).
     // They take over the green country where they are.
     if (!this._probing) {
       const mtn = this.getMountainness(x, z), band = smoothstep(0.32, 0.5, mtn);
-      const jr = mtn > 0.18 ? this.#jungleRange(x, z) : 0;
+      // (The jungle mountains: country of their own, see #jungleMtnBlob.)
+      const jb = this.#jungleMtnBlob(x, z);
       if (band > 0 && out.jungle > 0) {
-        const j = out.jungle * band * (1 - jr);
+        const j = out.jungle * band * (1 - jb);
         out.jungle -= j;
         out.temperate += j;
       }
       const own = Math.min(1, out.temperate + out.parkland + out.cascades + out.pine + out.redwood + out.jungle + out.wetland + out.smoky);
       // (The jungle range's mountains themselves, its high ground: the jungle mountains, green, rocky. Its
       // lower ground round them, the foothills jungle.)
-      const core = smoothstep(0.46, 0.58, mtn);
-      const km = jr * core;
-      const kj = smoothstep(0.18, 0.34, mtn) * jr * (1 - core); // (the whole of a jungle range is its own: nothing else mixed in)
+      const km = smoothstep(0.5, 0.8, jb);
+      const kj = smoothstep(0.12, 0.45, jb) * (1 - km); // (all of it its own: nothing else mixed in)
       const cl = this.#cherryLand(x, z), bl = this.#bambooLand(x, z);
       const kc = cl * own * (1 - kj - km), kb = bl * own * (1 - kj - km - kc);
       if (kj + km + kc + kb > 0) for (const id of BIOME_IDS) out[id] *= 1 - kj - km - kc - kb;
@@ -941,89 +940,6 @@ export class TerrainGenerator {
     return smoothstep(0.34, 0.46, this.jungleNoise.fbm(x * 0.00006 - 410, z * 0.00006 + 230, 2));
   }
 
-  // Whether (x, z) is in a jungle range (0..1): each mountain range (the
-  // land joined up by its mountains and foothills: see #rangeOf) is one or
-  // the other, all of it, never a mix. Blended between the corners of its
-  // grid only at the range's edge.
-  #jungleRange(x, z) {
-    const G = RANGE_CELL, gx = Math.floor(x / G - 0.5), gz = Math.floor(z / G - 0.5);
-    const fx = x / G - 0.5 - gx, fz = z / G - 0.5 - gz;
-    const j = (i, k) => (this.#rangeOf(i, k)?.jungle ? 1 : 0);
-    const a = j(gx, gz) + (j(gx + 1, gz) - j(gx, gz)) * fx;
-    const b = j(gx, gz + 1) + (j(gx + 1, gz + 1) - j(gx, gz + 1)) * fx;
-    return a + (b - a) * fz;
-  }
-
-  /**
-   * The mountain range grid cell (i, k) is part of, or null: all the cells
-   * joined to it by mountains or foothills (worked out once, from any of
-   * them, and remembered for all). A range is a jungle range if it's in
-   * warm country (see #tropicRange), its mountains real ones (peaks over
-   * about 120 m) but none high enough for snow, and its draw says so: one
-   * such range in two. The same whichever cell it's asked from.
-   */
-  #rangeOf(i, k) {
-    const ranges = (this._ranges ??= new Map()), key = (i + 32768) * 65536 + (k + 32768);
-    if (ranges.has(key)) return ranges.get(key);
-    const pr = this.#probe(), G = RANGE_CELL;
-    const inRange = (ci, ck) => pr.#rangeField((ci + 0.5) * G, (ck + 0.5) * G, {}).value + MOUNTAIN_BIAS > 0.17; // (quick: the ranges' own field, see getMountainness)
-    if (!inRange(i, k)) {
-      ranges.set(key, null);
-      return null;
-    }
-    // (Flood out over its cells, quick: whether each is mountain country is
-    // all that's looked at. If it reaches a cell of a range already known,
-    // it's that range. One too big to take in is no jungle range.)
-    const cells = [key], seen = new Set([key]);
-    let known = null;
-    for (let n = 0; n < cells.length && !known && cells.length <= 12000; n++) {
-      const c = cells[n], ci = Math.floor(c / 65536) - 32768, ck = (c % 65536) - 32768;
-      for (const [di, dk] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nk = (ci + di + 32768) * 65536 + (ck + dk + 32768);
-        if (seen.has(nk)) continue;
-        seen.add(nk);
-        const r = ranges.get(nk);
-        if (r) {
-          known = r;
-          break;
-        }
-        if (r === undefined && inRange(ci + di, ck + dk)) cells.push(nk);
-      }
-    }
-    let range = known;
-    if (!range) {
-      if (cells.length > 12000) range = { jungle: false, huge: true };
-      else {
-        // Warm country? Its peaks real mountains, and none high enough for snow?
-        // (Its cells in order: the same ones looked at, whichever cell it was found from.)
-        cells.sort((a, b) => a - b);
-        let warm = 0, top = -Infinity, minKey = Infinity, peaks = 0;
-        const step = Math.max(1, Math.floor(cells.length / 120)); // (a hundred or so of its cells looked at closely)
-        for (let n = 0; n < cells.length; n++) {
-          const c = cells[n];
-          if (c < minKey) minKey = c;
-          if (n % step) continue;
-          const x = (Math.floor(c / 65536) - 32768 + 0.5) * G, z = ((c % 65536) - 32768 + 0.5) * G;
-          if (pr.getAridity(x, z) < 0.42) warm++; // (green, well-watered country: not the dry)
-          const mtn = pr.getMountainness(x, z);
-          if (mtn > 0.45) top = Math.max(top, pr.landHeight(x, z));
-          if (mtn > 0.58) peaks++; // (its high ground: the jungle mountains' own, see #biomeWeights)
-        }
-        const mi = Math.floor(minKey / 65536) - 32768, mk = (minKey % 65536) - 32768;
-        // (About one range in five, of those in green country with real mountains in them, and
-        // big enough to be a range of them, not a lone hill or two (some 10 km² or more), with
-        // peaks to it (real mountains over 140 m, some of them), and not one of the great ranges
-        // (no more than some 70 km², cells and all), so a jungle range is the whole of its range,
-        // never touching another's mountains. No snow
-        // lies on their peaks: green and earth to the tops, see biomes' jungleMountains.)
-        range = { jungle: cells.length >= 100 && cells.length <= 700 && warm > Math.ceil(cells.length / step) * 0.5 && top > 140 && top < 178 && peaks >= 3 && hash2(mi, mk, this.seed ^ 0x7a11) < 0.25 };
-      }
-    }
-    if (ranges.size > 400000) ranges.clear();
-    for (const c of cells) ranges.set(c, range);
-    return range;
-  }
-
   // A cherry blossom grove (0..1): uncommon, a rounded patch half a
   // kilometre or so across, in the green foothills right by the mountains
   // (never up on the peaks, nor where the snow lies).
@@ -1184,6 +1100,22 @@ export class TerrainGenerator {
     return this.#blobs('glow', x, z, T.glowCell, T.glowChance, 450, 850, 0x610b, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       return r < 0.05 && this.getAridity(px, pz, r) < 0.36 && this.#volcanoBelt(px, pz) < 0.3 && this.#mountainsAround(px, pz) < 0.05 && this.#seaCoast(px, pz) < 0.05 && this.getOceanness(px, pz) < 0.1 ? 1 : 0;
+    });
+  }
+
+  /**
+   * Where the jungle mountains stand (0..1): now and then (one to a 6.5 km
+   * square or so, in jungle country) a rounded stretch of them, three to six
+   * kilometres across, well clear of the ranges, the volcanic country and the
+   * Smoky Mountains. Their own country, not a range's: see landHeight.
+   */
+  #jungleMtnBlob(x, z) {
+    return this.#blobs('jmtn', x, z, 6500, 0.9, 1600, 3000, 0x7a12, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      if (r > 0.12 || this.#volcanoBelt(px, pz) > 0.3 || this.#smokyBlob(px, pz) > 0.05) return 0;
+      // (In the jungles' country: where the jungle noise has it, warm and wet.)
+      if (this.jungleNoise.fbm(px * 0.00018 + 70, pz * 0.00018 - 30, 2) < -0.45) return 0;
+      return this.getAridity(px, pz, r) < 0.38 && this.#continentBase(px, pz) - this._contLift > -0.25 ? 1 : 0;
     });
   }
 
@@ -1618,7 +1550,20 @@ export class TerrainGenerator {
     const cascades = cw > 0.005 ? cw * this.cascadesRelief(x, z, cw) * (1 - smoothstep(0.5, 6, lakes)) : 0;
     const hw = (w.cherry ?? 0) + (w.bamboo ?? 0);
     const highland = hw > 0.005 ? hw * this.highlandRelief(x, z, (w.cherry ?? 0) / hw) * (1 - smoothstep(0.5, 6, lakes)) : 0;
-    let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + volcanic + badlands + cascades + highland + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
+    // The jungle mountains (see #jungleMtnBlob): steep, sharp-ridged peaks
+    // and spires, rising out of the jungle wherever they stand, low country
+    // or high (the higher the land, the taller they grow).
+    let jungleMtn = 0;
+    const jb = this._probing ? 0 : this.#jungleMtnBlob(x, z);
+    if (jb > 0) {
+      const N = this.jungleMtnNoise;
+      const qx = x + N.noise2D(x * 0.0007 + 31, z * 0.0007) * 160, qz = z + N.noise2D(x * 0.0007, z * 0.0007 - 31) * 160;
+      const peak = Math.pow(N.ridged(qx * 0.0021, qz * 0.0021, 3, 2.1, 0.5, 0.015), 2.2);
+      const spires = Math.pow(N.ridged(qx * 0.006 + 50, qz * 0.006 - 50, 2, 2, 0.5, 0.01), 3);
+      const high = 0.6 + 0.6 * smoothstep(0, 60, 14 + (continent - contLift) * 16);
+      jungleMtn = smoothstep(0, 0.9, jb) * (8 + (170 * peak + 35 * spires) * high * smoothstep(0.15, 0.7, jb));
+    }
+    let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + jungleMtn + volcanic + badlands + cascades + highland + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // (Valleys only in land well above the water: never new lakes.)
     if (valleys > 0) height -= valleys * smoothstep(seaLevel + 3, seaLevel + 30, height);
     // Canyons cut down into it (their floors kept above the sea).

@@ -212,7 +212,9 @@ export class LandmarkSites {
       }
     }
     todo.sort((a, b) => a[3] - b[3]);
-    for (const [kind, i, k] of todo.slice(0, budget)) {
+    // (With workers to ask, every one wanted is asked for at once, nearest
+    // first: asking's cheap here, they're worked out there, a batch at a time.)
+    for (const [kind, i, k] of todo.slice(0, this.lazy ? 800 : budget)) {
       const s = this.site(kind, i, k);
       if (s) sites.push(s);
     }

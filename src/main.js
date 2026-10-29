@@ -622,7 +622,7 @@ const spiders = new CaveSpiders(scene);
 const landmarks = new Landmarks(scene, generator); // (the twelve kinds of landmark: see landmarkSites)
 // (Where the landmarks lie: worked out by the chunk workers, which know the
 // land and its rivers already, not here: see LandmarkSites.lazy.)
-landmarks.askSites = (squares) => chunks.task({ kind: 'sites', squares });
+landmarks.askSites = (squares) => chunks.mapTask({ kind: 'sites', squares }); // (on the map's workers, or any idle: see ChunkManager.mapTask)
 generator.landmarks.lazy = chunks.workers.length > 0;
 const mineProps = new MineProps(scene); // (the old mines' timbers, rails and carts)
 let mineWait = 0;

@@ -1091,16 +1091,16 @@ export class Landmarks {
           for (let i = Math.floor((x - 900) / C); i <= Math.floor((x + 900) / C); i++) if (!L.known(kind, i, k)) (L.site(kind, i, k), todo = 0);
         }
       }
-      if (!this.asking && this.askSites) {
-        const squares = L.takeWanted(48);
-        if (squares.length) {
-          this.asking = true;
-          const g = this.generator;
-          this.askSites(squares)
-            .then((sites) => g === this.generator && squares.forEach(([kind, i, k], n) => L.prime(kind, i, k, sites[n])))
-            .catch(() => (L.lazy = false)) // (no workers after all: worked out here)
-            .finally(() => (this.asking = false));
-        }
+      // (A few batches out at once, so a map's worth comes in quickly.)
+      while ((this.asking ?? 0) < 4 && this.askSites) {
+        const squares = L.takeWanted(24);
+        if (!squares.length) break;
+        this.asking = (this.asking ?? 0) + 1;
+        const g = this.generator;
+        this.askSites(squares)
+          .then((sites) => g === this.generator && squares.forEach(([kind, i, k], n) => L.prime(kind, i, k, sites[n])))
+          .catch(() => (L.lazy = false)) // (no workers after all: worked out here)
+          .finally(() => this.asking--);
       }
       todo = 1; // (what's known is built meanwhile)
     } else {
