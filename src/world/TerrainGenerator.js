@@ -24,7 +24,7 @@ export const BIOME_TUNING = {
   // How high (m) the foothills count as mountains: lower, more mountains, fewer foothills.
   mountainsAbove: 103,
   // Jungles: lower, more jungle (-0.01 ≈ +0.25%).
-  jungle: 0.02,
+  jungle: -0.005,
   // Pine forests: their size (radius scale): higher, more pine forest.
   pine: 1.15,
   // Redwood forests in the heart of the pine forests near a lake or the sea: lower, more redwood.

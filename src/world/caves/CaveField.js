@@ -762,7 +762,7 @@ export class CaveField {
     const g = this.generator, N = CaveField.NATURAL, sea = this.seaLevel;
     const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x4e7a1) * 4294967296);
     const roll = rand();
-    if (roll > 0.55) return null;
+    if (roll > 0.24) return null;
     const H = (x, z) => g.getHeight(x, z);
     const pick = () => [(rx + 0.15 + rand() * 0.7) * N, (rz + 0.15 + rand() * 0.7) * N];
     // (The lowest and highest of the ground round (x, z), r out.)
@@ -776,7 +776,7 @@ export class CaveField {
       return [lo, hi];
     };
     const dry = (x, z) => g.getOceanness(x, z) < 0.05 && !((g.getBiomeWeights(x, z, {}).saltFlat ?? 0) > 0.15) && !this.nearEntrance(x, z, 30) && !g.rivers?.at?.(x, z, 10);
-    for (let t = 0; t < 14; t++) {
+    for (let t = 0; t < 30; t++) {
       const [x, z] = pick();
       if (!dry(x, z)) continue;
       if (roll < 0.06) {
@@ -800,7 +800,10 @@ export class CaveField {
       const h0 = H(x, z);
       if (h0 < sea + 6) continue;
       const gx = (H(x + 3, z) - H(x - 3, z)) / 6, gz = (H(x, z + 3) - H(x, z - 3)) / 6, grade = Math.hypot(gx, gz);
-      if (grade < 0.25) {
+      // (Half the regions look for a mouth in a slope first, the rest for a hole.)
+      const wantMouth = roll < 0.15;
+      if (wantMouth && grade < 0.7) continue;
+      if (!wantMouth && grade < 0.25) {
         // A hole: on level ground, over a cave.
         const r = 2.4 + rand() * 2.2;
         const [lo, hi] = rim(x, z, r + 1);
@@ -811,7 +814,7 @@ export class CaveField {
         if (bottom === null) continue;
         return this.#naturalShaft('hole', rx, rz, x, z, r, lo, bottom, rand, {});
       }
-      if (grade > 0.9) {
+      if (wantMouth) {
         // A mouth: in the face of a steep slope, a tunnel on into the hill
         // (uphill), falling gently, till it comes to a cave.
         const dx = gx / grade, dz = gz / grade, r = 2.2 + rand() * 1.3, cy = h0 + r * 0.55;
@@ -880,7 +883,7 @@ export class CaveField {
     let d = Math.max(h - R, e.bottom - 3 - y, y - (e.top + 4));
     if (e.kind === 'abyss' && h > R - 3.4 && y < e.tubeTop - 4 && y > e.bottom + 8) {
       const t = (e.tubeTop - y) / e.pitch + a / (Math.PI * 2);
-      if (t - Math.floor(t) < 0.12) d = Math.max(d, 0.6);
+      if (t - Math.floor(t) < 0.18) d = Math.max(d, 0.6);
     }
     return d;
   }
