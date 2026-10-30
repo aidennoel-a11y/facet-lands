@@ -446,8 +446,10 @@ export class PlayerControls {
     const fast = (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && input.forward > 0;
     const yaw = this.euler.y, pitch = this.euler.x;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-    const float = water.level + 0.25; // (eyes just above the surface)
-    const atSurface = pos.y > water.level - 0.5;
+    // (The surface as it is just now, riding the waves: the eyes kept just above it.)
+    const surf = this.world.surfaceAt?.(pos.x, pos.z, water) ?? water.level;
+    const float = surf + 0.4;
+    const atSurface = pos.y > surf - 0.5;
     this.swimSprint = fast;
     // What you're swimming for: level, at an easy pace; or a sprint, along where you look.
     let tx, ty, tz;
@@ -496,8 +498,13 @@ export class PlayerControls {
       if (v.y < 0) v.y = 0;
     }
     this.onBottom = pos.y <= stand + 0.05;
+    // Never the eyes right at the surface, the view cut in two by it: just
+    // under it or just over it, whichever way you're going (or nearer).
+    const gap = pos.y - surf, clear = 0.34;
+    // (Standing on the bottom too high up for under it: over it.)
+    if (Math.abs(gap) < clear) pos.y = surf + ((v.y > 0.05 ? true : v.y < -0.05 ? false : gap >= 0) || surf - clear < stand - 0.01 ? clear : -clear);
     this.velocityY = v.y;
-    this.underwater = pos.y < water.level - 0.05;
+    this.underwater = pos.y < surf - 0.05;
   }
 
   /**

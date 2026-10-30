@@ -183,8 +183,15 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
           gl_FragColor.rgb += rainRings(vWorld, uTime) * 0.22 * open;
           #ifdef USE_FOG
           // (Out past Snell's window, some 49° off straight up, the surface
-          // mirrors the dim water under it; inside it, the sky shines through.)
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(fogColor * 1.1, uSky * 0.75 + fogColor * 0.4, smoothstep(0.6, 0.8, abs(dot(normal, V)))), below);
+          // is a mirror, silvery, the water under it shown back rippling with
+          // the waves; at the window's edge a bright ring; inside it, the sky
+          // shining through, wavering.)
+          float nvB = abs(dot(normal, V)), win = smoothstep(0.62, 0.78, nvB);
+          float shimmer = ripples(vWorld * 1.4 + vec2(uTime * 0.3, -uTime * 0.2));
+          vec3 mirrored = fogColor * (1.5 + 0.6 * shimmer) + vec3(0.1, 0.14, 0.15) * (0.6 + 0.8 * shimmer);
+          vec3 through = (uSky * 0.75 + fogColor * 0.4) * (0.9 + 0.25 * shimmer);
+          float rd = (nvB - 0.7) / 0.06, ring = exp(-rd * rd);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(mirrored, through, win) + uSky * 0.35 * ring, below);
           #endif
           gl_FragColor.a = mix(gl_FragColor.a, 0.92, below);
           // Winter: lakes freeze over.

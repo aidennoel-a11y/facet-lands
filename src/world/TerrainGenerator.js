@@ -409,7 +409,8 @@ export class TerrainGenerator {
     // savanna, the desert and the salt flats.
     const bl = savanna + desert > 0.02 ? this.#badlands(x, z) : 0;
     // (And now and then out in the savanna too: the Black Hills rising out of the dry grassland, as they do.)
-    const dh = savanna > 0.3 && !this._probing ? this.#dryHills(x, z, range) * (1 - bl) : 0;
+    // (Fading out gently as the savanna gives way to the desert: never cut off in a wall.)
+    const dh = savanna > 0.06 && !this._probing ? this.#dryHills(x, z, range) * (1 - bl) * smoothstep(0.06, 0.45, savanna) : 0;
     out.savanna = savanna * (1 - bl) * (1 - dh);
     // Salt flats: the dry beds of old lakes in the heart of the deserts.
     const sf = desert > 0.5 ? this.#saltFlat(x, z) : 0;
@@ -441,8 +442,8 @@ export class TerrainGenerator {
       const own = Math.min(1, out.temperate + out.parkland + out.cascades + out.pine + out.redwood + out.jungle + out.wetland + out.smoky);
       // (The jungle range's mountains themselves, its high ground: the jungle mountains, green, rocky. Its
       // lower ground round them, the foothills jungle.)
-      const km = smoothstep(0.5, 0.8, jb);
-      const kj = smoothstep(0.12, 0.45, jb) * (1 - km); // (all of it its own: nothing else mixed in)
+      const km = smoothstep(0.4, 0.8, jb);
+      const kj = smoothstep(0.04, 0.4, jb) * (1 - km); // (all of it its own: nothing else mixed in)
       const cl = this.#cherryLand(x, z), bl = this.#bambooLand(x, z);
       const kc = cl * own * (1 - kj - km), kb = bl * own * (1 - kj - km - kc);
       if (kj + km + kc + kb > 0) for (const id of BIOME_IDS) out[id] *= 1 - kj - km - kc - kb;
@@ -786,7 +787,7 @@ export class TerrainGenerator {
    * `centre`, if given, of its middle and radius). Blobs,
    * never strips or lines; and never smaller than `rmin` across. Remembered.
    */
-  #blobs(key, x, z, C, chance, rmin, rmax, salt, suit, centre = null) {
+  #blobs(key, x, z, C, chance, rmin, rmax, salt, suit, centre = null, inner = 0.72) {
     const all = this._blobs ?? (this._blobs = {});
     const cache = all[key] ?? (all[key] = new Map());
     const ci = Math.floor(x / C), cj = Math.floor(z / C);
@@ -817,13 +818,13 @@ export class TerrainGenerator {
       const dx = x - b.x, dz = z - b.z, reach = b.r * 1.35, d2 = dx * dx + dz * dz;
       if (d2 > reach * reach * 1.000001) continue; // (quickly, before the exact distance)
       // (Well inside, however its outline wobbles: wholly in it.)
-      const inner = b.r * 0.525;
-      if (d2 < inner * inner) return 1;
+      const core = b.r * inner * 0.73;
+      if (d2 < core * core) return 1;
       const d = Math.hypot(dx, dz);
       if (d > reach) continue;
       const a = Math.atan2(dz, dx);
       const r = b.r * (1 + 0.15 * Math.sin(a * 3 + b.s) + 0.08 * Math.sin(a * 5 + b.s * 2) + 0.04 * Math.sin(a * 9 + b.s * 3));
-      best = Math.max(best, 1 - smoothstep(r * 0.72, r, d));
+      best = Math.max(best, 1 - smoothstep(r * inner, r, d));
     }
     return best;
   }
@@ -1170,7 +1171,7 @@ export class TerrainGenerator {
         for (const d of [rad + 1000, rad + 2000]) if (this.getMountainness(px + Math.cos(a) * d, pz + Math.sin(a) * d) > 0.6) return false;
       }
       return true;
-    });
+    }, 0.4); // (a wide fade: the land eases up into them over a kilometre or so)
   }
 
   /** Where wetlands lie (0..1): patches of the wettest, low-lying, flat country. */
@@ -1619,11 +1620,14 @@ export class TerrainGenerator {
       const ridges = Math.pow(N.ridged(qx * 0.0024, qz * 0.0024, 3, 2.1, 0.5, 0.02), 1.5);
       const rough = N.fbm(qx * 0.012 + 50, qz * 0.012 - 50, 2) * 6;
       const high = 0.65 + 0.55 * smoothstep(0, 60, 14 + (continent - contLift) * 16);
-      // (Rising to a high heart: real mountains, their summits two or three
-      // hundred metres over the jungle round them, above the trees.)
-      const core = Math.pow(smoothstep(0.12, 0.85, jb), 1.25);
-      const peak = (140 + 180 * mass) * (0.6 + 0.4 * ridges) + 45 * ridges;
-      jungleMtn = smoothstep(0, 0.9, jb) * 8 + core * (peak * high + rough);
+      // (Mountains, not a dome: several summits and the ridges between,
+      // two or three hundred metres over the jungle round them, the land
+      // easing up into them from far out; rough and broken in places.)
+      const env = Math.pow(smoothstep(0, 0.8, jb), 1.6);
+      const peaks = Math.pow(N.ridged(qx * 0.0013 + 70, qz * 0.0013 - 70, 4, 2.05, 0.5, 0.01), 1.8);
+      const peak = 60 + 120 * mass + 200 * peaks + 40 * ridges;
+      const broken = smoothstep(0.1, 0.6, N.noise2D(x * 0.0017 - 90, z * 0.0017 + 90)) * (N.fbm(x * 0.03 + 7, z * 0.03 - 7, 2) * 9 + N.ridged(x * 0.011, z * 0.011, 2, 2, 0.5, 0.02) * 14);
+      jungleMtn = smoothstep(0, 0.9, jb) * 8 + env * (peak * high + rough + broken);
     }
     let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + jungleMtn + volcanic + badlands + cascades + highland + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // (Valleys only in land well above the water: never new lakes.)

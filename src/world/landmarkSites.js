@@ -74,7 +74,7 @@ export const LANDMARKS = {
   // it caught sticking up out of it. Few: one to a 10 km square at most, and
   // few of those, so a savanna has one or two.)
   tarPits: { name: 'Tar Pits', cell: 10000, chance: 0.3, tries: 8, land: (h, slope) => h > 4 && slope < 0.1,
-    basin: { r: 16, d: 0.7, steep: 0.55 }, what: 'A pond of black tar welling up out of the savanna: sticky, slow going, no jumping out',
+    basin: { r: 16, d: 2.2, steep: 0.45 }, what: 'A pond of black tar welling up out of the savanna: sticky, slow going, no jumping out',
     fits: (w) => w.savanna > 0.65 },
   // (An old volcano's crater on a hill in the green country right by the
   // volcanic highlands: a round lake filling it to its lowest rim, the hill's

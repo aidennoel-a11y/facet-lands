@@ -79,6 +79,46 @@ function jitter(geo, amount, seed) {
 }
 
 // (Smooth wobble, and a colour picked by place: the same each time it's built.)
+/**
+ * A landmark's water seen from under it, as water is: past Snell's window
+ * (some 49° off straight up) a silvery mirror, the water under it shown
+ * back rippling; a bright ring at the window's edge; inside it the sky,
+ * wavering. (Its top side as before.)
+ */
+function underside(material, time) {
+  material.side = DoubleSide;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uWaterTime = time;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWaterWorld;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWaterWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWaterWorld;\nuniform float uWaterTime;')
+      .replace(
+        '#include <fog_fragment>',
+        /* glsl */ `#include <fog_fragment>
+        if (cameraPosition.y < vWaterWorld.y) { // (from below: a flat sheet, so where the eye is says which side's seen)
+          vec3 V = normalize(cameraPosition - vWaterWorld);
+          float sh = 0.5 + 0.5 * sin(vWaterWorld.x * 0.9 + uWaterTime * 1.3) * sin(vWaterWorld.z * 0.8 - uWaterTime * 1.1);
+          float nv = abs(V.y) + (sh - 0.5) * 0.08;
+          float rd = (nv - 0.7) / 0.06, win = smoothstep(0.62, 0.78, nv), ring = exp(-rd * rd);
+          #ifdef USE_FOG
+          vec3 deep = fogColor;
+          #else
+          vec3 deep = vec3(0.08, 0.3, 0.34);
+          #endif
+          vec3 mirrored = deep * (1.5 + 0.6 * sh) + vec3(0.1, 0.14, 0.15) * (0.6 + 0.8 * sh);
+          vec3 through = vec3(0.55, 0.72, 0.85) * (0.85 + 0.3 * sh);
+          gl_FragColor = vec4(mix(mirrored, through, win) + vec3(0.35, 0.42, 0.46) * ring, 0.97);
+          #ifdef USE_FOG
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+          #endif
+        }`,
+      );
+  };
+  material.customProgramCacheKey = () => 'landmark-water-under';
+}
+
 const wob2 = (x, z) => Math.sin(x * 0.37 + z * 0.11) * Math.cos(z * 0.41 - x * 0.07) * 0.7 + 0.3 * Math.sin(x * 1.3 + z * 1.7);
 const pick2 = (list, x, z) => list[Math.abs(Math.floor(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453)) % list.length];
 
@@ -115,9 +155,12 @@ export class Landmarks {
       dark: new MeshLambertMaterial({ color: 0x2a4a3a, transparent: true, opacity: 0.86, depthWrite: false }),
       hot: new MeshLambertMaterial({ color: 0x5ac8c0, transparent: true, opacity: 0.8, depthWrite: false }),
       turq: new MeshLambertMaterial({ color: 0x3ab4b0, transparent: true, opacity: 0.8, depthWrite: false }),
-      tar: new MeshLambertMaterial({ color: 0x0d0c0b, emissive: 0x050505, transparent: true, opacity: 0.97, depthWrite: false }),
+      tar: new MeshLambertMaterial({ color: 0x0d0c0b, emissive: 0x050505 }), // (thick and black: nothing shows through it)
       deep: new MeshLambertMaterial({ color: 0x1d4f86, transparent: true, opacity: 0.84, depthWrite: false }),
     };
+    // (Seen from under it too: see underside.)
+    this.waterTime = { value: 0 };
+    for (const [k, m] of Object.entries(this.waterMats)) if (k !== 'tar') underside(m, this.waterTime);
     this.wait = 0;
     this.time = 0;
   }
@@ -138,14 +181,14 @@ export class Landmarks {
    * `paint(x, z, y, slope, t)` (t: how far out, 0..1), laid just over the
    * land so it shows instead.
    */
-  #surface(site, R, paint, rough = 0.5) {
+  #surface(site, R, paint, rough = 0.5, lift = 0.06) {
     const rings = 46, segs = 140, pos = [], col = [], c = new Color();
     const P = [];
     for (let i = 0; i <= rings; i++) {
       const row = [], rr = (i / rings) * R;
       for (let j = 0; j < segs; j++) {
         const a = (j / segs) * Math.PI * 2, x = Math.cos(a) * rr, z = Math.sin(a) * rr, t = i / rings;
-        row.push([x, this.#ground(site.x + x, site.z + z) + 0.06 + rough * (1 - t) * (0.5 + 0.5 * wob2(x * 2.3, z * 2.3)), z, t]);
+        row.push([x, this.#ground(site.x + x, site.z + z) + lift + rough * (1 - t) * (0.5 + 0.5 * wob2(x * 2.3, z * 2.3)), z, t]);
       }
       P.push(row);
     }
@@ -819,11 +862,14 @@ export class Landmarks {
           const a = r(0, Math.PI * 2), d = Math.sqrt(R()) * lake.r * 0.85;
           blob(k, 0x141210, [Math.cos(a) * d, lake.level + 0.02, Math.sin(a) * d], r(0.15, 0.5), [1, 0.55, 1], 0.05);
         }
-        // (Its shore: a dark rim of tar-soaked earth, all round it.)
-        for (let i = 0; i < 36; i++) {
-          const a = (i / 36) * Math.PI * 2 + r(-0.06, 0.06), d = lake.r * r(0.98, 1.12), x = Math.cos(a) * d, z = Math.sin(a) * d;
-          blob(k, pick([0x1e1a16, 0x2a241c, 0x231e18]), [x, gy(x, z) + 0.02, z], r(1.4, 2.4), [1.3, 0.05, 1], 0.05);
-        }
+        // (Its shore: the earth round it soaked dark with tar, fading out into
+        // the grass; drawn over the land itself, so it lies on every slope.)
+        const shore = new Color(0x2a241c), land = new Color(), G = this.generator;
+        g.add(this.#surface(site, lake.r * 1.45, (x, z, y, slope, t) => {
+          const f = Math.min(1, Math.max(0, (t + 0.05 * wob2(x * 1.7, z * 1.7) - 0.62) / 0.35)), wx = site.x + x, wz = site.z + z, jit = G.getColorJitter(wx, wz);
+          G.surfaceColor(wx, wz, y + jit, 0.97, land, jit); // (the land's own colour, out at its edge)
+          return land.lerp(shore, 1 - f * f * (3 - 2 * f)).getHex();
+        }, 0.2, 0.3)); // (lifted a little more: the land's coarser triangles never poke through)
         tufts(30, lake.r * 1.8, [0xb8a25a, 0xa89048, 0xc8b06a]);
         break;
       }
@@ -1075,6 +1121,7 @@ export class Landmarks {
   /** Builds those near (x, z), drops those gone far; steam and falls moving. Returns the sites built. */
   update(dt, x, z) {
     this.time += dt;
+    this.waterTime.value = this.time;
     this.wait -= dt;
     // (The squares round you not yet worked out: two a frame, so finding
     // where the landmarks are never stalls a frame for long.)

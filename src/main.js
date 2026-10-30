@@ -1352,6 +1352,8 @@ const controls = new PlayerControls(camera, canvas, {
   terrainAt: (x, z) => chunks.groundHeightAt(x, z),
   seaLevel: WORLD.seaLevel,
   waterAt,
+  // (Where the water's surface is just now, its waves and all: see waterSurface.)
+  surfaceAt: (x, z, w) => waterSurface(x, z, w),
   collide: (position, radius) => {
     const feet = position.y - controls.eyeHeight;
     const bx = position.x, bz = position.z;
@@ -2496,9 +2498,13 @@ function perfNote(text) {
 const UNDERWATER = new THREE.Color(0x14505c);
 const SEA_BLUE = new THREE.Color(0x1868a8), underwaterClear = { at: false, x: 0, z: 0, v: 0 };
 let underwater = false;
+/** The water's surface over (x, z) as it's drawn just now: a lake's or the sea's with its waves on it. */
+function waterSurface(x, z, w) {
+  return w.level + (w.lake && game.waveAt ? game.waveAt(x, z).y : 0);
+}
 function applyUnderwater() {
   const w = sheltered ? null : waterAt(camera.position.x, camera.position.z);
-  underwater = !!w && camera.position.y < w.level - 0.02;
+  underwater = !!w && camera.position.y < waterSurface(camera.position.x, camera.position.z, w) - 0.02;
   // (Under the water nothing shows past the murk: so nothing past it is
   // drawn at all, the land, the trees, the far hills; back up, the whole
   // view again.)
