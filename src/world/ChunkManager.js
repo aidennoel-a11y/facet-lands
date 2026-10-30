@@ -1052,6 +1052,18 @@ export class ChunkManager {
     return this.generator.getBaseHeight(x, z); // (no chunk here yet: roughly, without working out the rivers)
   }
 
+  /** How far (x, y, z) is from the nearest place the caves come up through the ground (see ChunkMesher's openings), within a chunk or so; Infinity if none. */
+  openingDistance(x, y, z) {
+    const S = this.config.chunkSize, cx = Math.floor(x / S), cz = Math.floor(z / S);
+    let best = Infinity;
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (const o of this.chunks.get(`${cx + dx},${cz + dz}`)?.terrain.heights?.openings ?? []) best = Math.min(best, Math.hypot(o.x - x, o.y - y, o.z - z));
+      }
+    }
+    return best;
+  }
+
   /**
    * How much of the land round `position` is in: { done, total } of the
    * chunks within `rings` of the one you're on, each at the detail it

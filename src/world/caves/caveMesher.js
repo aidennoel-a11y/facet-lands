@@ -121,14 +121,51 @@ export function sampleChunk(field, cx, cz, chunkSize) {
   }
   if (!anyCave) return null;
 
+  // Where the caves come up through the ground (see CaveField.openness):
+  // each column's ground is open if the cave's air reaches it. Round an
+  // opening the rock is carried on a little way up past the ground (`tops`:
+  // the highest ground round about, and a bit), so the cave's walls close
+  // up against the ground's cut edge however the two meshes lie (see
+  // ChunkMesher). (Worked out from the same lattice points as the grid, on
+  // a ring of columns round the chunk too, so chunks side by side agree.)
+  const m = n + 2, ring = new Float32Array(m * m), open = new Uint8Array(m * m);
+  let anyOpen = false;
+  for (let k = 0; k < m; k++) {
+    for (let i = 0; i < m; i++) {
+      const inside = i > 0 && k > 0 && i <= n && k <= n;
+      const h = inside ? H[(k - 1) * n + i - 1] : g.getHeight(x0 + (i - 1) * cell, z0 + (k - 1) * cell);
+      ring[k * m + i] = h;
+      const li = cx * CELLS + i - 1, lk = cz * CELLS + k - 1;
+      if (field.openness(li * cell, lk * cell, h) <= 0.05 || field.regionRock(li * cell, lk * cell) > 10) continue;
+      const fy = (h - 0.6) / cell, lj = Math.floor(fy), t = fy - lj;
+      const v = field.latticeValue(li, lj, lk) * (1 - t) + field.latticeValue(li, lj + 1, lk) * t;
+      if (v < 0) (open[k * m + i] = 1), (anyOpen = true);
+    }
+  }
+  const tops = new Float32Array(n * n);
+  let topMax = -Infinity;
+  for (let k = 0; k < n; k++) {
+    for (let i = 0; i < n; i++) {
+      let near = false;
+      for (let dk = 0; dk <= 2; dk++) for (let di = 0; di <= 2; di++) if (open[(k + dk) * m + i + di]) near = true;
+      const c = k * n + i;
+      tops[c] = near ? H[c] + CaveField.RIM : H[c];
+      if (near) topMax = Math.max(topMax, tops[c]);
+    }
+  }
+
   // Vertical range: the cave band (down to the deep caves, if any are
-  // here), plus any entrance tunnel.
+  // here), plus any entrance tunnel, and up past the ground where it's open.
   let top = maxTop + 4;
+  if (anyOpen) top = Math.max(top, topMax + cell * 2);
   for (const e of entrances) top = Math.max(top, e.maxY + 3);
   const yMin = Math.floor(((anyDeep ? bottom : field.bottom) - 6) / cell) * cell;
   const ny = Math.min(140, Math.ceil((top - yMin) / cell) + 1);
 
   const values = new Float32Array(n * n * ny);
+  // (And the caves alone, without the ground: to tell the cave's rock from
+  // the ground's surface when meshing, see meshChunk.)
+  const caveOnly = new Float32Array(n * n * ny);
   let hasAir = false;
   for (let k = 0; k < n; k++) {
     for (let i = 0; i < n; i++) {
@@ -142,18 +179,77 @@ export function sampleChunk(field, cx, cz, chunkSize) {
           if (y < e.minY - 2 || y > e.maxY + 2) continue;
           d = Math.min(d, CaveField.ramp(e, x, y, z), CaveField.hull(e, x, y, z));
         }
-        values[c * ny + j] = d;
         if (d < 0) hasAir = true;
+        values[c * ny + j] = d;
+      }
+      // (Over the ground, the field just under it carried straight up: an
+      // opening's rock rises in a rim right round its cut edge, and nothing
+      // of the caves is drawn hanging in the open air over the land. Then
+      // air above the ground, and above that rim.)
+      const fy = (H[c] - 0.6 - yMin) / cell, j0 = Math.max(0, Math.min(ny - 2, Math.floor(fy))), t = Math.min(1, Math.max(0, fy - j0));
+      const under = values[c * ny + j0] * (1 - t) + values[c * ny + j0 + 1] * t;
+      for (let j = 0; j < ny; j++) {
+        const y = yMin + j * cell;
+        if (y > H[c] - 0.6) values[c * ny + j] = under;
+        caveOnly[c * ny + j] = values[c * ny + j];
+        values[c * ny + j] = Math.min(values[c * ny + j], tops[c] - y);
       }
     }
   }
   if (!hasAir) return null;
-  passable(values, n, ny, x0, z0, cell, yMin, entrances);
+  passable(values, n, ny, x0, z0, cell, yMin, entrances, H);
   // The kind of cave country, on a coarse grid (5 x 5 over the chunk).
   for (const col of cols) if (col.chamber) col.chamber.c.scores ??= field.biomeScores(col.chamber.c.x, col.chamber.c.z);
   const kStep = chunkSize / 4, kinds = [];
   for (let k = 0; k <= 4; k++) for (let i = 0; i <= 4; i++) kinds.push(field.biomeScores(x0 + i * kStep, z0 + k * kStep));
-  return { cx, cz, x0, z0, cell, n, ny, yMin, values, H, entrances, cols, kinds, kStep };
+  return { cx, cz, x0, z0, cell, n, ny, yMin, values, caveOnly, H, tops, entrances, cols, kinds, kStep, sky: anyOpen ? skyDistance(values, n, ny, yMin, cell, H) : null };
+}
+
+/**
+ * How far each grid point is from the open sky through the air, in metres
+ * (Infinity where it can't be reached in a hundred or so): for the
+ * daylight coming in at the caves' openings (see CaveField.openness).
+ * Stepped out from the air over the ground, through the cave's air.
+ */
+function skyDistance(values, n, ny, yMin, cell, H) {
+  const dist = new Float32Array(values.length).fill(Infinity);
+  let front = [];
+  for (let c = 0; c < n * n; c++) {
+    for (let j = 0; j < ny; j++) {
+      const q = c * ny + j;
+      if (values[q] < 0 && yMin + j * cell > H[c] + 0.5) (dist[q] = 0), front.push(q);
+    }
+  }
+  for (let step = 1; front.length && step * cell < 110; step++) {
+    const next = [];
+    for (const q of front) {
+      const j = q % ny, col = (q - j) / ny, i = col % n, k = (col - i) / n;
+      for (const [d, ok] of [[1, j < ny - 1], [-1, j > 0], [ny, i < n - 1], [-ny, i > 0], [n * ny, k < n - 1], [-n * ny, k > 0]]) {
+        const r = q + d;
+        if (!ok || values[r] >= 0 || dist[r] <= step * cell) continue;
+        dist[r] = step * cell;
+        next.push(r);
+      }
+    }
+    front = next;
+  }
+  return dist;
+}
+
+/** Daylight reaching a point in the caves through their openings (0.03 .. 1), from the grid's sky distances. */
+function openSky(grid, x, y, z) {
+  const { x0, z0, cell, n, ny, yMin, sky } = grid;
+  const i = Math.min(n - 1, Math.max(0, Math.round((x - x0) / cell)));
+  const k = Math.min(n - 1, Math.max(0, Math.round((z - z0) / cell)));
+  const j = Math.min(ny - 1, Math.max(0, Math.round((y - yMin) / cell)));
+  let d = Infinity;
+  // (The nearest air point's: a point on the rock may round to one in it.)
+  for (let dk = -1; dk <= 1; dk++) for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+    const ii = i + di, jj = j + dj, kk = k + dk;
+    if (ii < 0 || kk < 0 || jj < 0 || ii >= n || kk >= n || jj >= ny) continue;
+    d = Math.min(d, sky[(kk * n + ii) * ny + jj] + Math.hypot(di, dj, dk) * cell * 0.5);
+  }
+  return Math.min(1, Math.max(0.03, 1.2 - d / 28));
 }
 
 /**
@@ -164,7 +260,7 @@ export function sampleChunk(field, cx, cz, chunkSize) {
  * ways down are laid out to be walked.) The physics reads this same grid,
  * so what's filled is solid as well as unseen.
  */
-function passable(values, n, ny, x0, z0, cell, yMin, entrances) {
+function passable(values, n, ny, x0, z0, cell, yMin, entrances, H) {
   const at = (i, j, k) => (k * n + i) * ny + j;
   const nearEntrance = (i, j, k) => {
     const x = x0 + i * cell, y = yMin + j * cell, z = z0 + k * cell;
@@ -177,7 +273,9 @@ function passable(values, n, ny, x0, z0, cell, yMin, entrances) {
       if (v >= 0 || v < -1.4) continue; // (deeper in the air than that, there's room enough)
       const low = values[c - 1] >= 0 && values[c + 1] >= 0;
       const thin = values[at(i - 1, j, k)] >= 0 && values[at(i + 1, j, k)] >= 0 && values[at(i, j, k - 1)] >= 0 && values[at(i, j, k + 1)] >= 0;
-      if ((low || thin) && !nearEntrance(i, j, k)) values[c] = 0.6;
+      // (Not up by the ground: where the caves open out, the ground's cut is
+      // worked out from the field as it is, see CaveField.surfaceAir.)
+      if ((low || thin) && !nearEntrance(i, j, k) && yMin + j * cell < H[k * n + i] - 6) values[c] = 0.6;
     }
   }
   // Pockets: air shut in on every side within the chunk, however big, with
@@ -260,8 +358,8 @@ export function cavePortals(grid) {
 }
 
 /** Trilinear sample of a chunk grid at world coordinates (caller checks bounds). */
-export function sampleGrid(grid, x, y, z) {
-  const { x0, z0, cell, n, ny, yMin, values } = grid;
+export function sampleGrid(grid, x, y, z, values = grid.values) {
+  const { x0, z0, cell, n, ny, yMin } = grid;
   const fx = (x - x0) / cell;
   const fz = (z - z0) / cell;
   const fy = (y - yMin) / cell;
@@ -281,8 +379,8 @@ export function sampleGrid(grid, x, y, z) {
 }
 
 /** Terrain height inside the grid, bilinear from the per-column samples. */
-function gridHeight(grid, x, z) {
-  const { x0, z0, cell, n, H } = grid;
+function gridHeight(grid, x, z, H = grid.H) {
+  const { x0, z0, cell, n } = grid;
   const fx = Math.min(n - 1.0001, Math.max(0, (x - x0) / cell));
   const fz = Math.min(n - 1.0001, Math.max(0, (z - z0) / cell));
   const i = Math.floor(fx), k = Math.floor(fz);
@@ -324,7 +422,7 @@ class Grow {
  * geometry, flat-shaded, with per-face colours.
  */
 export function meshChunk(grid, field, out = {}) {
-  const { x0, z0, cell, n, ny, yMin, values, H, entrances } = grid;
+  const { x0, z0, cell, n, ny, yMin, values, tops, entrances } = grid;
   const seed = field.seed;
   const positions = new Grow();
   const colors = new Grow();
@@ -404,7 +502,7 @@ export function meshChunk(grid, field, out = {}) {
         const cellY = yMin + j * cell;
         let index = 0;
         for (let c = 0; c < 8; c++) {
-          const v = Math.min(H[col + cornerColumn[c]] - (cellY + cornerY[c] * cell), values[base + cornerIndex[c]]);
+          const v = Math.min(tops[col + cornerColumn[c]] - (cellY + cornerY[c] * cell), values[base + cornerIndex[c]]);
           cornerVal[c] = v;
           if (v < 0) index |= 1 << c;
         }
@@ -434,8 +532,8 @@ export function meshChunk(grid, field, out = {}) {
           const wz = z0 + czL;
 
           // Ground or cave? On the ground surface the ground term is the smaller one.
-          const ground = gridHeight(grid, wx, wz) - cy;
-          const isGround = ground < 2.5 && ground <= sampleGrid(grid, wx, cy, wz) + 0.05;
+          const ground = gridHeight(grid, wx, wz, tops) - cy;
+          const isGround = ground < 2.5 && ground <= sampleGrid(grid, wx, cy, wz, grid.caveOnly) + 0.05;
           if (isGround) continue; // plain ground: the terrain mesh draws it
           // Wholly inside an entrance's built part: EntranceLayer draws that.
           if (entrances.some((e) => tri.every((ev) => CaveField.inBuilt(e, x0 + edgeX[ev], edgeY[ev], z0 + edgeZ[ev])))) continue;
@@ -511,7 +609,7 @@ export function meshChunk(grid, field, out = {}) {
             const wxv = x0 + px, wyv = py, wzv = z0 + pz;
             // Where the rock meets the ground surface (the rim of a mouth),
             // leave the vertex on the surface so it meets the terrain.
-            rim[q] = Math.abs(gridHeight(grid, wxv, wzv) - wyv) < 0.35;
+            rim[q] = Math.abs(gridHeight(grid, wxv, wzv, tops) - wyv) < 0.35;
             onX[q] = px < 1e-4 || px > span - 1e-4;
             onZ[q] = pz < 1e-4 || pz > span - 1e-4;
             if (!rim[q]) {
@@ -554,6 +652,7 @@ export function meshChunk(grid, field, out = {}) {
               (vG[i * 3] = gr + 0.5 * l), (vG[i * 3 + 1] = gg + 0.16 * l), (vG[i * 3 + 2] = gb + 0.03 * l);
             } else (vG[i * 3] = gr), (vG[i * 3 + 1] = gg), (vG[i * 3 + 2] = gb);
             vS[i] = entrances.length ? CaveField.skyLight(entrances, x0 + v[0], v[1], z0 + v[2]) : 0.03;
+            if (grid.sky) vS[i] = Math.max(vS[i], openSky(grid, x0 + v[0], v[1], z0 + v[2]));
           }
           const emit = (ia, ib, ic, shade, to = null) => {
             const P = to ? to.positions : positions, C = to ? to.colors : colors, G = to ? to.glows : glows, S = to ? to.sky : sky;
