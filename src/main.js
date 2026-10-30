@@ -248,6 +248,8 @@ lightning.onStrike = (x, y, z, distance) => {
     game.hotbar?.flash(distance < 3 ? 'Struck by lightning!' : 'Lightning, right beside you!');
   }
   if (distance > 1300 || y < WORLD.seaLevel + 2 || waterAt(x, z, true)) return;
+  // (Never in the rain: only dry lightning sets the grass alight.)
+  if (weather.rain > 0.12) return;
   const w = generator.getBiomeWeights(x, z, {});
   if (w.desert > 0.4 || seasonUniforms.uWinter.value * generator.getSeasonality(x, z) > 0.4) return;
   const summer = 1 - seasonUniforms.uSpring.value - seasonUniforms.uWinter.value;

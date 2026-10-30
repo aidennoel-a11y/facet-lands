@@ -413,6 +413,22 @@ export class PlayerControls {
     this.velocityY = Math.max(-this.maxFallSpeed, this.velocityY - this.gravity * dt);
     let feet = feetNow + this.velocityY * dt;
 
+    // Falling into deep water from a height: in you go, plunging on under
+    // the surface with the speed you had, the water slowing you over a few
+    // metres (see #updateSwim), not stopped dead at it.
+    if (ground.swim && !wasGrounded && this.velocityY < -3 && feet <= floor) {
+      const v = (this.swimVel ??= { x: 0, y: 0, z: 0 });
+      v.y = this.velocityY * 0.8;
+      v.x = this.push.x * 0.5;
+      v.z = this.push.z * 0.5;
+      pos.y = feet + this.eyeHeight;
+      this.velocityY = 0;
+      this.softLanding = false;
+      this.swimming = true;
+      this.grounded = false;
+      return;
+    }
+
     if (feet <= floor || (wasGrounded && this.velocityY <= 0 && feet - floor < 0.6)) {
       if (!wasGrounded && this.velocityY < -8 && !this.softLanding) this.onLand?.(-this.velocityY);
       this.softLanding = false;

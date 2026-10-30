@@ -636,7 +636,7 @@ export class TerrainGenerator {
           v = smoothstep(0.15, 0.5, near) * (1 - smoothstep(0.75, 0.95, here));
           if (v > 0) v *= smoothstep(0.3, 0.6, this.#openSea(cx, cz));
         }
-        if (cache.size > 400000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -697,7 +697,7 @@ export class TerrainGenerator {
           }
           v = sum / 22.8;
         }
-        if (cache.size > 400000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -960,7 +960,7 @@ export class TerrainGenerator {
           const a = ((k + (d > 300 ? 0.5 : 0)) / 8) * Math.PI * 2;
           v = Math.max(v, jz(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d));
         }
-        if (cache.size > 400000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1053,7 +1053,7 @@ export class TerrainGenerator {
           v += jz(i * G + Math.cos(a) * 250, j * G + Math.sin(a) * 250);
         }
         v /= 10;
-        if (cache.size > 400000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1090,7 +1090,7 @@ export class TerrainGenerator {
           if (q > hi) hi = q;
           if (d === 300 && q > near) near = q;
         }
-        if (cache.size > 400000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(key, (v = [hi, near]));
       }
       return v[which];
@@ -1225,7 +1225,7 @@ export class TerrainGenerator {
           const a = (k / 6) * Math.PI * 2;
           v = Math.max(v, this.#rawAridityAt(i * G + Math.cos(a) * 800, j * G + Math.sin(a) * 800));
         }
-        if (cache.size > 400000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1257,7 +1257,7 @@ export class TerrainGenerator {
           sum += this.#rawAridityAt(i * G + Math.cos(a) * 450, j * G + Math.sin(a) * 450);
         }
         v = 0.9 * smoothstep(0.8, 1.3, sum / 10);
-        if (cache.size > 400000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1287,7 +1287,7 @@ export class TerrainGenerator {
           const a = (k / 8) * Math.PI * 2;
           for (const d of [170, 380]) v = Math.max(v, m(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d));
         }
-        if (cache.size > 400000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1317,7 +1317,7 @@ export class TerrainGenerator {
           const a = (k / 8) * Math.PI * 2;
           for (const d of [200, 400]) v = Math.min(v, m(i * G + Math.cos(a) * d, j * G + Math.sin(a) * d));
         }
-        if (cache.size > 400000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(key, v);
       }
       return v;
@@ -1860,7 +1860,7 @@ export class TerrainGenerator {
         isl = { x, z, r, top: sea + 2.5 + 10 * (r / 170) + 4 * hash2(i, j, seed + 4) };
         // (Far out in the deep sea, some are mushroom islands: grey-violet
         // mycelium for ground, giant mushrooms for trees. See MushroomIslandLayer.)
-        if (probe.getBaseHeight(x, z) < sea - 22 && hash2(i, j, seed + 5) < 0.45) isl.mushroom = true;
+        if (probe.getBaseHeight(x, z) < sea - 22 && hash2(i, j, seed + 5) < 0.3) isl.mushroom = true; // (a third fewer than they were)
         // (And others, out in the deep sea, coral atolls: a ring of low sandy
         // islets round a shallow lagoon, the reef all round it.)
         else if (probe.getBaseHeight(x, z) < sea - 14 && hash2(i, j, seed + 6) < 0.5) (isl.atoll = true), (isl.top = sea + 2.6 + 1.2 * hash2(i, j, seed + 7)), (isl.r = Math.max(isl.r, 90));
@@ -2945,7 +2945,8 @@ export class TerrainGenerator {
       if (ok(x, z)) {
         springs.push({
           x, z,
-          r: 4 + 4 * hash2(i, j, s + 3),
+          // (Now and then a great one, a broad steaming pool, up to six times the size.)
+          r: (4 + 4 * hash2(i, j, s + 3)) * (hash2(i, j, s + 9) < 0.12 ? 2 + 4 * hash2(i, j, s + 10) : 1),
           geyser: hash2(i, j, s + 4) < 0.35,
           hue: Math.floor(hash2(i, j, s + 8) * 6), // (its colours: see Rivers' hot pools, and the mats round it)
           period: 45 + 60 * hash2(i, j, s + 5),
@@ -2961,13 +2962,15 @@ export class TerrainGenerator {
     const field = this.#geothermalField(cx, cz);
     if (field) {
       const rand = mulberry32(hash2(i, j, s + 40) * 4294967296);
-      const n = 3 + Math.floor(rand() * 4);
-      for (let t = 0; t < 40 && springs.length < n + 1; t++) {
+      const n = 7 + Math.floor(rand() * 6);
+      for (let t = 0; t < 90 && springs.length < n + 1; t++) {
         const x = i * C + 8 + rand() * (C - 16), z = j * C + 8 + rand() * (C - 16);
         if (Math.hypot(x - field.x, z - field.z) > field.r) continue;
-        if (springs.some((o) => Math.hypot(o.x - x, o.z - z) < 13)) continue;
+        // (Some a great pool, up to six times the size: room kept round it.)
+        const r = (2.5 + 2.5 * rand()) * (rand() < 0.12 ? 2 + 4 * rand() : 1);
+        if (springs.some((o) => Math.hypot(o.x - x, o.z - z) < 9 + o.r + r)) continue;
         if (!ok(x, z, 0.6)) continue;
-        springs.push({ x, z, r: 2.5 + 2.5 * rand(), geyser: rand() < 0.4, period: 30 + 60 * rand(), phase: rand(), strength: 0.6 + 0.4 * rand(), hue: Math.floor(rand() * 6) });
+        springs.push({ x, z, r, geyser: r < 6 && rand() < 0.4, period: 30 + 60 * rand(), phase: rand(), strength: 0.6 + 0.4 * rand(), hue: Math.floor(rand() * 6) });
       }
     }
     if (cache.size > 20000) cache.clear();
@@ -2976,8 +2979,8 @@ export class TerrainGenerator {
   }
 
   /**
-   * The geothermal field (a patch 70-130 m across, thick with hot springs
-   * and geysers) that (x, z) lies near, if any: { x, z, r }. About a third
+   * The geothermal field (a patch 280-680 m across, thick with hot springs
+   * and geysers) that (x, z) lies near, if any: { x, z, r }. Nearly half
    * of the 720 m squares of the volcanic country hold one.
    */
   #geothermalField(x, z) {
@@ -2986,8 +2989,8 @@ export class TerrainGenerator {
     for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         const i = fi + di, j = fj + dj;
-        if (hash2(i, j, s) > 0.35) continue;
-        const f = { x: (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * F, z: (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * F, r: 70 + 60 * hash2(i, j, s + 3) };
+        if (hash2(i, j, s) > 0.45) continue;
+        const f = { x: (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * F, z: (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * F, r: 140 + 200 * hash2(i, j, s + 3) };
         if (Math.hypot(x - f.x, z - f.z) > f.r + 130) continue;
         const w = this.getBiomeWeights(f.x, f.z, {}, this.#rangeField(f.x, f.z, {}).value);
         if (w.volcanic > 0.7) return f;
@@ -3007,11 +3010,11 @@ export class TerrainGenerator {
     return out;
   }
 
-  /** The nearest hot spring or geyser to (x, z) within 40 m, with its distance, or null. */
+  /** The nearest hot spring or geyser to (x, z) within 140 m (the great pools are broad), with its distance, or null. */
   #nearestSpring(x, z) {
     const C = 180;
     const ci = Math.floor(x / C), cj = Math.floor(z / C);
-    let best = null, bd = 40;
+    let best = null, bd = 140;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       for (const sp of this.#springAt(ci + di, cj + dj)) {
         const d = Math.hypot(x - sp.x, z - sp.z);
@@ -3083,7 +3086,7 @@ export class TerrainGenerator {
   jungleNear(x, z) {
     const G = 128, gx = Math.floor(x / G), gz = Math.floor(z / G), fx = x / G - gx, fz = z / G - gz;
     const cache = (this._jungleNear ??= new Map());
-    if (cache.size > 400000) cache.clear();
+    if (cache.size > 50000) cache.clear();
     const corner = (i, j) => {
       const key = i * 65536 + j;
       let v = cache.get(key);
@@ -3405,7 +3408,7 @@ export class TerrainGenerator {
         let wet = cache.get(key);
         if (wet === undefined) {
           wet = this.getBaseHeight((gx + di) * G, (gz + dj) * G) < sea - 0.2;
-          if (cache.size > 200000) cache.clear();
+          if (cache.size > 40000) cache.clear();
           cache.set(key, wet);
         }
         if (wet) return true;

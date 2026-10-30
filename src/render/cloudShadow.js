@@ -125,13 +125,13 @@ export function addCloudShadow(material) {
         `#include <lights_fragment_end>
         reflectedLight.directDiffuse *= 1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r;
         {
-          // Burnt: charred black where a fire went through, ragged at the
+          // Burnt: darkened with ash where a fire went through, ragged at the
           // edge, greening over again; glowing where it's alight now.
           vec2 buv = (vCloudXZ - uBurnOrigin) / uBurnSize;
           vec4 b = (buv.x > 0.0 && buv.y > 0.0 && buv.x < 1.0 && buv.y < 1.0) ? texture2D(uBurnMap, buv) : vec4(0.0);
           float rag = fract(sin(dot(floor(vCloudXZ * 0.7), vec2(12.9898, 78.233))) * 43758.5453);
           float burnt = smoothstep(0.15 + 0.3 * rag, 0.6 + 0.3 * rag, b.r);
-          vec3 char = mix(vec3(1.0), vec3(0.16, 0.13, 0.11), burnt);
+          vec3 char = mix(vec3(1.0), vec3(0.46, 0.4, 0.34), burnt); // (dark with ash, not black)
           reflectedLight.directDiffuse *= char;
           reflectedLight.indirectDiffuse *= char;
           reflectedLight.indirectDiffuse += vec3(0.9, 0.3, 0.08) * smoothstep(0.3, 0.9, b.g) * (0.4 + 0.6 * rag) * 0.45;

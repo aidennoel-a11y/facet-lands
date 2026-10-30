@@ -111,7 +111,7 @@ export class BigRivers {
       let v = this.broad.get(k);
       if (v === undefined) {
         v = this.generator.broadHeight(i * GRID, j * GRID);
-        if (this.broad.size > 200000) this.broad.clear();
+        if (this.broad.size > 50000) this.broad.clear();
         this.broad.set(k, v);
       }
       return v;
@@ -131,7 +131,7 @@ export class BigRivers {
       let v = cache.get(k);
       if (v === undefined) {
         v = this.generator.broadDryness(i * GRID, j * GRID);
-        if (cache.size > 200000) cache.clear();
+        if (cache.size > 50000) cache.clear();
         cache.set(k, v);
       }
       return v;
@@ -153,7 +153,7 @@ export class BigRivers {
     let v = cache.get(k);
     if (v === undefined) {
       v = this.generator.landHeight(i * 64, j * 64);
-      if (cache.size > 200000) cache.clear();
+      if (cache.size > 50000) cache.clear();
       cache.set(k, v);
     }
     return v;
@@ -186,7 +186,7 @@ export class BigRivers {
     let v = cache.get(k);
     if (v === undefined) {
       v = this.generator.getOceanness(i * GRID, j * GRID);
-      if (cache.size > 200000) cache.clear();
+      if (cache.size > 50000) cache.clear();
       cache.set(k, v);
     }
     return v <= 0.5 ? 1 : 0;
