@@ -15,8 +15,8 @@ import { hash2, mulberry32 } from '../../noise/random.js';
  *    caverns open up. Tunnels run in and out of them, linking rooms into
  *    cave systems.
  *  - A regional mask switches caves off in some areas, and a band keeps
- *    them between `bottom` and `top`, with `cover` metres of rock under
- *    the ground surface, except where they're let up to it (openness).
+ *    them between `bottom` and `top`, always with `cover` metres of rock
+ *    under the ground surface, so they never break through by accident.
  *  - Below and among those (`#deep`), the stranger country: vast
  *    chambers far down, hundreds of metres across, with pillars of rock
  *    holding up the roof and still lakes (or lava) in their low places;
@@ -30,16 +30,15 @@ import { hash2, mulberry32 } from '../../noise/random.js';
  *    rock; lush, green with moss under the wet country; volcanic, black
  *    and glowing, under the volcanic highlands and very deep anywhere;
  *    ice, under the high cold mountains; dry sandstone under the deserts.
- *  - Ways in: in some stretches of country the band reaches on up past
- *    the ground, and the caves open out wherever they meet it (see
- *    openness). Built entrances only to the old mines (see #makeEntrance,
- *    #layMine and EntranceLayer).
+ *  - Entrances: built pieces rather than noise, so they're clean and easy
+ *    to spot. A pit opens in the ground, a ramp runs down it under a rock
+ *    ledge into a short arched tunnel, and a winding tunnel carries on from
+ *    there down into the network (see #makeEntrance and EntranceLayer).
  */
 /** Below this height every cave is volcanic: lava and dark rock (see biomeAt). */
 export const VOLCANIC_BELOW = -100;
 
 export class CaveField {
-  static CELLS = 40; // (the cave mesh's grid cells per chunk edge: see caveMesher)
   static MINE_HW = 2.5; // a mine gallery's half-width (m)
   static MINE_HT = 4.4; // ...and its height
   constructor(generator, { seaLevel, chunkSize }) {
@@ -60,7 +59,6 @@ export class CaveField {
     this.riverLevel = new SimplexNoise(seed + 11);
     this.chamberWall = new SimplexNoise(seed + 12);
     this.kind = new SimplexNoise(seed + 13);
-    this.breach = new SimplexNoise(seed + 14);
     this.chambers = new Map();
 
     this.bottom = -30; // deepest cave floor (m)
@@ -108,16 +106,9 @@ export class CaveField {
    * these alone, so the deep caves added since never move one.
    */
   legacy(x, y, z, H, regionRock) {
-    // (Where the caves come up to the light, the band reaches on up past the
-    // ground: the tunnels and rooms break out wherever they meet it, in a
-    // hillside, a cliff, a canyon's wall or the open ground. See openness.)
-    // (Only the tunnels: the rooms stay under their roofs of rock, met down the tunnels.)
-    const open = this.openness(x, z, H);
     const ceiling = Math.min(this.top, H - this.cover);
-    const tunnelCeiling = open > 0 ? ceiling + (H + CaveField.OPEN_ABOVE - ceiling) * open : ceiling;
     const rock = Math.max(regionRock, y - ceiling, this.bottom - y);
-    const tunnelRock = Math.max(regionRock, y - tunnelCeiling, this.bottom - y);
-    if (tunnelRock > 10) return tunnelRock; // far from any cave: skip the 3D noise
+    if (rock > 10) return rock; // far from any cave: skip the 3D noise
 
     // Tunnels: both noises near zero. Squashed vertically so they tend to
     // run level rather than plunge, and sampled through a domain warp (a
@@ -129,99 +120,13 @@ export class CaveField {
     const f = 1 / 64;
     const a = this.tunnelA.noise3D(wx * f, wy * f * 2.3, wz * f);
     const b = this.tunnelB.noise3D(wx * f, wy * f * 2.3, wz * f);
-    // (Wider as they come up near the ground where they open out: a mouth
-    // you can walk into, not a slit.)
-    const flare = open > 0 ? 0.07 * open * Math.min(1, Math.max(0, (y - H + 16) / 14)) : 0;
-    const tunnel = (Math.sqrt(a * a + b * b) - 0.16 - flare) * 34;
+    const tunnel = (Math.sqrt(a * a + b * b) - 0.16) * 34;
 
     // Rooms: broad, flattened blobs.
-    const room = rock > 10 ? rock : Math.max(rock, (0.42 - this.rooms.noise3D(x / 52, (y / 52) * 2.1, z / 52)) * 30);
+    const r = this.rooms.noise3D(x / 52, (y / 52) * 2.1, z / 52);
+    const room = (0.42 - r) * 30;
 
-    return Math.min(Math.max(tunnelRock, tunnel), room);
-  }
-
-  // --- Where the caves come to the surface -------------------------------------
-  //
-  // No entrances are built for the caves themselves: in some stretches of
-  // country (`openness`) their band reaches up past the ground, and the
-  // ground is cut away wherever the cave field is air at the surface (see
-  // surfaceAir, ChunkMesher), so the tunnels and rooms open out however
-  // they meet it: holes, trenches and sinks in level ground, mouths in
-  // hillsides, cliffs and canyon walls, every one different. The cave mesh
-  // there runs a little way up past the ground in a rim right round the
-  // cut (see caveMesher's tops), so the rock always closes up against it.
-
-  static OPEN_ABOVE = 25; // (how far above the ground the band reaches, where it's fully open)
-  static RIM = 0.8; // (how far the cave rock runs up past the ground round an opening, in a rim)
-  static CUT = 0.8; // (how deep in the air the ground's cut, in the field's units: the cut edge sits just inside the rock)
-
-  /**
-   * How far the caves are let up to the surface round (x, z), 0..1: in
-   * patches a few hundred metres across, about a fifth of the land; never
-   * by the sea or in low wet ground.
-   */
-  openness(x, z, H) {
-    if (H < this.seaLevel + 2.5) return 0;
-    const n = this.breach.noise2D(x * 0.0024, z * 0.0024) + 0.35 * this.breach.noise2D(x * 0.011 + 40, z * 0.011 - 40);
-    const t = Math.min(1, Math.max(0, (n - 0.55) / 0.2));
-    const dry = Math.min(1, Math.max(0, (H - this.seaLevel - 2.5) / 4));
-    return t * t * (3 - 2 * t) * dry;
-  }
-
-  /**
-   * The cave field (with the mines and any built way in) at point (i, j, k)
-   * of the caves' 3.2 m lattice, the same as the cave mesh is made from
-   * (see caveMesher.sampleChunk), remembered.
-   */
-  latticeValue(i, j, k) {
-    const C = this.chunkSize / CaveField.CELLS;
-    const lat = (this.lattice ??= new Map());
-    const key = `${i},${j},${k}`;
-    let v = lat.get(key);
-    if (v !== undefined) return v;
-    const x = i * C, y = j * C, z = k * C;
-    const colKey = `${i},${k}`, cols = (this.latticeCols ??= new Map());
-    let col = cols.get(colKey);
-    if (!col) {
-      const H = this.generator.getHeight(x, z);
-      col = { H, rr: this.regionRock(x, z), col: this.column(x, z, H), ents: this.entrancesNear(x - C, z - C, x + C, z + C) };
-      if (cols.size > 20000) cols.clear();
-      cols.set(colKey, col);
-    }
-    v = this.caves(x, y, z, col.H, col.rr, col.col, col.ents);
-    for (const e of col.ents) if (y >= e.minY - 2 && y <= e.maxY + 2) v = Math.min(v, CaveField.ramp(e, x, y, z), CaveField.hull(e, x, y, z));
-    if (lat.size > 200000) lat.clear();
-    lat.set(key, v);
-    return v;
-  }
-
-  /**
-   * How far into the caves' air the ground's surface at (x, z) lies, its
-   * height there `h` (the field just under it, blended from the lattice
-   * as the cave mesh is): below -CUT, the ground's cut away there (see
-   * ChunkMesher). Quick (a large positive number) where there's no cave
-   * near the surface.
-   */
-  surfaceAir(x, z, h) {
-    if (!this.mayOpen(x, z, h)) return 50;
-    return this.latticeAt(x, h - 0.6, z);
-  }
-
-  /** Whether the caves could come up to the ground at (x, z) at all (quick). */
-  mayOpen(x, z, h) {
-    return this.regionRock(x, z) <= 10 && this.openness(x, z, h) > 0.05;
-  }
-
-  /** The cave field at (x, y, z) blended from the lattice, as the cave mesh has it. */
-  latticeAt(x, y, z) {
-    const C = this.chunkSize / CaveField.CELLS;
-    const fx = x / C, fy = y / C, fz = z / C;
-    const i = Math.floor(fx), j = Math.floor(fy), k = Math.floor(fz);
-    const tx = fx - i, ty = fy - j, tz = fz - k;
-    const L = (a, b, c) => this.latticeValue(i + a, j + b, k + c);
-    const x00 = L(0, 0, 0) * (1 - tx) + L(1, 0, 0) * tx, x10 = L(0, 1, 0) * (1 - tx) + L(1, 1, 0) * tx;
-    const x01 = L(0, 0, 1) * (1 - tx) + L(1, 0, 1) * tx, x11 = L(0, 1, 1) * (1 - tx) + L(1, 1, 1) * tx;
-    return (x00 * (1 - ty) + x10 * ty) * (1 - tz) + (x01 * (1 - ty) + x11 * ty) * tz;
+    return Math.max(rock, Math.min(tunnel, room));
   }
 
   // --- The deep caves -----------------------------------------------------------
@@ -529,11 +434,6 @@ export class CaveField {
       e = this.#makeEntrance(rx, rz);
       if (e) {
         e.mine = this.#layMine(e, rx, rz);
-        // (Only the old mines are built: the caves' own ways in are where
-        // they come up to the surface, see openness.)
-        if (!e.mine) e = null;
-      }
-      if (e) {
         // (Its bounds take in the workings, so whatever looks for the
         // entrances near a place finds the mine there too.)
         if (e.mine) {
@@ -831,8 +731,11 @@ export class CaveField {
 
   // --- Natural openings -----------------------------------------------------------
   //
-  // The two great shafts down to the deep caverns (the caves' everyday
-  // ways in are where they come up to the surface: see openness):
+  // Ways into the caves the land has made itself, not the built entrances:
+  //  - a hole: a round hole in level ground, its shaft dropping straight
+  //    down into a cave that lies under it;
+  //  - a mouth: an opening in a steep slope or cliff, a tunnel running on
+  //    into the hill, falling gently, to a cave;
   //  - the abyss (very rare): a great round shaft from the surface straight
   //    down into one of the deep volcanic caverns, a ledge spiralling down
   //    its walls, smoke rising out of it off the lava far below;
@@ -894,7 +797,7 @@ export class CaveField {
   /** The openings another thread found (from its takeFresh), taken in. */
   share(list) {
     for (const [type, key, e] of list) {
-      const cache = (this.naturals ??= new Map());
+      const cache = type === 'm' ? (this.mouths ??= new Map()) : (this.naturals ??= new Map());
       if (!cache.has(key)) cache.set(key, e);
     }
   }
@@ -903,7 +806,7 @@ export class CaveField {
     const g = this.generator, N = CaveField.NATURAL, sea = this.seaLevel;
     const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x4e7a1) * 4294967296);
     const roll = rand();
-    if (roll >= 0.06) return null; // (the abyss and the waterfall halls only: the caves' other ways in are where they come up to the surface)
+    if (roll > 0.24) return null;
     const H = (x, z) => g.getHeight(x, z);
     const pick = () => [(rx + 0.15 + rand() * 0.7) * N, (rz + 0.15 + rand() * 0.7) * N];
     // (The lowest and highest of the ground round (x, z), r out.)
@@ -920,24 +823,196 @@ export class CaveField {
     for (let t = 0; t < 30; t++) {
       const [x, z] = pick();
       if (!dry(x, z)) continue;
-      // The abyss and the waterfall halls: over a great cavern.
-      const ch = this.chamberAt(x, z);
-      if (!ch || ch.e > 0.45 || ch.c.shaft || ch.c.flooded) continue;
-      const deep = ch.c.y < -110;
-      if ((roll < 0.012) !== deep) continue; // (the abyss only over the deepest; the halls over the rest)
-      const r = deep ? 13 + rand() * 7 : 5 + rand() * 3.5;
-      const [lo, hi] = rim(x, z, r + 1);
-      if (hi - lo > (deep ? 8 : 4) || lo < sea + 6) continue;
-      if (!deep && lo - (ch.c.y + ch.c.ry * 0.5) < 12) continue; // (a good roof of rock over the hall)
-      const extra = {};
-      if (!deep) {
-        // (The stream over its lip, falling to the cavern's floor, or its lake.)
-        const a = rand() * Math.PI * 2, fx = x + Math.cos(a) * (r - 0.6), fz = z + Math.sin(a) * (r - 0.6);
-        extra.fall = { x: fx, z: fz, top: H(x + Math.cos(a) * (r + 0.5), z + Math.sin(a) * (r + 0.5)) - 0.2, bottom: Math.max(this.chamberFloor(ch.c, fx, fz), ch.c.lake), yaw: a };
+      if (roll < 0.06) {
+        // The abyss and the waterfall halls: over a great cavern.
+        const ch = this.chamberAt(x, z);
+        if (!ch || ch.e > 0.45 || ch.c.shaft || ch.c.flooded) continue;
+        const deep = ch.c.y < -110;
+        if ((roll < 0.012) !== deep) continue; // (the abyss only over the deepest; the halls over the rest)
+        const r = deep ? 13 + rand() * 7 : 5 + rand() * 3.5;
+        const [lo, hi] = rim(x, z, r + 1);
+        if (hi - lo > (deep ? 8 : 4) || lo < sea + 6) continue;
+        if (!deep && lo - (ch.c.y + ch.c.ry * 0.5) < 12) continue; // (a good roof of rock over the hall)
+        const extra = {};
+        if (!deep) {
+          // (The stream over its lip, falling to the cavern's floor, or its lake.)
+          const a = rand() * Math.PI * 2, fx = x + Math.cos(a) * (r - 0.6), fz = z + Math.sin(a) * (r - 0.6);
+          extra.fall = { x: fx, z: fz, top: H(x + Math.cos(a) * (r + 0.5), z + Math.sin(a) * (r + 0.5)) - 0.2, bottom: Math.max(this.chamberFloor(ch.c, fx, fz), ch.c.lake), yaw: a };
+        }
+        return this.#naturalShaft(deep ? 'abyss' : 'hall', rx, rz, x, z, r, lo, ch.c.y, rand, extra);
       }
-      return this.#naturalShaft(deep ? 'abyss' : 'hall', rx, rz, x, z, r, lo, ch.c.y, rand, extra);
+      const h0 = H(x, z);
+      if (h0 < sea + 6) continue;
+      const gx = (H(x + 3, z) - H(x - 3, z)) / 6, gz = (H(x, z + 3) - H(x, z - 3)) / 6, grade = Math.hypot(gx, gz);
+      // (Half the regions look for a mouth in a slope first, the rest for a hole.)
+      const wantMouth = roll < 0.15;
+      if (wantMouth && grade < 0.7) continue;
+      if (!wantMouth && grade < 0.25) {
+        // A hole: on level ground, over a cave.
+        const r = 2.4 + rand() * 2.2;
+        const [lo, hi] = rim(x, z, r + 1);
+        if (hi - lo > 3) continue;
+        const rr = this.regionRock(x, z);
+        let bottom = null;
+        for (let y = lo - 8; y > Math.max(this.bottom + 2, lo - 75) && bottom === null; y -= 1.5) if (this.legacy(x, y, z, h0, rr) < -1.2) bottom = y;
+        if (bottom === null) continue;
+        return this.#naturalShaft('hole', rx, rz, x, z, r, lo, bottom, rand, {});
+      }
+      if (wantMouth) {
+        // A mouth: in the face of a steep slope, a tunnel on into the hill
+        // (uphill), falling gently, till it comes to a cave.
+        const dx = gx / grade, dz = gz / grade, r = 2.2 + rand() * 1.3, cy = h0 + r * 0.55;
+        let uTop = null;
+        for (let u = 0; u <= 9 && uTop === null; u += 0.5) if (H(x + dx * u, z + dz * u) > cy + r + 0.6) uTop = u;
+        if (uTop === null) continue;
+        let end = null;
+        for (let u = uTop + 4; u < 80 && end === null; u += 2) {
+          const px = x + dx * u, pz = z + dz * u, py = cy - Math.max(0, u - uTop - 4) * 0.3, ph = H(px, pz);
+          if (ph < py + r + 3) break; // (it would break out of the hill)
+          if (this.legacy(px, py, pz, ph, this.regionRock(px, pz)) < -1.2) end = u;
+        }
+        if (end === null) continue;
+        const L = uTop + 3;
+        const P = (u) => ({ x: x + dx * u, y: cy - Math.max(0, u - uTop - 4) * 0.3, z: z + dz * u });
+        const pts = [P(-1.5), P(L), P(uTop + 4), P(end + 2)];
+        const segments = [[pts[0], pts[1]], [pts[1], pts[2]], [pts[2], pts[3]]];
+        const w = r + 0.4;
+        const holePieces = [[[-1.5, -w], [uTop + 0.5, -w], [uTop + 0.5, w], [-1.5, w]]];
+        const wx = (u, v) => x + dx * u - dz * v, wz = (u, v) => z + dz * u + dx * v;
+        const xs = [...pts.map((p) => p.x), ...holePieces[0].map(([u, v]) => wx(u, v))], zs = [...pts.map((p) => p.z), ...holePieces[0].map(([u, v]) => wz(u, v))];
+        const ys = pts.map((p) => p.y);
+        return {
+          id: `n${rx},${rz}`, natural: true, kind: 'mouth', x, z, r, cy, uTop, L, seed: Math.floor(rand() * 1e6),
+          shape: { ox: x, oz: z, dx, dz },
+          holePieces,
+          holeBounds: { minX: Math.min(...holePieces[0].map(([u, v]) => wx(u, v))), maxX: Math.max(...holePieces[0].map(([u, v]) => wx(u, v))), minZ: Math.min(...holePieces[0].map(([u, v]) => wz(u, v))), maxZ: Math.max(...holePieces[0].map(([u, v]) => wz(u, v))) },
+          mouth: { x: wx(1.5, 0), y: cy - r * 0.4, z: wz(1.5, 0) },
+          start: pts[0], end: pts[3], segments,
+          minY: Math.min(...ys) - r - 2, maxY: Math.max(...ys) + r + 3,
+          bounds: { minX: Math.min(...xs) - r - 3, maxX: Math.max(...xs) + r + 3, minZ: Math.min(...zs) - r - 3, maxZ: Math.max(...zs) + r + 3 },
+        };
+      }
     }
     return null;
+  }
+
+  // Mouths in the faces of cliffs and canyon walls (as many as the
+  // land has walls for): in each 160 m square, now and then, the steepest
+  // face is found and an opening made at its foot, a tunnel winding on
+  // into the rock, falling gently, till it comes to a cave, or, where
+  // there's none, to a cave of its own, a rough chamber at its end.
+  static MOUTH = 160;
+
+  /** The cliff mouth in one 160 m square (or null), cached. */
+  mouth(rx, rz) {
+    const key = ((rx + 32768) << 16) | ((rz + 32768) & 0xffff);
+    const cache = (this.mouths ??= new Map());
+    let e = cache.get(key);
+    if (e === undefined) {
+      if (this.lazy) return null; // (see share)
+      e = this.#finding(() => this.#makeMouth(rx, rz));
+      if (cache.size > 20000) cache.clear();
+      cache.set(key, e);
+      this.#fresh('m', key, e);
+    }
+    return e;
+  }
+
+  #makeMouth(rx, rz) {
+    const g = this.generator, M = CaveField.MOUTH, sea = this.seaLevel;
+    const rand = mulberry32(hash2(rx, rz, this.seed ^ 0x6d07) * 4294967296);
+    if (rand() > 0.75) return null;
+    const H = (x, z) => g.getHeight(x, z);
+    // (The steepest face in the square, on a 32 m grid: the biggest rise
+    // from a point to the next one along or across.)
+    const S = 32, n = 6, x0 = rx * M - 8, z0 = rz * M - 8;
+    const hs = new Float64Array(n * n);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) hs[j * n + i] = H(x0 + i * S, z0 + j * S);
+    let best = 0, lo = null, hi = null;
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        for (const [a, b] of [[1, 0], [0, 1]]) {
+          if (i + a >= n || j + b >= n) continue;
+          const h0 = hs[j * n + i], h1 = hs[(j + b) * n + i + a], rise = Math.abs(h1 - h0);
+          if (rise <= best) continue;
+          best = rise;
+          const p = [x0 + i * S, z0 + j * S, h0], q = [x0 + (i + a) * S, z0 + (j + b) * S, h1];
+          [lo, hi] = h0 < h1 ? [p, q] : [q, p];
+        }
+      }
+    }
+    if (best < 12 || lo[2] < sea + 3) return null; // (no wall here: a rise of 12 m in 32 at least)
+    // (The foot of the face: from the low end towards the high, the first
+    // place it rises steeply.)
+    const ux = (hi[0] - lo[0]) / S, uz = (hi[1] - lo[1]) / S;
+    let foot = null;
+    for (let u = 0; u < S && !foot; u += 1) {
+      const px = lo[0] + ux * u, pz = lo[1] + uz * u;
+      if ((H(px + ux * 1.5, pz + uz * 1.5) - H(px - ux * 1.5, pz - uz * 1.5)) / 3 >= 0.8) foot = [px, pz];
+    }
+    if (!foot) return null;
+    const [x, z] = foot;
+    if (g.getOceanness(x, z) > 0.05 || this.nearEntrance(x, z, 30) || g.rivers?.at?.(x, z, 8)) return null;
+    const h0 = H(x, z);
+    if (h0 < sea + 3) return null;
+    // (Straight in, the way the face looks out.)
+    const gx = (H(x + 3, z) - H(x - 3, z)) / 6, gz = (H(x, z + 3) - H(x, z - 3)) / 6, grade = Math.hypot(gx, gz);
+    if (grade < 0.6) return null;
+    const dx = gx / grade, dz = gz / grade, r = 2.4 + rand() * 1.6, cy = h0 + r * 0.55;
+    let uTop = null;
+    for (let u = 0; u <= 9 && uTop === null; u += 0.5) if (H(x + dx * u, z + dz * u) > cy + r + 0.6) uTop = u;
+    if (uTop === null) return null;
+    const L = uTop + 3;
+    // (Then on into the rock, winding a little and falling gently: to a
+    // cave if it meets one, else as far as the rock over it allows.)
+    const pts = [{ x: x - dx * 1.5, y: cy, z: z - dz * 1.5 }, { x: x + dx * L, y: cy, z: z + dz * L }];
+    let a = Math.atan2(dz, dx), px = x + dx * L, pz = z + dz * L, py = cy;
+    const turn = (rand() - 0.5) * 0.06, want = 30 + rand() * 50;
+    let end = null, run = L, room = null;
+    for (let k = 0; k < 60 && !end; k++) {
+      a += turn + (rand() - 0.5) * 0.08;
+      const nx = px + Math.cos(a) * 3, nz = pz + Math.sin(a) * 3, ny = py - (run > uTop + 4 ? 0.45 + rand() * 0.5 : 0), nh = H(nx, nz);
+      if (nh < ny + r + 4) break; // (it would come out of the hill)
+      px = nx;
+      pz = nz;
+      py = ny;
+      run += 3;
+      if (k % 3 === 2) pts.push({ x: px, y: py, z: pz });
+      if (run > uTop + 8 && this.legacy(px, py, pz, nh, this.regionRock(px, pz)) < -1.2) end = 'cave';
+      else if (run >= want) end = 'room';
+    }
+    if (!end) {
+      if (run < uTop + 14) return null; // (too little rock for a cave)
+      end = 'room';
+    }
+    if (pts[pts.length - 1].x !== px || pts[pts.length - 1].z !== pz) pts.push({ x: px, y: py, z: pz });
+    if (end === 'room') {
+      // (A chamber at its end, under a good roof of rock.)
+      let R = 5 + rand() * 5;
+      const cover = (R) => [0, 1, 2, 3, 4, 5].every((k) => H(px + Math.cos(k * 1.047) * R * 0.8, pz + Math.sin(k * 1.047) * R * 0.8) > py - r * 0.55 + R * 1.3 + 3) && H(px, pz) > py - r * 0.55 + R * 1.3 + 3;
+      if (!cover(R)) R = 4;
+      if (!cover(R)) return null;
+      room = { x: px + Math.cos(a) * R * 0.5, y: py - r * 0.55 + R * 0.62, z: pz + Math.sin(a) * R * 0.5, r: R, floor: py - r * 0.55 - 0.3, seed: Math.floor(rand() * 1e6) };
+    }
+    const segments = [];
+    for (let k = 1; k < pts.length; k++) segments.push([pts[k - 1], pts[k]]);
+    const w = r + 0.4;
+    const holePieces = [[[-1.5, -w], [uTop + 0.5, -w], [uTop + 0.5, w], [-1.5, w]]];
+    const wx = (u, v) => x + dx * u - dz * v, wz = (u, v) => z + dz * u + dx * v;
+    const ext = room ? [[room.x - room.r, room.z - room.r], [room.x + room.r, room.z + room.r]] : [];
+    const xs = [...pts.map((p) => p.x), ...holePieces[0].map(([u, v]) => wx(u, v)), ...ext.map((q) => q[0])];
+    const zs = [...pts.map((p) => p.z), ...holePieces[0].map(([u, v]) => wz(u, v)), ...ext.map((q) => q[1])];
+    const ys = pts.map((p) => p.y);
+    return {
+      id: `m${rx},${rz}`, natural: true, kind: 'mouth', x, z, r, cy, uTop, L, seed: Math.floor(rand() * 1e6), room,
+      shape: { ox: x, oz: z, dx, dz },
+      holePieces,
+      holeBounds: { minX: Math.min(...holePieces[0].map(([u, v]) => wx(u, v))), maxX: Math.max(...holePieces[0].map(([u, v]) => wx(u, v))), minZ: Math.min(...holePieces[0].map(([u, v]) => wz(u, v))), maxZ: Math.max(...holePieces[0].map(([u, v]) => wz(u, v))) },
+      mouth: { x: wx(1.5, 0), y: cy - r * 0.4, z: wz(1.5, 0) },
+      start: pts[0], end: pts[pts.length - 1], segments,
+      minY: Math.min(...ys, room ? room.floor : Infinity) - r - 2, maxY: Math.max(...ys, room ? room.y + room.r : -Infinity) + r + 3,
+      bounds: { minX: Math.min(...xs) - r - 3, maxX: Math.max(...xs) + r + 3, minZ: Math.min(...zs) - r - 3, maxZ: Math.max(...zs) + r + 3 },
+    };
   }
 
   // A shaft straight down (a hole, the abyss, a hall's skylight): its
@@ -986,7 +1061,16 @@ export class CaveField {
     const R = this.entranceRegion;
     const reach = 300; // (a mine's workings reach a long way in)
     const out = [];
-    const N = CaveField.NATURAL, nr = 90;
+    const N = CaveField.NATURAL, nr = 90, Mo = CaveField.MOUTH, mr = 230; // (a mouth's tunnel and room reach some 200 m from its square)
+    for (let rz = Math.floor((minZ - mr) / Mo); rz <= Math.floor((maxZ + mr) / Mo); rz++) {
+      for (let rx = Math.floor((minX - mr) / Mo); rx <= Math.floor((maxX + mr) / Mo); rx++) {
+        const e = this.mouth(rx, rz);
+        if (!e) continue;
+        const b = e.bounds;
+        if (b.maxX < minX || b.minX > maxX || b.maxZ < minZ || b.minZ > maxZ) continue;
+        out.push(e);
+      }
+    }
     for (let rz = Math.floor((minZ - nr) / N); rz <= Math.floor((maxZ + nr) / N); rz++) {
       for (let rx = Math.floor((minX - nr) / N); rx <= Math.floor((maxX + nr) / N); rx++) {
         const e = this.natural(rx, rz);
@@ -1019,7 +1103,20 @@ export class CaveField {
       const [u, v] = CaveField.across(e, x, z);
       if (u > -margin && u < e.shape.back + margin && Math.abs(v) < CaveField.halfWidth(e, u) + e.shape.side + margin) return true;
     }
-    return false;
+    // (Nor a cliff mouth's opening: not while the openings are being found, which ask this too.)
+    if (this.finding) return false;
+    return this.#finding(() => {
+      const M = CaveField.MOUTH, ci = Math.floor(x / M), cj = Math.floor(z / M);
+      for (let j = cj - 1; j <= cj + 1; j++) {
+        for (let i = ci - 1; i <= ci + 1; i++) {
+          const m = this.mouth(i, j);
+          if (!m || Math.abs(x - m.x) > 20 || Math.abs(z - m.z) > 20) continue;
+          const [u, v] = CaveField.local(m, x, z);
+          if (u > -3 - margin && u < m.uTop + 1 + margin && Math.abs(v) < m.r + 1 + margin) return true;
+        }
+      }
+      return false;
+    });
   }
 
   /** World (x, z) to an entrance's own axes [u, v]. */
@@ -1168,6 +1265,12 @@ export class CaveField {
       const k = Math.min(1, Math.max(0, qy / 1.5));
       const widen = 1 - 0.18 * k * k * (3 - 2 * k);
       best = Math.min(best, Math.sqrt((qx * qx + qz * qz) * widen * widen + qy * qy) + floorLift - r);
+    }
+    if (e.room) {
+      // (The chamber at a cliff mouth's end: a rough dome over a level floor.)
+      const m = e.room, ox = x - m.x, oy = y - m.y, oz = z - m.z;
+      const wob = 1 + 0.12 * Math.sin(Math.atan2(oz, ox) * 3 + m.seed) + 0.06 * Math.sin(oy * 0.7 + m.seed);
+      best = Math.min(best, Math.max(Math.sqrt(ox * ox + oz * oz + oy * oy * 2.2) - m.r * wob, m.floor - y));
     }
     if (e.natural) return best; // (a natural mouth: no built floor)
     // Where it starts, inside the rock tunnel, keep it just under the floor

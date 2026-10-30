@@ -1887,9 +1887,7 @@ function updateVisibility() {
   const here = chunks.groundHeightAt(p.x, p.z);
   const underground = p.y < (Number.isFinite(here) ? here : generator.getBaseHeight(p.x, p.z)) - 1.5;
   const mouths = generator.caves.mouthsNear(p.x - 70, p.z - 70, p.x + 70, p.z + 70);
-  // (The mouths of the built ways in, and where the caves come up through the ground.)
-  const toOpening = chunks.openingDistance(p.x, p.y, p.z);
-  const nearMouth = mouths.some((e) => Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z) < 35) || toOpening < 35;
+  const nearMouth = mouths.some((e) => Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z) < 35);
   const surface = !underground || nearMouth;
   // Near a mouth you can see down the tunnel beyond it, so show all caves.
   chunks.setVisibility(surface, underground || nearMouth ? 'all' : 'mouths', p);
@@ -1914,14 +1912,14 @@ function updateVisibility() {
   sheltered = underground;
   // (Which caves to build: all round you underground; on the surface only those by a mouth near you.)
   caveFocus.under = underground;
-  caveFocus.atMouth = mouths.some((e) => Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z) < 14) || toOpening < 14;
+  caveFocus.atMouth = mouths.some((e) => Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z) < 14);
   chunks.underground = underground && !nearMouth; // (the surface not loaded further while you're down there: see ChunkManager)
   caveFocus.x = p.x;
   caveFocus.z = p.z;
 
   // Underground, a short dark haze replaces the sky: caves fade into darkness
   // rather than showing gaps where far-off tunnels aren't built yet.
-  const toMouth = mouths.reduce((d, e) => Math.min(d, Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z)), toOpening);
+  const toMouth = mouths.reduce((d, e) => Math.min(d, Math.hypot(e.mouth.x - p.x, e.mouth.y - p.y, e.mouth.z - p.z)), Infinity);
   caveHaze.target = underground && !ui.night.checked ? Math.min(1, Math.max(0, (toMouth - 4) / 16)) : 0;
   // (In a great chamber, the dark goes back and back: the haze much further off.)
   const ch = underground ? generator.caves.field.chamberAt(p.x, p.z) : null;

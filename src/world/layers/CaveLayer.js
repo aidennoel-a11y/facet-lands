@@ -594,7 +594,7 @@ export function createCaveLayer(config) {
 
     reuseKey: ({ lod }) => (lod > config.caveMaxLod ? 'none' : 'caves'),
 
-    build({ cx, cz, lod, generator, heights }) {
+    build({ cx, cz, lod, generator }) {
       if (lod > config.caveMaxLod || !generator.caves) return null;
       const caves = generator.caves;
       caveRescue = (x, z) => caves.rescue(x, z);
@@ -607,8 +607,7 @@ export function createCaveLayer(config) {
       group.userData.mouths = caves
         .mouthsNear(cx * size - 16, cz * size - 16, (cx + 1) * size + 16, (cz + 1) * size + 16)
         .filter((e) => e.mouth.x > cx * size - 16 && e.mouth.x < (cx + 1) * size + 16 && e.mouth.z > cz * size - 16 && e.mouth.z < (cz + 1) * size + 16)
-        .map((e) => e.mouth)
-        .concat(heights?.openings ?? []); // (and where the caves come up through the ground: see ChunkMesher)
+        .map((e) => e.mouth);
       group.userData.hasMouth = group.userData.mouths.length > 0;
       // (Nothing's built yet: only once it's wanted, see layer.update.)
       waiting.add(group);
@@ -627,9 +626,7 @@ export function createCaveLayer(config) {
       // (Coming up to a cave mouth: the caves all round you get built too,
       // ahead of time, so the way in isn't a black void when you get there.)
       const any = waiting.values().next().value;
-      // (Or where the caves come up through the ground: see ChunkMesher's openings.)
-      const opening = () => [...waiting].some((g) => g.userData.mouths.some((m) => Math.hypot(m.x - f.x, m.z - f.z) < 220));
-      const approaching = !f.under && (any.userData.caves.mouthsNear(f.x - 220, f.z - 220, f.x + 220, f.z + 220).length > 0 || opening());
+      const approaching = !f.under && any.userData.caves.mouthsNear(f.x - 220, f.z - 220, f.x + 220, f.z + 220).length > 0;
       const wanted = [];
       for (const group of waiting) {
         const [cx, cz] = group.userData.chunk;

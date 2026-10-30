@@ -118,28 +118,6 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
     generator.footprint = 0;
   }
 
-  // Where the caves come up through the ground (full detail only: see
-  // CaveField.openness): how far into the caves' air each vertex lies,
-  // the ground cut away below -CUT (see clipAir). Null where there's none.
-  let air = null;
-  const field = resolution >= detailResolution ? generator.caves?.field : null;
-  if (field) {
-    let any = false;
-    for (let k = 0; k < n * n && !any; k += 37) any = field.mayOpen(originX + gridX[k], originZ + gridZ[k], gridY[k]);
-    // (A coarse look first: open country is patchy, and most chunks have none.)
-    for (let j = 0; j <= 8 && !any; j++) for (let i = 0; i <= 8 && !any; i++) any = field.mayOpen(originX + (i / 8) * chunkSize, originZ + (j / 8) * chunkSize, generator.getHeight(originX + (i / 8) * chunkSize, originZ + (j / 8) * chunkSize));
-    if (any) {
-      air = new Float32Array(n * n);
-      let cut = false;
-      for (let k = 0; k < n * n; k++) {
-        air[k] = field.surfaceAir(originX + gridX[k], originZ + gridZ[k], gridY[k]);
-        if (air[k] < -CaveField.CUT) cut = true;
-      }
-      if (!cut) air = null;
-    }
-  }
-  const airAt = (p) => (field ? field.surfaceAir(originX + p[0], originZ + p[2], p[1]) : 50);
-
   // Cave entrances (full detail only): each entrance's pit is cut out of
   // the surface exactly. The pit is a strip of convex pieces; triangles
   // they overlap are clipped against them, so the hole's edge follows the
@@ -164,7 +142,7 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
   );
   const clipped = new Map(); // (cell index * 2 + triangle) -> pieces left over: [[x, y, z] x3, ...]
   let clippedTris = 0;
-  if (outlines.length || air) {
+  if (outlines.length) {
     for (let j = 0; j < resolution; j++) {
       for (let i = 0; i < resolution; i++) {
         const tris = cellTriangles(i, j);
@@ -172,10 +150,6 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
           const ids = [tris[t], tris[t + 1], tris[t + 2]];
           let pieces = [ids.map((k) => [gridX[k], gridY[k], gridZ[k]])];
           let touched = false;
-          if (air && ids.some((k) => air[k] < -CaveField.CUT)) {
-            pieces = clipAir(pieces[0], ids.map((k) => air[k]));
-            touched = true;
-          }
           for (const outline of outlines) {
             if (Math.max(...ids.map((k) => gridX[k])) < outline.minX || Math.min(...ids.map((k) => gridX[k])) > outline.maxX) continue;
             if (Math.max(...ids.map((k) => gridZ[k])) < outline.minZ || Math.min(...ids.map((k) => gridZ[k])) > outline.maxZ) continue;
@@ -211,26 +185,6 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
   if (fine) {
     fineTris = fine.count;
     splitEdges = fine.borderSplits;
-  }
-
-  // (A refined cell's triangles cut too, where the caves come up through
-  // them: the pieces kept, and how far into the air each corner lies, for
-  // groundHeightAt.)
-  const fineCut = new Map();
-  if (fine && air) {
-    for (const [cell, tris] of fine.cells) {
-      const ci = cell % resolution, cj = (cell - ci) / resolution, a = cj * n + ci;
-      if (Math.min(air[a], air[a + 1], air[a + n], air[a + n + 1]) > 4) continue; // (nowhere near)
-      const out = [];
-      for (let t = 0; t < tris.length; t += 9) {
-        const pts = [[tris[t], tris[t + 1], tris[t + 2]], [tris[t + 3], tris[t + 4], tris[t + 5]], [tris[t + 6], tris[t + 7], tris[t + 8]]];
-        const airs = pts.map(airAt);
-        if (airs.every((v) => v >= -CaveField.CUT)) out.push(pts);
-        else for (const piece of clipAir(pts, airs)) for (let q = 1; q < piece.length - 1; q++) out.push([piece[0], piece[q], piece[q + 1]]);
-      }
-      fineCut.set(cell, out);
-      fineTris += out.length;
-    }
   }
 
   const surfaceTris = resolution * resolution * 2;
@@ -305,12 +259,6 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
       const finer = fine && fine.cells.get(j * resolution + i);
       if (finer) {
         const corners = [tris[0], tris[1], tris[2], tris[3], tris[4], tris[5]];
-        const cut = fineCut.get(j * resolution + i);
-        if (cut) {
-          const centre = [(finer[0] + finer[3] + finer[6]) / 3, (finer[1] + finer[4] + finer[7]) / 3, (finer[2] + finer[5] + finer[8]) / 3];
-          cut.forEach(([a, b, c], t) => pushTri(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], gx * 8 + t, gz + 100003, null, centre));
-          continue;
-        }
         for (let t = 0; t < finer.length; t += 9) {
           pushTri(finer[t], finer[t + 1], finer[t + 2], finer[t + 3], finer[t + 4], finer[t + 5], finer[t + 6], finer[t + 7], finer[t + 8], gx * 8 + t / 9, gz + 100003);
           for (const p of corners) {
@@ -359,14 +307,8 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
   // entrance ramp running underneath, so they never wall a cave off.
   // (Only near, where the caves are built: see caveMaxLod.)
   const ramps = caveSystem ? caveSystem.mouthsNear(originX, originZ, originX + chunkSize, originZ + chunkSize) : [];
-  const rampBottom = (x, y, z, depth) => (ramps.length ? generator.caves.skirtBottom(ramps, originX + x, y, originZ + z, depth) : y - depth);
-  // (Nor down into the caves where they come up near the ground.)
-  const skirtBottom = (x, y, z, depth = skirtDepth) => {
-    const b = rampBottom(x, y, z, depth);
-    if (!air || !field.mayOpen(originX + x, originZ + z, y)) return b;
-    for (let d = 0; y - d > b; d += 0.75) if (field.latticeAt(originX + x, y - d, originZ + z) < 0.4) return Math.min(y, y - d + 0.5);
-    return b;
-  };
+  const skirtBottom = (x, y, z, depth = skirtDepth) =>
+    ramps.length ? generator.caves.skirtBottom(ramps, originX + x, y, originZ + z, depth) : y - depth;
   // The edge each skirt segment hangs from, as a key into the midpoints of split edges.
   const edgeKeys = [
     (t) => fine?.edgeKey(t, 0, 0),
@@ -551,14 +493,13 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
     colds: v < colors.length ? colds.slice(0, v / 3) : colds,
     gridX, gridY, gridZ,
     fineCells, fineOffsets, fineTris: fineData,
-    air: air ?? new Float32Array(0),
     triangles: surfaceTris + (fine ? fine.count - fine.cells.size * 2 : 0),
   };
 }
 
 /** The typed arrays in a chunk's data, to hand over from a worker without copying. */
 export function chunkDataBuffers(data) {
-  return [data.positions, data.normals, data.colors, data.colds, data.gridX, data.gridY, data.gridZ, data.fineCells, data.fineOffsets, data.fineTris, data.air].map((a) => a.buffer);
+  return [data.positions, data.normals, data.colors, data.colds, data.gridX, data.gridY, data.gridZ, data.fineCells, data.fineOffsets, data.fineTris].map((a) => a.buffer);
 }
 
 /**
@@ -608,24 +549,6 @@ export function chunkSurface(generator, config, cx, cz, resolution, data) {
   // flat triangles; things standing on the ground (trees) should use this.
   // If `out` is given, out.normalY receives how flat the triangle is (1 = flat).
   // Returns NaN over a cave mouth (no ground there) and null outside the chunk.
-  // How far into the caves' air the ground at (x, z) lies, blended over
-  // cell (i, j)'s triangles (see computeChunkData's air), or null if not on it.
-  const air = data.air?.length ? data.air : null;
-  const airOn = (x, z, i, j) => {
-    const tris = cellTriangles(i, j);
-    for (let t = 0; t < 6; t += 3) {
-      const p0 = tris[t], p1 = tris[t + 1], p2 = tris[t + 2];
-      const v = onTriangle(x, z, gridX[p0], air[p0], gridZ[p0], gridX[p1], air[p1], gridZ[p1], gridX[p2], air[p2], gridZ[p2]);
-      if (v !== null) return v;
-    }
-    return null;
-  };
-  const cutAway = (x, z, i, j) => {
-    if (!air) return false;
-    const v = airOn(x, z, i, j);
-    return v !== null && v < -CaveField.CUT;
-  };
-
   function groundHeightAt(x, z, out) {
     const ci = Math.floor(x / cellSize);
     const cj = Math.floor(z / cellSize);
@@ -648,7 +571,7 @@ export function chunkSurface(generator, config, cx, cz, resolution, data) {
         if (finer) {
           for (let t = 0; t < finer.length; t += 9) {
             const y = onTriangle(x, z, finer[t], finer[t + 1], finer[t + 2], finer[t + 3], finer[t + 4], finer[t + 5], finer[t + 6], finer[t + 7], finer[t + 8], out);
-            if (y !== null) return cutAway(x, z, i, j) ? NaN : y;
+            if (y !== null) return y;
           }
           continue;
         }
@@ -658,7 +581,6 @@ export function chunkSurface(generator, config, cx, cz, resolution, data) {
           const y = onTriangle(x, z, gridX[p0], gridY[p0], gridZ[p0], gridX[p1], gridY[p1], gridZ[p1], gridX[p2], gridY[p2], gridZ[p2], out);
           if (y !== null) {
             if (holes.length && holes.some((e) => CaveField.inHole(e, x + originX, z + originZ))) return NaN;
-            if (cutAway(x, z, i, j)) return NaN; // (where the caves come up through it)
             return y;
           }
         }
@@ -669,30 +591,12 @@ export function chunkSurface(generator, config, cx, cz, resolution, data) {
 
   return {
     // Handy for decoration layers (trees, rocks...) that need heights.
-    heights: { gridX, gridY, gridZ, size: n, openings: openingsOf(air, gridX, gridY, gridZ, originX, originZ) },
+    heights: { gridX, gridY, gridZ, size: n },
     groundHeightAt,
     get occluder() {
-      return (this._occluder ??= occluderOf(chunkSize, cellSize, gridX, air ? gridY.map((y, k) => (air[k] < -CaveField.CUT ? -Infinity : y)) : gridY, gridZ, fine));
+      return (this._occluder ??= occluderOf(chunkSize, cellSize, gridX, gridY, gridZ, fine));
     },
   };
-}
-
-/**
- * Where the caves come up through a chunk's ground (world points, about
- * one for every 16 m square with any): for showing the caves from the
- * surface near them (see CaveLayer, ChunkManager.setVisibility).
- */
-function openingsOf(air, gridX, gridY, gridZ, originX, originZ) {
-  if (!air?.length) return [];
-  const seen = new Set(), out = [];
-  for (let k = 0; k < air.length; k++) {
-    if (air[k] >= -CaveField.CUT) continue;
-    const key = `${Math.floor(gridX[k] / 16)},${Math.floor(gridZ[k] / 16)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ x: originX + gridX[k], y: gridY[k], z: originZ + gridZ[k] });
-  }
-  return out;
 }
 
 /**
@@ -749,26 +653,6 @@ function onTriangle(x, z, ax, ay, az, bx, by, bz, cx, cy, cz, out) {
  * Heights are interpolated along the polygon's edges, so the pieces stay
  * in its plane and meet the neighbouring triangles exactly.
  */
-/**
- * What's left of a triangle (points [x, y, z], how far into the caves' air
- * each lies) once the ground's cut away where it's further in than CUT:
- * the cut runs straight across it where the depth, blended along its
- * sides, crosses that. [polygon] or [] (all of it gone).
- */
-function clipAir(points, airs) {
-  const out = [];
-  const keep = (k) => airs[k] + CaveField.CUT;
-  for (let k = 0; k < points.length; k++) {
-    const q = (k + 1) % points.length, a = keep(k), b = keep(q);
-    if (a > 0) out.push(points[k]);
-    if ((a > 0) !== (b > 0)) {
-      const t = a / (a - b), P = points[k], Q = points[q];
-      out.push([P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t, P[2] + (Q[2] - P[2]) * t]);
-    }
-  }
-  return out.length >= 3 ? [out] : [];
-}
-
 function subtractOutline(polygon, outline) {
   const sides = outline.map(([ax, az], i) => {
     const [bx, bz] = outline[(i + 1) % outline.length];
