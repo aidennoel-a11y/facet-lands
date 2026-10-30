@@ -67,8 +67,8 @@ export const LANDMARKS = {
   // (Its jungle cousin, a cenote: a great round pit filled nearly to the
   // brim with clear deep water, a few metres of vine-hung wall all round
   // over it, a spring's fall into it.)
-  jungleSinkhole: { name: 'Jungle Sinkhole', cell: 3000, chance: 0.6, tries: 12, land: (h, slope) => h > 10 && slope < 0.25,
-    basin: { r: 58, d: 34, steep: 0.3, rough: 4, below: 4 }, what: 'A great round pit in the jungle: down its vine-hung walls, a hidden jungle and a waterfall into a clear pool',
+  jungleSinkhole: { name: 'Jungle Sinkhole', cell: 3000, chance: 0.6, tries: 20, land: (h, slope) => h > 17 && slope < 0.25,
+    basin: { r: 58, d: 32, steep: 0.36, rough: 6, dry: true, floor: 3 }, what: 'A great round pit in the jungle: down its steep, vine-hung walls, a hidden jungle round a clear pool, often a waterfall pouring in from a spring at its rim',
     fits: (w, m) => w.jungle > 0.5 && m < 0.35 },
   // (Black tar welling up in a hollow out on the savanna, the bones of what
   // it caught sticking up out of it. Few: one to a 10 km square at most, and
@@ -269,6 +269,7 @@ export class LandmarkSites {
       // (A dry pit no deeper than keeps its floor above the sea's level.)
       // (`floor`: how far over the sea's level its floor's kept; under it, and water fills its bottom.)
       if (L.basin.dry) s.pools[0].d = Math.min(L.basin.d, this.#probe((H) => H(s.x, s.z)) - (this.g.rivers?.seaLevel ?? 2) - (L.basin.floor ?? 8));
+      if (s.kind === 'jungleSinkhole') this.#sinkholeWater(s);
     } else if (L.falls) s.pools = this.#fallsPools(s);
     else s.pools = [];
     // (`below`: its water that many metres under its lowest rim, a wall round it.)
@@ -600,6 +601,25 @@ export class LandmarkSites {
     return best;
   }
 
+  /**
+   * A jungle sinkhole's water: a small clear pond in its floor and, three
+   * times in four, a spring just past its rim (its own little pool) whose
+   * stream runs to the lip and falls down the wall into the pond, the
+   * pond lying at the falls' foot. (`s.spring`: the way to it, see Landmarks.)
+   */
+  #sinkholeWater(s) {
+    const pit = s.pools[0], a = s.rot, R = pit.r, fed = s.seed % 100 < 75;
+    // (The pond: by the foot of the falls, or, with none, in the middle.)
+    const out = fed ? R * 0.27 : 0, x = s.x + Math.cos(a) * out, z = s.z + Math.sin(a) * out;
+    const floor = this.#probe((H) => H(x, z)) - pit.d;
+    s.pools.push({ x, z, r: 9 + (s.seed % 5), d: 2.6, steep: 0.3, seed: s.seed + 31, level: floor - 0.5 });
+    if (!fed) return;
+    // (The spring: in its own hollow just outside the rim, where the stream sets off for the lip.)
+    const sd = R * 1.12 + 6, sx = s.x + Math.cos(a) * sd, sz = s.z + Math.sin(a) * sd;
+    s.pools.push({ x: sx, z: sz, r: 4.5, d: 1.4, steep: 0.35, seed: s.seed + 57 });
+    s.spring = { a, from: sd - 4, pond: out };
+  }
+
   #rimLevel(p) {
     return this.#probe((H) => {
       let low = Infinity;
@@ -805,6 +825,18 @@ export class LandmarkSites {
   }
 
   /** Whether (x, z) is within `margin` of the falls' water (no trees growing there). */
+  /** Whether (x, z) is on a jungle sinkhole's steep walls, or in its pools: no trees there, so the pit shows. */
+  sinkholeBare(x, z) {
+    if (this.busy) return false;
+    for (const [s, pools] of this.#hollowsAt(x, z)) {
+      if (s.kind !== 'jungleSinkhole') continue;
+      const pit = pools[0], [d, a] = LandmarkSites.ell(pit, x, z), t = d / (pit.r * LandmarkSites.wob(pit, a));
+      if (t > pit.steep + 0.12 && t < 1.02) return true;
+      for (const p of pools.slice(1)) if (Math.hypot(x - p.x, z - p.z) < p.r * 1.1 + 1.5) return true;
+    }
+    return false;
+  }
+
   nearFalls(x, z, margin = 2) {
     if (this.busy) return false;
     for (const [s, pools] of this.#hollowsAt(x, z)) {

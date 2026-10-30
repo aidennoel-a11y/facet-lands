@@ -160,6 +160,10 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
       const inside = w.inset > 1.5 && w.level >= seaLevel + 0.35;
       const ground = inside ? -Infinity : generator.getHeight(x, z);
       keep[k] = Math.min(w.level + LIFT - ground, REACH + w.inset);
+      // (Past the channel's edge the water only runs on under a bank: where
+      // the land falls away below it there, as it can beside a fall on a
+      // slope, it stops, never a sheet hanging out over the hillside.)
+      if (w.inset < 0) keep[k] = Math.min(keep[k], ground - w.level + 0.6 + w.inset * 0.4);
       if (keep[k] >= 0) any = true;
       // Where it has come down to the level of the lake or sea it runs
       // into, out over that water, it gives way to it: fading out, so the

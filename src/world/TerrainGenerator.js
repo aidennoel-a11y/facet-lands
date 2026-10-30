@@ -1157,11 +1157,12 @@ export class TerrainGenerator {
   }
 
   #jungleMtnBlob(x, z) {
-    return this.#blobs('jmtn', x, z, 3500, 1, 1300, 2200, 0x7a12, (px, pz) => {
+    return this.#blobs('jmtn', x, z, 2100, 1, 1300, 2200, 0x7a12, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       if (this.getMountainness(px, pz) > 0.35 || this.#volcanoBelt(px, pz) > 0.6 || this.#smokyBlob(px, pz) > 0.05) return 0;
       // (In the green, well-watered country: they bring their own jungle with them, see #biomeWeights.)
-      return this.getAridity(px, pz, r) < 0.36 && this.#continentBase(px, pz) - this._contLift > -0.25 ? 1 : 0;
+      // (Out into the savanna too: they bring their own wet with them.)
+      return this.getAridity(px, pz, r) < 0.515 && this.#continentBase(px, pz) - this._contLift > -0.32 ? 1 : 0;
     }, (px, pz, rad) => {
       // (No mountain range within 2 km of its edge, so it never runs into one. See also #jungleMtn.)
       for (let k = 0; k < 12; k++) {
@@ -1618,7 +1619,11 @@ export class TerrainGenerator {
       const ridges = Math.pow(N.ridged(qx * 0.0024, qz * 0.0024, 3, 2.1, 0.5, 0.02), 1.5);
       const rough = N.fbm(qx * 0.012 + 50, qz * 0.012 - 50, 2) * 6;
       const high = 0.65 + 0.55 * smoothstep(0, 60, 14 + (continent - contLift) * 16);
-      jungleMtn = smoothstep(0, 0.9, jb) * (8 + (140 * mass * (0.55 + 0.45 * ridges) + 30 * ridges + rough) * high * smoothstep(0.15, 0.75, jb));
+      // (Rising to a high heart: real mountains, their summits two or three
+      // hundred metres over the jungle round them, above the trees.)
+      const core = Math.pow(smoothstep(0.12, 0.85, jb), 1.25);
+      const peak = (140 + 180 * mass) * (0.6 + 0.4 * ridges) + 45 * ridges;
+      jungleMtn = smoothstep(0, 0.9, jb) * 8 + core * (peak * high + rough);
     }
     let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + jungleMtn + volcanic + badlands + cascades + highland + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // (Valleys only in land well above the water: never new lakes.)

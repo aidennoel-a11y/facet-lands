@@ -123,6 +123,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (generator.blastAt && (biome.id === 'volcanic' || biome.id === 'temperate' || biome.id === 'pine' || biome.id === 'smoky') && hash2(gi, gj, seed + 17) < 0.9 * generator.blastAt(wx, wz)) continue; // (blasted bare round a volcano that blew apart: only a few have grown back)
       if (biome.id === 'blackHills' && generator.getFormation(wx, wz) > 3) continue; // nor up on the granite spires and domes
       if (generator.landmarks?.nearFalls(wx, wz, 3.5)) continue; // nor in the falls' pools, nor right at their edge
+      if (generator.landmarks?.sinkholeBare(wx, wz)) continue; // nor on a jungle sinkhole's walls, nor in its pools
       // Open plains are treeless: grass as far as you can see.
       if (biome.id === 'temperate' && hash2(gi, gj, seed + 16) < smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) continue;
       if (crowded(gi, gj, likely)) continue;
@@ -160,9 +161,9 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // (A jungle range's mountains: jungle thick up their lower slopes, as a jungle is, thinning higher up,
       // their steeper faces bare.)
       const jungleMtn = biome.id === 'jungleMountains';
-      if (r < Math.max(jungleMtn ? 1 - smoothstep(0.62, 0.8, upness) : cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(150, 190, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
+      if (r < Math.max(jungleMtn ? 1 - smoothstep(0.7, 0.86, upness) : cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(170, 215, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
       // And ever fewer the higher you go (the tree line).
-      if (!lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.9 * smoothstep(110, 190, land) : smoothstep(85, 150, land) * 0.9)) continue;
+      if (!lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.95 * smoothstep(95, 175, land) : smoothstep(85, 150, land) * 0.9)) continue;
 
       // Too steep for roots? (height change per metre)
       if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;

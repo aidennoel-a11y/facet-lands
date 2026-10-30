@@ -757,9 +757,9 @@ export class Landmarks {
         // mossy boulders, a dark pool. (Its walls drawn here finer than the
         // land round about, so their roughness shows.)
         const b = LANDMARKS[site.kind].basin;
-        // (The jungle's filled with water nearly to the brim: its floor, for what's built, the water.)
-        const lake = jungle ? this.#lake(site) : null;
-        const floor = jungle ? lake.level - 1.2 : y0;
+        // (The jungle's: a small clear pond in its floor, and mostly a spring's stream falling to it: see landmarkSites.)
+        const pools = jungle ? this.generator.landmarks.poolsOf(site) : null;
+        const floor = y0;
         g.add(this.#surface(site, b.r * 1.06, (x, z, y, slope, t) => {
           const band = Math.floor((y - floor) / 3.2 + wob2(x, z) * 0.6);
           if (slope < (jungle ? 0.75 : 0.55) && t < 0.97) return y - floor < 3 && !jungle ? 0x5a4e3e : pick2(jungle ? [0x3a6a28, 0x2e5e22, 0x467a30] : [0x4a6a34, 0x56783a, 0x3e5e2c], x, z);
@@ -778,7 +778,23 @@ export class Landmarks {
           }
         }
         const fa = site.rot, ftop = gy(Math.cos(fa) * b.r * 1.0, Math.sin(fa) * b.r * 1.0);
-        falls = [{ x: site.x + Math.cos(fa) * b.r * 0.62, z: site.z + Math.sin(fa) * b.r * 0.62, top: ftop, bottom: floor + 1.2, rot: fa, width: 1.6 }];
+        if (!jungle) falls = [{ x: site.x + Math.cos(fa) * b.r * 0.62, z: site.z + Math.sin(fa) * b.r * 0.62, top: ftop, bottom: floor + 1.2, rot: fa, width: 1.6 }];
+        else if (site.spring) {
+          // The spring's stream: from its pool out to the lip, then down the
+          // wall (steep, not sheer: the water running down the rock, white),
+          // to the pond at its foot.
+          const sp = site.spring, dx = -Math.cos(sp.a), dz = -Math.sin(sp.a), prof = [];
+          const pond = pools[1], end = sp.from - (sp.pond + pond.r * 0.4);
+          for (let o = 0; o <= end; o += 1.5) prof.push([o, gy(Math.cos(sp.a) * (sp.from - o), Math.sin(sp.a) * (sp.from - o)) + 0.25]);
+          ribbons = [{ x: site.x + Math.cos(sp.a) * sp.from, z: site.z + Math.sin(sp.a) * sp.from, dx, dz, w: 2.2, prof, top: prof[0][1], bottom: prof[prof.length - 1][1] }];
+          const sx = pools[2].x - site.x, sz = pools[2].z - site.z;
+          waters.push({ level: pools[2].level, r: pools[2].r * 1.02, clean: true, mat: 'turq', x: sx, z: sz, small: true });
+          // (Ferns round the spring.)
+          for (let i = 0; i < 6; i++) {
+            const a2 = r(0, Math.PI * 2), x = sx + Math.cos(a2) * pools[2].r * 1.3, z = sz + Math.sin(a2) * pools[2].r * 1.3;
+            fern(x, gy(x, z), z, r(0.8, 1.3));
+          }
+        }
         for (let i = 0; i < 6; i++) {
           const a = r(0, Math.PI * 2), x = Math.cos(a) * b.r * 0.35, z = Math.sin(a) * b.r * 0.35, b2 = a + r(1, 2);
           k.limb([x, gy(x, z) + 0.6, z], [x + Math.cos(b2) * 12, gy(x, z) + r(3, 10), z + Math.sin(b2) * 12], 0.45, 0.2, 0x5a4632, 6);
@@ -788,7 +804,8 @@ export class Landmarks {
           blob(k, pick([0x9a968c, 0x8a867c, 0x7a766e]), [x, y + 0.3, z], sz, [1, 0.7, 1], 0.25);
           k.add(new BoxGeometry(sz * 1.1, 0.14, sz * 1.1), 0x4a6a34, [x, y + 0.3 + sz * 0.62, z], [0, r(0, 3), 0]);
         }
-        waters.push(jungle ? { ...lake, clean: true, mat: 'turq' } : { level: floor + 1.2, r: b.r * 0.3, clean: false, mat: 'dark' });
+        if (jungle) waters.push({ level: pools[1].level, r: pools[1].r * 1.02, clean: true, mat: 'turq', x: pools[1].x - site.x, z: pools[1].z - site.z });
+        else waters.push({ level: floor + 1.2, r: b.r * 0.3, clean: false, mat: 'dark' });
         break;
       }
       case 'tarPits': {
