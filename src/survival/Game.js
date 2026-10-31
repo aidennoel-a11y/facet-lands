@@ -386,7 +386,7 @@ export class Game {
         this.#menu(false);
         return;
       }
-      if (!this.walking || !this.survival.alive || this.sleeping) return;
+      if (!this.acting || !this.survival.alive || this.sleeping) return;
       // E: what you carry (and wear), to sort; or, with a chest open, shut it.
       if (e.code === 'KeyE' || e.code === 'KeyI') {
         if (this.hud.chest) {
@@ -396,7 +396,14 @@ export class Game {
       }
       // Q: pick up, or use what you're pointing at; R: drop what's in your hand.
       if (e.code === 'KeyQ' && !this.hud.busy) this.interact(null, e.shiftKey);
-      if (e.code === 'KeyR' && !this.hud.busy) this.drop(e.shiftKey);
+      if (e.code === 'KeyR' && !this.hud.busy) {
+        // (Holding something to build: R turns it a quarter round instead; Shift+R still drops it.)
+        const held = this.inventory.slots[this.hotbar.index];
+        if (!e.shiftKey && ITEMS[held?.id]?.place && this.plan) {
+          this.buildTurn = ((this.buildTurn ?? 0) + Math.PI / 2) % (Math.PI * 2);
+          this.sound?.call('place', 0, 0.15);
+        } else this.drop(e.shiftKey);
+      }
       // G: a wave; T: the emotes to pick from.
       if (e.code === 'KeyG' && !this.hud.busy && this.mode !== 'testing') this.emote('wave');
       if (e.code === 'KeyT' && this.mode !== 'testing') {
@@ -1049,6 +1056,12 @@ export class Game {
       }
       case 'gate':
       case 'fenceGate':
+      case 'barnDoor':
+      case 'logDoor':
+      case 'plankDoor':
+      case 'stoneDoor':
+      case 'cutDoor':
+        // (A door, a gate: swung open or shut. Not while you're standing in its way.)
         this.structures.toggle(s);
         return this.sound?.call('creak', 0, 0.3);
       case 'plot': {
@@ -1576,6 +1589,12 @@ export class Game {
       const plan = this.plan;
       if (!plan) return this.hotbar?.flash('Point at the ground nearby');
       if (!plan.ok) return this.hotbar?.flash(plan.why);
+      // (Taking a wall's place: that wall comes down, back into your pack.)
+      if (plan.replace) {
+        const old = plan.replace;
+        this.structures.remove(old);
+        if (this.mode === 'survival') this.inventory.add(Inventory.stack(Object.keys(ITEMS).find((id) => ITEMS[id].place === old.type) ?? old.type, 1));
+      }
       // (A big one: its site marked out, to be built up stage by stage.)
       const stages = this.structures.stagesOf(plan.type);
       const site = this.structures.build(plan, stages ? { data: { stage: 0, got: {} } } : {});
@@ -3589,7 +3608,7 @@ export class Game {
       } else if (placing && placing !== 'torch') {
         const at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
         const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'stoneDoor', 'cutWindow', 'cutDoor', 'barnWall', 'barnWindow', 'barnDoor', 'gatehouse', 'dock'].includes(placing) ? Math.PI : 0);
-        this.plan = this.structures.plan(placing, at, yaw, ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
+        this.plan = this.structures.plan(placing, at, yaw + (this.buildTurn ?? 0), ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
         // (A dock: set at the water's edge, out over the water.)
         if (placing === 'dock' && this.plan.ok) {
           const out = (d) => this.waterAt(this.plan.x + Math.sin(this.plan.rot) * d, this.plan.z + Math.cos(this.plan.rot) * d);
@@ -3597,7 +3616,7 @@ export class Game {
         }
         const onPlot = placing === 'plot' && t?.kind === 'structure' && t.structure.type === 'plot';
         this.structures.preview(onPlot ? null : this.plan);
-        if (!onPlot) prompt = this.plan.ok ? `<kbd>Click</kbd> ${placing === 'plot' ? 'Dig a plot' : `Build ${item.name.toLowerCase()}`}` : this.plan.why;
+        if (!onPlot) prompt = this.plan.ok ? `<kbd>Click</kbd> ${placing === 'plot' ? 'Dig a plot' : this.plan.replace ? `Put ${item.name.toLowerCase()} in that wall's place` : `Build ${item.name.toLowerCase()}`}${placing === 'plot' ? '' : ' · <kbd>R</kbd> Turn it'}` : this.plan.why;
       } else this.structures.preview(null);
       if (!prompt && t) prompt = `<kbd>Q</kbd> ${t.text}`;
       if (!prompt && this.mineCarts?.cartNear(cam.x, cam.y - this.controls.eyeHeight, cam.z)) prompt = '<kbd>Q</kbd> Get in the mine cart';

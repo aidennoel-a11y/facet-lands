@@ -1805,7 +1805,7 @@ export function barnDoorModel(dye = 'natural') {
   const diag = Math.hypot(w, 0.85), ang = Math.atan2(0.85, w);
   for (const [y, s] of [[0.5, 1], [0.5, -1], [1.42, 1], [1.42, -1]]) b.add(new BoxGeometry(diag, 0.1, 0.05), trim, [w / 2, y, 0.065], [0, 0, s * ang]);
   b.add(new BoxGeometry(0.05, 0.05, 0.1), 0x2a2a2a, [w - 0.12, 0.8, 0.1]);
-  return b.build();
+  return b.build().translate(0, 0.3, 0); // (filling its doorway up to the head)
 }
 
 /** A barn's roof, 4 m: long boards down the slope, painted (or plain), a trim along its eaves. */
@@ -2061,7 +2061,8 @@ export function houseDoorModel(style) {
     b.add(new BoxGeometry(0.06, 0.18, 0.08), 0x3a3a40, [w - 0.14, 0.75, 0.08]); // (the handle)
     if (style !== 'plank') for (let x = 0.15; x < w; x += 0.3) for (let y = -0.1; y < 1.9; y += 0.5) b.add(new BoxGeometry(0.04, 0.04, 0.03), 0x2e2e32, [x, y, 0.06]); // (iron studs)
   }
-  return b.build();
+  // (Lifted to fill its doorway, from the sill to just under the head: no gap over it.)
+  return b.build().translate(0, 0.3, 0);
 }
 
 /**

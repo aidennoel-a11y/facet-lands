@@ -381,16 +381,38 @@ export class Structures {
         if (Math.abs(point.y - (up + FLOOR_TOP)) < 1.2 && point.y > f.y + 2) upper = up;
       }
     }
+    let stairLevel = null;
     if (kind.stairs) {
-      // (Square to the floor it stands on, or the one nearest.)
-      let near = null, bd = FLOOR_SIZE * 2;
+      // (Square to the floor or the wall nearest, on their grid: set in
+      // half metres, so a flight lies snug along a wall or squarely across
+      // a room; at the walls' level, where there's no floor under it.)
+      let near = null, bd = FLOOR_SIZE * 2.5;
       for (const f of this.list) {
-        if (!KINDS[f.type].floor) continue;
-        const d = Math.hypot(f.x - x, f.z - z);
+        const k = KINDS[f.type];
+        if (!k.floor && k.line !== 'wall') continue;
+        const d = Math.hypot(f.x - x, f.z - z) + (k.floor ? 0 : 0.5);
         if (d < bd) (bd = d), (near = f);
       }
-      const base = near ? near.rot : 0;
+      const base = near ? near.rot : Math.round(rot / (Math.PI / 2)) * (Math.PI / 2);
       rot = base + Math.round((rot - base) / (Math.PI / 2)) * (Math.PI / 2);
+      if (near) {
+        const ux = Math.cos(base), uz = -Math.sin(base), vx = Math.sin(base), vz = Math.cos(base);
+        const u = (x - near.x) * ux + (z - near.z) * uz, v = (x - near.x) * vx + (z - near.z) * vz;
+        // (Its own half-sizes across and along the wall's frame; a wall's face half its thickness off its middle line.)
+        const odd = Math.abs(Math.round((rot - base) / (Math.PI / 2))) % 2 === 1;
+        const hu = odd ? STAIRS_LENGTH / 2 : STAIRS_WIDTH / 2, hv = odd ? STAIRS_WIDTH / 2 : STAIRS_LENGTH / 2;
+        let gu, gv;
+        if (KINDS[near.type].floor) (gu = Math.round(u / 0.5) * 0.5), (gv = Math.round(v / 0.5) * 0.5);
+        else {
+          // (Snug against the wall's face, on whichever side you're on; along it, in half metres.)
+          const face = 0.3 + hv, sv = Math.sign(v) || 1;
+          gv = sv * Math.max(face, Math.round((Math.abs(v) - face) / 0.5) * 0.5 + face);
+          gu = Math.round((u - hu) / 0.5) * 0.5 + hu;
+        }
+        x = near.x + ux * gu + vx * gv;
+        z = near.z + uz * gu + vz * gv;
+        if (KINDS[near.type].line === 'wall') stairLevel = near.y;
+      }
     }
     if (kind.floor) {
       // Square to the nearest floor, and edge to edge with it: one floor,
@@ -472,6 +494,23 @@ export class Structures {
         z = near.z + az2 * u + bz2 * v;
         rot = near.rot + Math.round((rot - near.rot) / (Math.PI / 2)) * (Math.PI / 2);
         roofY = KINDS[near.type].roof ? near.y : near.y + FLOOR_TOP + 3.2;
+      } else {
+        // (No floor: over the walls themselves, square in the room they close, right down on their tops.)
+        let wall = null, wd = FLOOR_SIZE * 2;
+        for (const f of this.list) {
+          if (KINDS[f.type].line !== 'wall') continue;
+          const d = Math.hypot(f.x - x, f.z - z) + Math.abs(f.y + 3.2 - (point.y ?? f.y + 3.2)) * 0.5;
+          if (d < wd) (wd = d), (wall = f);
+        }
+        if (wall) {
+          const L = FLOOR_SIZE, ux = Math.cos(wall.rot), uz = -Math.sin(wall.rot), vx = Math.sin(wall.rot), vz = Math.cos(wall.rot);
+          const u = (x - wall.x) * ux + (z - wall.z) * uz, v = (x - wall.x) * vx + (z - wall.z) * vz;
+          const gu = Math.round(u / L) * L, gv = (Math.floor(v / L) + 0.5) * L;
+          x = wall.x + ux * gu + vx * gv;
+          z = wall.z + uz * gu + vz * gv;
+          rot = wall.rot + Math.round((rot - wall.rot) / (Math.PI / 2)) * (Math.PI / 2);
+          roofY = wall.y + 3.2;
+        }
       }
     }
     const half = kind.box ? kind.box : type === 'raft' ? [1.2, 1.3] : type === 'canoe' ? [0.4, 2.1] : [kind.circle || kind.reach || 0.5, kind.circle || kind.reach || 0.5];
@@ -495,6 +534,7 @@ export class Structures {
     // (A wall on the grid of the others: at their level, so its courses run on round the corner with theirs;
     // so long as that's not far up off the ground under it, nor sunk deep into it.)
     if (lineLevel !== null && lineLevel > lo - 1.6 && lineLevel < lo + 1.4) y = lineLevel;
+    if (stairLevel !== null && stairLevel > lo - 0.8 && stairLevel < lo + 0.6) y = stairLevel;
     if (kind.roof) y = roofY ?? hi + 3.2;
     // (A floor laid on from another, at its level if the ground's not in the way.)
     if (kind.floor && level !== null && level >= hi - 0.05 && level < lo + 1.4) y = level;
@@ -547,7 +587,14 @@ export class Structures {
         }
       }
     }
-    return { type, x, y, z, rot, ok, why, tilt, upper: upper !== null };
+    // (A door or a window set right where a plain wall stands (or the other
+    // way about): it takes that wall's place, the wall back in your pack.)
+    let replace = null;
+    if (!ok && kind.line === 'wall') {
+      const s = this.list.find((o) => KINDS[o.type].line === 'wall' && o.type !== type && Math.hypot(o.x - x, o.z - z) < 0.4 && Math.abs(Math.sin(o.rot - rot)) < 0.1);
+      if (s && !this.list.some((o) => o !== s && KINDS[o.type].line === 'wall' && Math.hypot(o.x - x, o.z - z) < 0.4)) (replace = s), (ok = true), (why = ''), (y = s.y), (rot = s.rot);
+    }
+    return { type, x, y, z, rot, ok, why, tilt, upper: upper !== null, replace };
   }
 
   /**
