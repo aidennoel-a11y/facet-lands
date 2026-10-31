@@ -235,6 +235,11 @@ export class Game {
     return this.controls.mode === 'walk';
   }
 
+  /** On foot or flying (creative): either way, you can use what's in your hand and build. */
+  get acting() {
+    return this.controls.mode === 'walk' || this.controls.mode === 'fly';
+  }
+
   /** Starts you afresh: full health, and (but in survival) the test kit. */
   newLife() {
     this.age = 0;
@@ -1318,7 +1323,7 @@ export class Game {
 
   /** The mouse pressed down (a bow starts to draw). */
   press() {
-    if (!this.walking || !this.survival.alive || this.hud.busy || this.riding) return;
+    if (!this.acting || !this.survival.alive || this.hud.busy || this.riding) return;
     if (this.line?.fight) return void (this.reeling = true);
     const s = this.inventory.slots[this.hotbar.index];
     if (BOWS.has(s?.id) && this.cooldown <= 0) {
@@ -1330,7 +1335,7 @@ export class Game {
 
   /** Click: uses what you're holding, at what you point at. */
   use(ray, placeTorch) {
-    if (!this.walking || !this.survival.alive || this.hud.busy || this.sleeping) return;
+    if (!this.acting || !this.survival.alive || this.hud.busy || this.sleeping) return;
     const i = this.hotbar.index;
     const s = this.inventory.slots[i];
     const { origin, direction } = this.#ray(ray);
@@ -3557,7 +3562,7 @@ export class Game {
     if (this.spanGuide) this.spanGuide.visible = this.spanMark.visible = false;
     // (Changed what's in hand: a half-laid span forgotten.)
     if (this.spanStart && held?.id !== this.spanStart.type && ITEMS[held?.id]?.place !== this.spanStart.type) this.spanStart = null;
-    if (walking && this.survival.alive && !this.hud.busy && !this.riding) {
+    if ((walking || this.acting) && this.survival.alive && !this.hud.busy && !this.riding) {
       const origin = cam, direction = this.camera.getWorldDirection(dir.clone());
       const t = this.#target({ origin, direction });
       const item = held && ITEMS[held.id];
@@ -3922,8 +3927,72 @@ export class Game {
     });
   }
 
+  /**
+   * Gliding: the glider's wing spread over your head (its leading edge just
+   * showing at the top of your view, the silk catching the light), and
+   * your two hands up on its bar; banking as you turn, buffeting a little
+   * in the wind of your going. (What's in your hand put by meanwhile.)
+   */
+  #gliderView(dt) {
+    const on = !!this.controls.gliding && this.survival.alive;
+    if (!this.gliderMesh) {
+      if (!on) return;
+      const g = new Group();
+      const silk = new MeshLambertMaterial({ color: 0xece4d4, flatShading: true, side: 2 }), frame = new MeshLambertMaterial({ color: 0x7a5432, flatShading: true });
+      const skin = new MeshLambertMaterial({ color: 0xd8a47a, flatShading: true }), sleeve = new MeshLambertMaterial({ color: 0xb8864e, flatShading: true });
+      const near = (m) => ((m.renderOrder = 999), (m.onBeforeRender = this.nearest.before), (m.onAfterRender = this.nearest.after), m);
+      // The wing: a broad delta of silk, swept back from its nose, a little arched.
+      const wing = new BufferGeometry();
+      wing.setAttribute('position', new Float32BufferAttribute([0, 0.12, -0.9, -1.5, -0.08, 0.5, 0, 0.02, 0.25, 0, 0.12, -0.9, 0, 0.02, 0.25, 1.5, -0.08, 0.5], 3));
+      wing.computeVertexNormals();
+      g.add(near(new Mesh(wing, silk)));
+      // Its frame: the keel, the leading edges, the bar you hold.
+      const rod = (ax, ay, az, bx, by, bz, r = 0.018) => {
+        const len = Math.hypot(bx - ax, by - ay, bz - az), m = near(new Mesh(new CylinderGeometry(r, r, len, 5), frame));
+        m.position.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
+        m.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), new Vector3(bx - ax, by - ay, bz - az).normalize());
+        g.add(m);
+      };
+      rod(0, 0.1, -0.9, 0, 0.0, 0.3);
+      rod(0, 0.12, -0.9, -1.5, -0.1, 0.5);
+      rod(0, 0.12, -0.9, 1.5, -0.1, 0.5);
+      rod(-0.32, -0.34, -0.42, 0.32, -0.34, -0.42, 0.016); // (the bar)
+      rod(-0.32, -0.34, -0.42, 0, 0.02, -0.5, 0.01);
+      rod(0.32, -0.34, -0.42, 0, 0.02, -0.5, 0.01);
+      // Your arms, up from below to the bar, a hand round it each side.
+      for (const side of [-1, 1]) {
+        const arm = new Group();
+        for (const [geo, mat, y] of [[new BoxGeometry(0.1, 0.34, 0.1), sleeve, -0.22], [new BoxGeometry(0.075, 0.26, 0.075), skin, 0.04], [new BoxGeometry(0.11, 0.1, 0.1), skin, 0.2]]) {
+          const m = near(new Mesh(geo, mat));
+          m.position.y = y;
+          arm.add(m);
+        }
+        arm.position.set(side * 0.28, -0.6, -0.36);
+        arm.rotation.set(-0.35, 0, side * -0.18);
+        g.add(arm);
+      }
+      g.position.set(0, 0.5, -0.15);
+      this.camera.add(g);
+      this.gliderMesh = g;
+      this.gliderYaw = this.controls.euler.y;
+    }
+    const g = this.gliderMesh;
+    g.visible = on;
+    if (!on) {
+      this.gliderYaw = this.controls.euler.y;
+      return;
+    }
+    this.grip.visible = false;
+    // (Banking into a turn, by how fast you're turning; and a shiver in the airflow, more the faster you go.)
+    const yaw = this.controls.euler.y, turn = Math.atan2(Math.sin(yaw - this.gliderYaw), Math.cos(yaw - this.gliderYaw)) / Math.max(dt, 1e-3);
+    this.gliderYaw = yaw;
+    this.gliderBank = (this.gliderBank ?? 0) + (Math.max(-0.5, Math.min(0.5, turn * 0.25)) - (this.gliderBank ?? 0)) * Math.min(1, dt * 4);
+    const speed = this.controls.glideSpeed ?? 10, t = this.time;
+    g.rotation.set(-0.12 - this.controls.euler.x * 0.25 + Math.sin(t * 9) * 0.004 * speed * 0.1, 0, this.gliderBank + Math.sin(t * 13) * 0.0025 * speed * 0.1);
+  }
+
   #drawHeld(dt, held, walking) {
-    const id = walking && this.survival.alive && !this.hud.busy ? held?.id ?? null : null;
+    const id = (walking || this.acting) && this.survival.alive && !this.hud.busy ? held?.id ?? null : null;
     if (id !== this.heldId) {
       this.heldId = id;
       this.grip.clear();
@@ -4033,6 +4102,7 @@ export class Game {
     this.grip.rotation.set(rx, ry, rz);
     this.grip.position.set(px, py, pz);
     this.#swimArms(dt, !!this.anim);
+    this.#gliderView(dt);
     if (TORCHES.has(this.heldId)) {
       const f = 0.85 + 0.15 * Math.sin(this.time * 17) * Math.sin(this.time * 7);
       this.handFlame.scale.set(f, 1.7 * f, f);

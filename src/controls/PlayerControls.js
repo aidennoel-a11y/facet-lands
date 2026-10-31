@@ -412,12 +412,22 @@ export class PlayerControls {
     const wasGrounded = this.grounded;
     // Gliding (a glider carried, Space held as you fall from somewhere high):
     // a slow sink, carried on the way you look; down gently.
-    const glide = this.canGlide && !wasGrounded && this.keys.has('Space') && this.velocityY < -1.5 && feetNow - floor > 1.2;
+    // It flies where you look: dive and it gathers speed, pull up and you
+    // trade that speed for height (till it slows and sinks); level, it
+    // sinks gently and slowly loses way.
+    const glide = this.canGlide && !wasGrounded && this.keys.has('Space') && (this.gliding || this.velocityY < -1.5) && feetNow - floor > 0.8;
     if (glide) {
-      const yaw = this.euler.y, pitch = Math.max(-0.6, Math.min(0.3, this.euler.x)), speed = 11 - 6 * pitch; // (nose down: faster, sinking faster)
-      this.velocityY += (-(2.2 - 3 * pitch) - this.velocityY) * Math.min(1, dt * 3);
-      this.push.x += (-Math.sin(yaw) * speed - this.push.x) * Math.min(1, dt * 2);
-      this.push.z += (-Math.cos(yaw) * speed - this.push.z) * Math.min(1, dt * 2);
+      if (!this.gliding) this.glideSpeed = Math.max(9, Math.hypot(this.push.x, this.push.z), -this.velocityY * 0.7);
+      const yaw = this.euler.y, pitch = Math.max(-1.1, Math.min(0.6, this.euler.x)), cp = Math.cos(pitch), sp = Math.sin(pitch);
+      let g = this.glideSpeed;
+      g += (-sp * 9.8 * 0.95 - 0.004 * g * g - 0.5) * dt; // (gravity along the way it's going; the air's drag)
+      g = Math.max(3, Math.min(45, g));
+      this.glideSpeed = g;
+      const stall = g < 6 ? (6 - g) * 0.9 : 0;
+      const vy = g * sp - 1.2 - stall;
+      this.velocityY += (vy - this.velocityY) * Math.min(1, dt * 6);
+      this.push.x += (-Math.sin(yaw) * g * cp - this.push.x) * Math.min(1, dt * 4);
+      this.push.z += (-Math.cos(yaw) * g * cp - this.push.z) * Math.min(1, dt * 4);
       this.softLanding = true;
     } else this.velocityY = Math.max(-this.maxFallSpeed, this.velocityY - this.gravity * dt);
     this.gliding = glide;

@@ -2329,3 +2329,11 @@ export function stiltFloorModel(len = 2) {
   return b.build();
 }
 export const RAISED_MODELS = { treePlatform: treePlatformModel, treeDeck: treeDeckModel, stiltFloor: stiltFloorModel };
+
+// A wall's footing: rough stones under it, down into the ground, so a wall set level with its
+// neighbours on falling ground stands on something, never on air (see Structures.build).
+export function wallFootingModel() {
+  const b = new Parts(181), rand = mulberry32(181), L = WALL_LENGTH;
+  for (let k = 0; k < 6; k++) b.add(new BoxGeometry(L / 6 + 0.06, 1.6, 0.5), [0x8e8a82, 0x7e7a72, 0x9a968e][Math.floor(rand() * 3)], [-L / 2 + (k + 0.5) * (L / 6), -0.72, 0], [0, 0, 0], [1, 1, 1], 0.08);
+  return b.build();
+}

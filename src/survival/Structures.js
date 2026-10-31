@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, RAISED_MODELS } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, RAISED_MODELS, wallFootingModel } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -412,27 +412,31 @@ export class Structures {
         }
       } else rot = Math.round(rot / (Math.PI / 2)) * (Math.PI / 2);
     }
+    let lineLevel = null;
     if (kind.line) {
-      // Across your view, and onto the end of another wall or gate (a fence
-      // or its gate) if one's close.
-      const ax = Math.cos(rot), az = -Math.sin(rot), L = kind.len;
-      let best = null, bestD = 1.6;
+      // On the grid of the walls (or fences) already up near by: square to
+      // them, end to end and corner to corner with them, at their level.
+      // (The grid: the nearest one's own, its length a square; a wall
+      // along it sits on the grid's lines, one across it at its ends.)
+      const L = kind.len;
+      let ref = null, refD = 12;
       for (const s of this.list) {
         const k = KINDS[s.type];
-        if (k.line !== kind.line) continue;
-        const sx = Math.cos(s.rot), sz = -Math.sin(s.rot);
-        for (const end of [1, -1]) {
-          const ex = s.x + (sx * end * k.len) / 2, ez = s.z + (sz * end * k.len) / 2;
-          for (const mine of [1, -1]) {
-            const mx = x + (ax * mine * L) / 2, mz = z + (az * mine * L) / 2;
-            const d = Math.hypot(mx - ex, mz - ez);
-            if (d < bestD) (bestD = d), (best = { ex, ez, mine });
-          }
-        }
+        if (k.line !== kind.line || (point.y !== undefined && Math.abs(s.y - point.y) > 2.5)) continue;
+        const d = Math.hypot(s.x - x, s.z - z);
+        if (d < refD) (refD = d), (ref = s);
       }
-      if (best) {
-        x = best.ex - (ax * best.mine * L) / 2;
-        z = best.ez - (az * best.mine * L) / 2;
+      if (ref) {
+        const turns = Math.round((rot - ref.rot) / (Math.PI / 2));
+        rot = ref.rot + turns * (Math.PI / 2);
+        const across = Math.abs(turns) % 2 === 1;
+        const ux = Math.cos(ref.rot), uz = -Math.sin(ref.rot), vx = Math.sin(ref.rot), vz = Math.cos(ref.rot);
+        const u = (x - ref.x) * ux + (z - ref.z) * uz, v = (x - ref.x) * vx + (z - ref.z) * vz;
+        const half = across ? L / 2 : 0, halfV = across ? L / 2 : 0;
+        const gu = Math.round((u - half) / L) * L + half, gv = Math.round((v - halfV) / L) * L + halfV;
+        x = ref.x + ux * gu + vx * gv;
+        z = ref.z + uz * gu + vz * gv;
+        lineLevel = ref.y;
       } else if (kind.line === 'wall') {
         // (Or along the edge of a floor, end to end with its corners.)
         let edge = null, bestE = 2.6;
@@ -488,6 +492,9 @@ export class Structures {
       }
     }
     let y = kind.line || type === 'stake' || kind.posts ? lo - 0.05 : kind.tilt ? ground(x, z) + 0.01 : kind.floor ? hi : lo;
+    // (A wall on the grid of the others: at their level, so its courses run on round the corner with theirs;
+    // so long as that's not far up off the ground under it, nor sunk deep into it.)
+    if (lineLevel !== null && lineLevel > lo - 1.6 && lineLevel < lo + 1.4) y = lineLevel;
     if (kind.roof) y = roofY ?? hi + 3.2;
     // (A floor laid on from another, at its level if the ground's not in the way.)
     if (kind.floor && level !== null && level >= hi - 0.05 && level < lo + 1.4) y = level;
@@ -689,6 +696,7 @@ export class Structures {
     body.receiveShadow = true;
     mesh.add(body);
     s.body = body;
+    if (KINDS[s.type].line === 'wall') mesh.add(new Mesh(this.models.wallFooting ??= wallFootingModel(), this.material)); // (its footing: see wallFootingModel)
     if (KINDS[s.type].door) {
       // (The door swings on its hinge at the left post.)
       s.door = new Mesh(this.doorModel(s.type, s.data?.dye), this.material);
