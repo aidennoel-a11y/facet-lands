@@ -1743,14 +1743,14 @@ window.addEventListener('keydown', (e) => {
     thirdPerson = !thirdPerson;
     return;
   }
-  // P shows and hides everything on screen but the crosshair: the
-  // panel, the minimap, the hotbar.
+  // P shows and hides everything on screen: the panel, the minimap, the
+  // hotbar, the crosshair.
   if (e.code === 'KeyP') {
     e.preventDefault();
     const hud = document.getElementById('hud');
     const hide = !hud.hidden;
     // (The debug panel only ever in testing.)
-    for (const el of [game.mode === 'testing' ? ui.panel : null, ui.minimap, ui.hotbar, hud]) if (el) el.hidden = hide;
+    for (const el of [game.mode === 'testing' ? ui.panel : null, ui.minimap, ui.hotbar, hud, document.getElementById('crosshair')]) if (el) el.hidden = hide;
     return;
   }
   if (e.code === 'KeyX') ui.mouseLock?.click();
@@ -2919,7 +2919,7 @@ function tick(now) {
   caveSounds(dt);
   const swampLamps = glowSwampHere.v > 0.05 ? wonders.lightsNear(camera.position) : [];
   torches.update(worldNow, camera.position, caveGlowLights.length || swampLamps.length ? [...gameLights, ...caveGlowLights, ...swampLamps] : gameLights);
-  updateCaveLife(now / 1000, sheltered ? camera.position : null);
+  updateCaveLife(now / 1000, sheltered ? camera.position : null, (x, y, z) => generator.caves.clearLine(camera.position.x, camera.position.y, camera.position.z, x, y, z));
   // The spiders in the dark, round you when you're down in the caves.
   // The landmarks near you (found, the first time you come to one), and the old mines' timbers.
   if (landmarks.generator !== generator) (landmarks.generator = generator), landmarks.built.forEach((b) => scene.remove(b.group)), landmarks.built.clear();
@@ -2962,6 +2962,7 @@ function tick(now) {
   // (How much of a glowing swamp you're in, looked at again now and then: its fireflies, its mist, its lights.)
   if (!(worldNow < glowSwampHere.next && glowSwampHere.next - worldNow < 1)) (glowSwampHere.next = worldNow + 0.7), (glowSwampHere.v = sheltered ? 0 : generator.glowSwampAt(camera.position.x, camera.position.z));
   const life = {
+    lava: (x, z) => generator.onLiveLava(x, z), // (a live lava flow: kept off; dies in it)
     glowSwamp: glowSwampHere.v,
     bloodMoon: dayNight.bloodMoon ?? 0,
     waterAt: (x, z) => waterAt(x, z),

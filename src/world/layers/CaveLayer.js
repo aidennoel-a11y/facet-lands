@@ -340,7 +340,12 @@ const foamGeometry = new CircleGeometry(1, 14).rotateX(-Math.PI / 2);
 const foamMaterial = new MeshBasicMaterial({ color: 0xf4fafc, transparent: true, opacity: 0.55, depthWrite: false });
 
 /** Swims the cave fish and flies the bats (call every frame); `eye`: where you are, if underground. */
-export function updateCaveLife(time, eye = null) {
+/**
+ * `seen(x, y, z)`: whether a light there has a clear line to you (no rock
+ * between): the lava's light only from lava you could see, never through a
+ * wall or up through the rock from a cave below, lighting rock it can't reach.
+ */
+export function updateCaveLife(time, eye = null, seen = null) {
   const dt = Math.min(0.1, Math.max(0, time - (caveTime.value || time)));
   caveTime.value = time;
   // The pieces of a mushroom cut down: tumbling to the floor, lying a while, sinking away.
@@ -394,7 +399,7 @@ export function updateCaveLife(time, eye = null) {
     // (The lava's light first, the nearest few spots of it, as far as it
     // reaches; then the nearest of the rest.)
     let lava = 0;
-    for (const [d, g] of near) if (g.lava && lava < 5 && d < 70 * 70) caveGlowLights.push(g), lava++;
+    for (const [d, g] of near) if (g.lava && lava < 6 && d < 70 * 70 && (!seen || seen(g.x, g.y, g.z))) caveGlowLights.push(g), lava++;
     // (The rest by how near they are for how far each reaches: a strong one a
     // way off before a faint one close by.)
     near.sort((a, b) => Math.sqrt(a[0]) / a[1].reach - Math.sqrt(b[0]) / b[1].reach);
@@ -894,7 +899,7 @@ export function createCaveLayer(config) {
               if (c) (c.x += x), (c.y += lp.getY(k)), (c.z += z), c.n++;
               else cells.set(key, { x, y: lp.getY(k), z, n: 1 });
             }
-            for (const c of cells.values()) list.push({ x: c.x / c.n, y: c.y / c.n + 2.5, z: c.z / c.n, strength: 24, reach: 32, colour: 0xff6420, lava: true });
+            for (const c of cells.values()) list.push({ x: c.x / c.n, y: c.y / c.n + 1.6, z: c.z / c.n, strength: 46, reach: 42, colour: 0xff5a18, lava: true });
             // Smoke rising off it, here and there over the lake.
             const vents = [];
             let k = 0;

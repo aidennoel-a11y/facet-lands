@@ -127,15 +127,19 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
           // bump on the surface: see perturbNormalArb).
           vec3 px = dFdx(vViewPosition), py = dFdy(vViewPosition);
           vec3 geo = normalize(cross(px, py));
-          float run = uTime * (0.8 + 2.2 * vFlow.z);
+          // (Still water, a pond's, with no current to carry its ripples: a
+          // slow, gentle stir over it where it lies, not the river's run.)
+          float still = 1.0 - step(0.01, vFlow.z);
+          vec2 fp = mix(vFlow.xy, vec2(vRiverWorld.x * 0.5, vRiverWorld.y * 0.19), still);
+          float run = uTime * mix(0.8 + 2.2 * vFlow.z, 0.1, still);
           // (Its slope taken along and across the flow, then carried onto
           // the screen by the chain rule: smooth, where the screen
           // derivatives of the noise itself would sparkle pixel by pixel.)
           float e = 0.3;
-          float h = riverSurface(vFlow.xy, run);
-          vec2 hs = vec2(riverSurface(vFlow.xy + vec2(e, 0.0), run) - h, riverSurface(vFlow.xy + vec2(0.0, e * 0.25), run) - h) / vec2(e, e * 0.25);
-          float bump = (0.12 + 0.18 * min(1.0, vFlow.z) + 0.5 * vFlow.w) * (1.0 - smoothstep(30.0, 140.0, length(vViewPosition))) * vStreaks;
-          vec2 dh = (hs.x * vec2(dFdx(vFlow.x), dFdy(vFlow.x)) + hs.y * vec2(dFdx(vFlow.y), dFdy(vFlow.y))) * bump;
+          float h = riverSurface(fp, run);
+          vec2 hs = vec2(riverSurface(fp + vec2(e, 0.0), run) - h, riverSurface(fp + vec2(0.0, e * 0.25), run) - h) / vec2(e, e * 0.25);
+          float bump = (0.12 - 0.05 * still + 0.18 * min(1.0, vFlow.z) + 0.5 * vFlow.w) * (1.0 - smoothstep(30.0, 140.0, length(vViewPosition))) * vStreaks;
+          vec2 dh = (hs.x * vec2(dFdx(fp.x), dFdy(fp.x)) + hs.y * vec2(dFdx(fp.y), dFdy(fp.y))) * bump;
           vec3 r1 = cross(py, geo), r2 = cross(geo, px);
           float det = dot(px, r1);
           vec3 grad = sign(det) * (dh.x * r1 + dh.y * r2);

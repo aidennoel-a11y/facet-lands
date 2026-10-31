@@ -68,7 +68,7 @@ export const LANDMARKS = {
   // brim with clear deep water, a few metres of vine-hung wall all round
   // over it, a spring's fall into it.)
   jungleSinkhole: { name: 'Jungle Sinkhole', cell: 3000, chance: 0.6, tries: 20, land: (h, slope) => h > 17 && slope < 0.25,
-    basin: { r: 58, d: 32, steep: 0.36, rough: 6, dry: true, floor: 3 }, what: 'A great round pit in the jungle: down its steep, vine-hung walls, a hidden jungle round a clear pool, often a waterfall pouring in from a spring at its rim',
+    basin: { r: 58, d: 32, steep: 0.55, rough: 5, dry: true, floor: 3 }, what: 'A great round pit in the jungle: down its steep, vine-hung walls, a hidden jungle round a clear pool, often a waterfall pouring in from a spring at its rim',
     fits: (w, m) => w.jungle > 0.5 && m < 0.35 },
   // (Black tar welling up in a hollow out on the savanna, the bones of what
   // it caught sticking up out of it. Few: one to a 10 km square at most, and
@@ -610,9 +610,9 @@ export class LandmarkSites {
   #sinkholeWater(s) {
     const pit = s.pools[0], a = s.rot, R = pit.r, fed = s.seed % 100 < 75;
     // (The pond: by the foot of the falls, or, with none, in the middle.)
-    const out = fed ? R * 0.27 : 0, x = s.x + Math.cos(a) * out, z = s.z + Math.sin(a) * out;
+    const out = fed ? R * 0.18 : 0, x = s.x + Math.cos(a) * out, z = s.z + Math.sin(a) * out;
     const floor = this.#probe((H) => H(x, z)) - pit.d;
-    s.pools.push({ x, z, r: 9 + (s.seed % 5), d: 2.6, steep: 0.3, seed: s.seed + 31, level: floor - 0.5 });
+    s.pools.push({ x, z, r: 15 + (s.seed % 7), d: 3.2, steep: 0.3, seed: s.seed + 31, level: floor - 0.5 });
     if (!fed) return;
     // (The spring: in its own hollow just outside the rim, where the stream sets off for the lip.)
     const sd = R * 1.12 + 6, sx = s.x + Math.cos(a) * sd, sz = s.z + Math.sin(a) * sd;

@@ -805,8 +805,9 @@ export class Landmarks {
         const floor = y0;
         g.add(this.#surface(site, b.r * 1.06, (x, z, y, slope, t) => {
           const band = Math.floor((y - floor) / 3.2 + wob2(x, z) * 0.6);
-          if (slope < (jungle ? 0.75 : 0.55) && t < 0.97) return y - floor < 3 && !jungle ? 0x5a4e3e : pick2(jungle ? [0x3a6a28, 0x2e5e22, 0x467a30] : [0x4a6a34, 0x56783a, 0x3e5e2c], x, z);
-          if (jungle) return [0x7a7462, 0x6a6452, 0x8a826a, 0x5e5a4a, 0x56704a, 0x4a6a3a][((band % 6) + 6) % 6];
+          if (slope < 0.55 && t < 0.97) return y - floor < 3 && !jungle ? 0x5a4e3e : pick2(jungle ? [0x3a6a28, 0x2e5e22, 0x467a30] : [0x4a6a34, 0x56783a, 0x3e5e2c], x, z);
+          // (A cenote's walls: pale limestone in bands, cream and grey, streaked dark where water runs, moss in the cracks.)
+          if (jungle) return wob2(x * 0.9, z * 0.9) > 0.55 ? 0x4a6a3a : [0xc8bfa4, 0xb4ac94, 0xd6cdb2, 0x9a9282, 0xbab098, 0x8a8474][((band % 6) + 6) % 6];
           return [0x9a968c, 0x8a867c, 0xb0aa9a, 0x7a766e, 0xc8c0aa, 0x6e6a62][((band % 6) + 6) % 6];
         }, 0.6));
         for (let i = 0; i < 40; i++) {
@@ -816,8 +817,11 @@ export class Landmarks {
             fern(x, gy(x, z), z, r(0.8, 1.4));
           }
           if (i % (jungle ? 1 : 3) === 0) {
-            const x0 = Math.cos(a) * b.r, z0 = Math.sin(a) * b.r, len = jungle ? r(14, 38) : r(10, 30);
-            k.limb([x0, top, z0], [x0 * 0.94, top - len, z0 * 0.94], 0.08, 0.04, pick([0x3e6a2a, 0x4a7a32]), 4);
+            // (Vines hanging down the walls, long ones in the jungle's, some right down to the water.)
+            for (let v = 0; v < (jungle ? 2 : 1); v++) {
+              const av = a + v * 0.07, x0 = Math.cos(av) * b.r * 0.98, z0 = Math.sin(av) * b.r * 0.98, len = jungle ? r(12, 34) : r(10, 30);
+              k.limb([x0, top, z0], [x0 * 0.92, top - len, z0 * 0.92], 0.08, 0.04, pick([0x3e6a2a, 0x4a7a32, 0x5a8a3a]), 4);
+            }
           }
         }
         const fa = site.rot, ftop = gy(Math.cos(fa) * b.r * 1.0, Math.sin(fa) * b.r * 1.0);

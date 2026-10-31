@@ -57,7 +57,11 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       const density = generator.getGrassDensity(wx, wz);
       if (keep > density) continue;
       const ground = groundHeightAt(lx, lz, surface);
-      if (!(ground >= seaLevel + 0.7) || surface.normalY < 0.8) continue; // also skips cave mouths
+      if (!(ground >= seaLevel + 0.7) || surface.normalY < 0.72) continue; // also skips cave mouths
+      // (A jungle range's mountains: grass up their lower slopes where the trees thin out, a little
+      // steeper and higher than elsewhere, but never on their tops.)
+      const jmtn = surface.normalY < 0.8 || ground > 120 ? generator.getBiomeWeights(wx, wz, {}).jungleMountains ?? 0 : 0;
+      if (surface.normalY < 0.8 && jmtn < 0.5) continue;
       // Near the water only on a lake's grassy shore patches.
       const shore = ground < seaLevel + 5.5 ? generator.getShore(wx, wz, ground) : null;
       if (ground < seaLevel + 3.5 && !(shore && shore.kind === 'grass')) continue;
@@ -66,7 +70,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       // Only where the ground itself is green (not sand, rock or snow).
       const jitter = generator.getColorJitter(wx, wz);
       const colourHeight = ground + jitter;
-      if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > 140) continue;
+      if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > (jmtn > 0.5 ? 178 : 140)) continue;
       if (generator.onSinter && generator.getBiomeWeights(wx, wz, {}).volcanic > 0.5 && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
       if (generator.onLiveLava?.(wx, wz)) continue; // nor on a lava flow
       // How much grass the biome here grows.

@@ -540,6 +540,16 @@ export class CaveSystem {
     return { height, inCave, ceiling };
   }
 
+  /** Whether there's a clear line through the caves' air from one point to another (no rock between). */
+  clearLine(ax, ay, az, bx, by, bz, step = 1.5) {
+    const dx = bx - ax, dy = by - ay, dz = bz - az, len = Math.hypot(dx, dy, dz);
+    for (let t = 1; t < len - 1; t += step) {
+      const x = ax + (dx * t) / len, y = ay + (dy * t) / len, z = az + (dz * t) / len;
+      if (Math.min(this.generator.getHeight(x, z) - y, this.caveDensity(x, y, z)) > 0.3) return false;
+    }
+    return true;
+  }
+
   /** Something no longer in the way at (x, z) (a giant mushroom cut down): its obstacle gone. */
   clearObstacle(x, z) {
     const data = this.cache.get(`${Math.floor(x / this.chunkSize)},${Math.floor(z / this.chunkSize)}`);

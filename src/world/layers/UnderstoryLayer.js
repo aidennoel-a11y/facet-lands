@@ -44,29 +44,57 @@ function leafy(seed) {
   return build(tris);
 }
 
-/** A fern: a ring of long fronds arching out and down, a metre or so across. */
-function fern(seed) {
+/**
+ * A fern: a ring of fronds, each a strip of leaflets narrowing to its tip,
+ * `n` of them `len` long, rising `rise` and drooping `droop` (a metre or
+ * so across, by default: arching out and down). `w` how broad a frond is;
+ * `strap`, a broad, smooth leaf (a bird's-nest fern's) rather than a
+ * feathery one; `trunk`, standing on a short stump.
+ */
+function fern(seed, { n = 9, len = 0.6, rise = 0.55, droop = 0.6, w = 0.09, strap = false, trunk = 0 } = {}) {
   const tris = [];
-  const n = 9;
+  if (trunk > 0) {
+    // (The stump: a few rough sides, dark and shaggy.)
+    for (let k = 0; k < 5; k++) {
+      const a0 = (k / 5) * Math.PI * 2, a1 = ((k + 1) / 5) * Math.PI * 2, r0 = 0.09, r1 = 0.07;
+      const b0 = [Math.cos(a0) * r0, 0, Math.sin(a0) * r0], b1 = [Math.cos(a1) * r0, 0, Math.sin(a1) * r0];
+      const t0 = [Math.cos(a0) * r1, trunk, Math.sin(a0) * r1], t1 = [Math.cos(a1) * r1, trunk, Math.sin(a1) * r1];
+      tris.push([b0, b1, t1, DARK, DARK, DARK], [b0, t1, t0, DARK, DARK, DARK]);
+    }
+  }
   for (let k = 0; k < n; k++) {
     const a = (k / n) * Math.PI * 2 + hash2(k, 5, seed) * 0.4;
     const ca = Math.cos(a), sa = Math.sin(a), px = -sa, pz = ca;
-    const len = 0.6 + 0.35 * hash2(k, 6, seed);
-    const pts = [0, 0.35, 0.7, 1].map((t) => [ca * len * t, 0.1 + 0.55 * t - 0.6 * t * t, sa * len * t]);
-    for (let s = 0; s < 3; s++) {
-      const w = 0.09 * Math.sin(Math.PI * (0.3 + 0.7 * ((s + 0.5) / 3)));
-      const p0 = pts[s], p1 = pts[s + 1];
-      const l0 = [p0[0] + px * w, p0[1], p0[2] + pz * w], r0 = [p0[0] - px * w, p0[1], p0[2] - pz * w];
+    const l = len * (0.75 + 0.5 * hash2(k, 6, seed));
+    const pts = [0, 0.35, 0.7, 1].map((t) => [ca * l * t, trunk + 0.1 + rise * t - droop * t * t, sa * l * t]);
+    for (let sg = 0; sg < 3; sg++) {
+      const f = (sg + 0.5) / 3, ww = w * (strap ? 1.1 - 0.5 * f : Math.sin(Math.PI * (0.3 + 0.7 * f)));
+      const p0 = pts[sg], p1 = pts[sg + 1];
+      const l0 = [p0[0] + px * ww, p0[1], p0[2] + pz * ww], r0 = [p0[0] - px * ww, p0[1], p0[2] - pz * ww];
       tris.push([p0, l0, p1, DARK, MID, LIGHT], [p0, p1, r0, DARK, LIGHT, MID]);
+      if (!strap) {
+        // (Leaflets: little blades off each side of the frond.)
+        const m = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2];
+        for (const side of [1, -1]) tris.push([l0.map((v, i) => (v + p0[i]) / 2), [m[0] + px * ww * 2.2 * side, m[1] - 0.03, m[2] + pz * ww * 2.2 * side], m, MID, LIGHT, MID]);
+      }
     }
   }
   return build(tris);
 }
 
+// (Kinds 0 and 1 the big-leaved plants, 2 the common fern, 3-6 the jungle's other ferns: see placeUnderstory.)
 const PLANTS = [
   { shape: leafy(3), colors: [0x3f7d2f, 0x4a8a34, 0x2f6a2a, 0x5a9a3a] },
   { shape: leafy(11), colors: [0x356f2c, 0x4f8f3a, 0x3a7a30] },
   { shape: fern(7), colors: [0x4a7f33, 0x5a8f3a, 0x3f7430, 0x6a9a44] },
+  // (A shuttlecock fern: tall fronds standing up out of the middle in a vase.)
+  { shape: fern(13, { n: 8, len: 0.45, rise: 1.25, droop: 0.35, w: 0.08 }), colors: [0x5a9a3a, 0x4f8a30, 0x6aa848] },
+  // (A bird's-nest fern: broad smooth bright straps in a rosette.)
+  { shape: fern(19, { n: 10, len: 0.75, rise: 0.5, droop: 0.4, w: 0.13, strap: true }), colors: [0x6aa83a, 0x7ab848, 0x5a9a30] },
+  // (A low lacy fern: many fine fronds lying out flat, wide across.)
+  { shape: fern(23, { n: 14, len: 0.85, rise: 0.25, droop: 0.3, w: 0.06 }), colors: [0x3e6e2c, 0x4a7a34, 0x355f28] },
+  // (A little tree fern: fronds arching out from the top of a shaggy stump.)
+  { shape: fern(29, { n: 9, len: 0.8, rise: 0.4, droop: 0.65, w: 0.1, trunk: 0.55 }), colors: [0x4a8a36, 0x3f7a2e, 0x55963c] },
 ];
 const color = new Color();
 const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), s = new Vector3(), yAxis = new Vector3(0, 1, 0);

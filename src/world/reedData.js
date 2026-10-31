@@ -86,6 +86,7 @@ export function reedData(generator, config, cx, cz, groundHeightAt, heights) {
         continue;
       }
       if (river.stream && generator.getMountainness(wx, wz) > 0.3) continue; // mountain streams: gravel, no reeds
+      if (river.hot) continue; // (nor round a hot spring: scalding water, bare crust)
       const e = river.d - river.water; // from the water's edge: negative in the water
       if (e < -Math.min(1.2, river.water * 0.6)) continue;
       // In patches, thickest right at the edge.

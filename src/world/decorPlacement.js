@@ -325,7 +325,8 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
         if (sh && sh.e > 0) lush = Math.min(0.92, lush + 0.6 * (1 - sh.e / 7));
       }
       if (keep > Math.max(jungle, ferns * 0.6, lush)) continue;
-      const kind = keep < jungle ? Math.floor(r * 3) : keep < lush && r < (lush > here[2] + 0.1 ? 0.12 : 0.3) ? 1 : 2;
+      // (The jungle's: the big-leaved plants, and its five kinds of fern, 2-6: see UnderstoryLayer.)
+      const kind = keep < jungle ? (r < 0.36 ? Math.floor(r / 0.18) : 2 + Math.min(4, Math.floor(((r - 0.36) / 0.64) * 5))) : keep < lush && r < (lush > here[2] + 0.1 ? 0.12 : 0.3) ? 1 : 2;
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1) || surface.normalY < 0.7) continue;
       if (generator.rivers?.at(x0 + lx, z0 + lz, 1)) continue;

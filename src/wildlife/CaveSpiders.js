@@ -6,7 +6,8 @@ const TAU = Math.PI * 2;
 const MAX = 8; // (spiders about you at once, at most)
 // The Broodmother: the great spider of the vast caverns (see #brood).
 export const BROOD = { name: 'The Broodmother', size: 3.1, health: 1100, bite: 30 };
-const BROOD_TINT = new Color(0.95, 0.55, 0.5), PLAIN = new Color(1, 1, 1);
+const BROOD_TINT = new Color(0.95, 0.55, 0.5), PLAIN = new Color(1, 1, 1), BURNT = new Color(0.25, 0.12, 0.08);
+const bX = new Vector3(), bY = new Vector3(), bZ = new Vector3(), basis = new Matrix4(), off = new Vector3();
 const LEGS = 8;
 const PIVOT = 0.5; // (its middle, up from its feet: what it turns over about, dying)
 
@@ -85,6 +86,37 @@ export class CaveSpiders {
     return g.height;
   }
 
+  // How deep into rock a point is (> 0 in the rock, < 0 in the air): the caves and the ground over them.
+  #rock(x, y, z, caves) {
+    return Math.min(caves.generator.getHeight(x, z) - y, caves.caveDensity(x, y, z));
+  }
+
+  // The way out of the rock at a point (a unit vector into the air), or null where there's no telling.
+  #normal(x, y, z, caves) {
+    const e = 0.35, r = (a, b, c) => this.#rock(a, b, c, caves);
+    const gx = r(x + e, y, z) - r(x - e, y, z), gy = r(x, y + e, z) - r(x, y - e, z), gz = r(x, y, z + e) - r(x, y, z - e);
+    const l = Math.hypot(gx, gy, gz);
+    return l > 1e-5 ? [-gx / l, -gy / l, -gz / l] : null;
+  }
+
+  // A point brought onto the rock's face (floor, wall or roof) nearest it: [x, y, z, normal] or null if there's none near.
+  // (`along`: the way out of the rock it was on, to come down onto it by first: over a rounded
+  // edge, the field's own way out would pull it back to the edge.)
+  #onto(x, y, z, caves, reach = 1.2, along = null) {
+    const x0 = x, y0 = y, z0 = z;
+    for (let it = 0; it < 5; it++) {
+      const v = this.#rock(x, y, z, caves), n = it === 0 && along ? along : this.#normal(x, y, z, caves);
+      if (!n) return null;
+      if (Math.abs(v) < 0.04) break;
+      // (Along the way out, by how deep it is: the field's only roughly a distance, so a few goes.)
+      const step = Math.max(-0.8, Math.min(0.8, v));
+      (x += n[0] * step), (y += n[1] * step), (z += n[2] * step);
+    }
+    if (Math.abs(this.#rock(x, y, z, caves)) > 0.25 || Math.hypot(x - x0, y - y0, z - z0) > reach) return null;
+    const n = this.#normal(x, y, z, caves);
+    return n ? [x, y, z, n] : null;
+  }
+
   /**
    * @param ctx { eye (Vector3), under (whether you're down in the caves), caves (CaveSystem),
    *   terrain(x, z), hurt(damage), poison(), fear [{ x, z, r }] (lights), sound, pan(x, z), alive }
@@ -119,6 +151,7 @@ export class CaveSpiders {
       this.spiders = this.spiders.filter((s) => !s.gone);
     }
     for (const s of this.spiders) this.#think(s, dt, ctx, feet);
+    this.#apart();
     this.#draw(ctx);
   }
 
@@ -160,10 +193,19 @@ export class CaveSpiders {
     const eye = ctx.eye;
     if (!s.alive) {
       s.dead += dt;
-      if (s.dead > 90) s.gone = true;
+      if (s.dead > (s.burnt ? 4 : 90)) s.gone = true;
+      // (Killed on a wall or the roof: it drops.)
+      if (!s.burnt && (s.falling || (s.n && s.n[1] < 0.6))) {
+        if (!s.falling) (s.falling = true), (s.vy = 0), (s.n = [0, 1, 0]), this.#tangent(s);
+        s.vy -= 22 * dt;
+        const ny = s.y + s.vy * dt;
+        if (this.#rock(s.x, ny, s.z, ctx.caves) > 0 || s.vy < -60) (s.falling = false), (s.dead = Math.min(s.dead, 0.2));
+        else s.y = ny;
+      }
+      if (s.burnt) s.y -= dt * 0.15 * s.size; // (sinking into the lava)
       return;
     }
-    const dx = eye.x - s.x, dz = eye.z - s.z, d = Math.hypot(dx, dz), level = Math.abs(feet - s.y) < 2.5;
+    const dx = eye.x - s.x, dz = eye.z - s.z, d = Math.hypot(dx, dz), level = Math.abs(feet - s.y) < (s.n && s.n[1] < 0.6 ? 9 : 2.5);
     const toYou = Math.atan2(dx, dz);
     s.cool = Math.max(0, s.cool - dt);
     s.shy = Math.max(0, s.shy - dt);
@@ -190,7 +232,7 @@ export class CaveSpiders {
     } else if (s.state === 'hunt') {
       if (d > (s.boss ? 70 : 35) || !level) s.state = 'lurk';
       else if (s.shy > 0) (want = toYou + Math.PI), (speed = 3);
-      else if (d > 3 + s.size * 1.5) (want = toYou + Math.sin(performance.now() / 700 + s.size * 9) * 0.5), (speed = s.boss ? 5 : 4.2);
+      else if (Math.hypot(d, feet - s.y) > 3 + s.size * 1.5 || (s.n && s.n[1] < 0.6)) (want = toYou + Math.sin(performance.now() / 700 + s.size * 9) * 0.5), (speed = s.boss ? 5 : 4.2);
       else if (s.cool <= 0) {
         // Rear up, then lunge.
         s.rear += dt;
@@ -207,7 +249,7 @@ export class CaveSpiders {
       s.lunge.t += dt;
       want = s.lunge.dir;
       speed = 9;
-      if (d < 1.3 + s.size * 0.4) {
+      if (Math.hypot(d, feet + 0.6 - s.y) < 1.3 + s.size * 0.4) {
         // The bite.
         ctx.hurt?.(s.boss ? s.boss.bite : Math.round(12 * s.size));
         if (Math.random() < (s.boss ? 0.6 : 0.3)) ctx.poison?.();
@@ -215,22 +257,178 @@ export class CaveSpiders {
         s.cool = rnd(1.4, 2.4);
       } else if (s.lunge.t > 0.5) (s.state = 'hunt'), (s.cool = rnd(1, 1.8));
     }
-    // Turning, and moving over the floor (round what's in the way).
-    let turn = Math.atan2(Math.sin(want - s.heading), Math.cos(want - s.heading));
-    s.heading += Math.max(-dt * 6, Math.min(dt * 6, turn));
+    this.#move(s, dt, ctx, want, speed);
+  }
+
+  /**
+   * Moving over the rock: a spider goes where it likes over floor, walls and
+   * roof alike, its feet to the rock (`n`, the way out of the rock under it;
+   * `f`, the way it faces, along the rock). It swims over water, keeps off
+   * lava (and dies in it), drops off the roof onto you, and falls where
+   * there's nothing to hold to.
+   */
+  #move(s, dt, ctx, want, speed) {
+    const caves = ctx.caves, k = s.size, eye = ctx.eye;
+    s.n ??= [0, 1, 0];
+    s.f ??= [Math.sin(s.heading), 0, Math.cos(s.heading)];
+    // What it's on or in (water, lava): looked at now and then.
+    if ((s.look = (s.look ?? 0) - dt) <= 0) {
+      s.look = 0.25;
+      s.water = caves.waterAt(s.x, s.y, s.z);
+      // (And just ahead: lava there, it turns aside.)
+      const ax = s.x + s.f[0] * 2 * k, az = s.z + s.f[2] * 2 * k, ahead = caves.waterAt(ax, s.y, az);
+      if (ahead?.lava && s.y < ahead.level + 1.2) s.avoid = 0.8;
+    }
+    const w = s.water;
+    if (w?.lava && s.y < w.level + 0.15 && !s.falling) {
+      // Into the lava: it burns, and is gone.
+      s.alive = false;
+      s.dead = 0;
+      s.burnt = true;
+      s.y = w.level;
+      s.n = [0, 1, 0];
+      if (s.boss) this.onKill?.(s); // (her trophy, still, from the edge of the lava: nothing of a lesser one's left)
+      return;
+    }
+    if ((s.avoid = Math.max(0, (s.avoid ?? 0) - dt)) > 0) (want = Math.atan2(-s.f[0], -s.f[2]) + 0.6), (speed = Math.max(speed, 3));
+    // Falling: off the roof onto you, or where it's lost its hold.
+    if (s.falling) {
+      s.vy = (s.vy ?? 0) - 22 * dt;
+      const ny = s.y + s.vy * dt;
+      if (w && !w.lava && ny < w.level - 0.3 * k) {
+        s.falling = false;
+        s.y = w.level - 0.3 * k;
+        s.vy = 0;
+        s.n = [0, 1, 0];
+        return;
+      }
+      if (this.#rock(s.x, ny, s.z, caves) > 0) {
+        const on = this.#onto(s.x, ny + 0.3, s.z, caves, 2);
+        s.falling = false;
+        s.vy = 0;
+        if (on) [s.x, s.y, s.z, s.n] = on;
+        else s.n = [0, 1, 0];
+        this.#tangent(s);
+        return;
+      }
+      s.y = ny;
+      if (s.vy < -60) s.gone = true;
+      return;
+    }
+    // The way it wants to go: toward `want` over the ground, or (hunting) straight at you, along the rock it's on.
+    const n = s.n;
+    let dx = Math.sin(want), dy = 0, dz = Math.cos(want);
+    if (s.hunting && !s.avoid && s.shy <= 0) {
+      const tx = eye.x - s.x, ty = eye.y - 1.2 - s.y, tz = eye.z - s.z, l = Math.hypot(tx, ty, tz) || 1;
+      const wob = want - Math.atan2(tx, tz);
+      (dx = tx / l), (dy = ty / l), (dz = tz / l);
+      // (Its weave from side to side, still.)
+      if (Math.abs(wob) > 0.01) {
+        const c = Math.cos(wob), sn = Math.sin(wob);
+        [dx, dz] = [dx * c + dz * sn, -dx * sn + dz * c];
+      }
+      // (On the roof right over you: it lets go.)
+      if (n[1] < -0.3 && Math.hypot(tx, tz) < 2.2 && ty < 0) {
+        s.falling = true;
+        s.vy = 0;
+        s.n = [0, 1, 0];
+        this.#tangent(s);
+        return;
+      }
+    }
+    const dn = dx * n[0] + dy * n[1] + dz * n[2];
+    (dx -= n[0] * dn), (dy -= n[1] * dn), (dz -= n[2] * dn);
+    const dl = Math.hypot(dx, dy, dz);
+    const f = s.f;
+    if (dl > 0.05) {
+      // Turning toward it, at most so fast.
+      const t = Math.min(1, dt * 5);
+      (f[0] += (dx / dl - f[0]) * t), (f[1] += (dy / dl - f[1]) * t), (f[2] += (dz / dl - f[2]) * t);
+      this.#tangent(s);
+    }
     s.speed += (speed - s.speed) * Math.min(1, dt * 8);
+    s.heading = Math.atan2(f[0], f[2]);
     if (s.speed > 0.05) {
-      for (const off of [0, 0.6, -0.6, 1.2, -1.2]) {
-        const h = s.heading + off, nx = s.x + Math.sin(h) * s.speed * dt, nz = s.z + Math.cos(h) * s.speed * dt;
-        const y = this.#floor(nx, s.y, nz, ctx.caves, ctx.terrain);
-        if (y === null || Math.abs(y - s.y) > 0.9) continue;
-        s.x = nx;
-        s.z = nz;
-        s.y += (y - s.y) * Math.min(1, dt * 12);
-        if (off) s.heading = h;
-        break;
+      const v = s.speed * dt;
+      if (s.swim) {
+        // Swimming: over the water, low in it, legs going, out where it's shallow.
+        const sw = s.swim, nx = s.x + f[0] * v * 0.7, nz = s.z + f[2] * v * 0.7;
+        if (this.#rock(nx, sw + 0.2, nz, caves) > 0) {
+          // (A bank or a wall: out of the water onto it, as onto any rock.)
+          const on = this.#onto(nx, sw + 0.3, nz, caves, 1.5);
+          if (on && (!s.boss || on[3][1] > 0.55)) ([s.x, s.y, s.z, s.n] = on), (s.swim = null), this.#tangent(s);
+          else s.heading += 0.8, (s.f = [Math.sin(s.heading), 0, Math.cos(s.heading)]);
+        } else {
+          (s.x = nx), (s.z = nz);
+          const bed = this.#onto(nx, sw - 0.3 * k, nz, caves, 1.6);
+          if (bed && bed[1] > sw - 0.3 * k && bed[3][1] > 0.4) ([s.x, s.y, s.z, s.n] = bed), (s.swim = null);
+        }
+        if (w && !w.lava && Math.abs(w.level - sw) < 1) s.swim = s.swim === null ? null : w.level;
+      } else {
+        let moved = false;
+        for (const off of [0, 0.7, -0.7, 1.4, -1.4]) {
+          // (Round what's in the way: a little to one side, then the other.)
+          let gx = f[0], gy = f[1], gz = f[2];
+          if (off) {
+            const c = Math.cos(off), sn = Math.sin(off);
+            // (Turned about the way out of the rock.)
+            const cx = n[1] * gz - n[2] * gy, cy = n[2] * gx - n[0] * gz, cz = n[0] * gy - n[1] * gx;
+            (gx = gx * c + cx * sn), (gy = gy * c + cy * sn), (gz = gz * c + cz * sn);
+          }
+          const on = this.#onto(s.x + gx * v + n[0] * 0.15, s.y + gy * v + n[1] * 0.15, s.z + gz * v + n[2] * 0.15, caves, v + 1, n);
+          if (!on) continue;
+          // (The Broodmother's too great to go up the walls; and none of them over the lip of lava.)
+          if (s.boss && on[3][1] < 0.55) continue;
+          [s.x, s.y, s.z] = on;
+          // (Its feet come round to the new rock smoothly.)
+          const t = Math.min(1, dt * 10);
+          s.n = [n[0] + (on[3][0] - n[0]) * t, n[1] + (on[3][1] - n[1]) * t, n[2] + (on[3][2] - n[2]) * t];
+          const nl = Math.hypot(...s.n) || 1;
+          s.n = s.n.map((c) => c / nl);
+          if (off) (f[0] = gx), (f[1] = gy), (f[2] = gz);
+          this.#tangent(s);
+          moved = true;
+          break;
+        }
+        if (!moved && !this.#onto(s.x, s.y, s.z, caves, 0.6)) (s.falling = true), (s.vy = 0), (s.n = [0, 1, 0]), this.#tangent(s);
+        // Into deep water: it swims.
+        if (w && !w.lava && s.y < w.level - 0.35 * k) (s.swim = w.level), (s.y = w.level - 0.3 * k), (s.n = [0, 1, 0]), this.#tangent(s);
       }
       s.gait += s.speed * dt * 3.2 / s.size;
+    }
+    if (s.swim) s.y += (s.swim - 0.3 * k - s.y) * Math.min(1, dt * 6);
+  }
+
+  // Its facing made to lie along the rock (square to `n`).
+  #tangent(s) {
+    const n = s.n, f = s.f;
+    const d = f[0] * n[0] + f[1] * n[1] + f[2] * n[2];
+    (f[0] -= n[0] * d), (f[1] -= n[1] * d), (f[2] -= n[2] * d);
+    let l = Math.hypot(f[0], f[1], f[2]);
+    if (l < 1e-4) {
+      // (Straight along the way out: any way along the rock will do.)
+      const a = Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      (f[0] = a[1] * n[2] - a[2] * n[1]), (f[1] = a[2] * n[0] - a[0] * n[2]), (f[2] = a[0] * n[1] - a[1] * n[0]);
+      l = Math.hypot(f[0], f[1], f[2]);
+    }
+    (f[0] /= l), (f[1] /= l), (f[2] /= l);
+  }
+
+  // The spiders kept apart: none walks through another.
+  #apart() {
+    const list = this.spiders;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j];
+        const min = 0.85 * (a.size + b.size), dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz);
+        if (d >= min || d < 1e-4) continue;
+        const push = (min - d) / d / 2, wa = a.alive ? 1 : 0, wb = b.alive ? 1 : 0;
+        if (!wa && !wb) continue;
+        const sa = wb ? (wa ? 1 : 0) : 2, sb = wa ? (wb ? 1 : 0) : 2;
+        if (wa) (a.x -= dx * push * sb), (a.z -= dz * push * sb);
+        if (wb) (b.x += dx * push * sa), (b.z += dz * push * sa);
+      }
     }
   }
 
@@ -246,9 +444,11 @@ export class CaveSpiders {
       if (!s.alive) continue;
       const k = s.size;
       if (Math.hypot(s.x - origin.x, s.z - origin.z) > max + 2 * k) continue;
-      const c = Math.cos(s.heading), sn = Math.sin(s.heading);
+      if (!s.q) continue;
       for (const [lx, ly, lz, r] of SHAPE) {
-        const cx = s.x + (lx * c + lz * sn) * k - origin.x, cy = s.y + ly * k - origin.y, cz = s.z + (-lx * sn + lz * c) * k - origin.z;
+        // (Each part where it's drawn: turned with it, on the floor, a wall or the roof.)
+        off.set(lx * k, (ly - PIVOT) * k, lz * k).applyQuaternion(s.q).add(s.pivot);
+        const cx = off.x - origin.x, cy = off.y - origin.y, cz = off.z - origin.z;
         const t = cx * dir.x + cy * dir.y + cz * dir.z, rr = r * k;
         const d2 = cx * cx + cy * cy + cz * cz - t * t;
         if (d2 > rr * rr || t < -rr) continue;
@@ -288,15 +488,23 @@ export class CaveSpiders {
       const t = dead ? Math.min(1, s.dead / 0.7) : 0, over = t * t * (3 - 2 * t);
       const curl = dead ? Math.min(1, s.dead / 1.2) : 0;
       const side = s.side ??= Math.random() < 0.5 ? 1 : -1;
-      q.setFromAxisAngle(UP, s.heading);
+      // (Its feet to the rock it's on, floor, wall or roof, facing along it.)
+      const nn = s.n ?? [0, 1, 0], ff = s.f ?? [Math.sin(s.heading), 0, Math.cos(s.heading)];
+      bY.set(nn[0], nn[1], nn[2]);
+      bZ.set(ff[0], ff[1], ff[2]);
+      bX.crossVectors(bY, bZ);
+      q.setFromRotationMatrix(basis.makeBasis(bX, bY, bZ));
       if (dead) q.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), side * Math.PI * (over + 0.06 * Math.sin(Math.min(1, s.dead / 1.1) * Math.PI * 3) * (1 - curl * 0.5))));
       else if (rear) q.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -rear));
       const bob = dead ? (0.35 * Math.sin(Math.PI * t) - 0.05 * over) * k : Math.abs(Math.sin(s.gait * 2)) * 0.04 * k;
       // (Everything turned about its middle, PIVOT up from its feet.)
-      const pivot = p.set(s.x, s.y + PIVOT * k + bob, s.z).clone();
+      const lift = PIVOT * k + bob;
+      const pivot = p.set(s.x + nn[0] * lift, s.y + nn[1] * lift, s.z + nn[2] * lift).clone();
+      s.q = (s.q ?? new Quaternion()).copy(q);
+      s.pivot = pivot;
       const world = (lx, ly, lz, out) => out.set(lx * k, (ly - PIVOT) * k, lz * k).applyQuaternion(q).add(pivot);
       m.compose(world(0, 0, 0, new Vector3()), q, sc.setScalar(k));
-      this.bodies.setColorAt(n, s.boss ? BROOD_TINT : PLAIN);
+      this.bodies.setColorAt(n, s.burnt ? BURNT : s.boss ? BROOD_TINT : PLAIN);
       this.bodies.setMatrixAt(n++, m);
       // The legs: four a side, each a thigh up and out to the knee and a
       // shank down to the foot, stepping by turns as it goes; dead, drawn in.
@@ -318,7 +526,7 @@ export class CaveSpiders {
           const len = dir.length();
           q2.setFromUnitVectors(UP, dir.normalize());
           m.compose(from, q2, sc.set(thick * k, len, thick * k));
-          this.legs.setColorAt(l, s.boss ? BROOD_TINT : PLAIN);
+          this.legs.setColorAt(l, s.burnt ? BURNT : s.boss ? BROOD_TINT : PLAIN);
           this.legs.setMatrixAt(l++, m);
         }
       }

@@ -338,6 +338,20 @@ export function meshChunk(grid, field, out = {}) {
   // lava, fading up the walls and away from its shore, smooth from corner
   // to corner (each vertex its own, by where it is).
   const lavaLit = new Map();
+  // (Whether the rock at (x, y, z) has a clear line to the lava at (tx, ty, tz):
+  // no rock in between, so the glow is only on what the lava itself lights,
+  // never on rock round a corner, behind a wall or over another cave's roof.)
+  const yTop = yMin + (ny - 1) * cell, gSpan = (n - 1) * cell;
+  const sees = (x, y, z, tx, ty, tz) => {
+    const dx = tx - x, dy = ty - y, dz = tz - z, len = Math.hypot(dx, dy, dz);
+    if (len < 1.2) return true;
+    for (let t = 1.1; t < len - 0.4; t += 0.9) {
+      const px = x + (dx * t) / len, py = y + (dy * t) / len, pz = z + (dz * t) / len;
+      if (px < x0 || pz < z0 || px > x0 + gSpan || pz > z0 + gSpan || py < yMin || py > yTop) continue;
+      if (sampleGrid(grid, px, py, pz) > 0.25) return false;
+    }
+    return true;
+  };
   const lavaGlow = (x, y, z) => {
     const key = `${Math.round(x * 4)},${Math.round(y * 4)},${Math.round(z * 4)}`;
     let v = lavaLit.get(key);
@@ -348,7 +362,7 @@ export function meshChunk(grid, field, out = {}) {
       let lit = 0;
       for (const [dx, dz, w] of [[0, 0, 0.4], [6, 0, 0.15], [-6, 0, 0.15], [0, 6, 0.15], [0, -6, 0.15]]) {
         const f = dx || dz ? field.volcanicFloor(x + dx, z + dz) : here;
-        if (f.floor < f.lava - 0.2 && field.volcAt(x + dx, z + dz) > 0.45) lit += w;
+        if (f.floor < f.lava - 0.2 && field.volcAt(x + dx, z + dz) > 0.45 && sees(x, y, z, x + dx, f.lava + 0.3, z + dz)) lit += w;
       }
       v = lit * Math.exp(-Math.max(0, h) / 6);
     }
@@ -356,7 +370,7 @@ export function meshChunk(grid, field, out = {}) {
     const ch = field.chamberAt(x, z);
     if (ch && ch.e < 1.1) {
       const h2 = y - ch.c.lake;
-      if (h2 > -2 && h2 < 22 && (ch.c.lake < VOLCANIC_BELOW || field.volcAt(x, z) > 0.45)) v = Math.max(v, (1 - Math.min(1, ch.e) * 0.6) * Math.exp(-Math.max(0, h2) / 7));
+      if (h2 > -2 && h2 < 22 && (ch.c.lake < VOLCANIC_BELOW || field.volcAt(x, z) > 0.45) && sees(x, y, z, x, ch.c.lake + 0.3, z)) v = Math.max(v, (1 - Math.min(1, ch.e) * 0.6) * Math.exp(-Math.max(0, h2) / 7));
     }
     lavaLit.set(key, v);
     return v;
@@ -857,6 +871,19 @@ export function decorateChunk(grid, field) {
   // point, leaning out from where they grew; amethyst, quartz, sea-green or
   // rose, glowing faintly from within. Up from the floor or down from the roof.
   const CRYSTALS = [[0x7a5ac8, 0xe0d0ff, [0.18, 0.1, 0.34]], [0xb8c8d4, 0xffffff, [0.16, 0.18, 0.22]], [0x3aa8a0, 0xc0fff4, [0.06, 0.26, 0.24]], [0xc87a9a, 0xffd8e8, [0.26, 0.1, 0.16]]];
+  // A long thing lying at a slant (a crystal, a beam of one), as a row of
+  // short solid pieces along it from its foot (x, y, z), `len` long and `r`
+  // thick: up, leant over by `pitch`, turned by `yaw` (and, `down`, hanging).
+  const along = (x, y, z, len, r, yaw, pitch, down) => {
+    const sx = -Math.sin(pitch) * Math.cos(yaw), sy = Math.cos(pitch), sz = Math.sin(pitch) * Math.sin(yaw), f = down ? -1 : 1;
+    const gap = Math.max(0.5, r * 1.2);
+    for (let t = r * 0.5; t < len; t += gap) {
+      const px = x + sx * t, py = y + sy * t * f, pz = z + sz * t * f;
+      // (Each piece as tall as the crystal is thick there, more where it stands up steeply.)
+      const half = r + gap * 0.5 * Math.abs(sy);
+      obstacles.push(px, pz, r, py - half, py + half);
+    }
+  };
   const crystalCluster = (x, y, z, size, s, down) => {
     const [lo, hi, glow] = CRYSTALS[Math.floor(s * 997) % CRYSTALS.length];
     const n = 3 + Math.floor(((s * 7) % 1) * 5);
@@ -880,6 +907,8 @@ export function decorateChunk(grid, field) {
           c.copy(low).lerp(tip, t * 0.85 + 0.15 * hash2(v, Math.round(x * 10), seed + 41));
         }, glow);
       }
+      // (The big ones solid all along, leaning as they lean.)
+      if (len > 1.4 && r > 0.15) along(x, y + (down ? 0.3 : -0.3), z, len + r * 2.2, r, a, tilt, down);
     }
     if (size > 1.2) lights.push(x, y + (down ? -size * 0.4 : size * 0.4), z, 2);
     if (!down) obstacles.push(x, z, Math.max(0.3, size * 0.22), y - 0.3, y + size);
@@ -954,8 +983,8 @@ export function decorateChunk(grid, field) {
       tip.set(hi);
       piece(g, x, y, z, (c, cyv, v) => c.copy(low).lerp(tip, 0.4 + 0.6 * hash2(v, Math.round(x * 10), seed + 47)), glow);
     }
-    // (Its foot is in the way; the rest of it is over your head, or you climb over it.)
-    obstacles.push(x, z, r * 1.1, y - 0.5, y + Math.min(len * Math.cos(pitch), 3));
+    // (All of it in the way, foot to point: walking or swimming, you go round it, under it or over it, never through.)
+    along(x, y - 0.6, z, len + r * 1.6, r * 1.05, yaw, pitch, false);
   };
 
   for (let gz = step / 2; gz < field.chunkSize; gz += step) {

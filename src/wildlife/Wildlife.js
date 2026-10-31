@@ -1375,6 +1375,42 @@ export class Wildlife {
         if (d < min && d > 1e-4) (a.x = c.x + (dx / d) * min), (a.z = c.z + (dz / d) * min);
       }
     }
+    // (Nor through one another: two creatures on the ground, one in the
+    // other's way, are pushed apart, the smaller further.)
+    const cells = new Map();
+    for (const a of this.animals) {
+      const sp = SPECIES[a.kind];
+      if (!sp.ground || !a.alive || a.gone || a.carriedBy || a.leap || a.mirrored) continue;
+      const ci = Math.floor(a.x / 8), ck = Math.floor(a.z / 8), key = `${ci},${ck}`;
+      const cell = cells.get(key);
+      if (cell) cell.list.push(a);
+      else cells.set(key, { ci, ck, list: [a] });
+    }
+    for (const { ci, ck, list } of cells.values()) {
+      for (const a of list) {
+        const sa = SPECIES[a.kind], ra = (sa.radius ?? 0.4) * a.scale, ma = ra * ra * (sa.height ?? 1);
+        for (let di = 0; di <= 1; di++) {
+          for (let dk = di ? -1 : 0; dk <= 1; dk++) {
+            const other = di || dk ? cells.get(`${ci + di},${ck + dk}`)?.list : list;
+            if (!other) continue;
+            for (const b of other) {
+              if (b === a || (other === list && list.indexOf(b) <= list.indexOf(a))) continue;
+              const sb = SPECIES[b.kind], rb = (sb.radius ?? 0.4) * b.scale;
+              const min = (ra + rb) * 0.9, dx = b.x - a.x, dz = b.z - a.z;
+              if (Math.abs(dx) > min || Math.abs(dz) > min || Math.abs((a.y ?? 0) - (b.y ?? 0)) > 2) continue;
+              // (A hunter on its prey's back, or one being ridden: left to it.)
+              if (a.ridden || b.ridden || a.prey === b || b.prey === a) continue;
+              const d = Math.hypot(dx, dz);
+              if (d >= min) continue;
+              const ux = d > 1e-4 ? dx / d : 1, uz = d > 1e-4 ? dz / d : 0, mb = rb * rb * (sb.height ?? 1);
+              const share = mb / (ma + mb), over = min - d;
+              (a.x -= ux * over * share), (a.z -= uz * over * share);
+              (b.x += ux * over * (1 - share)), (b.z += uz * over * (1 - share));
+            }
+          }
+        }
+      }
+    }
     globalThis.__prof?.mark('  an: pushing aside');
     const tv = prof ? performance.now() : 0;
     this.#vocalize(dt, views);
@@ -2709,10 +2745,25 @@ export class Wildlife {
     const from = a.path?.from;
     if (goal && Math.hypot(goal.x - a.x, goal.z - a.z) < 4) return;
     if (from && Math.hypot(from.x - a.x, from.z - a.z) < 3) return;
-    const top = ctx.trees?.canopyTop?.(a.x, a.z, 0.6 * a.scale) ?? -Infinity;
-    if (!(top > -Infinity)) return;
-    const clear = top + 0.6;
-    if (a.y < clear) a.y = clear;
+    // (What's under it and just ahead of it, the trees and the ground: it
+    // rises over them before it gets there, smoothly, and comes down again
+    // slowly after: no jumping up as it reaches a tree, never through one,
+    // nor into a rise in the ground.)
+    const r = 0.6 * a.scale, h = a.heading ?? 0, look = Math.max(3, Math.min(14, (a.speed ?? 6) * 0.7));
+    let need = -Infinity;
+    for (const t of [0, 0.5, 1]) {
+      const x = a.x + Math.sin(h) * look * t, z = a.z + Math.cos(h) * look * t;
+      const top = ctx.trees?.canopyTop?.(x, z, r) ?? -Infinity;
+      if (top > -Infinity) need = Math.max(need, top + 0.6);
+      const g = ctx.ground?.(x, z);
+      if (g === g && t > 0) need = Math.max(need, g + 0.8 * a.scale + 0.3);
+    }
+    const prev = a.overY ?? -Infinity;
+    a.overY = need > prev ? (prev > -Infinity ? prev + (need - prev) * Math.min(1, dt * 6) : need) : need > -Infinity ? prev - Math.min(prev - need, dt * 2.5) : -Infinity;
+    if (a.overY > -Infinity && a.y < a.overY) a.y += (a.overY - a.y) * Math.min(1, dt * 8);
+    // (And never inside the crown right under it, however it came there.)
+    const here = ctx.trees?.canopyTop?.(a.x, a.z, r) ?? -Infinity;
+    if (here > -Infinity && a.y < here + 0.15) a.y = here + 0.15;
   }
 
   // The nearest tree to shelter under from the rain (within 40 m), a step
@@ -3091,6 +3142,7 @@ export class Wildlife {
   }
 
   #footing(a, sp, x, z, ctx) {
+    if (ctx.lava?.(x, z)) return 0; // (never onto a lava flow)
     const y = ctx.ground(x, z);
     if (!(y === y)) return 0;
     const w = ctx.waterAt?.(x, z);
@@ -3153,6 +3205,16 @@ export class Wildlife {
       a.roll += (a.side * Math.PI * 0.45 - a.roll) * Math.min(1, dt * 4);
       a.headDown += (Math.sin(a.struggle * 2.1) * 0.5 - a.headDown) * Math.min(1, dt * 3);
       return;
+    }
+    // Onto a lava flow somehow (driven, pushed, cornered): it burns.
+    if (a.alive && !a.mirrored && (a.lavaCheck = (a.lavaCheck ?? Math.random() * 0.4) - dt) <= 0) {
+      a.lavaCheck = 0.4;
+      if (ctx.lava?.(a.x, a.z)) {
+        a.down = true;
+        a.burnt = true;
+        this.wound(a, {});
+        return;
+      }
     }
     if (a.hibernating && a.alive) {
       // Asleep in its den for the winter, till something wakes it: you
