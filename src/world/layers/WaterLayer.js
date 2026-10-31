@@ -59,6 +59,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         varying float vDepth;
         varying float vSurfY;
         varying vec3 vWaveN;
+        varying float vShut;
         // One train of Gerstner waves: direction (angle off the wind),
         // length (m), height (share of the whole), phase. Adds its lift and
         // sideways push to disp, and its tilt to the normal.
@@ -90,7 +91,9 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         // The waves: several trains crossing at odd angles about the wind,
         // long swells and shorter seas. Open, deep water rolls, more so in a
         // wind; shallow and small water barely laps.
-        float amp = ${f(waveHeight)} * waveScale * (0.3 + 0.7 * uWind) * (1.0 - vIce);
+        // (Water shut in from the sea, a pool lying below sea level inland: still, barely stirring.)
+        vShut = 1.0 - smoothstep(0.1, 0.4, foamOpen);
+        float amp = ${f(waveHeight)} * waveScale * (0.3 + 0.7 * uWind) * (1.0 - vIce) * (1.0 - 0.85 * vShut);
         vec3 disp = vec3(0.0), wn = vec3(0.0, 1.0, 0.0);
         float crest = 0.0;
         gerstner(wp.xz, 0.0, 74.0, 1.0, 0.0, amp, disp, wn, crest);
@@ -119,6 +122,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         varying float vDepth;
         varying float vSurfY;
         varying vec3 vWaveN;
+        varying float vShut;
         float waterHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float waterNoise(vec2 p) {
           vec2 i = floor(p), f = fract(p);
@@ -127,7 +131,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         }
         // Fine ripples: three sizes of them drifting with the wind.
         float ripples(vec2 p) {
-          vec2 d = uWindDir * uTime;
+          vec2 d = uWindDir * uTime * mix(1.0, 0.15, vShut); // (shut-in water: its ripples hardly drift)
           return waterNoise(p * 0.32 - d * 0.5) * 0.55 + waterNoise(p * 0.9 + vec2(-d.y, d.x) * 0.7) * 0.3 + waterNoise(p * 2.3 - d * 1.6) * 0.15;
         }
         ${SPARKLE_HEAD}`,
@@ -138,7 +142,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         {
           // The waves' own tilt, then the ripples over it (fading out with
           // distance, where they'd only shimmer).
-          float fine = (1.0 - smoothstep(50.0, 240.0, length(vViewPosition))) * (0.35 + 0.65 * uWind) * (1.0 - vIce);
+          float fine = (1.0 - smoothstep(50.0, 240.0, length(vViewPosition))) * (0.35 + 0.65 * uWind) * (1.0 - vIce) * (1.0 - 0.6 * vShut);
           float e = 0.35;
           float h0 = ripples(vWorld);
           vec2 g = vec2(ripples(vWorld + vec2(e, 0.0)) - h0, ripples(vWorld + vec2(0.0, e)) - h0) / e;

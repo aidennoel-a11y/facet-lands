@@ -109,7 +109,7 @@ export function createGeyserLayer(config) {
       // before rivers just past its edge.)
       const ground = (x, z) => {
         const h = x >= x0 && z >= z0 && x < x0 + size && z < z0 + size ? groundHeightAt(x - x0, z - z0) : NaN;
-        return Number.isFinite(h) ? h : generator.getBaseHeight(x, z);
+        return Number.isFinite(h) ? h : generator.getHeight(x, z); // (the ground as it lies, pools dug and all: never the land before them, which would leave slabs floating over a big pool's sunken shore)
       };
       const springs = generator.hotSprings(x0, z0, x0 + size, z0 + size).filter((g) => g.x >= x0 && g.x < x0 + size && g.z >= z0 && g.z < z0 + size);
       if (!springs.length) return null;

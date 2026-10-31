@@ -8,6 +8,7 @@ import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer, seaStorm } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
+import { plantsAt } from './world/layers/UnderstoryLayer.js';
 import { Geese } from './render/Geese.js';
 import { createWreckLayer } from './world/layers/WreckLayer.js';
 import { createSunkenCityLayer } from './world/layers/SunkenCityLayer.js';
@@ -1094,6 +1095,11 @@ function playerTraces(dt) {
   const cover = surface === 'grass' || surface === 'leaves' ? game.player.cover ?? 0 : 0;
   if (cover > 0.4) sound.call('brush', (Math.random() - 0.5) * 0.4, loud * Math.min(1, 0.4 + cover));
   else if (controls.speedFactor < 0.9) sound.call('brush', (Math.random() - 0.5) * 0.4, loud * 0.8);
+  else {
+    // (Through the ferns and big-leaved plants of the forest floor: their leaves swishing past your legs.)
+    const fern = plantsAt(pos.x, pos.z);
+    if (fern > 0.1) sound.call('brush', (Math.random() - 0.5) * 0.4, loud * (0.5 + 0.5 * fern));
+  }
   const stick = game.items.lying?.(pos.x, pos.z, 0.6, 'stick');
   if (stick || (surface === 'leaves' && Math.random() < (controls.sprinting ? 0.12 : 0.05))) sound.call('crack', 0, (stick ? 0.8 : 0.55) * (controls.crouch ? 0.5 : 1));
   walker.x = pos.x;
