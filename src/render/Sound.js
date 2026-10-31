@@ -53,7 +53,7 @@ export class Sound {
     if (!AudioContext) return;
     const ctx = (this.ctx = new AudioContext());
     this.master = ctx.createGain();
-    this.master.gain.value = this.enabled ? 1 : 0;
+    this.master.gain.value = this.enabled ? this.volume ?? 1 : 0;
     // Everything passes a low-pass filter, closed down underground.
     this.muffle = ctx.createBiquadFilter();
     this.muffle.type = 'lowpass';
@@ -97,7 +97,11 @@ export class Sound {
     // Rain: a hiss (high noise) over a soft roar (low noise).
     this.rainGain = ctx.createGain();
     this.rainGain.gain.value = 0;
-    this.rainGain.connect(this.muffle);
+    // (Indoors, under a roof: the rain's hiss dulled through it, and its drumming on the roof over you instead: see update.)
+    this.rainRoof = ctx.createBiquadFilter();
+    this.rainRoof.type = 'lowpass';
+    this.rainRoof.frequency.value = 20000;
+    this.rainGain.connect(this.rainRoof).connect(this.muffle);
     const hiss = ctx.createBufferSource();
     hiss.buffer = this.noise;
     hiss.loop = true;
@@ -202,6 +206,7 @@ export class Sound {
     const ctx = this.ctx;
     this.beds = {
       wind: this.#bed(this.brownNoise, 'bandpass', 420, 0.6),
+      roof: this.#bed(this.noise, 'bandpass', 520, 1.4), // (rain drumming on a roof, heard from under it)
       gust: this.#bed(this.noise, 'bandpass', 900, 0.8),
       surf: this.#bed(this.brownNoise, 'lowpass', 520, 0.7, true),
       whistle: this.#bed(this.noise, 'bandpass', 900, 12),
@@ -302,7 +307,8 @@ export class Sound {
     // The wind: up on a ridge it blows harder, and whistles; down in a
     // valley or in among the trees it's hushed, and there the leaves rustle
     // as each gust comes through.
-    const lie = (1 + 0.9 * (e.exposure ?? 0)) * (1 - 0.5 * (e.hollow ?? 0)) * (1 - 0.45 * (e.canopy ?? 0));
+    // (Indoors: the wind outside, through the walls, a low moan; shut in all round, hardly at all.)
+    const lie = (1 + 0.9 * (e.exposure ?? 0)) * (1 - 0.5 * (e.hollow ?? 0)) * (1 - 0.45 * (e.canopy ?? 0)) * (1 - 0.35 * (this.indoors ?? 0) - 0.45 * (this.shut ?? 0));
     const gust = e.gust ?? 0;
     // (No wind, no wind sound: still air low down is silent. Only up on the
     // peaks and ridges is there always a breath of it.)
@@ -1402,10 +1408,11 @@ export class Sound {
     const take = {
       grass: ['step-grass', 1, 0.3], leaves: ['step-gravel', 1.15, 0.2], dirt: ['step-dirt', 1, 0.32], rock: ['step-rock', 1, 0.3],
       sand: ['step-sand', 1, 0.3], snow: ['step-snow', 1, 0.3], mud: ['step-water', 0.7, 0.32], water: ['step-water', 1, 0.36], wood: ['wood', 1, 0.4],
+      gravel: ['step-gravel', 0.9, 0.3], ice: ['step-rock', 1.35, 0.22], crystal: ['step-rock', 1.5, 0.18],
     }[surface];
     if (take && this.#clip(take[0], out, t, take[1], take[2])) {
       if (surface === 'leaves') this.#clip('step-grass', out, t, 1.1, 0.12); // (litter crunching over the soft ground)
-      return;
+      if (surface !== 'ice' && surface !== 'crystal') return;
     }
     if (surface === 'grass') {
       thud(t, 120, 0.06, 0.05);
@@ -1445,19 +1452,64 @@ export class Sound {
     } else if (surface === 'wood') {
       thud(t, 190, 0.08, 0.12); // (hollow boards)
       burst(t, 0.03, 'bandpass', 1400, 1.5, 0.05, 0.002);
+    } else if (surface === 'ice') {
+      // (A hard, slick click on the ice, and now and then a creak under you.)
+      burst(t, 0.02, 'highpass', 4200, 1, 0.08, 0.001);
+      thud(t, 300, 0.03, 0.03);
+      if (Math.random() < 0.25) {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(220 + Math.random() * 120, t + 0.05);
+        o.frequency.exponentialRampToValueAtTime(90, t + 0.4);
+        g.gain.setValueAtTime(0.0001, t + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.02, t + 0.08);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+        o.connect(g).connect(out);
+        o.start(t + 0.05);
+        o.stop(t + 0.45);
+      }
+    } else if (surface === 'gravel') {
+      // (Loose stones and cinders shifting and grinding underfoot.)
+      thud(t, 120, 0.05, 0.05);
+      grains(t, 14, 0.12, 2400, 0.07);
+    } else if (surface === 'crystal') {
+      // (Crystal under your boots: a faint glassy chime over the scuff.)
+      burst(t, 0.025, 'highpass', 3000, 0.8, 0.06, 0.001);
+      for (let k = 0; k < 2; k++) {
+        const o = ctx.createOscillator(), g = ctx.createGain(), at = t + 0.01 + k * 0.03;
+        o.type = 'sine';
+        o.frequency.value = 1800 + Math.random() * 1600;
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(0.012, at + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + 0.35);
+        o.connect(g).connect(out);
+        o.start(at);
+        o.stop(at + 0.4);
+      }
+    } else if (surface === 'moss') {
+      thud(t, 90, 0.08, 0.04); // (soft, springy, near silent)
+      burst(t, 0.1, 'lowpass', 900, 0.6, 0.02, 0.02);
     }
   }
 
   setEnabled(on) {
     this.enabled = on;
-    if (this.master) this.master.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.1);
+    if (this.master) this.master.gain.setTargetAtTime(on ? this.volume ?? 1 : 0, this.ctx.currentTime, 0.1);
   }
 
   /** Call every frame: rain loudness 0..1, and whether you're underground. */
-  update(rain, sheltered) {
+  /** `indoors`: under a roof (0..1) and shut in by walls (`shut`, 0..1): the rain and the wind as heard from inside. */
+  update(rain, sheltered, indoors = 0, shut = 0) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.rainGain.gain.setTargetAtTime(rain * 0.16, t, 0.5);
+    this.indoors = indoors;
+    this.shut = shut;
+    this.rainGain.gain.setTargetAtTime(rain * 0.16 * (1 - 0.55 * indoors), t, 0.5);
+    this.rainRoof.frequency.setTargetAtTime(indoors > 0.5 ? 700 + 900 * (1 - shut) : 20000, t, 0.4);
+    // (The drumming on the roof: a soft, low patter, close over your head.)
+    if (this.beds?.roof) {
+      this.beds.roof.gain.gain.setTargetAtTime(rain * indoors * 0.11 * (0.85 + 0.3 * Math.random()), t, 0.15);
+    }
     this.muffle.frequency.setTargetAtTime(sheltered ? 1800 : 20000, t, 0.3); // (underground: the world above shut out; the drip of water down here still clear)
   }
 

@@ -1,3 +1,4 @@
+import { difficulty } from '../settings.js';
 import { BoxGeometry, BufferGeometry, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Vector3 } from 'three';
 import { seasonUniforms } from '../render/Seasons.js';
 import { LEAF_GEOMETRIES, treeGeometry } from '../world/trees.js';
@@ -55,9 +56,9 @@ const NAMES = {
 };
 const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a black bear', cougar: 'a cougar', moose: 'a moose', boar: 'a wild boar', elk: 'a bull elk', deer: 'a buck', bison: 'a bison', snake: 'a rattlesnake', tiger: 'a tiger', jaguar: 'a jaguar', panther: 'a black panther', crocodile: 'a crocodile', panda: 'a giant panda', mountainGoat: 'a mountain goat', lion: 'a lion', hyena: 'a hyena', elephant: 'an elephant', hippo: 'a hippo', camel: 'a camel', scorpion: 'a scorpion', python: 'a python' };
 const AXES = { axe: 1, steelAxe: 2, forgedAxe: 3 };
-const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2, tuskPickaxe: 3 };
+const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2, tuskPickaxe: 3, starPickaxe: 3.6 };
 const SPEARS = new Set(['spear', 'steelSpear', 'forgedSpear']);
-const SWORDS = new Set(['sword', 'fangSword', 'oldSword']);
+const SWORDS = new Set(['sword', 'fangSword', 'oldSword', 'starBlade']);
 const BOWS = new Set(['bow', 'antlerBow', 'longbow']);
 // (How long a bow takes to draw full, seconds: a longbow's slower.)
 const drawTime = (id) => ITEMS[id]?.draw ?? 0.9;
@@ -1477,6 +1478,12 @@ export class Game {
       this.cooldown = 0.6;
       this.#animate('use', 0.35);
       this.sound?.call('eat', 0, 0.5);
+      // (A medicinal plant: what it does, learnt the first time, in your journal of herbs.)
+      if (item.herb) {
+        this.herbsKnown ??= new Set();
+        if (!this.herbsKnown.has(s.id)) (this.herbsKnown.add(s.id), this.hud.toast(`${item.name}: ${item.herb}`), (this.dirty = true));
+        return this.hotbar?.flash(`${item.name}: ${item.herb}`);
+      }
       return this.hotbar?.flash(`Ate: ${item.name}${sick ? ' (raw: you feel feverish)' : item.food.health < 0 ? ' (raw: it turns your stomach)' : ''}`);
     }
     if (item.wear) return this.#putOn(i);
@@ -3407,6 +3414,7 @@ export class Game {
     // Under a roof, with walls round you: out of the rain, out of the wind,
     // and a fire in there warms the whole of it.
     const shelter = this.structures.shelterAt(cam.x, cam.y - this.controls.eyeHeight, cam.z);
+    this.indoors = shelter; // (for the sounds: the rain on the roof, the wind outside; see Sound.update)
     // In a cave: out of the rain and the wind altogether (see Survival.coldness for its warmth).
     const cave = ctx.cave ?? null;
     if (cave !== null) (shelter.roof = 1), (shelter.walls = 1);
@@ -3439,6 +3447,10 @@ export class Game {
     // walk, an ice-axe in each hand; it's hard going, and wears them.)
     const picks = this.inventory.slots.findIndex((st) => st?.id === 'climbingPicks');
     this.controls.maxClimb = picks >= 0 ? 2.6 : 1.1;
+    // (A glider in your pack: hold Space as you fall and you glide; it wears a little each flight.)
+    const glider = this.inventory.slots.findIndex((st) => st?.id === 'glider');
+    this.controls.canGlide = glider >= 0;
+    if (this.controls.gliding && glider >= 0 && (this.glideWear = (this.glideWear ?? 0) + dt) > 6) (this.glideWear = 0), this.inventory.wear(glider, 1);
     if (picks >= 0 && walking && this.controls.moving && this.controls.climbingSteep) {
       this.survival.energy = Math.max(0, this.survival.energy - dt * 0.25);
       if ((this.pickWear = (this.pickWear ?? 0) + dt) > 4) (this.pickWear = 0), this.inventory.wear(picks, 1);
@@ -3630,6 +3642,7 @@ export class Game {
   /** You've been hurt (by a wolf, a bear, a fall...). */
   hurt(amount, cause, { bite = false } = {}) {
     if (!this.walking || this.sleeping || this.mode === 'creative') return;
+    amount *= difficulty.hurt; // (the difficulty: see settings)
     // Armour takes the worst of a bite or a swipe (and wears for it).
     const armour = this.inventory.armour;
     if (bite && armour) {

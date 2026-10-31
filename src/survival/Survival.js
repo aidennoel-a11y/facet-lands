@@ -1,3 +1,4 @@
+import { difficulty } from '../settings.js';
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -78,6 +79,10 @@ export class Survival {
     if (food.health > 0) this.health = Math.min(100, this.health + food.health);
     else if (food.health < 0) this.hurt(-food.health, 'food poisoning');
     if (food.cure) this.sick = 0;
+    // (The herbs' own good: see items.)
+    if (food.stopBleed) this.bleeding = 0;
+    if (food.antivenom) this.venom = 0;
+    if (food.energy) this.energy = Math.min(100, this.energy + food.energy);
     if (food.sick && Math.random() < food.sick) {
       this.sick = Math.max(this.sick, 150 + Math.random() * 120);
       return true;
@@ -153,12 +158,12 @@ export class Survival {
     this.full = Math.max(0, this.full - dt * work);
     this.fresh = Math.max(0, (this.fresh ?? 0) - dt);
     const start = this.fresh > 0 ? 0.25 : 1;
-    this.hunger = Math.max(0, this.hunger - dt * 0.042 * work * fever * start * (this.full > 0 ? 0.35 : 1) - (e.jumped ?? 0) * 0.5);
+    this.hunger = Math.max(0, this.hunger - dt * 0.042 * difficulty.drain * work * fever * start * (this.full > 0 ? 0.35 : 1) - (e.jumped ?? 0) * 0.5);
     // Energy: a day's worth (about 45 minutes awake), faster running, carrying a load.
     this.energy = Math.max(0, this.energy - dt * 0.037 * (e.sprinting ? 2 : 1) * (1 + (e.load ?? 0)));
     // Thirst: faster (half an hour or so), and far faster in the heat.
     const heat = 1 + (e.heat ?? 0) * (0.6 + 0.4 * (e.day ?? 1));
-    this.thirst = Math.max(0, this.thirst - dt * 0.055 * heat * fever * start * (e.sprinting ? 2.2 : e.moving ? 1.15 : 1) - (e.jumped ?? 0) * 0.25);
+    this.thirst = Math.max(0, this.thirst - dt * 0.055 * difficulty.drain * heat * fever * start * (e.sprinting ? 2.2 : e.moving ? 1.15 : 1) - (e.jumped ?? 0) * 0.25);
     // Fever passes; bleeding clots in the end.
     if (this.sick > 0) {
       this.sick = Math.max(0, this.sick - dt);

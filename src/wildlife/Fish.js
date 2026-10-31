@@ -91,6 +91,7 @@ function fishMaterial(hook) {
       .replace(
         '#include <color_fragment>',
         /* glsl */ `#include <color_fragment>
+        float vFishGlow = 0.0;
         {
           vec3 l = vFishLocal;
           float flank = smoothstep(0.12, 0.0, abs(l.y)) ;
@@ -117,6 +118,13 @@ function fishMaterial(hook) {
           } else if (k == 7) { // a shark: slate grey over, white under, darker fin tips
             diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.92, 0.9), smoothstep(-0.01, -0.06, l.y));
             if (l.y > 0.2 || l.z < -0.5) diffuseColor.rgb *= 0.6;
+          } else if (k == 9) { // an anglerfish of the trench: near black, a glowing lure over its mouth, glowing flecks
+            diffuseColor.rgb *= 0.35;
+            float fleck = step(0.93, fishHash(floor(l * vec3(30.0, 30.0, 26.0))));
+            vFishGlow = max(fleck * 0.8, smoothstep(0.08, 0.02, length(l - vec3(0.0, 0.2, 0.52))) * 2.5);
+          } else if (k == 10) { // a gulper or a viperfish: black, a line of blue lights down each flank
+            diffuseColor.rgb *= 0.25;
+            vFishGlow = step(0.82, fract(l.z * 18.0)) * smoothstep(0.03, 0.0, abs(l.y + 0.02)) * 1.6;
           } else if (k == 8) { // a reef fish: bright, with dark bands across it
             float band = step(0.72, sin(l.z * 26.0 + 1.0));
             diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.08, 0.08, 0.12), band * 0.85);
@@ -125,7 +133,13 @@ function fishMaterial(hook) {
         }`,
       );
   };
-  m.customProgramCacheKey = () => 'fish-swim';
+  const before = m.onBeforeCompile;
+  m.onBeforeCompile = (shader, renderer) => {
+    before.call(m, shader, renderer);
+    // (What glows on the deep fish: their lures and lights, seen in the dark of the trench.)
+    shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n        totalEmissiveRadiance += vec3(0.45, 0.85, 1.0) * vFishGlow;');
+  };
+  m.customProgramCacheKey = () => 'fish-swim-deep';
   return m;
 }
 const fishTime = { value: 0 };
@@ -143,6 +157,8 @@ const SEA_KINDS = [[0xb8c8d8, 6], [0x9fb4c8, 6], [0xc8c0a8, 6]];
 // Over the coral: bright reef fish, banded (yellow, blue, orange, green-gold).
 const REEF_KINDS = [[0xf0d040, 8], [0x3a8ad8, 8], [0xf08a30, 8], [0x8ad060, 8], [0xe86aa0, 8]];
 const ANTHIAS = 0xf06a30;
+// Down in the ocean trenches, in the dark: anglerfish with their glowing lures, and long black gulpers lit along their sides.
+const DEEP_KINDS = [[0x4a4038, 9, 0.6, 1.1], [0x2a2a34, 10, 1.0, 1.8], [0x5a4a52, 9, 0.9, 1.5]];
 // Out in the deep water: big fish cruising alone, a tuna, a grouper, a shark now and then.
 const BIG_KINDS = [[0x8a9cb8, 6, 1.2, 1.9], [0x6a5a40, 2, 1.0, 1.6], [0x7c8890, 7, 1.9, 3.0]];
 
@@ -246,7 +262,11 @@ export class Fish {
         }
       }
     }
-    if (kind === 'b' && this.#h(i, j, 0xf180) < 0.5 && w?.lake && w.level - bed > 6) {
+    if (kind === 'b' && this.#h(i, j, 0xf187) < 0.85 && w?.lake && w.level - bed > 70) {
+      // Down a trench: the strange fish of the deep, slow, near the bottom in the dark.
+      const depth = w.level - bed, [tint, kk, s0, s1] = DEEP_KINDS[Math.floor(this.#h(i, j, 0xf188) * DEEP_KINDS.length)];
+      found = { x, z, level: w.level, y: bed + 4 + Math.min(20, depth * 0.1) * this.#h(i, j, 0xf189), tint, kind: kk, size: s0 + (s1 - s0) * this.#h(i, j, 0xf18a), r: 5 + 6 * this.#h(i, j, 0xf18b), speed: 0.15 + 0.15 * this.#h(i, j, 0xf18c), phase: this.#h(i, j, 0xf18d) * TAU };
+    } else if (kind === 'b' && this.#h(i, j, 0xf180) < 0.5 && w?.lake && w.level - bed > 6) {
       // A big fish of the open sea: round a wide loop of its own, deep down.
       const depth = w.level - bed, [tint, kk, s0, s1] = BIG_KINDS[this.#h(i, j, 0xf181) < 0.22 ? 2 : this.#h(i, j, 0xf182) < 0.6 ? 0 : 1];
       found = { x, z, level: w.level, y: w.level - Math.min(depth * 0.55, 14), tint, kind: kk, size: s0 + (s1 - s0) * this.#h(i, j, 0xf183), r: 7 + 9 * this.#h(i, j, 0xf184), speed: 0.35 + 0.3 * this.#h(i, j, 0xf185), phase: this.#h(i, j, 0xf186) * TAU };

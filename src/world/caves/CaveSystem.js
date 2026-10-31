@@ -192,6 +192,7 @@ export class CaveSystem {
       entry.lights = data.lights ?? new Float32Array(0);
       entry.geysers = data.geysers ?? new Float32Array(0);
       entry.giants = data.giants ?? new Float32Array(0);
+      entry.webs = data.webs ?? new Float32Array(0);
       entry.labels = data.labels ?? null;
       entry.portals = data.portals ?? null;
       entry.water = toLiquid(data.water);
@@ -548,6 +549,19 @@ export class CaveSystem {
       if (Math.min(this.generator.getHeight(x, z) - y, this.caveDensity(x, y, z)) > 0.3) return false;
     }
     return true;
+  }
+
+  /** How caught up in a spider's web you'd be at (x, y, z) (your middle): 0 none, 1 right in it. */
+  webAt(x, y, z) {
+    const data = this.cache.get(`${Math.floor(x / this.chunkSize)},${Math.floor(z / this.chunkSize)}`);
+    const w = data?.webs;
+    if (!w) return 0;
+    let most = 0;
+    for (let k = 0; k < w.length; k += 4) {
+      const R = w[k + 3], d = Math.hypot(x - w[k], (y - w[k + 1]) * 0.8, z - w[k + 2]);
+      if (d < R) most = Math.max(most, 1 - d / R);
+    }
+    return most;
   }
 
   /** Something no longer in the way at (x, z) (a giant mushroom cut down): its obstacle gone. */

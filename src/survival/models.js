@@ -2266,3 +2266,66 @@ export function ladderModel(len = 3) {
   for (let y = 0.3; y < h - 0.1; y += 0.3) b.add(new CylinderGeometry(0.022, 0.022, 0.44, 5), 0x9a7048, [0, y, (y / h) * off], [0, 0, Math.PI / 2]);
   return b.build();
 }
+
+// A medicinal plant growing wild: a little clump of leaves, its flowers (or none) over them.
+export const herbModel = (leaf, flower = null, tall = 0.22, seed = 301) => {
+  const P = new Parts(seed);
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    P.add(new ConeGeometry(0.035, tall, 3), leaf, [Math.cos(a) * 0.05, tall / 2, Math.sin(a) * 0.05], [Math.cos(a) * 0.5, 0, -Math.sin(a) * 0.5], [1, 1, 0.35]);
+  }
+  if (flower) for (let k = 0; k < 3; k++) P.add(new IcosahedronGeometry(0.035, 0), flower, [(k - 1) * 0.04, tall + 0.04, (k % 2) * 0.03]);
+  return P.build();
+};
+// A fleck of star metal: a dark, heavy lump with blue glints in it.
+export const starMetalModel = () =>
+  new Parts(41)
+    .add(new DodecahedronGeometry(0.13, 0), 0x3a4050, [0, 0.08, 0], [0.4, 0.3, 0.2], [1.2, 0.8, 1])
+    .add(new OctahedronGeometry(0.04, 0), 0x9ac8ff, [0.06, 0.15, 0.04])
+    .add(new OctahedronGeometry(0.035, 0), 0x7ab0f0, [-0.07, 0.12, -0.03])
+    .build();
+// A silk glider, folded: a bundle of pale silk on its sticks.
+export const gliderModel = () =>
+  new Parts(43)
+    .add(new BoxGeometry(0.9, 0.06, 0.12), 0xece6da, [0, 0.05, 0])
+    .add(new CylinderGeometry(0.015, 0.015, 1.0, 4), 0x8a5d38, [0, 0.09, 0], [0, 0, Math.PI / 2])
+    .build();
+
+// Raised floors (see Structures: `raised`): a deck of planks 4 m square, lifted off the ground.
+// `len` how far below the deck the ground (or the bed of the water) is.
+function deckParts(seed) {
+  const b = new Parts(seed), rand = mulberry32(seed), h = FLOOR_SIZE / 2, n = 10, w = FLOOR_SIZE / n;
+  for (let k = 0; k < n; k++) b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.06, w - 0.03), [0x9a7448, 0x8a663e, 0xa47e50, 0x84603a][Math.floor(rand() * 4)], [0, FLOOR_TOP - 0.03, -h + w * (k + 0.5)], [0, 0, 0], [1, 1, 1], 0.05);
+  for (const x of [-h + 0.12, 0, h - 0.12]) b.add(new BoxGeometry(0.16, 0.16, FLOOR_SIZE), 0x5e4630, [x, FLOOR_TOP - 0.14, 0]);
+  for (const z of [-h + 0.1, h - 0.1]) b.add(new BoxGeometry(FLOOR_SIZE, 0.14, 0.12), 0x5e4630, [0, FLOOR_TOP - 0.14, z]);
+  return b;
+}
+// (A tree platform: the deck built round the trunk in its middle, braced to the trunk below.)
+export function treePlatformModel(len = 4) {
+  const b = deckParts(171), h = FLOOR_SIZE / 2;
+  for (const [x, z] of [[h - 0.3, h - 0.3], [-h + 0.3, h - 0.3], [h - 0.3, -h + 0.3], [-h + 0.3, -h + 0.3]]) {
+    b.log([x, 0, z], [x * 0.15, -Math.min(2.2, len * 0.5), z * 0.15], 0.08, 0x6a4c32, 0xc8a070, 5);
+  }
+  // (Rope lashings round the trunk where the braces meet it.)
+  b.add(new TorusGeometry(0.42, 0.04, 4, 10), 0xc8b088, [0, -Math.min(2.2, len * 0.5) + 0.1, 0], [Math.PI / 2, 0, 0]);
+  return b.build();
+}
+// (A deck laid on out from a tree platform: hung by ropes from the branches over it, braced under.)
+export function treeDeckModel(len = 4) {
+  const b = deckParts(173), h = FLOOR_SIZE / 2;
+  for (const [x, z] of [[h - 0.2, h - 0.2], [-h + 0.2, h - 0.2], [h - 0.2, -h + 0.2], [-h + 0.2, -h + 0.2]]) b.add(new CylinderGeometry(0.02, 0.02, 3.2, 4), 0xc8b088, [x, FLOOR_TOP + 1.6, z]);
+  b.log([0, 0, -h + 0.2], [0, -1.4, 0], 0.07, 0x6a4c32, 0xc8a070, 5);
+  b.log([0, 0, h - 0.2], [0, -1.4, 0], 0.07, 0x6a4c32, 0xc8a070, 5);
+  return b.build();
+}
+// (A floor up on stilts: nine piles down to the ground or the bed of the water, crossed braces between them.)
+export function stiltFloorModel(len = 2) {
+  const b = deckParts(179), h = FLOOR_SIZE / 2, L = len + 0.6;
+  for (const x of [-h + 0.15, 0, h - 0.15]) for (const z of [-h + 0.15, 0, h - 0.15]) b.log([x, -0.1, z], [x, -L, z], 0.12, 0x5a4230, 0xb08a60, 6);
+  if (len > 1.2) for (const z of [-h + 0.15, h - 0.15]) {
+    b.log([-h + 0.15, -0.3, z], [h - 0.15, -Math.min(L - 0.3, 1.8), z], 0.05, 0x6a4c32, 0xb08a60, 4);
+    b.log([h - 0.15, -0.3, z], [-h + 0.15, -Math.min(L - 0.3, 1.8), z], 0.05, 0x6a4c32, 0xb08a60, 4);
+  }
+  return b.build();
+}
+export const RAISED_MODELS = { treePlatform: treePlatformModel, treeDeck: treeDeckModel, stiltFloor: stiltFloorModel };

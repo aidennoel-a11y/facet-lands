@@ -21,6 +21,9 @@ const CELL = 640;
 const GREY = [0xb4b0a6, 0xa6a298, 0xc2beb2, 0x9a978e, 0xb0aa94, 0xc6c0b2, 0xa29e92];
 const SAND = [0xd2b080, 0xc4a274, 0xdcbe8c, 0xb8966a, 0xccaa7c, 0xe2c694];
 const MOSS = [0x4f6a34, 0x5c7a3a, 0x46602e, 0x6a8a44];
+// (The jungle's lost temples: a dark, wet, grey-green stone, half grown over.)
+const JUNGLE_STONE = [0x8a8f7a, 0x7c826c, 0x969a84, 0x6e745e, 0x858a70, 0x9aa088];
+const VINE = [0x2f5a24, 0x3a6a2a, 0x2a4e20, 0x467a30];
 const IVY = [0x2e4a22, 0x3a5a28, 0x34522a];
 
 /** The ruin in grid cell (I, K), if any: { x, z, rot, seed, key } (not yet checked against the land). */
@@ -45,6 +48,9 @@ export function ruinFits(site, generator, seaLevel) {
   if (generator.caves?.mouthsNear?.(site.x - site.size - 22, site.z - site.size - 22, site.x + site.size + 22, site.z + site.size + 22)?.length) return false;
   return true;
 }
+
+/** Whether a ruin here is one of the jungle's lost temples. */
+export const isJungle = (w) => (w.jungle ?? 0) + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) > 0.5;
 
 const shadeColour = new Color();
 function colour(g, hex, rand, vary = 0.16) {
@@ -101,11 +107,13 @@ export function keepSite(generator, seaLevel) {
 // One ruin: its stone, into `parts` (geometries in the chunk's frame, its
 // corner at x0, z0), what's solid of it into `solids` (world), and its
 // chests to `onChest`.
-function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = null) {
+function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = null, traps = null) {
   const rand = mulberry32(site.seed);
   const rot = site.rot, ca = Math.cos(rot), sa = Math.sin(rot);
   const w = generator.getBiomeWeights(site.x, site.z, {});
-  const STONE = (w.desert ?? 0) + (w.badlands ?? 0) + (w.saltFlat ?? 0) > 0.5 ? SAND : GREY;
+  // (In the jungle, a lost temple instead: see jungleTemple.)
+  const jungle = !site.keep && isJungle(w);
+  const STONE = jungle ? JUNGLE_STONE : (w.desert ?? 0) + (w.badlands ?? 0) + (w.saltFlat ?? 0) > 0.5 ? SAND : GREY;
   const stone = () => STONE[Math.floor(rand() * STONE.length)];
   const moss = () => MOSS[Math.floor(rand() * MOSS.length)];
   // (The ruin's own frame: u along it, v across; to the world and back.)
@@ -323,6 +331,152 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = 
       solid(u, (v1 + v2) / 2, 0.25, (v2 - v1) / 2, g0 - 0.4, y);
     }
   };
+
+  // A trap: a pressure plate in the floor at (u, v), its top at `y`; darts
+  // shot from the walls when it's trodden on (`darts`), or a bed of spikes
+  // (`spikes`, always there: a pit to keep out of).
+  const trap = (u, v, y, kind, r = 0.6) => {
+    if (kind === 'spikes') {
+      for (let k = 0; k < 9; k++) {
+        const su = u + ((k % 3) - 1) * r * 0.6, sv = v + (Math.floor(k / 3) - 1) * r * 0.6;
+        const g = new CylinderGeometry(0.0, 0.07, 0.55, 4, 1);
+        g.translate(su, y + 0.27, sv);
+        put(g, 0x6a6458, 0.2);
+      }
+      block(u, v, y - 0.05, r * 2, 0.12, r * 2, 0x4a463c);
+    } else block(u, v, y + 0.02, r * 1.6, 0.08, r * 1.6, 0x6e6a58); // (the plate: a slab a shade darker, just proud of the floor)
+    traps?.push({ x: wx(u, v), z: wz(u, v), y, r, kind, key: `${site.key}:${Math.round(u * 10)},${Math.round(v * 10)}` });
+  };
+  // Vines hanging down a face: long green strips at (u, v), from `top` down `len`.
+  const vines = (u, v, top, len, turn = 0) => {
+    for (let k = 0; k < 3; k++) {
+      const l = len * (0.5 + rand() * 0.5), o = (k - 1) * 0.35;
+      block(u + o * Math.cos(turn), v - o * Math.sin(turn), top - l / 2, 0.14, l, 0.05, VINE[Math.floor(rand() * VINE.length)], [0, turn, 0]);
+    }
+  };
+  // Big roots over the stone, thick and twisting, from a strangler fig long gone.
+  const roots = (u, v, y, n = 4) => {
+    for (let k = 0; k < n; k++) {
+      const a = rand() * Math.PI * 2, l = 2 + rand() * 3, g = new CylinderGeometry(0.08, 0.2, l, 5, 1);
+      g.rotateZ(Math.PI / 2 - 0.25 - rand() * 0.35);
+      g.rotateY(a);
+      g.translate(u + Math.cos(a) * l * 0.4, y + 0.3, v - Math.sin(a) * l * 0.4);
+      put(g, 0x5a4a36, 0.2);
+    }
+  };
+  // A carved square pillar, a broad capital on it, a face carved in its top.
+  const pillar = (u, v, y0, tall = 3.4) => {
+    const h = rand() < 0.3 ? tall * (0.4 + rand() * 0.4) : tall;
+    block(u, v, y0 + h / 2, 0.8, h, 0.8, stone());
+    block(u, v, y0 + h + 0.15, 1.15, 0.3, 1.15, rand() < 0.4 ? moss() : stone());
+    if (h === tall) block(u + 0.42, v, y0 + h - 0.5, 0.06, 0.45, 0.5, 0x5e6250); // (the face's brow)
+    solid(u, v, 0.45, 0.45, y0 - 0.3, y0 + h + 0.3);
+    if (rand() < 0.45) vines(u + 0.45, v, y0 + h, h * 0.7);
+    return y0 + h + 0.3;
+  };
+
+  if (jungle) {
+    // The lost temples of the jungle, three kinds, all overgrown, each with its traps.
+    const S = Math.max(9, site.size);
+    switch (site.seed % 3) {
+      case 0: {
+        // A stepped pyramid: tiers of great blocks, a stair up its front, a shrine on top with the best chest; darts on the stair.
+        const tiers = 4 + (site.seed % 2), R = Math.min(S, 13), stairW = 2.2, step = 0.9;
+        let lo = Infinity, hi = -Infinity;
+        for (let k = 0; k < 9; k++) {
+          const g = ground(((k % 3) - 1) * R, (Math.floor(k / 3) - 1) * R);
+          lo = Math.min(lo, g);
+          hi = Math.max(hi, g);
+        }
+        const rOf = (t) => R - t * (R / (tiers + 1.5));
+        for (let t = 0; t < tiers; t++) {
+          const r = rOf(t), y = hi + step * (t + 1);
+          // (Each tier one great block of courses, grown over at its edges.)
+          for (let u = -r; u < r - 0.01; u += 2.4) {
+            for (let v = -r; v < r - 0.01; v += 2.4) {
+              const su = Math.min(2.4, r - u), sv = Math.min(2.4, r - v), bot = t === 0 ? lo - 0.5 : y - step - 0.1;
+              block(u + su / 2, v + sv / 2, (bot + y) / 2, su - 0.05, y - bot, sv - 0.05, rand() < 0.18 ? moss() : stone());
+            }
+          }
+          solid(0, 0, r, r, lo - 0.5, y);
+          for (let k = 0; k < 4; k++) if (rand() < 0.7) vines(k % 2 ? (rand() - 0.5) * r * 1.6 : r * (k < 2 ? 1 : -1) * 1.01, k % 2 ? r * (k < 2 ? 1 : -1) * 1.01 : (rand() - 0.5) * r * 1.6, y, step * 1.3, k % 2 ? 0 : Math.PI / 2);
+          if (t === 0) roots(r * 0.8, r * 0.8, y, 3);
+        }
+        const top = hi + step * tiers, rTop = rOf(tiers - 1);
+        // The stair up the front (along -u), from the ground to the top, broad and steep.
+        const foot = -R - 1.6, base = ground(foot, 0), n = Math.ceil((top - base) / 0.3);
+        for (let k = 0; k < n; k++) {
+          const f = (k + 1) / n, y = base + f * (top - base), u = foot + (k + 0.5) * ((-rTop - foot) / n);
+          block(u, 0, (y + lo - 0.5) / 2, (-rTop - foot) / n + 0.02, y - lo + 0.5, stairW, stone());
+          solid(u, 0, (-rTop - foot) / n / 2 + 0.01, stairW / 2, lo - 0.5, y);
+        }
+        // Stone serpents' heads either side of the stair's foot.
+        for (const side of [-1, 1]) {
+          block(-R - 1.6, side * (stairW / 2 + 0.6), base + 0.5, 1.4, 1.0, 0.9, moss());
+          block(-R - 2.3, side * (stairW / 2 + 0.6), base + 0.6, 0.5, 0.5, 0.7, 0x5e6250);
+          solid(-R - 1.8, side * (stairW / 2 + 0.6), 0.9, 0.45, base - 0.3, base + 1.1);
+        }
+        // The shrine on top: three walls and a roof slab, the doorway facing the stair.
+        const sr = Math.min(2.6, rTop - 0.6);
+        const pts = [[-sr, -sr], [sr, -sr], [sr, sr], [-sr, sr]];
+        for (let k = 0; k < 4; k++) {
+          const [u1, v1] = pts[k], [u2, v2] = pts[(k + 1) % 4];
+          const door = k === 3; // (the side toward the stair, -u)
+          const ys = top - (ground((u1 + u2) / 2, (v1 + v2) / 2));
+          wallRun(u1, v1, u2, v2, 0.6, () => 3 + ys, { gaps: door ? [[0.32, 0.68, ys - 0.1, ys + 2.3]] : [], mossy: 0.6 });
+        }
+        block(0, 0, top + 3.15, sr * 2 + 1, 0.4, sr * 2 + 1, moss());
+        solid(0, 0, sr + 0.5, sr + 0.5, top + 2.95, top + 3.35);
+        chest(sr - 1, 0, top, 'shrine', true);
+        // (A plate on the stair, halfway up.)
+        { const k = Math.floor(n / 2), u = foot + (k + 0.5) * ((-rTop - foot) / n); trap(u, 0, base + ((k + 1) / n) * (top - base), 'darts', 0.7); }
+        trap(-sr - 0.6, 0, top, 'darts');
+        rubble(10, R + 3, R + 8);
+        break;
+      }
+      case 1: {
+        // A courtyard temple: a wall round a court of flagstones, carved pillars round it, an altar and spike pits.
+        const H = Math.min(S, 12), W = H * 0.75;
+        wallLoop([[-H, -W], [H, -W], [H, W], [-H, W]], 0.9, ruined(3.4, 0.88), (k) => (k === 3 ? { gaps: [[0.42, 0.58, 0, 2.8]], mossy: 0.6 } : { mossy: 0.6 }));
+        cobbles(-H + 1, H - 1, -W + 1, W - 1, 0.35);
+        for (let u = -H + 2.5; u < H - 1.5; u += 3.2) for (const v of [-W + 2, W - 2]) pillar(u, v, ground(u, v));
+        const g0 = ground(H - 3, 0);
+        block(H - 3, 0, g0 + 0.5, 1.6, 1.0, 2.6, stone());
+        block(H - 3, 0, g0 + 1.1, 1.2, 0.2, 2.2, moss());
+        solid(H - 3, 0, 0.8, 1.3, g0 - 0.2, g0 + 1.2);
+        chest(H - 4.6, 0, ground(H - 4.6, 0), 'altar', true);
+        chest(-H + 2, W - 3.5, ground(-H + 2, W - 3.5), 'court');
+        // (Spike pits across the way to the altar, and a dart plate before it.)
+        for (const [u, v] of [[-2, -1.4], [1, 1.6], [3.5, -0.8]]) trap(u, v, ground(u, v), 'spikes', 0.75);
+        trap(H - 5.6, 0, ground(H - 5.6, 0), 'darts');
+        roots(H - 1, W - 1, ground(H - 1, W - 1), 5);
+        roots(-H + 1, -W + 1, ground(-H + 1, -W + 1), 4);
+        rubble(12, H + 2, H + 8);
+        break;
+      }
+      default: {
+        // An overgrown shrine: a small chamber, a great carved face over its door, roots over it all; a dart trap in the doorway.
+        const A = 4, B = 3.2;
+        wallLoop([[-A, -B], [A, -B], [A, B], [-A, B]], 0.8, () => 3.6 + rand() * 0.4, (k) => (k === 3 ? { gaps: [[0.36, 0.64, 0, 2.5]], mossy: 0.7 } : { mossy: 0.7 }));
+        const g0 = ground(0, 0);
+        block(0, 0, g0 + 4.0, A * 2 + 1.2, 0.5, B * 2 + 1.2, moss());
+        solid(0, 0, A + 0.6, B + 0.6, g0 + 3.75, g0 + 4.25);
+        // (The face: a broad brow, two eyes, a mouth, on a slab over the door.)
+        const gf = ground(-A, 0);
+        block(-A - 0.5, 0, gf + 3.2, 0.3, 1.8, 3.0, stone());
+        for (const side of [-1, 1]) block(-A - 0.7, side * 0.65, gf + 3.5, 0.15, 0.35, 0.55, 0x3e4234);
+        block(-A - 0.7, 0, gf + 2.75, 0.15, 0.25, 1.3, 0x3e4234);
+        vines(-A - 0.75, 0, gf + 4.2, 2.0, Math.PI / 2);
+        roots(A, B, ground(A, B) + 2, 5);
+        roots(-A, -B, ground(-A, -B) + 1, 4);
+        chest(A - 1.2, 0, ground(A - 1.2, 0), 'shrine', true);
+        trap(-A + 0.9, 0, ground(-A + 0.9, 0), 'darts');
+        trap(1, 1.6, ground(1, 1.6), 'spikes', 0.6);
+        rubble(8, 6, 10);
+      }
+    }
+    return;
+  }
 
   switch (site.kind) {
     case 1: {
@@ -588,6 +742,7 @@ export function createRuinLayer(config) {
     return fits.get(key);
   };
   const solids = new Map(); // "cx,cz" -> [{ x, z, hx, hz, rot, bottom, top, r }] (world)
+  const trapLists = new Map(); // "cx,cz" -> [{ x, z, y, r, kind, key }] (world: the jungle temples' traps)
   const gates = new Set(); // (the Keep's sealed gate, while it's built)
   const rough = new Map(); // (the big map's rough guesses: see sitesRoughly)
   // (The stone near a point: what's in the chunks round it.)
@@ -693,6 +848,14 @@ export function createRuinLayer(config) {
       return top;
     },
 
+    /** A temple's trap under your feet at (x, z) (feet at `feetY`): { kind, key, x, y, z } or null. */
+    trapAt(x, z, feetY) {
+      const size = config.chunkSize, list = trapLists.get(`${Math.floor(x / size)},${Math.floor(z / size)}`);
+      if (!list) return null;
+      for (const t of list) if (Math.abs(feetY - t.y) < 0.5 && Math.hypot(x - t.x, z - t.z) < t.r) return t;
+      return null;
+    },
+
     /** Pushes a circle (you, walking, feet at `feetY`) out of the ruins' stone. */
     collide(position, radius, feetY) {
       for (const b of near(position.x, position.z)) {
@@ -721,14 +884,14 @@ export function createRuinLayer(config) {
       if (lod > 2) return null;
       const size = config.chunkSize, x0 = cx * size, z0 = cz * size;
       const I0 = Math.floor(x0 / CELL), K0 = Math.floor(z0 / CELL);
-      const parts = [], list = [], gateParts = [];
+      const parts = [], list = [], gateParts = [], traps = [];
       const keep = keepSite(generator, config.seaLevel);
       if (Math.floor(keep.x / size) === cx && Math.floor(keep.z / size) === cz) buildRuin(keep, generator, x0, z0, parts, list, lod === 0 ? layer.onChest : null, gateParts);
       for (let K = K0 - 1; K <= K0 + 1; K++) {
         for (let I = I0 - 1; I <= I0 + 1; I++) {
           const s = site(I, K, generator);
           if (!s || Math.floor(s.x / size) !== cx || Math.floor(s.z / size) !== cz) continue;
-          buildRuin(s, generator, x0, z0, parts, list, lod === 0 ? layer.onChest : null);
+          buildRuin(s, generator, x0, z0, parts, list, lod === 0 ? layer.onChest : null, null, lod === 0 ? traps : null);
         }
       }
       if (!parts.length) return null;
@@ -757,11 +920,23 @@ export function createRuinLayer(config) {
       group.userData.key = `${cx},${cz}`;
       group.userData.solids = list;
       solids.set(group.userData.key, list);
+      // (Traps by the chunk they're in: a temple's may spread over the chunk's edge.)
+      group.userData.traps = traps;
+      for (const t of traps) {
+        const k = `${Math.floor(t.x / size)},${Math.floor(t.z / size)}`;
+        if (!trapLists.has(k)) trapLists.set(k, []);
+        const l = trapLists.get(k);
+        if (!l.some((o) => o.key === t.key)) l.push(t);
+      }
       return group;
     },
 
     dispose(group) {
       if (solids.get(group.userData.key) === group.userData.solids) solids.delete(group.userData.key);
+      for (const t of group.userData.traps ?? []) {
+        const k = `${Math.floor(t.x / config.chunkSize)},${Math.floor(t.z / config.chunkSize)}`, l = trapLists.get(k);
+        if (l) l.splice(l.findIndex((o) => o.key === t.key) >>> 0, 1);
+      }
       if (group.userData.gate) gates.delete(group.userData.gate);
       for (const mesh of group.children) mesh.geometry.dispose();
     },

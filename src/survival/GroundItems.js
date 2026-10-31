@@ -15,6 +15,8 @@ const smoothstep = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 // Ore, lying in the rock: a vein to break out with a pickaxe, never picked up by hand (see Game.#mine).
+// How likely a spot is to have a medicinal plant: a few in most green country, more in the woods' edges and the jungle; none on bare rock.
+const pHerb = (w, forest, mount) => 0.006 * Math.min(1, w.temperate + w.parkland + w.smoky + w.pine + w.wetland + w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + 0.6 * (w.desert + w.savanna + w.badlands) + (w.cascades ?? 0) + (w.blackHills ?? 0)) * (1 - 0.6 * Math.min(1, mount));
 export const ORE_NODES = new Set(['iron', 'coal', 'goldOre', 'mountainOre']);
 export const WILD_CROPS = { wildWheat: 'wheat', wildCorn: 'corn', wildPotato: 'potato', wildCarrot: 'carrot' };
 // (Things that are built: a small one of what it builds. See model.)
@@ -106,6 +108,9 @@ export class GroundItems {
         honey: () => M.seedsModel(0xe8a020), rawEgg: () => M.eggModel(false), cookedEgg: () => M.eggModel(true), salt: () => M.seedsModel(0xf4f2ee), oyster: M.oysterModel, seashell: M.seashellModel, pearl: M.pearlModel, straw: M.wheatModel, sand: () => M.seedsModel(0xe2c88a),
         flintSteel: () => M.flintSteelModel(false), fineFlintSteel: () => M.flintSteelModel(true),
         oldSword: () => swordModel(0xa8aca4, 0xc8ccc4, 0xb08a3a), oldMap: () => M.hideModel(),
+        starBlade: () => swordModel(0x7a98c8, 0xd4e6ff, 0x3a4050), starPickaxe: () => pickaxeModel(0x5a6a90, 0xd4e6ff), starMetal: M.starMetalModel, glider: M.gliderModel,
+        yarrow: () => M.herbModel(0x6a9a44, 0xf0ece0, 0.26, 311), aloe: () => M.herbModel(0x7ab070, null, 0.3, 313), willowBark: () => M.herbModel(0x8a7458, null, 0.08, 317),
+        ginseng: () => M.herbModel(0x4a8a34, 0xc02828, 0.2, 319), snakeroot: () => M.herbModel(0x3a7a34, 0xffffff, 0.28, 323),
         fangSword: () => swordModel(0xf0e8d4, 0xfaf4e4, 0x5a4a3a), antlerBow: () => bowModel(true, 0xcbb690), tuskPickaxe: () => pickaxeModel(0xe8dcc0, 0xf4ecd8),
         poisonArrow: () => arrowModel(0x6a9a3a), poisonBolt: () => boltModel(0x6a9a3a),
         saddle: () => M.saddleModel(false), greatSaddle: () => M.saddleModel(true), bandage: M.bandageModel, torch: M.torchModel, coalTorch: M.torchModel, candle: M.candleModel, lantern: M.lanternModel,
@@ -133,7 +138,7 @@ export class GroundItems {
     const seed = generator.seed ^ 0x9e3779;
     const G = 6, cells = Math.floor(size / G);
     const surface = { normalY: 1 };
-    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], iron: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [], oyster: [], seashell: [], honey: [], fossil: [], petrifiedWood: [], glowcap: [] };
+    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], iron: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [], oyster: [], seashell: [], honey: [], fossil: [], petrifiedWood: [], glowcap: [], yarrow: [], aloe: [], willowBark: [], ginseng: [], snakeroot: [], starMetal: [] };
     const items = [];
     // (The country, sampled every 32 m.)
     const land = new Map();
@@ -178,7 +183,18 @@ export class GroundItems {
         else if (h > 1 - pGold - pHoney) id = 'honey';
         else if (h > 1 - pGold - pHoney - pFossil) id = hash2(gi, gj, seed + 11) < 0.4 ? 'fossil' : 'petrifiedWood';
         else if (h > 1 - pGold - pHoney - pFossil - pGlow) id = 'glowcap';
-        else if (h > 1 - pGold - pHoney - pFossil - pGlow - pWild) {
+        else if (h > 1 - pGold - pHoney - pFossil - pGlow - pHerb(w, forest, mount)) {
+          // A medicinal plant, of the country's own kind.
+          const r = hash2(gi, gj, seed + 13), choice = [['yarrow', w.temperate + w.parkland + 0.4 * w.blackHills], ['aloe', w.desert + w.savanna + 0.5 * w.badlands], ['willowBark', w.wetland + 0.5 * (w.mangrove ?? 0)], ['ginseng', (w.smoky + w.pine + (w.cascades ?? 0)) * (0.4 + forest)], ['snakeroot', w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0)]];
+          let total = 0;
+          for (const [, wt] of choice) total += wt;
+          let pick = r * total;
+          for (const [hid, wt] of choice) if ((pick -= wt) <= 0) {
+            id = hid;
+            break;
+          }
+        }
+        else if (h > 1 - pGold - pHoney - pFossil - pGlow - pHerb(w, forest, mount) - pWild) {
           const r = hash2(gi, gj, seed + 7);
           id = r < 0.45 ? 'wildWheat' : r < 0.65 ? 'wildCarrot' : r < 0.85 ? 'wildPotato' : 'wildCorn';
         }
@@ -225,6 +241,23 @@ export class GroundItems {
         if (id === 'iron') (item.size = 2.1), (item.boulder = true); // (a boulder with iron in it: see ironBoulderModel)
         found[id].push(item);
         items.push(item);
+      }
+    }
+    // The star metal: flecks of it lying in the crater's bowl round the meteorite (rare: only here).
+    {
+      const c = generator.meteorCraterAt?.(x0 + size / 2, z0 + size / 2, 3);
+      if (c) {
+        const n = 6 + Math.floor((c.r / 110) * 8);
+        for (let k = 0; k < n; k++) {
+          const a = hash2(k, 71, seed + Math.round(c.x)) * Math.PI * 2, d = c.r * (0.12 + 0.55 * hash2(k, 72, seed + Math.round(c.z)));
+          const x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d, key = `star:${Math.round(c.x)},${Math.round(c.z)},${k}`;
+          if (Math.floor(x / size) !== cx || Math.floor(z / size) !== cz || this.taken.has(key)) continue;
+          const y = groundHeightAt(x - x0, z - z0, surface);
+          if (!Number.isFinite(y)) continue;
+          const item = { key, id: 'starMetal', x, y, z, turn: a, index: found.starMetal.length };
+          found.starMetal.push(item);
+          items.push(item);
+        }
       }
     }
     // The meteorite, in the bottom of a meteor crater: a great lump of iron, to break up with a pickaxe.

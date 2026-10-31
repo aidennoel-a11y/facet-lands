@@ -443,6 +443,19 @@ export class Volcanoes {
       }, { opacity: erupting ? 0.55 : 0.4 }), c.x, rim, c.z, 'plume');
     }
     if (c.state === 'erupting') {
+      // Its great eruptions, every few minutes (see update): lava flung high
+      // out of the crater in a glowing fountain, bombs arcing out and falling
+      // on its flanks, and a black column of ash boiling up a kilometre high.
+      // (Shown only while one's going on: uAmount.)
+      add(new Puffs(this.scene, 110, (k) => {
+        const a = random() * Math.PI * 2, out = k < 80 ? rnd(0, 7) : rnd(10, 22), g = rnd(0.55, 1);
+        return { offset: [Math.cos(a) * rnd(0, c.rc * 0.25), 0, Math.sin(a) * rnd(0, c.rc * 0.25)], velocity: [Math.cos(a) * out, k < 80 ? rnd(22, 42) : rnd(30, 48), Math.sin(a) * out], period: rnd(3.2, 5.5), phase: random(), from: k < 80 ? rnd(1.6, 3) : rnd(2.5, 4), to: rnd(0.6, 1.4), colour: new Color(1, 0.35 + 0.3 * g, 0.08 * g), glow: 1 };
+      }, { opacity: 0.95 }), c.x, pool + 1, c.z, 'fountain');
+      add(new Puffs(this.scene, 70, () => {
+        const a = random() * Math.PI * 2, d = random() * c.rc * 0.4, grey = rnd(0.12, 0.26);
+        return { offset: [Math.cos(a) * d, rnd(0, 20), Math.sin(a) * d], velocity: [rnd(-2, 2), rnd(16, 26), rnd(-2, 2)], period: rnd(32, 44), phase: random(), from: rnd(18, 30), to: rnd(90, 150), colour: new Color(grey, grey * 0.95, grey * 0.92), glow: 0 };
+      }, { opacity: 0.8 }), c.x, rim, c.z, 'ash');
+      for (const p of parts) if (p.role === 'fountain' || p.role === 'ash') (p.uniforms.uAmount.value = 0), p.role === 'fountain' && (p.uniforms.uGravity.value = 16);
       // Steam off the lava lake, and where its flow runs into water, steam boiling up.
       add(new Puffs(this.scene, 20, () => {
         const a = random() * Math.PI * 2, d = Math.sqrt(random()) * c.rc * 0.5;
@@ -475,8 +488,9 @@ export class Volcanoes {
     this.wait -= dt;
     if (this.wait <= 0 && ctx.generator) {
       this.wait = 3;
-      const near = ctx.generator.volcanoes(cam.x - 3000, cam.z - 3000, cam.x + 3000, cam.z + 3000)
-        .filter((c) => c.lava || c.lake)
+      // (Erupting ones from much further: an eruption's seen from far across the land.)
+      const near = ctx.generator.volcanoes(cam.x - 7000, cam.z - 7000, cam.x + 7000, cam.z + 7000)
+        .filter((c) => (c.lava || c.lake) && (c.state === 'erupting' || Math.hypot(c.x - cam.x, c.z - cam.z) < 3000))
         .sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z))
         .slice(0, 3);
       const keep = new Set();
@@ -492,8 +506,24 @@ export class Volcanoes {
       }
     }
     let nearest = Infinity;
-    for (const { parts, c } of this.active.values()) {
+    const T0 = ctx.netTime ?? ctx.time;
+    for (const v of this.active.values()) {
+      const { parts, c } = v;
+      // Its great eruptions: every four minutes or so (by the clock: online, everyone sees the same one), a minute long.
+      let burst = 0;
+      if (c.state === 'erupting') {
+        const P = 240, seedK = Math.round(c.x * 0.37 + c.z * 0.61), slot = Math.floor((T0 + seedK) / P), into = T0 + seedK - slot * P;
+        if (hash01(slot, seedK % 97) < 0.7) burst = smoothstep(0, 4, into) * (1 - smoothstep(48, 62, into));
+        if (burst > 0.05 && v.blew !== slot) {
+          v.blew = slot;
+          // (The blast, heard far over the land, the ground shaking near it.)
+          const d = Math.hypot(c.x - cam.x, c.z - cam.z);
+          if (d < 8000) ctx.sound?.call('rumble', 0, Math.min(1, 0.35 + 0.65 * (1 - d / 8000)));
+          if (d < 2500) this.shake = Math.max(this.shake, 1 - d / 2500);
+        }
+      }
       for (const p of parts) {
+        if (p.role === 'fountain' || p.role === 'ash') p.uniforms.uAmount.value = burst;
         const u = p.uniforms;
         u.uTime.value = ctx.time;
         u.uLight.value.copy(ctx.light);

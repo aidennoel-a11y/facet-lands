@@ -1696,6 +1696,17 @@ export class TerrainGenerator {
         height += (seaLevel + 8 * Math.pow(t, 2.6) - height) * beachy;
       }
     }
+    // Ocean trenches: far out in the deep, here and there, a long winding
+    // gash in the sea floor, its walls dropping steeply away a hundred and
+    // fifty metres more into the dark (where the strange fish are: see Fish).
+    if (ocean > 0.5 && u < -32 && !this._riverWork) {
+      const where = smoothstep(0.05, 0.3, this.coastNoise.noise2D(x * 0.00025 - 90, z * 0.00025 + 40));
+      if (where > 0) {
+        const n = this.coastNoise.noise2D(x * 0.0008 + 311, z * 0.0008 - 177) + 0.08 * this.coastNoise.noise2D(x * 0.006 + 13, z * 0.006 - 7);
+        const gash = smoothstep(0.075, 0.02, Math.abs(n)) * smoothstep(-32, -55, u) * smoothstep(0.5, 0.8, ocean) * where;
+        if (gash > 0) height -= 150 * Math.pow(gash, 0.7);
+      }
+    }
     // Coral reefs off the open coast (not off cliffs, wetlands or volcanic
     // shores): built up off a sandy floor seven to eleven metres down, the
     // reef itself: broad tables of it cut through by narrow canyons, and

@@ -702,6 +702,7 @@ export function decorateChunk(grid, field) {
   const plants = []; // (the soft growths on the floor: never solid, see CaveLayer)
   let into = parts;
   const obstacles = [];
+  const webs = []; // [x, y, z, R, ...]: the spiders' webs
   const floors = []; // [x, y, z, random, roof, ...]: open cave floor, for the finds (see below)
   const roofs = []; // [x, y, z, random, ...]: high roofs, for bats
   const pools = [];
@@ -941,6 +942,7 @@ export function decorateChunk(grid, field) {
   // A spider's web: strands out from its middle, rings round them, hung
   // upright across the passage at (x, y, z), `R` across, turned `yaw`.
   const web = (x, y, z, R, yaw, s) => {
+    webs.push(x, y, z, R); // (where it hangs, to be caught in: see CaveSystem.webAt)
     const ux = Math.cos(yaw), uz = Math.sin(yaw), N = 8, pt = (a, r) => [x + ux * Math.cos(a) * r, y + Math.sin(a) * r, z + uz * Math.cos(a) * r];
     const silk = 0xd8d6cc, faint = [0.05, 0.05, 0.05];
     for (let k = 0; k < N; k++) {
@@ -1334,7 +1336,7 @@ export function decorateChunk(grid, field) {
     g.computeBoundingSphere();
     return g;
   };
-  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights, geysers, giants, drift };
+  return { geometry: merge(parts), plants: merge(plants), obstacles, features, pools, vines, lights, geysers, giants, drift, webs };
 }
 
 // What each kind of glowing thing (see decorateChunk's `lights`) casts on
@@ -1484,6 +1486,7 @@ export function buildChunkData(field, cx, cz, chunkSize) {
     geysers: new Float32Array(deco.geysers),
     giants: new Float32Array(deco.giants),
     drift: new Float32Array(deco.drift),
+    webs: new Float32Array(deco.webs ?? []),
     // (The abyss and the waterfall halls whose middle is in this chunk: their
     // smoke, their falls, see CaveLayer. [kind (1 abyss, 2 hall), x, z, top,
     // bottom, r, fall x, fall z, fall top, fall bottom, fall yaw, ...])
@@ -1508,6 +1511,7 @@ export function chunkDataBuffers(data) {
   if (data.geysers) out.push(data.geysers.buffer);
   if (data.giants) out.push(data.giants.buffer);
   if (data.drift) out.push(data.drift.buffer);
+  if (data.webs) out.push(data.webs.buffer);
   if (data.openings) out.push(data.openings.buffer);
   return [...new Set(out)];
 }

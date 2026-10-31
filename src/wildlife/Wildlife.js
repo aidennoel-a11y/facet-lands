@@ -1,3 +1,4 @@
+import { difficulty } from '../settings.js';
 import { AdditiveBlending, BoxGeometry, Color, DynamicDrawUsage, Euler, Frustum, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Raycaster, Sphere, Vector3 } from 'three';
 import { hash2, mulberry32 } from '../noise/random.js';
 import { chooseGait, footAt, rhythm, solveLeg, stepFeet, strideLength } from './Gait.js';
@@ -956,7 +957,7 @@ export class Wildlife {
     const cubs = a.herd && (a.kind === 'blackBear' || a.kind === 'grizzly') && !a.young && a.herd.members.some((m) => m.young && m.alive);
     // (Lions by day, hyenas but in the dark: lying up, seldom troubled unless you come right up.)
     const idle = (pr.dusk && (ctx.dusk ?? 0) < 0.15 && ctx.day > 0.35) || (pr.night && ctx.day > 0.3);
-    const sight = pr.sight * (p.crouch ? 0.55 : 1) * (0.7 + 0.3 * ctx.day) * (1 - 0.55 * (a.forest ?? 0)) * this.#scent(a, ctx) * (idle ? 0.3 : 1);
+    const sight = difficulty.wild * pr.sight * (p.crouch ? 0.55 : 1) * (0.7 + 0.3 * ctx.day) * (1 - 0.55 * (a.forest ?? 0)) * this.#scent(a, ctx) * (idle ? 0.3 : 1);
     if (t.d < pr.close * (p.crouch ? 0.7 : 1) * (cubs ? 1.6 : 1) * (idle ? 0.5 : 1) || atDen) a.notice = Math.max(a.notice ?? 0, 2.4);
     else if (t.d < sight) a.notice = (a.notice ?? 0) + dt;
     else a.notice = Math.max(0, (a.notice ?? 0) - dt * 0.5);
@@ -1231,7 +1232,11 @@ export class Wildlife {
     if (!w || !p) return 1;
     const dx = a.x - p.x, dz = a.z - p.z, d = Math.hypot(dx, dz) || 1;
     const along = (dx * w.x + dz * w.y) / d; // (1: it's straight downwind of you)
-    return along > 0 ? 1 + 0.8 * along : 1 + 0.3 * along;
+    // (The stronger the wind, the further it carries your scent downwind, and
+    // the better hidden you are upwind; creeping doesn't hide your smell.
+    // In a dead calm, it spreads a little all round.)
+    const blow = 0.35 + 0.65 * Math.min(1, ctx.wind ?? 0.5), creep = p.crouch && along > 0.3 ? 1.5 : 1;
+    return along > 0 ? (1 + 1.9 * along * blow) * creep : 1 + 0.5 * along * blow;
   }
 
   // The fire (a campfire, a torch) whose light (x, z) is in, if any: { x, z, r }.

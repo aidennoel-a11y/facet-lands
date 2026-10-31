@@ -87,6 +87,15 @@ export const ITEMS = {
   caveMushroom: { name: 'Cave mushroom', food: { hunger: 10, full: 120 }, spoils: 1800, weight: 0.1, group: 'Food' },
   deathcap: { name: 'Pale deathcap', food: { hunger: 3, health: -35, sick: 1, full: 30 }, spoils: 2400, weight: 0.1, group: 'Food' },
   glowcap: { name: 'Glowcap', food: { hunger: 3, full: 30 }, spoils: 2400, weight: 0.05, group: 'Food' },
+  // Medicinal plants, growing wild, each in its own country (see GroundItems): chewed, each does its own good.
+  yarrow: { name: 'Yarrow', herb: 'Chewed and pressed on a wound: stops bleeding, mends a little', food: { health: 10, stopBleed: true, full: 10 }, spoils: 6000, weight: 0.03, group: 'Herbs' }, // (the meadows)
+  aloe: { name: 'Aloe', herb: 'Its cool sap soothes burns and heals', food: { health: 22, thirst: 4, full: 10 }, spoils: 6000, weight: 0.08, group: 'Herbs' }, // (the dry country)
+  willowBark: { name: 'Willow bark', herb: 'Chewed: breaks a fever and eases pain', food: { health: 8, cure: true, full: 10 }, spoils: 20000, weight: 0.05, group: 'Herbs' }, // (by the water)
+  ginseng: { name: 'Ginseng root', herb: 'A bitter root: puts the strength back in you', food: { health: 6, energy: 35, full: 20 }, spoils: 9000, weight: 0.05, group: 'Herbs' }, // (the forest floor in the hills)
+  snakeroot: { name: 'Snakeroot', herb: 'Draws out venom from a bite or a sting', food: { health: 6, antivenom: true, cure: true, full: 10 }, spoils: 6000, weight: 0.04, group: 'Herbs' }, // (the jungle)
+  // From the meteor craters: the star metal, flecks of it in the bowl round the meteorite.
+  starMetal: { name: 'Star metal', weight: 1.2, group: 'Materials' },
+  glider: { name: 'Silk glider', tool: true, durability: 200, weight: 2.2, group: 'Tools' }, // (carried: hold Space as you fall and you glide)
   blindFish: { name: 'Blind cave fish', food: { hunger: 6, health: -3, sick: 0.2, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.4, group: 'Food' },
   rawMeat: { name: 'Raw meat', food: { hunger: 10, health: -4, sick: 0.35, full: 180 }, spoils: 900, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 1, group: 'Food' },
   cookedMeat: { name: 'Cooked meat', food: { hunger: 35, health: 4, full: 600 }, spoils: 4 * DAY, dries: 'jerky', weight: 0.8, group: 'Food' },
@@ -130,6 +139,8 @@ export const ITEMS = {
   // (Found only in the ruins: a knight's blade, old but keen; and maps that show where other ruins lie.)
   oldSword: { name: "Old knight's sword", tool: true, durability: 300, weight: 1.7, sharp: 3.5, group: 'Tools' },
   oldMap: { name: 'Old map', weight: 0.05, group: 'Tools' },
+  starBlade: { name: 'Star-metal blade', tool: true, durability: 700, weight: 1.4, sharp: 5, group: 'Tools' }, // (forged of the meteor's metal: keener than any)
+  starPickaxe: { name: 'Star-metal pickaxe', tool: true, durability: 800, weight: 1.8, group: 'Tools' },
   fangSword: { name: 'Fang sword', tool: true, durability: 360, weight: 1.6, sharp: 4, group: 'Tools' }, // (Greymane's fang set in its hilt: the keenest blade)
   antlerBow: { name: 'Antler bow', tool: true, durability: 240, weight: 1.4, power: 1.5, group: 'Tools' }, // (stiffer: arrows fly further and strike harder)
   tuskPickaxe: { name: 'Tusk pickaxe', tool: true, durability: 500, weight: 2.2, group: 'Tools' },
@@ -231,6 +242,9 @@ export const ITEMS = {
   leanTo: { name: 'Lean-to', place: 'leanTo', weight: 6, group: 'Building' }, // (a quick shelter of poles and leafy boughs: out of the rain)
   waterFilter: { name: 'Water filter', place: 'waterFilter', weight: 6, group: 'Building' }, // (sand and charcoal in a bark cone: still water through it comes out clean)
   woodFloor: { name: 'Plank floor', place: 'woodFloor', weight: 16, group: 'Building' },
+  treePlatform: { name: 'Tree platform', place: 'treePlatform', weight: 14, group: 'Building' },
+  treeDeck: { name: 'Tree deck', place: 'treeDeck', weight: 12, group: 'Building' },
+  stiltFloor: { name: 'Stilt floor', place: 'stiltFloor', weight: 20, group: 'Building' },
   // The building sets: logs (no more than an axe), planks (a steel axe to cut them true), rough stone, cut stone (a steel pickaxe to dress it).
   logWall: { name: 'Log wall', place: 'logWall', weight: 24, group: 'Building' },
   logFloor: { name: 'Log floor', place: 'logFloor', weight: 18, group: 'Building' },
@@ -320,6 +334,9 @@ export const RECIPES = [
   { id: 'stake', needs: { log: 1 }, note: 'One sharpened log, stood upright' },
   { id: 'wall', needs: { log: 5 }, note: 'A section of palisade, sharpened logs: walls join end to end' },
   { id: 'logWall', needs: { log: 6 }, note: 'Whole logs laid one on another, notched at the ends: joins end to end with any wall' },
+  { id: 'treePlatform', needs: { log: 4, stick: 8, rope: 2 }, note: 'A treehouse floor: built round the trunk of the tree you point at, braced to it, a few metres up. Lay tree decks on out from it; walls, doors, windows and roofs go on it like any floor. A ladder to climb up' },
+  { id: 'treeDeck', needs: { log: 3, stick: 6, rope: 3 }, note: 'More treehouse floor: laid on edge to edge from a tree platform (or another deck), hung from the branches on ropes' },
+  { id: 'stiltFloor', needs: { log: 6, stick: 4 }, note: 'A floor up on piles: over marshy ground, or out in water up to 3 m deep. Join them edge to edge for a stilt house; walls and roofs go on as on any floor' },
   { id: 'logFloor', needs: { log: 4 }, note: 'Logs adzed flat, side by side on stumps, 4 m square: floors join edge to edge. Aim at the top of your walls to lay one a storey up' },
   { id: 'logStairs', needs: { log: 4 }, note: 'A flight of log steps up to the top of your walls (and a floor laid up there)' },
   { id: 'logRoof', needs: { log: 5 }, note: 'Split logs laid down a slope, set on top of your walls' },
@@ -456,6 +473,9 @@ export const RECIPES = [
   { id: 'hideRoof', needs: { greatHide: 1, log: 4 }, note: "A shelter roofed with Thunderhead's hide" },
   { id: 'caveLamp', needs: { crystal: 2, glowcap: 2, rock: 1 }, note: 'Crystals and glowcaps set in a stone: a cold blue light that never goes out' },
   { id: 'caveLamp', needs: { glowcap: 5, ironBar: 1 }, note: 'A lantern of glowcaps from the glowing swamps, packed in an iron cage: their cold light never goes out' },
+  { id: 'glider', needs: { silk: 8, stick: 6, rope: 2 }, note: 'Spider silk stretched on a frame of sticks: carry it and hold Space as you fall from somewhere high to glide down a long way' },
+  { id: 'starBlade', needs: { starMetal: 3, steelBar: 1, deerSkin: 1 }, at: 'anvil', note: 'The metal of a fallen star, forged to an edge: the keenest blade there is, and it hardly dulls' },
+  { id: 'starPickaxe', needs: { starMetal: 3, stick: 2 }, at: 'anvil', note: 'Star metal: breaks the hardest rock in a few blows, and lasts and lasts' },
   { id: 'paleCloak', needs: { paleFur: 1, pelt: 2 }, note: 'Pale and soft: warm, and the wild notice you less' },
   { id: 'caveCloak', needs: { caveBearPelt: 1, rope: 1 }, note: 'The warmest thing to wear there is' },
 ];
@@ -466,10 +486,10 @@ export const RECIPES = [
  * in RECIPES is in one of them.
  */
 export const TIERS = [
-  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor'] },
+  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['glider', 'axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'sailboat', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
-  { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor', 'stoneRoad', 'zipLine'] },
+  { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor', 'stoneRoad', 'zipLine', 'starBlade', 'starPickaxe'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];
 /**
@@ -647,6 +667,15 @@ ICONS.coalTorch = `<path d="M14 30l3-17h2l-1 17z" fill="#7a5634"/><path d="M14 1
 ICONS.crystal = `<path d="M10 27l3-14 3-9 3 9 1 14z" fill="#9ae8ff"/><path d="M16 4l3 9 1 14h-4z" fill="#c8f4ff"/><path d="M19 27l3-10 4-5 0 9-2 6z" fill="#c0a0ff"/><path d="M6 28h22v-2H6z" fill="#6a6572"/>`;
 ICONS.caveLamp = `<path d="M8 29h16l-2-5H10z" fill="#5a5058"/><path d="M12 24l2-12 2-6 2 6 2 12z" fill="#a8ecff"/><path d="M16 6l2 6 2 12h-4z" fill="#d8f8ff"/><circle cx="16" cy="16" r="11" fill="#7ac8ff" opacity="0.18"/>`;
 ICONS.glowDye = `<path d="M10 10h12v16H10z" fill="#2e8a7a"/><path d="M10 10h12v4H10z" fill="#b8f0e0"/><circle cx="16" cy="19" r="9" fill="#7affc8" opacity="0.25"/>`;
+// (The herbs, the star metal and what's made of it, the glider.)
+const HERB = (leaf, flower) => `<path d="M16 29V14" stroke="#4a6a2e" stroke-width="1.6"/><path d="M16 22c-6-1-9-5-9-9 5 0 8 4 9 9zM16 19c6-1 9-5 9-9-5 0-8 4-9 9z" fill="${leaf}"/>${flower ? `<circle cx="16" cy="10" r="4" fill="${flower}"/><circle cx="12" cy="12" r="2.4" fill="${flower}"/><circle cx="20" cy="12" r="2.4" fill="${flower}"/>` : ''}`;
+ICONS.yarrow = HERB('#6a9a44', '#f0ece0');
+ICONS.aloe = `<path d="M16 28c-1-8-6-14-10-17 6 2 9 8 10 17zM16 28c1-8 6-14 10-17-6 2-9 8-10 17zM16 28c0-9 0-16 0-22 2 6 2 14 0 22z" fill="#7ab070"/><path d="M8 28h16" stroke="#8a6a4a" stroke-width="2"/>`;
+ICONS.willowBark = `<path d="M7 24l5-16 13 4-5 16z" fill="#8a7458"/><path d="M12 8l13 4-1 3-13-4z" fill="#c8b48c"/><path d="M10 14l10 3M9 19l10 3" stroke="#6a5640"/>`;
+ICONS.ginseng = `<path d="M16 6c4 4 3 10 0 14-2 3-6 6-8 8 3-1 6-1 8-4 1 3 4 4 7 4-3-3-5-6-6-9 2-4 2-9-1-13z" fill="#e0c89c"/><path d="M16 6l-4-3M16 6l3-4" stroke="#5a8a3a" stroke-width="1.6"/>`;
+ICONS.snakeroot = HERB('#3a7a34', '#ffffff');
+ICONS.starMetal = `<path d="M7 20l4-9 9-3 6 7-3 9-10 2z" fill="#3a4050"/><path d="M11 11l9-3 6 7-9 1z" fill="#5a6478"/><path d="M14 16l2-1 1 2-2 1zM19 19l2-1 1 2-2 1zM12 21l2 0-1 2z" fill="#a8d0ff"/>`;
+ICONS.glider = `<path d="M3 18L16 8l13 10-13-3z" fill="#ece6da"/><path d="M16 8v7" stroke="#8a5d38" stroke-width="1.6"/><path d="M3 18l13-3 13 3" stroke="#8a5d38" stroke-width="1.4" fill="none"/><path d="M16 15v8" stroke="#8a5d38" stroke-width="1.2"/>`;
 ICONS.glowTonic = `<path d="M13 6h6v5l4 6v9H9v-9l4-6z" fill="#5ad8b8"/><path d="M12 4h8v3h-8z" fill="#8a6a4a"/><circle cx="16" cy="20" r="8" fill="#7affc8" opacity="0.3"/>`;
 ICONS.glowcap = `<path d="M14 28h4l-1-12h-2z" fill="#d8f0e8"/><path d="M6 17c0-6 5-10 10-10s10 4 10 10z" fill="#7affc8"/><circle cx="16" cy="13" r="10" fill="#7affc8" opacity="0.2"/>`;
 ICONS.caveMushroom = `<path d="M14 28h4l-1-12h-2z" fill="#ece4d0"/><path d="M5 17c0-6 5-10 11-10s11 4 11 10z" fill="#d8ccb8"/><path d="M9 14c2-3 5-4 8-4" stroke="#f4ecdc" fill="none"/>`;
@@ -743,3 +772,12 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   re('paleCloak', 'furCloak', [['#8a7458', '#e8e4dc'], ['#c8b89a', '#ffffff']]);
   re('caveCloak', 'furCloak', [['#8a7458', '#3a3230']]);
 }
+
+// (The star metal's: the steel ones, blued.)
+ICONS.starBlade = ICONS.sword.replaceAll('#dfe6ee', '#8aa8d8').replaceAll('#ffffff', '#d4e6ff').replaceAll('#8a949e', '#3a4050');
+ICONS.starPickaxe = ICONS.forgedPickaxe.replaceAll('#dfe6ee', '#8aa8d8').replaceAll('#eef2f6', '#d4e6ff').replaceAll('#b8c0c8', '#5a6a90').replaceAll('#9aa4b0', '#3a4050');
+
+// (The raised floors: a deck, with what holds it up.)
+ICONS.treePlatform = ICONS.woodFloor + '<path d="M15 2h2v12h-2z" fill="#6a4c32"/><path d="M11 8l5-4 5 4" stroke="#3e7a2e" stroke-width="3" fill="none"/>';
+ICONS.treeDeck = ICONS.woodFloor + '<path d="M5 6v13M27 6v13" stroke="#c8b088" stroke-width="1"/>';
+ICONS.stiltFloor = ICONS.woodFloor.replaceAll('20', '14').replaceAll('23', '17').replaceAll('27', '21').replaceAll('30', '24') + '<path d="M6 17v12M16 21v10M26 17v12" stroke="#5a4230" stroke-width="2"/><path d="M2 28h28" stroke="#4a8ac0" stroke-width="1.5"/>';

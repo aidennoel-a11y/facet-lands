@@ -1,8 +1,9 @@
+import './keys.js'; // (first of all: your own keys, heard before anything else: see keys.js)
 import * as THREE from 'three';
 import './render/splitShadow.js'; // (first: the sun's shadow in two maps, before any material copies the shader code)
 import './render/chunkFade.js'; // (likewise: the dither that fades the land's changes of detail)
 import { WORLD } from './config.js';
-import { settings } from './settings.js';
+import { DIFFICULTIES, settings } from './settings.js';
 import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
 import { createWaterLayer, seaStorm } from './world/layers/WaterLayer.js';
@@ -1183,17 +1184,27 @@ function stepSurface(x, z, feetY = null) {
     if (built) return built;
     if (Math.abs(ruins.surfaceAt(x, z, feetY) - feetY) < 0.35) return 'rock';
   }
+  // (Down in the caves: the rock, or the crystal of the crystal caverns, the moss of the lush caves, the ash and cinders of the volcanic ones.)
+  if (sheltered && feetY !== null) {
+    const kind = generator.caves.biomeAt(x, feetY + 0.5, z);
+    const w = waterAt(x, z, true);
+    if (w && w.level > feetY - 0.05 && !w.lava) return 'water';
+    return { 1: 'moss', 2: 'gravel', 3: 'ice', 5: 'crystal', 6: 'moss', 7: 'dirt', 10: 'moss' }[kind] ?? 'rock';
+  }
   const y = chunks.groundHeightAt(x, z);
   const water = waterAt(x, z, true);
   if (water && !water.frozen && water.level > y + 0.02) return 'water';
+  if (water?.frozen && water.level > y - 0.3) return 'ice'; // (out on a frozen lake or pond)
   if (rocks.surfaceAt(x, z) > y + 0.1) return 'rock'; // (up on a boulder)
   const kind = printGround(x, z, y);
   if (kind) return kind; // (snow, mud or sand)
   // Grey ground (rock, scree, the bare mountains) or steep ground: rock.
   generator.surfaceColor(x, z, y + generator.getColorJitter(x, z), groundNormal(x, z).y, printColour, generator.getColorJitter(x, z));
   const hi = Math.max(printColour.r, printColour.g, printColour.b), lo = Math.min(printColour.r, printColour.g, printColour.b);
-  if (hi - lo < 0.18 * hi) return 'rock';
   const w = generator.getBiomeWeights(x, z, {});
+  // (The black cinders of the volcanic country, and the loose scree of the badlands and the mountains' grey slopes: gravel.)
+  if (w.volcanic > 0.5 || (hi - lo < 0.18 * hi && (w.badlands > 0.4 || generator.getMountainness(x, z) > 0.55) && groundNormal(x, z).y > 0.8)) return 'gravel';
+  if (hi - lo < 0.18 * hi) return 'rock';
   const forest = generator.getForestDensity(x, z);
   if (w.pine + w.redwood + w.jungle > 0.5 || (w.temperate + w.smoky > 0.5 && forest > 0.55)) return 'leaves';
   if (w.savanna + w.badlands > 0.6) return 'dirt';
@@ -1355,6 +1366,7 @@ function thirdPersonView(dt, now) {
   return eyeSaved;
 }
 
+const webStuck = { on: false };
 const controls = new PlayerControls(camera, canvas, {
   groundAt,
   terrainAt: (x, z) => chunks.groundHeightAt(x, z),
@@ -1375,12 +1387,44 @@ const controls = new PlayerControls(camera, canvas, {
     const tar = landmarks.waterAt(position.x, position.z, feet - 0.05);
     controls.noJump = !!tar?.tar;
     if (tar?.tar) controls.speedFactor *= 0.3;
+    // (Through a spider's web in the caves: it clings, and you tear through it slowly.)
+    const web = sheltered ? generator.caves?.webAt?.(position.x, feet + 1, position.z) ?? 0 : 0;
+    if (web > 0) {
+      controls.speedFactor *= 1 - 0.8 * Math.min(1, web * 1.6);
+      if (!webStuck.on) (webStuck.on = true), game.hotbar?.flash('Caught in a web: tear through it slowly'), sound.call('brush', 0, 0.6);
+    } else webStuck.on = false;
     game.structures.collide(position, radius, feet);
     ruins.collide(position, radius, feet);
     generator.caves.collide(position, radius, feet);
     bodiesCollide(position, radius, feet);
   },
 });
+
+// The jungle temples' traps (see RuinLayer): a plate that shoots darts from
+// the walls when it's trodden on, then has to be reset (a while); spikes
+// that hurt as long as you're among them.
+const trapState = { sprung: new Map(), spikeWait: 0 };
+function templeTraps(dt) {
+  trapState.spikeWait = Math.max(0, trapState.spikeWait - dt);
+  if (controls.mode !== 'walk' || !game.survival.alive || (peaceful?.checked ?? false)) return;
+  const p = camera.position, feet = p.y - controls.eyeHeight, t = ruins.trapAt(p.x, p.z, feet);
+  if (!t) return;
+  const now = performance.now() / 1000;
+  if (t.kind === 'darts') {
+    if ((trapState.sprung.get(t.key) ?? -1e9) > now - 20) return;
+    trapState.sprung.set(t.key, now);
+    sound.call('crack', 0, 0.9);
+    sound.call('hiss', (Math.random() - 0.5) * 0.8, 0.5);
+    game.hurt(controls.crouch ? 6 : 14, 'a dart trap');
+    if (Math.random() < 0.4) game.survival.poison(15);
+    game.hotbar?.flash('Click... darts fly from the walls!');
+  } else if (trapState.spikeWait <= 0) {
+    trapState.spikeWait = 0.7;
+    game.hurt(9, 'a spike pit');
+    sound.call('thump', 0, 0.6);
+    game.hotbar?.flash('Spikes!');
+  }
+}
 
 // No walking through the animals (standing ones), nor through the others online.
 function bodiesCollide(position, radius, feet) {
@@ -1478,6 +1522,16 @@ game.pave = (x, z) => grassCut.pave(x, z); // (a stone road laid: the grass gone
 game.waveAt = (x, z) => water.waveAt(x, z, WORLD.seaLevel - chunks.groundHeightAt(x, z), generator.getOceanness(x, z)); // (trees carried round in a tornado: see Felling.liftUp)
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 ruins.onChest = (c) => game.ruinChest(c);
+// (A treehouse's platform goes round a tree trunk: the nearest one to where you point.)
+game.structures.treeNear = (x, z, r) => {
+  let best = null;
+  for (const t of trees.within(x, z, r)) {
+    if (t.bush) continue;
+    const d = Math.hypot(t.x - x, t.z - z);
+    if (!best || d < best.d) best = { x: t.x, z: t.z, bottom: t.crown.bottom, d };
+  }
+  return best;
+};
 wrecks.onChest = (c) => game.ruinChest(c); // (a wreck's sea chest)
 cities.onChest = (c) => game.ruinChest(c); // (a drowned city's strongroom)
 game.mineCarts = mineProps; // (the old mines' carts, to ride: see Game.#rideCart)
@@ -2946,6 +3000,7 @@ function tick(now) {
     if (sheltered) for (const m of generator.caves.field.minesNear(camera.position.x, camera.position.z, camera.position.x, camera.position.z)) if (generator.caves.field.mineAt(m, camera.position.x, camera.position.y - 1, camera.position.z) < 0) game.inMine(m.id);
   }
   prof.mark('landmarks & mines');
+  templeTraps(dt);
   spiders.update(Math.min(dt, 0.1), {
     eye: camera.position, under: caveFocus.under && controls.mode === 'walk', caves: generator.caves, terrain: (x, z) => chunks.groundHeightAt(x, z),
     hurt: (d) => game.hurt(d, 'a cave spider'), poison: () => game.survival.poison(25), fear: game.fearLights(),
@@ -2956,7 +3011,7 @@ function tick(now) {
   prof.mark('cave spiders');
   updateVisibility();
   const haze = heatHaze(dt);
-  sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater);
+  sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater, game.indoors?.roof ?? 0, game.indoors?.walls ?? 0);
   const env = surroundings(dt, snow);
   if (!sheltered && !underwater) surfSound();
   // The wildlife round you. (In a hard winter they walk out on the ice of
@@ -3241,6 +3296,12 @@ if (!TESTING) {
     camera.fov = s.fov;
     camera.updateProjectionMatrix();
     if ((s.shadows === 'off') === ui.shadows.checked) ui.shadows.click();
+    // (Brightness, the sound's loudness, the light rays; and the difficulty's peace.)
+    renderer.domElement.style.filter = (s.brightness ?? 1) === 1 ? '' : `brightness(${s.brightness})`;
+    sound.volume = s.volume ?? 1;
+    sound.setEnabled?.(sound.enabled ?? true);
+    if ((s.rays ?? true) !== ui.rays.checked) ui.rays.click();
+    if (peaceful && !!peaceful.checked !== !!DIFFICULTIES[s.difficulty]?.peaceful && (live || DIFFICULTIES[s.difficulty]?.peaceful)) peaceful.click();
     if (live && startMenu?.world) {
       // (In a world: the view and shadows' detail changed at once, the fog with them.)
       useQuality();

@@ -410,7 +410,17 @@ export class PlayerControls {
     const floor = ground.stand;
     this.swimming = false;
     const wasGrounded = this.grounded;
-    this.velocityY = Math.max(-this.maxFallSpeed, this.velocityY - this.gravity * dt);
+    // Gliding (a glider carried, Space held as you fall from somewhere high):
+    // a slow sink, carried on the way you look; down gently.
+    const glide = this.canGlide && !wasGrounded && this.keys.has('Space') && this.velocityY < -1.5 && feetNow - floor > 1.2;
+    if (glide) {
+      const yaw = this.euler.y, pitch = Math.max(-0.6, Math.min(0.3, this.euler.x)), speed = 11 - 6 * pitch; // (nose down: faster, sinking faster)
+      this.velocityY += (-(2.2 - 3 * pitch) - this.velocityY) * Math.min(1, dt * 3);
+      this.push.x += (-Math.sin(yaw) * speed - this.push.x) * Math.min(1, dt * 2);
+      this.push.z += (-Math.cos(yaw) * speed - this.push.z) * Math.min(1, dt * 2);
+      this.softLanding = true;
+    } else this.velocityY = Math.max(-this.maxFallSpeed, this.velocityY - this.gravity * dt);
+    this.gliding = glide;
     let feet = feetNow + this.velocityY * dt;
 
     // Falling into deep water from a height: in you go, plunging on under

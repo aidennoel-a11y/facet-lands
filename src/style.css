@@ -1991,3 +1991,25 @@ kbd {
 /* The journal (see Hud.toggleJournal): its pages under the skills panel's look. */
 .journal-pages h2 { margin: 14px 0 8px; font: 700 18px/1.2 var(--display); }
 .journal-pages h2:first-child { margin-top: 4px; }
+/* Your own keys, in the settings: each control and the key it's on. */
+.sm-keys {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+.sm-key {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: #e8dcb8;
+  font-size: 13px;
+}
+.sm-key .sm-q {
+  min-width: 64px;
+  padding: 3px 8px;
+  font-size: 13px;
+}
+.sm-set {
+  flex-wrap: wrap;
+}

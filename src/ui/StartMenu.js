@@ -6,7 +6,8 @@
 
 import { DEFAULT_SERVER, VERSION, openWorlds } from '../net/Multiplayer.js';
 import { describeHardware, graphicsInfo, MAX_VIEW, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
-import { DEFAULTS, saveSettings, settings } from '../settings.js';
+import { DEFAULTS, DIFFICULTIES, saveSettings, settings } from '../settings.js';
+import { ACTIONS, bind, keyName, keyOf, listenForKey, resetKeys } from '../keys.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
 // The seeds whose land has claimed a survival life: never played in survival again.
@@ -463,6 +464,15 @@ export class StartMenu {
       ${pick('Shadows', [['off', 'Off'], ['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], s.shadows)}
       <label class="sm-field sm-slide">Mouse sensitivity <output>${s.sensitivity.toFixed(2)}×</output><input type="range" data-k="sensitivity" min="0.25" max="2.5" step="0.05" value="${s.sensitivity}" /></label>
       <label class="sm-field sm-slide">Field of view <output>${s.fov}°</output><input type="range" data-k="fov" min="50" max="100" step="1" value="${s.fov}" /></label>
+      <label class="sm-field sm-slide">Brightness <output>${(s.brightness ?? 1).toFixed(2)}×</output><input type="range" data-k="brightness" min="0.6" max="1.6" step="0.05" value="${s.brightness ?? 1}" /></label>
+      <label class="sm-field sm-slide">Volume <output>${(s.volume ?? 1).toFixed(2)}×</output><input type="range" data-k="volume" min="0" max="1.5" step="0.05" value="${s.volume ?? 1}" /></label>
+      ${pick('Light rays', [['on', 'On'], ['off', 'Off']], s.rays === false ? 'off' : 'on')}
+      ${pick('Difficulty', Object.entries(DIFFICULTIES).map(([id, d]) => [id, d.name]), s.difficulty ?? 'normal')}
+      <p class="sm-note">Difficulty: how much harm things do you, how fast you grow hungry and thirsty, how far off the hunters notice you. Peaceful: nothing attacks.</p>
+      <h3 class="sm-head" style="font-size:1rem;margin-top:12px">Controls</h3>
+      <div class="sm-keys">${ACTIONS.map(([id, label]) => `<div class="sm-key"><span>${label}</span><button type="button" class="sm-q" data-key="${id}">${keyName(keyOf(id))}</button></div>`).join('')}</div>
+      <p class="sm-note">Click a control, then press the key for it (Esc to leave it as it is). The mouse buttons stay as they are.</p>
+      <button class="sm-btn" data-go="keys">Keys back to the defaults</button>
       <p class="sm-note">More view and grass look better but ask more of your computer. Grass changes show as the land round you is next built.</p>
       <button class="sm-btn" data-go="reset">Back to the defaults</button>
       <button class="sm-btn sm-primary" data-go="back">Done</button>`);
@@ -480,12 +490,26 @@ export class StartMenu {
     }
     for (const b of card.querySelectorAll('[data-set]')) {
       b.addEventListener('click', () => {
-        const k = b.dataset.set === 'Grass' ? 'grass' : 'shadows';
-        s[k] = k === 'grass' ? +b.dataset.v : b.dataset.v;
+        const k = { Grass: 'grass', Shadows: 'shadows', 'Light rays': 'rays', Difficulty: 'difficulty' }[b.dataset.set];
+        s[k] = k === 'grass' ? +b.dataset.v : k === 'rays' ? b.dataset.v === 'on' : b.dataset.v;
         changed();
         this.settings(back);
       });
     }
+    // (A control put on another key: the next key pressed.)
+    for (const b of card.querySelectorAll('[data-key]')) {
+      b.addEventListener('click', () => {
+        b.textContent = 'Press a key…';
+        listenForKey((code) => {
+          if (code) bind(b.dataset.key, code);
+          this.settings(back);
+        });
+      });
+    }
+    this.#on('[data-go="keys"]', () => {
+      resetKeys();
+      this.settings(back);
+    });
     this.#on('[data-go="reset"]', () => {
       Object.assign(s, DEFAULTS);
       changed();

@@ -11,7 +11,22 @@
  *  fov          the field of view, degrees (up and down)
  */
 const KEY = 'facet-lands:settings';
-export const DEFAULTS = { view: null, grass: 1, shadows: 'normal', sensitivity: 1, fov: 60 };
+export const DEFAULTS = { view: null, grass: 1, shadows: 'normal', sensitivity: 1, fov: 60, brightness: 1, volume: 1, rays: true, difficulty: 'normal' };
+
+/**
+ * How hard survival is (see Game, Survival, Wildlife): `hurt`, how much
+ * harm a blow, a bite or a fall does; `drain`, how fast you grow hungry and
+ * thirsty; `wild`, how far off the hunters notice you; `peaceful`, no
+ * creature attacks.
+ */
+export const DIFFICULTIES = {
+  peaceful: { name: 'Peaceful', hurt: 0.5, drain: 0.6, wild: 0.6, peaceful: true },
+  easy: { name: 'Easy', hurt: 0.6, drain: 0.7, wild: 0.8 },
+  normal: { name: 'Normal', hurt: 1, drain: 1, wild: 1 },
+  hard: { name: 'Hard', hurt: 1.5, drain: 1.35, wild: 1.3 },
+};
+/** The difficulty now (kept up to date as it's changed). */
+export const difficulty = { ...DIFFICULTIES.normal };
 
 export function settings() {
   try {
@@ -21,7 +36,13 @@ export function settings() {
   }
 }
 
+function useDifficulty(s) {
+  Object.assign(difficulty, { peaceful: false }, DIFFICULTIES[s.difficulty] ?? DIFFICULTIES.normal);
+}
+useDifficulty(settings());
+
 export function saveSettings(s) {
+  useDifficulty(s);
   try {
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
