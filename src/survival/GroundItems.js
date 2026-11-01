@@ -123,7 +123,8 @@ export class GroundItems {
         fossil: M.seashellModel, petrifiedWood: () => new M.Parts(11).log([-0.35, 0.12, 0], [0.35, 0.12, 0], 0.12, 0x9a84a0, 0xc89a5a).build(),
         crystal: M.crystalItemModel, silk: M.woolModel, silkRope: M.ropeModel, glowcap: () => M.mushroomModel(0x7affc8, 0xd8f0e8), caveLamp: M.caveLampModel, guano: M.guanoModel,
         beeswax: M.beeswaxModel, pail: () => M.pailModel(false), milk: () => M.pailModel(true), cheese: M.cheeseModel,
-        boots: () => M.bootsModel(), furBoots: () => M.bootsModel(0x6a4a30, 0x2a2018, 0xa89070), gloves: () => M.glovesModel(), furHat: () => M.hatModel('fur'), strawHat: () => M.hatModel('straw'),
+        boots: () => M.bootsModel(), furBoots: () => M.bootsModel(0x6a4a30, 0x2a2018, 0xa89070), gloves: () => M.glovesModel(), furHat: () => M.hatModel('fur'), leatherCap: () => M.hatModel('leather'), bronzeHelmet: () => M.hatModel('bronze'), steelHelmet: () => M.hatModel('steel'),
+        bronzeArmour: () => M.coatModel(0x8a6024, 0x6a4a20, 0xd0a050), chainmail: () => M.coatModel(0x5a4a3a, 0x4a3a2a, 0x8a929a), strawHat: () => M.hatModel('straw'),
         longbow: () => bowModel(true, 0xb8885a), fireArrow: () => arrowModel(0xd85a20),
         caveMushroom: () => M.mushroomModel(0xd8ccb8, 0xece4d0), deathcap: () => M.mushroomModel(0xe8e4c8, 0xf4f0e0, 0), blindFish: () => fishModel(false),
       }[id];

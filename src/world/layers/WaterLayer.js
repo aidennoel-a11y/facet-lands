@@ -3,6 +3,7 @@ import { waterData } from '../waterData.js';
 import { windDirection, windStrength } from '../../render/wind.js';
 import { seasonUniforms } from '../../render/Seasons.js';
 import { SPARKLE_HEAD, sparkleUniforms } from '../../render/waterSparkle.js';
+import { RIPPLES, RIPPLE_GLSL } from '../../render/Traces.js';
 
 /**
  * The lakes and the sea, for every chunk that dips below sea level: a sheet
@@ -76,7 +77,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
     side: DoubleSide, // (seen from underneath, too)
   });
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms, sparkleUniforms);
+    Object.assign(shader.uniforms, uniforms, sparkleUniforms, RIPPLES);
     shader.uniforms.uWind = windStrength;
     shader.uniforms.uWindDir = windDirection;
     shader.uniforms.uWinter = seasonUniforms.uWinter;
@@ -97,6 +98,9 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         attribute float aDepth;
         attribute vec3 aShore;
         attribute float aCoast;
+        attribute vec4 aEdgeAB;
+        attribute vec4 aEdgeW;
+        attribute vec4 aEdgeD;
         uniform float uTide;
         varying float vSheet;
         varying float vSwash;
@@ -150,10 +154,33 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         float amp = ${f(waveHeight * 1.3)} * waveScale * (0.3 + 0.7 * uWind) * (1.0 - vIce) * (1.0 - 0.85 * vShut);
         vec3 disp = vec3(0.0), wn = vec3(0.0, 1.0, 0.0);
         float crest = 0.0;
-        gerstner(wp.xz, 0.0, 74.0, 1.0, 0.0, amp, disp, wn, crest);
-        gerstner(wp.xz, 0.55, 43.0, 0.6, 1.7, amp, disp, wn, crest);
-        gerstner(wp.xz, -0.75, 25.0, 0.34, 4.1, amp, disp, wn, crest);
-        gerstner(wp.xz, 1.35, 15.0, 0.18, 2.3, amp, disp, wn, crest);
+        // (A corner on a coast chunk's edge laid on the plain grid's edge: its
+        // waves as the plain grid's two corners either side have them, between,
+        // so the two chunks' water meets exactly. See waterData.)
+        bool onEdge = aCoast >= 2.0;
+        float edgeT = aCoast - 2.0;
+        vec2 edgeA = (modelMatrix * vec4(aEdgeAB.x, 0.0, aEdgeAB.y, 1.0)).xz, edgeB = (modelMatrix * vec4(aEdgeAB.z, 0.0, aEdgeAB.w, 1.0)).xz;
+        if (onEdge) {
+          float k0 = amp / max(waveScale, 1e-3);
+          vec3 dA = vec3(0.0), nA = vec3(0.0, 1.0, 0.0), dB = vec3(0.0), nB = vec3(0.0, 1.0, 0.0);
+          float cA = 0.0, cB = 0.0;
+          gerstner(edgeA, 0.0, 74.0, 1.0, 0.0, k0 * aEdgeW.x, dA, nA, cA);
+          gerstner(edgeA, 0.55, 43.0, 0.6, 1.7, k0 * aEdgeW.x, dA, nA, cA);
+          gerstner(edgeA, -0.75, 25.0, 0.34, 4.1, k0 * aEdgeW.x, dA, nA, cA);
+          gerstner(edgeA, 1.35, 15.0, 0.18, 2.3, k0 * aEdgeW.x, dA, nA, cA);
+          gerstner(edgeB, 0.0, 74.0, 1.0, 0.0, k0 * aEdgeW.y, dB, nB, cB);
+          gerstner(edgeB, 0.55, 43.0, 0.6, 1.7, k0 * aEdgeW.y, dB, nB, cB);
+          gerstner(edgeB, -0.75, 25.0, 0.34, 4.1, k0 * aEdgeW.y, dB, nB, cB);
+          gerstner(edgeB, 1.35, 15.0, 0.18, 2.3, k0 * aEdgeW.y, dB, nB, cB);
+          disp = mix(dA, dB, edgeT);
+          wn = mix(nA, nB, edgeT);
+          crest = mix(cA, cB, edgeT);
+        } else {
+          gerstner(wp.xz, 0.0, 74.0, 1.0, 0.0, amp, disp, wn, crest);
+          gerstner(wp.xz, 0.55, 43.0, 0.6, 1.7, amp, disp, wn, crest);
+          gerstner(wp.xz, -0.75, 25.0, 0.34, 4.1, amp, disp, wn, crest);
+          gerstner(wp.xz, 1.35, 15.0, 0.18, 2.3, amp, disp, wn, crest);
+        }
         vWaveN = normalize(wn);
         // (How near a big wave's crest this is: whitecaps, out in the open sea, most in a wind.)
         vCrest = smoothstep(1.4, 2.6, waveScale) * smoothstep(1.2, 1.9, crest) * (0.4 + 0.6 * uWind);
@@ -169,8 +196,15 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         transformed.y += uTide * aShore.z * (1.0 - vIce);
         vSheet = 0.0;
         vSwash = 0.0;
-        vCoastF = aCoast;
-        if (aCoast > 0.5) {
+        vCoastF = min(aCoast, 1.0);
+        if (onEdge) {
+          // (Its breakers, too, as the plain grid's corners either side have them.)
+          float energyE = 0.55 + 0.45 * uWind + 0.8 * uSeaStorm;
+          float uA = breakerPhase(edgeA, aEdgeD.x, aEdgeD.z), uB = breakerPhase(edgeB, aEdgeD.y, aEdgeD.w);
+          float liftA = breakerHeight(aEdgeD.x) * aEdgeW.z * energyE * breakerProfile(uA) * step(0.0, aEdgeW.z - 1e-4);
+          float liftB = breakerHeight(aEdgeD.y) * aEdgeW.w * energyE * breakerProfile(uB) * step(0.0, aEdgeW.w - 1e-4);
+          transformed.y += mix(liftA, liftB, edgeT) * (1.0 - vIce);
+        } else if (aCoast > 0.5) {
           // On the open coast the water lies on the land's own grid (see
           // waterData), so it can meet the beach truly: in the water, the
           // swell rising into breakers, the crests pitching forward toward
@@ -190,7 +224,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
             transformed.y += A * breakerProfile(u);
             // (The crest curling over: thrown forward, up the slope, just as it breaks.)
             float curl = smoothstep(0.62, 0.76, u) * (1.0 - smoothstep(0.76, 0.84, u)) * smoothstep(0.6, 1.4, depthT) * smoothstep(3.5, 2.0, depthT);
-            transformed.xz += up * A * 1.4 * curl;
+            transformed.xz += up * A * 1.4 * curl * smoothstep(0.45, 0.18, slope);
             // (Never under the bed, at the very edge.)
             transformed.y = max(transformed.y, ground + 0.03);
           } else {
@@ -198,7 +232,8 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
             float h = -depthT; // (how far above the still water)
             float u0 = breakerPhase(wp.xz, 0.0, slope);
             float t = fract(u0 - 0.82);
-            float reach = (0.28 + 0.3 * uWind + 0.6 * uSeaStorm) * coastal * swashReach(t);
+            // (Never up a cliff or a steep rock face: only up a beach's gentle slope.)
+            float reach = (0.28 + 0.3 * uWind + 0.6 * uSeaStorm) * coastal * swashReach(t) * smoothstep(0.45, 0.18, slope);
             float behind = (reach - h) / sl; // (m behind the front, across the sand)
             float rushing = 1.0 - smoothstep(0.1, 0.32, t);
             if (behind > 0.0) {
@@ -210,7 +245,10 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
               vFoam = 0.0;
               vSwash = max(lip * 1.4, smoothstep(2.5, 0.0, behind) * (0.5 + 0.5 * rushing)) * coastal;
             } else {
-              transformed.y = ground - 0.08;
+              // (Tucked under the sand; under a cliff or a high bank, down at
+              // the water's own level, inside the rock, so the water never
+              // runs up its face.)
+              transformed.y = min(ground - 0.08, position.y + uTide * aShore.z + 0.2);
               vSheet = 1.0;
               vFoam = 0.0;
             }
@@ -257,7 +295,8 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
           vec2 d = uWindDir * uTime * mix(1.0, 0.15, vShut); // (shut-in water: its ripples hardly drift)
           return waterNoise(p * 0.32 - d * 0.5) * 0.55 + waterNoise(p * 0.9 + vec2(-d.y, d.x) * 0.7) * 0.3 + waterNoise(p * 2.3 - d * 1.6) * 0.15;
         }
-        ${SPARKLE_HEAD}`,
+        ${SPARKLE_HEAD}
+        ${RIPPLE_GLSL}`,
       )
       .replace(
         '#include <normal_fragment_begin>',
@@ -338,6 +377,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
           float open = (1.0 - vIce) * (1.0 - white) * (1.0 - below);
           gl_FragColor.rgb += sunGlitter(vWorld, normal, -V, uTime) * open * (1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r * 1.6);
           gl_FragColor.rgb += rainRings(vWorld, uTime) * 0.22 * open;
+          { float sr = splashRings(vWorld); gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 1.0), sr); gl_FragColor.a = max(gl_FragColor.a, sr); } // (splashes' rings: see Traces)
           #ifdef USE_FOG
           // (Out past Snell's window, some 49° off straight up, the surface
           // is a mirror, silvery, the water under it shown back rippling with
@@ -358,7 +398,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         #include <fog_fragment>`,
       );
   };
-  material.customProgramCacheKey = () => 'water-v3';
+  material.customProgramCacheKey = () => 'water-v4';
 
   return {
     name: 'water',
@@ -411,7 +451,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
       if (depth <= 0) {
         const tt = fr(phase(0) - 0.82);
         const up = 1 - (1 - sm(0, 0.2, tt)) ** 2, down = 1 - sm(0.24, 0.9, tt);
-        const reach = (0.28 + 0.3 * wind + 0.6 * storm) * coastal * up * down;
+        const reach = (0.28 + 0.3 * wind + 0.6 * storm) * coastal * up * down * sm(0.45, 0.18, slope);
         const behind = (reach + depth) / Math.max(slope, 0.01);
         if (behind <= 0) return null;
         const rushing = 1 - sm(0.1, 0.32, tt);
@@ -435,7 +475,11 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
       geometry.setAttribute('foam', new BufferAttribute(data.foams, 1));
       geometry.setAttribute('aFreeze', new BufferAttribute(data.freezes, 1));
       geometry.setAttribute('aDepth', new BufferAttribute(data.depths, 1));
-      geometry.setAttribute('aCoast', new BufferAttribute(new Float32Array(data.depths.length).fill(data.coast?.[0] ?? 0), 1));
+      const count = data.depths.length;
+      geometry.setAttribute('aCoast', new BufferAttribute(data.coasts ?? new Float32Array(count), 1));
+      geometry.setAttribute('aEdgeAB', new BufferAttribute(data.edgeAB ?? new Float32Array(count * 4), 4));
+      geometry.setAttribute('aEdgeW', new BufferAttribute(data.edgeW ?? new Float32Array(count * 4), 4));
+      geometry.setAttribute('aEdgeD', new BufferAttribute(data.edgeD ?? new Float32Array(count * 4), 4));
       geometry.setAttribute('aShore', new BufferAttribute(data.shores ?? new Float32Array(data.depths.length * 3), 3));
       geometry.setAttribute('normal', new BufferAttribute(new Float32Array(data.positions.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
       geometry.computeBoundingSphere();

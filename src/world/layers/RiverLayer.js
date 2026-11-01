@@ -24,6 +24,7 @@ export const FLOOD_RISE = 0.45; // (m, at the height of a flood: as far up the b
 import { riverData, riverGrid } from '../riverData.js';
 import { seasonalWater, seasonUniforms } from '../../render/Seasons.js';
 import { SPARKLE_HEAD, sparkleUniforms } from '../../render/waterSparkle.js';
+import { RIPPLES, RIPPLE_GLSL } from '../../render/Traces.js';
 
 /**
  * River, stream and pond water (see Rivers) as one surface that fills the
@@ -56,7 +57,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
     side: DoubleSide, // (seen from underneath, too)
   });
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms, sparkleUniforms);
+    Object.assign(shader.uniforms, uniforms, sparkleUniforms, RIPPLES);
     shader.uniforms.uFlood = riverFlood;
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -117,7 +118,8 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
                + waterNoise(vec2(q.x * 0.8 - run * 0.85, q.y * 1.2 + 3.1)) * 0.32
                + waterNoise(vec2(q.x * 2.1 - run * 2.3, q.y * 2.8 - 7.0)) * 0.18;
         }
-        ${SPARKLE_HEAD}`,
+        ${SPARKLE_HEAD}
+        ${RIPPLE_GLSL}`,
       )
       .replace(
         '#include <normal_fragment_begin>',
@@ -178,12 +180,13 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
           float calm = (1.0 - vFlow.w) * (1.0 - white);
           gl_FragColor.rgb += sunGlitter(vRiverWorld, normal, -V, uTime) * calm * (1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r * 1.6);
           gl_FragColor.rgb += rainRings(vRiverWorld, uTime) * 0.2 * calm;
+          { float sr = splashRings(vRiverWorld); gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 1.0), sr); gl_FragColor.a = max(gl_FragColor.a, sr); } // (splashes' rings: see Traces)
           gl_FragColor.a *= vMouth; // (giving way to the lake or sea it runs into)
         }
         #include <fog_fragment>`,
       );
   };
-  material.customProgramCacheKey = () => 'river-v3';
+  material.customProgramCacheKey = () => 'river-v4';
   seasonalWater(material); // ponds freeze in winter
 
   // Waterfall spray: little cubes, each flying on its own arc (start, velocity,

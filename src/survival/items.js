@@ -195,6 +195,11 @@ export const ITEMS = {
   scarArmour: { name: 'Scar-pelt armour', tool: true, wear: 'armour', durability: 240, protect: 0.22, weight: 10, group: 'Worn' },
   lionArmour: { name: 'Lion-mane armour', tool: true, wear: 'armour', durability: 240, protect: 0.22, weight: 9, group: 'Worn' },
   tigerArmour: { name: 'Tiger-stripe armour', tool: true, wear: 'armour', durability: 240, protect: 0.22, weight: 9, group: 'Worn' },
+  bronzeArmour: { name: 'Bronze scale armour', tool: true, wear: 'armour', durability: 110, protect: 0.4, weight: 8, group: 'Worn' },
+  chainmail: { name: 'Chainmail', tool: true, wear: 'armour', durability: 200, protect: 0.36, weight: 7, stopsCuts: true, group: 'Worn' }, // (rings of steel: a fang or a claw rarely gets through to bleed you)
+  leatherCap: { name: 'Leather helmet', tool: true, wear: 'head', guard: 0.85, durability: 40, warmth: 0.95, weight: 0.5, group: 'Worn' },
+  bronzeHelmet: { name: 'Bronze helmet', tool: true, wear: 'head', guard: 0.75, durability: 110, weight: 1.6, group: 'Worn' },
+  steelHelmet: { name: 'Steel helmet', tool: true, wear: 'head', guard: 0.65, durability: 180, weight: 2, group: 'Worn' },
   crocArmour: { name: 'Croc-scale armour', tool: true, wear: 'armour', durability: 340, protect: 0.16, weight: 11, group: 'Worn' },
   paleCloak: { name: 'Ghost cloak', tool: true, wear: 'coat', warmth: 0.12, hush: true, weight: 2, group: 'Worn' }, // (pale and soft: the wild notice you less)
   // (Feet, hands, head.)
@@ -462,6 +467,9 @@ export const RECIPES = [
   { id: 'bronzePickaxe', needs: { bronzeBar: 2, stick: 2 }, note: 'Bronze: half again the life of a stone one' },
   { id: 'bronzeSpear', needs: { bronzeBar: 1, log: 1, vine: 1 }, note: 'A bronze head: keener and longer-lasting than flint' },
   { id: 'bronzeSword', needs: { bronzeBar: 3, deerSkin: 1 }, note: 'A short, heavy bronze blade: cuts deep' },
+  { id: 'leatherCap', needs: { deerSkin: 1, vine: 1 }, note: 'Hardened leather over your head: a bite or a blow there hurts a little less' },
+  { id: 'bronzeArmour', needs: { bronzeBar: 4, deerSkin: 2 }, note: 'Bronze scales sewn on leather: a bite or a blow does well under half the harm. Heavy' },
+  { id: 'bronzeHelmet', needs: { bronzeBar: 2, deerSkin: 1 }, note: 'A bronze helmet with a nose guard: takes a quarter off a bite or a blow' },
   { id: 'steelAxe', needs: { ironBar: 2, stick: 1, vine: 1 }, note: 'Twice the life, fells trees twice as fast' },
   { id: 'steelPickaxe', needs: { ironBar: 2, stick: 2 }, note: 'Twice the life of a stone one' },
   { id: 'steelSpear', needs: { ironBar: 1, log: 1, vine: 1 }, note: 'Twice the life of a stone spear' },
@@ -494,6 +502,8 @@ export const RECIPES = [
   { id: 'crossbow', needs: { steelBar: 1, log: 1, rope: 1 }, at: 'anvil', note: 'Slow to wind, but a bolt flies straight and strikes hard' },
   { id: 'bolt', needs: { stick: 2, ironBar: 1, feather: 2 }, makes: 6, at: 'anvil', note: 'Six crossbow bolts' },
   { id: 'sword', needs: { steelBar: 2, deerSkin: 1 }, at: 'anvil', note: 'Quick to swing, cuts deep: the best blade there is' },
+  { id: 'chainmail', needs: { steelBar: 3, rope: 1 }, at: 'anvil', note: 'Thousands of steel rings: lighter than plate, and a fang or claw seldom gets through to make you bleed' },
+  { id: 'steelHelmet', needs: { steelBar: 2, deerSkin: 1 }, at: 'anvil', note: 'A steel helmet: takes a third off a bite or a blow' },
   { id: 'steelArmour', needs: { steelBar: 4, deerSkin: 2 }, at: 'anvil', note: 'Plates over leather: a bite or a blow does a third of the harm. Heavy' },
   { id: 'scarArmour', needs: { steelArmour: 1, grizzlyPelt: 1 }, at: 'anvil', note: "Steel lined with Old Scar's pelt: the best armour, and long-lasting" },
   { id: 'lionArmour', needs: { steelArmour: 1, lionPelt: 1 }, at: 'anvil', note: "Steel lined with Kingmane's pelt: the best armour" },
@@ -522,10 +532,10 @@ export const RECIPES = [
  */
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['glider', 'axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor', 'rug', 'gable', 'hatchFloor', 'seedPumpkin', 'greenhouse'] },
-  { id: 'bronze', name: 'Bronze', tag: 'Smelt copper ore in a furnace, then tin with two copper bars: bronze', unlock: 'bronzeBar', ids: ['bronzeAxe', 'bronzePickaxe', 'bronzeSpear', 'bronzeSword', 'armourStand', 'weaponRack', 'painting'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'leatherCap', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor', 'rug', 'gable', 'hatchFloor', 'seedPumpkin', 'greenhouse'] },
+  { id: 'bronze', name: 'Bronze', tag: 'Smelt copper ore in a furnace, then tin with two copper bars: bronze', unlock: 'bronzeBar', ids: ['bronzeAxe', 'bronzePickaxe', 'bronzeSpear', 'bronzeSword', 'bronzeArmour', 'bronzeHelmet', 'armourStand', 'weaponRack', 'painting'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'sailboat', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
-  { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor', 'stoneRoad', 'zipLine', 'starBlade', 'starPickaxe'] },
+  { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'chainmail', 'steelHelmet', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor', 'stoneRoad', 'zipLine', 'starBlade', 'starPickaxe'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];
 /**
@@ -772,6 +782,14 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   re('lionArmour', 'steelArmour', [['#9aa4b0', '#b08a58']]);
   re('tigerArmour', 'steelArmour', [['#9aa4b0', '#d8782a']]);
   re('crocArmour', 'steelArmour', [['#9aa4b0', '#4a5a3a']]);
+  re('bronzeArmour', 'steelArmour', [['#9aa4b0', '#c89a4a'], ['#5a626e', '#8a6024'], ['#e4e8ee', '#f0d080']]);
+  re('chainmail', 'steelArmour', [['#9aa4b0', '#8a929a']]);
+  {
+    const helm = (cap, band, nose) => `<path d="M6 21c0-12 20-12 20 0z" fill="${cap}"/><path d="M5 19h22v4H5z" fill="${band}"/>${nose ? `<path d="M15 21h2v7h-2z" fill="${band}"/>` : ''}<path d="M10 12q6-4 12 0" stroke="rgba(255,255,255,.35)" stroke-width="1.4" fill="none"/>`;
+    ICONS.leatherCap = helm('#7a5230', '#5a3a20', false);
+    ICONS.bronzeHelmet = helm('#c89a4a', '#8a6024', true);
+    ICONS.steelHelmet = helm('#a8b0b8', '#5a626e', true);
+  }
   re('fangSword', 'sword', [['#dfe6ee', '#f4f0e4'], ['#8a949e', '#e0d8c0']]);
   re('oldSword', 'sword', [['#dfe6ee', '#a8aca4'], ['#8a949e', '#b08a3a']]);
   ICONS.oldMap = `<path d="M5 7l7-2 8 2 7-2v20l-7 2-8-2-7 2z" fill="#d8c8a0"/><path d="M12 5v20M20 7v20" stroke="#b8a47a"/><path d="M8 18c3-4 6 2 10-3s5-2 6-4" stroke="#8a5a3a" stroke-dasharray="1.5 1.5" fill="none"/><path d="M22 9l3 3M25 9l-3 3" stroke="#b02a1a" stroke-width="1.6"/>`;

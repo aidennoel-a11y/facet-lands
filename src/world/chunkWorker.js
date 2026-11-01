@@ -106,7 +106,7 @@ self.onmessage = (event) => {
   const { groundHeightAt, heights } = chunkSurface(g, config, cx, cz, resolution, data);
   // The lake or sea over it, if any.
   out.water = waterData(g, config, cx, cz, heights);
-  if (out.water) for (const a of Object.values(out.water)) transfer.push(a.buffer);
+  if (out.water) for (const a of Object.values(out.water)) if (a) transfer.push(a.buffer);
   // River, stream and pond water (at every level of detail), and the reeds along their banks (close by).
   if (wantRivers) {
     out.river = riverData(g, config, cx, cz, riverGrid(config, resolution));

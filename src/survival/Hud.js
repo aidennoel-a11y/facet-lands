@@ -28,6 +28,7 @@ const GROUPS = ['Tools', 'Materials', 'Trophies', 'Food', 'Herbs', 'Farming', 'W
 const WEAR_COLOUR = {
   coat: '#a8743e', furCloak: '#8a7458', paleCloak: '#e8e4dc', caveCloak: '#3a3634',
   boots: '#6a4428', furBoots: '#5a3e28', gloves: '#9a6a3e', furHat: '#8a7458', strawHat: '#e0c878',
+  bronzeArmour: '#c89a4a', chainmail: '#8a929a', leatherCap: '#7a5230', bronzeHelmet: '#c89a4a', steelHelmet: '#a8b0b8',
   armour: '#7a5230', steelArmour: '#8a96a0', scarArmour: '#4a3426', lionArmour: '#c89a5a', tigerArmour: '#d07a2a', crocArmour: '#4a6a3a',
 };
 function personSvg(inv) {
@@ -47,6 +48,7 @@ function personSvg(inv) {
     ${feet ? `<path d="M41 178h16l-1 22H42zM63 178h16l-1 22H64z" fill="${feet}"/>${inv.feet.id === 'furBoots' ? '<path d="M40 176h18v6H40zM62 176h18v6H62z" fill="#a89070"/>' : ''}` : ''}
     <path d="M40 200h18v8H36zM64 200h18l4 8H64z" fill="${feet ? '#2a1e14' : '#3a2a1c'}"/>
     ${hat === 'strawHat' ? '<ellipse cx="60" cy="24" rx="30" ry="5" fill="#e0c878"/><path d="M47 24q0-16 13-16t13 16z" fill="#d8bc6a"/><path d="M47 21h26v3H47z" fill="#8a4a2a"/>' : ''}
+    ${['leatherCap', 'bronzeHelmet', 'steelHelmet'].includes(hat) ? `<path d="M43 30q0-22 17-22t17 22z" fill="${WEAR_COLOUR[hat]}"/><path d="M42 27h36v5H42z" fill="rgba(0,0,0,.25)"/>${hat !== 'leatherCap' ? '<path d="M58 30h4v10h-4z" fill="rgba(0,0,0,.3)"/>' : ''}` : ''}
     ${hat === 'furHat' ? '<path d="M42 30q0-22 18-22t18 22z" fill="#8a7458"/><path d="M41 26h38v6H41z" fill="#a89070"/><path d="M41 30h6v14h-6zM73 30h6v14h-6z" fill="#a89070"/>' : ''}
     ${pack ? '<path d="M44 60l4 50M76 60l-4 50" stroke="#4a2e18" stroke-width="5"/>' : ''}`;
 }

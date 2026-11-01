@@ -64,6 +64,7 @@ import { Sound } from './render/Sound.js';
 import { Showers } from './render/Showers.js';
 import { PRINT, Traces } from './render/Traces.js';
 import { Fish } from './wildlife/Fish.js';
+import { Piranha } from './wildlife/Piranha.js';
 import { ShootingStars } from './render/ShootingStars.js';
 import { DustDevils, Sandstorm, Volcanoes, Wildfires } from './render/Phenomena.js';
 import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
@@ -233,6 +234,7 @@ function labelAnimals(on) {
 }
 const traces = new Traces(scene);
 const fish = new Fish(scene, addCloudShadow);
+const piranha = new Piranha(scene);
 const shootingStars = new ShootingStars(scene);
 // (Word of what's in the sky tonight, as the evening comes on: an eclipse, a meteor shower.)
 let skyTold = null;
@@ -1117,6 +1119,20 @@ function bleed(x, z, amount = 1) {
   if (!Number.isFinite(y) || waterAt(x, z)) return;
   traces.print(x, y, z, Math.random() * 6.28, PRINT.paw, 0.12 + 0.12 * amount * Math.random(), 'blood', printColour.copy(BLOOD).multiplyScalar(0.8 + Math.random() * 0.4), groundNormal(x, z));
 }
+// Your own heart, loud in your ears: when you're badly hurt, or when
+// something is stalking you, coming for you (quicker, the nearer it is).
+const pulse = { wait: 0 };
+function heartbeat(dt) {
+  if (controls.mode !== 'walk' || !game.survival?.alive || game.mode === 'creative') return;
+  const p = camera.position;
+  const near = wildlife.menace(p.x, p.z);
+  const fear = Math.max(Math.min(1, Math.max(0, (35 - near) / 30)), Math.min(1, Math.max(0, (35 - game.survival.health) / 30)));
+  if (fear <= 0.02) return void (pulse.wait = 0);
+  pulse.wait -= dt;
+  if (pulse.wait > 0) return;
+  pulse.wait = 60 / (72 + 70 * fear); // (beats a minute)
+  sound.call('heartbeat', 0, 0.25 + 0.5 * fear);
+}
 // The player's steps and strokes.
 const walker = { x: null, z: null, left: false, wet: false, stroke: 0, since: 0, airborne: false, fall: 0, hit: 0 };
 function playerTraces(dt) {
@@ -1900,6 +1916,12 @@ document.getElementById('test-avalanche')?.addEventListener('click', (e) => {
     if (!best || score > best.score) best = { x, z, score };
   }
   if (best) startAvalanche(best.x, best.z);
+  e.currentTarget.blur();
+});
+// (A volcano's eruption for testing: the nearest one awake blows now.)
+document.getElementById('test-volcano')?.addEventListener('click', (e) => {
+  const d = volcanoes.erupt(camera.position.x, camera.position.z);
+  hotbar.flash(d == null ? 'No erupting volcano near enough: go nearer one (they smoke)' : `The volcano ${Math.round(d)} m off erupts`);
   e.currentTarget.blur();
 });
 document.getElementById('test-tornado')?.addEventListener('click', (e) => {
@@ -3223,6 +3245,14 @@ function tick(now) {
   };
   prof.mark('sound & surroundings');
   wildlife.update(dt, life);
+  heartbeat(dt);
+  if (controls.mode === 'walk' && !sheltered) {
+    const pp = camera.position;
+    piranha.update(dt, {
+      camera, feet: pp.y - controls.eyeHeight, water: waterAt(pp.x, pp.z), generator, bleeding: game.survival.bleeding > 0, alive: game.survival.alive && !(peaceful?.checked ?? false) && game.mode !== 'creative',
+      hurt: (d) => game.hurt(d, 'piranha', { bite: true }), bleed: () => game.survival.bleed(50), splash: (x, y, z, n, sp, r) => traces.splash(x, y, z, n, sp, r), sound, flash: (t) => game.hotbar?.flash(t),
+    });
+  } else piranha.update(dt, { camera, feet: 0, water: null, generator, alive: false });
   prof.mark('animals');
   mp.update(dt, {
     x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x, // (the way you look: yaw first, then pitch)

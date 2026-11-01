@@ -934,6 +934,10 @@ export class Sound {
       // A frog: a low, rattling croak or two.
       const n = 1 + Math.floor(Math.random() * 2), f = 160 + Math.random() * 90;
       for (let k = 0; k < n; k++) tone(t + k * 0.26, 0.18, 'square', f * 1.1, f * 0.85, f * 2.4, 1.6, 0.07, 38);
+    } else if (kind === 'heartbeat') {
+      // Your own heart, loud in your ears: lub-dub, two low, soft thumps.
+      tone(t, 0.12, 'sine', 62, 42, 70, 0.7, 0.55);
+      tone(t + 0.2, 0.1, 'sine', 56, 38, 64, 0.7, 0.4);
     } else if (kind === 'peep') {
       // A spring peeper: a high rising whistle.
       tone(t, 0.12, 'sine', 2500 + Math.random() * 300, 3000 + Math.random() * 300, 2800, 1, 0.035);

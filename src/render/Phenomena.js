@@ -483,6 +483,22 @@ export class Volcanoes {
   }
 
   /** @param ctx { time, camera, generator, wind: { x, z }, light (Color), night (0..1), sound, pan(x, z) } */
+  /**
+   * For testing: the nearest erupting volcano (in sight, within some 8 km)
+   * blows now. Returns how far off it is (m), or null if there's none awake near.
+   */
+  erupt(x, z) {
+    let best = null;
+    for (const v of this.active.values()) {
+      if (v.c.state !== 'erupting') continue;
+      const d = Math.hypot(v.c.x - x, v.c.z - z);
+      if (!best || d < best.d) best = { v, d };
+    }
+    if (!best) return null;
+    best.v.forced = this.clock ?? 0;
+    return best.d;
+  }
+
   update(dt, ctx) {
     const cam = ctx.camera.position;
     this.wait -= dt;
@@ -507,6 +523,7 @@ export class Volcanoes {
     }
     let nearest = Infinity;
     const T0 = ctx.netTime ?? ctx.time;
+    this.clock = T0;
     for (const v of this.active.values()) {
       const { parts, c } = v;
       // Its great eruptions: every four minutes or so (by the clock: online, everyone sees the same one), a minute long.
@@ -514,6 +531,20 @@ export class Volcanoes {
       if (c.state === 'erupting') {
         const P = 240, seedK = Math.round(c.x * 0.37 + c.z * 0.61), slot = Math.floor((T0 + seedK) / P), into = T0 + seedK - slot * P;
         if (hash01(slot, seedK % 97) < 0.7) burst = smoothstep(0, 4, into) * (1 - smoothstep(48, 62, into));
+        // (Or set off for testing: see erupt.)
+        if (v.forced != null) {
+          const f = T0 - v.forced;
+          if (f < 0 || f > 62) v.forced = null;
+          else {
+            burst = Math.max(burst, smoothstep(0, 4, f) * (1 - smoothstep(48, 62, f)));
+            if (f > 0.5 && v.blew !== 'forced' + v.forced) {
+              v.blew = 'forced' + v.forced;
+              const d = Math.hypot(c.x - cam.x, c.z - cam.z);
+              if (d < 8000) ctx.sound?.call('rumble', 0, Math.min(1, 0.35 + 0.65 * (1 - d / 8000)));
+              if (d < 2500) this.shake = Math.max(this.shake, 1 - d / 2500);
+            }
+          }
+        }
         if (burst > 0.05 && v.blew !== slot) {
           v.blew = slot;
           // (The blast, heard far over the land, the ground shaking near it.)

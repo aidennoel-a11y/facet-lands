@@ -21,6 +21,7 @@ function smoothstep(a, b, x) {
  */
 export function waterData(generator, config, cx, cz, heights, resolution = 16) {
   const { seaLevel, chunkSize, vertexJitter } = config;
+  const baseResolution = resolution;
 
   // Skip chunks that are entirely dry.
   let minGround = Infinity;
@@ -74,103 +75,171 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
         const gi = cx * resolution + i;
         const gj = cz * resolution + j;
         const k = j * n + i;
-        xs[k] = i * cell + (hash2(gi, gj, seed) - 0.5) * 2 * vertexJitter * cell;
-        zs[k] = j * cell + (hash2(gi, gj, seed ^ 0x5bd1e995) - 0.5) * 2 * vertexJitter * cell;
+        // (Not nudged across the chunk's edge, so its edges run straight: see aEdge.)
+        xs[k] = i * cell + (i === 0 || i === resolution ? 0 : (hash2(gi, gj, seed) - 0.5) * 2 * vertexJitter * cell);
+        zs[k] = j * cell + (j === 0 || j === resolution ? 0 : (hash2(gi, gj, seed ^ 0x5bd1e995) - 0.5) * 2 * vertexJitter * cell);
         ground[k] = generator.getHeight(originX + xs[k], originZ + zs[k]);
       }
     }
     flipOf = (i, j) => hash2(cx * resolution + i, cz * resolution + j, seed + 9) < 0.5;
   }
 
-  // Surf along the open coast: in the shallows, strongest under cliffs.
-  const surf = new Float32Array(n * n);
-  // The open sea: waves build the further out (the deeper) it is.
-  const swell = new Float32Array(n * n);
-  for (let k = 0; k < n * n; k++) {
-    const depth = seaLevel - ground[k];
-    if (depth < 6) continue;
-    swell[k] = smoothstep(6, 30, depth) * smoothstep(0.4, 0.8, oceanAt(xs[k], zs[k]));
-  }
-  // Lakes (not the open sea) in lands with a cold winter freeze over.
-  const freeze = new Float32Array(n * n);
-  for (let k = 0; k < n * n; k++) {
-    if (ground[k] < seaLevel + 1.5) {
-      const x = originX + xs[k], z = originZ + zs[k];
-      freeze[k] = generator.getSeasonality(x, z) * (1 - oceanAt(xs[k], zs[k]));
+  // Each corner's surf, swell, freeze and so on (see below), for a grid of them.
+  const gridAttrs = (n, cell, xs, zs, ground, coast) => {
+    // Surf along the open coast: in the shallows, strongest under cliffs.
+    const surf = new Float32Array(n * n);
+    // The open sea: waves build the further out (the deeper) it is.
+    const swell = new Float32Array(n * n);
+    for (let k = 0; k < n * n; k++) {
+      const depth = seaLevel - ground[k];
+      if (depth < 6) continue;
+      swell[k] = smoothstep(6, 30, depth) * smoothstep(0.4, 0.8, oceanAt(xs[k], zs[k]));
     }
-    const depth = seaLevel - ground[k];
-    if (depth < (coast ? -3 : -1) || depth > 3.5) continue; // (on the coast, up the sand, too: the swash runs up it)
-    const x = originX + xs[k], z = originZ + zs[k];
-    if (oceanAt(xs[k], zs[k]) < 0.5) continue;
-    surf[k] = (1 - smoothstep(0.2, 1.8, depth)) * (0.35 + 0.65 * generator.getSeaCliff(x, z));
-  }
-
-  // How open each part of the water is to the sea (a 5×5 grid over the
-  // chunk, between): a cove or inlet shut in by the land all round lies
-  // still, no swell reaching it to break on its shore (but in a storm: see
-  // WaterLayer). Of a ring of ways out, how many run on 400 m without land.
-  let anySurf = false;
-  for (let k = 0; k < n * n && !anySurf; k++) if (surf[k] > 0) anySurf = true;
-  const exposure = new Float32Array(25).fill(1);
-  if (anySurf) {
-    for (let j = 0; j < 5; j++) for (let i = 0; i < 5; i++) {
-      const x = originX + (i / 4) * chunkSize, z = originZ + (j / 4) * chunkSize;
-      let open = 0;
-      for (let d = 0; d < 12; d++) {
-        const a = (d / 12) * Math.PI * 2, ax = Math.cos(a), az = Math.sin(a);
-        let clear = 0;
-        for (let s = 40; s <= 400; s += 40) {
-          if (generator.getBaseHeight(x + ax * s, z + az * s) > seaLevel - 0.2) break;
-          clear = s;
-        }
-        open += clear >= 400 ? 1 : clear / 800;
+    // Lakes (not the open sea) in lands with a cold winter freeze over.
+    const freeze = new Float32Array(n * n);
+    for (let k = 0; k < n * n; k++) {
+      if (ground[k] < seaLevel + 1.5) {
+        const x = originX + xs[k], z = originZ + zs[k];
+        freeze[k] = generator.getSeasonality(x, z) * (1 - oceanAt(xs[k], zs[k]));
       }
-      exposure[j * 5 + i] = open / 12;
+      const depth = seaLevel - ground[k];
+      if (depth < (coast ? -3 : -1) || depth > 3.5) continue; // (on the coast, up the sand, too: the swash runs up it)
+      const x = originX + xs[k], z = originZ + zs[k];
+      if (oceanAt(xs[k], zs[k]) < 0.5) continue;
+      surf[k] = (1 - smoothstep(0.2, 1.8, depth)) * (0.35 + 0.65 * generator.getSeaCliff(x, z));
     }
-    for (let k = 0; k < n * n; k++) {
-      if (!(surf[k] > 0)) continue;
-      const fx = Math.min(3.999, Math.max(0, (xs[k] / chunkSize) * 4)), fz = Math.min(3.999, Math.max(0, (zs[k] / chunkSize) * 4));
-      const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
-      const e = (exposure[j * 5 + i] * (1 - u) + exposure[j * 5 + i + 1] * u) * (1 - v) + (exposure[(j + 1) * 5 + i] * (1 - u) + exposure[(j + 1) * 5 + i + 1] * u) * v;
-      // (Packed with the surf: how open, in sixteenths, above it. Unpacked per corner: see WaterLayer.)
-      surf[k] = Math.min(0.999, surf[k]) + 2 * Math.round(Math.min(1, e) * 16);
-    }
-  }
 
-  // Not down a river's channel, though, where the river's own water runs
-  // above the lake's level (see riverData): only where it has come down to
-  // that level, at its mouth, does the lake's water run on up it. (Cut off
-  // along a line across the channel, worked out between the grid's points.)
-  const open = new Float32Array(n * n).fill(1);
-  const rivers = generator.rivers;
-  if (rivers) {
-    for (let k = 0; k < n * n; k++) {
-      if (ground[k] > seaLevel + 12) continue;
-      const w = rivers.waterAt(originX + xs[k], originZ + zs[k], 8);
-      // (Smoothly: out past the channel's edge the cut eases off, gone 4 m
-      // out, so it follows a line under the bank, never the search's own
-      // stepped edge 8 m out on this coarse grid.)
-      if (w) open[k] = Math.min(1, Math.max(seaLevel + 0.3 - w.level, -(w.inset ?? 0) - 4));
+    // How open each part of the water is to the sea (a 5×5 grid over the
+    // chunk, between): a cove or inlet shut in by the land all round lies
+    // still, no swell reaching it to break on its shore (but in a storm: see
+    // WaterLayer). Of a ring of ways out, how many run on 400 m without land.
+    let anySurf = false;
+    for (let k = 0; k < n * n && !anySurf; k++) if (surf[k] > 0) anySurf = true;
+    const exposure = new Float32Array(25).fill(1);
+    if (anySurf) {
+      for (let j = 0; j < 5; j++) for (let i = 0; i < 5; i++) {
+        const x = originX + (i / 4) * chunkSize, z = originZ + (j / 4) * chunkSize;
+        let open = 0;
+        for (let d = 0; d < 12; d++) {
+          const a = (d / 12) * Math.PI * 2, ax = Math.cos(a), az = Math.sin(a);
+          let clear = 0;
+          for (let s = 40; s <= 400; s += 40) {
+            if (generator.getBaseHeight(x + ax * s, z + az * s) > seaLevel - 0.2) break;
+            clear = s;
+          }
+          open += clear >= 400 ? 1 : clear / 800;
+        }
+        exposure[j * 5 + i] = open / 12;
+      }
+      for (let k = 0; k < n * n; k++) {
+        if (!(surf[k] > 0)) continue;
+        const fx = Math.min(3.999, Math.max(0, (xs[k] / chunkSize) * 4)), fz = Math.min(3.999, Math.max(0, (zs[k] / chunkSize) * 4));
+        const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+        const e = (exposure[j * 5 + i] * (1 - u) + exposure[j * 5 + i + 1] * u) * (1 - v) + (exposure[(j + 1) * 5 + i] * (1 - u) + exposure[(j + 1) * 5 + i + 1] * u) * v;
+        // (Packed with the surf: how open, in sixteenths, above it. Unpacked per corner: see WaterLayer.)
+        surf[k] = Math.min(0.999, surf[k]) + 2 * Math.round(Math.min(1, e) * 16);
+      }
     }
-  }
 
-  // The lie of the sea bed (and the beach) at each corner: the way up it
-  // toward the land, and how steep: for the breakers rolling in and washing
-  // up the sand (see WaterLayer). With how much it's the open sea there
-  // (for the tide). Over two cells each way, so it's smooth.
-  const shoreX = new Float32Array(n * n), shoreZ = new Float32Array(n * n), sea = new Float32Array(n * n);
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const k = j * n + i, depth = seaLevel - ground[k];
-      if (depth < -3.5 || depth > 8) continue;
-      const r = coast ? Math.max(2, Math.round(6 / cell)) : 2; // (over some 6 m each way: smooth, not every bump of the sand)
-      const i0 = Math.max(0, i - r), i1 = Math.min(n - 1, i + r), j0 = Math.max(0, j - r), j1 = Math.min(n - 1, j + r);
-      shoreX[k] = (ground[j * n + i1] - ground[j * n + i0]) / ((i1 - i0) * cell);
-      shoreZ[k] = (ground[j1 * n + i] - ground[j0 * n + i]) / ((j1 - j0) * cell);
+    // Not down a river's channel, though, where the river's own water runs
+    // above the lake's level (see riverData): only where it has come down to
+    // that level, at its mouth, does the lake's water run on up it. (Cut off
+    // along a line across the channel, worked out between the grid's points.)
+    const open = new Float32Array(n * n).fill(1);
+    const rivers = generator.rivers;
+    if (rivers) {
+      for (let k = 0; k < n * n; k++) {
+        if (ground[k] > seaLevel + 12) continue;
+        const w = rivers.waterAt(originX + xs[k], originZ + zs[k], 8);
+        // (Smoothly: out past the channel's edge the cut eases off, gone 4 m
+        // out, so it follows a line under the bank, never the search's own
+        // stepped edge 8 m out on this coarse grid.)
+        if (w) open[k] = Math.min(1, Math.max(seaLevel + 0.3 - w.level, -(w.inset ?? 0) - 4));
+      }
+    }
+
+    // The lie of the sea bed (and the beach) at each corner: the way up it
+    // toward the land, and how steep: for the breakers rolling in and washing
+    // up the sand (see WaterLayer). With how much it's the open sea there
+    // (for the tide). Over two cells each way, so it's smooth.
+    const shoreX = new Float32Array(n * n), shoreZ = new Float32Array(n * n), sea = new Float32Array(n * n);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const k = j * n + i, depth = seaLevel - ground[k];
+        if (depth < -3.5 || depth > 8) continue;
+        const r = coast ? Math.max(2, Math.round(6 / cell)) : 2; // (over some 6 m each way: smooth, not every bump of the sand)
+        const i0 = Math.max(0, i - r), i1 = Math.min(n - 1, i + r), j0 = Math.max(0, j - r), j1 = Math.min(n - 1, j + r);
+        shoreX[k] = (ground[j * n + i1] - ground[j * n + i0]) / ((i1 - i0) * cell);
+        shoreZ[k] = (ground[j1 * n + i] - ground[j0 * n + i]) / ((j1 - j0) * cell);
+      }
+    }
+    for (let k = 0; k < n * n; k++) if (ground[k] < seaLevel + 3) sea[k] = smoothstep(0.35, 0.6, oceanAt(xs[k], zs[k]));
+    return { surf, swell, freeze, open, shoreX, shoreZ, sea };
+  };
+  let { surf, swell, freeze, open, shoreX, shoreZ, sea } = gridAttrs(n, cell, xs, zs, ground, coast);
+
+  // Where the coast's fine grid meets a neighbour's edge out in deeper water,
+  // its corners along that edge are laid on the plain grid's edge instead (the
+  // one every chunk off the coast has: see above), its waves worked out as
+  // the plain grid's would be there (between its corners: see WaterLayer,
+  // aEdge), so the two meet without a crack between them however high the
+  // swell runs. (Near the shore they keep their own: the swash's.)
+  let edgeAB = null, edgeT = null, edgeW = null, edgeD = null;
+  if (coast) {
+    const R = baseResolution, rn = R + 1, rcell = chunkSize / R;
+    const rx = new Float32Array(rn * rn), rz = new Float32Array(rn * rn), rg = new Float32Array(rn * rn);
+    for (let j = 0; j < rn; j++) for (let i = 0; i < rn; i++) {
+      const k = j * rn + i;
+      const gi = cx * R + i, gj = cz * R + j;
+      rx[k] = i * rcell + (i === 0 || i === R ? 0 : (hash2(gi, gj, seed) - 0.5) * 2 * vertexJitter * rcell);
+      rz[k] = j * rcell + (j === 0 || j === R ? 0 : (hash2(gi, gj, seed ^ 0x5bd1e995) - 0.5) * 2 * vertexJitter * rcell);
+      rg[k] = generator.getHeight(originX + rx[k], originZ + rz[k]);
+    }
+    const reg = gridAttrs(rn, rcell, rx, rz, rg, false);
+    const waveOf = (A, k) => 0.1 + 0.9 * smoothstep(1, 16, seaLevel - rg[k]) + 2.4 * A.swell[k];
+    // (How much a plain corner's on the open coast, for its breakers: as WaterLayer works it out.)
+    const openCoastOf = (A, k) => {
+      const foamOpen = Math.floor(A.surf[k] * 0.5) / 16;
+      return smoothstep(0.12, 0.45, foamOpen) * smoothstep(0.004, 0.02, Math.hypot(A.shoreX[k], A.shoreZ[k])) * A.sea[k];
+    };
+    xs = Float32Array.from(xs);
+    zs = Float32Array.from(zs);
+    ground = Float32Array.from(ground);
+    surf = Float32Array.from(surf); swell = Float32Array.from(swell); freeze = Float32Array.from(freeze); open = Float32Array.from(open);
+    shoreX = Float32Array.from(shoreX); shoreZ = Float32Array.from(shoreZ); sea = Float32Array.from(sea);
+    edgeAB = new Float32Array(n * n * 4);
+    edgeT = new Float32Array(n * n).fill(-1);
+    edgeW = new Float32Array(n * n * 4);
+    edgeD = new Float32Array(n * n * 4);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      if (!(i === 0 || j === 0 || i === n - 1 || j === n - 1)) continue;
+      const k = j * n + i;
+      // Which of the plain grid's edge segments it lies on, and how far along.
+      const along = (i === 0 || i === n - 1) ? j : i; // (corners: either)
+      const f = (along / (n - 1)) * R;
+      const s0 = Math.min(R - 1, Math.floor(f)), t = f - s0;
+      const ka = (i === 0 || i === n - 1) ? s0 * rn + (i === 0 ? 0 : R) : (j === 0 ? 0 : R) * rn + s0;
+      const kb = (i === 0 || i === n - 1) ? (s0 + 1) * rn + (i === 0 ? 0 : R) : (j === 0 ? 0 : R) * rn + s0 + 1;
+      const depth = seaLevel - (rg[ka] * (1 - t) + rg[kb] * t);
+      if (depth < 2) continue; // (in the shallows: its own, see above)
+      const lerp = (arr) => arr[ka] * (1 - t) + arr[kb] * t;
+      xs[k] = lerp(rx);
+      zs[k] = lerp(rz);
+      ground[k] = seaLevel - depth;
+      surf[k] = t < 0.5 ? reg.surf[ka] : reg.surf[kb];
+      swell[k] = lerp(reg.swell);
+      freeze[k] = lerp(reg.freeze);
+      open[k] = lerp(reg.open);
+      shoreX[k] = lerp(reg.shoreX);
+      shoreZ[k] = lerp(reg.shoreZ);
+      sea[k] = lerp(reg.sea);
+      edgeAB.set([rx[ka], rz[ka], rx[kb], rz[kb]], k * 4);
+      edgeT[k] = t;
+      edgeW.set([waveOf(reg, ka), waveOf(reg, kb), openCoastOf(reg, ka), openCoastOf(reg, kb)], k * 4);
+      edgeD.set([seaLevel - rg[ka], seaLevel - rg[kb], Math.hypot(reg.shoreX[ka], reg.shoreZ[ka]), Math.hypot(reg.shoreX[kb], reg.shoreZ[kb])], k * 4);
     }
   }
-  for (let k = 0; k < n * n; k++) if (ground[k] < seaLevel + 3) sea[k] = smoothstep(0.35, 0.6, oceanAt(xs[k], zs[k]));
-  const shores = [];
+  const shores = [], coasts = [], edgeABs = [], edgeWs = [], edgeDs = [];
 
   const positions = [];
   const colors = [];
@@ -192,6 +261,11 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     foams.push(t < 0.5 ? surf[a] : surf[b]); // (packed: not to be blended, see above)
     freezes.push(freeze[a] * s + freeze[b] * t);
     shores.push(shoreX[a] * s + shoreX[b] * t, shoreZ[a] * s + shoreZ[b] * t, sea[a] * s + sea[b] * t);
+    if (coast) {
+      // (aCoast: 1 on the coast's grid; 2 + how far along, at a corner laid on the plain grid's edge.)
+      coasts.push(edgeT[a] >= 0 ? 2 + Math.min(0.999, edgeT[a]) : 1);
+      for (let q = 0; q < 4; q++) edgeABs.push(edgeAB[a * 4 + q]), edgeWs.push(edgeW[a * 4 + q]), edgeDs.push(edgeD[a * 4 + q]);
+    }
   };
   const addTri = (a, b, c) => {
     // Keep faces with any corner under water; drop fully dry ones. (On the
@@ -232,6 +306,9 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     freezes: new Float32Array(freezes),
     depths: new Float32Array(depths),
     shores: new Float32Array(shores),
-    coast: new Float32Array([coast ? 1 : 0]),
+    coasts: coast ? new Float32Array(coasts) : null,
+    edgeAB: coast ? new Float32Array(edgeABs) : null,
+    edgeW: coast ? new Float32Array(edgeWs) : null,
+    edgeD: coast ? new Float32Array(edgeDs) : null,
   };
 }

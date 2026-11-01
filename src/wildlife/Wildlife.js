@@ -843,6 +843,16 @@ export class Wildlife {
   }
 
   /** The dead lying near (x, z), for butchering and the like. */
+  /** How near (m) the nearest thing coming for you is: stalking you, hunting you, charging. Infinity if none. */
+  menace(x, z) {
+    let best = Infinity;
+    for (const a of this.animals) {
+      if (!a.alive || a.tame || !(a.stalking || a.hunting || a.state === 'charge' || a.state === 'threat')) continue;
+      best = Math.min(best, Math.hypot(a.x - x, a.z - z));
+    }
+    return best;
+  }
+
   carcassesNear(x, z, r) {
     return this.animals.filter((a) => !a.alive && a.state === 'dead' && !a.gone && Math.hypot(a.x - x, a.z - z) < r);
   }
@@ -1792,15 +1802,26 @@ export class Wildlife {
     }
     // Far off in the night, in wolf country (the woods and the hills), now
     // and then a pack you can't see howls: from somewhere out there, faint.
-    this.farHowl = (this.farHowl ?? rnd(20, 60)) - 0.5;
+    // Through the night they answer each other (a second pack, off another
+    // way, a few breaths later), and as the night goes on, if you're out in
+    // it, each time a little nearer.
+    this.farHowl = (this.farHowl ?? rnd(15, 40)) - 0.5;
+    if (day > 0.5) this.howlReach = 1400;
     if (day < 0.25 && this.farHowl <= 0) {
-      this.farHowl = rnd(60, 160);
-      const w = g.getBiomeWeights(cx, cz, {}), wild = (w.pine ?? 0) + (w.smoky ?? 0) + (w.blackHills ?? 0) + (w.redwood ?? 0) * 0.5 + (w.parkland ?? 0) * 0.6 + (w.cascades ?? 0) * 0.7 + (w.temperate ?? 0) * Math.min(1, g.getForestDensity(cx, cz) * 1.5);
-      const packNear = this.animals.some((a) => a.kind === 'wolf' && a.alive && Math.hypot(a.x - cx, a.z - cz) < 700);
-      if (wild > 0.5 && !packNear) {
-        const a = rnd(0, TAU), d = rnd(600, 1400);
-        ctx.sound?.call('howl', ctx.pan(cx + Math.sin(a) * d, cz + Math.cos(a) * d), rnd(0.18, 0.32));
+      this.farHowl = rnd(35, 90);
+      const w = g.getBiomeWeights(cx, cz, {}), wild = (w.pine ?? 0) + (w.smoky ?? 0) + (w.blackHills ?? 0) + (w.redwood ?? 0) * 0.5 + (w.parkland ?? 0) * 0.6 + (w.cascades ?? 0) * 0.7 + (w.temperate ?? 0) * Math.min(1, g.getForestDensity(cx, cz) * 1.5) + (w.tundra ?? 0) * 0.8 + (w.taiga ?? 0);
+      if (wild > 0.25) {
+        const reach = (this.howlReach = Math.max(260, (this.howlReach ?? 1400) * (ctx.sheltered ? 1 : 0.85)));
+        const a = rnd(0, TAU), d = rnd(0.75, 1.1) * reach;
+        ctx.sound?.call('howl', ctx.pan(cx + Math.sin(a) * d, cz + Math.cos(a) * d), Math.min(0.6, rnd(0.18, 0.3) * Math.sqrt(1000 / d)));
+        // (The answer: another pack, another way.)
+        if (Math.random() < 0.7) this.howlAnswer = { at: this.time + rnd(4, 11), a: a + rnd(1.6, 4.6), d: rnd(0.8, 1.3) * reach };
       }
+    }
+    if (this.howlAnswer && this.time >= this.howlAnswer.at) {
+      const { a, d } = this.howlAnswer;
+      this.howlAnswer = null;
+      if (day < 0.3) ctx.sound?.call('howl', ctx.pan(cx + Math.sin(a) * d, cz + Math.cos(a) * d), Math.min(0.6, rnd(0.15, 0.26) * Math.sqrt(1000 / d)));
     }
     // (Come the day, the night's visitors go off, out of sight.)
     if (day > 0.5) for (const h of this.herds) if (h.night) for (const m of h.members) if (this.#nearest(m.x, m.z) > 120) m.gone = true;
@@ -4585,13 +4606,61 @@ export class Wildlife {
 
   // --- Drawing --------------------------------------------------------------
 
+  // Something watching you, out at the edge of the trees on a dark night:
+  // two eyes, low, pale green, unblinking (now and then, a blink). No torch
+  // needed to see them. Come closer and they're gone: something moving off
+  // in the dark. You never see what it was.
+  #watchers(ctx, cam, dark) {
+    const E = this.shineMesh;
+    const dt = Math.min(0.5, this.time - (this.watchAt ?? this.time));
+    this.watchAt = this.time;
+    this.watchers = this.watchers ?? [];
+    this.watchWait = (this.watchWait ?? rnd(40, 120)) - dt;
+    const g = ctx.generator;
+    if (this.watchWait <= 0 && dark > 0.6 && g && this.watchers.length < 2) {
+      this.watchWait = rnd(70, 220) / (ctx.bloodMoon ? 3 : 1);
+      const wood = g.getForestDensity?.(cam.x, cam.z) ?? 0;
+      if (wood > 0.3 && Math.random() < 0.8) {
+        const f = Math.atan2(ctx.forward?.x ?? 0, ctx.forward?.z ?? 1) + rnd(-1.1, 1.1), d = rnd(28, 48);
+        const x = cam.x + Math.sin(f) * d, z = cam.z + Math.cos(f) * d, y = ctx.ground(x, z);
+        if (Number.isFinite(y) && !ctx.waterAt?.(x, z)) this.watchers.push({ x, y: y + rnd(0.5, 1.1), z, life: rnd(10, 30), blink: rnd(2, 6) });
+      }
+    }
+    for (const w of this.watchers) {
+      w.life -= dt;
+      w.blink -= dt;
+      if (w.blink < -0.15) w.blink = rnd(2, 7);
+      const d = Math.hypot(w.x - cam.x, w.z - cam.z);
+      if (d < 20 && w.life > 0) {
+        // (Gone, as you come: a rustle, something moving off.)
+        w.life = 0;
+        ctx.sound?.call('rustle', ctx.pan?.(w.x, w.z) ?? 0, 0.35);
+      }
+      if (w.life <= 0 || w.blink < 0 || E.count > 156) continue;
+      const k = dark * Math.min(1, w.life) * 0.85, size = Math.max(0.03, d * 0.0026);
+      tint.setHex(0xc8f070).multiplyScalar(k);
+      const ax = (cam.z - w.z) / (d || 1), az = -(cam.x - w.x) / (d || 1); // (side to side, across the way to you)
+      for (const sx of [1, -1]) {
+        pos.set(w.x + ax * 0.07 * sx, w.y, w.z + az * 0.07 * sx);
+        E.setMatrixAt(E.count, out.compose(pos, quat.identity(), scl.setScalar(size)));
+        E.setColorAt(E.count++, tint);
+      }
+    }
+    this.watchers = this.watchers.filter((w) => w.life > 0);
+  }
+
   #eyeshine(ctx) {
     const E = this.shineMesh;
     E.count = 0;
     const cam = ctx?.camera?.position;
     const dark = Math.min(1, Math.max(0, ((ctx?.night ?? 0) - 0.3) / 0.4));
-    if (!cam || !ctx.eyeLight || dark <= 0 || this.hidden) return (E.visible = false);
+    if (!cam || dark <= 0 || this.hidden) {
+      this.watchers = [];
+      return (E.visible = false);
+    }
+    this.#watchers(ctx, cam, dark);
     for (const a of this.animals) {
+      if (!ctx.eyeLight) break;
       if (!a.alive || !a.hm || E.count > 158) continue;
       const eye = this.rigs[a.kind]?.meshes.head?.geometry.userData.eye;
       if (!eye) continue;

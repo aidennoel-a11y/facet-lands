@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, IcosahedronGeometry, Matrix4, OctahedronGeometry, Quaternion, TorusGeometry, Vector3 } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Euler, IcosahedronGeometry, Matrix4, OctahedronGeometry, Quaternion, SphereGeometry, TorusGeometry, Vector3 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../noise/random.js';
 
@@ -2168,6 +2168,12 @@ export function hatModel(kind = 'fur') {
     b.add(new CylinderGeometry(0.11, 0.12, 0.12, 8), 0x8a7458, [0, 0.06, 0]);
     b.add(new CylinderGeometry(0.125, 0.125, 0.05, 8), 0xa89070, [0, 0.03, 0]);
     for (const x of [-0.12, 0.12]) b.add(new BoxGeometry(0.03, 0.1, 0.08), 0xa89070, [x, -0.02, 0]);
+  } else if (kind === 'leather' || kind === 'bronze' || kind === 'steel') {
+    // A helmet: a domed cap, a band round the brow, a nose guard (metal ones).
+    const [cap, band] = { leather: [0x7a5230, 0x5a3a20], bronze: [0xc89a4a, 0x8a6024], steel: [0xa8b0b8, 0x5a626e] }[kind];
+    b.add(new SphereGeometry(0.125, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), cap, [0, 0.03, 0]);
+    b.add(new CylinderGeometry(0.13, 0.13, 0.04, 8), band, [0, 0.03, 0]);
+    if (kind !== 'leather') b.add(new BoxGeometry(0.025, 0.09, 0.02), band, [0, -0.02, 0.125]);
   } else {
     b.add(new CylinderGeometry(0.24, 0.24, 0.015, 10), 0xe0c878, [0, 0.01, 0]);
     b.add(new CylinderGeometry(0.09, 0.11, 0.11, 8), 0xd8bc6a, [0, 0.07, 0]);

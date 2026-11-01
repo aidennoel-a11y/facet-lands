@@ -3751,8 +3751,21 @@ export class Game {
       }
       this.inventory.changed();
     }
+    // A helmet takes some of it too (a hat, none).
+    const helmet = this.inventory.head, guard = helmet && ITEMS[helmet.id]?.guard;
+    if (bite && guard) {
+      amount *= guard;
+      helmet.dur = (helmet.dur ?? ITEMS[helmet.id].durability) - 1;
+      if (helmet.dur <= 0) {
+        this.inventory.head = null;
+        this.sound?.call('crack', 0, 0.6);
+        this.hotbar?.flash('Your helmet is split');
+      }
+      this.inventory.changed();
+    }
     this.survival.hurt(amount, cause);
-    if (bite && Math.random() < (armour ? (armour.id === 'steelArmour' ? 0.05 : 0.15) : 0.4)) {
+    const tough = armour && (armour.id === 'steelArmour' || ITEMS[armour.id]?.stopsCuts || (ITEMS[armour.id]?.protect ?? 1) < 0.3);
+    if (bite && Math.random() < (armour ? (tough ? 0.05 : 0.15) : 0.4)) {
       this.survival.bleed(60 + Math.random() * 60);
       this.hotbar?.flash('You are bleeding: bandage it');
     }

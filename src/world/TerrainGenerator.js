@@ -2657,27 +2657,30 @@ export class TerrainGenerator {
           if (c.state === 'blown') {
             let db = angle - c.breach;
             db = Math.abs(Math.atan2(Math.sin(db), Math.cos(db)));
-            ruin = (0.25 + 0.75 * smoothstep(0.35, 1.3, db)) * (0.8 + 0.35 * this.volcanoNoise.ridged(angle * 3 + c.seed, t * 4, 2, 2, 0.5, 1));
+            // (Ragged, but in broad worn lumps, not spikes: slow noise round the rim.)
+            ruin = (0.3 + 0.7 * smoothstep(0.2, 1.5, db)) * (0.88 + 0.16 * this.volcanoNoise.noise2D(angle * 1.3 + c.seed, t * 1.2));
             rimH *= ruin;
           }
           // (A dead or blown volcano's bowl: black volcanic rock.)
           if (c.state === 'dead' || c.state === 'blown') out.cold = Math.max(out.cold, 1 - smoothstep(c.rc * 0.95, c.rc * 1.25, d));
-          if (d < c.rc) {
-            h = rimH - c.depth * Math.pow(1 - (d / c.rc) ** 2, 0.7) * (c.state === 'blown' ? Math.min(1, ruin + 0.3) : 1);
-            out.crater = Math.max(out.crater, 1);
-          } else {
-            // (Across a live flow, the flank's furrows follow the flow: its two banks alike.)
-            const lp = c.active ? this.lavaPath(c, d) : null;
-            let na = angle;
-            if (lp) {
-              let dl = angle - lp.angle;
-              dl = Math.atan2(Math.sin(dl), Math.cos(dl));
-              if (Math.abs(dl * d) < lp.half * 3) na = lp.angle;
-              else if (Math.abs(dl * d) < lp.half * 5) na = lp.angle + dl * smoothstep(lp.half * 3, lp.half * 5, Math.abs(dl * d));
-            }
-            h = c.H * Math.pow(1 - t, 1.5) * (0.95 + 0.05 * this.volcanoNoise.noise2D(na * 5 + c.seed, t * 3)) * (c.state === 'blown' ? 0.6 + 0.4 * Math.min(1, ruin + smoothstep(0.5, 1, t)) : 1);
-            out.crater = Math.max(out.crater, 1 - smoothstep(c.rc, c.rc * 1.6, d));
+          // The bowl inside, the flank outside, meeting in a rim rounded over
+          // (a worn lip some metres across, never a knife edge: on the land's
+          // triangles that comes out a row of spikes).
+          const bowl = rimH - c.depth * Math.pow(Math.max(0, 1 - (d / c.rc) ** 2), 0.85) * (c.state === 'blown' ? Math.min(1, ruin + 0.3) : 1);
+          // (Across a live flow, the flank's furrows follow the flow: its two banks alike.)
+          const lp = c.active && d >= c.rc * 0.8 ? this.lavaPath(c, d) : null;
+          let na = angle;
+          if (lp) {
+            let dl = angle - lp.angle;
+            dl = Math.atan2(Math.sin(dl), Math.cos(dl));
+            if (Math.abs(dl * d) < lp.half * 3) na = lp.angle;
+            else if (Math.abs(dl * d) < lp.half * 5) na = lp.angle + dl * smoothstep(lp.half * 3, lp.half * 5, Math.abs(dl * d));
           }
+          // (Blown: the flank broken down as low as the rim at the top, whole again further down: no step at the rim.)
+          const flank = c.H * Math.pow(1 - t, 1.5) * (0.95 + 0.05 * this.volcanoNoise.noise2D(na * 5 + c.seed, t * 3)) * (c.state === 'blown' ? ruin + (1 - ruin) * smoothstep(c.rc / c.R, 1, t) : 1);
+          const k = Math.max(4, c.depth * 0.35), gap = Math.max(0, k - Math.abs(bowl - flank)) / k;
+          h = Math.min(bowl, flank) - gap * gap * k * 0.25;
+          out.crater = Math.max(out.crater, d < c.rc ? 1 : 1 - smoothstep(c.rc, c.rc * 1.6, d));
         }
         // A live flow: a channel down the flank between levees of fresh
         // lava, in places roofed over into a lava tube (skylights here and there).

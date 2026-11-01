@@ -11,6 +11,7 @@ import {
   Quaternion,
   ShaderMaterial,
   Vector3,
+  Vector4,
 } from 'three';
 
 const PRINTS = 900;
@@ -22,6 +23,30 @@ const CROWNS = 24;
 const LASTS = { snow: 180, mud: 120, sand: 90, grass: 100, blood: 200, dung: 600, twig: 500, crack: 1500 };
 // Shapes of print: a boot, a cloven hoof, a paw, a rabbit's long hind foot
 // (each blocky, cut square like the animals' feet).
+// The rings spreading over the water from splashes and drops: drawn by the
+// water's own surfaces (see WaterLayer, RiverLayer), so they're only ever on
+// the water, never spilling out over the bank. Each (x, z, when, how big).
+const RIPPLE_SLOTS = 32;
+export const RIPPLES = {
+  uRipples: { value: Array.from({ length: RIPPLE_SLOTS }, () => new Vector4(0, 0, -1e6, 1)) },
+  uRippleTime: { value: 0 },
+};
+export const RIPPLE_GLSL = /* glsl */ `
+  uniform vec4 uRipples[${RIPPLE_SLOTS}];
+  uniform float uRippleTime;
+  float splashRings(vec2 p) {
+    float rings = 0.0;
+    for (int i = 0; i < ${RIPPLE_SLOTS}; i++) {
+      vec4 q = uRipples[i];
+      float age = (uRippleTime - q.z) / 1.6;
+      if (age < 0.0 || age > 1.0) continue;
+      float grow = q.w * (0.15 + sqrt(age));
+      float r = length(p - q.xy) / grow;
+      rings += smoothstep(0.78, 0.9, r) * (1.0 - smoothstep(0.9, 1.0, r)) * (1.0 - age);
+    }
+    return min(rings, 1.0) * 0.55;
+  }`;
+
 export const PRINT = { boot: 0, hoof: 1, paw: 2, rabbit: 3, square: 4 };
 
 const m4 = new Matrix4(), q = new Quaternion(), spin = new Quaternion(), p = new Vector3(), s = new Vector3(), n = new Vector3();
@@ -156,7 +181,7 @@ export class Traces {
     this.rings.renderOrder = 3;
     this.rings.name = 'ripples';
     for (let k = 0; k < RINGS; k++) this.rings.setMatrixAt(k, m4.makeScale(0, 0, 0));
-    scene.add(this.rings);
+    // (Not drawn: the water draws its own rings now, see RIPPLES.)
     this.nextRing = 0;
     this.time = 0;
     this.dirty = { prints: false, rings: false };
@@ -206,16 +231,15 @@ export class Traces {
   /** A ring spreading out over the water from (x, level, z), to `size` metres across. */
   ripple(x, level, z, size = 0.8) {
     const k = this.nextRing;
-    this.nextRing = (k + 1) % RINGS;
-    this.rings.setMatrixAt(k, m4.makeTranslation(x, level + 0.06, z));
-    this.ringInfo.setXY(k, this.time, size);
-    this.dirty.rings = true;
+    this.nextRing = (k + 1) % RIPPLE_SLOTS;
+    RIPPLES.uRipples.value[k].set(x, z, this.time, size);
   }
 
   update(dt) {
     this.time += dt;
     this.uniforms.uTime.value = this.time;
     this.ringUniforms.uTime.value = this.time;
+    RIPPLES.uRippleTime.value = this.time;
     if (this.dirty.prints) {
       this.prints.instanceMatrix.needsUpdate = true;
       this.prints.instanceColor.needsUpdate = true;
