@@ -416,7 +416,7 @@ globalThis.__prof?.mark('  ins: bees');
     if (this.bugWait <= 0 && g) {
       this.bugWait = 1;
       const w = g.getBiomeWeights(cam.x, cam.z, {});
-      const wet = Math.min(1, (w.wetland ?? 0) + (w.mangrove ?? 0) + (w.jungle ?? 0) * 0.9);
+      const wet = Math.min(1, (w.wetland ?? 0) + (w.mangrove ?? 0) + ((w.jungle ?? 0) + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0)) * 0.9);
       const water = ctx.waterAt?.(cam.x, cam.z) || ctx.waterAt?.(cam.x + 12, cam.z) || ctx.waterAt?.(cam.x - 12, cam.z) || ctx.waterAt?.(cam.x, cam.z + 12) || ctx.waterAt?.(cam.x, cam.z - 12);
       const warm = Math.max(0, (ctx.summer ?? 0) + 0.6 * (ctx.spring ?? 0) + 0.3 * (ctx.autumn ?? 0)) * (1 - (ctx.winter ?? 0));
       const high = Math.max(0, Math.min(1, (cam.y - (ctx.seaLevel ?? 0) - 60) / 60)); // (none up on the heights)

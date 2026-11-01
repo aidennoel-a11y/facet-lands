@@ -760,7 +760,8 @@ chunks.addLayer(createReedLayer(WORLD));
 chunks.addLayer(createLilyLayer(WORLD));
 chunks.addLayer(createVentLayer(WORLD));
 chunks.addLayer(createGeyserLayer(WORLD));
-chunks.addLayer(createCoralLayer(WORLD));
+const coralLayer = createCoralLayer(WORLD);
+chunks.addLayer(coralLayer);
 chunks.addLayer(createMushroomIslandLayer(WORLD));
 chunks.addLayer(createLeafLayer());
 const mushrooms = createMushroomLayer();
@@ -1570,16 +1571,18 @@ function quicksand(dt) {
     const g = chunks.groundHeightAt(p.x, p.z), feet = p.y - controls.eyeHeight;
     if (Number.isFinite(g) && feet < g + 0.4) q = generator.quicksandAt(p.x, p.z);
   }
-  if (q > 0.3) {
+  // (In it till you're well clear of it: no flicking in and out at its edge.)
+  if (q > (sand.sink > 0.02 ? 0.12 : 0.3)) {
     const slowly = controls.crouch && controls.moving, struggle = controls.moving && !controls.crouch ? (controls.sprinting ? 0.5 : 0.25) : 0;
-    const rate = slowly ? -0.18 : 0.05 + struggle + (controls.takeJumpsPeek?.() ? 0.3 : 0);
-    sand.sink = Math.max(0, Math.min(1.7, sand.sink + rate * dt * (0.6 + 0.6 * q)));
+    const rate = slowly ? -0.25 : 0.05 + struggle + (controls.takeJumpsPeek?.() ? 0.3 : 0);
+    // (Never deeper than your chin: your eyes stay above the sand, never down in the ground.)
+    sand.sink = Math.max(0, Math.min(1.3, sand.sink + rate * dt * (0.6 + 0.6 * q)));
     sand.slow = slowly ? 0.35 : 0.12;
     if (performance.now() - sand.told > 9000 && sand.sink > 0.15) (sand.told = performance.now()), game.hotbar?.flash(sand.sink > 1 ? 'Sinking! Stop struggling: crouch (C) and move slowly to work free' : 'Quicksand! Struggling sinks you faster: crouch and edge out slowly');
-    if (sand.sink > 1.35 && game.survival.alive) game.hurt(9 * dt, 'quicksand');
+    if (sand.sink > 1.15 && game.survival.alive) game.hurt(9 * dt, 'quicksand');
     if (Math.random() < dt * 2) sound.call('brush', 0, 0.3);
   } else {
-    sand.sink = Math.max(0, sand.sink - dt * (walking ? 1.2 : 3)); // (out of it: up onto the firm ground)
+    sand.sink = Math.max(0, sand.sink - dt * (walking ? 0.6 : 3)); // (out of it: hauling yourself up onto the firm ground, steadily)
     sand.slow = 1;
   }
   controls.sinkDepth = sand.sink;
@@ -3246,6 +3249,7 @@ function tick(now) {
   prof.mark('sound & surroundings');
   wildlife.update(dt, life);
   heartbeat(dt);
+  coralLayer.refresh(camera.position);
   if (controls.mode === 'walk' && !sheltered) {
     const pp = camera.position;
     piranha.update(dt, {

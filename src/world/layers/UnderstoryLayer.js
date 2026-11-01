@@ -145,29 +145,35 @@ function addPush(material) {
       .replace(
         '#include <project_vertex>',
         /* glsl */ `{
-          vec3 wv = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+          // (The whole plant leans away from you together, from its foot:
+          // pushed by where its root is, not leaf by leaf, so nothing stretches.)
+          vec3 wv = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
           vec2 push = vec2(0.0);
           for (int i = 0; i < ${GRASS_PUSHERS}; i++) {
             vec4 q = uPushers[i];
             if (q.z <= 0.0) break;
             vec2 off = wv.xz - q.xy;
             float d = length(off);
-            float f = 1.0 - smoothstep(q.z * 0.3, q.z * 1.1, d);
+            float f = 1.0 - smoothstep(q.z * 0.5, q.z * 1.6, d);
             if (f > 0.0) push += (off / max(d, 0.05)) * f;
           }
           float pushed = min(1.0, length(push));
           if (pushed > 0.0) {
-            vec3 local = transpose(mat3(instanceMatrix)) * vec3(push.x, 0.0, push.y);
-            vec2 lp = normalize(local.xz) * pushed;
-            float hgt = max(transformed.y, 0.0);
-            transformed.xz += lp * hgt * 0.8;
-            transformed.y -= hgt * 0.35 * pushed;
+            // (Its lean, as a turn about its foot: over and down, never longer.)
+            vec3 local = inverse(mat3(instanceMatrix)) * vec3(push.x, 0.0, push.y);
+            vec2 dir = length(local.xz) > 1e-4 ? normalize(local.xz) : vec2(0.0);
+            float a = pushed * 0.75, c = cos(a), sn = sin(a);
+            float hgt = max(transformed.y, 0.0), along = dot(transformed.xz, dir);
+            vec2 side = transformed.xz - dir * along;
+            float na = along * c + hgt * sn, ny = -along * sn + hgt * c;
+            transformed.xz = side + dir * na;
+            transformed.y = transformed.y < 0.0 ? transformed.y : ny;
           }
         }
         #include <project_vertex>`,
       );
   };
-  material.customProgramCacheKey = () => key + '-pushed';
+  material.customProgramCacheKey = () => key + '-pushed2';
   return material;
 }
 

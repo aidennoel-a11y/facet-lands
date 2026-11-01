@@ -201,6 +201,35 @@ export function createCoralLayer(config) {
   if (shapes.length !== CORAL_KINDS.length) throw new Error('coral shapes and kinds differ');
   const palettes = CORAL_KINDS.map((k) => PALETTES[k].map((c) => new Color(c)));
   const material = new MeshLambertMaterial({ vertexColors: false, side: DoubleSide });
+  // The chunks right round you hold both shapes of each coral: the full ones
+  // for those within some 30 m of you, the plain ones beyond (through the
+  // water, a few dozen metres off, you can't tell them apart), sorted again
+  // as you move. (A reef's corals by the thousand, each in full: far too
+  // many triangles.)
+  const NEAR = 30;
+  const live = new Set();
+  let lastX = Infinity, lastZ = Infinity;
+  const sort = (group, ex, ez) => {
+    const ox = group.parent.position.x, oz = group.parent.position.z; // (the chunk's corner)
+    group.userData.sorted = true;
+    for (const k of group.userData.coral) {
+      let nf = 0, np = 0;
+      for (const [m, c, x, z] of k.list) {
+        const near = (x + ox - ex) ** 2 + (z + oz - ez) ** 2 < NEAR * NEAR;
+        const mesh = near ? k.full : k.plain, n = near ? nf++ : np++;
+        mesh.setMatrixAt(n, m);
+        mesh.setColorAt(n, c);
+      }
+      k.full.count = nf;
+      k.plain.count = np;
+      k.full.visible = nf > 0;
+      k.plain.visible = np > 0;
+      for (const mesh of [k.full, k.plain]) {
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      }
+    }
+  };
 
   return {
     name: 'corals',
@@ -227,9 +256,26 @@ export function createCoralLayer(config) {
       if (!placed.some((l) => l.length)) return null;
       const group = new Group();
       group.name = 'corals';
+      if (lod === 0) {
+        group.userData.coral = [];
+        placed.forEach((list, k) => {
+          if (!list.length) return;
+          const full = new InstancedMesh(shapes[k], material, list.length), plainMesh = new InstancedMesh(plain[k], material, list.length);
+          for (const mesh of [full, plainMesh]) {
+            list.forEach(([m, c], n) => (mesh.setMatrixAt(n, m), mesh.setColorAt(n, c)));
+            mesh.computeBoundingSphere();
+            group.add(mesh);
+          }
+          full.count = 0; // (all plain, till sorted round you)
+          group.userData.coral.push({ list: list.map(([m, c]) => [m, c, m.elements[12], m.elements[14]]), full, plain: plainMesh });
+        });
+        live.add(group);
+        group.userData.sorted = false;
+        return group;
+      }
       placed.forEach((list, k) => {
         if (!list.length) return;
-        const mesh = new InstancedMesh((lod === 0 ? shapes : plain)[k], material, list.length);
+        const mesh = new InstancedMesh(plain[k], material, list.length);
         list.forEach(([m, c], n) => {
           mesh.setMatrixAt(n, m);
           mesh.setColorAt(n, c);
@@ -241,7 +287,15 @@ export function createCoralLayer(config) {
     },
 
     dispose(group) {
+      live.delete(group);
       for (const mesh of group.children) mesh.dispose(); // (the shapes are shared)
+    },
+
+    /** Sorts the near chunks' corals into full and plain, round `eye` (when you've moved a few metres). */
+    refresh(eye) {
+      const moved = Math.hypot(eye.x - lastX, eye.z - lastZ) >= 4;
+      if (moved) (lastX = eye.x), (lastZ = eye.z);
+      for (const group of live) if (group.parent && (moved || !group.userData.sorted)) sort(group, eye.x, eye.z);
     },
   };
 }

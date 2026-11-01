@@ -20,6 +20,14 @@ function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 }
+// The land's biomes, for the animals: the jungle's mountains and foothills
+// are jungle to them, all the same creatures living there as down in it.
+function wildWeights(g, x, z, out = {}) {
+  const w = g.getBiomeWeights(x, z, out);
+  w.jungle = Math.min(1, (w.jungle ?? 0) + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0));
+  return w;
+}
+
 const TAU = Math.PI * 2;
 const SWAY = { x: 0, z: 0 };
 // The calls that carry far (see #vocalize).
@@ -1785,9 +1793,9 @@ export class Wildlife {
       const blood = (ctx.bloodMoon ?? 0) > 0.3; // (under a blood moon: the hunters out in numbers)
       this.nightCool = blood ? rnd(15, 30) : rnd(35, 80);
       const near = (kind) => this.animals.some((a) => a.kind === kind && a.alive && Math.hypot(a.x - cx, a.z - cz) < 200);
-      const s = spot(140, 260, (x, z) => g.getMountainness(x, z) < 0.6 && g.getBiomeWeights(x, z, {}).desert < 0.5, 10);
+      const s = spot(140, 260, (x, z) => g.getMountainness(x, z) < 0.6 && wildWeights(g, x, z, {}).desert < 0.5, 10);
       if (s) {
-        const w = g.getBiomeWeights(s.x, s.z, {}), open = w.savanna > 0.4 || (w.temperate > 0.5 && g.getPlainness(s.x, s.z) > 0.3 && g.getForestDensity(s.x, s.z) < 0.3);
+        const w = wildWeights(g, s.x, s.z, {}), open = w.savanna > 0.4 || (w.temperate > 0.5 && g.getPlainness(s.x, s.z) > 0.3 && g.getForestDensity(s.x, s.z) < 0.3);
         const kind = open && !near('coyote') ? 'coyote' : (blood || !near('wolf')) && w.jungle + w.mangrove < 0.4 ? 'wolf' : null;
         const herd = kind && this.#spawnHerd(kind, s, (kind === 'wolf' ? 3 + Math.floor(rnd(0, 3)) : 1 + Math.floor(rnd(0, 3))) + (blood ? 2 : 0));
         if (herd) {
@@ -1809,7 +1817,7 @@ export class Wildlife {
     if (day > 0.5) this.howlReach = 1400;
     if (day < 0.25 && this.farHowl <= 0) {
       this.farHowl = rnd(35, 90);
-      const w = g.getBiomeWeights(cx, cz, {}), wild = (w.pine ?? 0) + (w.smoky ?? 0) + (w.blackHills ?? 0) + (w.redwood ?? 0) * 0.5 + (w.parkland ?? 0) * 0.6 + (w.cascades ?? 0) * 0.7 + (w.temperate ?? 0) * Math.min(1, g.getForestDensity(cx, cz) * 1.5) + (w.tundra ?? 0) * 0.8 + (w.taiga ?? 0);
+      const w = wildWeights(g, cx, cz, {}), wild = (w.pine ?? 0) + (w.smoky ?? 0) + (w.blackHills ?? 0) + (w.redwood ?? 0) * 0.5 + (w.parkland ?? 0) * 0.6 + (w.cascades ?? 0) * 0.7 + (w.temperate ?? 0) * Math.min(1, g.getForestDensity(cx, cz) * 1.5) + (w.tundra ?? 0) * 0.8 + (w.taiga ?? 0);
       if (wild > 0.25) {
         const reach = (this.howlReach = Math.max(260, (this.howlReach ?? 1400) * (ctx.sheltered ? 1 : 0.85)));
         const a = rnd(0, TAU), d = rnd(0.75, 1.1) * reach;
@@ -1828,7 +1836,7 @@ export class Wildlife {
 
     // Flocks wheeling over the woods and fields, by day.
     if (day > 0.4 && this.flocks.filter((f) => f.kind === 'starling').length < 1) {
-      const s = spot(260, 380, (x, z) => { const w = g.getBiomeWeights(x, z, {}); return w.temperate + w.savanna + w.pine > 0.6; }, 6);
+      const s = spot(260, 380, (x, z) => { const w = wildWeights(g, x, z, {}); return w.temperate + w.savanna + w.pine > 0.6; }, 6);
       if (s) this.#spawnFlock('starling', s, Math.round(rnd(6, 12)));
     }
     // Gulls over the coast.
@@ -1851,7 +1859,7 @@ export class Wildlife {
     }
     // An eagle, circling high over the Smoky Mountains and the Black Hills.
     if (day > 0.3 && count('eagle') < 1) {
-      const s = spot(150, 350, (x, z) => { const w = g.getBiomeWeights(x, z, {}); return w.smoky + w.blackHills > 0.5; }, 6);
+      const s = spot(150, 350, (x, z) => { const w = wildWeights(g, x, z, {}); return w.smoky + w.blackHills > 0.5; }, 6);
       if (s) this.#spawnCircler('eagle', s);
     }
     // Bats out of the caves: streaming out at dusk, or startled out by a
@@ -1917,7 +1925,7 @@ export class Wildlife {
         if (!home.monkeys && this.#crowns(ctx.trees, key)) {
           home.monkeys = true;
           const list = this.#crowns(ctx.trees, key);
-          const w = ctx.generator.getBiomeWeights((cx + 0.5) * C, (cz + 0.5) * C, {});
+          const w = wildWeights(ctx.generator, (cx + 0.5) * C, (cz + 0.5) * C, {});
           if (w.jungle > 0.5 && home.rand() < 0.6) {
             for (let k = 0, n = 3 + Math.floor(home.rand() * 5); k < n && list.length; k++) {
               const i = Math.floor(home.rand() * (list.length / 5)) * 5;
@@ -1976,7 +1984,7 @@ export class Wildlife {
     for (let k = 0; k < 3; k++) {
       const p = at();
       if (p.y < ctx.seaLevel + 1 || p.y > 150) continue;
-      const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
+      const w = wildWeights(g, p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
       if (w.temperate + w.pine + w.smoky + w.parkland + (w.cascades ?? 0) > 0.6 && f > 0.08 && f < 0.95 && g.getMountainness(p.x, p.z) < 0.55) { // (the birch and aspen parkland too)
         if (rand() < 0.28) {
           const from = this.animals.length;
@@ -1991,7 +1999,7 @@ export class Wildlife {
     for (let k = 0; k < 3; k++) {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if (((w.temperate > 0.6 && g.getPlainness(p.x, p.z) > 0.3) || w.savanna > 0.6) && g.getMountainness(p.x, p.z) < 0.3) {
         if (rand() < 0.14) {
           const from = this.animals.length;
@@ -2007,7 +2015,7 @@ export class Wildlife {
     for (let k = 0; k < 2; k++) {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
-      const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
+      const w = wildWeights(g, p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
       if (((m > 0.18 && m < 0.65) || w.smoky > 0.5) && w.temperate + w.pine + w.smoky > 0.5 && g.getForestDensity(p.x, p.z) > 0.05) {
         if (rand() < 0.22 && ctx.winter < 0.5) { // (in winter they're asleep in their dens: see below)
           const from = this.animals.length;
@@ -2039,7 +2047,7 @@ export class Wildlife {
     for (let k = 0; k < 2; k++) {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       const cold = g.getSeasonality(p.x, p.z);
       if ((w.pine > 0.5 || (w.temperate > 0.6 && cold > 0.7)) && g.getForestDensity(p.x, p.z) > 0.2 && g.getMountainness(p.x, p.z) < 0.6) {
         if (rand() < 0.09) {
@@ -2055,7 +2063,7 @@ export class Wildlife {
     for (let k = 0; k < 2; k++) {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if ((w.savanna > 0.5 || (w.temperate > 0.6 && g.getPlainness(p.x, p.z) > 0.3)) && g.getMountainness(p.x, p.z) < 0.4) {
         if (rand() < 0.14) {
           const from = this.animals.length;
@@ -2069,7 +2077,7 @@ export class Wildlife {
     // A fox, at the woods' edge where the winters are cold.
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
+      const w = wildWeights(g, p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
       if (p.y > ctx.seaLevel + 1 && w.temperate + w.pine > 0.6 && g.getSeasonality(p.x, p.z) > 0.55 && f > 0.05 && f < 0.7 && rand() < 0.16) {
         const from = this.animals.length;
         this.#spawnWalker('fox', p.x, p.z, null);
@@ -2081,7 +2089,7 @@ export class Wildlife {
     for (let k = 0; k < bunnies; k++) {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if (w.temperate + w.pine + w.savanna * 0.6 > 0.6 && g.getForestDensity(p.x, p.z) < 0.8 && g.getMountainness(p.x, p.z) < 0.45) {
         const from = this.animals.length;
         this.#spawnWalker('rabbit', p.x, p.z, null);
@@ -2091,7 +2099,7 @@ export class Wildlife {
     // Sheep: flocks out on the open plains.
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       // (And in the open meadows of the birch and aspen parkland.)
       const plain = g.getPlainness(p.x, p.z), park = w.parkland ?? 0;
       if (p.y > ctx.seaLevel + 1 && w.temperate + park > 0.6 && (plain > 0.3 || park > 0.5) && g.getForestDensity(p.x, p.z) < 0.4 && g.getMountainness(p.x, p.z) < 0.3 && rand() < (plain > 0.5 || park > 0.5 ? 0.34 : 0.2)) {
@@ -2106,7 +2114,7 @@ export class Wildlife {
     for (const e of g.caves?.mouthsNear(cx * C, cz * C, (cx + 1) * C, (cz + 1) * C) ?? []) {
       const m = e.mouth;
       if (m.x < cx * C || m.x >= (cx + 1) * C || m.z < cz * C || m.z >= (cz + 1) * C) continue;
-      const w = g.getBiomeWeights(m.x, m.z, {}), f = g.getForestDensity(m.x, m.z);
+      const w = wildWeights(g, m.x, m.z, {}), f = g.getForestDensity(m.x, m.z);
       if (!(w.temperate + w.pine + w.smoky + w.blackHills > 0.5 && f > 0.1)) continue;
       const roll = hash2(Math.round(m.x), Math.round(m.z), ctx.seed ^ 0xd3d);
       const kind = roll < 0.35 && (w.pine > 0.3 || g.getSeasonality(m.x, m.z) > 0.55) ? 'wolves' : roll > 0.65 ? 'bear' : null;
@@ -2145,7 +2153,7 @@ export class Wildlife {
     for (let k = 0; k < 2; k++) {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
-      const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z), f = g.getForestDensity(p.x, p.z);
+      const w = wildWeights(g, p.x, p.z, {}), m = g.getMountainness(p.x, p.z), f = g.getForestDensity(p.x, p.z);
       if (w.pine + w.smoky + w.temperate + w.parkland + (w.cascades ?? 0) > 0.6 && m > 0.1 && m < 0.75 && f < 0.85) {
         if (rand() < 0.3) {
           const from = this.animals.length;
@@ -2169,7 +2177,7 @@ export class Wildlife {
     // the spring and summer).
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {}), cold = g.getSeasonality(p.x, p.z);
+      const w = wildWeights(g, p.x, p.z, {}), cold = g.getSeasonality(p.x, p.z);
       if (p.y > ctx.seaLevel + 1 && (w.pine > 0.4 || (w.temperate > 0.5 && cold > 0.65) || w.wetland > 0.3) && g.getForestDensity(p.x, p.z) > 0.1 && rand() < 0.08) {
         const from = this.animals.length;
         const cow = this.#spawnWalker('moose', p.x, p.z, null);
@@ -2189,7 +2197,7 @@ export class Wildlife {
     for (let k = 0; k < 2; k++) {
       const p = at();
       if (p.y < ctx.seaLevel + 1) continue;
-      const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
+      const w = wildWeights(g, p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
       if (w.temperate + w.smoky + (w.blackHills ?? 0) > 0.6 && f > 0.3 && g.getMountainness(p.x, p.z) < 0.5) {
         if (rand() < 0.1) {
           const from = this.animals.length;
@@ -2206,7 +2214,7 @@ export class Wildlife {
     // A cougar, alone, in the mountains and the high woods.
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
+      const w = wildWeights(g, p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
       if (p.y > ctx.seaLevel + 1 && (m > 0.25 || w.smoky > 0.5 || (w.blackHills ?? 0) > 0.5) && w.desert < 0.3 && rand() < 0.045) {
         const from = this.animals.length;
         this.#spawnWalker('cougar', p.x, p.z, null);
@@ -2217,7 +2225,7 @@ export class Wildlife {
     if (rand() < 0.35) {
       for (let k = 0, n = 1 + Math.floor(rand() * 2); k < n; k++) {
         const p = at();
-        const w = g.getBiomeWeights(p.x, p.z, {});
+        const w = wildWeights(g, p.x, p.z, {});
         if (p.y > ctx.seaLevel + 1 && w.pine + w.temperate * 0.8 > 0.5 && (g.getSeasonality(p.x, p.z) > 0.5 || g.getPlainness(p.x, p.z) > 0.3) && g.getForestDensity(p.x, p.z) < 0.6) {
           const from = this.animals.length;
           this.#spawnWalker('hare', p.x, p.z, null);
@@ -2228,7 +2236,7 @@ export class Wildlife {
     // Turkeys: a flock in the open woods.
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
+      const w = wildWeights(g, p.x, p.z, {}), f = g.getForestDensity(p.x, p.z);
       if (p.y > ctx.seaLevel + 1 && w.temperate + w.smoky + w.parkland + (w.cascades ?? 0) > 0.6 && f > 0.15 && f < 0.8 && g.getMountainness(p.x, p.z) < 0.45 && rand() < 0.1) {
         const from = this.animals.length;
         const herd = this.#group('turkey', p, 4 + Math.floor(rand() * 6), rand() < 0.2);
@@ -2253,7 +2261,7 @@ export class Wildlife {
     // The jungle's: a tiger, a black panther, giant pandas (in the bamboo).
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if (p.y > ctx.seaLevel + 1 && w.jungle > 0.6) {
         const r = rand();
         const from = this.animals.length;
@@ -2271,7 +2279,7 @@ export class Wildlife {
     // Mountain goats: a band on the crags and in the badlands.
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if (p.y > ctx.seaLevel + 1 && (g.getMountainness(p.x, p.z) > 0.4 || w.badlands > 0.5) && w.desert < 0.5 && rand() < 0.07) {
         const from = this.animals.length;
         const herd = this.#group('mountainGoat', p, 2 + Math.floor(rand() * 4), rand() < 0.3);
@@ -2282,7 +2290,7 @@ export class Wildlife {
     // Goats, gone wild: a band on the hills and the scrub (a billy and his nannies).
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
+      const w = wildWeights(g, p.x, p.z, {}), m = g.getMountainness(p.x, p.z);
       const hills = (m > 0.18 && m < 0.5) || (w.badlands > 0.3 && w.badlands < 0.8) || (w.blackHills ?? 0) > 0.5 || (w.volcanic > 0.4 && m < 0.5);
       if (p.y > ctx.seaLevel + 2 && hills && w.desert < 0.4 && g.getForestDensity(p.x, p.z) < 0.5 && rand() < 0.05) {
         const from = this.animals.length;
@@ -2302,7 +2310,7 @@ export class Wildlife {
     // (The mangroves most of all: a band on every stretch of their shore.)
     for (let k = 0, found = 0; k < 16 && found < 3 && ctx.waterAt; k++) {
       const x = (cx + 0.05 + 0.9 * rand()) * C, z = (cz + 0.05 + 0.9 * rand()) * C;
-      const w = g.getBiomeWeights(x, z, {});
+      const w = wildWeights(g, x, z, {});
       if (w.mangrove + w.jungle + w.wetland < 0.4 || !ctx.waterAt(x, z)) continue;
       found++;
       const mangrove = w.mangrove > 0.4;
@@ -2335,7 +2343,7 @@ export class Wildlife {
     // Wild horses: a herd, a stallion at its head, out on the open grass.
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       const open = (w.temperate > 0.5 && g.getPlainness(p.x, p.z) > 0.25) || w.parkland > 0.5 || w.savanna > 0.5 || w.blackHills > 0.5;
       if (p.y > ctx.seaLevel + 1 && open && g.getForestDensity(p.x, p.z) < 0.45 && g.getMountainness(p.x, p.z) < 0.45 && rand() < 0.06) {
         const from = this.animals.length;
@@ -2354,7 +2362,7 @@ export class Wildlife {
     // edge, the badlands' flats, the savanna's dry grass).
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       const dry = (w.desert > 0.15 && w.desert < 0.75) || w.badlands > 0.4 || w.savanna > 0.5;
       if (p.y > ctx.seaLevel + 1 && dry && g.getForestDensity(p.x, p.z) < 0.35 && g.getMountainness(p.x, p.z) < 0.5 && rand() < 0.05) {
         const from = this.animals.length;
@@ -2371,7 +2379,7 @@ export class Wildlife {
     // clan of hyenas, a herd of elephants with their calves.
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if (p.y > ctx.seaLevel + 1 && w.savanna > 0.6 && g.getMountainness(p.x, p.z) < 0.4) {
         const r = rand();
         const from = this.animals.length;
@@ -2402,7 +2410,7 @@ export class Wildlife {
       for (const r of g.rivers.inBox(cx * C, cz * C, (cx + 1) * C, (cz + 1) * C)) {
         const pond = r.pond;
         if (!pond || pond.x < cx * C || pond.x >= (cx + 1) * C || pond.z < cz * C || pond.z >= (cz + 1) * C) continue;
-        const w = g.getBiomeWeights(pond.x, pond.z, {});
+        const w = wildWeights(g, pond.x, pond.z, {});
         if (w.savanna + 0.5 * w.wetland < 0.4 || rand() > 0.7) continue;
         const from = this.animals.length;
         const herd = { kind: 'hippo', goal: { x: pond.x, z: pond.z }, goalWait: rnd(20, 60), members: [], fear: null, fleeTime: 0, den: { x: pond.x, z: pond.z } };
@@ -2415,7 +2423,7 @@ export class Wildlife {
     // Hippos, in the savanna's rivers (and the wetlands').
     for (let k = 0; k < 6 && ctx.waterAt; k++) {
       const x = (cx + 0.05 + 0.9 * rand()) * C, z = (cz + 0.05 + 0.9 * rand()) * C;
-      const w = g.getBiomeWeights(x, z, {}), wat = ctx.waterAt(x, z);
+      const w = wildWeights(g, x, z, {}), wat = ctx.waterAt(x, z);
       if (w.savanna + 0.5 * w.wetland < 0.5 || !wat || g.getOceanness(x, z) > 0.4) continue;
       if (wat.level - ctx.ground(x, z) > 0.5 && rand() < 0.35) {
         const from = this.animals.length;
@@ -2429,7 +2437,7 @@ export class Wildlife {
     // The desert's camels; scorpions there and in the badlands (not in the winter).
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if (p.y > ctx.seaLevel + 1 && w.desert > 0.6 && rand() < 0.07) {
         const from = this.animals.length;
         const herd = this.#spawnHerd('camel', p, 3 + Math.floor(rand() * 5));
@@ -2437,7 +2445,7 @@ export class Wildlife {
         own(from);
       }
       const q = at();
-      const wq = g.getBiomeWeights(q.x, q.z, {});
+      const wq = wildWeights(g, q.x, q.z, {});
       if (q.y > ctx.seaLevel + 1 && wq.desert + wq.badlands > 0.5 && ctx.winter < 0.5 && rand() < 0.4) {
         const from = this.animals.length;
         for (let n = 1 + Math.floor(rand() * 2), j = 0; j < n; j++) this.#spawnWalker('scorpion', q.x + rnd(-8, 8), q.z + rnd(-8, 8), null);
@@ -2448,7 +2456,7 @@ export class Wildlife {
     for (let k = 0; k < 4; k++) {
       const p = at();
       if (p.y < ctx.seaLevel + 0.5 || p.y > ctx.seaLevel + 3 || g.getOceanness(p.x, p.z) < 0.25 || rand() > 0.5) continue;
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if ((w.tundra ?? 0) + (w.glacier ?? 0) > 0.4 || ctx.winter > 0.7) continue;
       const from = this.animals.length;
       for (let n = 2 + Math.floor(rand() * 4), j = 0; j < n; j++) this.#spawnWalker('crab', p.x + rnd(-5, 5), p.z + rnd(-5, 5), null);
@@ -2460,7 +2468,7 @@ export class Wildlife {
       for (let k = 0; k < 3; k++) {
         const p = at();
         if (p.y < ctx.seaLevel + 0.5 || p.y > ctx.seaLevel + 2.5 || g.getOceanness(p.x, p.z) < 0.3 || rand() > 0.45) continue;
-        const w = g.getBiomeWeights(p.x, p.z, {});
+        const w = wildWeights(g, p.x, p.z, {});
         if (w.jungle + w.savanna + w.desert + (w.mangrove ?? 0) + w.volcanic + 0.5 * w.temperate < 0.5) continue; // (warm shores only)
         const from = this.animals.length;
         for (let n = 1 + Math.floor(rand() * 3), j = 0; j < n; j++) {
@@ -2475,7 +2483,7 @@ export class Wildlife {
     // A python, by the jungle's water or among the roots of its trees.
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if (p.y > ctx.seaLevel + 1 && w.jungle + 0.5 * w.mangrove > 0.6 && rand() < 0.14) {
         const from = this.animals.length;
         this.#spawnSnake(p.x, p.z, 'python');
@@ -2485,7 +2493,7 @@ export class Wildlife {
     // A rattlesnake in the dry country and the badlands (they sleep out the winter).
     {
       const p = at();
-      const w = g.getBiomeWeights(p.x, p.z, {});
+      const w = wildWeights(g, p.x, p.z, {});
       if (p.y > ctx.seaLevel + 1 && w.desert + w.savanna + w.volcanic * 0.5 + w.badlands > 0.5 && ctx.winter < 0.5 && rand() < 0.3) {
         const from = this.animals.length;
         this.#spawnSnake(p.x, p.z);
@@ -2510,7 +2518,7 @@ export class Wildlife {
     const found = [];
     if (hash2(i, j, seed) < 0.1) {
       const x = (i + 0.2 + 0.6 * hash2(i, j, seed + 1)) * BOSS_CELL, z = (j + 0.2 + 0.6 * hash2(i, j, seed + 2)) * BOSS_CELL;
-      const w = g.getBiomeWeights(x, z, {});
+      const w = wildWeights(g, x, z, {});
       let best = null, bw = 0.55;
       for (const [id, b] of Object.entries(BOSSES)) for (const bi of b.biomes ?? []) if ((w[bi] ?? 0) > bw) (bw = w[bi]), (best = id);
       if (best && g.getBaseHeight(x, z) > ctx.seaLevel + 1) found.push({ key: `${best}@${key}`, boss: best, x, z });
@@ -4486,7 +4494,7 @@ export class Wildlife {
       if (k.alive || k.gone || k.state !== 'dead' || k.birdsCalled || (k.deadTime ?? 0) < 25 || !SPECIES[k.kind].ground) continue;
       if (SPECIES[k.kind].bulk === 'small' || Math.hypot(k.x - c.x, k.z - c.z) > 500) continue;
       k.birdsCalled = true;
-      const w = ctx.generator.getBiomeWeights(k.x, k.z, {});
+      const w = wildWeights(ctx.generator, k.x, k.z, {});
       const dry = (w.savanna ?? 0) + (w.desert ?? 0) + (w.badlands ?? 0) + 0.6 * (w.temperate ?? 0) * (1 - ctx.generator.getForestDensity(k.x, k.z));
       const kind = dry > 0.45 && Math.random() < 0.85 ? 'vulture' : 'crow';
       const n = kind === 'vulture' ? Math.round(rnd(3, 7)) : Math.round(rnd(4, 9));

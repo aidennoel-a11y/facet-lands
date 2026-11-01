@@ -4231,13 +4231,35 @@ export class TerrainGenerator {
   }
 
   /** Black sand on the beach (0..1): the coasts by volcanic country, and here and there a stretch of dark volcanic shore elsewhere. */
+  // How volcanic it is half a kilometre off each way (the most of the four),
+  // for the black sand of a volcanic shore. It changes only over hundreds of
+  // metres, so it's worked out on a 32 m lattice and read between (and
+  // remembered): not four times over for every face of the beach.
+  #volcanicNear(x, z) {
+    const C = 32, fx = x / C, fz = z / C, i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+    const cache = (this._volcNear ??= new Map());
+    const at = (a, b) => {
+      const key = a * 131071 + b;
+      let r = cache.get(key);
+      if (r === undefined) {
+        if (cache.size > 60000) cache.clear();
+        r = 0;
+        for (const [dx, dz] of [[450, 0], [-450, 0], [0, 450], [0, -450]]) r = Math.max(r, 0.9 * this.getBiomeWeights(a * C + dx, b * C + dz, {}).volcanic);
+        cache.set(key, r);
+      }
+      return r;
+    };
+    return (at(i, j) * (1 - u) + at(i + 1, j) * u) * (1 - v) + (at(i, j + 1) * (1 - u) + at(i + 1, j + 1) * u) * v;
+  }
+
   blackSandAt(x, z) {
     const w = this.getBiomeWeights(x, z, {});
     // (Volcanic country here, or within half a kilometre inland: its shore. Three
     // stretches of such shore in four are black sand, the rest pale.)
     let v = w.volcanic + this.#volcanoZone(x, z, this.#rangeField(x, z, {}).value) * 0.5;
-    if (v < 0.2 && this.getOceanness(x, z) > 0.3) for (const [dx, dz] of [[450, 0], [-450, 0], [0, 450], [0, -450]]) v = Math.max(v, 0.9 * this.getBiomeWeights(x + dx, z + dz, {}).volcanic);
-    const volc = smoothstep(0.02, 0.2, v) * smoothstep(-0.44, -0.36, this.coastNoise.noise2D(x * 0.0004 + 71, z * 0.0004 - 19));
+    const along = smoothstep(-0.44, -0.36, this.coastNoise.noise2D(x * 0.0004 + 71, z * 0.0004 - 19));
+    if (v < 0.2 && along > 0 && this.getOceanness(x, z) > 0.3) v = Math.max(v, this.#volcanicNear(x, z));
+    const volc = smoothstep(0.02, 0.2, v) * along;
     const stretch = smoothstep(0.42, 0.54, this.coastNoise.fbm(x * 0.0005 + 500, z * 0.0005 - 200, 2)) * (1 - w.desert - w.saltFlat);
     return Math.max(volc, stretch) * (1 - w.mangrove);
   }
