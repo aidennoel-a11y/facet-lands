@@ -22,8 +22,42 @@ import { SPARKLE_HEAD, sparkleUniforms } from '../../render/waterSparkle.js';
 // How stormy it is at sea (0..1): only then does the surf break on the shores of a sheltered cove.
 export const seaStorm = { value: 0 };
 
+/**
+ * The tide (m above or below the sea's still level): rising and falling
+ * twice a day (see main), on the open sea only.
+ */
+export const tide = { value: 0 };
+
+// The breakers rolling in on an open beach, shared by the surface's lift
+// (vertex) and its foam (fragment): `u`, where a point is in the passing of
+// a breaker (0 the trough behind it, rising to its crest at about 0.75, its
+// face falling away sharply in front, to the shore), from how far out it is
+// (its depth over the bed's slope), the time, and a slow wander along the
+// coast, so the crests come in curved, in crescents, not ruled lines.
+const BREAKERS = /* glsl */ `
+  float breakerPhase(vec2 p, float depth, float slope) {
+    float out_ = max(depth, -3.0) / max(slope, 0.004);
+    float bend = 3.5 * sin(p.x * 0.061 + 1.3 * sin(p.y * 0.023)) * cos(p.y * 0.057 + 1.1 * sin(p.x * 0.029));
+    return fract((bend - out_) / 17.0 + uTime / 8.0 + 0.15 * sin(p.x * 0.011 - p.y * 0.008));
+  }
+  // How high a breaker stands: building as it runs into shallower water; past about 1 m deep, spent.
+  float breakerHeight(float depth) {
+    return 0.75 * smoothstep(6.0, 2.0, depth) * smoothstep(0.7, 1.6, depth) + 0.18 * smoothstep(1.6, 0.4, depth) * smoothstep(-0.4, 0.4, depth);
+  }
+  // Its shape: a long gentle back, the crest at 0.75, the front falling away steeply.
+  float breakerProfile(float u) {
+    return (u < 0.75 ? pow(u / 0.75, 2.2) : 1.0 - smoothstep(0.75, 0.86, u)) - 0.35;
+  }
+  // The swash: the spent wave's water running up the beach (a rise, fast)
+  // and draining back down it (slowly), on the sand just above the water.
+  float swashLift(float u, float depth) {
+    float t = fract(u - 0.82);
+    float run = smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.15, 0.85, t));
+    return 0.6 * run * smoothstep(-2.6, -0.4, depth) * smoothstep(1.2, 0.2, depth);
+  }`;
+
 export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor = new Color(0xd6e8f7), skyTop = new Color(0x7fb4e6) } = {}) {
-  const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor }, uSkyTop: { value: skyTop } };
+  const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor }, uSkyTop: { value: skyTop }, uTide: tide };
 
   const material = new MeshPhongMaterial({
     vertexColors: true,
@@ -52,6 +86,11 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         attribute float foam;
         attribute float aFreeze;
         attribute float aDepth;
+        attribute vec3 aShore;
+        uniform float uTide;
+        varying vec3 vShore;
+        varying float vSea;
+        varying float vOpenCoast;
         varying float vFoam;
         varying float vCrest;
         varying vec2 vWorld;
@@ -75,7 +114,8 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
           disp += vec3(q * a * d.x * co, a * si, q * a * d.y * co);
           n += vec3(-d.x * k * a * co, -q * k * a * si, -d.y * k * a * co);
           crest += share * si;
-        }`,
+        }
+        ${BREAKERS}`,
       )
       .replace(
         '#include <beginnormal_vertex>',
@@ -105,7 +145,20 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         vCrest = smoothstep(1.4, 2.6, waveScale) * smoothstep(1.2, 1.9, crest) * (0.4 + 0.6 * uWind);
         vec3 objectNormal = vWaveN;`,
       )
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += disp;\nvSurfY = (modelMatrix * vec4(transformed, 1.0)).y;');
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        transformed += disp;
+        // The tide: the open sea risen or fallen (see tide), and the breakers on its beaches.
+        vShore = aShore;
+        vSea = aShore.z;
+        float slope = length(aShore.xy);
+        vOpenCoast = smoothstep(0.12, 0.45, foamOpen) * smoothstep(0.004, 0.02, slope) * (1.0 - vIce) * aShore.z;
+        transformed.y += uTide * aShore.z * (1.0 - vIce);
+        if (vOpenCoast > 0.0) {
+          float u = breakerPhase(wp.xz, aDepth, slope);
+          float A = breakerHeight(aDepth) * vOpenCoast * (0.55 + 0.45 * uWind + 0.8 * uSeaStorm);
+          transformed.y += A * breakerProfile(u) + swashLift(u, aDepth) * vOpenCoast * (0.6 + 0.4 * uWind + 0.6 * uSeaStorm);
+        }
+        vSurfY = (modelMatrix * vec4(transformed, 1.0)).y;`);
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
@@ -123,6 +176,11 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         varying float vSurfY;
         varying vec3 vWaveN;
         varying float vShut;
+        uniform float uSeaStorm;
+        varying vec3 vShore;
+        varying float vSea;
+        varying float vOpenCoast;
+        ${BREAKERS}
         float waterHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float waterNoise(vec2 p) {
           vec2 i = floor(p), f = fract(p);
@@ -178,6 +236,25 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
           float coast = min(1.0, 0.3 + vFoam * 2.0);
           float lap = max(line * shore, swash) * coast;
           float cap = vCrest * smoothstep(0.5, 0.75, waterNoise(vWorld * 0.09 + uTime * 0.12));
+          // The breakers on an open beach: each swell rising as it runs into
+          // the shallows, its face steepening and glowing green with the
+          // light through it, its lip curling over in a white crescent and
+          // falling on itself; then a bore of white water rushing in, and the
+          // last of it sliding up the sand in a thin lacy sheet and draining
+          // back. (See breakerPhase: the same waves as the surface's own lift.)
+          if (vOpenCoast > 0.01) {
+            float slopeF = max(length(vShore.xy), 0.004);
+            float u = breakerPhase(vWorld, vDepth, slopeF);
+            float zone = smoothstep(4.5, 2.2, vDepth) * smoothstep(0.6, 1.4, vDepth);
+            float face = smoothstep(0.5, 0.74, u) * (1.0 - smoothstep(0.76, 0.8, u)) * smoothstep(5.0, 2.0, vDepth);
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.32, 0.7, 0.66), face * 0.45 * vOpenCoast);
+            float n1 = waterNoise(vWorld * 0.6 + vec2(uTime * 0.4, 0.0)), n2 = waterNoise(vWorld * 1.7 - uTime * 0.6);
+            float lip = smoothstep(0.71, 0.765, u) * (1.0 - smoothstep(0.765, 0.84, u)) * zone;
+            float bore = smoothstep(1.5, 0.4, vDepth) * smoothstep(-0.6, 0.2, vDepth) * pow(1.0 - fract(u - 0.78), 3.0) * smoothstep(0.25, 0.6, n1 * 0.7 + n2 * 0.5);
+            float sheet = smoothstep(0.4, -0.2, vDepth) * swashLift(u, -0.5) * 2.5 * smoothstep(0.3, 0.75, n2 + 0.3 * n1);
+            float edge = smoothstep(0.15, -0.05, vDepth) * smoothstep(-1.6, -0.2, vDepth) * smoothstep(0.55, 0.8, n2 + 0.4 * sin(uTime * 1.3 + vWorld.x * 0.11));
+            breaking = max(breaking, (max(max(lip, bore), max(sheet, edge * swashLift(u, -0.2) * 3.0))) * vOpenCoast * (0.7 + 0.3 * uWind + 0.5 * uSeaStorm));
+          }
           float white = max(max(breaking, cap), lap) * (1.0 - vIce) * (1.0 - 0.7 * below);
           gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.95, 0.97, 0.98), white * 0.85);
           gl_FragColor.a = mix(gl_FragColor.a, 1.0, white * 0.75);
@@ -205,7 +282,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         #include <fog_fragment>`,
       );
   };
-  material.customProgramCacheKey = () => 'water-v2';
+  material.customProgramCacheKey = () => 'water-v3';
 
   return {
     name: 'water',
@@ -251,6 +328,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
       geometry.setAttribute('foam', new BufferAttribute(data.foams, 1));
       geometry.setAttribute('aFreeze', new BufferAttribute(data.freezes, 1));
       geometry.setAttribute('aDepth', new BufferAttribute(data.depths, 1));
+      geometry.setAttribute('aShore', new BufferAttribute(data.shores ?? new Float32Array(data.depths.length * 3), 3));
       geometry.setAttribute('normal', new BufferAttribute(new Float32Array(data.positions.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
       geometry.computeBoundingSphere();
       // Waves move vertices about; pad the bounds so culling stays correct.

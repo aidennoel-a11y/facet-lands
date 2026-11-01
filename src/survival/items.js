@@ -38,6 +38,13 @@ export const ITEMS = {
   mountainOre: { name: 'Mountain iron ore', weight: 3, group: 'Materials' },
   coal: { name: 'Coal', weight: 0.5, group: 'Materials' },
   goldOre: { name: 'Gold ore', weight: 2, group: 'Materials' },
+  // Before iron: copper (green-stained lumps on the hills and in the stream beds) and tin (rarer, dark, heavy: in the mountains' streams),
+  // smelted, and the two together, bronze.
+  copperOre: { name: 'Copper ore', weight: 2, group: 'Materials' },
+  tinOre: { name: 'Tin ore', weight: 2.2, group: 'Materials' },
+  copperBar: { name: 'Copper bar', weight: 2, group: 'Materials' },
+  bronzeBar: { name: 'Bronze bar', weight: 2, group: 'Materials' },
+  glass: { name: 'Glass', weight: 0.6, group: 'Materials' }, // (sand melted in a furnace)
   goldBar: { name: 'Gold bar', weight: 2.5, group: 'Materials' },
   // (Found in the caves.)
   crystal: { name: 'Cave crystal', weight: 0.3, group: 'Materials' },
@@ -72,6 +79,7 @@ export const ITEMS = {
   seedCorn: { name: 'Corn kernels', weight: 0.05, sow: 'corn', group: 'Farming' },
   seedPotato: { name: 'Seed potato', weight: 0.2, sow: 'potato', group: 'Farming' },
   seedCarrot: { name: 'Carrot seeds', weight: 0.05, sow: 'carrot', group: 'Farming' },
+  seedPumpkin: { name: 'Pumpkin seeds', weight: 0.05, sow: 'pumpkin', group: 'Farming' },
   wheat: { name: 'Wheat', weight: 0.3, group: 'Farming' },
   // (Wild crops growing out on the plains: never carried, cut with a sickle for their grain, roots and seed.)
   wildWheat: { name: 'Wild wheat', wild: 'wheat', weight: 0, group: 'Farming' },
@@ -95,6 +103,7 @@ export const ITEMS = {
   snakeroot: { name: 'Snakeroot', herb: 'Draws out venom from a bite or a sting', food: { health: 6, antivenom: true, cure: true, full: 10 }, spoils: 6000, weight: 0.04, group: 'Herbs' }, // (the jungle)
   // From the meteor craters: the star metal, flecks of it in the bowl round the meteorite.
   starMetal: { name: 'Star metal', weight: 1.2, group: 'Materials' },
+  serpentScale: { name: "The Deep Coil's scale", weight: 2, group: 'Trophies' }, // (from the great serpent of the trenches)
   glider: { name: 'Silk glider', tool: true, durability: 200, weight: 2.2, group: 'Tools' }, // (carried: hold Space as you fall and you glide)
   blindFish: { name: 'Blind cave fish', food: { hunger: 6, health: -3, sick: 0.2, full: 120 }, spoils: 700, cooks: 'cookedFish', dries: 'jerky', smokes: 'smokedFish', weight: 0.4, group: 'Food' },
   rawMeat: { name: 'Raw meat', food: { hunger: 10, health: -4, sick: 0.35, full: 180 }, spoils: 900, cooks: 'cookedMeat', dries: 'jerky', smokes: 'smokedMeat', weight: 1, group: 'Food' },
@@ -119,6 +128,8 @@ export const ITEMS = {
   potato: { name: 'Potato', food: { hunger: 5, health: -1, full: 150 }, spoils: 6000, cooks: 'bakedPotato', weight: 0.3, group: 'Food' },
   bakedPotato: { name: 'Baked potato', food: { hunger: 26, health: 3, full: 420 }, spoils: 2400, weight: 0.3, group: 'Food' },
   carrot: { name: 'Carrot', food: { hunger: 9, thirst: 2, full: 100 }, spoils: 3600, weight: 0.15, group: 'Food' },
+  pumpkin: { name: 'Pumpkin', food: { hunger: 14, thirst: 6, full: 120, sick: 0.05 }, spoils: 14400, weight: 3, group: 'Food' }, // (keeps a long while; better roasted)
+  roastPumpkin: { name: 'Roast pumpkin', food: { hunger: 32, thirst: 4, health: 4, full: 300 }, spoils: 2400, weight: 1.2, group: 'Food' },
   dough: { name: 'Dough', food: { hunger: 4, health: -1, full: 90 }, spoils: 1200, cooks: 'bread', weight: 0.5, group: 'Food' },
   bread: { name: 'Bread', food: { hunger: 32, health: 3, full: 480 }, spoils: 6000, weight: 0.4, group: 'Food' },
   glowTonic: { name: 'Glowcap tonic', food: { thirst: 18, health: 18, cure: true, full: 240 }, weight: 0.3, group: 'Food' }, // (swamp glowcaps steeped with berries: it settles a sick stomach)
@@ -128,6 +139,10 @@ export const ITEMS = {
   pickaxe: { name: 'Stone pickaxe', tool: true, durability: 90, weight: 1.8, group: 'Tools' },
   spear: { name: 'Spear', tool: true, durability: 40, weight: 1.5, sharp: 1, group: 'Tools' },
   flintSteel: { name: 'Flint and steel', tool: true, durability: 25, weight: 0.3, group: 'Tools' },
+  bronzeAxe: { name: 'Bronze axe', tool: true, durability: 140, weight: 1.8, chop: 1.5, sharp: 1.25, group: 'Tools' },
+  bronzePickaxe: { name: 'Bronze pickaxe', tool: true, durability: 140, weight: 2, group: 'Tools' },
+  bronzeSpear: { name: 'Bronze spear', tool: true, durability: 60, weight: 1.6, sharp: 1.25, group: 'Tools' },
+  bronzeSword: { name: 'Bronze sword', tool: true, durability: 150, weight: 1.5, sharp: 2, group: 'Tools' },
   steelAxe: { name: 'Iron axe', tool: true, durability: 180, weight: 2, chop: 2, sharp: 1.5, group: 'Tools' },
   steelPickaxe: { name: 'Iron pickaxe', tool: true, durability: 180, weight: 2.2, group: 'Tools' },
   steelSpear: { name: 'Iron spear', tool: true, durability: 80, weight: 1.8, sharp: 1.5, group: 'Tools' },
@@ -224,6 +239,13 @@ export const ITEMS = {
   chair: { name: 'Chair', place: 'chair', weight: 4, group: 'Building' },
   table: { name: 'Table', place: 'table', weight: 9, group: 'Building' },
   shelf: { name: 'Shelves', place: 'shelf', weight: 8, group: 'Building' }, // (six slots of storage)
+  armourStand: { name: 'Armour stand', place: 'armourStand', weight: 7, group: 'Building' }, // (your gear on it, shown)
+  weaponRack: { name: 'Weapon rack', place: 'weaponRack', weight: 6, group: 'Building' },
+  rug: { name: 'Rug', place: 'rug', weight: 3, group: 'Building' },
+  painting: { name: 'Painting', place: 'painting', weight: 2, group: 'Building' },
+  gable: { name: 'Gable end', place: 'gable', weight: 9, group: 'Building' }, // (closes the end of a roof, over a wall)
+  hatchFloor: { name: 'Floor with a trapdoor', place: 'hatchFloor', weight: 17, group: 'Building' },
+  greenhouse: { name: 'Greenhouse', place: 'greenhouse', weight: 30, group: 'Building' },
   trophyRack: { name: 'Trophy rack', place: 'trophyRack', weight: 5, group: 'Building' },
   // (To plant: an orchard, a berry patch, a woodlot by your home.)
   waterMill: { name: 'Water mill', place: 'waterMill', weight: 1, group: 'Building' }, // (on a stream bank: its wheel grinds grain to flour)
@@ -337,6 +359,7 @@ export const RECIPES = [
   { id: 'treePlatform', needs: { log: 4, stick: 8, rope: 2 }, note: 'A treehouse floor: built round the trunk of the tree you point at, braced to it, a few metres up. Lay tree decks on out from it; walls, doors, windows and roofs go on it like any floor. A ladder to climb up' },
   { id: 'treeDeck', needs: { log: 3, stick: 6, rope: 3 }, note: 'More treehouse floor: laid on edge to edge from a tree platform (or another deck), hung from the branches on ropes' },
   { id: 'stiltFloor', needs: { log: 6, stick: 4 }, note: 'A floor up on piles: over marshy ground, or out in water up to 3 m deep. Join them edge to edge for a stilt house; walls and roofs go on as on any floor' },
+  { id: 'seedPumpkin', needs: { pumpkin: 1 }, makes: 4, note: 'Scooped from a pumpkin' },
   { id: 'logFloor', needs: { log: 4 }, note: 'Logs adzed flat, side by side on stumps, 4 m square: floors join edge to edge. Aim at the top of your walls to lay one a storey up' },
   { id: 'logStairs', needs: { log: 4 }, note: 'A flight of log steps up to the top of your walls (and a floor laid up there)' },
   { id: 'logRoof', needs: { log: 5 }, note: 'Split logs laid down a slope, set on top of your walls' },
@@ -394,7 +417,15 @@ export const RECIPES = [
   { id: 'zipLine', needs: { steelBar: 4, rope: 8, log: 6, ironBar: 2 }, uses: ['forgedAxe'], note: 'Posts, steel cable and a pulley. Click the top end (high up), then the foot (well below, up to 120 m away): a rope for every 5 m is taken then. Q at the top to ride it down' },
   { id: 'chair', needs: { log: 1, stick: 4 }, note: 'Sit and rest a while (Q): you get your strength back faster' },
   { id: 'table', needs: { log: 2, stick: 4 }, note: 'A table, for your house' },
-  { id: 'shelf', needs: { log: 2, stick: 3 }, note: 'Shelves: six slots of storage (Q)' },
+  { id: 'shelf', needs: { log: 2, stick: 3 }, note: 'Shelves: six slots of storage (Q); what\'s on them shows' },
+  { id: 'armourStand', needs: { log: 2, stick: 4 }, note: 'A wooden figure to hang your armour, coat, hat and boots on (Q): they show on it' },
+  { id: 'weaponRack', needs: { log: 2, stick: 4 }, note: 'A rack for four weapons or tools (Q): they stand in it, shown' },
+  { id: 'rug', needs: { wool: 4 }, note: 'A woven rug for the floor' },
+  { id: 'rug', needs: { pelt: 2 }, note: 'Furs sewn together for the floor' },
+  { id: 'painting', needs: { stick: 2, deerSkin: 1, redDye: 1, blackDye: 1 }, note: 'A painting on stretched hide: hung on a wall you point at' },
+  { id: 'gable', needs: { log: 3, stick: 4 }, note: 'Boards to close the open end of a roof, over the wall under it (R to turn it the other way)' },
+  { id: 'hatchFloor', needs: { log: 4, stick: 2, rope: 1 }, note: 'A log floor with a trapdoor in it (Q to open): set stairs or a ladder under it to go up through' },
+  { id: 'greenhouse', needs: { log: 6, glass: 10, stick: 6 }, note: 'A frame of glass over the ground, 4 m square: dig plots inside it, and they grow even in the winter, and faster' },
   { id: 'waterMill', needs: { stick: 4, rope: 1 }, note: 'Stakes and line to mark out a water mill on a stream bank; then build it up in stages, bringing stone, logs, rope and iron to the site. Its wheel grinds grain (wheat, corn) to flour' },
   { id: 'windmill', needs: { stick: 4, rope: 1 }, note: 'Stakes and line to mark out a windmill; then build it up in stages, bringing stone, logs, hides, rope and iron to the site. Its sails grind grain to flour in the wind' },
   { id: 'fineDough', needs: { flour: 2 }, makes: 2, note: 'Milled flour makes more bread: bake it on a fire' },
@@ -427,6 +458,10 @@ export const RECIPES = [
   { id: 'fireArrow', needs: { arrow: 4, beeswax: 1, vine: 1 }, makes: 4, note: 'A waxed rag bound at each head, lit as you loose: sets grass, trees, wood burning; a beast it hits panics. (Wild nests give a little beeswax too)' },
   { id: 'furCloak', needs: { pelt: 3, rope: 1 }, note: 'The warmest thing to wear in the winter' },
   { id: 'armour', needs: { deerSkin: 3, vine: 2 }, note: 'Wear it: bites and blows hurt less' },
+  { id: 'bronzeAxe', needs: { bronzeBar: 2, stick: 1, vine: 1 }, note: 'Bronze: half again the life of stone, fells trees quicker' },
+  { id: 'bronzePickaxe', needs: { bronzeBar: 2, stick: 2 }, note: 'Bronze: half again the life of a stone one' },
+  { id: 'bronzeSpear', needs: { bronzeBar: 1, log: 1, vine: 1 }, note: 'A bronze head: keener and longer-lasting than flint' },
+  { id: 'bronzeSword', needs: { bronzeBar: 3, deerSkin: 1 }, note: 'A short, heavy bronze blade: cuts deep' },
   { id: 'steelAxe', needs: { ironBar: 2, stick: 1, vine: 1 }, note: 'Twice the life, fells trees twice as fast' },
   { id: 'steelPickaxe', needs: { ironBar: 2, stick: 2 }, note: 'Twice the life of a stone one' },
   { id: 'steelSpear', needs: { ironBar: 1, log: 1, vine: 1 }, note: 'Twice the life of a stone spear' },
@@ -487,7 +522,8 @@ export const RECIPES = [
  */
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['glider', 'axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor', 'rug', 'gable', 'hatchFloor', 'seedPumpkin', 'greenhouse'] },
+  { id: 'bronze', name: 'Bronze', tag: 'Smelt copper ore in a furnace, then tin with two copper bars: bronze', unlock: 'bronzeBar', ids: ['bronzeAxe', 'bronzePickaxe', 'bronzeSpear', 'bronzeSword', 'armourStand', 'weaponRack', 'painting'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'sailboat', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor', 'stoneRoad', 'zipLine', 'starBlade', 'starPickaxe'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
@@ -781,3 +817,27 @@ ICONS.starPickaxe = ICONS.forgedPickaxe.replaceAll('#dfe6ee', '#8aa8d8').replace
 ICONS.treePlatform = ICONS.woodFloor + '<path d="M15 2h2v12h-2z" fill="#6a4c32"/><path d="M11 8l5-4 5 4" stroke="#3e7a2e" stroke-width="3" fill="none"/>';
 ICONS.treeDeck = ICONS.woodFloor + '<path d="M5 6v13M27 6v13" stroke="#c8b088" stroke-width="1"/>';
 ICONS.stiltFloor = ICONS.woodFloor.replaceAll('20', '14').replaceAll('23', '17').replaceAll('27', '21').replaceAll('30', '24') + '<path d="M6 17v12M16 21v10M26 17v12" stroke="#5a4230" stroke-width="2"/><path d="M2 28h28" stroke="#4a8ac0" stroke-width="1.5"/>';
+ICONS.serpentScale = `<path d="M16 3l11 8-4 15H9L5 11z" fill="#2a3a32"/><path d="M16 6l8 6-3 11H11L8 12z" fill="#4a6a58"/><path d="M16 9l5 4-2 7h-6l-2-7z" fill="#8ab49a"/>`;
+
+// (Copper, tin, bronze; glass; pumpkins; the new things to build.)
+const ORE = (rock, fleck) => `<path d="M7 21l3-9 8-4 7 6-1 9-10 3z" fill="${rock}"/><path d="M10 12l8-4 7 6-8 2z" fill="${rock}" opacity="0.8"/><path d="M12 16l3-1 1 3-3 1zM19 19l3-1v3l-2 1zM16 11l2 0-1 2z" fill="${fleck}"/>`;
+const BAR = (a, b, c) => `<path d="M4 20l6-8h18l-6 8z" fill="${a}"/><path d="M4 20h18v4H4z" fill="${b}"/><path d="M22 20l6-8v4l-6 8z" fill="${c}"/>`;
+ICONS.copperOre = ORE('#7a7068', '#4ab89a');
+ICONS.tinOre = ORE('#4a4a50', '#c8c8d0');
+ICONS.copperBar = BAR('#e0905a', '#b86a3a', '#9a5428');
+ICONS.bronzeBar = BAR('#d0a050', '#a87a34', '#8a6024');
+ICONS.glass = `<path d="M6 8h20v16H6z" fill="#bfe4ee" opacity="0.7"/><path d="M8 10l6 0-6 6z" fill="#ffffff" opacity="0.8"/><path d="M6 8h20v16H6z" fill="none" stroke="#8ab8c8"/>`;
+ICONS.seedPumpkin = `<ellipse cx="10" cy="20" rx="2" ry="3" fill="#f0e0b0"/><ellipse cx="17" cy="15" rx="2" ry="3" fill="#f0e0b0"/><ellipse cx="22" cy="22" rx="2" ry="3" fill="#f0e0b0"/>`;
+ICONS.pumpkin = `<ellipse cx="16" cy="19" rx="11" ry="8" fill="#e07a20"/><path d="M16 11v16M10 12c-2 4-2 10 0 14M22 12c2 4 2 10 0 14" stroke="#b85a14" fill="none"/><path d="M16 11l1-5 3 1-2 4z" fill="#5a7a34"/>`;
+ICONS.roastPumpkin = ICONS.pumpkin.replaceAll('#e07a20', '#b85a20').replaceAll('#b85a14', '#7a3a10');
+ICONS.bronzeAxe = ICONS.axe.replaceAll('#8e8a84', '#c89a4a').replaceAll('#c8c4bc', '#e8c070');
+ICONS.bronzePickaxe = ICONS.pickaxe.replaceAll('#8e8a84', '#c89a4a').replaceAll('#c8c4bc', '#e8c070');
+ICONS.bronzeSpear = ICONS.spear.replaceAll('#5a5e68', '#a87a34').replaceAll('#a8acb4', '#e8c070');
+ICONS.bronzeSword = ICONS.sword.replaceAll('#dfe6ee', '#d0a050').replaceAll('#ffffff', '#f0d080');
+ICONS.armourStand = `<path d="M16 4v24M10 28h12" stroke="#7a5638" stroke-width="2.4"/><circle cx="16" cy="6" r="3" fill="#9a7048"/><path d="M9 10h14l-2 10H11z" fill="#8a949e"/>`;
+ICONS.weaponRack = `<path d="M5 26h22M5 10h22" stroke="#7a5638" stroke-width="2.6"/><path d="M9 28L11 4M16 28V4M23 28L21 4" stroke="#b8c0c8" stroke-width="2"/>`;
+ICONS.rug = `<path d="M5 9h22v14H5z" fill="#8a3a2a"/><path d="M8 12h16v8H8z" fill="none" stroke="#d8b060" stroke-width="1.5"/><path d="M12 14h8v4h-8z" fill="#3a5a6a"/>`;
+ICONS.painting = `<path d="M5 7h22v18H5z" fill="#5a3a22"/><path d="M8 10h16v12H8z" fill="#2a3a4a"/><path d="M8 22l5-7 4 4 3-3 4 6z" fill="#1a1a20"/><circle cx="20" cy="13" r="2" fill="#d8d0b0"/>`;
+ICONS.gable = `<path d="M3 26L29 26L29 10z" fill="#9a7048"/><path d="M8 26v-3M14 26v-6M20 26v-9M26 26v-12" stroke="#6a4c30"/>`;
+ICONS.hatchFloor = ICONS.woodFloor + '<path d="M12 15l6-3 6 3-6 3z" fill="#5a3c24"/>';
+ICONS.greenhouse = `<path d="M4 14l12-8 12 8v14H4z" fill="#bfe4ee" opacity="0.6"/><path d="M4 14l12-8 12 8M4 14v14h24V14M10 10v18M16 6v22M22 10v18" stroke="#6a4c30" stroke-width="1.4" fill="none"/>`;

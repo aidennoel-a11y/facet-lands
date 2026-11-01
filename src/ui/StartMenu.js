@@ -8,6 +8,7 @@ import { DEFAULT_SERVER, VERSION, openWorlds } from '../net/Multiplayer.js';
 import { describeHardware, graphicsInfo, MAX_VIEW, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
 import { DEFAULTS, DIFFICULTIES, saveSettings, settings } from '../settings.js';
 import { ACTIONS, bind, keyName, keyOf, listenForKey, resetKeys } from '../keys.js';
+import { LOOK_CHOICES, LOOK_DEFAULT, loadLook, saveLook } from '../character.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
 // The seeds whose land has claimed a survival life: never played in survival again.
@@ -204,6 +205,7 @@ export class StartMenu {
       <h1 class="sm-logo">Facet<span>Lands</span></h1>
       <p class="sm-tag">A low-poly world to survive in</p>
       <button class="sm-btn sm-primary" data-go="start">Start</button>
+      <button class="sm-btn" data-go="character">Character</button>
       <button class="sm-btn" data-go="settings">Settings</button>
       <div class="sm-quality" role="radiogroup" aria-label="Graphics">
         <span>Graphics</span>
@@ -216,6 +218,7 @@ export class StartMenu {
       <a class="sm-credits" href="sounds/CREDITS.md" target="_blank" rel="noopener">Sound credits</a>`);
     this.#on('[data-go="start"]', () => this.choose());
     this.#on('[data-go="settings"]', () => this.settings(() => this.title()));
+    this.#on('[data-go="character"]', () => this.character(() => this.title()));
     // (Put into effect when a world starts: see main's useQuality.)
     for (const b of this.card.querySelectorAll('.sm-q')) {
       b.addEventListener('click', () => {
@@ -431,11 +434,13 @@ export class StartMenu {
       ${code ? `<p class="sm-code">Online · world code <strong>${code}</strong></p>` : ''}
       <button class="sm-btn sm-primary" data-go="resume">Resume</button>
       ${testing ? '' : '<button class="sm-btn" data-go="save">Save world</button>'}
+      <button class="sm-btn" data-go="character">Character</button>
       <button class="sm-btn" data-go="settings">Settings</button>
       <button class="sm-btn" data-go="quit">${testing ? 'Quit to title' : 'Save and quit to title'}</button>
       <p class="sm-note" aria-live="polite"></p>`);
     this.#on('[data-go="resume"]', () => this.resume());
     this.#on('[data-go="settings"]', () => this.settings(() => this.pause()));
+    this.#on('[data-go="character"]', () => this.character(() => this.pause()));
     this.#on('[data-go="save"]', () => {
       this.onSave(this.world);
       card.querySelector('.sm-note').textContent = 'Saved.';
@@ -514,6 +519,55 @@ export class StartMenu {
       Object.assign(s, DEFAULTS);
       changed();
       this.settings(back);
+    });
+    this.#on('[data-go="back"]', back);
+  }
+
+  // Your character: how you look (see character.js), with a picture of you as you choose.
+  character(back) {
+    const look = loadLook();
+    const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
+    const NAMES = { skin: 'Skin', hair: 'Hair', hairStyle: 'Hair worn', beard: 'Beard', shirt: 'Shirt', trousers: 'Trousers', marks: 'Marks' };
+    const rows = Object.entries(LOOK_CHOICES).map(([k, opts]) => `<div class="sm-quality sm-set sm-look"><span>${NAMES[k]}</span>${opts.map(([label, v]) => typeof v === 'number'
+      ? `<button type="button" class="sm-q sm-swatch${v === look[k] ? ' sm-picked' : ''}" data-look="${k}" data-v="${v}" title="${label}" aria-label="${label}" style="background:${hex(v)}"></button>`
+      : `<button type="button" class="sm-q${v === look[k] ? ' sm-picked' : ''}" data-look="${k}" data-v="${v}">${label}</button>`).join('')}</div>`).join('');
+    const card = this.#show(`
+      <h2 class="sm-head">Character</h2>
+      <canvas class="sm-portrait" width="120" height="180"></canvas>
+      ${rows}
+      <p class="sm-note">A hard country, and it shows on those who live in it.</p>
+      <button class="sm-btn" data-go="reset">Back to the default</button>
+      <button class="sm-btn sm-primary" data-go="back">Done</button>`);
+    // (The picture: you from the front, as blocks, as the world draws you.)
+    const c = card.querySelector('.sm-portrait').getContext('2d');
+    const box = (x, y, w, h, col) => ((c.fillStyle = typeof col === 'number' ? hex(col) : col), c.fillRect(x, y, w, h));
+    c.fillStyle = '#26301f';
+    c.fillRect(0, 0, 120, 180);
+    box(42, 120, 16, 50, look.trousers), box(62, 120, 16, 50, look.trousers), box(40, 166, 18, 8, 0x2a2018), box(62, 166, 18, 8, 0x2a2018);
+    box(36, 66, 48, 58, look.shirt), box(24, 68, 12, 44, look.shirt), box(84, 68, 12, 44, look.shirt), box(25, 108, 10, 14, look.skin), box(85, 108, 10, 14, look.skin);
+    box(54, 56, 12, 10, look.skin), box(44, 22, 32, 36, look.skin);
+    if (look.hairStyle === 'hood') box(40, 14, 40, 22, look.shirt), box(38, 20, 6, 36, look.shirt), box(76, 20, 6, 36, look.shirt);
+    else if (look.hairStyle !== 'shaved') {
+      box(42, 16, 36, 10, look.hair);
+      if (look.hairStyle === 'long') box(40, 20, 6, 38, look.hair), box(74, 20, 6, 38, look.hair);
+    } else box(44, 20, 32, 3, look.hair);
+    box(51, 34, 6, 4, '#1a1410'), box(63, 34, 6, 4, '#1a1410');
+    if (look.beard === 'full') box(46, 44, 28, 16, look.hair);
+    else if (look.beard === 'stubble') box(47, 46, 26, 9, `${hex(look.hair)}88`);
+    if (look.marks === 'cheek') box(66, 40, 2, 10, '#a86a5a');
+    else if (look.marks === 'eye') box(53, 28, 2, 16, '#a86a5a');
+    else if (look.marks === 'grime') box(62, 42, 10, 6, '#5a4a3a88');
+    for (const b of card.querySelectorAll('[data-look]')) {
+      b.addEventListener('click', () => {
+        const k = b.dataset.look, v = b.dataset.v;
+        look[k] = typeof LOOK_DEFAULT[k] === 'number' ? Number(v) : v;
+        saveLook(look);
+        this.character(back);
+      });
+    }
+    this.#on('[data-go="reset"]', () => {
+      saveLook({ ...LOOK_DEFAULT });
+      this.character(back);
     });
     this.#on('[data-go="back"]', back);
   }

@@ -119,6 +119,23 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     }
   }
 
+  // The lie of the sea bed (and the beach) at each corner: the way up it
+  // toward the land, and how steep: for the breakers rolling in and washing
+  // up the sand (see WaterLayer). With how much it's the open sea there
+  // (for the tide). Over two cells each way, so it's smooth.
+  const shoreX = new Float32Array(n * n), shoreZ = new Float32Array(n * n), sea = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const k = j * n + i, depth = seaLevel - ground[k];
+      if (depth < -3 || depth > 8) continue;
+      const i0 = Math.max(0, i - 2), i1 = Math.min(n - 1, i + 2), j0 = Math.max(0, j - 2), j1 = Math.min(n - 1, j + 2);
+      shoreX[k] = (ground[j * n + i1] - ground[j * n + i0]) / ((i1 - i0) * cell);
+      shoreZ[k] = (ground[j1 * n + i] - ground[j0 * n + i]) / ((j1 - j0) * cell);
+    }
+  }
+  for (let k = 0; k < n * n; k++) if (ground[k] < seaLevel + 2) sea[k] = smoothstep(0.35, 0.6, generator.getOceanness(originX + xs[k], originZ + zs[k]));
+  const shores = [];
+
   const positions = [];
   const colors = [];
   const waves = [];
@@ -138,6 +155,7 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     waves.push(0.1 + 0.9 * smoothstep(1, 16, depth) + 2.4 * (swell[a] * s + swell[b] * t));
     foams.push(t < 0.5 ? surf[a] : surf[b]); // (packed: not to be blended, see above)
     freezes.push(freeze[a] * s + freeze[b] * t);
+    shores.push(shoreX[a] * s + shoreX[b] * t, shoreZ[a] * s + shoreZ[b] * t, sea[a] * s + sea[b] * t);
   };
   const addTri = (a, b, c) => {
     // Keep faces with any corner under water; drop fully dry ones.
@@ -177,5 +195,6 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     foams: new Float32Array(foams),
     freezes: new Float32Array(freezes),
     depths: new Float32Array(depths),
+    shores: new Float32Array(shores),
   };
 }

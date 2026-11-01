@@ -738,7 +738,7 @@ export function snake() {
 // the body, facing +z. Wings hinge at the shoulders (flapped and folded):
 // covert feathers, then the long flight feathers fanned out at the tip.
 
-function bird({ body, belly = body, head = body, beak = 0x3a2e22, wing = body, tip = wing, tail = body, eye = 0x0a0808, legs = 0x4a3a2a, crest = null }) {
+function bird({ body, belly = body, head = body, beak = 0x3a2e22, wing = body, tip = wing, tail = body, eye = 0x0a0808, legs = 0x4a3a2a, crest = null, bill = null, tailLong = 1, beakTip = null }) {
   const wingOf = (side) => {
     const b = new Blocks()
       .box(0.16, 0.025, 0.15, wing, [side * 0.08, 0, 0.005])
@@ -751,15 +751,16 @@ function bird({ body, belly = body, head = body, beak = 0x3a2e22, wing = body, t
     .box(0.1, 0.085, 0.1, body, [0, 0.005, -0.09], [0, 0, 0], [0.8, 0.9])
     .box(0.09, 0.04, 0.2, belly, [0, -0.045, 0.0], [0, 0, 0], [1.1, 1])
     .box(0.09, 0.085, 0.09, head, [0, 0.06, 0.13], [0, 0, 0], [0.85, 0.85])
-    .box(0.03, 0.025, 0.05, beak, [0, 0.05, 0.2], [0, 0, 0], [0.5, 0.6])
+    .box(...(bill ?? [0.03, 0.025, 0.05]), beak, bill ? [0, 0.055, 0.17 + bill[2] / 2] : [0, 0.05, 0.2], bill ? [0.25, 0, 0] : [0, 0, 0], [0.5, 0.6])
     .box(0.015, 0.02, 0.02, eye, [0.042, 0.075, 0.15])
     .box(0.015, 0.02, 0.02, eye, [-0.042, 0.075, 0.15])
     .box(0.04, 0.012, 0.13, tail, [0.025, 0.005, -0.2], [0, 0.15, 0]) // tail fan
     .box(0.04, 0.012, 0.13, tail, [-0.025, 0.005, -0.2], [0, -0.15, 0])
-    .box(0.04, 0.012, 0.14, tail, [0, 0.008, -0.21])
+    .box(0.04, 0.012, 0.14 * tailLong, tail, [0, 0.008, -0.14 - 0.07 * tailLong])
     .box(0.012, 0.06, 0.012, legs, [0.025, -0.08, 0.02]) // legs
     .box(0.012, 0.06, 0.012, legs, [-0.025, -0.08, 0.02]);
   if (crest) b.box(0.02, 0.05, 0.05, crest, [0, 0.115, 0.1], [-0.4, 0, 0]);
+  if (beakTip && bill) b.box(bill[0] * 0.9, bill[1] * 0.9, bill[2] * 0.3, beakTip, [0, 0.045, 0.17 + bill[2] * 0.9], [0.3, 0, 0], [0.5, 0.6]); // (a toucan's: its tip another colour)
   return { body: b.build(), wingL: wingOf(1), wingR: wingOf(-1) };
 }
 
@@ -767,6 +768,9 @@ export const songbird = () => bird({ body: 0xd8d0c4, belly: 0xf0ece4, head: 0xd0
 export const starling = () => bird({ body: 0x2c2a34, belly: 0x3a3844, head: 0x24222c, beak: 0xd8b040, wing: 0x26242e, legs: 0xc08a5a });
 export const crow = () => bird({ body: 0x18181c, head: 0x121216, beak: 0x0c0c0e, wing: 0x1a1a20, tip: 0x101014, legs: 0x101010 });
 export const gull = () => bird({ body: 0xf2f2f0, belly: 0xffffff, head: 0xf8f8f6, beak: 0xe8c040, wing: 0xb8c0c8, tip: 0x2a2a2e, tail: 0xf2f2f0, legs: 0xe0a060 });
+// The jungle's: a scarlet macaw, red, its wings banded yellow and blue, its tail very long; a toucan, black, a yellow throat, its great bill orange tipped with black.
+export const parrot = () => bird({ body: 0xc8281e, belly: 0xd0302a, head: 0xd83228, beak: 0xe8e0d0, wing: 0xe8c030, tip: 0x2a58b8, tail: 0xb82420, legs: 0x5a5a5a, bill: [0.04, 0.05, 0.06], tailLong: 2.6 });
+export const toucan = () => bird({ body: 0x141416, belly: 0x1a1a1c, head: 0x18181a, beak: 0xf08a20, wing: 0x101012, tip: 0x0a0a0c, tail: 0x121214, legs: 0x5a7ab8, bill: [0.045, 0.06, 0.17], beakTip: 0x1a1a1a, crest: 0xf8e040 });
 export const hawk = () => bird({ body: 0x6e4a2c, belly: 0xd8c8a8, head: 0x5a3a22, beak: 0x2a2a2a, wing: 0x7a5434, tip: 0x3a2a1e, tail: 0x9a5a34, legs: 0xd8b040, crest: 0x5a3a22 });
 
 // --- Insects and hives -------------------------------------------------------
@@ -823,8 +827,27 @@ export const frog = () => new Blocks()
  * (hips at y = 0.92), the head (neck), the arms (shoulders) and the legs
  * (hips), and the arms and legs again in two (see upperArm). About 1.8 m tall.
  */
-export function person(shirt = 0x3a86c8) {
-  const skin = 0xd8a47a, hair = 0x3a2a1e, trousers = 0x3a3a44, boots = 0x2a2018, pack = 0x7a5a32;
+export function person(look = 0x3a86c8) {
+  // (`look`: a shirt's colour, or a whole look: see character.js.)
+  const L = typeof look === 'number' ? { shirt: look } : look;
+  const shirt = L.shirt ?? 0x3a86c8, skin = L.skin ?? 0xd8a47a, hair = L.hair ?? 0x3a2a1e, trousers = L.trousers ?? 0x3a3a44, boots = 0x2a2018, pack = 0x7a5a32;
+  const style = L.hairStyle ?? 'cropped', beard = L.beard ?? 'none', marks = L.marks ?? 'none';
+  const head = new Blocks()
+    .box(0.08, 0.08, 0.08, skin, [0, 0.04, 0]) // neck
+    .box(0.22, 0.24, 0.22, skin, [0, 0.19, 0.01]) // head
+    .box(0.035, 0.03, 0.01, 0x1a1410, [0.05, 0.2, 0.125]) // eyes
+    .box(0.035, 0.03, 0.01, 0x1a1410, [-0.05, 0.2, 0.125]);
+  if (style === 'hood') head.box(0.27, 0.27, 0.26, shirt, [0, 0.24, -0.01]).box(0.27, 0.1, 0.06, shirt, [0, 0.33, 0.1]);
+  else if (style !== 'shaved') {
+    head.box(0.24, 0.08, 0.24, hair, [0, 0.31, -0.005]).box(0.24, style === 'long' ? 0.3 : 0.14, 0.05, hair, [0, style === 'long' ? 0.16 : 0.22, -0.1]);
+    if (style === 'long') for (const s of [-1, 1]) head.box(0.04, 0.22, 0.12, hair, [s * 0.12, 0.18, -0.04]);
+    if (style === 'tied') head.box(0.06, 0.14, 0.06, hair, [0, 0.22, -0.15]);
+  } else head.box(0.225, 0.02, 0.225, hair, [0, 0.31, 0.01]);
+  if (beard === 'full') head.box(0.2, 0.12, 0.06, hair, [0, 0.09, 0.11]).box(0.22, 0.05, 0.04, hair, [0, 0.14, 0.12]);
+  else if (beard === 'stubble') head.box(0.2, 0.08, 0.02, hair, [0, 0.11, 0.115]);
+  if (marks === 'cheek') head.box(0.012, 0.07, 0.012, 0xa86a5a, [0.07, 0.16, 0.122], [0, 0, 0.5]);
+  else if (marks === 'eye') head.box(0.012, 0.11, 0.012, 0xa86a5a, [-0.05, 0.2, 0.128], [0, 0, -0.2]);
+  else if (marks === 'grime') head.box(0.08, 0.05, 0.01, 0x5a4a3a, [0.06, 0.13, 0.121]);
   return {
     body: new Blocks()
       .box(0.36, 0.5, 0.2, shirt, [0, 0.26, 0], [0, 0, 0], [0.92, 0.9]) // chest
@@ -832,14 +855,7 @@ export function person(shirt = 0x3a86c8) {
       .box(0.3, 0.36, 0.14, pack, [0, 0.3, -0.17]) // the pack
       .box(0.26, 0.08, 0.14, 0x5a4024, [0, 0.5, -0.17]) // its flap
       .build(),
-    head: new Blocks()
-      .box(0.08, 0.08, 0.08, skin, [0, 0.04, 0]) // neck
-      .box(0.22, 0.24, 0.22, skin, [0, 0.19, 0.01]) // head
-      .box(0.24, 0.08, 0.24, hair, [0, 0.31, -0.005]) // hair
-      .box(0.24, 0.14, 0.05, hair, [0, 0.22, -0.1])
-      .box(0.035, 0.03, 0.01, 0x1a1410, [0.05, 0.2, 0.125]) // eyes
-      .box(0.035, 0.03, 0.01, 0x1a1410, [-0.05, 0.2, 0.125])
-      .build(),
+    head: head.build(),
     arm: new Blocks()
       .box(0.1, 0.32, 0.11, shirt, [0, -0.16, 0]) // sleeve
       .box(0.085, 0.26, 0.09, skin, [0, -0.45, 0]) // forearm

@@ -1053,6 +1053,12 @@ export function cropModel(kind, ripe = false) {
         for (let k = 0; k < 4; k++) b.add(new BoxGeometry(0.5, 0.02, 0.08), green, [x + 0.2 * Math.cos(k * 1.9), 0.5 + k * 0.35, z + 0.2 * Math.sin(k * 1.9)], [0, k * 1.9, -0.4]);
         b.add(new BoxGeometry(0.08, 0.26, 0.08), ripe ? 0xf0c830 : 0x8aba4a, [x + 0.06, 1.1, z], [0, 0, 0.3]);
         b.add(new BoxGeometry(0.04, 0.2, 0.04), 0xc8a060, [x, 2.05, z]);
+      } else if (kind === 'pumpkin') {
+        // (Sprawling vines, big leaves; ripe, fat orange pumpkins lying among them: every other plant.)
+        if ((r + c) % 2) continue;
+        for (let k = 0; k < 5; k++) b.add(new BoxGeometry(0.28, 0.02, 0.24), green, [x + 0.3 * Math.cos(k * 1.3), 0.12 + rand() * 0.06, z + 0.3 * Math.sin(k * 1.3)], [rand() * 0.4, k * 1.3, rand() * 0.3]);
+        if (ripe) b.add(new DodecahedronGeometry(0.24, 1), 0xe0781c, [x, 0.17, z], [0, rand() * 3, 0], [1.15, 0.75, 1.15]);
+        else b.add(new DodecahedronGeometry(0.08, 0), 0x8aa83a, [x, 0.08, z]);
       } else if (kind === 'potato') {
         b.add(new DodecahedronGeometry(0.2, 0), green, [x, 0.18, z], [rand(), rand(), 0], [1, 0.8, 1]);
         if (!ripe) b.add(new DodecahedronGeometry(0.05, 0), 0xe8e0f0, [x, 0.36, z]);
@@ -1429,6 +1435,8 @@ export function oreNodeModel(id) {
     coal: { rock: 0x6a6662, bits: [0x1a1816, 0x24201e, 0x0e0c0c], n: 9, shape: 'box' },
     goldOre: { rock: 0xe8e2d4, bits: [0xf0c030, 0xe0a820, 0xffd860], n: 9, shape: 'octa' },
     mountainOre: { rock: 0x3a3e48, bits: [0xc8d4e4, 0x9ab0c8, 0xe8f0f8], n: 8, shape: 'octa' },
+    copperOre: { rock: 0x7a7068, bits: [0x3aa888, 0x4ab89a, 0xc07040], n: 9, shape: 'dodeca' },
+    tinOre: { rock: 0x4a4a50, bits: [0xb8b8c4, 0xd0d0d8, 0x8a8a94], n: 7, shape: 'box' },
   }[id] ?? { rock: 0x8e8a82, bits: [0x9a968e], n: 0, shape: 'octa' };
   const b = R(301 + id.length);
   const rand = mulberry32(17 + id.length * 7);
@@ -2336,5 +2344,136 @@ export const RAISED_MODELS = { treePlatform: treePlatformModel, treeDeck: treeDe
 export function wallFootingModel() {
   const b = new Parts(181), rand = mulberry32(181), L = WALL_LENGTH;
   for (let k = 0; k < 6; k++) b.add(new BoxGeometry(L / 6 + 0.06, 1.6, 0.5), [0x8e8a82, 0x7e7a72, 0x9a968e][Math.floor(rand() * 3)], [-L / 2 + (k + 0.5) * (L / 6), -0.72, 0], [0, 0, 0], [1, 1, 1], 0.08);
+  return b.build();
+}
+
+/** A pumpkin (or roasted, a wedge of one, darker). */
+export const pumpkinModel = (roast) => (roast
+  ? new Parts(611).add(new DodecahedronGeometry(0.14, 0), 0xb85a20, [0, 0.07, 0], [0, 0, 0], [1.2, 0.5, 0.8]).build()
+  : new Parts(613).add(new DodecahedronGeometry(0.2, 1), 0xe0781c, [0, 0.14, 0], [0, 0, 0], [1.15, 0.72, 1.15]).add(new CylinderGeometry(0.02, 0.025, 0.08, 5), 0x5a6a2a, [0, 0.3, 0]).build());
+/** A pane of glass, thick and greenish, as it came from the furnace. */
+export const glassModel = () => new Parts(617).add(new BoxGeometry(0.3, 0.02, 0.22), 0xb8dce4, [0, 0.01, 0], [0, 0, 0], [1, 1, 1], 0.02).build();
+
+// --- Greenhouse, furniture, decoration ----------------------------------------------
+
+/** A greenhouse's timber frame, 4 m square: corner posts, rafters to a ridge, a doorway in its front (−z). */
+export function greenhouseFrameModel() {
+  const b = new Parts(621), h = 1.95, wood = 0x6a4c30;
+  for (const [x, z] of [[-h, -h], [h, -h], [-h, h], [h, h], [-0.65, -h], [0.65, -h], [0, h], [-h, 0], [h, 0]]) b.add(new BoxGeometry(0.1, 2.2, 0.1), wood, [x, 1.1, z]);
+  for (const z of [-h, h]) b.add(new BoxGeometry(4, 0.1, 0.1), wood, [0, 2.2, z]);
+  for (const x of [-h, h]) b.add(new BoxGeometry(0.1, 0.1, 4), wood, [x, 2.2, 0]);
+  b.add(new BoxGeometry(0.1, 0.1, 4), wood, [0, 3.1, 0]); // (the ridge)
+  for (const z of [-h, -0.65, 0.65, h]) for (const s of [-1, 1]) b.add(new BoxGeometry(2.15, 0.08, 0.08), wood, [s * 0.98, 2.65, z], [0, 0, s * -0.43]);
+  b.add(new BoxGeometry(1.3, 0.12, 0.12), wood, [0, 2.1, -h]); // (over the doorway)
+  for (const [x, z, sx, sz] of [[0, h, 4, 0.1], [-h, 0, 0.1, 4], [h, 0, 0.1, 4], [-1.3, -h, 1.3, 0.1], [1.3, -h, 1.3, 0.1]]) b.add(new BoxGeometry(sx, 0.3, sz), 0x8a8478, [x, 0.15, z]); // (a low stone sill)
+  return b.build();
+}
+/** Its glass: panes in every side but the doorway, and over the roof. */
+export function greenhouseGlassModel() {
+  const b = new Parts(623), h = 1.95, g = 0xcfeef4;
+  b.add(new BoxGeometry(3.9, 1.85, 0.02), g, [0, 1.22, h], [0, 0, 0], [1, 1, 1], 0.02);
+  for (const x of [-h, h]) b.add(new BoxGeometry(0.02, 1.85, 3.9), g, [x, 1.22, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  for (const x of [-1.3, 1.3]) b.add(new BoxGeometry(1.25, 1.85, 0.02), g, [x, 1.22, -h], [0, 0, 0], [1, 1, 1], 0.02);
+  for (const s of [-1, 1]) b.add(new BoxGeometry(2.15, 0.02, 3.95), g, [s * 0.98, 2.68, 0], [0, 0, s * -0.43], [1, 1, 1], 0.02);
+  for (const z of [-h, h]) b.add(new BoxGeometry(3.9, 0.85, 0.02), g, [0, 2.6, z], [0, 0, 0], [1, 0.95, 1], 0.02); // (the gable ends: roughly)
+  return b.build();
+}
+
+/** An armour stand: a rough wooden figure on a cross foot, a peg for a head, arms out a little. */
+export function armourStandModel() {
+  const b = new Parts(627), wood = 0x7a5638;
+  b.add(new BoxGeometry(0.7, 0.08, 0.12), wood, [0, 0.04, 0]);
+  b.add(new BoxGeometry(0.12, 0.08, 0.7), wood, [0, 0.04, 0]);
+  b.add(new BoxGeometry(0.08, 1.75, 0.08), wood, [0, 0.9, 0]);
+  b.add(new BoxGeometry(0.62, 0.07, 0.07), wood, [0, 1.42, 0]); // (the shoulders)
+  b.add(new BoxGeometry(0.34, 0.07, 0.07), wood, [0, 0.95, 0]); // (the hips)
+  b.add(new DodecahedronGeometry(0.11, 0), 0x8a6444, [0, 1.72, 0]);
+  return b.build();
+}
+/** A weapon rack: a frame with a notched top bar and a foot rail, for four to lean in. */
+export function weaponRackModel() {
+  const b = new Parts(629), wood = 0x6e4e32;
+  for (const x of [-0.7, 0.7]) b.add(new BoxGeometry(0.09, 1.5, 0.09), wood, [x, 0.75, 0]);
+  b.add(new BoxGeometry(1.5, 0.08, 0.14), wood, [0, 1.35, 0]);
+  b.add(new BoxGeometry(1.5, 0.08, 0.3), wood, [0, 0.12, 0.05]);
+  for (const x of [-0.7, 0.7]) b.add(new BoxGeometry(0.12, 0.06, 0.5), wood, [x, 0.03, 0]);
+  return b.build();
+}
+/** A rug, 2 m by 3 m: woven, dark red with a border and a worn pattern (or furs: see `fur`). */
+export function rugModel(fur = false) {
+  const b = new Parts(fur ? 633 : 631);
+  if (fur) {
+    for (let k = 0; k < 2; k++) b.add(new BoxGeometry(1.0, 0.03, 1.45), [0x8a6a4a, 0x6e5238][k], [k ? 0.5 : -0.5, 0.015, 0], [0, (k - 0.5) * 0.1, 0], [1, 1, 1], 0.12);
+    return b.build();
+  }
+  b.add(new BoxGeometry(2, 0.02, 3), 0x7a2a22, [0, 0.01, 0], [0, 0, 0], [1, 1, 1], 0.05);
+  for (const [x, z, sx, sz] of [[0, 1.35, 1.8, 0.1], [0, -1.35, 1.8, 0.1], [0.85, 0, 0.1, 2.6], [-0.85, 0, 0.1, 2.6]]) b.add(new BoxGeometry(sx, 0.025, sz), 0xb8904a, [x, 0.012, z]);
+  for (const z of [-0.7, 0, 0.7]) b.add(new BoxGeometry(0.5, 0.025, 0.4), 0x2e4a52, [0, 0.013, z], [0, Math.PI / 4, 0]);
+  for (let k = -9; k <= 9; k++) for (const z of [-1.52, 1.52]) b.add(new BoxGeometry(0.02, 0.01, 0.1), 0xd0c0a0, [k * 0.1, 0.01, z]); // (the fringe)
+  return b.build();
+}
+/**
+ * A painting on stretched hide in a rough frame, 1.1 by 0.8 m, its back to
+ * the wall (+z out): one of four grim scenes, as a hard country's painter
+ * would make them: a storm wrecking a boat; wolves under a full moon; a
+ * dark pine wood at dusk; a mountain with a fire on it, burning.
+ */
+export function paintingModel(v = 0) {
+  const b = new Parts(641 + v), W = 1.1, H = 0.8, z = 0.04;
+  b.add(new BoxGeometry(W + 0.12, H + 0.12, 0.05), 0x3e2a1a, [0, 0, 0.0]);
+  const sky = [0x2a3440, 0x1a2030, 0x4a3a40, 0x3a2a2a][v], ground = [0x1e3038, 0x2a2e2a, 0x1a2418, 0x2a2420][v];
+  b.add(new BoxGeometry(W, H * 0.6, 0.01), sky, [0, H * 0.2, z], [0, 0, 0], [1, 1, 1], 0.02);
+  b.add(new BoxGeometry(W, H * 0.4, 0.01), ground, [0, -H * 0.3, z], [0, 0, 0], [1, 1, 1], 0.02);
+  if (v === 0) {
+    // A storm: dark waves heaped up, a little boat on its side among them, a slash of lightning.
+    for (let k = 0; k < 4; k++) b.add(new ConeGeometry(0.16, 0.3, 3), 0x2a4a58, [-0.4 + k * 0.27, -0.12, z + 0.01], [0, 0, 0.3], [1, 1, 0.1]);
+    b.add(new BoxGeometry(0.16, 0.05, 0.01), 0x5a3a22, [0.1, -0.05, z + 0.02], [0, 0, 0.8]);
+    b.add(new BoxGeometry(0.02, 0.32, 0.01), 0xe8e4c0, [0.3, 0.2, z + 0.02], [0, 0, 0.4]);
+  } else if (v === 1) {
+    // Wolves under a full moon: the moon, black hills, three dark shapes, one howling.
+    b.add(new DodecahedronGeometry(0.09, 0), 0xe8e4d0, [0.3, 0.22, z + 0.01], [0, 0, 0], [1, 1, 0.1]);
+    for (const x of [-0.3, -0.1, 0.12]) b.add(new BoxGeometry(0.12, 0.06, 0.01), 0x0a0a0c, [x, -0.18, z + 0.02], [0, 0, x === 0.12 ? 0.6 : 0]);
+  } else if (v === 2) {
+    // A dark pine wood at dusk: ranks of black spires against a dull red sky.
+    for (let k = 0; k < 8; k++) b.add(new ConeGeometry(0.06, 0.3 + (k % 3) * 0.08, 4), 0x0e140e, [-0.48 + k * 0.137, -0.05, z + 0.015], [0, 0, 0], [1, 1, 0.1]);
+  } else {
+    // A mountain, a fire burning up its side, smoke over it.
+    b.add(new ConeGeometry(0.35, 0.45, 3), 0x2a2420, [0, 0.0, z + 0.01], [0, 0, 0], [1, 1, 0.1]);
+    b.add(new DodecahedronGeometry(0.06, 0), 0xe0601a, [0.08, -0.05, z + 0.02], [0, 0, 0], [1.4, 1, 0.1]);
+    b.add(new DodecahedronGeometry(0.1, 0), 0x5a5050, [0.1, 0.2, z + 0.02], [0, 0, 0], [1.6, 1, 0.1]);
+  }
+  return b.build();
+}
+/** A gable end: rough boards closing the triangle under a roof piece, 4 m along the wall, rising 1.6 m to one end (+x). */
+export function gableModel() {
+  const b = new Parts(651), rand = mulberry32(651), L = WALL_LENGTH, rise = ROOF_RISE;
+  for (let k = 0; k < 13; k++) {
+    const x = -L / 2 + (k + 0.5) * (L / 13), h = Math.max(0.05, rise * ((x + L / 2) / L));
+    b.add(new BoxGeometry(L / 13 - 0.02, h, 0.08), [0x8a663e, 0x7a5a36, 0x94704a][Math.floor(rand() * 3)], [x, h / 2, 0], [0, 0, 0], [1, 1, 1], 0.04);
+  }
+  b.add(new BoxGeometry(Math.hypot(L, rise) + 0.1, 0.12, 0.12), 0x5a4230, [0, rise / 2, 0], [0, 0, Math.atan2(rise, L)]); // (the barge board along its top)
+  return b.build();
+}
+/** A floor of logs with a trapdoor in it: the floor's frame, its logs round the opening (1.4 by 1.6 m, at one side). */
+export const HATCH = { u: 0, v: 1.0, hu: 0.7, hv: 0.8 };
+export function hatchFloorModel(upper = false) {
+  const b = new Parts(655), rand = mulberry32(655), h = FLOOR_SIZE / 2;
+  for (let k = 0; k < 13; k++) {
+    const x = -h + (k + 0.5) * (FLOOR_SIZE / 13), bark = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
+    if (Math.abs(x - HATCH.u) < HATCH.hu + 0.05) {
+      // (Broken by the opening.)
+      b.log([x, FLOOR_TOP - 0.15, -h], [x, FLOOR_TOP - 0.15, HATCH.v - HATCH.hv], 0.15, bark, 0xc8a070, 6);
+      if (HATCH.v + HATCH.hv < h) b.log([x, FLOOR_TOP - 0.15, HATCH.v + HATCH.hv], [x, FLOOR_TOP - 0.15, h], 0.15, bark, 0xc8a070, 6);
+    } else b.log([x, FLOOR_TOP - 0.15, -h], [x, FLOOR_TOP - 0.15, h], 0.15, bark, 0xc8a070, 6);
+  }
+  if (!upper) for (const x of [-h + 0.15, h - 0.15]) for (const z of [-h + 0.15, h - 0.15]) b.add(new CylinderGeometry(0.14, 0.15, 1.8, 6), 0x5a4230, [x, FLOOR_TOP - 1.2, z]);
+  return b.build();
+}
+/** The trapdoor's lid: boards on a frame, hinged along its near edge (at z = 0, the lid out along +z). */
+export function hatchLidModel() {
+  const b = new Parts(657);
+  b.add(new BoxGeometry(HATCH.hu * 2 - 0.04, 0.08, HATCH.hv * 2 - 0.04), 0x8a6644, [0, 0, HATCH.hv], [0, 0, 0], [1, 1, 1], 0.04);
+  for (const z of [0.3, HATCH.hv * 2 - 0.3]) b.add(new BoxGeometry(HATCH.hu * 2 - 0.1, 0.03, 0.08), 0x2e2e32, [0, 0.05, z]);
+  b.add(new TorusGeometry(0.06, 0.012, 4, 8), 0x2e2e32, [0, 0.07, HATCH.hv * 2 - 0.15], [Math.PI / 2, 0, 0]);
   return b.build();
 }

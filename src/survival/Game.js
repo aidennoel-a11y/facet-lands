@@ -55,10 +55,10 @@ const NAMES = {
   horse: 'horse', donkey: 'donkey', mule: 'mule', vulture: 'vulture', goat: 'goat',
 };
 const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a black bear', cougar: 'a cougar', moose: 'a moose', boar: 'a wild boar', elk: 'a bull elk', deer: 'a buck', bison: 'a bison', snake: 'a rattlesnake', tiger: 'a tiger', jaguar: 'a jaguar', panther: 'a black panther', crocodile: 'a crocodile', panda: 'a giant panda', mountainGoat: 'a mountain goat', lion: 'a lion', hyena: 'a hyena', elephant: 'an elephant', hippo: 'a hippo', camel: 'a camel', scorpion: 'a scorpion', python: 'a python' };
-const AXES = { axe: 1, steelAxe: 2, forgedAxe: 3 };
-const PICKS = { pickaxe: 1, steelPickaxe: 1.6, forgedPickaxe: 2.2, tuskPickaxe: 3, starPickaxe: 3.6 };
-const SPEARS = new Set(['spear', 'steelSpear', 'forgedSpear']);
-const SWORDS = new Set(['sword', 'fangSword', 'oldSword', 'starBlade']);
+const AXES = { axe: 1, bronzeAxe: 1.5, steelAxe: 2, forgedAxe: 3 };
+const PICKS = { pickaxe: 1, bronzePickaxe: 1.3, steelPickaxe: 1.6, forgedPickaxe: 2.2, tuskPickaxe: 3, starPickaxe: 3.6 };
+const SPEARS = new Set(['spear', 'bronzeSpear', 'steelSpear', 'forgedSpear']);
+const SWORDS = new Set(['sword', 'fangSword', 'oldSword', 'starBlade', 'bronzeSword']);
 const BOWS = new Set(['bow', 'antlerBow', 'longbow']);
 // (How long a bow takes to draw full, seconds: a longbow's slower.)
 const drawTime = (id) => ITEMS[id]?.draw ?? 0.9;
@@ -120,7 +120,7 @@ const RUIN_LOOT = [
 ];
 const RUIN_RARE = [['oldMap', 0.4, 0.5], ['oldSword', 0.06, 0.25], ['forgedPickaxe', 0.04, 0.1], ['steelArmour', 0.02, 0.08]];
 // What a ripe crop gives.
-const HARVEST = { wheat: [['wheat', 3], ['seedWheat', 2]], corn: [['corn', 2], ['seedCorn', 2]], potato: [['potato', 4], ['seedPotato', 1]], carrot: [['carrot', 3], ['seedCarrot', 2]] };
+const HARVEST = { pumpkin: [['pumpkin', 2], ['seedPumpkin', 2]], wheat: [['wheat', 3], ['seedWheat', 2]], corn: [['corn', 2], ['seedCorn', 2]], potato: [['potato', 4], ['seedPotato', 1]], carrot: [['carrot', 3], ['seedCarrot', 2]] };
 // Past this much in your pack (kg) you slow down; past twice it, you can't run.
 const LOAD = 55;
 
@@ -235,6 +235,31 @@ export class Game {
     return this.controls.mode === 'walk';
   }
 
+  /**
+   * Boats left moored or drifting, not only the one you're in: each riding
+   * the water as it is now (the tide in or out), lifted and dropped by the
+   * swell and pitching and rolling on it, each a little out of time with
+   * the next; on a river or a pond, just a gentle rocking.
+   */
+  #bobBoats() {
+    const cam = this.camera.position, t = this.time;
+    for (const s of this.structures.list) {
+      const k = this.structures.kindOf?.(s.type);
+      if (!(s.type === 'raft' || s.type === 'canoe' || s.type === 'sailboat') || s === this.riding || !s.mesh) continue;
+      if (Math.abs(s.x - cam.x) > 220 || Math.abs(s.z - cam.z) > 220) continue;
+      const w = this.waterAt(s.x, s.z);
+      if (!w) continue;
+      void k;
+      const sink = s.type === 'sailboat' ? 0.05 : s.type === 'canoe' ? -0.05 : 0.12, ph = s.id * 1.7;
+      const wave = w.lake && this.waveAt ? this.waveAt(s.x, s.z) : { y: Math.sin(t * 1.3 + ph) * 0.035, nx: Math.sin(t * 0.9 + ph) * 0.03, nz: Math.cos(t * 1.1 + ph) * 0.03 };
+      const fx = Math.sin(s.rot), fz = Math.cos(s.rot), size = s.type === 'sailboat' ? 0.5 : 0.8;
+      s.mesh.position.y = w.level - sink + wave.y + Math.sin(t * 0.8 + ph) * 0.02;
+      s.mesh.rotation.order = 'YXZ';
+      s.mesh.rotation.x = Math.atan(fx * wave.nx + fz * wave.nz) * size + Math.sin(t * 0.7 + ph) * 0.012;
+      s.mesh.rotation.z = -Math.atan(fz * wave.nx - fx * wave.nz) * size + Math.sin(t * 0.55 + ph * 1.3) * 0.02;
+    }
+  }
+
   /** On foot or flying (creative): either way, you can use what's in your hand and build. */
   get acting() {
     return this.controls.mode === 'walk' || this.controls.mode === 'fly';
@@ -310,6 +335,7 @@ export class Game {
     if (!saved?.progress && saved) {
       const has = (id) => JSON.stringify(saved).includes(`"${id}"`);
       if (has('campfire') || has('furnace')) this.progress.add('campfire');
+      if (has('bronzeBar') || has('bronzeAxe') || has('ironBar') || has('steelBar')) this.progress.add('bronzeBar');
       if (has('ironBar') || has('anvil') || has('steelAxe') || has('steelBar')) this.progress.add('ironBar');
       if (has('steelBar') || has('forgedAxe') || has('forgedPickaxe') || has('forgedSpear') || has('crossbow') || has('sword') || has('steelArmour')) this.progress.add('steelBar');
     }
@@ -481,7 +507,7 @@ export class Game {
         }
         this.hotbar?.render();
       }
-      for (const id of ['ironBar', 'steelBar']) if (this.inventory.count(id)) this.#learn(id);
+      for (const id of ['bronzeBar', 'ironBar', 'steelBar']) if (this.inventory.count(id)) this.#learn(id);
       if (this.inventory.slots.some((s) => s && ITEMS[s.id]?.group === 'Trophies')) this.#learn('trophy');
       if (!this.hud.el('.craft').hidden) this.hud.renderCraft(this.inventory);
       this.hud.renderChest();
@@ -646,6 +672,12 @@ export class Game {
       }
       case 'cellar': return 'Open the root cellar';
       case 'shelf': return 'Open the shelves';
+      case 'armourStand': return 'Hang your gear on the stand';
+      case 'weaponRack': return 'Put weapons in the rack';
+      case 'hatchFloor': return s.open ? 'Shut the trapdoor' : 'Open the trapdoor';
+      case 'greenhouse': return 'A greenhouse: dig plots inside it; they grow all year';
+      case 'painting': return 'A painting (Shift+Q: take it down)';
+      case 'rug': return 'A rug (Shift+Q: take it up)';
       case 'chair': return 'Sit and rest';
       case 'repairBench': return held && ITEMS[held.id]?.durability ? `Mend the ${ITEMS[held.id].name.toLowerCase()}` : 'The repair bench: Q with a worn tool in hand';
       case 'waterMill':
@@ -1082,9 +1114,14 @@ export class Game {
       case 'repairBench':
         return this.#repair();
       case 'shelf':
+      case 'armourStand':
+      case 'weaponRack':
         this.sound?.call('wood', 0, 0.35);
-        this.hud.openChest(s.contents, this.inventory, 'Shelves', 'Click to move a stack across · E or Esc to close');
+        this.hud.openChest(s.contents, this.inventory, s.type === 'shelf' ? 'Shelves' : s.type === 'armourStand' ? 'Armour stand' : 'Weapon rack', 'Click to move a stack across · E or Esc to close');
         return this.#menu(true);
+      case 'hatchFloor':
+        this.structures.toggle(s);
+        return this.sound?.call('creak', 0, 0.35);
       case 'chair':
         // (Sitting a while: rested, a little.)
         if (this.time < (this.satUntil ?? 0)) return this.hotbar?.flash('You sit, resting');
@@ -1742,6 +1779,23 @@ export class Game {
       this.inventory.remove(veg, 1);
       this.inventory.wear(i, 1);
       return say(`A stew on: ${ITEMS[meat].name.toLowerCase()} and ${ITEMS[veg].name.toLowerCase()}`);
+    }
+    // Copper and tin, and glass: smelted, melted.
+    if (at.type === 'furnace' && (s.id === 'copperOre' || s.id === 'sand')) {
+      const out = s.id === 'sand' ? 'glass' : 'copperBar';
+      if (!this.structures.work(at, { id: s.id, count: 1 }, Inventory.stack(out, 1), TIMES.smelt)) return say('The furnace is full');
+      take();
+      this.cooldown = 0.3;
+      return say(`${ITEMS[s.id].name} in the furnace: ${s.id === 'sand' ? 'it will melt to glass' : 'a copper bar'} in half a minute${at.lit ? '' : ' (light it)'}`);
+    }
+    if (at.type === 'furnace' && s.id === 'tinOre') {
+      // (Bronze: tin melted in with copper, two bars of it to the one of tin.)
+      if (this.inventory.count('copperBar') < 2) return say('Tin wants two copper bars with it to make bronze: smelt copper ore first');
+      if (!this.structures.work(at, { id: 'tinOre', count: 1 }, Inventory.stack('bronzeBar', 2), TIMES.steel)) return say('The furnace is full');
+      take();
+      this.inventory.remove('copperBar', 2);
+      this.cooldown = 0.3;
+      return say(`Tin and copper in the furnace: two bronze bars soon${at.lit ? '' : ' (light it)'}`);
     }
     if (at.type === 'furnace' && s.id === 'iron') {
       if (!this.structures.work(at, { id: 'iron', count: 1 }, Inventory.stack('ironBar', 1), TIMES.smelt)) return say('The furnace is full');
@@ -2474,12 +2528,15 @@ export class Game {
 
   // The nearest creature along a ray: an animal, or a spider in the caves.
   #aimAny(o, d, reach) {
-    const a = this.wildlife.aim(o, d, reach), s = this.spiders?.aim(o, d, reach);
-    return s && (!a || s.distance < a.distance) ? s : a;
+    const a = this.wildlife.aim(o, d, reach), s = this.spiders?.aim(o, d, reach), w = this.sea?.aim(o, d, reach);
+    let best = a;
+    for (const h of [s, w]) if (h && (!best || h.distance < best.distance)) best = h;
+    return best;
   }
 
   // A spider struck or shot.
   #hitSpider(hit, sharp, from) {
+    if (hit.sea) return this.#hitSea(hit, sharp, from);
     const out = this.spiders.wound(hit.animal, sharp);
     this.#wounded(hit, from);
     this.sound?.call('stab', 0, 0.5);
@@ -2489,6 +2546,20 @@ export class Game {
       return this.hotbar?.flash(out === 'dead' ? `${hit.animal.boss.name} is dead` : 'A hit: she shrieks');
     }
     this.hotbar?.flash(out === 'dead' ? 'The spider curls up, dead' : 'A hit: it hisses');
+  }
+
+  // A creature of the sea struck or shot: a dolphin, a whale, the Deep Coil (all hard to kill).
+  #hitSea(hit, sharp, from) {
+    const c = hit.animal, out = this.sea.wound(c, sharp);
+    this.#wounded(hit, from);
+    this.sound?.call('stab', 0, 0.5);
+    if (c.boss) {
+      this.#bossFight(c);
+      if (out !== 'dead') this.sound?.call('roar', 0, 0.8);
+      return this.hotbar?.flash(out === 'dead' ? `${c.boss.name} is dead: it sinks into the dark` : 'A hit: it thrashes');
+    }
+    const name = c.kind === 'whale' ? 'whale' : 'dolphin';
+    this.hotbar?.flash(out === 'dead' ? `The ${name} rolls over, dead` : c.kind === 'whale' ? 'A hit: it hardly notices, and sounds' : 'A hit: the pod dives and flees');
   }
 
   // Spearing a fish (along a ray, or where a thrown spear goes in): whether one was caught.
@@ -3561,6 +3632,7 @@ export class Game {
       this.hotbar?.flash('You are sick');
     }
     globalThis.__prof?.mark('  g: before food');
+    this.#bobBoats();
     // Food spoils (not in a chest; jerky keeps).
     this.spoilWait = (this.spoilWait ?? 0) - dt;
     if (this.spoilWait <= 0) {
@@ -3905,7 +3977,8 @@ export class Game {
     const on = this.controls.swimming && this.controls.mode === 'walk' && !busy && this.survival.alive && this.hand.visible;
     if (!this.swimArmsMesh) {
       if (!on) return;
-      const skin = new MeshLambertMaterial({ color: 0xd8a47a, flatShading: true }), sleeve = new MeshLambertMaterial({ color: 0xb8864e, flatShading: true });
+      const skin = new MeshLambertMaterial({ color: this.look?.skin ?? 0xd8a47a, flatShading: true }), sleeve = new MeshLambertMaterial({ color: this.look?.shirt ?? 0xb8864e, flatShading: true });
+      this.armMaterials = [skin, sleeve];
       const arm = () => {
         const g = new Group();
         const parts = [
@@ -3958,7 +4031,8 @@ export class Game {
       if (!on) return;
       const g = new Group();
       const silk = new MeshLambertMaterial({ color: 0xece4d4, flatShading: true, side: 2 }), frame = new MeshLambertMaterial({ color: 0x7a5432, flatShading: true });
-      const skin = new MeshLambertMaterial({ color: 0xd8a47a, flatShading: true }), sleeve = new MeshLambertMaterial({ color: 0xb8864e, flatShading: true });
+      const skin = new MeshLambertMaterial({ color: this.look?.skin ?? 0xd8a47a, flatShading: true }), sleeve = new MeshLambertMaterial({ color: this.look?.shirt ?? 0xb8864e, flatShading: true });
+      this.gliderArmMaterials = [skin, sleeve];
       const near = (m) => ((m.renderOrder = 999), (m.onBeforeRender = this.nearest.before), (m.onAfterRender = this.nearest.after), m);
       // The wing: a broad delta of silk, swept back from its nose, a little arched.
       const wing = new BufferGeometry();

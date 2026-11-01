@@ -98,6 +98,7 @@ const SHORE = {
 };
 // Black sand, the banded ground of a petrified forest, a glowing swamp's moss (see surfaceColor).
 const BLACK_SAND = new Color(0x2e2c2e);
+const QUICKSAND = new Color(0x9a845a); // (wet, smooth sand: a quicksand)
 const CRATER_SCORCH = new Color(0x4a443e), CRATER_DUST = new Color(0xa49a8a); // (a meteor crater's blasted bowl, and the dust thrown out round it)
 const PETRIFIED_BANDS = [new Color(0x9a948e), new Color(0xa88ea8), new Color(0xb47860), new Color(0xd8c8a8)];
 const GLOW_MOSS = new Color(0x2e5248);
@@ -4198,6 +4199,21 @@ export class TerrainGenerator {
     return c;
   }
 
+  /**
+   * Quicksand at (x, z): 0 none, 1 the middle of a patch. Small patches, a
+   * few metres to a dozen across, here and there in the desert's low flats
+   * (where water lies under the sand), the wetlands' and mangroves' edges,
+   * and now and then in a savanna's dry riverbeds: never on a slope.
+   */
+  quicksandAt(x, z, w = this.getBiomeWeights(x, z, {})) {
+    const where = w.desert + 0.8 * w.wetland + 0.8 * (w.mangrove ?? 0) + 0.3 * w.savanna;
+    if (where < 0.3) return 0;
+    const n = this.detailNoise.noise2D(x * 0.045 + 311, z * 0.045 - 77) + 0.35 * this.detailNoise.noise2D(x * 0.13 - 9, z * 0.13 + 41);
+    const gate = this.detailNoise.noise2D(x * 0.004 - 150, z * 0.004 + 220);
+    if (gate < 0.2) return 0;
+    return smoothstep(0.82, 1.05, n) * smoothstep(0.2, 0.4, gate) * Math.min(1, where);
+  }
+
   /** The land at (x, z), `g` high, with the meteor craters' bowls blasted out and their rims and ejecta heaped. */
   #craterCarve(x, z, g) {
     this._craterNew = false;
@@ -4430,6 +4446,12 @@ export class TerrainGenerator {
       // A glowing swamp: its moss darker, blue-green.
       const gs = w.wetland > 0.2 ? this.glowSwampAt(x, z) : 0;
       if (gs > 0.01) out.lerp(GLOW_MOSS, 0.45 * gs);
+    }
+    // Quicksand: a patch of smooth, damp-looking sand, a shade darker and
+    // flatter than round it (if you know what to look for).
+    if (upness > 0.85 && (w.desert + w.wetland + (w.mangrove ?? 0) + w.savanna) > 0.4) {
+      const q = this.quicksandAt(x, z, w);
+      if (q > 0.05) out.lerp(QUICKSAND, 0.55 * smoothstep(0.05, 0.6, q));
     }
     // Salt flats: the white crust cracked into plates, each a little
     // different, with darker seams between them.

@@ -158,3 +158,120 @@ export class Avalanches {
     }
   }
 }
+
+const SLAB_SITES = 18, PER_SITE = 12;
+/**
+ * The snow building up where an avalanche may come down: on the steep snowy
+ * slopes round you, after heavy snow, fat pillows of wind-packed snow lying
+ * across the slope, and along the crest above each an overhanging cornice,
+ * growing the longer it snows (and shrinking away in a thaw). The worst
+ * loaded are where the avalanches break away (see ripest): and for a few
+ * seconds first a dark crack opens across the top of the slab.
+ */
+export class SnowLoad {
+  constructor(scene) {
+    const g = new IcosahedronGeometry(1, 1);
+    this.mesh = new InstancedMesh(g, new MeshLambertMaterial({ flatShading: true, color: 0xf4f7fb }), SLAB_SITES * PER_SITE);
+    this.mesh.frustumCulled = false;
+    this.mesh.count = 0;
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
+    this.crack = new InstancedMesh(new IcosahedronGeometry(1, 0), new MeshLambertMaterial({ color: 0x4a5866 }), SLAB_SITES);
+    this.crack.frustumCulled = false;
+    this.crack.count = 0;
+    scene.add(this.mesh, this.crack);
+    this.sites = [];
+    this.wait = 0;
+  }
+
+  /**
+   * @param ctx { eye, load (0..1: deep fresh snow), forward (yaw), slopeAt(x, z) -> { g, slope, snow, down }, mountains(x, z) }
+   */
+  update(dt, ctx) {
+    const e = ctx.eye;
+    this.wait -= dt;
+    if (this.wait <= 0) {
+      this.wait = 3;
+      this.sites = this.sites.filter((s) => Math.hypot(s.x - e.x, s.z - e.z) < 650 && (s.build > 0.02 || ctx.load > 0.1));
+      // (New ones found, on the steep snowy slopes in view: only once snow's been falling.)
+      if (ctx.load > 0.1 && ctx.mountains(e.x, e.z) > 0.3) {
+        for (let k = 0; k < 24 && this.sites.length < SLAB_SITES; k++) {
+          const a = ctx.forward + (Math.random() - 0.5) * 2.6, d = 80 + Math.random() * 380, x = e.x + Math.sin(a) * d, z = e.z + Math.cos(a) * d;
+          if (this.sites.some((s) => Math.hypot(s.x - x, s.z - z) < 45)) continue;
+          const s = ctx.slopeAt(x, z);
+          if (!s.snow || s.slope < 0.65 || s.slope > 1.7 || !Number.isFinite(s.g)) continue;
+          this.sites.push({ x, z, down: s.down, slope: s.slope, build: 0.05, width: 18 + Math.random() * 22, seed: Math.random() * 100, crack: 0 });
+        }
+      }
+    }
+    // Building up as it snows, settling and melting away when it doesn't.
+    for (const s of this.sites) {
+      s.build = Math.max(0, Math.min(1, s.build + (ctx.load > 0.1 ? dt * 0.004 * (0.4 + ctx.load) : -dt * 0.0015)));
+      if (s.crack > 0) s.crack += dt;
+    }
+    this.#draw(ctx);
+  }
+
+  /** The most heavily loaded slab in reach of (x, z), high above it (for an avalanche to break away from), or null. */
+  ripest(x, z, y) {
+    let best = null;
+    for (const s of this.sites) {
+      if (s.build < 0.35 || s.crack > 0 || Math.hypot(s.x - x, s.z - z) > 450 || (s.g ?? 0) < y + 20) continue;
+      if (!best || s.build > best.build) best = s;
+    }
+    return best;
+  }
+
+  /** It's going: a crack opening across its top for a few seconds, then `then()` (the avalanche breaking away). */
+  release(s, then) {
+    s.crack = 0.001;
+    s.then = then;
+  }
+
+  #draw(ctx) {
+    const mesh = this.mesh;
+    let n = 0, c = 0;
+    for (const s of this.sites) {
+      if (s.crack > 4) {
+        // (It's gone: down the mountain.)
+        s.then?.(s);
+        s.then = null;
+        s.gone = true;
+        continue;
+      }
+      if (s.build < 0.03) continue;
+      const fx = Math.sin(s.down), fz = Math.cos(s.down), ax = -fz, az = fx;
+      s.g = ctx.slopeAt(s.x, s.z).g;
+      const tilt = Math.atan(s.slope);
+      for (let k = 0; k < PER_SITE && n < mesh.instanceMatrix.count; k++) {
+        const cornice = k >= PER_SITE - 4;
+        const u = cornice ? ((k - (PER_SITE - 4)) / 3 - 0.5) * s.width : ((k % 8) / 7 - 0.5) * s.width * 0.9;
+        const back = cornice ? -14 - s.width * 0.1 : ((Math.sin(s.seed + k * 1.7) + 1) * 0.5) * 8 - 4;
+        const x = s.x + ax * u - fx * back, z = s.z + az * u - fz * back, g = ctx.slopeAt(x, z).g;
+        if (!Number.isFinite(g)) continue;
+        const B = s.build, w = (cornice ? s.width / 3.2 : s.width / 6) * (0.8 + 0.3 * Math.sin(s.seed + k));
+        const thick = cornice ? 0.5 + 1.6 * B : 0.25 + 1.3 * B;
+        p.set(x + (cornice ? fx * 1.2 * B : 0), g + thick * 0.35, z + (cornice ? fz * 1.2 * B : 0));
+        e.set(cornice ? -0.25 : tilt * 0.9, s.down, 0, 'YXZ');
+        q.setFromEuler(e);
+        s3.set(w, thick, cornice ? 2 + 2.5 * B : w * 0.8);
+        mesh.setMatrixAt(n++, m4.compose(p, q, s3));
+      }
+      // The crack: a dark line opening across the slab's top.
+      if (s.crack > 0 && c < this.crack.instanceMatrix.count) {
+        const g = ctx.slopeAt(s.x - fx * 5, s.z - fz * 5).g;
+        p.set(s.x - fx * 5, g + 0.4 + 1.1 * s.build, s.z - fz * 5);
+        e.set(tilt * 0.9, s.down, 0, 'YXZ');
+        q.setFromEuler(e);
+        s3.set(s.width * 0.5 * Math.min(1, s.crack / 1.5), 0.12, 0.25 + 0.3 * Math.min(1, s.crack / 3));
+        this.crack.setMatrixAt(c++, m4.compose(p, q, s3));
+      }
+    }
+    this.sites = this.sites.filter((s) => !s.gone);
+    mesh.count = n;
+    this.crack.count = c;
+    mesh.instanceMatrix.needsUpdate = true;
+    this.crack.instanceMatrix.needsUpdate = true;
+  }
+}
+const s3 = new Vector3();

@@ -302,7 +302,7 @@ export class PlayerControls {
     const deepWater = (!g.inCave || !!water?.cave) && water !== null && g.height < water.level - this.swimDepth;
     return {
       height: g.height,
-      stand: deepWater ? water.level - this.swimDepth : g.height,
+      stand: deepWater ? water.level - this.swimDepth : g.height - (g.inCave ? 0 : this.sinkDepth ?? 0), // (sunk in quicksand: see main's quicksand)
       inCave: g.inCave,
       ceiling: g.ceiling,
       swim: deepWater,

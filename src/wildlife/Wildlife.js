@@ -94,6 +94,9 @@ const SPECIES = {
   monkey: { bird: true, climber: true, model: Models.monkey, max: 40, scale: 1.0, flee: 14, radius: 0.25, health: 15 },
   snake: { serpent: true, model: Models.snake, max: 10, walk: 0.35, run: 1.2, flee: 5, calm: 12, radius: 0.1, height: 0.1, health: 4, size: 1.0 },
   songbird: { bird: true, model: Models.songbird, max: 60, scale: 1.6, flee: 9, radius: 0.25, health: 2 },
+  // (The jungle's: up in the canopy, as the songbirds are elsewhere.)
+  parrot: { bird: true, model: Models.parrot, max: 30, scale: 3.4, flee: 14, radius: 0.35, health: 5, call: 'parrot' },
+  toucan: { bird: true, model: Models.toucan, max: 30, scale: 3.0, flee: 12, radius: 0.35, health: 5, call: 'toucan' },
   starling: { bird: true, model: Models.starling, max: 60, scale: 1.45, flee: 22, radius: 0.25, health: 2 },
   crow: { bird: true, model: Models.crow, max: 40, scale: 2.3, flee: 25, radius: 0.35, health: 4 },
   gull: { bird: true, model: Models.gull, max: 12, scale: 3.0, flee: 15, radius: 0.5, health: 6 },
@@ -1920,7 +1923,10 @@ export class Wildlife {
             if (list[i + 3] - list[i + 2] < 2.5) continue;
             const perch = this.#perchOn(list.slice(i, i + 5), ctx);
             if (!perch) continue;
-            const a = this.#spawnSongbird(perch);
+            // (In the jungle: macaws and toucans instead.)
+            const jw = ctx.generator?.getBiomeWeights(perch.x, perch.z, {}) ?? {};
+            const jungle = (jw.jungle ?? 0) + (jw.jungleMountains ?? 0) + (jw.jungleFoothills ?? 0) > 0.5;
+            const a = this.#spawnSongbird(perch, jungle ? (home.rand() < 0.55 ? 'parrot' : 'toucan') : 'songbird');
             a.chunk = key;
             home.animals.push(a);
           }
@@ -2695,11 +2701,11 @@ export class Wildlife {
     return a;
   }
 
-  #spawnSongbird(at) {
+  #spawnSongbird(at, kind = 'songbird') {
     const a = {
-      kind: 'songbird', x: at.x, y: at.y, z: at.z, heading: rnd(0, TAU), pitch: 0, roll: 0,
-      scale: SPECIES.songbird.scale * rnd(0.85, 1.15), alive: true, health: SPECIES.songbird.health,
-      state: 'perch', timer: rnd(3, 15), flap: 0, tint: SONGBIRD_TINTS[Math.floor(Math.random() * SONGBIRD_TINTS.length)],
+      kind, x: at.x, y: at.y, z: at.z, heading: rnd(0, TAU), pitch: 0, roll: 0,
+      scale: SPECIES[kind].scale * rnd(0.85, 1.15), alive: true, health: SPECIES[kind].health,
+      state: 'perch', timer: rnd(3, 15), flap: 0, tint: kind === 'songbird' ? SONGBIRD_TINTS[Math.floor(Math.random() * SONGBIRD_TINTS.length)] : undefined,
     };
     this.animals.push(a);
     return a;
@@ -3010,6 +3016,10 @@ export class Wildlife {
         case 'horse': call = Math.random() < 0.4 ? 'neigh' : 'snort'; break;
         case 'donkey': case 'mule': call = Math.random() < 0.35 ? 'bray' : Math.random() < 0.3 ? 'snort' : null; break;
         case 'rabbit': case 'hare': call = Math.random() < 0.2 ? 'thump' : null; break;
+        case 'parrot': case 'toucan':
+          call = a.state === 'perch' && (ctx.day ?? 1) > 0.2 ? a.kind : null;
+          holder.voiceAt = this.time + rnd(6, 18);
+          break;
         case 'songbird':
           a.voice ??= Math.floor(Math.random() * 7);
           call = a.state === 'perch' && (ctx.day ?? 1) > 0.3 ? `song${a.voice}` : null;
@@ -3029,11 +3039,27 @@ export class Wildlife {
     const y = ctx.ground(a.x, a.z);
     const w = ctx.waterAt?.(a.x, a.z), half = (sp.height ?? 1) * a.scale * 0.3;
     if (w && !w.frozen && w.level - (y === y ? y : -Infinity) > half * 1.2) {
-      const float = w.level - half * 0.8 + Math.sin(this.time * 1.3 + (a.phase ?? 0)) * 0.03;
-      a.y = a.floating ? a.y + (float - a.y) * Math.min(1, dt * 2) : Math.min(a.y, float);
+      // Dead in the water: it goes under a moment, then floats up, low in
+      // the water, on its side, rocking with the ripples and the swell,
+      // turning slowly as it drifts (down the current, before the wind);
+      // after a few minutes waterlogged, it sinks slowly to the bottom.
+      // (The heavy, dense ones float lowest.)
+      a.soak = (a.soak ?? 0) + (a.alive ? 0 : dt);
+      const heavy = Math.min(1, (sp.size ?? 1) * a.scale / 2.5);
+      const sinking = a.alive ? 0 : Math.min(1, Math.max(0, (a.soak - 180) / 150));
+      const wave = ctx.waveAt?.(a.x, a.z) ?? 0;
+      const float = w.level - half * (0.7 + 0.5 * heavy) + Math.sin(this.time * 1.3 + (a.phase ?? 0)) * 0.04 + wave;
+      const bed = y === y ? y + half * 0.4 : float;
+      const want = float + (Math.min(float, bed) - float) * sinking;
+      if (!a.floating) a.y = Math.min(a.y, float - half * 0.6); // (under, for a moment, as it goes in)
+      a.y += (want - a.y) * Math.min(1, dt * (sinking > 0 ? 0.3 : 1.2));
       a.floating = true;
-      if (w.fx || w.fz) {
-        const nx = a.x + (w.fx ?? 0) * (w.speed ?? 0) * 0.4 * dt, nz = a.z + (w.fz ?? 0) * (w.speed ?? 0) * 0.4 * dt;
+      if (!a.alive && sinking < 0.6) {
+        // (Rocking, and slowly turning, as it drifts.)
+        a.roll += (a.side * Math.PI * 0.5 + Math.sin(this.time * 0.9 + (a.phase ?? 0)) * 0.12 - a.roll) * Math.min(1, dt * 2);
+        a.heading += Math.sin(this.time * 0.13 + (a.phase ?? 0)) * 0.05 * dt;
+        const wd = ctx.windDir, blow = (ctx.wind ?? 0.3) * 0.25;
+        const nx = a.x + ((w.fx ?? 0) * (w.speed ?? 0) * 0.5 + (wd ? wd.x * blow : 0)) * dt, nz = a.z + ((w.fz ?? 0) * (w.speed ?? 0) * 0.5 + (wd ? wd.y * blow : 0)) * dt;
         if (ctx.waterAt(nx, nz)) (a.x = nx), (a.z = nz);
       }
       return;

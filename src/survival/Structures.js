@@ -6,7 +6,8 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, RAISED_MODELS, wallFootingModel } from './models.js';
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, RAISED_MODELS, wallFootingModel,
+  greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -16,7 +17,7 @@ const FUEL_START = 450; // seconds a new fire burns
 const FUEL_LOG = 270; // and each log added
 const FUEL_MAX = 1350;
 // How long a crop takes to ripen (seconds, in a good season).
-export const GROW = { wheat: 420, corn: 600, potato: 480, carrot: 360 };
+export const GROW = { wheat: 420, corn: 600, potato: 480, carrot: 360, pumpkin: 720 };
 const UP = new Vector3(0, 1, 0), tq = new Quaternion(), yq = new Quaternion(), nv = new Vector3();
 const R = ROOF_SIZE / 2 - 0.15;
 
@@ -181,6 +182,17 @@ const KINDS = {
     { name: 'the mast and sail', needs: { log: 1, rope: 4, deerSkin: 4 }, upTo: 1 },
   ] },
   ladder: { make: () => ladderModel(3), circle: 0 },
+  // (A greenhouse: glass walls on a frame, its doorway in front; plots dug inside grow all year: see update.)
+  greenhouse: { make: greenhouseFrameModel, posts: [[-1.95, -1.95], [1.95, -1.95], [-1.95, 1.95], [1.95, 1.95]], shelter: [2, 2], walls: [[0, 1.95, 2, 0.08], [-1.95, 0, 0.08, 2], [1.95, 0, 0.08, 2], [-1.3, -1.95, 0.65, 0.08], [1.3, -1.95, 0.65, 0.08]], tall: 3.2, over: true },
+  // (Furniture that shows what's put on it: see #showShelf.)
+  armourStand: { make: armourStandModel, box: [0.3, 0.3], tall: 1.9 },
+  weaponRack: { make: weaponRackModel, box: [0.75, 0.2], tall: 1.5 },
+  // (On the floor, walked over; on a wall, hung; over a wall's top, closing a roof's end.)
+  rug: { make: () => rugModel(false), flat: true, over: true, steep: 0.6 },
+  painting: { make: () => paintingModel(0), hung: true, over: true },
+  gable: { make: gableModel, gable: true, over: true },
+  // (A floor with a trapdoor: Q opens it; open, you can go up and down through it.)
+  hatchFloor: { make: hatchFloorModel, box: [FLOOR_SIZE / 2, FLOOR_SIZE / 2], floor: true, steep: 1.6, hatch: true },
 };
 
 /**
@@ -366,6 +378,7 @@ export class Structures {
     let rot = yaw;
     const kind = KINDS[type];
     if (kind.raised) return this.#raisedPlan(type, kind, point, yaw, ground, water);
+    if (kind.hung || kind.gable) return this.#onWallPlan(type, kind, point, yaw);
     // (On a floor, things stand on its boards or flags, not the ground under it.)
     if (!kind.floor) {
       // (Not one laid up over where you're pointing: a floor upstairs isn't in the way of building under it.)
@@ -653,6 +666,34 @@ export class Structures {
     return { type, x, y, z, rot, ok, why, tilt: null, upper: false, len: y - lo };
   }
 
+  /**
+   * A painting, hung on the face of the wall you point at (the side you're
+   * on), at eye height, in the middle of the wall or a quarter along; a
+   * gable end, set up on top of the wall you point at, rising to the end
+   * you face (R turns it to rise the other way).
+   */
+  #onWallPlan(type, kind, point, yaw) {
+    let wall = null, bd = 2.2;
+    for (const s of this.list) {
+      if (KINDS[s.type].line !== 'wall') continue;
+      const d = Math.hypot(s.x - point.x, s.z - point.z) + (kind.gable ? Math.abs(s.y + 3.2 - (point.y ?? s.y + 3.2)) * 0.3 : 0);
+      if (d < bd) (bd = d), (wall = s);
+    }
+    if (!wall) return { type, x: point.x, y: point.y ?? 0, z: point.z, rot: yaw, ok: false, why: kind.gable ? 'Point at the top of a wall' : 'Point at a wall to hang it on', tilt: null };
+    const ux = Math.cos(wall.rot), uz = -Math.sin(wall.rot), vx = Math.sin(wall.rot), vz = Math.cos(wall.rot);
+    const u = (point.x - wall.x) * ux + (point.z - wall.z) * uz, v = (point.x - wall.x) * vx + (point.z - wall.z) * vz;
+    if (kind.gable) {
+      // (Rising toward the end you're facing.)
+      const up = Math.cos(yaw - wall.rot) > 0 ? 0 : Math.PI;
+      const taken = this.list.some((o) => o.type === 'gable' && Math.hypot(o.x - wall.x, o.z - wall.z) < 0.3 && Math.abs(o.y - (wall.y + 3.2)) < 0.3);
+      return { type, x: wall.x, y: wall.y + 3.2, z: wall.z, rot: wall.rot + up, ok: !taken, why: taken ? 'There is one there already' : '', tilt: null };
+    }
+    const side = Math.sign(v) || 1, gu = Math.max(-1, Math.min(1, Math.round(u))), off = 0.3;
+    const x = wall.x + ux * gu + vx * side * off, z = wall.z + uz * gu + vz * side * off;
+    const taken = this.list.some((o) => o.type === 'painting' && Math.hypot(o.x - x, o.z - z) < 0.6);
+    return { type, x, y: wall.y + 1.4, z, rot: wall.rot + (side > 0 ? 0 : Math.PI), ok: !taken, why: taken ? 'There is one there already' : '', tilt: null, variant: Math.floor(Math.random() * 4) };
+  }
+
   // Whether something already built stands at (px, pz) (within `r`), in the
   // way of `type` going up at (x, z): why not, or null. (Lengths of the same
   // wall or fence may meet end to end; a roof goes over things.)
@@ -728,8 +769,9 @@ export class Structures {
   build(plan, extra = {}) {
     const s = { id: this.nextId++, type: plan.type, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, tilt: plan.tilt ?? null, upper: !!plan.upper, lit: false, fuel: 0, jobs: [], ...(plan.len !== undefined ? { len: plan.len } : {}), ...extra };
     s.jobs = (s.jobs ?? []).map((j) => ({ ...j }));
-    if (s.type === 'chest' || s.type === 'cellar' || s.type === 'shelf' || s.type === 'sailboat') {
-      const inv = new Inventory(s.type === 'cellar' ? 24 : s.type === 'shelf' ? 6 : s.type === 'sailboat' ? 16 : 10);
+    if (s.type === 'painting') s.data = { ...(s.data ?? {}), variant: s.data?.variant ?? plan.variant ?? Math.floor(Math.random() * 4) };
+    if (s.type === 'chest' || s.type === 'cellar' || s.type === 'shelf' || s.type === 'sailboat' || s.type === 'armourStand' || s.type === 'weaponRack') {
+      const inv = new Inventory(s.type === 'cellar' ? 24 : s.type === 'shelf' ? 6 : s.type === 'sailboat' ? 16 : s.type === 'armourStand' || s.type === 'weaponRack' ? 4 : 10);
       if (extra.contents) extra.contents.forEach((st, i) => (inv.slots[i] = st));
       s.contents = inv;
     }
@@ -738,12 +780,26 @@ export class Structures {
     const bk = KINDS[s.type].bridge;
     const ys = s.data?.ys ?? [0, 0];
     const spanModel = s.type === 'stoneRoad' ? stoneRoadModel(s.len ?? 1, ys) : s.type === 'zipLine' ? zipLineModel(s.len ?? 10, s.rise ?? -3) : s.type === 'ditch' ? ditchModel(s.len ?? 1, ys) : null;
-    const body = new Mesh(spanModel ? spanModel : bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : KINDS[s.type].raised ? RAISED_MODELS[s.type](s.len ?? 3) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper), this.material);
+    const body = new Mesh(spanModel ? spanModel : bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : KINDS[s.type].raised ? RAISED_MODELS[s.type](s.len ?? 3) : s.type === 'painting' ? (this.models[`painting${s.data.variant}`] ??= paintingModel(s.data.variant)) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper), this.material);
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);
     s.body = body;
     if (KINDS[s.type].line === 'wall') mesh.add(new Mesh(this.models.wallFooting ??= wallFootingModel(), this.material)); // (its footing: see wallFootingModel)
+    if (s.type === 'greenhouse') {
+      // (Its glass: pale, seen through.)
+      this.glassMaterial ??= new MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.35, depthWrite: false, side: 2 });
+      const glass = new Mesh(this.models.greenhouseGlass ??= greenhouseGlassModel(), this.glassMaterial);
+      glass.renderOrder = 3;
+      mesh.add(glass);
+    }
+    if (KINDS[s.type].hatch) {
+      // (The trapdoor's lid, hinged at the opening's near edge.)
+      s.lid = new Mesh(this.models.hatchLid ??= hatchLidModel(), this.material);
+      s.lid.position.set(HATCH.u, FLOOR_TOP - 0.04, HATCH.v - HATCH.hv);
+      s.lid.rotation.x = s.open ? -Math.PI * 0.55 : 0;
+      mesh.add(s.lid);
+    }
     if (KINDS[s.type].door) {
       // (The door swings on its hinge at the left post.)
       s.door = new Mesh(this.doorModel(s.type, s.data?.dye), this.material);
@@ -846,7 +902,7 @@ export class Structures {
 
   /** Opens or shuts a gate. */
   toggle(s) {
-    if (!KINDS[s.type].door) return;
+    if (!KINDS[s.type].door && !KINDS[s.type].hatch) return;
     s.open = !s.open;
     this.onChange?.();
   }
@@ -1037,6 +1093,25 @@ export class Structures {
         fit = { scale, lift: -bb.min.y * scale, cx: -(bb.min.x + bb.max.x) / 2 * scale, cz: -(bb.min.z + bb.max.z) / 2 * scale };
         fitted.set(st.id, fit);
       }
+      if (!geo.boundingBox) geo.computeBoundingBox();
+      if (s.type !== 'shelf') {
+        // An armour stand: what's worn, on the figure (a hat on its head, armour or a coat on its body, gloves at its hips, boots at its foot).
+        // A weapon rack: each standing on end in its place, leaning on the top bar.
+        const m = new Mesh(geo, this.material);
+        if (s.type === 'armourStand') {
+          const at = [[0, 1.6, 0, 0.42], [0, 0.95, 0, 0.75], [0, 0.85, 0.12, 0.35], [0, 0.04, 0.1, 0.4]][k];
+          m.scale.setScalar(Math.min(1.5, fit.scale * 2.2));
+          m.position.set(at[0] + fit.cx, at[1] + fit.lift * 0.5, at[2] + fit.cz);
+        } else {
+          m.position.set(-0.52 + k * 0.35, 0.18, 0.06);
+          m.rotation.set(0, 0, 0.12);
+          m.scale.setScalar(Math.min(1.3, 1.25 / Math.max(0.01, (geo.boundingBox.max.y - geo.boundingBox.min.y))));
+        }
+        m.castShadow = true;
+        s.mesh.add(m);
+        s.shelfShown.push(m);
+        return;
+      }
       const board = [0.125, 0.625, 1.125][Math.floor(k / 2)] ?? 1.6, x = k % 2 ? 0.3 : -0.3, copies = Math.min(3, st.count);
       for (let c = 0; c < copies; c++) {
         const m = new Mesh(geo, this.material);
@@ -1111,7 +1186,9 @@ export class Structures {
       if (s.type === 'plot' && s.crop && s.growth < 1) {
         // Growing: best in the spring and summer, none in the winter;
         // faster watered, or in the rain.
-        const season = (ctx.winter ?? 0) > 0.6 ? 0 : 0.35 + 0.8 * (ctx.spring ?? 0) + 0.65 * (ctx.summer ?? 0) + 0.25 * (ctx.autumn ?? 0);
+        // (Under glass: as in high summer all year, and a little quicker still.)
+        if (!s.glassCheck || ctx.time > s.glassCheck) (s.glassCheck = ctx.time + 3), (s.underGlass = this.list.some((g) => g.type === 'greenhouse' && Math.abs(g.x - s.x) < 1.9 && Math.abs(g.z - s.z) < 1.9));
+        const season = s.underGlass ? 1.4 : (ctx.winter ?? 0) > 0.6 ? 0 : 0.35 + 0.8 * (ctx.spring ?? 0) + 0.65 * (ctx.summer ?? 0) + 0.25 * (ctx.autumn ?? 0);
         s.watered = Math.max(0, (s.watered ?? 0) - dt);
         const wet = 1 + 0.6 * Math.min(1, (ctx.rain ?? 0) + (s.watered > 0 ? 1 : 0));
         s.fed = Math.max(0, (s.fed ?? 0) - dt);
@@ -1120,7 +1197,8 @@ export class Structures {
         if (Math.floor(s.growth * 20) !== s.shown) this.#showCrop(s);
         if (s.growth >= 1) this.onChange?.();
       }
-      if (s.type === 'shelf' && s.contents && (!s.shelfCheck || ctx.time > s.shelfCheck)) {
+      if (s.lid) s.lid.rotation.x += Math.max(-dt * 2.5, Math.min(dt * 2.5, (s.open ? -Math.PI * 0.55 : 0) - s.lid.rotation.x));
+      if ((s.type === 'shelf' || s.type === 'armourStand' || s.type === 'weaponRack') && s.contents && (!s.shelfCheck || ctx.time > s.shelfCheck)) {
         s.shelfCheck = ctx.time + 0.4;
         this.#showShelf(s);
       }
@@ -1229,6 +1307,11 @@ export class Structures {
         for (const end of [-1, 1]) this.#pushCircle(position, radius, s.x + ax * end * (k.len / 2 - 0.2), s.z + az * end * (k.len / 2 - 0.2), k.line === 'fence' ? 0.12 : 0.26);
         continue;
       }
+      if (k.walls) {
+        // (A greenhouse: its glass sides, the doorway in its front open.)
+        for (const [u, v, hu, hv] of k.walls) this.#pushBox(position, radius, s, u, hu, hv, v);
+        continue;
+      }
       if (k.posts) {
         // (A roof: only its posts, below it.)
         const c = Math.cos(s.rot), sn = Math.sin(s.rot);
@@ -1262,10 +1345,10 @@ export class Structures {
   }
 
   // Out of a box in a structure's frame: its middle `uc` along it, half-sizes hu x hv.
-  #pushBox(position, radius, s, uc, hu, hv) {
+  #pushBox(position, radius, s, uc, hu, hv, vc = 0) {
     const ax = Math.cos(s.rot), az = -Math.sin(s.rot), bx = Math.sin(s.rot), bz = Math.cos(s.rot);
     const ox = position.x - s.x, oz = position.z - s.z;
-    const u = ox * ax + oz * az - uc, v = ox * bx + oz * bz;
+    const u = ox * ax + oz * az - uc, v = ox * bx + oz * bz - vc;
     const cu = Math.max(-hu, Math.min(hu, u)), cv = Math.max(-hv, Math.min(hv, v));
     let du = u - cu, dv = v - cv, d = Math.hypot(du, dv);
     if (d >= radius) return;
@@ -1582,6 +1665,8 @@ export class Structures {
         continue;
       }
       if (Math.abs(u) > FLOOR_SIZE / 2 + 0.05 || Math.abs(v) > FLOOR_SIZE / 2 + 0.05) continue;
+      // (Its trapdoor open: nothing to stand on over the opening.)
+      if (k.hatch && s.open && Math.abs(u - HATCH.u) < HATCH.hu && Math.abs(v - HATCH.v) < HATCH.hv) continue;
       t = s.y + FLOOR_TOP;
       if (t > feetY + 0.7) continue;
       if (top === null || t > top) top = t;

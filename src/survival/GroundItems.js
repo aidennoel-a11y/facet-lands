@@ -17,7 +17,7 @@ const smoothstep = (a, b, x) => {
 // Ore, lying in the rock: a vein to break out with a pickaxe, never picked up by hand (see Game.#mine).
 // How likely a spot is to have a medicinal plant: a few in most green country, more in the woods' edges and the jungle; none on bare rock.
 const pHerb = (w, forest, mount) => 0.006 * Math.min(1, w.temperate + w.parkland + w.smoky + w.pine + w.wetland + w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + 0.6 * (w.desert + w.savanna + w.badlands) + (w.cascades ?? 0) + (w.blackHills ?? 0)) * (1 - 0.6 * Math.min(1, mount));
-export const ORE_NODES = new Set(['iron', 'coal', 'goldOre', 'mountainOre']);
+export const ORE_NODES = new Set(['iron', 'coal', 'goldOre', 'mountainOre', 'copperOre', 'tinOre']);
 export const WILD_CROPS = { wildWheat: 'wheat', wildCorn: 'corn', wildPotato: 'potato', wildCarrot: 'carrot' };
 // (Things that are built: a small one of what it builds. See model.)
 const BUILT = {
@@ -89,7 +89,9 @@ export class GroundItems {
       const steel = [0xb8c0c8, 0xeef2f6];
       const make = {
         stick: stickModel, rock: rockModel, flint: flintModel, iron: ironModel, log: logModel, deerSkin: skinModel,
-        spear: () => spearModel(), steelSpear: () => spearModel(0x9aa4b0),
+        spear: () => spearModel(), steelSpear: () => spearModel(0x9aa4b0), bronzeSpear: () => spearModel(0xb8863e),
+        bronzeAxe: () => axeModel(0xc89a4a, 0xe8c070), bronzePickaxe: () => pickaxeModel(0xc89a4a, 0xe8c070), bronzeSword: () => swordModel(0xc89a4a, 0xe8c070, 0x6a4a2a),
+        copperBar: () => ironBarModel(0xd0844a), bronzeBar: () => ironBarModel(0xc89a4a), glass: M.glassModel, seedPumpkin: () => M.seedsModel(0xf0e0b0), pumpkin: () => M.pumpkinModel(false), roastPumpkin: () => M.pumpkinModel(true),
         axe: () => axeModel(), steelAxe: () => axeModel(...steel),
         pickaxe: () => pickaxeModel(), steelPickaxe: () => pickaxeModel(...steel),
         rawMeat: () => meatModel(false), rawFowl: () => meatModel(false), cookedMeat: () => meatModel(true), rawFish: () => fishModel(false), cookedFish: () => fishModel(true), smokedMeat: () => meatModel(true), smokedFish: () => fishModel(true),
@@ -138,7 +140,7 @@ export class GroundItems {
     const seed = generator.seed ^ 0x9e3779;
     const G = 6, cells = Math.floor(size / G);
     const surface = { normalY: 1 };
-    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], iron: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [], oyster: [], seashell: [], honey: [], fossil: [], petrifiedWood: [], glowcap: [], yarrow: [], aloe: [], willowBark: [], ginseng: [], snakeroot: [], starMetal: [] };
+    const found = { stick: [], rock: [], flint: [], seedWheat: [], seedCorn: [], seedPotato: [], seedCarrot: [], coal: [], iron: [], mountainOre: [], goldOre: [], wildWheat: [], wildCorn: [], wildPotato: [], wildCarrot: [], oyster: [], seashell: [], honey: [], fossil: [], petrifiedWood: [], glowcap: [], copperOre: [], tinOre: [], seedPumpkin: [], yarrow: [], aloe: [], willowBark: [], ginseng: [], snakeroot: [], starMetal: [] };
     const items = [];
     // (The country, sampled every 32 m.)
     const land = new Map();
@@ -203,7 +205,7 @@ export class GroundItems {
         else if (h < pFlint + pStick + pRock) id = 'rock';
         else if (h < pFlint + pStick + pRock + pSeed) {
           const r = hash2(gi, gj, seed + 5);
-          id = w.savanna > 0.5 ? 'seedCorn' : mount > 0.3 || w.pine > 0.5 ? 'seedPotato' : r < 0.6 ? 'seedWheat' : 'seedCarrot';
+          id = w.savanna > 0.5 ? 'seedCorn' : mount > 0.3 || w.pine > 0.5 ? 'seedPotato' : r < 0.5 ? 'seedWheat' : r < 0.8 ? 'seedCarrot' : 'seedPumpkin';
         }
         // On the sea floor: oysters in clusters on the harder ground (most
         // on the reefs and the rocky patches), seashells on the sand.
@@ -229,6 +231,9 @@ export class GroundItems {
         // through: once in a while anywhere, far more often in the mountains and
         // their foothills.
         if (id === 'rock' && hash2(gi, gj, seed + 8) < 0.01 + 0.035 * smoothstep(0.3, 0.6, mount)) id = 'iron';
+        // (Copper, green-stained, among the stones of the hills and the dry country; tin, rarer, up in the mountains.)
+        else if (id === 'rock' && hash2(gi, gj, seed + 14) < 0.03 * Math.min(1, 0.3 + mount + w.badlands + w.blackHills + 0.6 * w.savanna)) id = 'copperOre';
+        else if (id === 'rock' && hash2(gi, gj, seed + 15) < 0.012 * smoothstep(0.35, 0.7, mount)) id = 'tinOre';
         else if (id === 'rock' && y > 150) {
           const r = hash2(gi, gj, seed + 6) * smoothstep(150, 200, y);
           if (r > 0.82) id = 'mountainOre';

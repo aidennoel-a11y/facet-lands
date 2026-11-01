@@ -66,12 +66,12 @@ export function packFlags(me, items) {
 }
 
 export class Remote {
-  constructor(scene, { id, name, colour }) {
+  constructor(scene, { id, name, colour, look = null }) {
     this.id = id;
     this.name = name;
     this.colour = colour;
     this.snaps = []; // [{ at, s }]
-    const parts = Models.person(Number.parseInt(colour.slice(1), 16));
+    const parts = Models.person(look ?? Number.parseInt(colour.slice(1), 16));
     const mat = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
     this.root = new Group();
     this.body = new Mesh(parts.body, mat);

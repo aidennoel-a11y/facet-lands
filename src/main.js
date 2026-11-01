@@ -4,9 +4,10 @@ import './render/splitShadow.js'; // (first: the sun's shadow in two maps, befor
 import './render/chunkFade.js'; // (likewise: the dither that fades the land's changes of detail)
 import { WORLD } from './config.js';
 import { DIFFICULTIES, settings } from './settings.js';
+import { loadLook, onLook } from './character.js';
 import { TerrainGenerator } from './world/TerrainGenerator.js';
 import { ChunkManager } from './world/ChunkManager.js';
-import { createWaterLayer, seaStorm } from './world/layers/WaterLayer.js';
+import { createWaterLayer, seaStorm, tide } from './world/layers/WaterLayer.js';
 import { createTreeLayer } from './world/layers/TreeLayer.js';
 import { createGrassLayer, grassClearings, grassPushers } from './world/layers/GrassLayer.js';
 import { plantsAt } from './world/layers/UnderstoryLayer.js';
@@ -15,6 +16,7 @@ import { createWreckLayer } from './world/layers/WreckLayer.js';
 import { createSunkenCityLayer } from './world/layers/SunkenCityLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
+import { SeaLife } from './wildlife/SeaLife.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
 import { cutShroomKey, fellShroom, pickShroom, shroomCapAt, shroomCollide, shroomsCut } from './world/layers/CaveLayer.js';
 import { caveFocus, caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
@@ -54,7 +56,7 @@ import { RayEffects } from './render/RayEffects.js';
 import { Clouds } from './world/Clouds.js';
 import { Weather, WEATHER } from './render/Weather.js';
 import { Tornadoes } from './render/Tornado.js';
-import { Avalanches } from './render/Avalanche.js';
+import { Avalanches, SnowLoad } from './render/Avalanche.js';
 import { Landmarks } from './world/Landmarks.js';
 import { MineProps } from './world/caves/MineProps.js';
 import { Lightning, panTowards, Rain } from './render/Storm.js';
@@ -431,6 +433,7 @@ function spawnTornado({ near = null, delay = 50, back = null } = {}) {
 // now and then one breaks away and comes down (see Avalanche); or you set
 // one off yourself, running across a steep slope of deep snow.
 const avalanches = new Avalanches(scene);
+const snowLoad = new SnowLoad(scene); // (the snow building up where an avalanche may come down)
 const slide = { wait: 5, rumble: 0, hit: 0 };
 // Earthquakes, in the volcanic country: the ground heaving under you for
 // a few seconds, a deep roar; rock shaken loose tumbling down the steep
@@ -524,7 +527,12 @@ function avalancheUpdate(dt) {
     slide.wait = 2;
     // (Deep fresh snow on the mountains: after it's been snowing, in the winter.)
     const load = Math.min(1, seasonUniforms.uSnowfall.value * 1.2) * (0.4 + 0.6 * Math.min(1, weather.rain * 2 * (seasonUniforms.uWinter.value > 0.4 ? 1 : 0.3)));
-    if (load > 0.15 && generator.getMountainness(p.x, p.z) > 0.35 && Math.random() < 0.014 * load) {
+    // (The snow building up on the steep slopes round you: see SnowLoad. An avalanche breaks away from the worst loaded, a crack opening first.)
+    const ripe = load > 0.15 && Math.random() < 0.02 * load ? snowLoad.ripest(p.x, p.z, p.y) : null;
+    if (ripe && !snowLoad.sites.some((s) => s.crack > 0)) {
+      snowLoad.release(ripe, (s) => !avalanches.now && startAvalanche(s.x, s.z));
+      sound.call('crack', 0, 0.35);
+    } else if (load > 0.15 && generator.getMountainness(p.x, p.z) > 0.35 && Math.random() < 0.006 * load) {
       // Somewhere high above, steep and snowy, that you can see.
       const fwd = Math.atan2(-Math.sin(controls.euler?.y ?? 0), -Math.cos(controls.euler?.y ?? 0));
       for (let k = 0; k < 14; k++) {
@@ -546,6 +554,10 @@ function avalancheUpdate(dt) {
     }
   }
   avalanches.update(dt, (x, z) => chunks.groundHeightAt(x, z));
+  {
+    const load = Math.min(1, seasonUniforms.uSnowfall.value * 1.2) * (0.4 + 0.6 * Math.min(1, weather.rain * 2 * (seasonUniforms.uWinter.value > 0.4 ? 1 : 0.3)));
+    snowLoad.update(dt, { eye: p, load: sheltered ? 0 : load, forward: Math.atan2(-Math.sin(controls.euler?.y ?? 0), -Math.cos(controls.euler?.y ?? 0)), slopeAt: snowSlopeAt, mountains: (x, z) => generator.getMountainness(x, z) });
+  }
   const a = avalanches.now;
   if (!a) return;
   // Its roar, rolling down the mountain.
@@ -623,6 +635,21 @@ function stormTint() {
 const fires = new Wildfires(scene);
 // (Big spiders in the dark of the caves: see CaveSpiders. Killed, one leaves its silk.)
 const spiders = new CaveSpiders(scene);
+// (Out on the open sea: dolphins, whales, and in the trenches the Deep Coil. See SeaLife.)
+const sea = new SeaLife(scene, addCloudShadow);
+sea.onKill = (c) => {
+  // (What's left to butcher: a great deal of meat and hide; the serpent, its trophy, sinking with it but not before it's cut free.)
+  const y = Math.max(c.y + 0.5, camera.position.y - 1);
+  if (c.kind === 'dolphin') game.items.drop({ id: 'rawMeat', count: 6 }, c.x, y, c.z);
+  else if (c.kind === 'whale') (game.items.drop({ id: 'rawMeat', count: 30 }, c.x, y, c.z), game.items.drop({ id: 'hide', count: 6 }, c.x + 1, y, c.z));
+  else {
+    game.items.drop({ id: 'serpentScale', count: 1 }, camera.position.x, camera.position.y - 0.5, camera.position.z);
+    game.items.drop({ id: 'rawMeat', count: 10 }, camera.position.x + 1, camera.position.y - 0.5, camera.position.z);
+    (game.wildlife.bossDeaths ??= {})[c.key] = Math.round((dayNight.day + dayNight.hour / 24) * 100) / 100;
+    game.progress?.add?.('trophy');
+  }
+  game.dirty = true;
+};
 const landmarks = new Landmarks(scene, generator); // (the twelve kinds of landmark: see landmarkSites)
 // (Where the landmarks lie: worked out by the chunk workers, which know the
 // land and its rivers already, not here: see LandmarkSites.lazy.)
@@ -925,6 +952,18 @@ function thinIce(dt) {
 // The kinds of cave, for the panel (in the order of CaveField.biomeAt).
 const CAVE_NAMES = ['Cave', 'Lush cave', 'Volcanic cave', 'Ice cave', 'Sandstone cave', 'Crystal caverns', 'Mushroom forest', 'Root cave', "Spiders' den", 'Silver Mist Caverns', 'Firefly Hollow'];
 
+// How much (x, z) is the open sea, for the tide (as the water's drawn: see waterData), remembered by 32 m squares.
+const seaShares = new Map();
+function seaShare(x, z) {
+  const key = Math.floor(x / 32) * 65536 + Math.floor(z / 32);
+  let v = seaShares.get(key);
+  if (v === undefined) {
+    if (seaShares.size > 20000) seaShares.clear();
+    v = smooth(0.35, 0.6, generator.getOceanness(Math.floor(x / 32) * 32 + 16, Math.floor(z / 32) * 32 + 16));
+    seaShares.set(key, v);
+  }
+  return v;
+}
 function waterAt(x, z, ice = false) {
   // Underground: the still lakes of the great chambers, the rivers in the
   // rock, the pools on cave floors (or lava). Not the sea or the rivers
@@ -934,7 +973,9 @@ function waterAt(x, z, ice = false) {
     return w ? { level: w.level, fx: 0, fz: 0, speed: w.river ? 0.5 : 0, cave: true, lava: w.lava } : null;
   }
   const ground = chunks.groundHeightAt(x, z);
-  let found = ground < WORLD.seaLevel ? { level: WORLD.seaLevel, fx: 0, fz: 0, speed: 0, lake: true } : null;
+  // (The sea's level, with the tide: risen up the beaches or fallen back off them; on the open sea only.)
+  const seaLevel = tide.value !== 0 && ground < WORLD.seaLevel + 1 ? WORLD.seaLevel + tide.value * seaShare(x, z) : WORLD.seaLevel;
+  let found = ground < seaLevel ? { level: seaLevel, fx: 0, fz: 0, speed: 0, lake: true } : null;
   // (A river in flood: up its banks, and quicker. Out to where it's spilt over them.)
   const rise = riverFlood.value * FLOOD_RISE;
   const r = generator.rivers.waterAt(x, z, rise > 0.02 ? 4.5 : 0);
@@ -1325,6 +1366,15 @@ function treeBump(dx, dz) {
 // Only the drawing: everything else goes on from your own eyes.
 let thirdPerson = false;
 let selfFigure = null;
+// (Your look: see character.js and the Character page.)
+let myLook = loadLook(), lookKey = JSON.stringify(myLook);
+onLook((l) => {
+  myLook = l;
+  lookKey = JSON.stringify(l);
+  game.look = l;
+  // (The arms you see in front of you, swimming and gliding: your skin, your sleeves.)
+  for (const m of [game.armMaterials, game.gliderArmMaterials]) if (m) m[0].color.setHex(l.skin), m[1].color.setHex(l.shirt);
+});
 const eyeSaved = new THREE.Vector3(), behind = new THREE.Vector3();
 function thirdPersonView(dt, now) {
   const on = thirdPerson && !loading && (controls.mode === 'walk' || controls.mode === 'fly') && !game.sleeping;
@@ -1333,7 +1383,8 @@ function thirdPersonView(dt, now) {
     if (selfFigure) selfFigure.root.visible = false;
     return null;
   }
-  selfFigure ??= new Remote(scene, { id: 'me', name: 'You', colour: '#c8965a' });
+  if (selfFigure && selfFigure.lookKey !== lookKey) (scene.remove(selfFigure.root), (selfFigure = null)); // (your look changed: dressed anew)
+  if (!selfFigure) (selfFigure = new Remote(scene, { id: 'me', name: 'You', colour: '#c8965a', look: myLook })), (selfFigure.lookKey = lookKey);
   selfFigure.tag.visible = false;
   // (How fast you're going, eased: so the stride's swing and rhythm follow it.)
   const p = camera.position, moved = selfFigure.last ? Math.hypot(p.x - selfFigure.last.x, p.z - selfFigure.last.z) / Math.max(dt, 1e-3) : 0;
@@ -1367,6 +1418,7 @@ function thirdPersonView(dt, now) {
 }
 
 const webStuck = { on: false };
+const seaBoat = {}; // (where the boat you're in was a frame ago: its speed, for the dolphins to ride its bow)
 const controls = new PlayerControls(camera, canvas, {
   groundAt,
   terrainAt: (x, z) => chunks.groundHeightAt(x, z),
@@ -1387,6 +1439,7 @@ const controls = new PlayerControls(camera, canvas, {
     const tar = landmarks.waterAt(position.x, position.z, feet - 0.05);
     controls.noJump = !!tar?.tar;
     if (tar?.tar) controls.speedFactor *= 0.3;
+    if (sand.slow < 1) (controls.speedFactor *= sand.slow), (controls.noJump = true); // (in quicksand)
     // (Through a spider's web in the caves: it clings, and you tear through it slowly.)
     const web = sheltered ? generator.caves?.webAt?.(position.x, feet + 1, position.z) ?? 0 : 0;
     if (web > 0) {
@@ -1424,6 +1477,32 @@ function templeTraps(dt) {
     sound.call('thump', 0, 0.6);
     game.hotbar?.flash('Spikes!');
   }
+}
+
+// Quicksand (see TerrainGenerator.quicksandAt): stood in, you sink, slowly;
+// struggle, run, try to jump, and you sink faster; crouch and move slowly,
+// and you work yourself up and out. Up to your chin, it's suffocating you.
+const sand = { sink: 0, slow: 1, told: 0 };
+function quicksand(dt) {
+  const p = camera.position, walking = controls.mode === 'walk' && !controls.swimming && !sheltered;
+  let q = 0;
+  if (walking) {
+    const g = chunks.groundHeightAt(p.x, p.z), feet = p.y - controls.eyeHeight;
+    if (Number.isFinite(g) && feet < g + 0.4) q = generator.quicksandAt(p.x, p.z);
+  }
+  if (q > 0.3) {
+    const slowly = controls.crouch && controls.moving, struggle = controls.moving && !controls.crouch ? (controls.sprinting ? 0.5 : 0.25) : 0;
+    const rate = slowly ? -0.18 : 0.05 + struggle + (controls.takeJumpsPeek?.() ? 0.3 : 0);
+    sand.sink = Math.max(0, Math.min(1.7, sand.sink + rate * dt * (0.6 + 0.6 * q)));
+    sand.slow = slowly ? 0.35 : 0.12;
+    if (performance.now() - sand.told > 9000 && sand.sink > 0.15) (sand.told = performance.now()), game.hotbar?.flash(sand.sink > 1 ? 'Sinking! Stop struggling: crouch (C) and move slowly to work free' : 'Quicksand! Struggling sinks you faster: crouch and edge out slowly');
+    if (sand.sink > 1.35 && game.survival.alive) game.hurt(9 * dt, 'quicksand');
+    if (Math.random() < dt * 2) sound.call('brush', 0, 0.3);
+  } else {
+    sand.sink = Math.max(0, sand.sink - dt * (walking ? 1.2 : 3)); // (out of it: up onto the firm ground)
+    sand.slow = 1;
+  }
+  controls.sinkDepth = sand.sink;
 }
 
 // No walking through the animals (standing ones), nor through the others online.
@@ -1483,6 +1562,7 @@ const game = new Game({
   fireHeat: (x, y, z) => fires.heatAt(x, y, z, (px, pz) => generator.getBaseHeight(px, pz)),
   // (The burnt ground, saved with the world; and the days, for the burnt woods growing back.)
   spiders,
+  sea,
   // (The giant mushrooms in the caves: cut down with an axe, see CaveLayer.)
   shrooms: { pick: (o, d, r) => pickShroom(o, d, r), fell: (hit, away) => fellShroom(hit, scene, away), cut: shroomsCut },
   // (The long grass cut with a sickle: see GrassCut.)
@@ -1516,6 +1596,8 @@ const game = new Game({
     return Number.isFinite(h) ? Math.max(h, rocks.surfaceAt(x, z)) : generator.getHeight(x, z);
   },
 });
+game.look = myLook;
+
 game.felling.vortex = () => tornadoes.now;
 game.pave = (x, z) => grassCut.pave(x, z); // (a stone road laid: the grass gone under it)
 // (The sea's and the lakes' waves under a boat: see WaterLayer.waveAt.)
@@ -2419,7 +2501,7 @@ const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, g
 // (Walls and fences: a strip of clearings along their length; see clearGrass.)
 const CLEARED_LINE = { wall: 0.55, gate: 0.55, stoneWall: 0.6, fence: 0.4, fenceGate: 0.4, stoneFence: 0.5, woodWindow: 0.55, stoneWindow: 0.6, logWall: 0.55, plankWall: 0.5, cutStoneWall: 0.6, logWindow: 0.55, logDoor: 0.55, plankWindow: 0.5, plankDoor: 0.5, stoneDoor: 0.6, cutWindow: 0.6, cutDoor: 0.6, barnWall: 0.5, barnWindow: 0.5, barnDoor: 0.5 };
 // The grass round you and the bigger animals near you bends away from them.
-const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'starling', 'crow', 'gull', 'hawk', 'wolfPup', 'bat', 'eagle', 'scorpion', 'crab']);
+const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'parrot', 'toucan', 'starling', 'crow', 'gull', 'hawk', 'wolfPup', 'bat', 'eagle', 'scorpion', 'crab']);
 function pushGrass() {
   const p = camera.position, list = [];
   if (controls.mode === 'walk') list.push([0, p.x, p.z, 0.9]);
@@ -2944,6 +3026,8 @@ function tick(now) {
   // In a cold winter, it snows (over the lands that have one).
   const snow = Math.max(seasonUniforms.uWinter.value, firstSnowing ? (seasons.highSnowing ? smoothstep(60, 85, camera.position.y) : 1) : 0, seasonUniforms.uHighSnow.value * smoothstep(80, 100, camera.position.y)) * coldHere(dt);
   rain.update(worldNow, camera.position, localRain, clouds.wind, wind, dayNight.horizon, snow);
+  // The tide: in and out twice a day, some 60 cm either way (higher at a storm's surge).
+  tide.value = 0.6 * Math.sin((dayNight.day + dayNight.hour / 24) * Math.PI * 4) + 0.5 * (seaStorm.value ?? 0);
   prof.mark('rain, snow, tornado');
   // Water: the sun's glitter on it (not behind cloud), rings where the rain falls; the waterfalls' mist in the daylight.
   sparkleUniforms.uSunView.value.copy(dayNight.lightDirection).transformDirection(camera.matrixWorldInverse);
@@ -3001,6 +3085,7 @@ function tick(now) {
   }
   prof.mark('landmarks & mines');
   templeTraps(dt);
+  quicksand(dt);
   spiders.update(Math.min(dt, 0.1), {
     eye: camera.position, under: caveFocus.under && controls.mode === 'walk', caves: generator.caves, terrain: (x, z) => chunks.groundHeightAt(x, z),
     hurt: (d) => game.hurt(d, 'a cave spider'), poison: () => game.survival.poison(25), fear: game.fearLights(),
@@ -3009,6 +3094,20 @@ function tick(now) {
     broodGone: (key) => { const died = game.wildlife.bossDeaths?.[key]; return died !== undefined && dayNight.day + dayNight.hour / 24 - died < 6; },
   });
   prof.mark('cave spiders');
+  {
+    // (The boat you're in: where it is, the way it's going, how fast.)
+    const r = game.riding, mx = r ? r.x - (seaBoat.x ?? r.x) : 0, mz = r ? r.z - (seaBoat.z ?? r.z) : 0;
+    const boat = r ? { x: r.x, z: r.z, rot: Math.hypot(mx, mz) > 1e-4 ? Math.atan2(mx, mz) : r.rot, speed: Math.hypot(mx, mz) / Math.max(dt, 1e-3) } : null;
+    if (r) (seaBoat.x = r.x), (seaBoat.z = r.z);
+    sea.update(Math.min(dt, 0.1), {
+      eye: camera.position, waterAt: (x, z) => waterAt(x, z), ground: (x, z) => chunks.groundHeightAt(x, z), ocean: (x, z) => generator.getOceanness(x, z),
+      boat, swimming: controls.swimming, time: now / 1000, sound, pan: (x, z) => panTowards(camera, x, z), splash: (x, y, z, size = 1) => traces.splash(x, y, z, 6, 1.2 * size, 0.6 * size),
+      hurt: (d) => game.hurt(d, 'the Deep Coil', { bite: true }), bleed: () => game.survival.bleed(120), alive: game.survival.alive && !(peaceful?.checked ?? false),
+      wind: windDirection.value,
+      broodGone: (key) => { const died = game.wildlife.bossDeaths?.[key]; return died !== undefined && dayNight.day + dayNight.hour / 24 - died < 6; },
+    });
+  }
+  prof.mark('sea life');
   updateVisibility();
   const haze = heatHaze(dt);
   sound.update(underwater ? 0 : localRain * (1 - snow), sheltered || underwater, game.indoors?.roof ?? 0, game.indoors?.walls ?? 0);
@@ -3024,6 +3123,7 @@ function tick(now) {
   if (!(worldNow < glowSwampHere.next && glowSwampHere.next - worldNow < 1)) (glowSwampHere.next = worldNow + 0.7), (glowSwampHere.v = sheltered ? 0 : generator.glowSwampAt(camera.position.x, camera.position.z));
   const life = {
     lava: (x, z) => generator.onLiveLava(x, z), // (a live lava flow: kept off; dies in it)
+    waveAt: (x, z) => (game.waveAt ? game.waveAt(x, z).y : 0), // (the swell, for a body afloat)
     glowSwamp: glowSwampHere.v,
     bloodMoon: dayNight.bloodMoon ?? 0,
     waterAt: (x, z) => waterAt(x, z),
