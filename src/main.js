@@ -964,6 +964,24 @@ function seaShare(x, z) {
   }
   return v;
 }
+// The surf at (x, z) on an open beach (see WaterLayer.surfAt): the swash's
+// sheet over the sand, a breaker coming down. Null off the open coast.
+function surfAt(x, z) {
+  if (sheltered) return null;
+  const ground = chunks.groundHeightAt(x, z);
+  if (!Number.isFinite(ground) || ground > WORLD.seaLevel + 3 || ground < WORLD.seaLevel - 5) return null;
+  const share = seaShare(x, z);
+  if (share < 0.05) return null;
+  const e = 6, gx = (chunks.groundHeightAt(x + e, z) - chunks.groundHeightAt(x - e, z)) / (2 * e), gz = (chunks.groundHeightAt(x, z + e) - chunks.groundHeightAt(x, z - e)) / (2 * e);
+  const still = WORLD.seaLevel + tide.value * share;
+  const s = water.surfAt(x, z, still - ground, Math.hypot(gx, gz), share);
+  if (!s) return null;
+  s.ground = ground;
+  s.still = still;
+  s.upX = gx;
+  s.upZ = gz;
+  return s;
+}
 function waterAt(x, z, ice = false) {
   // Underground: the still lakes of the great chambers, the rivers in the
   // rock, the pools on cave floors (or lava). Not the sea or the rivers
@@ -1034,6 +1052,13 @@ function footfall(x, z, heading, shape, size, loud = 0.5, track = false) {
   const water = waterAt(x, z, true);
   const y = chunks.groundHeightAt(x, z);
   if (!Number.isFinite(y) || water?.frozen) return; // (none on the ice)
+  // (Splashing through the swash running up the beach, too.)
+  const surf = !water && surfAt(x, z);
+  if (surf?.swash) {
+    traces.splash(x, y + surf.thick, z, 4 + Math.round(loud * 5), 1 + loud * 1.4, 0.4 + loud * 0.5);
+    if (Math.hypot(x - camera.position.x, z - camera.position.z) < 25) sound.call('splash', panTowards(camera, x, z), 0.2 + 0.3 * loud);
+    return;
+  }
   if (water && water.level > y + 0.02) {
     traces.splash(x, water.level, z, 5 + Math.round(loud * 6), 1.2 + loud * 1.6, 0.5 + loud * 0.6);
     if (Math.hypot(x - camera.position.x, z - camera.position.z) < 25) sound.call('splash', panTowards(camera, x, z), 0.25 + 0.4 * loud);
@@ -1093,7 +1118,7 @@ function bleed(x, z, amount = 1) {
   traces.print(x, y, z, Math.random() * 6.28, PRINT.paw, 0.12 + 0.12 * amount * Math.random(), 'blood', printColour.copy(BLOOD).multiplyScalar(0.8 + Math.random() * 0.4), groundNormal(x, z));
 }
 // The player's steps and strokes.
-const walker = { x: null, z: null, left: false, wet: false, stroke: 0, since: 0 };
+const walker = { x: null, z: null, left: false, wet: false, stroke: 0, since: 0, airborne: false, fall: 0, hit: 0 };
 function playerTraces(dt) {
   const pos = camera.position;
   if (walker.x === null) (walker.x = pos.x), (walker.z = pos.z);
@@ -1107,6 +1132,45 @@ function playerTraces(dt) {
     sound.call('bigsplash', 0, 0.8);
   }
   walker.wet = inWater;
+  // In the surf: jumping in it and landing back in it splash; a breaker
+  // coming down on you, or the swash's white water rushing past, throws
+  // spray all round you (and shoves you a little up the beach).
+  if (controls.mode === 'walk') {
+    const air = !controls.grounded && !controls.swimming;
+    const surf = feet < WORLD.seaLevel + 3.5 ? surfAt(pos.x, pos.z) : null;
+    const wetFeet = (water && feet < water.level + 0.3) || surf?.swash;
+    const level = water ? water.level : surf ? surf.ground + surf.thick : feet;
+    if (air && !walker.airborne && wetFeet && controls.velocityY > 1) {
+      traces.splash(pos.x, level, pos.z, 12, 2, 1.4); // (jumping up out of it)
+      sound.call('splash', 0, 0.45);
+    }
+    if (!air && walker.airborne && wetFeet && walker.fall < -2) {
+      traces.splash(pos.x, level, pos.z, 18 + Math.round(Math.min(20, -walker.fall * 2)), 2.5, 1.8); // (coming down in it)
+      sound.call(walker.fall < -6 ? 'bigsplash' : 'splash', 0, 0.6);
+    }
+    walker.fall = air ? Math.min(walker.fall, controls.velocityY) : 0;
+    walker.airborne = air;
+    walker.hit -= dt;
+    if (surf && walker.hit <= 0) {
+      const breaking = surf.breaker && feet < surf.still + surf.height + 0.6;
+      const rush = surf.swash && surf.front && surf.rushing > 0.6;
+      if (breaking || rush) {
+        walker.hit = breaking ? 1.6 : 1.2;
+        const big = breaking ? Math.min(1.6, 0.6 + surf.height) : 0.5;
+        const y = breaking ? surf.still + surf.height * 0.6 : surf.ground + surf.thick;
+        for (let k = 0; k < 3; k++) {
+          const a = Math.random() * Math.PI * 2, r = 0.4 + Math.random() * 0.9;
+          traces.splash(pos.x + Math.cos(a) * r, y, pos.z + Math.sin(a) * r, Math.round(10 * big), 2 * big, 1.6 * big);
+        }
+        sound.call(breaking ? 'bigsplash' : 'splash', 0, 0.35 + 0.4 * big);
+        if (breaking && controls.push) {
+          const g = Math.hypot(surf.upX, surf.upZ) || 1;
+          controls.push.x += (surf.upX / g) * 2.2 * big;
+          controls.push.z += (surf.upZ / g) * 2.2 * big;
+        }
+      }
+    }
+  }
   if (controls.swimming) {
     walker.stroke -= dt;
     if (walker.stroke <= 0 && moved > 0.3) {

@@ -18,7 +18,7 @@ export function buildChunkGeometry(generator, config, cx, cz, resolution) {
 }
 
 /** The lattice and cell-diagonal helpers every part of a chunk agrees on. */
-function chunkGrid(seed, config, cx, cz, resolution) {
+export function chunkGrid(seed, config, cx, cz, resolution) {
   const { chunkSize } = config;
   const finest = config.lods[0].resolution;
   const step = finest / resolution;

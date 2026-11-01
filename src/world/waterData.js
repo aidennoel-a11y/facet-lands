@@ -1,5 +1,6 @@
 import { Color } from 'three';
 import { hash2 } from '../noise/random.js';
+import { chunkGrid } from './ChunkMesher.js';
 
 const SHALLOW = new Color(0x39a9b2);
 const DEEP = new Color(0x1b4a8c);
@@ -26,24 +27,59 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
   for (let k = 0; k < heights.gridY.length; k++) minGround = Math.min(minGround, heights.gridY[k]);
   if (minGround > seaLevel + 1) return null;
 
-  const n = resolution + 1;
-  const cell = chunkSize / resolution;
   const originX = cx * chunkSize;
   const originZ = cz * chunkSize;
   const seed = generator.seed ^ 0x2545f491;
 
-  const xs = new Float32Array(n * n);
-  const zs = new Float32Array(n * n);
-  const ground = new Float32Array(n * n);
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const gi = cx * resolution + i;
-      const gj = cz * resolution + j;
-      const k = j * n + i;
-      xs[k] = i * cell + (hash2(gi, gj, seed) - 0.5) * 2 * vertexJitter * cell;
-      zs[k] = j * cell + (hash2(gi, gj, seed ^ 0x5bd1e995) - 0.5) * 2 * vertexJitter * cell;
-      ground[k] = generator.getHeight(originX + xs[k], originZ + zs[k]);
+  // How much it's the open sea, over a coarse grid (9×9) across the chunk,
+  // between: asked of the land far less often than at every corner.
+  const oc = new Float32Array(81);
+  for (let j = 0; j < 9; j++) for (let i = 0; i < 9; i++) oc[j * 9 + i] = generator.getOceanness(originX + (i / 8) * chunkSize, originZ + (j / 8) * chunkSize);
+  const oceanAt = (lx, lz) => {
+    const fx = Math.min(7.999, Math.max(0, (lx / chunkSize) * 8)), fz = Math.min(7.999, Math.max(0, (lz / chunkSize) * 8));
+    const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+    return (oc[j * 9 + i] * (1 - u) + oc[j * 9 + i + 1] * u) * (1 - v) + (oc[(j + 1) * 9 + i] * (1 - u) + oc[(j + 1) * 9 + i + 1] * u) * v;
+  };
+
+  // On the open coast, where the sea meets the land, the water's laid on the
+  // land's own grid (its very corners and triangles: see ChunkMesher), so it
+  // can run up the beach as a sheet lying on the sand and meet it exactly,
+  // never a flat plane cutting through it (see WaterLayer: the breakers and
+  // the swash). Elsewhere, its own coarse grid.
+  let maxOc = 0;
+  for (const v of oc) maxOc = Math.max(maxOc, v);
+  let shoreline = false;
+  if (heights?.gridX && maxOc > 0.4) {
+    for (let k = 0; k < heights.gridY.length && !shoreline; k++) shoreline = heights.gridY[k] > seaLevel - 1 && heights.gridY[k] < seaLevel + 2.5;
+  }
+  const coast = shoreline;
+  let n, cell, xs, zs, ground, flipOf;
+  if (coast) {
+    n = heights.size;
+    resolution = n - 1;
+    cell = chunkSize / resolution;
+    xs = heights.gridX;
+    zs = heights.gridZ;
+    ground = heights.gridY;
+    const g = chunkGrid(generator.seed, config, cx, cz, resolution);
+    flipOf = (i, j) => g.cellHash(g.baseGx + i * g.step, g.baseGz + j * g.step, 7) < 0.5;
+  } else {
+    n = resolution + 1;
+    cell = chunkSize / resolution;
+    xs = new Float32Array(n * n);
+    zs = new Float32Array(n * n);
+    ground = new Float32Array(n * n);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const gi = cx * resolution + i;
+        const gj = cz * resolution + j;
+        const k = j * n + i;
+        xs[k] = i * cell + (hash2(gi, gj, seed) - 0.5) * 2 * vertexJitter * cell;
+        zs[k] = j * cell + (hash2(gi, gj, seed ^ 0x5bd1e995) - 0.5) * 2 * vertexJitter * cell;
+        ground[k] = generator.getHeight(originX + xs[k], originZ + zs[k]);
+      }
     }
+    flipOf = (i, j) => hash2(cx * resolution + i, cz * resolution + j, seed + 9) < 0.5;
   }
 
   // Surf along the open coast: in the shallows, strongest under cliffs.
@@ -53,20 +89,19 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
   for (let k = 0; k < n * n; k++) {
     const depth = seaLevel - ground[k];
     if (depth < 6) continue;
-    const x = originX + xs[k], z = originZ + zs[k];
-    swell[k] = smoothstep(6, 30, depth) * smoothstep(0.4, 0.8, generator.getOceanness(x, z));
+    swell[k] = smoothstep(6, 30, depth) * smoothstep(0.4, 0.8, oceanAt(xs[k], zs[k]));
   }
   // Lakes (not the open sea) in lands with a cold winter freeze over.
   const freeze = new Float32Array(n * n);
   for (let k = 0; k < n * n; k++) {
     if (ground[k] < seaLevel + 1.5) {
       const x = originX + xs[k], z = originZ + zs[k];
-      freeze[k] = generator.getSeasonality(x, z) * (1 - generator.getOceanness(x, z));
+      freeze[k] = generator.getSeasonality(x, z) * (1 - oceanAt(xs[k], zs[k]));
     }
     const depth = seaLevel - ground[k];
-    if (depth < -1 || depth > 3.5) continue;
+    if (depth < (coast ? -3 : -1) || depth > 3.5) continue; // (on the coast, up the sand, too: the swash runs up it)
     const x = originX + xs[k], z = originZ + zs[k];
-    if (generator.getOceanness(x, z) < 0.5) continue;
+    if (oceanAt(xs[k], zs[k]) < 0.5) continue;
     surf[k] = (1 - smoothstep(0.2, 1.8, depth)) * (0.35 + 0.65 * generator.getSeaCliff(x, z));
   }
 
@@ -127,13 +162,14 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const k = j * n + i, depth = seaLevel - ground[k];
-      if (depth < -3 || depth > 8) continue;
-      const i0 = Math.max(0, i - 2), i1 = Math.min(n - 1, i + 2), j0 = Math.max(0, j - 2), j1 = Math.min(n - 1, j + 2);
+      if (depth < -3.5 || depth > 8) continue;
+      const r = coast ? Math.max(2, Math.round(6 / cell)) : 2; // (over some 6 m each way: smooth, not every bump of the sand)
+      const i0 = Math.max(0, i - r), i1 = Math.min(n - 1, i + r), j0 = Math.max(0, j - r), j1 = Math.min(n - 1, j + r);
       shoreX[k] = (ground[j * n + i1] - ground[j * n + i0]) / ((i1 - i0) * cell);
       shoreZ[k] = (ground[j1 * n + i] - ground[j0 * n + i]) / ((j1 - j0) * cell);
     }
   }
-  for (let k = 0; k < n * n; k++) if (ground[k] < seaLevel + 2) sea[k] = smoothstep(0.35, 0.6, generator.getOceanness(originX + xs[k], originZ + zs[k]));
+  for (let k = 0; k < n * n; k++) if (ground[k] < seaLevel + 3) sea[k] = smoothstep(0.35, 0.6, oceanAt(xs[k], zs[k]));
   const shores = [];
 
   const positions = [];
@@ -151,15 +187,16 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     // ending in an edge: see `open` above.)
     const fade = smoothstep(-0.25, 0.15, open[a] * s + open[b] * t);
     colors.push(color.r, color.g, color.b, (0.6 + 0.38 * smoothstep(-0.5, 8, depth)) * fade);
-    depths.push(Math.max(-2, Math.min(40, depth)));
+    depths.push(Math.max(coast ? -80 : -2, Math.min(40, depth))); // (on the coast, the true height of the land above: see WaterLayer)
     waves.push(0.1 + 0.9 * smoothstep(1, 16, depth) + 2.4 * (swell[a] * s + swell[b] * t));
     foams.push(t < 0.5 ? surf[a] : surf[b]); // (packed: not to be blended, see above)
     freezes.push(freeze[a] * s + freeze[b] * t);
     shores.push(shoreX[a] * s + shoreX[b] * t, shoreZ[a] * s + shoreZ[b] * t, sea[a] * s + sea[b] * t);
   };
   const addTri = (a, b, c) => {
-    // Keep faces with any corner under water; drop fully dry ones.
-    const wet = seaLevel + 1.5;
+    // Keep faces with any corner under water; drop fully dry ones. (On the
+    // open coast, the beach a way up too: the swash runs up it.)
+    const wet = seaLevel + (coast ? 3 : 1.5);
     if (ground[a] > wet && ground[b] > wet && ground[c] > wet) return;
     // (Left out under a river's channel where the river stands above it;
     // where it meets the river, faded out rather than cut: see put.)
@@ -175,9 +212,8 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
       const b = a + 1;
       const c = a + n;
       const d = c + 1;
-      const gi = cx * resolution + i;
-      const gj = cz * resolution + j;
-      if (hash2(gi, gj, seed + 9) < 0.5) {
+      // (The same diagonal as the land's under it, on the coast: see flipOf.)
+      if (flipOf(i, j)) {
         addTri(a, c, d);
         addTri(a, d, b);
       } else {
@@ -196,5 +232,6 @@ export function waterData(generator, config, cx, cz, heights, resolution = 16) {
     freezes: new Float32Array(freezes),
     depths: new Float32Array(depths),
     shores: new Float32Array(shores),
+    coast: new Float32Array([coast ? 1 : 0]),
   };
 }

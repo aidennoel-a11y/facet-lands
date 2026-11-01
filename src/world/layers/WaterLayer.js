@@ -54,6 +54,15 @@ const BREAKERS = /* glsl */ `
     float t = fract(u - 0.82);
     float run = smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.15, 0.85, t));
     return 0.6 * run * smoothstep(-2.6, -0.4, depth) * smoothstep(1.2, 0.2, depth);
+  }
+  // How far up the beach (m above the still water) the swash has run, at
+  // t through a wave's coming: shooting up fast as the spent breaker's
+  // white water rolls ashore, slowing, then draining back down slowly, the
+  // sand left wet and shining. (0 the moment the breaker spills at the shore.)
+  float swashReach(float t) {
+    float up = 1.0 - pow(1.0 - smoothstep(0.0, 0.2, t), 2.0);
+    float down = 1.0 - smoothstep(0.24, 0.9, t);
+    return up * down;
   }`;
 
 export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor = new Color(0xd6e8f7), skyTop = new Color(0x7fb4e6) } = {}) {
@@ -87,7 +96,11 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         attribute float aFreeze;
         attribute float aDepth;
         attribute vec3 aShore;
+        attribute float aCoast;
         uniform float uTide;
+        varying float vSheet;
+        varying float vSwash;
+        varying float vCoastF;
         varying vec3 vShore;
         varying float vSea;
         varying float vOpenCoast;
@@ -132,8 +145,9 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         // long swells and shorter seas. Open, deep water rolls, more so in a
         // wind; shallow and small water barely laps.
         // (Water shut in from the sea, a pool lying below sea level inland: still, barely stirring.)
-        vShut = 1.0 - smoothstep(0.1, 0.4, foamOpen);
-        float amp = ${f(waveHeight)} * waveScale * (0.3 + 0.7 * uWind) * (1.0 - vIce) * (1.0 - 0.85 * vShut);
+        // (Not the open sea itself, though, far out past any surf: see aShore.z.)
+        vShut = (1.0 - aShore.z) * (1.0 - smoothstep(0.1, 0.4, foamOpen));
+        float amp = ${f(waveHeight * 1.3)} * waveScale * (0.3 + 0.7 * uWind) * (1.0 - vIce) * (1.0 - 0.85 * vShut);
         vec3 disp = vec3(0.0), wn = vec3(0.0, 1.0, 0.0);
         float crest = 0.0;
         gerstner(wp.xz, 0.0, 74.0, 1.0, 0.0, amp, disp, wn, crest);
@@ -153,7 +167,55 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         float slope = length(aShore.xy);
         vOpenCoast = smoothstep(0.12, 0.45, foamOpen) * smoothstep(0.004, 0.02, slope) * (1.0 - vIce) * aShore.z;
         transformed.y += uTide * aShore.z * (1.0 - vIce);
-        if (vOpenCoast > 0.0) {
+        vSheet = 0.0;
+        vSwash = 0.0;
+        vCoastF = aCoast;
+        if (aCoast > 0.5) {
+          // On the open coast the water lies on the land's own grid (see
+          // waterData), so it can meet the beach truly: in the water, the
+          // swell rising into breakers, the crests pitching forward toward
+          // the shore as they break; on the sand, the swash: a sheet of
+          // water, with thickness, rolling up the beach behind a rounded,
+          // foaming lip, thinning, then draining back. Sand it hasn't
+          // reached lies dry (the water's corners there tucked down under it).
+          float ground = position.y - aDepth;
+          float depthT = aDepth + uTide * aShore.z;
+          float energy = (0.55 + 0.45 * uWind + 0.8 * uSeaStorm);
+          float coastal = smoothstep(0.004, 0.02, slope) * (1.0 - vIce) * aShore.z * smoothstep(0.12, 0.45, foamOpen);
+          vec2 up = slope > 1e-4 ? aShore.xy / slope : vec2(0.0);
+          float sl = max(slope, 0.01);
+          if (depthT > 0.0) {
+            float u = breakerPhase(wp.xz, depthT, slope);
+            float A = breakerHeight(depthT) * coastal * energy;
+            transformed.y += A * breakerProfile(u);
+            // (The crest curling over: thrown forward, up the slope, just as it breaks.)
+            float curl = smoothstep(0.62, 0.76, u) * (1.0 - smoothstep(0.76, 0.84, u)) * smoothstep(0.6, 1.4, depthT) * smoothstep(3.5, 2.0, depthT);
+            transformed.xz += up * A * 1.4 * curl;
+            // (Never under the bed, at the very edge.)
+            transformed.y = max(transformed.y, ground + 0.03);
+          } else {
+            transformed.xz = position.xz; // (on the land's own corners, no sway)
+            float h = -depthT; // (how far above the still water)
+            float u0 = breakerPhase(wp.xz, 0.0, slope);
+            float t = fract(u0 - 0.82);
+            float reach = (0.28 + 0.3 * uWind + 0.6 * uSeaStorm) * coastal * swashReach(t);
+            float behind = (reach - h) / sl; // (m behind the front, across the sand)
+            float rushing = 1.0 - smoothstep(0.1, 0.32, t);
+            if (behind > 0.0) {
+              float lip = smoothstep(0.0, 1.2, behind) * (1.0 - smoothstep(1.2, 5.0, behind)) * rushing;
+              float thick = 0.035 + 0.05 * smoothstep(0.6, 0.0, h) * (0.4 + 0.6 * rushing) + 0.16 * lip * coastal;
+              transformed.y = ground + thick;
+              transformed.xz += up * 0.35 * lip; // (the lip leaning forward as it rolls)
+              vSheet = 1.0;
+              vFoam = 0.0;
+              vSwash = max(lip * 1.4, smoothstep(2.5, 0.0, behind) * (0.5 + 0.5 * rushing)) * coastal;
+            } else {
+              transformed.y = ground - 0.08;
+              vSheet = 1.0;
+              vFoam = 0.0;
+            }
+          }
+        } else if (vOpenCoast > 0.0) {
           float u = breakerPhase(wp.xz, aDepth, slope);
           float A = breakerHeight(aDepth) * vOpenCoast * (0.55 + 0.45 * uWind + 0.8 * uSeaStorm);
           transformed.y += A * breakerProfile(u) + swashLift(u, aDepth) * vOpenCoast * (0.6 + 0.4 * uWind + 0.6 * uSeaStorm);
@@ -180,6 +242,9 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         varying vec3 vShore;
         varying float vSea;
         varying float vOpenCoast;
+        varying float vSheet;
+        varying float vSwash;
+        varying float vCoastF;
         ${BREAKERS}
         float waterHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float waterNoise(vec2 p) {
@@ -234,7 +299,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
           float line = smoothstep(0.78, 0.93, roll) * (1.0 - smoothstep(0.93, 1.0, roll)) * smoothstep(0.3, 0.7, waterNoise(vWorld * 0.35 + uTime * 0.15));
           float swash = (1.0 - smoothstep(-0.2, 0.35, vDepth)) * (0.55 + 0.45 * sin(uTime * 0.9 + vWorld.x * 0.05 + vWorld.y * 0.07));
           float coast = min(1.0, 0.3 + vFoam * 2.0);
-          float lap = max(line * shore, swash) * coast;
+          float lap = max(line * shore, swash * (1.0 - vCoastF)) * coast;
           float cap = vCrest * smoothstep(0.5, 0.75, waterNoise(vWorld * 0.09 + uTime * 0.12));
           // The breakers on an open beach: each swell rising as it runs into
           // the shallows, its face steepening and glowing green with the
@@ -253,7 +318,18 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
             float bore = smoothstep(1.5, 0.4, vDepth) * smoothstep(-0.6, 0.2, vDepth) * pow(1.0 - fract(u - 0.78), 3.0) * smoothstep(0.25, 0.6, n1 * 0.7 + n2 * 0.5);
             float sheet = smoothstep(0.4, -0.2, vDepth) * swashLift(u, -0.5) * 2.5 * smoothstep(0.3, 0.75, n2 + 0.3 * n1);
             float edge = smoothstep(0.15, -0.05, vDepth) * smoothstep(-1.6, -0.2, vDepth) * smoothstep(0.55, 0.8, n2 + 0.4 * sin(uTime * 1.3 + vWorld.x * 0.11));
-            breaking = max(breaking, (max(max(lip, bore), max(sheet, edge * swashLift(u, -0.2) * 3.0))) * vOpenCoast * (0.7 + 0.3 * uWind + 0.5 * uSeaStorm));
+            float washed = (1.0 - vCoastF) * max(sheet, edge * swashLift(u, -0.2) * 3.0); // (on the coast's own grid, the swash below instead)
+            breaking = max(breaking, max(max(lip, bore), washed) * vOpenCoast * (0.7 + 0.3 * uWind + 0.5 * uSeaStorm));
+          }
+          // The swash on the sand (see the vertex shader): a thin, clear sheet,
+          // the sand showing through it, behind a front of white water and lace.
+          if (vCoastF > 0.5 && vSheet > 0.01) {
+            float n3 = waterNoise(vWorld * 1.3 + vec2(uTime * 0.9, -uTime * 0.5)), n4 = waterNoise(vWorld * 3.1 - uTime * 0.7);
+            float holes = smoothstep(0.3, 0.75, n3 * 0.6 + n4 * 0.5);
+            float lace = smoothstep(0.7, 1.3, vSwash) * (0.6 + 0.4 * holes) + smoothstep(0.1, 0.6, vSwash) * holes * 0.8;
+            breaking = max(breaking, min(1.0, lace) * (1.0 - vIce));
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.55, 0.72, 0.7), vSheet * 0.35);
+            gl_FragColor.a = mix(gl_FragColor.a, 0.42, vSheet * (1.0 - smoothstep(0.1, 0.6, vSwash)));
           }
           float white = max(max(breaking, cap), lap) * (1.0 - vIce) * (1.0 - 0.7 * below);
           gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.95, 0.97, 0.98), white * 0.85);
@@ -315,6 +391,37 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
       return out;
     },
 
+    /**
+     * The surf on an open beach at (x, z), as the shader draws it (see
+     * BREAKERS and the coast's swash): `depth` under the still water (with
+     * the tide; above it, on the sand, below 0), `slope` the bed's, `ocean`
+     * how open the sea. { swash (the sheet's over the sand here), thick,
+     * rushing (0..1: running up, not draining), front (at its foaming front),
+     * breaker (a breaker's lip coming down here), height } or null.
+     */
+    surfAt(x, z, depth, slope, ocean) {
+      if (!(ocean > 0.05) || depth > 4.5) return null;
+      const sm = (a, b, v) => { const q = Math.min(1, Math.max(0, (v - a) / (b - a))); return q * q * (3 - 2 * q); };
+      const fr = (v) => v - Math.floor(v);
+      const t = uniforms.uTime.value, wind = windStrength.value, storm = seaStorm.value;
+      const coastal = sm(0.004, 0.02, slope) * ocean;
+      if (coastal < 0.05) return null;
+      const bend = 3.5 * Math.sin(x * 0.061 + 1.3 * Math.sin(z * 0.023)) * Math.cos(z * 0.057 + 1.1 * Math.sin(x * 0.029));
+      const phase = (d) => fr((bend - Math.max(d, -3) / Math.max(slope, 0.004)) / 17 + t / 8 + 0.15 * Math.sin(x * 0.011 - z * 0.008));
+      if (depth <= 0) {
+        const tt = fr(phase(0) - 0.82);
+        const up = 1 - (1 - sm(0, 0.2, tt)) ** 2, down = 1 - sm(0.24, 0.9, tt);
+        const reach = (0.28 + 0.3 * wind + 0.6 * storm) * coastal * up * down;
+        const behind = (reach + depth) / Math.max(slope, 0.01);
+        if (behind <= 0) return null;
+        const rushing = 1 - sm(0.1, 0.32, tt);
+        return { swash: true, thick: 0.04 + 0.1 * rushing, rushing, front: behind < 2.5 };
+      }
+      const u = phase(depth);
+      const height = (0.75 * sm(6, 2, depth) * sm(0.7, 1.6, depth) + 0.18 * sm(1.6, 0.4, depth) * sm(-0.4, 0.4, depth)) * coastal * (0.55 + 0.45 * wind + 0.8 * storm);
+      return { swash: false, breaker: u > 0.74 && u < 0.84 && height > 0.12, height, u };
+    },
+
     reuseKey: ({ resolution }) => `${resolution}`,
 
     build({ cx, cz, heights, generator, config, prepared }) {
@@ -328,6 +435,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
       geometry.setAttribute('foam', new BufferAttribute(data.foams, 1));
       geometry.setAttribute('aFreeze', new BufferAttribute(data.freezes, 1));
       geometry.setAttribute('aDepth', new BufferAttribute(data.depths, 1));
+      geometry.setAttribute('aCoast', new BufferAttribute(new Float32Array(data.depths.length).fill(data.coast?.[0] ?? 0), 1));
       geometry.setAttribute('aShore', new BufferAttribute(data.shores ?? new Float32Array(data.depths.length * 3), 3));
       geometry.setAttribute('normal', new BufferAttribute(new Float32Array(data.positions.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
       geometry.computeBoundingSphere();
