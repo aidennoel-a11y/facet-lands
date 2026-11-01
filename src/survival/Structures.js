@@ -407,7 +407,7 @@ export class Structures {
           // (Snug against the wall's face, on whichever side you're on; along it, in half metres.)
           const face = 0.3 + hv, sv = Math.sign(v) || 1;
           gv = sv * Math.max(face, Math.round((Math.abs(v) - face) / 0.5) * 0.5 + face);
-          gu = Math.round((u - hu) / 0.5) * 0.5 + hu;
+          gu = Math.round(u / 0.5) * 0.5; // (in half metres along it: the middle of a room's side among them)
         }
         x = near.x + ux * gu + vx * gv;
         z = near.z + uz * gu + vz * gv;
@@ -1012,6 +1012,44 @@ export class Structures {
     s.shown = Math.floor(s.growth * 20);
   }
 
+  /**
+   * What's on a shelf, set out on its boards: two things to a board, low to
+   * high, each shrunk to fit its place (a stack shown as two or three side
+   * by side); worked out again only when what's on it changes.
+   */
+  #showShelf(s) {
+    const slots = s.contents.slots, key = slots.map((st) => (st ? `${st.id}:${Math.min(3, st.count)}` : '-')).join(',');
+    if (key === s.shelfKey) return;
+    s.shelfKey = key;
+    if (s.shelfShown) for (const m of s.shelfShown) s.mesh.remove(m);
+    s.shelfShown = [];
+    const fitted = (s.shelfFits ??= this.shelfFits ??= new Map());
+    slots.forEach((st, k) => {
+      if (!st) return;
+      const geo = this.modelOf(st.id);
+      if (!geo) return;
+      // (Shrunk to fit its place, 0.45 m wide and 0.4 high, never grown; stood on the board.)
+      let fit = fitted.get(st.id);
+      if (!fit) {
+        geo.computeBoundingBox();
+        const bb = geo.boundingBox, sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
+        const scale = Math.min(1, 0.45 / Math.max(sx, sz, 0.01), 0.4 / Math.max(sy, 0.01));
+        fit = { scale, lift: -bb.min.y * scale, cx: -(bb.min.x + bb.max.x) / 2 * scale, cz: -(bb.min.z + bb.max.z) / 2 * scale };
+        fitted.set(st.id, fit);
+      }
+      const board = [0.125, 0.625, 1.125][Math.floor(k / 2)] ?? 1.6, x = k % 2 ? 0.3 : -0.3, copies = Math.min(3, st.count);
+      for (let c = 0; c < copies; c++) {
+        const m = new Mesh(geo, this.material);
+        m.scale.setScalar(fit.scale * (copies > 1 ? 0.75 : 1));
+        m.position.set(x + fit.cx + (c - (copies - 1) / 2) * 0.13, board + fit.lift * (copies > 1 ? 0.75 : 1), fit.cz + (c % 2) * 0.04);
+        m.rotation.y = (c * 0.7 + k) % 1.2 - 0.6;
+        m.castShadow = true;
+        s.mesh.add(m);
+        s.shelfShown.push(m);
+      }
+    });
+  }
+
   #kindle(s) {
     if (s.flames) return;
     const closed = KINDS[s.type].fire === 'closed';
@@ -1081,6 +1119,10 @@ export class Structures {
         s.growth = Math.min(1, s.growth + (dt * season * wet * fed) / (GROW[s.crop] ?? 480));
         if (Math.floor(s.growth * 20) !== s.shown) this.#showCrop(s);
         if (s.growth >= 1) this.onChange?.();
+      }
+      if (s.type === 'shelf' && s.contents && (!s.shelfCheck || ctx.time > s.shelfCheck)) {
+        s.shelfCheck = ctx.time + 0.4;
+        this.#showShelf(s);
       }
       if (s.door) {
         const want = s.open ? -Math.PI / 2 : 0;
@@ -1315,7 +1357,7 @@ export class Structures {
       else if (s.type === 'tanningRack') for (const h of [0.6, 1.3]) points.push([s.x, s.y + h, s.z, 0.75]);
       else if (s.type === 'stake') for (const h of [0.5, 1.4, 2.3]) points.push([s.x, s.y + h, s.z, 0.4]);
       else if (KINDS[s.type].bed) for (const v of [-0.7, 0, 0.7]) points.push([s.x + bx * v, s.y + (s.type === 'bedroll' ? 0.15 : s.type === 'strawBed' ? 0.25 : 0.35), s.z + bz * v, 0.55]);
-      else if (KINDS[s.type].stairs) for (const v of [-1.5, -0.5, 0.5, 1.5]) points.push([s.x + bx * v, s.y + (STAIRS_RISE * (v + 2)) / 4, s.z + bz * v, 0.8]);
+      else if (KINDS[s.type].stairs) for (const f of [0.125, 0.375, 0.625, 0.875]) points.push([s.x + bx * (f - 0.5) * STAIRS_LENGTH, s.y + STAIRS_RISE * f, s.z + bz * (f - 0.5) * STAIRS_LENGTH, 0.8]);
       else if (s.type === 'raft') for (const v of [-0.8, 0, 0.8]) points.push([s.x + bx * v, s.y + 0.3, s.z + bz * v, 1]);
       else if (s.type === 'canoe') for (const v of [-1.5, -0.5, 0.5, 1.5]) points.push([s.x + bx * v, s.y + 0.25, s.z + bz * v, 0.45]);
       else if (s.type === 'sailboat') for (const v of [-2.8, -1.6, -0.5, 0.6, 1.7, 2.8]) points.push([s.x + bx * v, s.y + 0.9, s.z + bz * v, Math.abs(v) > 2.5 ? 0.6 : 1.05]);

@@ -1885,7 +1885,7 @@ export function cutStoneFloorModel(upper = false) {
  * (from a floor to the top of the walls round it: up to a floor laid on
  * them, or onto the roof). The foot at -z, the head at +z.
  */
-export const STAIRS_LENGTH = 4;
+export const STAIRS_LENGTH = 3.2; // (short enough to fit inside a room of one floor square, wall to wall: a steep flight)
 export const STAIRS_WIDTH = 2;
 export const STAIRS_RISE = 3.2;
 export function stairsModel(style) {
