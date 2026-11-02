@@ -792,6 +792,14 @@ export class TerrainGenerator {
 
   /** Volcanic highlands before they're kept to a good size (see #volcanoZone). */
   #volcanoRaw(x, z) {
+    // (Asked for several times per point, each time 21 looks at the noise: the last answer remembered.)
+    if (x === this._vrX && z === this._vrZ) return this._vr;
+    this._vrX = x;
+    this._vrZ = z;
+    return (this._vr = this.#volcanoRawAt(x, z));
+  }
+
+  #volcanoRawAt(x, z) {
     const zone = smoothstep(0.51, 0.61, this.#volcanoNoise(x, z));
     if (zone <= 0) return 0;
     let ring = Infinity;
@@ -3049,6 +3057,13 @@ export class TerrainGenerator {
 
   /** The nearest hot spring or geyser to (x, z) within 140 m (the great pools are broad), with its distance, or null. */
   #nearestSpring(x, z) {
+    if (x === this._nsX && z === this._nsZ) return this._ns; // (the last point's, remembered)
+    this._nsX = x;
+    this._nsZ = z;
+    return (this._ns = this.#nearestSpringAt(x, z));
+  }
+
+  #nearestSpringAt(x, z) {
     const C = 180;
     const ci = Math.floor(x / C), cj = Math.floor(z / C);
     let best = null, bd = 140;
