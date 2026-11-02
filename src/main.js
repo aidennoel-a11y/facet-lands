@@ -185,6 +185,11 @@ const TEST = new URLSearchParams(location.search);
 // into a world, without the title screen. Anything else in the address,
 // put there by wherever the game's hosted, is no business of the game's.)
 const TESTING = ['seed', 'x', 'z', 'y', 'up', 'yaw', 'pitch', 'hour', 'vd', 'mp', 'hide', 'loadscreen', 'weather', 'season', 'noocclude', 'norugged'].some((k) => TEST.has(k));
+// (Each new shader checked for mistakes as it's made: that check makes the
+// page wait for the graphics driver to finish compiling it, a stall. Kept for
+// testing and development, and with ?shadercheck; off for play, where it
+// changes nothing you see.)
+renderer.debug.checkShaderErrors = TESTING || import.meta.env.DEV || TEST.has('shadercheck');
 if (TEST.get('seed')) WORLD.seed = TEST.get('seed');
 if (TEST.get('vd')) WORLD.viewDistance = +TEST.get('vd');
 let generator = new TerrainGenerator(WORLD.seed, WORLD);

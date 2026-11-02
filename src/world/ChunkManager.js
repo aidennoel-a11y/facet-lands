@@ -243,6 +243,7 @@ export class ChunkManager {
     this.#tickFades(true);
     for (const chunk of this.chunks.values()) this.#unload(chunk);
     this.chunks.clear();
+    this.near9 = null; // (see groundHeightAt)
     this.queue.length = 0;
     this.centerKey = null;
     this.epoch++;
@@ -359,6 +360,7 @@ export class ChunkManager {
       if (!wanted.has(key)) {
         this.#unload(chunk);
         this.chunks.delete(key);
+        this.near9 = null;
       }
     }
 
@@ -721,6 +723,7 @@ export class ChunkManager {
     else if (previous) this.#unload(previous, sameMesh ? geometry : null, kept);
 
     this.chunks.set(key, chunk);
+    this.near9 = null;
     if (merged) this.#tileOf(chunk, true);
     // (Rugged land, seen for the first time: wanted in finer detail, now and from now on.)
     if (!this.rugged.has(key)) {
@@ -1046,10 +1049,20 @@ export class ChunkManager {
     const cx = Math.floor(x / chunkSize);
     const cz = Math.floor(z / chunkSize);
     // Vertex jitter lets a chunk's surface poke slightly past its square,
-    // so check the neighbours before giving up.
-    for (const [dx, dz] of NEIGHBOURS) {
-      const chunk = this.chunks.get(`${cx + dx},${cz + dz}`);
+    // so check the neighbours before giving up. (The nine chunks round each
+    // square, looked up once and remembered till a chunk comes or goes:
+    // asked for many times a frame, by every animal.)
+    const cache = (this.near9 ??= new Map()), ck = (cx + 32768) * 65536 + (cz + 32768);
+    let near = cache.get(ck);
+    if (!near) {
+      near = NEIGHBOURS.map(([dx, dz]) => this.chunks.get(`${cx + dx},${cz + dz}`) ?? null);
+      if (cache.size > 512) cache.clear();
+      cache.set(ck, near);
+    }
+    for (let k = 0; k < 9; k++) {
+      const chunk = near[k];
       if (!chunk) continue;
+      const [dx, dz] = NEIGHBOURS[k];
       const h = chunk.groundHeightAt(x - (cx + dx) * chunkSize, z - (cz + dz) * chunkSize);
       if (h !== null) return h;
     }
