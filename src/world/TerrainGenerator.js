@@ -200,6 +200,20 @@ export function mesaArchAt(arch, a) {
  * Chunks, the minimap and (later) trees/water all ask this object, so the
  * world stays consistent no matter who builds what, or in which order.
  */
+// The box round a Smoky Mountains river trunk's points (the segments #trunkDistance measures: every third point).
+function trunkBox(P) {
+  const b = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let k = 0; k < P.length; k++) {
+    if (k % 3 && k !== P.length - 1) continue;
+    const p = P[k];
+    if (p.x < b[0]) b[0] = p.x;
+    if (p.z < b[1]) b[1] = p.z;
+    if (p.x > b[2]) b[2] = p.x;
+    if (p.z > b[3]) b[3] = p.z;
+  }
+  return b;
+}
+
 export class TerrainGenerator {
   constructor(seed, config = { seaLevel: 2, chunkSize: 128 }) {
     this.seedText = String(seed); // as given, so a worker can rebuild the same world
@@ -3625,23 +3639,32 @@ export class TerrainGenerator {
 
   /** Metres from (x, z) to the nearest Smoky Mountains river trunk (Infinity if none near). */
   #trunkDistance(x, z) {
+    // (Asked for several times per point: the last answer remembered.)
+    if (x === this._tdX && z === this._tdZ) return this._td;
     const C = 4000, ci = Math.floor(x / C), cj = Math.floor(z / C);
-    let best = Infinity;
+    let best2 = Infinity; // (squared, the root taken once at the end)
     for (let dj = -2; dj <= 2; dj++) {
       for (let di = -2; di <= 2; di++) {
         const b = this.#smokyBlobCell(ci + di, cj + dj);
         if (!b || Math.hypot(x - b.x, z - b.z) > b.r * 1.3 + 900) continue;
         const P = this.#trunk(b);
+        // (A trunk whose whole box lies further off than the nearest found already: none of it can be nearer.)
+        const bx = b.trunkBox ?? (b.trunkBox = trunkBox(P));
+        const ox = x < bx[0] ? bx[0] - x : x > bx[2] ? x - bx[2] : 0, oz = z < bx[1] ? bx[1] - z : z > bx[3] ? z - bx[3] : 0;
+        if (ox * ox + oz * oz >= best2) continue;
         // (Every third point is near enough for a valley 1.5 km across.)
         for (let k = 3; k < P.length; k += 3) {
           const p = P[k - 3], q = P[k];
           const dx = q.x - p.x, dz = q.z - p.z, l2 = dx * dx + dz * dz;
           const t = Math.max(0, Math.min(1, ((x - p.x) * dx + (z - p.z) * dz) / l2));
-          best = Math.min(best, Math.hypot(p.x + dx * t - x, p.z + dz * t - z));
+          const ex = p.x + dx * t - x, ez = p.z + dz * t - z, d2 = ex * ex + ez * ez;
+          if (d2 < best2) best2 = d2;
         }
       }
     }
-    return best;
+    this._tdX = x;
+    this._tdZ = z;
+    return (this._td = Math.sqrt(best2));
   }
 
   /** Where the Smoky Mountains' blobs lie (0..1), before they're fitted to the land. */
