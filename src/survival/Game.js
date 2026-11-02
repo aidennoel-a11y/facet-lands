@@ -58,6 +58,7 @@ const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a bla
 const AXES = { axe: 1, bronzeAxe: 1.5, steelAxe: 2, forgedAxe: 3 };
 const PICKS = { pickaxe: 1, bronzePickaxe: 1.3, steelPickaxe: 1.6, forgedPickaxe: 2.2, tuskPickaxe: 3, starPickaxe: 3.6 };
 const SPEARS = new Set(['spear', 'bronzeSpear', 'steelSpear', 'forgedSpear']);
+const CLUBS = new Set(['club', 'mace', 'warHammer']);
 const SWORDS = new Set(['sword', 'fangSword', 'oldSword', 'starBlade', 'bronzeSword']);
 const BOWS = new Set(['bow', 'antlerBow', 'longbow']);
 // (How long a bow takes to draw full, seconds: a longbow's slower.)
@@ -840,6 +841,15 @@ export class Game {
     // (An old mine cart on its rails, close by: in you get.)
     const cartAt = !t || t.kind !== 'item' ? this.mineCarts?.cartNear(this.camera.position.x, this.camera.position.y - this.controls.eyeHeight, this.camera.position.z) : null;
     if (cartAt) return this.#rideCart(cartAt);
+    // (A pot held over snow: packed full of it, to melt over a fire for clean water.)
+    const heldPot = this.inventory.slots[this.hotbar?.index ?? 0];
+    if ((!t || t.kind === 'water') && heldPot?.id === 'pot' && !heldPot.brine && !heldPot.snow && this.onSnow?.()) {
+      heldPot.snow = true;
+      this.inventory.changed();
+      this.sound?.call('step', 0, 0.4);
+      this.#reach();
+      return this.hotbar?.flash('The pot packed with snow: melt it over a fire for clean water');
+    }
     if (!t) return this.hotbar?.flash('Nothing to pick up here');
     if (t.kind === 'vein') return this.hotbar?.flash(t.text);
     if (t.kind === 'item') {
@@ -1546,7 +1556,9 @@ export class Game {
       const sick = this.survival.consume(item.food);
       this.cooldown = 0.6;
       this.#animate('use', 0.35);
-      this.sound?.call('eat', 0, 0.5);
+      this.sound?.call(item.food.thirst > 0 && !item.food.hunger ? 'drink' : 'eat', 0, 0.5);
+      // (What it was in, left over: the pot the meltwater was in.)
+      if (item.returns) this.#give(item.returns, 1);
       // (A medicinal plant: what it does, learnt the first time, in your journal of herbs.)
       if (item.herb) {
         this.herbsKnown ??= new Set();
@@ -1740,6 +1752,15 @@ export class Game {
       take();
       this.cooldown = 0.3;
       return say(at.lit ? `${item.name} on the fire: a minute to cook` : `${item.name} on the fire: light it`);
+    }
+    // A pot of snow on the fire: melted down to clean water (slowly: a pot of
+    // snow gives a lot less water than you'd think).
+    if (at.type === 'campfire' && s.id === 'pot' && s.snow) {
+      if (!this.structures.work(at, { id: 'pot', count: 1 }, Inventory.stack('meltwater', 1), TIMES.stew * 1.5)) return say('No room on the fire');
+      s.snow = false;
+      this.inventory.changed();
+      this.cooldown = 0.3;
+      return say(at.lit ? 'The snow on the fire, melting: clean water in a while' : 'The snow on the fire: light it');
     }
     // A pot of sea water on a burning fire: boiled away to salt.
     if (at.type === 'campfire' && s.id === 'pot' && s.brine) {
@@ -2316,6 +2337,20 @@ export class Game {
   }
 
   /** Right-click: throws a spear; otherwise the same as Q. */
+  /** Right mouse down, holding a blade, an axe or a club: guard up (see hurt). */
+  blockStart() {
+    const s = this.inventory.slots[this.hotbar?.index ?? 0];
+    if (!this.walking || !this.survival.alive || this.hud.busy || !s) return;
+    if (SWORDS.has(s.id) || AXES[s.id] || CLUBS.has(s.id)) this.blocking = { since: this.time };
+  }
+
+  /** Right mouse up: guard down. Whether it was held up long enough not to count as a click. */
+  blockEnd() {
+    const b = this.blocking;
+    this.blocking = null;
+    return !!b && this.time - b.since > 0.3;
+  }
+
   alt(ray) {
     if (!this.walking || !this.survival.alive || this.hud.busy) return;
     const i = this.hotbar.index;
@@ -3257,7 +3292,7 @@ export class Game {
       s.heading ??= s.rot + Math.PI;
       const nx = s.x - Math.sin(s.heading) * s.speed * dt + (w.fx ?? 0) * drift * dt, nz = s.z - Math.cos(s.heading) * s.speed * dt + (w.fz ?? 0) * drift * dt;
       const next = this.waterAt(nx, nz);
-      if (next && this.groundAt(nx, nz) < next.level - (sail ? 0.9 : canoe ? 0.12 : 0.2)) {
+      if (next && (next.cave ? this.groundAt(nx, nz, next.level + 0.5) : this.groundAt(nx, nz)) < next.level - (sail ? 0.9 : canoe ? 0.12 : 0.2)) {
         // (It comes round to where you look as you paddle; adrift, it hardly turns.)
         const pull = Math.min(1, dt * turn * (canoe || sail ? Math.min(1, 0.25 + Math.abs(s.speed) / 2) : 1));
         s.heading += Math.atan2(Math.sin(yaw - s.heading), Math.cos(yaw - s.heading)) * pull;
@@ -3418,7 +3453,8 @@ export class Game {
     this.pending = this.pending.filter((p) => p.time > 0);
     const cam = this.camera.position;
     globalThis.__prof?.mark('  g: start');
-    const ground = (x, z) => this.groundAt(x, z);
+    // (Down in the caves: the cave's floor, not the land far overhead.)
+    const ground = (x, z) => (ctx.cave ? this.groundAt(x, z, cam.y) : this.groundAt(x, z));
     // (The trees and bushes picked clean lately, nearest first: drawn without their fruit.)
     if (this.pickedAt?.size && (this.pickWait = (this.pickWait ?? 0) - dt) <= 0) {
       this.pickWait = 0.5;
@@ -3753,6 +3789,25 @@ export class Game {
   hurt(amount, cause, { bite = false } = {}) {
     if (!this.walking || this.sleeping || this.mode === 'creative') return;
     amount *= difficulty.hurt; // (the difficulty: see settings)
+    // (Rolling clear just as it came at you: it misses.)
+    if (bite && this.controls.dodging > 0.08) {
+      this.hotbar?.flash('You roll clear');
+      return;
+    }
+    // (Your weapon up to take it: a parry, if it's raised just as the blow
+    // comes, and you hardly feel it; else blocked, much of it taken on the
+    // blade or haft, at a cost to your strength and the weapon.)
+    if (bite && this.blocking) {
+      const quick = this.time - this.blocking.since < 0.3, i = this.hotbar.index;
+      amount *= quick ? 0.1 : 0.4;
+      this.survival.energy = Math.max(0, this.survival.energy - (quick ? 2 : 6));
+      if (this.inventory.slots[i]) this.inventory.wear(i, 1);
+      this.sound?.call(quick ? 'clang' : 'thump', 0, 0.7);
+      this.shake = Math.min(1, (this.shake ?? 0) + 0.25);
+      if (quick) this.hotbar?.flash('Parried!');
+      this.survival.hurt(amount, cause);
+      return;
+    }
     // Armour takes the worst of a bite or a swipe (and wears for it).
     const armour = this.inventory.armour;
     if (bite && armour) {

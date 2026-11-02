@@ -216,6 +216,24 @@ export class CaveField {
   }
 
   /**
+   * The way an underground river runs at (x, z): along its line, toward
+   * where it lies lower. { fx, fz } (unit), or null off any river.
+   */
+  riverFlow(x, z) {
+    const line = (px, pz) => {
+      const wx = px + this.warp.noise2D(px / 140 + 7, pz / 140) * 40, wz = pz + this.warp.noise2D(px / 140, pz / 140 - 7) * 40;
+      return this.riverLine.noise2D(wx / 420, wz / 420);
+    };
+    const e = 1.5, gx = line(x + e, z) - line(x - e, z), gz = line(x, z + e) - line(x, z - e), l = Math.hypot(gx, gz);
+    if (l < 1e-6) return null;
+    let fx = -gz / l, fz = gx / l;
+    // (Downhill: toward the lower level of it.)
+    const lv = (px, pz) => this.riverLevel.noise2D(px / 1100, pz / 1100);
+    if (lv(x + fx * 30, z + fz * 30) > lv(x - fx * 30, z - fz * 30)) (fx = -fx), (fz = -fz);
+    return { fx, fz };
+  }
+
+  /**
    * What a column has of the deep caves, worked out once for the column:
    * its chamber, its river, whether spaghetti runs here. `H` its ground.
    */

@@ -734,7 +734,9 @@ export class Wildlife {
       const dx = a.x - from.x, dz = a.z - from.z, d = Math.hypot(dx, dz) || 1;
       a.jolt = { x: dx / d, z: dz / d, t: 0.3 };
     }
-    let [lame, down, dead] = sp.bird || a.kind === 'rabbit' || a.kind === 'snake' || a.kind === 'duck' || a.kind === 'scorpion' || a.kind === 'crab' ? [1, 1, 1] : BLOWS[sp.bulk];
+    // (A blow to the head or neck: the telling one, and you hear it.)
+    if (head && !a.mirrored) this.ctx?.sound?.call('crit', 0, 0.75), this.onCrit?.(a);
+        let [lame, down, dead] = sp.bird || a.kind === 'rabbit' || a.kind === 'snake' || a.kind === 'duck' || a.kind === 'scorpion' || a.kind === 'crab' ? [1, 1, 1] : BLOWS[sp.bulk];
     // (A great beast takes many times the blows, never lamed or brought
     // down before the end; a blow to its head is only a harder one.)
     if (a.boss) {

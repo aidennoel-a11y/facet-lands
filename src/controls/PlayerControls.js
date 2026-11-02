@@ -150,6 +150,26 @@ export class PlayerControls {
       if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
       if (e.code === 'Space') e.preventDefault(); // don't toggle focused checkboxes
       if (this.frozen) return;
+      // A dodge: a direction tapped twice, quickly: a quick hop and roll
+      // aside, out of the way of a charge or a lunge (see Game.hurt: what
+      // comes at you in the moment of it misses).
+      const dirKey = { KeyW: [0, 1], KeyS: [0, -1], KeyA: [-1, 0], KeyD: [1, 0] }[e.code];
+      if (dirKey && !e.repeat) {
+        const now = performance.now();
+        if (this.lastTap?.code === e.code && now - this.lastTap.at < 280 && this.mode === 'walk' && this.grounded && !this.swimming && !this.vehicle && !this.noJump && (this.dodgeCool ?? 0) <= 0 && (this.canDodge?.() ?? true)) {
+          const y = this.euler.y, fx = -Math.sin(y), fz = -Math.cos(y), rx = Math.cos(y), rz = -Math.sin(y);
+          const [sx, sf] = dirKey;
+          this.push.x = (rx * sx + fx * sf) * 9;
+          this.push.z = (rz * sx + fz * sf) * 9;
+          this.velocityY = 2.6;
+          this.grounded = false;
+          this.dodging = 0.4;
+          this.dodgeCool = 0.9;
+          this.dodgeSide = sx || 0;
+          this.onDodge?.();
+          this.lastTap = null;
+        } else this.lastTap = { code: e.code, at: now };
+      }
       this.keys.add(e.code);
       if (e.code === 'Space' && this.mode === 'walk' && this.grounded && !this.swimming && !this.noJump && !this.#onSteep()) {
         this.velocityY = this.jumpSpeed * (this.crouch ? 0.8 : 1);
@@ -219,9 +239,13 @@ export class PlayerControls {
     const input = on ? this.#input() : { forward: 0, strafe: 0 };
     const speed = Math.hypot(v.x, v.z);
     const stroke = (this.strokePhase = (this.strokePhase ?? 0) + dt * (1.2 + speed * 0.9));
-    const roll = on ? -input.strafe * 0.13 * (input.forward ? 0.8 : 1) + Math.sin(stroke) * 0.025 * Math.min(1, speed / 1.5) : 0;
-    const dip = on ? Math.max(-0.12, Math.min(0.12, -v.y * 0.05)) : 0;
-    const k = Math.min(1, dt * 4);
+    // (Dodging: the view tipping into the roll and coming back up.)
+    this.dodging = Math.max(0, (this.dodging ?? 0) - dt);
+    this.dodgeCool = Math.max(0, (this.dodgeCool ?? 0) - dt);
+    const dodge = this.dodging > 0 ? Math.sin((1 - this.dodging / 0.4) * Math.PI) : 0;
+    const roll = (on ? -input.strafe * 0.13 * (input.forward ? 0.8 : 1) + Math.sin(stroke) * 0.025 * Math.min(1, speed / 1.5) : 0) - dodge * 0.35 * (this.dodgeSide ?? 0);
+    const dip = (on ? Math.max(-0.12, Math.min(0.12, -v.y * 0.05)) : 0) - dodge * 0.18 * (this.dodgeSide ? 0.4 : 1);
+    const k = Math.min(1, dt * (this.dodging > 0 ? 14 : 4));
     this.tiltRoll = (this.tiltRoll ?? 0) + (roll - (this.tiltRoll ?? 0)) * k;
     this.tiltDip = (this.tiltDip ?? 0) + (dip - (this.tiltDip ?? 0)) * k;
     if (Math.abs(this.tiltRoll) < 1e-4 && Math.abs(this.tiltDip) < 1e-4 && !this.tilted) return;

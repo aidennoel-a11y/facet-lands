@@ -114,6 +114,7 @@ const skyFragment = /* glsl */ `
   uniform float eclipse; // the earth's shadow across the full moon (0 none .. 1 all of it: a coppery red moon)
   uniform float aurora; // northern lights, 0..1
   uniform float rainbow; // after rain, 0..1
+  uniform vec3 conStars[28]; // the constellations' stars (see CONSTELLATIONS), turned as the sky turns
   varying vec3 vDir;
 
   float hash(vec3 p) {
@@ -203,6 +204,11 @@ const skyFragment = /* glsl */ `
     float twinkle = 0.75 + 0.25 * sin(time * (2.0 + 3.0 * hash(cell + 5.0)) + hash(cell + 6.0) * 6.28);
     vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.9, 0.72), hash(cell + 9.0));
     col += tint * star * starsShow * (0.5 + 0.5 * hash(cell + 7.0)) * twinkle;
+    // The constellations' bright stars, steady and a touch larger than the rest.
+    for (int i = 0; i < 28; i++) {
+      float c = dot(d, conStars[i]);
+      col += vec3(0.95, 0.96, 1.0) * smoothstep(0.999985, 0.999997, c) * starsShow * 1.4 * (0.9 + 0.1 * sin(time * 1.3 + float(i)));
+    }
 
     // The northern lights: curtains of green light hanging in the northern
     // sky (-z), rippling and drifting, fringed with red and violet above,
@@ -271,6 +277,24 @@ const skyFragment = /* glsl */ `
  * that casts shadows. The shadow camera follows the player and snaps to
  * whole shadow-map texels so shadows don't shimmer as you move.
  */
+// The constellations: a few bright figures in the night sky, each highest
+// at midnight in its own season (so which are up tells you the time of
+// year), the sky turning through the night about the pole star in the
+// north. Stars as [degrees across, degrees up] from the figure's middle,
+// which stands at [compass bearing, height] at its season's midnight.
+export const CONSTELLATIONS = [
+  { name: 'The Stag', season: 'spring', at: [180, 55], stars: [[0, 0], [-4, 3], [4, 3], [-6, 8], [6, 8], [-8, 12], [8, 12], [0, -6]] },
+  { name: 'The Swan', season: 'summer', at: [150, 70], stars: [[0, 0], [0, 7], [0, -7], [-8, 1], [8, 1], [-13, 3], [13, 3]] },
+  { name: 'The Hunter', season: 'autumn', at: [200, 45], stars: [[-3, 0], [0, 0.5], [3, 1], [-5, 7], [5, 8], [-4, -7], [5, -6]] },
+  { name: 'The Bear', season: 'winter', at: [0, 55], stars: [[0, 0], [4, 1], [8, 0], [12, -1], [13, 4], [17, 4], [17, 0]] },
+];
+const SEASON_MID = { spring: 0.125, summer: 0.375, autumn: 0.625, winter: 0.875 };
+const POLE = new Vector3(0, Math.sin(0.7), -Math.cos(0.7)).normalize();
+const skyDir = (bearing, height) => {
+  const b = (bearing * Math.PI) / 180, h = (height * Math.PI) / 180;
+  return new Vector3(Math.sin(b) * Math.cos(h), Math.sin(h), -Math.cos(b) * Math.cos(h));
+};
+
 export class DayNight {
   constructor(scene, config, radius) {
     this.scene = scene;
@@ -331,6 +355,7 @@ export class DayNight {
           moonPhase: { value: 0.35 },
           eclipse: { value: 0 },
           aurora: { value: 0 },
+          conStars: { value: Array.from({ length: 28 }, () => new Vector3(0, -1, 0)) },
           rainbow: { value: 0 },
         },
         vertexShader: skyVertex,
@@ -473,8 +498,25 @@ export class DayNight {
     this.radiant = h(3) * Math.PI * 2;
   }
 
+  // The sky's turn now (the hour, and how far through the year), applied to each figure.
+  #turnConstellations() {
+    const u = this.sky?.material?.uniforms?.conStars;
+    if (!u) return;
+    const year = this.yearFrac ?? 0;
+    this.constellationsUp = [];
+    let n = 0;
+    for (const c of CONSTELLATIONS) {
+      const angle = -2 * Math.PI * (((this.hour + 12) % 24) / 24 - 0.5 + (year - SEASON_MID[c.season]));
+      const mid = skyDir(c.at[0], c.at[1]).applyAxisAngle(POLE, angle);
+      this.constellationsUp.push({ name: c.name, season: c.season, dir: mid });
+      for (const [dx, dy] of c.stars) if (n < 28) u.value[n++].copy(skyDir(c.at[0] + dx / Math.max(0.3, Math.cos((c.at[1] * Math.PI) / 180)), c.at[1] + dy).applyAxisAngle(POLE, angle));
+    }
+    for (; n < 28; n++) u.value[n].set(0, -1, 0);
+  }
+
   update(dt, focus, weather = null) {
     this._dt = dt;
+    this.#turnConstellations();
     if (this.playing) this.hour = (this.hour + (dt * 24) / (this.config.dayLengthMinutes * 60)) % 24;
     const cover = weather ? weather.cover : 0.2;
     const rain = weather ? weather.rain : 0;

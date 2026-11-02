@@ -1250,6 +1250,15 @@ export class Sound {
       // A crocodile's bellow: a low, rumbling growl that trembles.
       tone(t, 1.6, 'sawtooth', 58, 50, 140, 1.2, 0.35, 11);
       noise(t, 1.5, 160, 1.5, 0.22, 11);
+    } else if (kind === 'clang') {
+      // A parry: the hard ring of the blow turned on the weapon, and its thud.
+      tone(t, 0.35, 'triangle', 820, 760, 1600, 6, 0.25, 8);
+      tone(t, 0.25, 'square', 1240, 1100, 2400, 8, 0.06);
+      noise(t, 0.05, 1800, 1.5, 0.35);
+    } else if (kind === 'crit') {
+      // A telling blow: a sharp crack over the thud of it.
+      noise(t, 0.04, 2600, 2, 0.4);
+      tone(t, 0.18, 'sine', 160, 70, 220, 0.8, 0.5);
     } else if (kind === 'thump') {
       // A thump on the ground (a rabbit's warning; a body falling).
       wash(t, 0.12, 'lowpass', 220, 0.5, 0.003);

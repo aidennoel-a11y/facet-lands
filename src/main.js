@@ -18,6 +18,7 @@ import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js
 import { GrassCut } from './render/grassCut.js';
 import { CutBlades } from './render/cutBlades.js';
 import { LavaBubbles } from './render/lavaBubbles.js';
+import { FlashFloods } from './world/flashFlood.js';
 import { SeaLife } from './wildlife/SeaLife.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
 import { cutShroomKey, fellShroom, pickShroom, shroomCapAt, shroomCollide, shroomsCut } from './world/layers/CaveLayer.js';
@@ -268,6 +269,9 @@ lightning.onStrike = (x, y, z, distance) => {
 const grassCut = new GrassCut();
 const cutBlades = new CutBlades(scene);
 const lavaBubbles = new LavaBubbles(scene);
+const constellationSeen = { wait: 0 };
+const flashFloods = new FlashFloods(scene);
+const aridHere = { v: 0, wait: 0 };
 const bladeTint = new THREE.Color();
 
 // --- The climate, and the tornadoes ---------------------------------------------------------
@@ -996,7 +1000,9 @@ function waterAt(x, z, ice = false) {
   // far overhead.
   if (sheltered) {
     const w = generator.caves.waterAt(x, camera.position.y - 1.2, z);
-    return w ? { level: w.level, fx: 0, fz: 0, speed: w.river ? 0.5 : 0, cave: true, lava: w.lava } : null;
+    // (An underground river runs, and carries you, or your raft, along it.)
+    const fl = w?.river ? generator.caves.field.riverFlow(x, z) : null;
+    return w ? { level: w.level, fx: fl?.fx ?? 0, fz: fl?.fz ?? 0, speed: w.river ? 1.6 : 0, cave: true, lava: w.lava } : null;
   }
   const ground = chunks.groundHeightAt(x, z);
   // (The sea's level, with the tide: risen up the beaches or fallen back off them; on the open sea only.)
@@ -1007,6 +1013,9 @@ function waterAt(x, z, ice = false) {
   const r = generator.rivers.waterAt(x, z, rise > 0.02 ? 4.5 : 0);
   const up = r && !r.pond && r.level > WORLD.seaLevel + 0.35 ? rise : 0;
   if (r && (rise <= 0.02 || r.level + up > ground + 0.02) && (!found || r.level + up > found.level)) found = { level: r.level + up, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : (0.6 + Math.min(2.4, Math.max(0, r.drop) * 6)) * (1 + riverFlood.value), pond: r.pond, hot: r.tint === 2, flood: up > 0.05 };
+  // (A flash flood down a dry wash: see FlashFloods.)
+  const ff = flashFloods.waterAt(x, z);
+  if (ff && ff.level > ground + 0.02 && (!found || ff.level > found.level)) found = ff;
   // (A landmark's lake or pool: the crystal lake, the falls' basin, the hot pools...)
   const lw = landmarks.waterAt(x, z, ground);
   // (Tar's no water: you wade in it, stuck, never swim. See the collide hook.)
@@ -1544,6 +1553,7 @@ const controls = new PlayerControls(camera, canvas, {
       }
     }
     if (sand.slow < 1) (controls.speedFactor *= sand.slow), (controls.noJump = true); // (in quicksand)
+    if (game.blocking) controls.speedFactor *= 0.55; // (guard up: going carefully)
     // (Through a spider's web in the caves: it clings, and you tear through it slowly.)
     const web = sheltered ? generator.caves?.webAt?.(position.x, feet + 1, position.z) ?? 0 : 0;
     if (web > 0) {
@@ -1713,7 +1723,15 @@ const game = new Game({
 game.look = myLook;
 
 game.felling.vortex = () => tornadoes.now;
-game.pave = (x, z) => grassCut.pave(x, z); // (a stone road laid: the grass gone under it)
+game.pave = (x, z) => grassCut.pave(x, z);
+// (A dodge: it takes your wind; none to spare, none to be had.)
+controls.canDodge = () => game.mode === 'creative' || game.survival.energy > 8;
+controls.onDodge = () => {
+  if (game.mode !== 'creative') game.survival.energy = Math.max(0, game.survival.energy - 6);
+  sound.call('brush', 0, 0.5);
+};
+wildlife.onCrit = () => game.hotbar?.flash('A telling blow, to the head');
+game.onSnow = () => controls.mode === 'walk' && !sheltered && stepSurface(camera.position.x, camera.position.z) === 'snow'; // (where there's snow to pack a pot with) // (a stone road laid: the grass gone under it)
 // (The sea's and the lakes' waves under a boat: see WaterLayer.waveAt.)
 game.waveAt = (x, z) => water.waveAt(x, z, WORLD.seaLevel - chunks.groundHeightAt(x, z), generator.getOceanness(x, z)); // (trees carried round in a tornado: see Felling.liftUp)
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
@@ -1952,6 +1970,12 @@ document.getElementById('test-avalanche')?.addEventListener('click', (e) => {
   if (best) startAvalanche(best.x, best.z);
   e.currentTarget.blur();
 });
+// (A flash flood for testing: down the nearest wash, now.)
+document.getElementById('test-flood')?.addEventListener('click', (e) => {
+  flashFloods.test({ eye: camera.position, height: (x, z) => { const h = chunks.groundHeightAt(x, z); return Number.isFinite(h) ? h : generator.getHeight(x, z); } });
+  hotbar.flash(flashFloods.flood ? 'A flash flood coming down the wash' : 'No wash here for a flood to come down');
+  e.currentTarget.blur();
+});
 // (A volcano's eruption for testing: the nearest one awake blows now.)
 document.getElementById('test-volcano')?.addEventListener('click', (e) => {
   const d = volcanoes.erupt(camera.position.x, camera.position.z);
@@ -2061,9 +2085,12 @@ let press = null;
 canvas.addEventListener('pointerdown', (e) => {
   press = { x: e.clientX, y: e.clientY, time: performance.now(), button: e.button, locked: controls.locked };
   if (e.button === 0 && (controls.locked || controls.lockFailed || !controls.mouseLock)) game.press(); // (a bow starts to draw)
+  if (e.button === 2) game.blockStart(); // (guard up, holding a weapon)
 });
 canvas.addEventListener('pointerup', (e) => {
   game.release(); // (a fish on the line: no longer reeling)
+  // (Guard held up a while: lowered, and that's all the right button did.)
+  if (e.button === 2 && game.blockEnd()) return void (press = null);
   if (!press) return;
   let at = null;
   if (press.locked) {
@@ -3097,7 +3124,21 @@ function tick(now) {
   farLightning(dt);
   afterRain(dt);
   dayNight.viewDir = dir;
+  dayNight.yearFrac = ((seasons.time ?? 0) / 4) % 1; // (for the constellations: which are up, and when)
   dayNight.update(dt, camera.position, weather);
+  // (Looking up at one of the constellations on a clear night: its name, and its season, once a night.)
+  if (dayNight.constellationsUp && (1 - (around.env?.day ?? 1)) > 0.7 && !sheltered && (constellationSeen.wait -= dt) <= 0) {
+    constellationSeen.wait = 1;
+    const look = camera.getWorldDirection(new THREE.Vector3());
+    for (const c of dayNight.constellationsUp) {
+      if (c.dir.y < 0.17 || look.dot(c.dir) < 0.985) continue;
+      const night = Math.floor(dayNight.day);
+      if (constellationSeen[c.name] === night) break;
+      constellationSeen[c.name] = night;
+      game.hotbar?.flash(`${c.name}: the stars of ${c.season}${c.season === seasons.name?.toLowerCase() ? ', high now' : ''}`);
+      break;
+    }
+  }
   // Indoors, the daylight only what comes in through the windows and an
   // open door (see Game: indoorGloom): your eyes adjusting, a moment, as
   // you come in out of the sun or go back out into it.
@@ -3196,6 +3237,12 @@ function tick(now) {
   caveSounds(dt);
   const swampLamps = glowSwampHere.v > 0.05 ? wonders.lightsNear(camera.position) : [];
   torches.update(worldNow, camera.position, caveGlowLights.length || swampLamps.length ? [...gameLights, ...caveGlowLights, ...swampLamps] : gameLights);
+  if ((aridHere.wait -= dt) <= 0) {
+    aridHere.wait = 3;
+    const w = generator.getBiomeWeights(camera.position.x, camera.position.z, {});
+    aridHere.v = Math.min(1, (w.desert ?? 0) + (w.badlands ?? 0) + (w.saltFlat ?? 0) + 0.6 * (w.savanna ?? 0));
+  }
+  flashFloods.update(dt, { eye: camera.position, arid: aridHere.v, storm: weather.storm, rain: localRain, height: (x, z) => { const h = chunks.groundHeightAt(x, z); return Number.isFinite(h) ? h : generator.getHeight(x, z); }, sound, flash: (t) => game.hotbar?.flash(t), sheltered });
   lavaBubbles.update(dt, sheltered ? camera.position : null, caveGlowLights, sound, (x, z) => panTowards(camera, x, z));
   updateCaveLife(now / 1000, sheltered ? camera.position : null, (x, y, z) => generator.caves.clearLine(camera.position.x, camera.position.y, camera.position.z, x, y, z));
   // The spiders in the dark, round you when you're down in the caves.

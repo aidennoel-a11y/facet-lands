@@ -133,6 +133,7 @@ export const ITEMS = {
   dough: { name: 'Dough', food: { hunger: 4, health: -1, full: 90 }, spoils: 1200, cooks: 'bread', weight: 0.5, group: 'Food' },
   bread: { name: 'Bread', food: { hunger: 32, health: 3, full: 480 }, spoils: 6000, weight: 0.4, group: 'Food' },
   glowTonic: { name: 'Glowcap tonic', food: { thirst: 18, health: 18, cure: true, full: 240 }, weight: 0.3, group: 'Food' }, // (swamp glowcaps steeped with berries: it settles a sick stomach)
+  meltwater: { name: 'Pot of meltwater', food: { thirst: 30, full: 60 }, weight: 2, group: 'Food', returns: 'pot' }, // (snow melted over a fire: clean, cold)
   stew: { name: 'Stew', food: { hunger: 50, thirst: 25, health: 12, cure: true, full: 720 }, spoils: 1800, weight: 1, group: 'Food' },
   // Tools and weapons.
   axe: { name: 'Stone axe', tool: true, durability: 90, weight: 1.5, sharp: 1, group: 'Tools' },
@@ -604,6 +605,7 @@ export const ICONS = {
   leanTo: `<path d="M4 27L14 7h4l10 20z" fill="#5a8a3a"/><path d="M14 7L4 27M18 7l10 20M12 7h8" stroke="#7a5230" stroke-width="2"/><path d="M8 20h16M10 15h12" stroke="#4a7a2e"/>`,
   waterFilter: `<path d="M9 5h14l-4 16h-6z" fill="#8a6a48"/><path d="M11 9h10M12 13h8" stroke="#e2c88a" stroke-width="2"/><path d="M12 16h8" stroke="#2a2420" stroke-width="2"/><path d="M16 22v3" stroke="#6ab4e8" stroke-width="2"/><ellipse cx="16" cy="28" rx="5" ry="2" fill="#6ab4e8"/>`,
   jerky: `<path d="M6 10l18-3 3 4-18 4zM5 16l19-2 2 4-19 3zM7 22l17-1 2 4-17 1z" fill="#6a2e18"/><path d="M8 11l14-2M8 17l14-2M9 23l14-1" stroke="#8a4424" stroke-width="1"/>`,
+  meltwater: `<path d="M5 12h22l-2 13c-1 3-5 4-9 4s-8-1-9-4z" fill="#4a5058"/><ellipse cx="16" cy="13" rx="10.5" ry="2.6" fill="#8ac0dc"/><path d="M4 11h24v3H4z" fill="#6e7680"/>`,
   stew: `<path d="M4 15h24c0 7-5 12-12 12S4 22 4 15z" fill="#6a4a30"/><ellipse cx="16" cy="15" rx="12" ry="3.5" fill="#a8582a"/><circle cx="12" cy="14.5" r="1.5" fill="#d8b478"/><circle cx="19" cy="15.5" r="1.5" fill="#c82038"/><path d="M11 9c0-2 2-2 2-4M17 9c0-2 2-2 2-4" stroke="#c8c8c8" fill="none"/>`,
   axe: AXE,
   steelAxe: STEEL(AXE),
