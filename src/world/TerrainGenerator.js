@@ -1,3 +1,4 @@
+import { parseSeed } from '../worldOptions.js';
 import { SimplexNoise } from '../noise/SimplexNoise.js';
 import { hash2, hashSeed, mulberry32 } from '../noise/random.js';
 import { BIOME_IDS, BIOMES, blendedFaceColor, prepareBiome } from './biomes.js';
@@ -202,7 +203,14 @@ export function mesaArchAt(arch, a) {
 export class TerrainGenerator {
   constructor(seed, config = { seaLevel: 2, chunkSize: 128 }) {
     this.seedText = String(seed); // as given, so a worker can rebuild the same world
-    this.seed = hashSeed(seed);
+    // (The world's own settings ride after a '~' in the seed: the land's noise from the part before it. See worldOptions.js.)
+    const parsed = parseSeed(seed);
+    this.opts = parsed.values;
+    this.seed = hashSeed(parsed.custom || parsed.code ? parsed.base : seed);
+    this._optDry = this.opts.dry ?? 0;
+    this._optSea = this.opts.sea ?? 0;
+    this._optMtn = this.opts.mountains ?? 0;
+    this._optTrees = this.opts.trees ?? 1;
     this._config = config;
     // Separate noise fields so each layer is independent of the others.
     this.continentNoise = new SimplexNoise(this.seed);
@@ -319,7 +327,7 @@ export class TerrainGenerator {
   #rawAridityAt(x, z) {
     const wx = x + this.aridityNoise.noise2D(x * 0.0008 + 31, z * 0.0008 - 17) * 260;
     const wz = z + this.aridityNoise.noise2D(x * 0.0008 - 53, z * 0.0008 + 71) * 260;
-    const raw = 0.5 + this.aridityNoise.fbm(wx * 0.00016, wz * 0.00016, 3) * 1.3;
+    const raw = 0.5 + this.aridityNoise.fbm(wx * 0.00016, wz * 0.00016, 3) * 1.3 + this._optDry;
     // Wet, green country all round volcanic highlands.
     const belt = this.#volcanoBelt(x, z);
     return belt > 0 ? raw + (Math.min(raw, 0.1) - raw) * belt : raw;
@@ -718,7 +726,7 @@ export class TerrainGenerator {
       // much of it is that.
       const basin = smoothstep(0.15, 0.35, this.continentNoise.fbm(x * 0.00005 + 500, z * 0.00005 - 700, 2));
       this._contLift = 0.45 * (1 - basin);
-      this._cont = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.015 + this._contLift - 0.8 * basin;
+      this._cont = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.015 + this._contLift - 0.8 * basin - this._optSea;
     }
     return this._cont;
   }
@@ -3877,6 +3885,7 @@ export class TerrainGenerator {
     // it: never a range cut off in a wall at its edge).
     const belt = smoothstep(0.26, 0.54, this.volcanoNoise.fbm(x * 0.00005 + 900, z * 0.00005 - 300, 2));
     if (belt > 0) value = value * (1 - belt) - 0.3 * belt;
+    value += this._optMtn; // (the world's settings: more mountains, or fewer)
     out.x = x;
     out.z = z;
     out.value = value;
@@ -3975,7 +3984,8 @@ export class TerrainGenerator {
     const m = this.getMountainness(x, z);
     // (Only part way: wooded still, with clearings, so it never reads as a bare patch next to the pine forests.)
     const open = m > 0.08 && m < 0.5 ? 0.5 * smoothstep(0.08, 0.3, m) * (1 - smoothstep(0.4, 0.5, m)) : 0;
-    return (0.05 + 0.95 * smoothstep(-0.3, 0.15, n)) * (1 - open);
+    const d = (0.05 + 0.95 * smoothstep(-0.3, 0.15, n)) * (1 - open);
+    return this._optTrees === 1 ? d : Math.min(1, d * this._optTrees);
   }
 
   /**

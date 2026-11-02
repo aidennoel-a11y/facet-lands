@@ -24,6 +24,7 @@ import { CaveSpiders } from './wildlife/CaveSpiders.js';
 import { cutShroomKey, fellShroom, pickShroom, shroomCapAt, shroomCollide, shroomsCut } from './world/layers/CaveLayer.js';
 import { caveFocus, caveGlowLights, caveNightVision, createCaveLayer, roostFlocks, updateCaveLife } from './world/layers/CaveLayer.js';
 import { endLife, StartMenu, rememberWorld } from './ui/StartMenu.js';
+import { parseSeed } from './worldOptions.js';
 import { createRockLayer } from './world/layers/RockLayer.js';
 import { createRuinLayer } from './world/layers/RuinLayer.js';
 import { createEntranceLayer } from './world/layers/EntranceLayer.js';
@@ -1882,6 +1883,11 @@ ui.seed.value = WORLD.seed;
 function setSeed(seed, saveKey = null, place = true, later = false) {
   WORLD.seed = seed;
   generator = new TerrainGenerator(seed, WORLD);
+  // (The world's own settings, from its seed: see worldOptions.js.)
+  const opts = parseSeed(seed).values;
+  wildlife.worldOpts = opts;
+  weather.wild = opts.weather ?? 1;
+  game.worldOpts = opts;
   generator.landmarks.lazy = chunks.workers.length > 0;
   if (generator.caves) generator.caves.field.lazy = chunks.workers.length > 0;
   game.trees.removed.clear(); // (the new world's felled trees are loaded below)
@@ -1896,7 +1902,7 @@ function setSeed(seed, saveKey = null, place = true, later = false) {
   fires.clear();
   volcanoes.clear();
   insects.clear();
-  if (place && game.mode !== 'testing') (seasons.time = 1.5), (dayNight.hour = 8); // (a new world starts on a summer's morning, midsummer)
+  if (place && game.mode !== 'testing') (seasons.time = opts.season ?? 1.5), (dayNight.hour = 8); // (a new world starts on a morning in the season it's set to: midsummer, unless chosen)
   if (place) {
     const t = performance.now();
     placeCamera(game.mode === 'survival', later); // (not when you'll be put back where you were)

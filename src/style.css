@@ -1321,6 +1321,53 @@ kbd {
 .mp-badge[hidden] {
   display: none;
 }
+/* A new world's settings: presets, and a slider for each. */
+.sm-world {
+  color: #e8dcb8;
+  font-size: 14px;
+}
+.sm-world summary {
+  cursor: pointer;
+  font: 600 15px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #c9bfa4;
+}
+.sm-world summary em {
+  display: block;
+  font: normal 13px sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #a89f86;
+}
+.sm-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0 8px;
+}
+.sm-presets .sm-q {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+.sm-opts {
+  display: grid;
+  gap: 4px;
+}
+.sm-opt {
+  display: grid;
+  grid-template-columns: 84px 1fr 78px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.sm-opt span {
+  color: #c9bfa4;
+}
+.sm-opt output {
+  color: #e8dcb8;
+  text-align: right;
+}
 /* Graphics quality, on the title screen. */
 .sm-quality {
   display: flex;

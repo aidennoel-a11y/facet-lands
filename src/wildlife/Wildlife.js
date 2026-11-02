@@ -1802,7 +1802,7 @@ export class Wildlife {
     this.nightCool = (this.nightCool ?? rnd(10, 30)) - 0.5;
     if (day < 0.25 && this.nightCool <= 0) {
       const blood = (ctx.bloodMoon ?? 0) > 0.3; // (under a blood moon: the hunters out in numbers)
-      this.nightCool = blood ? rnd(15, 30) : rnd(35, 80);
+      this.nightCool = (blood ? rnd(15, 30) : rnd(35, 80)) / (this.worldOpts?.predators ?? 1); // (more or fewer hunters about, as the world's set)
       const near = (kind) => this.animals.some((a) => a.kind === kind && a.alive && Math.hypot(a.x - cx, a.z - cz) < 200);
       const s = spot(140, 260, (x, z) => g.getMountainness(x, z) < 0.6 && wildWeights(g, x, z, {}).desert < 0.5, 10);
       if (s) {
@@ -1982,8 +1982,32 @@ export class Wildlife {
    * out on the open grass, rabbits.
    */
   #settle(cx, cz, ctx) {
+    // (The world's settings: more animals, or fewer; more hunters, or fewer. The same for a chunk each time you come back.)
+    const o = this.worldOpts ?? {}, A = o.animals ?? 1, P = o.predators ?? 1;
+    const home = this.#settleOnce(cx, cz, ctx, 0);
+    if (A === 1 && P === 1) return home;
+    const r = mulberry32(Math.floor(hash2(cx, cz, ctx.seed ^ 0x5e771e) * 4294967296));
+    if (A > 1 && r() < A - 1) {
+      const more = this.#settleOnce(cx, cz, ctx, 1);
+      home.animals.push(...more.animals);
+      home.herds.push(...more.herds);
+    }
+    const keep = new Map(); // (a herd kept or not, all together)
+    for (const a of home.animals) {
+      const pred = !!SPECIES[a.kind]?.predator, share = (pred ? P : 1) * Math.min(1, A);
+      if (share >= 1) continue;
+      const k = a.herd ?? a;
+      if (!keep.has(k)) keep.set(k, r() < share);
+      if (!keep.get(k)) a.gone = true;
+    }
+    home.animals = home.animals.filter((a) => !a.gone);
+    home.herds = home.herds.filter((h) => h.members?.some((a) => !a.gone));
+    return home;
+  }
+
+  #settleOnce(cx, cz, ctx, salt) {
     const g = ctx.generator, C = ctx.chunkSize;
-    const rand = mulberry32(Math.floor(hash2(cx, cz, ctx.seed ^ 0xdee7) * 4294967296));
+    const rand = mulberry32(Math.floor(hash2(cx, cz, ctx.seed ^ (0xdee7 + salt * 7919)) * 4294967296));
     const home = { cx, cz, animals: [], herds: [], birds: false, rand };
     const at = () => {
       const x = (cx + 0.1 + 0.8 * rand()) * C, z = (cz + 0.1 + 0.8 * rand()) * C;

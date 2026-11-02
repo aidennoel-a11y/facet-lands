@@ -95,6 +95,9 @@ export class FlashFloods {
   waterAt(x, z) {
     const f = this.flood;
     if (!f) return null;
+    // (Far outside the wash's box: no need to look along it.)
+    const b = f.box;
+    if (x < b[0] || x > b[2] || z < b[1] || z > b[3]) return null;
     let best = null, bd = Infinity;
     for (let k = 0; k < f.path.length; k++) {
       const p = f.path[k], d = Math.hypot(x - p.x, z - p.z);
@@ -159,7 +162,9 @@ export class FlashFloods {
     mesh.frustumCulled = false;
     mesh.name = 'flash flood';
     this.scene.add(mesh);
-    this.flood = { path, ground, geometry, mesh, levels: new Float32Array(path.length).fill(-Infinity), t: -Math.random() * 20, depth: 1.6 + Math.random() * 1.2 };
+    const box = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const p of path) (box[0] = Math.min(box[0], p.x - SPAN)), (box[1] = Math.min(box[1], p.z - SPAN)), (box[2] = Math.max(box[2], p.x + SPAN)), (box[3] = Math.max(box[3], p.z + SPAN));
+    this.flood = { box, path, ground, geometry, mesh, levels: new Float32Array(path.length).fill(-Infinity), t: -Math.random() * 20, depth: 1.6 + Math.random() * 1.2 };
   }
 
   #end() {

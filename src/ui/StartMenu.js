@@ -9,6 +9,7 @@ import { describeHardware, graphicsInfo, MAX_VIEW, QUALITY, quality, qualityChos
 import { DEFAULTS, DIFFICULTIES, saveSettings, settings } from '../settings.js';
 import { ACTIONS, bind, keyName, keyOf, listenForKey, resetKeys } from '../keys.js';
 import { LOOK_CHOICES, LOOK_DEFAULT, loadLook, saveLook } from '../character.js';
+import { WORLD_OPTIONS, WORLD_PRESETS, describeOptions, parseSeed, seedWith } from '../worldOptions.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
 // The seeds whose land has claimed a survival life: never played in survival again.
@@ -327,6 +328,15 @@ export class StartMenu {
       <h2 class="sm-head">${online ? 'New world, online' : 'New world'}</h2>
       <label class="sm-field">World name<input id="sm-name" type="text" maxlength="40" value="My world" /></label>
       <label class="sm-field">Seed<input id="sm-seed" type="text" maxlength="24" value="${seed}" /></label>
+      <details class="sm-world">
+        <summary>World settings <em class="sm-world-sum">The wild: everything as it comes</em></summary>
+        <div class="sm-presets" role="radiogroup" aria-label="World preset">
+          ${WORLD_PRESETS.map((p, i) => `<button type="button" class="sm-q${i === 0 ? ' sm-picked' : ''}" data-preset="${p.id}" title="${p.blurb}">${p.name}</button>`).join('')}
+        </div>
+        <div class="sm-opts">
+          ${WORLD_OPTIONS.map((o) => `<label class="sm-opt"><span>${o.name}</span><input type="range" data-opt="${o.id}" min="0" max="${o.levels.length - 1}" step="1" value="${o.normal ?? 2}" /><output>${o.levels[o.normal ?? 2]}</output></label>`).join('')}
+        </div>
+      </details>
       <div class="sm-modes" role="radiogroup" aria-label="Game mode">
         ${Object.entries(MODES).filter(([id]) => !online || id !== 'testing').map(([id, m], i) => `
           <button type="button" class="sm-mode${i === 0 ? ' sm-picked' : ''}" data-mode="${id}" role="radio" aria-checked="${i === 0}">
@@ -336,6 +346,33 @@ export class StartMenu {
       <button class="sm-btn sm-primary" data-go="play">${online ? 'Create and open to others' : 'Create world'}</button>
       <p class="sm-note" aria-live="polite"></p>
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
+    // The world's settings: a preset sets them all; each slider then fine-tunes one.
+    const levels = Object.fromEntries(WORLD_OPTIONS.map((o) => [o.id, o.normal ?? 2]));
+    const sum = card.querySelector('.sm-world-sum');
+    const showOpts = (presetName = null) => {
+      for (const input of card.querySelectorAll('[data-opt]')) {
+        const o = WORLD_OPTIONS.find((x) => x.id === input.dataset.opt);
+        input.value = levels[o.id];
+        input.nextElementSibling.textContent = o.levels[levels[o.id]];
+      }
+      const said = describeOptions(seedWith('x', levels));
+      sum.textContent = presetName ? `${presetName}${said ? `: ${said}` : ''}` : said ? `Custom: ${said}` : 'The wild: everything as it comes';
+    };
+    for (const b of card.querySelectorAll('[data-preset]')) {
+      b.addEventListener('click', () => {
+        const p = WORLD_PRESETS.find((x) => x.id === b.dataset.preset);
+        for (const o of WORLD_OPTIONS) levels[o.id] = p.set[o.id] ?? o.normal ?? 2;
+        for (const o of card.querySelectorAll('[data-preset]')) o.classList.toggle('sm-picked', o === b);
+        showOpts(p.name);
+      });
+    }
+    for (const input of card.querySelectorAll('[data-opt]')) {
+      input.addEventListener('input', () => {
+        levels[input.dataset.opt] = Number(input.value);
+        for (const o of card.querySelectorAll('[data-preset]')) o.classList.remove('sm-picked');
+        showOpts();
+      });
+    }
     let mode = 'survival';
     for (const b of card.querySelectorAll('.sm-mode')) {
       b.addEventListener('click', () => {
@@ -348,7 +385,9 @@ export class StartMenu {
     }
     this.#on('[data-go="play"]', () => {
       const name = card.querySelector('#sm-name').value.trim() || 'My world';
-      const s = card.querySelector('#sm-seed').value.trim() || seed;
+      const typed = card.querySelector('#sm-seed').value.trim() || seed;
+      // (A seed typed with its settings already on it, after a '~', is taken as it is.)
+      const s = typed.includes('~') ? typed : seedWith(typed, levels);
       const world = { id: `w${Date.now().toString(36)}`, name, seed: s, mode, created: Date.now() };
       // (A land that has claimed a life is closed to survival for good.)
       if (mode === 'survival' && seedIsDead(s)) {
@@ -387,7 +426,7 @@ export class StartMenu {
           <li>
             <button type="button" class="sm-world${w.dead ? ' sm-ended' : ''}" data-id="${w.id}"${w.dead ? ' disabled' : ''}>
               <strong>${w.name.replace(/</g, '&lt;')}</strong>
-              <span>${MODES[w.mode]?.name ?? w.mode} · seed ${String(w.seed).replace(/</g, '&lt;')} · ${when(w.played)}</span>
+              <span>${MODES[w.mode]?.name ?? w.mode} · seed ${String(parseSeed(w.seed).base).replace(/</g, '&lt;')}${parseSeed(w.seed).custom ? ' · custom world' : ''} · ${when(w.played)}</span>
               ${w.dead ? `<span class="sm-dead">Died after ${w.lastDays ?? 0} ${w.lastDays === 1 ? 'day' : 'days'}. This land will not take you back.</span>` : ''}
             </button>
             <button type="button" class="sm-delete" data-del="${w.id}" title="Delete this world">Delete</button>

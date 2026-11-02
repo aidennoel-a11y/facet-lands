@@ -265,6 +265,14 @@ export class Weather {
     // (Pop-up storms: a cloudy summer afternoon can boil up into thunder.)
     if (this.kind === 'cloudy') w.storm = (w.storm ?? 0) + 0.45 * this.summer * afternoon;
     if (w.storm) w.storm *= (0.45 + 1.3 * this.summer) * (1 - 0.8 * this.winter) * (afternoon ? 1.8 : night ? 0.45 : 1);
+    // (The world's settings: gentler weather, or wilder.)
+    const wild = this.wild ?? 1;
+    if (wild !== 1) {
+      if (w.storm) w.storm *= wild;
+      if (w.rain) w.rain *= Math.sqrt(wild);
+      if (w.clear) w.clear /= Math.sqrt(wild);
+      if (w.fair) w.fair /= Math.sqrt(wild);
+    }
     if (w.overcast) w.overcast *= 1 + 0.8 * this.winter;
     if (w.clear) w.clear *= 1 + 0.4 * this.summer * (1 - afternoon);
     return Weather.#pick(w, this.spring);

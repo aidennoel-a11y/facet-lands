@@ -276,6 +276,8 @@ export class Game {
     this.survival.reset();
     this.inventory.clear();
     if (this.mode !== 'survival') for (const [id, n] of TEST_KIT) this.inventory.add(Inventory.stack(id, n));
+    // (A world set to start you with a few tools.)
+    else if (this.worldOpts?.kit) for (const [id, n] of [['axe', 1], ['spear', 1], ['flintSteel', 1], ['waterskin', 1], ['cookedMeat', 3]]) this.inventory.add(Inventory.stack(id, n));
     this.hud.alive();
     this.controls.frozen = false;
   }
