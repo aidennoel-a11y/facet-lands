@@ -94,9 +94,23 @@ export function createMushroomLayer() {
   material.customProgramCacheKey = () => 'mushrooms';
   const chunks = new Map(); // "cx,cz" -> [{ key, x, y, z, mesh, index }]
   const hidden = new Matrix4().makeScale(0, 0, 0);
+  const groups = new Set(); // (the chunks' mushrooms built: see refresh)
 
   const layer = {
     name: 'mushrooms',
+
+    /**
+     * Each chunk's mushrooms drawn only while you're within 60 m of some
+     * part of it: they're a hand high, so past that they'd be less than a
+     * pixel, and there are hundreds in a wood. (Call each frame.)
+     */
+    refresh(eye) {
+      for (const g of groups) {
+        const [x0, z0, x1, z1] = g.userData.box;
+        const dx = eye.x < x0 ? x0 - eye.x : eye.x > x1 ? eye.x - x1 : 0, dz = eye.z < z0 ? z0 - eye.z : eye.z > z1 ? eye.z - z1 : 0;
+        g.visible = dx * dx + dz * dz < 3600;
+      }
+    },
     material,
     taken: new Set(), // picked (saved with the world)
 
@@ -213,12 +227,15 @@ export function createMushroomLayer() {
         group.add(mesh);
       });
       group.userData.key = `${cx},${cz}`;
+      group.userData.box = [cx * config.chunkSize, cz * config.chunkSize, (cx + 1) * config.chunkSize, (cz + 1) * config.chunkSize];
       chunks.set(group.userData.key, found);
+      groups.add(group);
       return group;
     },
 
     dispose(group) {
       if (chunks.get(group.userData.key) && group.userData.key) chunks.delete(group.userData.key);
+      groups.delete(group);
       for (const mesh of group.children) mesh.dispose(); // (the shapes are shared)
     },
   };

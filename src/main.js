@@ -3380,6 +3380,7 @@ function tick(now) {
   wildlife.update(dt, life);
   heartbeat(dt);
   coralLayer.refresh(camera.position);
+  mushrooms.refresh(camera.position);
   if (controls.mode === 'walk' && !sheltered) {
     const pp = camera.position;
     piranha.update(dt, {

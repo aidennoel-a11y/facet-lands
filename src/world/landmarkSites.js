@@ -165,7 +165,28 @@ export class LandmarkSites {
     }
     if (this.cache.size > 20000) this.cache.clear();
     this.cache.set(key, s);
+    // (Handed on to the other threads building this world, with the rivers:
+    // working one out can mean working out the land kilometres off. See share.)
+    const f = (this.fresh ??= []);
+    if (f.length > 2000) f.length = 0;
+    f.push([key, s]);
     return s;
+  }
+
+  /** The sites worked out here since last asked (or null): [[key, site]]. */
+  takeFresh() {
+    const f = this.fresh;
+    if (!f?.length) return null;
+    this.fresh = [];
+    return f;
+  }
+
+  /** Sites another thread worked out (from its takeFresh), taken in. */
+  share(list) {
+    for (const [key, s] of list) {
+      this.wanted?.delete(key);
+      if (!this.cache.has(key)) this.cache.set(key, s);
+    }
   }
 
   // The land's height asked for mid-way through its working out another

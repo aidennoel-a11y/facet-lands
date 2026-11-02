@@ -16,12 +16,15 @@ import { mapTile } from '../ui/mapLabels.js';
 
 let world = null; // { seed, generator }
 const rocks = new Map(); // "cx,cz" -> rock candidates (recently used last)
+// (The ones worked out here, to hand on to the other workers with the
+// rivers: each chunk's are wanted by its neighbours too, often on another worker.)
+let rocksFresh = [];
 
 function rocksAt(cx, cz, config) {
   const key = `${cx},${cz}`;
   let list = rocks.get(key);
   if (list) rocks.delete(key);
-  else list = rockCandidates(world.generator, config, cx, cz);
+  else (list = rockCandidates(world.generator, config, cx, cz)), rocksFresh.push([key, list]);
   rocks.set(key, list);
   if (rocks.size > 300) rocks.delete(rocks.keys().next().value);
   return list;
@@ -31,7 +34,7 @@ self.onmessage = (event) => {
   const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarGrass, wantFarTrees, wantRivers, wantReeds, wantUnderstory } = event.data;
   if (!world || world.seed !== seed) {
     world = { seed, generator: new TerrainGenerator(seed, config) };
-    rocks.clear();
+    rocks.clear(), (rocksFresh = []);
   }
   const g = world.generator;
   if (event.data.kind === 'sites') {
@@ -181,9 +184,11 @@ self.onmessage = (event) => {
     if (kind === 'rivers') {
       if (!world || world.seed !== seed) {
         world = { seed, generator: new TerrainGenerator(seed, config) };
-        rocks.clear();
+        rocks.clear(), (rocksFresh = []);
       }
       world.generator.rivers.share(delta);
+      // (Rock spots another worker worked out: kept, if there's room, as if worked out here.)
+      for (const [key, list] of delta.rocks ?? []) if (!rocks.has(key) && rocks.size < 300) rocks.set(key, list);
       return;
     }
     const out = [];
@@ -193,8 +198,9 @@ self.onmessage = (event) => {
     } finally {
       self.postMessage = post;
     }
-    const fresh = world?.generator.rivers.takeFresh();
-    if (fresh) post({ kind: 'rivers', seed: world.seed, delta: fresh });
+    const fresh = world?.generator.rivers.takeFresh(), rf = rocksFresh;
+    rocksFresh = [];
+    if (fresh || rf.length) post({ kind: 'rivers', seed: world.seed, delta: { list: [], rivers: [], streams: [], covered: [], ...fresh, rocks: rf.length ? rf : undefined } });
     for (const [message, transfer] of out) post(message, transfer);
   };
 }

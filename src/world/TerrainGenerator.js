@@ -3586,14 +3586,35 @@ export class TerrainGenerator {
 
   /** Whether a Smoky Mountains blob's outline comes within `margin` metres of (x, z). */
   #smokyBlobNear(x, z, margin) {
-    const C = 4000, ci = Math.floor(x / C), cj = Math.floor(z / C);
-    for (let dj = -2; dj <= 2; dj++) {
-      for (let di = -2; di <= 2; di++) {
-        const b = this.#smokyBlobCell(ci + di, cj + dj);
-        if (b && Math.hypot(x - b.x, z - b.z) < b.r * 1.3 + margin) return true;
-      }
+    const near = this.#smokyNear(x, z);
+    for (let n = 0; n < near.length; n++) {
+      const b = near[n];
+      if (Math.hypot(x - b.x, z - b.z) < b.r * 1.3 + margin) return true;
     }
     return false;
+  }
+
+  // The Smoky Mountains blobs of the 5 by 5 cells (of 4 km) round the one (x, z) is in, in the
+  // order they were looked at before (gathered once a cell: asked for at every point of the land).
+  #smokyNear(x, z) {
+    const C = 4000, ci = Math.floor(x / C), cj = Math.floor(z / C);
+    if (this._snCi === ci && this._snCj === cj) return this._sn;
+    const cache = (this._smokyNearCache ??= new Map()), k = cellKey(ci, cj);
+    let near = cache.get(k);
+    if (!near) {
+      near = [];
+      for (let dj = -2; dj <= 2; dj++) {
+        for (let di = -2; di <= 2; di++) {
+          const b = this.#smokyBlobCell(ci + di, cj + dj);
+          if (b) near.push(b);
+        }
+      }
+      if (cache.size > 2000) cache.clear();
+      cache.set(k, near);
+    }
+    this._snCi = ci;
+    this._snCj = cj;
+    return (this._sn = near);
   }
 
   /** How much (x, z) lies in a Smoky Mountains blob (0..1: quick, their outline only). */
@@ -3641,12 +3662,12 @@ export class TerrainGenerator {
   #trunkDistance(x, z) {
     // (Asked for several times per point: the last answer remembered.)
     if (x === this._tdX && z === this._tdZ) return this._td;
-    const C = 4000, ci = Math.floor(x / C), cj = Math.floor(z / C);
+    const near = this.#smokyNear(x, z);
     let best2 = Infinity; // (squared, the root taken once at the end)
-    for (let dj = -2; dj <= 2; dj++) {
-      for (let di = -2; di <= 2; di++) {
-        const b = this.#smokyBlobCell(ci + di, cj + dj);
-        if (!b || Math.hypot(x - b.x, z - b.z) > b.r * 1.3 + 900) continue;
+    {
+      for (let n = 0; n < near.length; n++) {
+        const b = near[n];
+        if (Math.hypot(x - b.x, z - b.z) > b.r * 1.3 + 900) continue;
         const P = this.#trunk(b);
         // (A trunk whose whole box lies further off than the nearest found already: none of it can be nearer.)
         const bx = b.trunkBox ?? (b.trunkBox = trunkBox(P));
