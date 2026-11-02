@@ -542,6 +542,9 @@ export class Game {
 
   // A menu opened (let go of the mouse to click in it) or closed.
   #menu(open) {
+    // (A chest's lid let down as you close it.)
+    if (open && this.hud.el?.('.chest-ui') && !this.hud.el('.chest-ui').hidden) this.chestOpen = true;
+    if (!open && this.chestOpen) (this.chestOpen = false), this.sound?.call('lidShut', 0, 0.55);
     this.controls.frozen = open || !this.survival.alive;
     if (open && document.pointerLockElement) document.exitPointerLock();
   }
@@ -841,7 +844,7 @@ export class Game {
         }
         this.items.drop({ ...stack, count: left }, this.camera.position.x, this.camera.position.y - 1, this.camera.position.z);
       }
-      this.sound?.call('pickup', 0, 0.5);
+      this.sound?.call('pickup', 0, 0.5), this.#reach();
       this.dirty = true;
       // (An oyster prised off the sea bed: now and then there's a pearl in it.)
       if (stack.id === 'oyster' && Math.random() < 0.08) {
@@ -953,7 +956,7 @@ export class Game {
       this.#give(id, n);
       this.harvested.set(t.tree.key, this.time);
       (this.pickedAt ??= new Map()).set(t.tree.key, { x: t.tree.x, z: t.tree.z });
-      this.sound?.call('pickup', 0, 0.5);
+      this.sound?.call('pickup', 0, 0.5), this.#reach();
       if (id === 'berries' && this.#thorns(0.35, 'brambles')) return;
       return this.hotbar?.flash(`${ITEMS[id].name} ×${n}`);
     }
@@ -1024,7 +1027,7 @@ export class Game {
         return this.hotbar?.flash(t.clean ? 'Filled with running water' : 'Filled with still water: boil it on a fire first');
       }
       const sick = this.survival.consume({ thirst: 22, sick: t.clean ? 0.03 : 0.15 });
-      this.sound?.call('drink', 0, 0.5);
+      this.sound?.call('drink', 0, 0.5), this.#reach();
       return this.hotbar?.flash(sick ? 'You drink... it tastes foul: you feel feverish' : 'You drink');
     }
   }
@@ -1060,7 +1063,7 @@ export class Game {
         const left = this.inventory.add({ ...st }, this.hotbar.index);
         if (left) this.items.drop({ ...st, count: left }, s.x, s.y + 1, s.z);
       }
-      this.sound?.call('pickup', 0, 0.5);
+      this.sound?.call('pickup', 0, 0.5), this.#reach();
       return this.hotbar?.flash(done.map((st) => ITEMS[st.id].name).join(', '));
     }
     switch (s.type) {
@@ -1095,13 +1098,14 @@ export class Game {
       case 'cutDoor':
         // (A door, a gate: swung open or shut. Not while you're standing in its way.)
         this.structures.toggle(s);
-        return this.sound?.call('creak', 0, 0.3);
+        this.#reach();
+        return this.sound?.call(s.open ? 'doorOpen' : 'doorClose', 0, s.type === 'stoneDoor' || s.type === 'cutDoor' ? 0.8 : 0.65);
       case 'plot': {
         const crop = this.structures.harvest(s);
         if (!crop) return this.hotbar?.flash(this.#structureText(s));
         this.#achieve('harvest');
         const got = HARVEST[crop].map(([id, n]) => (this.#give(id, n, s), `${ITEMS[id].name} ×${n}`));
-        this.sound?.call('pickup', 0, 0.5);
+        this.sound?.call('pickup', 0, 0.5), this.#reach();
         this.dirty = true;
         return this.hotbar?.flash(got.join(', '));
       }
@@ -1121,7 +1125,7 @@ export class Game {
         return this.#menu(true);
       case 'hatchFloor':
         this.structures.toggle(s);
-        return this.sound?.call('creak', 0, 0.35);
+        return this.sound?.call(s.open ? 'doorOpen' : 'doorClose', 0, 0.6);
       case 'chair':
         // (Sitting a while: rested, a little.)
         if (this.time < (this.satUntil ?? 0)) return this.hotbar?.flash('You sit, resting');
@@ -1149,7 +1153,7 @@ export class Game {
         const id = s.type === 'orchardApple' ? 'apple' : 'berries', n = id === 'apple' ? 4 + Math.floor(Math.random() * 3) : 4 + Math.floor(Math.random() * 3);
         s.data = { ...(s.data ?? {}), picked: r.year };
         this.#give(id, n, s);
-        this.sound?.call('pickup', 0, 0.5);
+        this.sound?.call('pickup', 0, 0.5), this.#reach();
         this.dirty = true;
         this.structures.onChange?.();
         return this.hotbar?.flash(`${ITEMS[id].name} ×${n}`);
@@ -1210,7 +1214,7 @@ export class Game {
         s.eggs -= eggs;
         s.feathers -= feathers;
         this.dirty = true;
-        this.sound?.call('pickup', 0, 0.5);
+        this.sound?.call('pickup', 0, 0.5), this.#reach();
         return this.hotbar?.flash([eggs ? `Eggs ×${eggs}` : '', feathers ? `feathers ×${feathers}` : ''].filter(Boolean).join(', '));
       }
       case 'bed':
@@ -1236,7 +1240,7 @@ export class Game {
         if (!s.caught) return this.hotbar?.flash('Nothing yet');
         s.caught = false;
         s.catchMesh.visible = false;
-        this.sound?.call('pickup', 0, 0.5);
+        this.sound?.call('pickup', 0, 0.5), this.#reach();
         this.#give('rawMeat', 1);
         this.dirty = true;
         return this.hotbar?.flash('A rabbit: raw meat');
@@ -1517,7 +1521,7 @@ export class Game {
       const sick = this.survival.consume({ thirst: 22, sick: s.clean ? 0 : 0.15 });
       this.#animate('use', 0.4);
       this.cooldown = 0.5;
-      this.sound?.call('drink', 0, 0.5);
+      this.sound?.call('drink', 0, 0.5), this.#reach();
       return this.hotbar?.flash(sick ? 'It tasted foul: you feel feverish' : `You drink (${s.water} left)`);
     }
     if (s.id === 'oldMap') return this.#readMap(i);
@@ -3929,6 +3933,11 @@ export class Game {
     }
     for (const st of this.felling.stumps) if (Math.hypot(st.m[12] - x, st.m[14] - z) < r + 0.55) return 'A stump is in the way';
     return null;
+  }
+
+  // (Reaching out a hand: picking a thing up, opening a door, drinking. Not over a swing already going.)
+  #reach() {
+    if (!this.anim || this.anim.t >= this.anim.duration) this.#animate('use', 0.35);
   }
 
   #animate(kind, duration) {

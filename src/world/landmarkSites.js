@@ -608,7 +608,7 @@ export class LandmarkSites {
    * pond lying at the falls' foot. (`s.spring`: the way to it, see Landmarks.)
    */
   #sinkholeWater(s) {
-    const pit = s.pools[0], a = s.rot, R = pit.r, fed = s.seed % 100 < 75;
+    const pit = s.pools[0], a = s.rot, R = pit.r, fed = false; // (no spring falling down its walls: a still pool in its floor)
     // (The pond: by the foot of the falls, or, with none, in the middle.)
     const out = fed ? R * 0.18 : 0, x = s.x + Math.cos(a) * out, z = s.z + Math.sin(a) * out;
     const floor = this.#probe((H) => H(x, z)) - pit.d;

@@ -117,6 +117,21 @@ export function createRockLayer(config) {
 
   const cache = { generator: null, map: new Map() }; // chunk -> rock candidates
   const groups = new Map(); // "cx,cz" -> the chunk's rocks drawn now
+  const boulderShapes = new Map(); // boulder key -> { tris (world), bounds }
+  // (Straight down at (x, z) onto a boulder's faces: the highest it meets, or -Infinity.)
+  const shapeTop = (sh, x, z) => {
+    let top = -Infinity;
+    const t = sh.tris;
+    for (let i = 0; i < t.length; i += 9) {
+      const ax = t[i], az = t[i + 2], bx = t[i + 3], bz = t[i + 5], qx = t[i + 6], qz = t[i + 8];
+      const d = (bz - qz) * (ax - qx) + (qx - bx) * (az - qz);
+      if (Math.abs(d) < 1e-9) continue;
+      const l1 = ((bz - qz) * (x - qx) + (qx - bx) * (z - qz)) / d, l2 = ((qz - az) * (x - qx) + (ax - qx) * (z - qz)) / d, l3 = 1 - l1 - l2;
+      if (l1 < -1e-4 || l2 < -1e-4 || l3 < -1e-4) continue;
+      top = Math.max(top, l1 * t[i + 1] + l2 * t[i + 4] + l3 * t[i + 7]);
+    }
+    return top;
+  };
 
   const layer = {
     name: 'rocks',
@@ -132,6 +147,7 @@ export function createRockLayer(config) {
     /** Breaks up the boulder `key` (see keyOf): gone from the world, and from where it's drawn now. */
     removeKey(key) {
       layer.removed.add(key);
+      boulderShapes.delete(key);
       for (const [ck, list] of layer.boulders) {
         for (let k = 0; k < list.length; k += 7) {
           if (layer.keyOf(list[k], list[k + 1]) !== key) continue;
@@ -166,6 +182,13 @@ export function createRockLayer(config) {
           for (let k = 0; k < list.length; k += 7) {
             const ox = x - list[k], oz = z - list[k + 1];
             const rx = list[k + 3], rz = list[k + 5];
+            const sh = boulderShapes.get(layer.keyOf(list[k], list[k + 1]));
+            if (sh) {
+              // (Its true faces.)
+              if (x < sh.minX || x > sh.maxX || z < sh.minZ || z > sh.maxZ) continue;
+              top = Math.max(top, shapeTop(sh, x, z));
+              continue;
+            }
             if (Math.abs(ox) > Math.max(rx, rz) || Math.abs(oz) > Math.max(rx, rz)) continue;
             // Into the rock's own frame (it's turned about the vertical).
             const c = Math.cos(list[k + 6]), s = Math.sin(list[k + 6]);
@@ -309,6 +332,21 @@ export function createRockLayer(config) {
           }
         }
       });
+      // Each boulder's own faces, for standing on it and walking into it: its
+      // true shape, not a rough round one (see surfaceAt).
+      const ox0 = cx * config.chunkSize, oz0 = cz * config.chunkSize, shapeKeys = [];
+      for (const [first, n, key] of rocks) {
+        if (!key) continue;
+        const tris = new Float32Array(n * 3);
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (let i = 0; i < n; i++) {
+          const X = positions[(first + i) * 3] + ox0, Y = positions[(first + i) * 3 + 1], Z = positions[(first + i) * 3 + 2] + oz0;
+          tris[i * 3] = X, tris[i * 3 + 1] = Y, tris[i * 3 + 2] = Z;
+          minX = Math.min(minX, X), maxX = Math.max(maxX, X), minZ = Math.min(minZ, Z), maxZ = Math.max(maxZ, Z);
+        }
+        boulderShapes.set(key, { tris, minX, maxX, minZ, maxZ });
+        shapeKeys.push(key);
+      }
       // The faces sunk wholly in the ground (half of a rock, often, and
       // every face of its underside) are never seen: left out.
       let w = 0;
@@ -345,6 +383,7 @@ export function createRockLayer(config) {
       group.userData.key = `${cx},${cz}`;
       group.userData.boulders = boulders;
       group.userData.ranges = ranges;
+      group.userData.shapeKeys = shapeKeys;
       layer.boulders.set(group.userData.key, boulders);
       groups.set(group.userData.key, group);
       return group;
@@ -352,7 +391,10 @@ export function createRockLayer(config) {
 
     dispose(group) {
       if (layer.boulders.get(group.userData.key) === group.userData.boulders) layer.boulders.delete(group.userData.key);
-      if (groups.get(group.userData.key) === group) groups.delete(group.userData.key);
+      if (groups.get(group.userData.key) === group) {
+        groups.delete(group.userData.key);
+        for (const k of group.userData.shapeKeys ?? []) boulderShapes.delete(k);
+      }
       for (const mesh of group.children) mesh.geometry.dispose();
     },
   };

@@ -16,6 +16,7 @@ import { createWreckLayer } from './world/layers/WreckLayer.js';
 import { createSunkenCityLayer } from './world/layers/SunkenCityLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
+import { CutBlades } from './render/cutBlades.js';
 import { SeaLife } from './wildlife/SeaLife.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
 import { cutShroomKey, fellShroom, pickShroom, shroomCapAt, shroomCollide, shroomsCut } from './world/layers/CaveLayer.js';
@@ -264,6 +265,8 @@ lightning.onStrike = (x, y, z, distance) => {
   if (chance < 0.18 + 0.2 * summer + 0.15 * w.savanna + 0.3 * fireSeason.dryness) fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
 };
 const grassCut = new GrassCut();
+const cutBlades = new CutBlades(scene);
+const bladeTint = new THREE.Color();
 
 // --- The climate, and the tornadoes ---------------------------------------------------------
 //
@@ -1457,6 +1460,11 @@ onLook((l) => {
   for (const m of [game.armMaterials, game.gliderArmMaterials]) if (m) m[0].color.setHex(l.skin), m[1].color.setHex(l.shirt);
 });
 const eyeSaved = new THREE.Vector3(), behind = new THREE.Vector3();
+// (Off the ground: jumping, falling, gliding. For your figure's pose, and the others' view of you online.)
+function airFlags() {
+  const walk = controls.mode === 'walk' && !controls.swimming;
+  return { air: walk && !controls.grounded, rising: controls.velocityY > 0.5, glide: walk && !!controls.gliding };
+}
 function thirdPersonView(dt, now) {
   const on = thirdPerson && !loading && (controls.mode === 'walk' || controls.mode === 'fly') && !game.sleeping;
   if (game.hand) game.hand.visible = !on;
@@ -1472,7 +1480,7 @@ function thirdPersonView(dt, now) {
   selfFigure.last = { x: p.x, z: p.z };
   selfFigure.speedOverride = (selfFigure.speedOverride ?? 0) + (Math.min(moved, 12) - (selfFigure.speedOverride ?? 0)) * Math.min(1, dt * 8);
   const flying = controls.mode === 'fly';
-  const t = now / 1000, me = { crouch: controls.crouch, sprint: controls.sprinting || (flying && selfFigure.speedOverride > 4.5), swim: controls.swimming || (flying && controls.underwater), fly: false, pose: game.pose() };
+  const t = now / 1000, me = { crouch: controls.crouch, sprint: controls.sprinting || (flying && selfFigure.speedOverride > 4.5), swim: controls.swimming || (flying && controls.underwater), fly: false, pose: game.pose(), ...airFlags() };
   selfFigure.push([camera.position.x, camera.position.y - controls.eyeHeight, camera.position.z, controls.euler.y, controls.euler.x, packFlags(me, mp.items)], t);
   selfFigure.update(dt, t + 0.15, mp.items); // (drawn as you are now, not a moment behind as the others are)
   eyeSaved.copy(camera.position);
@@ -1654,6 +1662,14 @@ const game = new Game({
     const fresh = grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24);
     if (sync.online) sync.fx.push({ k: 'mow', x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, r });
     const kind = fresh ? stepSurface(x, z) : null;
+    if (kind === 'grass') {
+      // (The stalks shorn off at the foot, falling over the way the blade swept.)
+      const w = generator.getBiomeWeights(x, z, {}), dry = Math.min(1, (w.savanna ?? 0) + (w.desert ?? 0) + (w.badlands ?? 0));
+      bladeTint.setRGB(0.36 + 0.42 * dry, 0.58 + 0.12 * dry, 0.2 + 0.1 * dry);
+      const fwd = new THREE.Vector3();
+      camera.getWorldDirection(fwd);
+      cutBlades.cut(x, z, r, (px, pz) => chunks.groundHeightAt(px, pz), bladeTint, Math.atan2(fwd.x, fwd.z) + Math.PI / 2);
+    }
     return kind === 'grass' || kind === 'dirt' || kind === 'leaves' ? fresh : 0;
   },
   cutJSON: () => grassCut.toJSON(),
@@ -2269,7 +2285,7 @@ function* lookAround(e) {
       const forest = generator.getForestDensity(x + dx, z + dz);
       woods += (w.temperate * smoothstep(0.35, 0.7, forest) + w.blackHills * 0.7 + w.pine + (w.smoky ?? 0)) / pts.length;
       grass += (w.temperate * (1 - smoothstep(0.35, 0.7, forest)) + w.savanna) / pts.length;
-      jungle += w.jungle / pts.length;
+      jungle += Math.min(1, w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0)) / pts.length; // (the jungle mountains are jungle too, to the ear)
       wetland += (w.wetland + w.mangrove) / pts.length;
       desert += (w.desert + w.saltFlat + 0.6 * w.badlands) / pts.length;
       pine += (w.pine + w.redwood) / pts.length;
@@ -2591,9 +2607,21 @@ const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, g
 const CLEARED_LINE = { wall: 0.55, gate: 0.55, stoneWall: 0.6, fence: 0.4, fenceGate: 0.4, stoneFence: 0.5, woodWindow: 0.55, stoneWindow: 0.6, logWall: 0.55, plankWall: 0.5, cutStoneWall: 0.6, logWindow: 0.55, logDoor: 0.55, plankWindow: 0.5, plankDoor: 0.5, stoneDoor: 0.6, cutWindow: 0.6, cutDoor: 0.6, barnWall: 0.5, barnWindow: 0.5, barnDoor: 0.5 };
 // The grass round you and the bigger animals near you bends away from them.
 const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'parrot', 'toucan', 'starling', 'crow', 'gull', 'hawk', 'wolfPup', 'bat', 'eagle', 'scorpion', 'crab']);
+// (Where you've just been: the plants you pushed through spring back up
+// slowly over a couple of seconds after you've gone, not at once.)
+const pushTrail = [];
 function pushGrass() {
-  const p = camera.position, list = [];
-  if (controls.mode === 'walk') list.push([0, p.x, p.z, 0.9]);
+  const p = camera.position, list = [], now = performance.now() / 1000;
+  if (controls.mode === 'walk') {
+    list.push([0, p.x, p.z, 0.9]);
+    const last = pushTrail[pushTrail.length - 1];
+    if (!last || Math.hypot(last.x - p.x, last.z - p.z) > 0.5) pushTrail.push({ x: p.x, z: p.z, t: now });
+  }
+  while (pushTrail.length && (now - pushTrail[0].t > 2.5 || pushTrail.length > 6)) pushTrail.shift();
+  for (const q of pushTrail) {
+    const age = (now - q.t) / 2.5, d = Math.hypot(q.x - p.x, q.z - p.z);
+    if (d > 0.3) list.push([d * 0.5 + 0.1, q.x, q.z, Math.max(0.02, 0.9 * (1 - age) * (1 - age))]);
+  }
   for (const a of wildlife.animals) {
     if (!a.alive || SMALL.has(a.kind)) continue;
     const d = Math.hypot(a.x - p.x, a.z - p.z);
@@ -3260,7 +3288,7 @@ function tick(now) {
   prof.mark('animals');
   mp.update(dt, {
     x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x, // (the way you look: yaw first, then pitch)
-    crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk',
+    crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk', ...airFlags(),
     pose: game.pose(), // (what's in your hand, what you're doing with it)
   });
   sync.update();
@@ -3269,6 +3297,7 @@ function tick(now) {
   fish.update(dt, { ...life, traces, autumn, ground: (x, z) => chunks.groundHeightAt(x, z) });
   prof.mark('fish');
   traces.update(dt);
+  cutBlades.update(dt);
   prof.mark('tracks & splashes');
   // Fire, smoke and dust, lit by the light of the sky.
   ambientLight.copy(scene.fog.color).lerp(MIST_WHITE, 0.25).multiplyScalar(0.6 + 0.5 * Math.min(1, dayNight.light.intensity / 2));
@@ -3310,6 +3339,7 @@ function tick(now) {
   env.cell = [Math.round(camera.position.x / 150), Math.round(camera.position.z / 150)];
   env.panTo = (a) => panTowards(camera, camera.position.x + Math.cos(a) * 40, camera.position.z + Math.sin(a) * 40);
   // (Underground the wind and the water above are shut out: only the river in the rock, if there's one near.)
+  env.rush = controls.gliding ? Math.min(1, Math.max(0, ((controls.glideSpeed ?? 0) - 5) / 30)) : 0;
   sound.ambience(sheltered ? { ...env, woods: 0, jungle: 0, grass: 0, wetland: 0, wind: 0, gust: 0, fall: 0, river: 0, brook: caveSounds.brook ?? 0, brookPan: 0, canopy: 0, exposure: 0, storm: 0 } : env);
   // (The ground trembles as a volcano rumbles.)
   lavaHeat(dt);

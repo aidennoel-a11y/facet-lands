@@ -427,6 +427,28 @@ export class Structures {
         if (KINDS[near.type].line === 'wall') stairLevel = near.y;
       }
     }
+    if (type === 'plot') {
+      // Plots side by side, square to the nearest, on its 2 m grid: a field.
+      let near = null, bd = 4.5;
+      for (const f of this.list) {
+        if (f.type !== 'plot') continue;
+        const d = Math.hypot(f.x - x, f.z - z);
+        if (d < bd) (bd = d), (near = f);
+      }
+      if (near) {
+        const base = near.rot ?? 0, ux = Math.cos(base), uz = -Math.sin(base), vx = Math.sin(base), vz = Math.cos(base);
+        let gu = Math.round(((x - near.x) * ux + (z - near.z) * uz) / 2) * 2, gv = Math.round(((x - near.x) * vx + (z - near.z) * vz) / 2) * 2;
+        if (gu === 0 && gv === 0) {
+          // (Pointed at the plot itself: the next one along, on your side of it.)
+          const du = (x - near.x) * ux + (z - near.z) * uz, dv = (x - near.x) * vx + (z - near.z) * vz;
+          if (Math.abs(du) > Math.abs(dv)) gu = Math.sign(du || 1) * 2;
+          else gv = Math.sign(dv || 1) * 2;
+        }
+        x = near.x + ux * gu + vx * gv;
+        z = near.z + uz * gu + vz * gv;
+        rot = base;
+      }
+    }
     if (kind.floor) {
       // Square to the nearest floor, and edge to edge with it: one floor,
       // laid out on its grid (and level with it, where the ground allows).
@@ -702,6 +724,11 @@ export class Structures {
     for (const s of this.list) {
       const k = KINDS[s.type];
       if (s.type === 'rope' || k.posts || kind.posts || k.over || kind.over || k.roof || kind.roof) continue;
+      // (Plots lie edge to edge in a field: only one right on top of another's in its way.)
+      if (type === 'plot' && s.type === 'plot') {
+        if (Math.hypot(s.x - x, s.z - z) < 1.5) return 'There is a plot there already';
+        continue;
+      }
       // (A floor's under things, not in their way; and floors meet edge to edge.)
       if (k.floor && !kind.floor) continue;
       if (kind.floor && !k.floor) continue;
@@ -1063,7 +1090,7 @@ export class Structures {
     const key = `crop:${s.crop}:${ripe}`;
     m.geometry = this.models[key] ?? (this.models[key] = cropModel(s.crop, ripe));
     const g = 0.12 + 0.88 * Math.min(1, s.growth);
-    m.scale.set(0.6 + 0.4 * g, g, 0.6 + 0.4 * g);
+    m.scale.set(1, g, 1); // (growing up, not drawn in to the middle: the rows run on from plot to plot, one field)
     m.position.y = 0.06;
     s.shown = Math.floor(s.growth * 20);
   }

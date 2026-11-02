@@ -303,6 +303,8 @@ export class Sound {
     const e = env, quiet = 1 - 0.6 * e.snowy; // snow deadens everything
     // (No bugs or frogs up on the mountains, in the snow or the cold.)
     const lowland = (1 - Math.min(1, Math.max(0, (e.high - 0.25) / 0.4))) * (1 - e.snowy);
+    // (The jungle's life goes on up its mountains: not hushed by the height there.)
+    const jungleLand = Math.max(lowland, Math.min(1, e.jungle * 1.5) * (1 - e.snowy));
     const set = (bed, v, lag = 1.5) => bed.gain.gain.setTargetAtTime(v, t, lag);
     // The wind: up on a ridge it blows harder, and whistles; down in a
     // valley or in among the trees it's hushed, and there the leaves rustle
@@ -313,9 +315,11 @@ export class Sound {
     // (No wind, no wind sound: still air low down is silent. Only up on the
     // peaks and ridges is there always a breath of it.)
     const peak = e.high * (0.4 + 0.6 * (e.exposure ?? 0));
-    set(this.beds.wind, (0.075 * peak * (0.35 + e.wind) + 0.06 * e.wind * e.wind * (0.7 + 0.6 * gust)) * (0.7 + 0.3 * quiet) * lie, 0.8);
-    set(this.beds.gust, (0.03 * e.high * e.wind + 0.015 * e.wind * e.wind) * (0.4 + 1.3 * gust) * quiet * lie, 0.6);
-    this.beds.wind.filter.frequency.setTargetAtTime(300 + 260 * e.wind + 160 * gust + 120 * Math.sin(t * 0.13), t, 1);
+    // (Gliding: the air rushing past you, louder and higher the faster you go.)
+    const rush = e.rush ?? 0;
+    set(this.beds.wind, (0.075 * peak * (0.35 + e.wind) + 0.06 * e.wind * e.wind * (0.7 + 0.6 * gust)) * (0.7 + 0.3 * quiet) * lie + 0.22 * rush * rush, rush > 0.02 ? 0.25 : 0.8);
+    set(this.beds.gust, (0.03 * e.high * e.wind + 0.015 * e.wind * e.wind) * (0.4 + 1.3 * gust) * quiet * lie + 0.09 * rush * rush * (0.6 + 0.8 * gust), rush > 0.02 ? 0.25 : 0.6);
+    this.beds.wind.filter.frequency.setTargetAtTime(300 + 260 * e.wind + 160 * gust + 120 * Math.sin(t * 0.13) + 1400 * rush, t, rush > 0.02 ? 0.25 : 1);
     // How much the loud sounds round you (the surf, the wind on the tops,
     // a storm, a waterfall) drown out the quieter ones (see call).
     const windLoud = this.beds.wind.gain.gain.value + this.beds.gust.gain.gain.value;
@@ -419,10 +423,10 @@ export class Sound {
     this.beds.storm.filter.frequency.setTargetAtTime(420 + 650 * gust + 160 * Math.sin(t * 0.37), t, 0.5);
     // The jungle's hum by day: cicadas swelling in waves.
     const swellC = 0.45 + 0.55 * Math.max(0, Math.sin(t * 0.55 + Math.sin(t * 0.17) * 2));
-    const cicada = lowland * 0.03 * e.jungle * e.day * (1 - e.rain) * swellC * quiet;
+    const cicada = jungleLand * 0.03 * e.jungle * e.day * (1 - e.rain) * swellC * quiet;
     set(this.beds.cicada, cicada, 1.2);
     this.cicadaDepth.gain.setTargetAtTime(cicada * 0.9, t, 1.2);
-    const buzz = lowland * (0.022 * e.jungle + 0.012 * e.grass * (1 - e.woods) + 0.008 * (e.wetland ?? 0)) * e.day * (1 - e.rain) * quiet;
+    const buzz = (jungleLand * 0.022 * e.jungle + lowland * (0.012 * e.grass * (1 - e.woods) + 0.008 * (e.wetland ?? 0))) * e.day * (1 - e.rain) * quiet;
     set(this.beds.insects, buzz);
     this.insectDepth.gain.setTargetAtTime(buzz * 0.8, t, 1.5);
 
@@ -474,7 +478,7 @@ export class Sound {
     if (e.woods + e.jungle * 0.5 > 0.4 && e.day < 0.2 && e.rain < 0.3 && (r = due(3, 25))) this.call('owl', way(r(1)), 0.25 + 0.3 * r(2));
     // The jungle, alive: howler monkeys roaring far off, by day and by
     // night; at night the katydids and tree frogs all round.
-    if (e.jungle * lowland > 0.3 && (r = e.day < 0.3 ? due(4, 1.4) : due(5, 11)) && r(3) < Math.min(1, e.jungle / 0.6)) {
+    if (e.jungle * jungleLand > 0.3 && (r = e.day < 0.3 ? due(4, 1.4) : due(5, 11)) && r(3) < Math.min(1, e.jungle / 0.6)) {
       const k = r(1), pan = way(r(2));
       if (k < 0.25) this.call('howler', pan, 0.15 + 0.2 * r(4));
       else if (e.day < 0.3) this.call(k < 0.65 ? 'katydid' : 'treefrog', pan, 0.3 + 0.4 * r(4));
@@ -979,6 +983,22 @@ export class Sound {
       // An axe biting wood: a knock and a crack.
       tone(t, 0.12, 'triangle', 190, 120, 400, 1.2, 0.3);
       noise(t, 0.08, 1800, 1.5, 0.18);
+    } else if (kind === 'doorOpen') {
+      // A door or gate swung open: the latch's click, then the hinge's
+      // squealing creak as it swings, rising.
+      noise(t, 0.04, 2400, 2, 0.35);
+      tone(t + 0.06, 0.55, 'sawtooth', 240, 420, 900, 6, 0.09, 14);
+      tone(t + 0.06, 0.55, 'sawtooth', 120, 210, 450, 4, 0.06, 9);
+    } else if (kind === 'doorClose') {
+      // Swung shut: a short creak, then the wooden thud of it closing, the latch dropping.
+      tone(t, 0.3, 'sawtooth', 380, 230, 800, 6, 0.06, 12);
+      tone(t + 0.28, 0.25, 'sine', 110, 55, 160, 0.8, 0.55);
+      noise(t + 0.28, 0.12, 500, 0.8, 0.4);
+      noise(t + 0.36, 0.04, 2600, 2, 0.25);
+    } else if (kind === 'lidShut') {
+      // A chest's lid let down: a soft wooden clunk.
+      tone(t, 0.18, 'sine', 140, 70, 200, 0.8, 0.45);
+      noise(t, 0.08, 700, 0.8, 0.3);
     } else if (kind === 'creak') {
       // A tree about to go: a long groaning creak.
       tone(t, 1.3, 'sawtooth', 70, 110, 260, 4, 0.12, 9);

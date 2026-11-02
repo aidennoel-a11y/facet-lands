@@ -353,13 +353,18 @@ export function gateFrameModel() {
   b.log([-WALL_LENGTH / 2 + 0.1, 3.2, 0], [WALL_LENGTH / 2 - 0.1, 3.2, 0], 0.13, 0x6a5238, 0xb89468, 6);
   return b.build();
 }
-/** ...and its door: planks of split logs, hinged at its left edge (x = 0), braced. */
+/** ...and its door: whole logs side by side, pointed at their tops like the palisade's stakes, hinged at its left edge (x = 0), held by two cross logs and a brace log. */
 export function gateDoorModel() {
   const b = new Parts(63);
-  const w = WALL_LENGTH - 0.9, n = 8;
-  for (let k = 0; k < n; k++) b.add(new BoxGeometry(w / n - 0.02, 2.8, 0.14), 0x8a6a44, [(w / n) * (k + 0.5), 1.45, 0]);
-  for (const y of [0.5, 2.4]) b.add(new BoxGeometry(w, 0.16, 0.08), 0x5a3c24, [w / 2, y, -0.1]);
-  b.add(new BoxGeometry(0.12, 2.3, 0.07), 0x5a3c24, [w / 2, 1.45, -0.12], [0, 0, 0.62]);
+  const w = WALL_LENGTH - 0.9, n = 7, r = w / n / 2;
+  const rand = mulberry32(631);
+  for (let k = 0; k < n; k++) {
+    const x = (w / n) * (k + 0.5), h = 2.75 + (rand() - 0.5) * 0.12, rr = r * (0.9 + rand() * 0.12);
+    b.log([x, 0.08, 0], [x, h, 0], rr, 0x6e5438, 0xb89468, 7);
+    b.add(new ConeGeometry(rr, 0.32, 7), 0xb0946a, [x, h + 0.16, 0]);
+  }
+  for (const y of [0.55, 2.3]) b.log([0.05, y, -r - 0.07], [w - 0.05, y, -r - 0.07], 0.075, 0x5a3c24, 0xa88458, 6);
+  b.log([0.15, 0.6, -r - 0.07], [w - 0.15, 2.25, -r - 0.07], 0.065, 0x5a3c24, 0xa88458, 6); // (the brace)
   return b.build();
 }
 export const GATE_DOOR_WIDTH = WALL_LENGTH - 0.9;
@@ -979,10 +984,11 @@ export function fenceGatePostsModel() {
 }
 /** ...and the gate (hinged at x = 0). */
 export function fenceGateDoorModel() {
+  // (Of poles, like the fence's: two rails, two stiles, a brace.)
   const b = new Parts(103), w = FENCE_LENGTH - 0.3;
-  for (const y of [0.35, 0.95]) b.add(new BoxGeometry(w, 0.1, 0.05), 0x8a6a44, [w / 2, y, 0]);
-  for (const x of [0.05, w - 0.05]) b.add(new BoxGeometry(0.08, 0.8, 0.05), 0x7a5a38, [x, 0.65, 0]);
-  b.add(new BoxGeometry(0.06, 0.9, 0.04), 0x5a3c24, [w / 2, 0.65, -0.03], [0, 0, 1.0]);
+  for (const y of [0.35, 0.95]) b.log([0, y, 0], [w, y, 0], 0.05, 0x7a5a38, 0xc8a070, 6);
+  for (const x of [0.05, w - 0.05]) b.log([x, 0.2, 0], [x, 1.08, 0], 0.055, 0x6e4c32, 0xc8a070, 6);
+  b.log([0.1, 0.38, -0.07], [w - 0.1, 0.92, -0.07], 0.04, 0x5a3c24, 0xc8a070, 5);
   return b.build();
 }
 
@@ -1048,8 +1054,8 @@ export function cropModel(kind, ripe = false) {
           b.add(new BoxGeometry(0.04, 0.14, 0.04), ripe ? 0xe0bc64 : 0x8aba4a, [x + dx + lean * 0.4, h + 0.05, z + dz + lean * 0.4], [lean, 0, lean]);
         }
       } else if (kind === 'corn') {
-        if ((r + c) % 2) continue;
-        b.add(new BoxGeometry(0.05, 2.0, 0.05), ripe ? 0x9a9a44 : 0x5a9a34, [x, 1.0, z]);
+        // (Every place in the rows: the plot's own rows running on into the next plot's.)
+        b.add(new BoxGeometry(0.05, 2.0, 0.05), ripe ? 0x9a9a44 : 0x5a9a34, [x, 1.0, z], [(rand() - 0.5) * 0.08, 0, (rand() - 0.5) * 0.08]);
         for (let k = 0; k < 4; k++) b.add(new BoxGeometry(0.5, 0.02, 0.08), green, [x + 0.2 * Math.cos(k * 1.9), 0.5 + k * 0.35, z + 0.2 * Math.sin(k * 1.9)], [0, k * 1.9, -0.4]);
         b.add(new BoxGeometry(0.08, 0.26, 0.08), ripe ? 0xf0c830 : 0x8aba4a, [x + 0.06, 1.1, z], [0, 0, 0.3]);
         b.add(new BoxGeometry(0.04, 0.2, 0.04), 0xc8a060, [x, 2.05, z]);

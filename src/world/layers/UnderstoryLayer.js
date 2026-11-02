@@ -162,7 +162,7 @@ function addPush(material) {
             // (Its lean, as a turn about its foot: over and down, never longer.)
             vec3 local = inverse(mat3(instanceMatrix)) * vec3(push.x, 0.0, push.y);
             vec2 dir = length(local.xz) > 1e-4 ? normalize(local.xz) : vec2(0.0);
-            float a = pushed * 0.75, c = cos(a), sn = sin(a);
+            float a = pushed * 0.5236, c = cos(a), sn = sin(a); // (30 degrees at the most)
             float hgt = max(transformed.y, 0.0), along = dot(transformed.xz, dir);
             vec2 side = transformed.xz - dir * along;
             float na = along * c + hgt * sn, ny = -along * sn + hgt * c;

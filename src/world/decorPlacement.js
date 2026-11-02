@@ -147,6 +147,7 @@ export function placeSeaweed(generator, config, cx, cz, groundHeightAt) {
       const gi = cx * n + i, gj = cz * n + j;
       const lx = (i + hash2(gi, gj, seed + 1)) * G, lz = (j + hash2(gi, gj, seed + 2)) * G;
       const y = groundHeightAt(lx, lz);
+      if (!Number.isFinite(y)) continue; // (just over the chunk's edge, or over a cave mouth: not here)
       const depth = sea - y;
       if (!(depth > 0.8 && depth < 30)) continue;
       // (The open sea or a sea inlet: not a mountain lake.)
@@ -171,7 +172,8 @@ export function placeSeaweed(generator, config, cx, cz, groundHeightAt) {
       if (kind < 0) continue;
       for (let c = 0; c < clumps; c++) {
         const ox = c ? (hash2(gi + c * 7, gj, seed + 6) - 0.5) * G : 0, oz = c ? (hash2(gi, gj + c * 7, seed + 7) - 0.5) * G : 0;
-        const yy = c ? groundHeightAt(Math.min(size - 0.01, Math.max(0, lx + ox)), Math.min(size - 0.01, Math.max(0, lz + oz))) : y;
+        const yy = c ? groundHeightAt(lx + ox, lz + oz) : y;
+        if (!Number.isFinite(yy)) continue; // (its ground out of this chunk: none of it floating)
         // (The thick fields' grass stands taller.)
         list.push(kind, lx + ox, yy - 0.04, lz + oz, hash2(gi + c, gj, seed + 3), hash2(gi, gj + c, seed + 4), clumps > 1 ? 1.35 : 1);
       }

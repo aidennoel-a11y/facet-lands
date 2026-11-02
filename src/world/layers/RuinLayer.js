@@ -45,6 +45,9 @@ export function ruinFits(site, generator, seaLevel) {
   }
   if (lo < seaLevel + 3 || hi - lo > 4 + site.size / 8) return false;
   if (generator.getMountainness(site.x, site.z) > 0.7) return false;
+  // (Never out in the desert or on the salt flats: no one built there.)
+  const w = generator.getBiomeWeights(site.x, site.z, {});
+  if ((w.desert ?? 0) + (w.saltFlat ?? 0) > 0.35) return false;
   if (generator.caves?.mouthsNear?.(site.x - site.size - 22, site.z - site.size - 22, site.x + site.size + 22, site.z + site.size + 22)?.length) return false;
   return true;
 }

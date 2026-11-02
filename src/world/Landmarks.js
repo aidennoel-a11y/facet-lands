@@ -5,6 +5,7 @@ import {
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../noise/random.js';
 import { LANDMARKS } from './landmarkSites.js';
+const MOSS_GREEN = new Color(0x4a6a3a);
 import { fallIce } from './riverData.js';
 
 const tint = new Color(), m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s3 = new Vector3();
@@ -803,12 +804,16 @@ export class Landmarks {
         // (The jungle's: a small clear pond in its floor, and mostly a spring's stream falling to it: see landmarkSites.)
         const pools = jungle ? this.generator.landmarks.poolsOf(site) : null;
         const floor = y0;
+        // (Its walls and floor coloured as the land round it is, by its own
+        // biome: the rock of these hills, their grass and earth, with the
+        // same mottling as anywhere; only faintly banded down the walls.)
+        const tint = new Color(), gen = this.generator;
         g.add(this.#surface(site, b.r * 1.06, (x, z, y, slope, t) => {
-          const band = Math.floor((y - floor) / 3.2 + wob2(x, z) * 0.6);
-          if (slope < 0.55 && t < 0.97) return y - floor < 3 && !jungle ? 0x5a4e3e : pick2(jungle ? [0x3a6a28, 0x2e5e22, 0x467a30] : [0x4a6a34, 0x56783a, 0x3e5e2c], x, z);
-          // (A cenote's walls: pale limestone in bands, cream and grey, streaked dark where water runs, moss in the cracks.)
-          if (jungle) return wob2(x * 0.9, z * 0.9) > 0.55 ? 0x4a6a3a : [0xc8bfa4, 0xb4ac94, 0xd6cdb2, 0x9a9282, 0xbab098, 0x8a8474][((band % 6) + 6) % 6];
-          return [0x9a968c, 0x8a867c, 0xb0aa9a, 0x7a766e, 0xc8c0aa, 0x6e6a62][((band % 6) + 6) % 6];
+          const wx = site.x + x, wz = site.z + z, jitter = gen.getColorJitter(wx, wz);
+          gen.surfaceColor(wx, wz, y + jitter, 1 / Math.sqrt(1 + slope * slope), tint, jitter);
+          if (slope > 0.9) tint.multiplyScalar(0.94 + 0.12 * (0.5 + 0.5 * Math.sin((y - floor) / 3.2 + wob2(x, z) * 2)));
+          if (jungle && slope > 0.55 && wob2(x * 0.9, z * 0.9) > 0.55) tint.lerp(MOSS_GREEN, 0.5); // (moss in the cracks)
+          return tint.getHex();
         }, 0.6));
         for (let i = 0; i < 40; i++) {
           const a = (i / 40) * Math.PI * 2 + r(-0.05, 0.05), top = gy(Math.cos(a) * b.r * 1.02, Math.sin(a) * b.r * 1.02);
@@ -824,9 +829,7 @@ export class Landmarks {
             }
           }
         }
-        const fa = site.rot, ftop = gy(Math.cos(fa) * b.r * 1.0, Math.sin(fa) * b.r * 1.0);
-        if (!jungle) falls = [{ x: site.x + Math.cos(fa) * b.r * 0.62, z: site.z + Math.sin(fa) * b.r * 0.62, top: ftop, bottom: floor + 1.2, rot: fa, width: 1.6 }];
-        else if (site.spring) {
+        if (false && site.spring) { // (no falls down its walls)
           // The spring's stream: from its pool out to the lip, then down the
           // wall (steep, not sheer: the water running down the rock, white),
           // to the pond at its foot.

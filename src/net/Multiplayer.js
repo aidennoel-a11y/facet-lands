@@ -12,7 +12,7 @@ import * as Models from '../wildlife/models.js';
 
 const SEND_EVERY = 1 / 15;
 const DELAY = 0.15; // (how far behind the others are drawn, in seconds: smooth through a late update)
-const FLAG = { crouch: 1, sprint: 2, swim: 4, fly: 8 };
+const FLAG = { crouch: 1, sprint: 2, swim: 4, fly: 8, air: 1 << 28, rising: 1 << 29, glide: 1 << 30 }; // (air: off the ground, jumping or falling; rising: on the way up; glide: under a glider)
 // (Also in the flags, above those: what you're doing with what's in your
 // hand (bits 4-6, one of ACTS; bit 7 flips with each new one), what that
 // is (bits 8-15: its place in the list of items, 0 nothing) and how far a
@@ -54,7 +54,7 @@ function nameTag(name, colour) {
 
 /** What you're doing, packed for the others (and for your own figure, seen from behind: see main's third person). */
 export function packFlags(me, items) {
-  let flags = (me.crouch ? FLAG.crouch : 0) | (me.sprint ? FLAG.sprint : 0) | (me.swim ? FLAG.swim : 0) | (me.fly ? FLAG.fly : 0);
+  let flags = (me.crouch ? FLAG.crouch : 0) | (me.sprint ? FLAG.sprint : 0) | (me.swim ? FLAG.swim : 0) | (me.fly ? FLAG.fly : 0) | (me.air ? FLAG.air : 0) | (me.rising ? FLAG.rising : 0) | (me.glide ? FLAG.glide : 0);
   // (What's in your hand and what you're doing with it: see ACTS.)
   const p = me.pose;
   if (p && items) {
@@ -152,6 +152,7 @@ export class Remote {
     this.root.rotation.y = yaw + Math.PI; // (the camera looks down -z; the model faces +z)
     const crouch = flags & FLAG.crouch, swim = flags & FLAG.swim;
     this.#gait(dt, speed, pitch, !!crouch, !!swim, !!(flags & FLAG.sprint), y);
+    this.#air(dt, flags, swim);
     this.#hands(dt, flags, pitch, swim, items);
     this.#emote(dt, flags, speed, swim);
   }
@@ -234,6 +235,70 @@ export class Remote {
     this.head.rotation.x = Math.max(-0.8, Math.min(0.8, -pitch - g.lean * (swim ? 0.9 : 0.6)));
     this.head.rotation.y = -this.body.rotation.y * 0.8; // (looking where they go, not rolling with the body)
     this.tag.position.y = crouch ? 1.75 : swim ? 1.0 + 0.6 * (1 - M) : 2.15;
+  }
+
+  /**
+   * Off the ground: jumping (knees drawn up, arms swung up and forward),
+   * falling (arms flung out and up, flailing, legs dangling apart, leaning
+   * back), hanging under a glider (arms straight up gripping its bar, body
+   * stretched out level, legs trailing together); and coming down hard, a
+   * crouch to take the landing, up again.
+   */
+  #air(dt, flags, swim) {
+    const g = this.gait, ease = (k) => 1 - Math.exp(-dt * k);
+    const air = !swim && !!(flags & FLAG.air), rising = !!(flags & FLAG.rising), glide = !swim && !!(flags & FLAG.glide);
+    g.jump = (g.jump ?? 0) + ((air && rising && !glide ? 1 : 0) - (g.jump ?? 0)) * ease(10);
+    g.fall = (g.fall ?? 0) + ((air && !rising && !glide ? 1 : 0) - (g.fall ?? 0)) * ease(4);
+    g.glide = (g.glide ?? 0) + ((glide ? 1 : 0) - (g.glide ?? 0)) * ease(5);
+    // (Landing: the longer the fall, the deeper the crouch to take it.)
+    if (this.wasAir && !air) g.land = Math.min(1, 0.4 + (g.fall ?? 0));
+    this.wasAir = air;
+    g.land = Math.max(0, (g.land ?? 0) - dt * 2.5);
+    const J = g.jump, F = g.fall, G = g.glide, L = g.land, t = performance.now() / 1000;
+    if (J + F + G + L < 0.01) return;
+    const [lt, rt] = this.legs, [ls, rs] = this.shins, [la, ra] = this.arms, [lf, rf] = this.forearms;
+    const mix = (o, v, k) => o + (v - o) * k;
+    // Jumping: knees up, arms up and forward.
+    lt.rotation.x = mix(lt.rotation.x, -0.55, J);
+    rt.rotation.x = mix(rt.rotation.x, -0.35, J);
+    ls.rotation.x = mix(ls.rotation.x, 1.0, J);
+    rs.rotation.x = mix(rs.rotation.x, 0.8, J);
+    la.rotation.x = mix(la.rotation.x, -1.3, J);
+    ra.rotation.x = mix(ra.rotation.x, -1.3, J);
+    // Falling: arms out and flailing, legs apart, leaning back.
+    const flail = Math.sin(t * 9) * 0.35, flail2 = Math.sin(t * 7.3 + 1) * 0.35;
+    la.rotation.x = mix(la.rotation.x, -1.6 + flail, F);
+    ra.rotation.x = mix(ra.rotation.x, -1.6 + flail2, F);
+    la.rotation.z = mix(la.rotation.z, -1.1, F);
+    ra.rotation.z = mix(ra.rotation.z, 1.1, F);
+    lt.rotation.x = mix(lt.rotation.x, -0.25 + flail2 * 0.5, F);
+    rt.rotation.x = mix(rt.rotation.x, 0.15 + flail * 0.5, F);
+    lt.rotation.z = mix(lt.rotation.z, -0.2, F);
+    rt.rotation.z = mix(rt.rotation.z, 0.2, F);
+    ls.rotation.x = mix(ls.rotation.x, 0.5, F);
+    rs.rotation.x = mix(rs.rotation.x, 0.3, F);
+    this.body.rotation.x = mix(this.body.rotation.x, -0.15, F);
+    // Gliding: arms straight up to the bar, body out level, legs trailing.
+    la.rotation.x = mix(la.rotation.x, -2.95, G);
+    ra.rotation.x = mix(ra.rotation.x, -2.95, G);
+    la.rotation.z = mix(la.rotation.z, -0.2, G);
+    ra.rotation.z = mix(ra.rotation.z, 0.2, G);
+    lf.rotation.x = mix(lf.rotation.x, 0, G);
+    rf.rotation.x = mix(rf.rotation.x, 0, G);
+    lt.rotation.x = mix(lt.rotation.x, 0.15, G);
+    rt.rotation.x = mix(rt.rotation.x, 0.2, G);
+    ls.rotation.x = mix(ls.rotation.x, 0.1, G);
+    rs.rotation.x = mix(rs.rotation.x, 0.15, G);
+    this.body.rotation.x = mix(this.body.rotation.x, 0.9, G);
+    // Landing: down into a crouch, knees bent, arms forward for balance.
+    this.body.position.y -= 0.28 * L;
+    lt.rotation.x -= 0.7 * L;
+    rt.rotation.x -= 0.7 * L;
+    ls.rotation.x += 1.2 * L;
+    rs.rotation.x += 1.2 * L;
+    la.rotation.x -= 0.6 * L;
+    ra.rotation.x -= 0.6 * L;
+    this.body.rotation.x += 0.3 * L;
   }
 
   // A wave, a cheer, pointing, a bow, sitting down, a shrug (see EMOTES):

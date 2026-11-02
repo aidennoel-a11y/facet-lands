@@ -420,14 +420,17 @@ export class PlayerControls {
       if (!this.gliding) this.glideSpeed = Math.max(9, Math.hypot(this.push.x, this.push.z), -this.velocityY * 0.7);
       const yaw = this.euler.y, pitch = Math.max(-1.1, Math.min(0.6, this.euler.x)), cp = Math.cos(pitch), sp = Math.sin(pitch);
       let g = this.glideSpeed;
-      g += (-sp * 9.8 * 0.95 - 0.004 * g * g - 0.5) * dt; // (gravity along the way it's going; the air's drag)
-      g = Math.max(3, Math.min(45, g));
+      // (Gravity along the way it's going: nosed down it picks up speed fast,
+      // the full pull of it; the air's drag; and a glider's own steady loss of
+      // way. Heavier and quicker than a leaf on the air: no hanging there.)
+      g += (-sp * 9.8 * (sp < 0 ? 1.25 : 1) - 0.0035 * g * g - 0.9) * dt;
+      g = Math.max(3, Math.min(50, g));
       this.glideSpeed = g;
-      const stall = g < 6 ? (6 - g) * 0.9 : 0;
-      const vy = g * sp - 1.2 - stall;
-      this.velocityY += (vy - this.velocityY) * Math.min(1, dt * 6);
-      this.push.x += (-Math.sin(yaw) * g * cp - this.push.x) * Math.min(1, dt * 4);
-      this.push.z += (-Math.cos(yaw) * g * cp - this.push.z) * Math.min(1, dt * 4);
+      const stall = g < 8 ? (8 - g) * 1.3 : 0;
+      const vy = g * sp - 2.1 - stall;
+      this.velocityY += (vy - this.velocityY) * Math.min(1, dt * 9);
+      this.push.x += (-Math.sin(yaw) * g * cp - this.push.x) * Math.min(1, dt * 7);
+      this.push.z += (-Math.cos(yaw) * g * cp - this.push.z) * Math.min(1, dt * 7);
       this.softLanding = true;
     } else this.velocityY = Math.max(-this.maxFallSpeed, this.velocityY - this.gravity * dt);
     this.gliding = glide;

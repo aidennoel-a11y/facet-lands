@@ -186,7 +186,7 @@ export function createWonderLayer(config) {
   const stone = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const plant = swaying(new MeshLambertMaterial({ vertexColors: true, flatShading: true }), 'giant-flower');
   const glow = new MeshBasicMaterial({ color: 0x5affd8 });
-  const glowBlue = new MeshBasicMaterial({ color: 0x6ad0ff });
+  const glowBlue = new MeshBasicMaterial({ color: 0x6ad0ff, transparent: true, opacity: 0, depthWrite: false }); // (the reed tips: lit only from dusk on)
   const mist = new MeshBasicMaterial({ color: 0xb8f0e4, transparent: true, opacity: 0, depthWrite: false });
   // (The specks on the water: only to be seen once it's dusk, never by day.)
   const speckGlow = new MeshBasicMaterial({ color: 0x5affd8, transparent: true, opacity: 0, depthWrite: false });
@@ -376,7 +376,7 @@ export function createWonderLayer(config) {
         const shrooms = [], tips = [], specks = [], mists = [], fogs = [], lamps = new Map();
         placed(2.5, 30, (lx, lz, gi, gj, r) => {
           const gs = generator.glowSwampAt(x0 + lx, z0 + lz);
-          if (gs < 0.2 || r(0) > 0.6 * gs) return;
+          if (gs < 0.45 || r(0) > 0.6 * gs) return; // (only in the swamp itself, not out round its edges)
           const y = groundHeightAt(lx, lz);
           if (!Number.isFinite(y)) return;
           if (y < config.seaLevel + 0.1) {
@@ -433,9 +433,12 @@ export function createWonderLayer(config) {
 
     update(time) {
       // The glow: faint by day, bright at night.
-      const k = 0.35 + 0.65 * Math.min(1, layer.night * 1.3);
-      glow.color.setRGB(0.35 * k, 1.0 * k, 0.85 * k);
-      glowBlue.color.setRGB(0.42 * k, 0.82 * k, 1.0 * k);
+      // (By day the fungi are only pale toadstools, nothing glowing; from dusk they light up.)
+      const nk = Math.min(1, Math.max(0, (layer.night - 0.2) * 1.6));
+      glow.color.setRGB(0.72 + (0.35 - 0.72) * nk, 0.7 + (1.0 - 0.7) * nk, 0.62 + (0.85 - 0.62) * nk);
+      glowBlue.color.setRGB(0.42, 0.82, 1.0);
+      glowBlue.opacity = nk;
+      glowBlue.visible = nk > 0.01;
       // (The mist: only to be seen at night, lit by the glow; by day it's burnt off.)
       mist.opacity = 0.16 * Math.min(1, layer.night * 1.4);
       mist.visible = mist.opacity > 0.01;
