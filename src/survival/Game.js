@@ -457,7 +457,7 @@ export class Game {
         else if (!this.hud.busy) this.#openBags();
       }
     });
-    this.hud.onCraft = (id) => this.craft(id);
+    this.hud.onCraft = (id, ri) => this.craft(id, ri);
     this.hud.onEmote = (kind) => (this.emote(kind), this.hud.closeAll(), this.#menu(false));
     // The inventory (E): stacks moved and sorted, things put on and taken off.
     this.hud.onInvMove = (a, b) => {
@@ -1405,8 +1405,10 @@ export class Game {
   }
 
   /** Makes something (if you've what it needs). */
-  craft(id) {
-    const r = RECIPES.find((x) => x.id === id);
+  craft(id, ri = null) {
+    // (The way of making it that was clicked; or the first you've the makings for.)
+    const ways = RECIPES.filter((x) => x.id === id);
+    const r = (ri !== null && RECIPES[ri]?.id === id ? RECIPES[ri] : null) ?? ways.find((x) => Object.entries(x.needs).every(([k, n]) => this.inventory.count(k) >= n)) ?? ways[0];
     if (!r) return;
     const tier = tierOf(id);
     if (!this.unlocked(tier)) return this.hotbar?.flash(`Not yet: ${tier.tag.toLowerCase()} first`);
@@ -3708,6 +3710,20 @@ export class Game {
       if (was > 0.3 && this.grime < 0.05 && (e.hotSpring || this.controls.swimming)) this.hotbar?.flash(e.hotSpring ? 'A hot bath: the blood and dirt soaked off you, warm through' : 'You wash the blood and dirt off');
       if (e.hotSpring && this.grime < 0.05 && !this.bathed) (this.bathed = true), this.survival.energy = Math.min(100, this.survival.energy + 10);
       if (!e.hotSpring) this.bathed = false;
+    }
+    // Panting after a long run: a while of hard breathing once you stop (longer, the longer you ran).
+    if (e.active && this.controls.sprinting && this.controls.moving) this.runFor = (this.runFor ?? 0) + dt;
+    else if ((this.runFor ?? 0) > 0) {
+      if (this.runFor > 7) this.panting = Math.max(this.panting ?? 0, Math.min(10, 2 + this.runFor * 0.3));
+      this.runFor = 0;
+    }
+    if (this.survival.energy < 12 && e.active && this.controls.moving) this.panting = Math.max(this.panting ?? 0, 2);
+    if ((this.panting ?? 0) > 0 && e.active && !this.controls.swimming) {
+      this.panting -= dt;
+      if ((this.pantWait = (this.pantWait ?? 0) - dt) <= 0) {
+        this.pantWait = 0.75 + Math.random() * 0.15 + (this.panting < 2 ? 0.4 : 0);
+        this.sound?.call('pant', 0, Math.min(0.6, 0.18 + this.panting * 0.06));
+      }
     }
     // A carcass on the rope, hauled along behind you over the ground.
     if (this.dragging) {

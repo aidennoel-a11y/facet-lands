@@ -1726,6 +1726,52 @@ kbd {
   background: rgba(60, 56, 52, 0.5);
 }
 /* Survival: the day of this life, the season, the longest yet (top right, by the menu button). */
+.pinned {
+  position: fixed;
+  top: calc(120px + env(safe-area-inset-top, 0px));
+  right: 14px;
+  min-width: 150px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: #e8e4dc;
+  background: rgba(20, 24, 22, 0.5);
+  font-size: 12px;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.pinned h4 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 3px;
+  font-size: 13px;
+}
+.pinned h4 em {
+  color: #a8d890;
+  font-style: normal;
+  font-weight: normal;
+  font-size: 11px;
+}
+.pinned p {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 1px 0;
+  color: #e8a890;
+}
+.pinned p.got {
+  color: #a8d890;
+}
+.pinned p span {
+  flex: 1;
+}
+.pinned svg {
+  width: 16px;
+  height: 16px;
+}
+.card.pinned-card {
+  outline: 2px solid rgba(242, 216, 128, 0.7);
+}
 .almanac {
   position: fixed;
   top: calc(14px + env(safe-area-inset-top, 0px));

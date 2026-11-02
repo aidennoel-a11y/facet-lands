@@ -236,6 +236,8 @@ SPECIES.scorpion.charger = { close: 1.6, hit: 6, reach: 0.35, warn: 0.9, cry: 's
 SPECIES.camel.charger = { close: 0, hit: 12, reach: 1.6, hurt: true, warn: 0.8, cry: 'camel' };
 // How many blows to the body each size takes to go lame, to go down, and to
 // die (a blow to the head brings one down; one more finishes it).
+// The furred ones that shake themselves dry coming out of the water.
+const SHAKERS = new Set(['wolf', 'wolfPup', 'coyote', 'fox', 'blackBear', 'grizzly', 'deer', 'elk', 'moose', 'bison', 'boar', 'sheep', 'goat', 'mountainGoat', 'horse', 'donkey', 'mule', 'cougar', 'tiger', 'jaguar', 'panther', 'lion', 'hyena', 'beaver', 'panda', 'monkey', 'camel']);
 const BLOWS = { huge: [6, 10, 13], large: [3, 5, 6], medium: [2, 3, 4], small: [1, 2, 2] };
 
 /**
@@ -3901,7 +3903,18 @@ export class Wildlife {
     // In deep water: swimming, low in it, only its back and head out.
     const w = ctx.waterAt?.(a.x, a.z); // (any of them: none walks along the bottom)
     const H = this.rigs[a.kind].model.legs[0][1] * a.scale;
+    const swam = a.swimming;
     a.swimming = !!w && w.level - a.y > H * 0.8;
+    // (Out of the water, a furred one stops and shakes itself, head to tail, the spray flying.)
+    if (swam && !a.swimming && a.alive && SHAKERS.has(a.kind)) a.shakeIn = 0.6 + Math.random() * 1.2;
+    if (a.shakeIn > 0 && (a.shakeIn -= dt) <= 0) {
+      a.shaking = 0.85;
+      const d = Math.hypot(a.x - ctx.camera.position.x, a.z - ctx.camera.position.z);
+      if (d < 40) ctx.sound?.call('shake', ctx.pan(a.x, a.z), Math.min(0.6, 8 / (d + 6)) * Math.min(1.4, a.scale));
+      ctx.splash?.(a.x, a.y + H * 1.2, a.z, 0.35 * a.scale);
+    }
+    if (a.shaking > 0) (a.shaking -= dt), (a.shakeRoll = Math.sin(a.shaking * 48) * 0.26 * Math.min(1, a.shaking * 3));
+    else a.shakeRoll = 0;
     // (One that doesn't swim, in over its head: making for the nearest shore.)
     if (a.swimming && !sp.swims && a.shoreHeading == null) {
       let best = null;
@@ -4915,7 +4928,7 @@ export class Wildlife {
       // (A crocodile crawls with its belly on the ground, rising up on its
       // legs to walk tall as it goes faster.)
       const belly = mo.sprawl && a.alive ? H * 0.3 * (1 - smoothstep(sp.walk, sp.walk * 2.5, a.speed ?? 0)) : 0;
-      euler.set(a.pitch + r.pitch + surgePitch - (a.rear ?? 0) * 0.55, a.heading, a.roll + r.roll + lean + idleRoll, 'YXZ');
+      euler.set(a.pitch + r.pitch + surgePitch - (a.rear ?? 0) * 0.55, a.heading, a.roll + r.roll + lean + idleRoll + (a.shakeRoll ?? 0), 'YXZ');
       quat.setFromEuler(euler);
       base.compose(pos.set(x, a.y + (r.bob * H - lieDrop - crouch - belly) * s - (a.drop ?? 0), z), quat, scl.setScalar(s));
     }

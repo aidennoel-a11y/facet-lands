@@ -90,10 +90,11 @@ export class Hud {
         <ol class="ach-list"></ol>
       </section>
       <section class="craft" hidden aria-label="Crafting">
-        <header><h2>Crafting</h2><p>Click to make · Tab or Esc to close · Z for every item</p></header>
+        <header><h2>Crafting</h2><p>Click to make · right-click to pin it on screen · Tab or Esc to close · Z for every item</p></header>
         <div class="tree"></div>
         <p class="craft-note">Point at something to see what it's for.</p>
       </section>
+      <aside class="pinned" hidden aria-label="Pinned recipe"></aside>
       <section class="creative" hidden aria-label="Creative: every item">
         <header><h2>Every item</h2><p>Click for a stack in your hotbar · Z or Esc to close</p></header>
         <div class="creative-groups"></div>
@@ -176,7 +177,21 @@ export class Hud {
    * @param info { active (on foot), load (kg), heavy (0..), wind (the
    *               wind's direction relative to your view, radians) }
    */
+  // The pinned recipe, on screen: each thing it wants, how many you've got of it.
+  #showPinned(inventory, force = false) {
+    const el = this.el('.pinned'), r = RECIPES[this.pinnedRecipe];
+    if (!r) return void (el.hidden = true);
+    const rows = Object.entries(r.needs).map(([n, c]) => [n, Math.min(c, inventory.count(n)), c]);
+    const key = `${this.pinnedRecipe}|${rows.map((x) => x[1]).join(',')}`;
+    if (!force && el.dataset.k === key) return;
+    el.dataset.k = key;
+    el.hidden = false;
+    const done = rows.every(([, h, c]) => h >= c);
+    el.innerHTML = `<h4>${iconSvg(r.id)}${ITEMS[r.id].name}${done ? ' <em>ready to make</em>' : ''}</h4>${rows.map(([n, h, c]) => `<p class="${h >= c ? 'got' : ''}">${iconSvg(n)}<span>${ITEMS[n].name}</span><b>${h}/${c}</b></p>`).join('')}`;
+  }
+
   update(survival, inventory, info) {
+    this.#showPinned(inventory);
     this.el('.vitals').classList.toggle('paused', !info.active);
     for (const [id, el] of Object.entries(this.bars)) {
       const v = survival[id];
@@ -354,14 +369,13 @@ export class Hud {
    */
   renderCraft(inventory) {
     const tree = this.el('.tree');
-    const recipe = (id) => RECIPES.find((r) => r.id === id);
     let before = true; // (the tiers before this one all open)
     tree.innerHTML = TIERS.map((tier, k) => {
       const open = this.unlocked ? this.unlocked(tier) : true;
       const next = before && !open; // (the next one to open: what to do next, said plainly)
       before = before && open;
-      const cards = tier.ids.map((id) => {
-        const r = recipe(id);
+      // (Each way of making it: a log wall from logs, or from sawn planks.)
+      const cards = tier.ids.flatMap((id) => RECIPES.flatMap((r, ri) => (r.id === id ? [[id, r, ri]] : []))).map(([id, r, ri]) => {
         const has = Object.entries(r.needs).every(([n, c]) => inventory.count(n) >= c);
         const station = (!r.at || this.stations?.[r.at]) && (!r.uses || r.uses.some((t) => inventory.count(t) > 0));
         const can = open && has && station;
@@ -371,7 +385,7 @@ export class Hud {
         const atText = { anvil: 'at an anvil', fire: 'by a lit fire' }[r.at] ?? `at a ${r.at}`;
         const note = `${r.note}${r.at ? ` (${atText})` : ''}`;
         const tool = r.uses ? `<em class="${r.uses.some((t) => inventory.count(t) > 0) ? '' : 'short'}">with ${usesText(r)}</em>` : '';
-        return `<button type="button" class="card${can ? ' can' : ''}${open ? '' : ' locked'}" data-craft="${id}" data-note="${ITEMS[id].name}: ${note.replaceAll('"', '&quot;')}" ${can ? '' : 'aria-disabled="true"'}>
+        return `<button type="button" class="card${can ? ' can' : ''}${open ? '' : ' locked'}${this.pinnedRecipe === ri ? ' pinned-card' : ''}" data-craft="${id}" data-r="${ri}" data-note="${ITEMS[id].name}: ${note.replaceAll('"', '&quot;')}" ${can ? '' : 'aria-disabled="true"'}>
           <span class="made">${iconSvg(id)}${r.makes ? `<b>×${r.makes}</b>` : ''}</span>
           <span class="what"><b>${ITEMS[id].name}</b>${r.at ? `<em class="${station ? '' : 'short'}">${atText}</em>` : ''}${tool}<span class="needs">${needs}</span></span>
         </button>`;
@@ -385,8 +399,19 @@ export class Hud {
     const note = this.el('.craft-note');
     tree.onclick = (e) => {
       const b = e.target.closest('[data-craft]');
-      if (b && b.classList.contains('can')) this.onCraft?.(b.dataset.craft);
+      if (b && b.classList.contains('can')) this.onCraft?.(b.dataset.craft, Number(b.dataset.r));
       else if (b) note.textContent = b.classList.contains('locked') ? `Locked: ${TIERS.find((t) => t.ids.includes(b.dataset.craft)).tag.toLowerCase()} to open this tier` : b.dataset.note;
+    };
+    // (Right-click: pinned on screen, what it needs and what you've got of it, till you unpin it.)
+    tree.oncontextmenu = (e) => {
+      const b = e.target.closest('[data-craft]');
+      if (!b) return;
+      e.preventDefault();
+      const ri = Number(b.dataset.r);
+      this.pinnedRecipe = this.pinnedRecipe === ri ? null : ri;
+      note.textContent = this.pinnedRecipe === null ? 'Unpinned' : `Pinned: ${ITEMS[b.dataset.craft].name} (right-click again to unpin)`;
+      this.renderCraft(inventory);
+      this.#showPinned(inventory, true);
     };
     tree.onmouseover = (e) => {
       const b = e.target.closest('[data-craft]');

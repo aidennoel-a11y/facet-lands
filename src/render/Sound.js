@@ -942,6 +942,14 @@ export class Sound {
       // Your own heart, loud in your ears: lub-dub, two low, soft thumps.
       tone(t, 0.12, 'sine', 62, 42, 70, 0.7, 0.55);
       tone(t + 0.2, 0.1, 'sine', 56, 38, 64, 0.7, 0.4);
+    } else if (kind === 'pant') {
+      // Your own breath after a long run: a quick rasping in, a longer huff out.
+      wash(t, 0.26, 'bandpass', 900 + Math.random() * 150, 0.16, 0.05, 1300);
+      wash(t + 0.3, 0.34, 'bandpass', 1250 + Math.random() * 150, 0.2, 0.03, 700);
+    } else if (kind === 'shake') {
+      // An animal shaking the water off: a rattle of fur flapping, and the spray pattering down.
+      for (let k = 0; k < 7; k++) wash(t + k * 0.065, 0.07, 'bandpass', 1600 + Math.random() * 700, 0.14, 0.008);
+      drops(t + 0.3, 7 + Math.floor(Math.random() * 4), 0.5, 0.035, true);
     } else if (kind === 'peep') {
       // A spring peeper: a high rising whistle.
       tone(t, 0.12, 'sine', 2500 + Math.random() * 300, 3000 + Math.random() * 300, 2800, 1, 0.035);
