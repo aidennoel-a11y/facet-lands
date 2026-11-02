@@ -1463,6 +1463,7 @@ function treeBump(dx, dz) {
 // Only the drawing: everything else goes on from your own eyes.
 let thirdPerson = false;
 let selfFigure = null;
+let EMPTY_GEO = null;
 // (Your look: see character.js and the Character page.)
 let myLook = loadLook(), lookKey = JSON.stringify(myLook);
 onLook((l) => {
@@ -1492,6 +1493,9 @@ function thirdPersonView(dt, now) {
   selfFigure.tag.visible = false;
   selfFigure.head.visible = !legs;
   for (const a of selfFigure.arms) a.visible = !legs;
+  // (Through your own eyes: the body itself left out too, only the legs under it; it would fill the view looking down.)
+  selfFigure.bodyGeo ??= selfFigure.body.geometry;
+  selfFigure.body.geometry = legs ? (EMPTY_GEO ??= new THREE.BufferGeometry()) : selfFigure.bodyGeo;
   if (legs) {
     const p = camera.position, yaw = controls.euler.y, back = 0.24;
     const moved = selfFigure.last ? Math.hypot(p.x - selfFigure.last.x, p.z - selfFigure.last.z) / Math.max(dt, 1e-3) : 0;
