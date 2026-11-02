@@ -649,7 +649,14 @@ export function liquidChunk(grid, field, pools) {
       // rock hides the sheet: so its edge is where the water meets the floor.
       let level = null, levelAt = null, molten = false;
       const ch = col.chamber;
-      if (ch && ch.e < 1 && (ch.c.flooded ? !(f(x, ch.c.floor - 9, z) < 0) : !(f(x, ch.c.lake - 4, z) < 0 && f(x, ch.c.lake - 8, z) < 0))) (level = ch.c.lake), (levelAt = () => ch.c.lake);
+      // (A lake's water wherever there's a bed under it within 40 m: deep in
+      // the middle as well as shallow at the edges; never hanging over a
+      // great drop, a shaft or a tunnel far below.)
+      const bedUnder = (top) => {
+        for (let dy = 1; dy <= 40; dy += 1.5) if (f(x, top - dy, z) >= 0) return true;
+        return false;
+      };
+      if (ch && ch.e < 1 && bedUnder(ch.c.lake)) (level = ch.c.lake), (levelAt = () => ch.c.lake);
       const rv = field.riverAt(x, z, gridHeight(grid, x, z));
       if (rv && rv.across < rv.half * 0.92 && rv.fade > 0.5 && f(x, rv.level - 2.6, z) >= 0 && rv.level - 0.2 > (level ?? -Infinity)) {
         level = rv.level - 0.2;

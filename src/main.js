@@ -796,7 +796,8 @@ chunks.addLayer(createFlowerLayer(WORLD));
 const wonders = createWonderLayer(WORLD);
 scene.add(wonders.swarm);
 chunks.addLayer(wonders);
-chunks.addLayer(createUnderstoryLayer(WORLD));
+const understory = createUnderstoryLayer(WORLD);
+chunks.addLayer(understory);
 chunks.addLayer(trees);
 const farTrees = createFarTreeLayer(WORLD);
 farTrees.prepare(renderer); // (the furthest trees' pictures)
@@ -3386,6 +3387,7 @@ function tick(now) {
   heartbeat(dt);
   coralLayer.refresh(camera.position);
   mushrooms.refresh(camera.position);
+  understory.refresh(camera.position);
   if (controls.mode === 'walk' && !sheltered) {
     const pp = camera.position;
     piranha.update(dt, {

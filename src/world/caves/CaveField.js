@@ -374,6 +374,19 @@ export class CaveField {
       sd = Math.max(sd, -col.spag * 40, this.spagDeep - y);
       d = Math.min(d, sd);
     }
+    // (Under a volcanic cavern's lava lakes, a slab of solid rock 10 m thick that
+    // no other cave cuts into: the lava lies whole, never over a hollow, never
+    // with a tunnel coming up through it from beneath.)
+    if (col.volc > 0.45 && y < -55) {
+      const vf = col.vfloor ??= this.volcanicFloor(x, z);
+      if (vf.floor < vf.lava + 1 && y < vf.floor && y > vf.floor - 10) d = Math.max(d, Math.min(vf.floor - y, y - (vf.floor - 10)));
+    }
+    // (And the same under a great chamber's lake, water or lava: its bed
+    // whole, 8 m of rock under it, never a tunnel breaking up through it.)
+    if (ch && ch.e < 1 && Number.isFinite(ch.c.lake)) {
+      const fl = this.chamberFloor(ch.c, x, z);
+      if (fl < ch.c.lake + 1 && y < fl && y > fl - 8) d = Math.max(d, Math.min(fl - y, y - (fl - 8)));
+    }
     return Math.max(d, y - ceiling);
   }
 
