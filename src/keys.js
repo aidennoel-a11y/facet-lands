@@ -24,6 +24,7 @@ export const ACTIONS = [
   ['fly', 'Fly (creative)', 'KeyV'],
   ['wave', 'Wave', 'KeyG'],
   ['emotes', 'Emotes', 'KeyT'],
+  ['clearInventory', 'Clear inventory (creative)', 'Delete'],
 ];
 
 let bindings = {};

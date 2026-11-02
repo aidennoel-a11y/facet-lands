@@ -46,9 +46,29 @@ function liquidMaterial(lava) {
       .replace('#include <common>', '#include <common>\nvarying vec3 vLiquidAt;\nuniform float uCaveTime;')
       .replace('#include <color_fragment>', `#include <color_fragment>
         float ripple = sin(vLiquidAt.x * 0.9 + uCaveTime * ${lava ? '0.4' : '1.1'}) * sin(vLiquidAt.z * 0.7 - uCaveTime * ${lava ? '0.3' : '0.8'});
-        diffuseColor.rgb *= ${lava ? '0.85 + 0.3 * ripple' : '0.9 + 0.2 * ripple'};`);
+        diffuseColor.rgb *= ${lava ? '0.85 + 0.3 * ripple' : '0.9 + 0.2 * ripple'};
+        ${lava ? `{
+          // The lava moving: slow swirls of brighter and darker melt drifting
+          // across it, plates of dark crust riding on it with glowing seams
+          // between them, cracking and closing as they go.
+          vec2 lp = vLiquidAt.xz;
+          float t = uCaveTime;
+          float swirl = sin(lp.x * 0.31 + t * 0.22 + sin(lp.y * 0.27 + t * 0.13) * 2.2) * sin(lp.y * 0.36 - t * 0.17 + sin(lp.x * 0.23 - t * 0.09) * 1.8);
+          vec2 q = lp * 0.42 + vec2(t * 0.05, -t * 0.04) + swirl * 0.5;
+          // (Crust plates of all sizes, no two alike: a few waves of different sizes and slants, warped by each other.)
+          float w1 = sin(q.x * 1.7 + sin(q.y * 1.1 + t * 0.03) * 1.9) + sin(q.y * 2.3 - sin(q.x * 0.9) * 1.6);
+          float w2 = sin((q.x + q.y) * 3.1 + w1 * 1.3) * 0.5 + sin((q.x - q.y) * 2.6 - w1 * 1.1) * 0.5;
+          float plates = w1 * 0.6 + w2 * 0.4;
+          float seam = 1.0 - smoothstep(0.0, 0.22, abs(plates)); // (the glowing cracks between plates)
+          float crust = smoothstep(-0.1, 0.5, swirl * 0.5 + 0.35) * (1.0 - seam);
+          vec3 melt = vec3(1.0, 0.36, 0.06) * (0.85 + 0.3 * (swirl * 0.5 + 0.5)) + vec3(0.25, 0.2, 0.0) * seam;
+          vec3 skin = vec3(0.16, 0.05, 0.03) + vec3(0.25, 0.06, 0.0) * smoothstep(0.3, 0.0, abs(plates) - 0.2);
+          float edge = 1.0 - clamp(diffuseColor.r, 0.0, 1.0) * 0.0 - (1.0 - diffuseColor.g / 0.42) * 0.0;
+          vec3 base = diffuseColor.rgb / vec3(1.0, 0.42, 0.1); // (1 where it's deep and hot; less where cooled by the rock)
+          diffuseColor.rgb = mix(melt, skin, clamp(crust * 0.8 + (1.0 - base.g) * 0.8, 0.0, 1.0)) * mix(0.55, 1.0, base.r);
+        }` : ''}`);
   };
-  material.customProgramCacheKey = () => (lava ? 'cave lava' : 'cave water');
+  material.customProgramCacheKey = () => (lava ? 'cave lava 3' : 'cave water');
   return material;
 }
 

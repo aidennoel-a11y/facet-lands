@@ -174,6 +174,11 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
           gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.43, 0.36, 0.25), flood * 0.6);
           gl_FragColor.a = mix(gl_FragColor.a, 0.92, flood * 0.6);
           white = max(white, flood * step(0.01, vFlow.z) * smoothstep(0.6, 0.9, froth) * 0.55);
+          // (Bubbles and specks of scum riding the current, always: so even a
+          // slow, smooth river shows which way it's going, and how fast.)
+          float drift = uTime * (0.6 + 2.0 * vFlow.z) * (1.0 + uFlood);
+          float flecks = step(0.01, vFlow.z) * (1.0 - vFlow.w) * smoothstep(0.74, 0.88, waterNoise(vec2(vFlow.x * 1.4 - drift * 1.4, vFlow.y * 9.0 + 11.0))) * (0.3 + 0.25 * min(1.0, vFlow.z));
+          white = max(white, flecks * vStreaks);
           gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 0.98), white * 0.85);
           gl_FragColor.a = mix(gl_FragColor.a, 1.0, white * 0.7);
           // Sun glitter on the smooth stretches (not under a cloud's shadow), and rings in the rain.
@@ -186,7 +191,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         #include <fog_fragment>`,
       );
   };
-  material.customProgramCacheKey = () => 'river-v4';
+  material.customProgramCacheKey = () => 'river-v5';
   seasonalWater(material); // ponds freeze in winter
 
   // Waterfall spray: little cubes, each flying on its own arc (start, velocity,

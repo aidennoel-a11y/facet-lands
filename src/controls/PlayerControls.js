@@ -510,7 +510,7 @@ export class PlayerControls {
     v.z = ease(v.z, tz);
     v.y = ease(v.y, ty);
     // The current.
-    const dx = (v.x + (water.fx ?? 0) * (water.speed ?? 0) * 0.7) * dt, dz = (v.z + (water.fz ?? 0) * (water.speed ?? 0) * 0.7) * dt;
+    const dx = (v.x + (water.fx ?? 0) * (water.speed ?? 0) * 0.95) * dt, dz = (v.z + (water.fz ?? 0) * (water.speed ?? 0) * 0.95) * dt; // (carried along nearly at the current's own pace)
     if (dx || dz) {
       const next = this.world.groundAt(pos.x + dx, pos.y - this.eyeHeight, pos.z + dz);
       const under = next.height < water.level - 0.3;
@@ -574,7 +574,7 @@ export class PlayerControls {
     const there = this.#ground(pos.x + dx, feet, pos.z + dz);
     const rise = there.stand - here.stand;
     if (!there.swim && there.stand > feet + 1.2) return false; // a wall
-    if (there.inCave && there.ceiling - there.stand < this.eyeHeight + 0.25) return false; // too low
+    if (there.inCave && there.ceiling - there.stand < 1.25) return false; // too low (lower than that you duck under it: see the ceiling below)
     // In a cave, look a little further ahead too (your body's width, and a
     // little for the rough rock), so you stop at the wall rather than
     // with your face in it.
@@ -583,9 +583,16 @@ export class PlayerControls {
       const ax = pos.x + dx + (dx / len) * reach, az = pos.z + dz + (dz / len) * reach;
       const ahead = this.#ground(ax, feet, az);
       if (!ahead.swim && ahead.stand > feet + 1.2) return false;
-      if (ahead.inCave && ahead.ceiling < feet + this.eyeHeight + 0.1) return false; // (rock at head height)
+      if (ahead.inCave && ahead.ceiling < feet + this.eyeHeight - 0.25) return false; // (rock at head height: not a little knob of it, ducked under)
     }
-    if (this.grounded && !here.swim && rise > 0 && rise / Math.hypot(dx, dz) > this.maxClimb) return false;
+    // (In a cave the floor's rough rock: its lie judged over half a metre
+    // ahead, not the knobs under your feet, and small steps up taken in your stride.)
+    let steep = rise > 0 && rise / Math.hypot(dx, dz) > this.maxClimb;
+    if (steep && (here.inCave || there.inCave)) {
+      const len = Math.hypot(dx, dz) || 1, far = this.#ground(pos.x + (dx / len) * 0.5, feet, pos.z + (dz / len) * 0.5);
+      steep = far.stand - here.stand > 0.5 * this.maxClimb * 1.5 && rise > 0.35;
+    }
+    if (this.grounded && !here.swim && steep) return false;
     // (Up what's steeper than walking takes: with climbing picks, see Game.)
     this.climbingSteep = rise > 0 && rise / Math.hypot(dx, dz) > 1.1;
     pos.x += dx;

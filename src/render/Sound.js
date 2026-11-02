@@ -983,6 +983,17 @@ export class Sound {
       // An axe biting wood: a knock and a crack.
       tone(t, 0.12, 'triangle', 190, 120, 400, 1.2, 0.3);
       noise(t, 0.08, 1800, 1.5, 0.18);
+    } else if (kind === 'lavaBubble') {
+      // Lava: a thick bubble swelling and bursting, a deep wet 'blop', the
+      // spatter of it falling back, a short hiss.
+      tone(t, 0.25, 'sine', 70 + Math.random() * 30, 140 + Math.random() * 60, 160, 1.2, 0.5);
+      tone(t + 0.18, 0.12, 'sine', 180, 60, 200, 0.8, 0.35);
+      noise(t + 0.15, 0.35, 900, 0.7, 0.18, 22);
+      drops(t + 0.3, 4, 0.4, 0.03, false);
+    } else if (kind === 'lavaCrackle') {
+      // The crust at its edges cracking as it cools: sharp little ticks and snaps.
+      for (let k = 0; k < 5 + Math.floor(Math.random() * 6); k++) noise(t + Math.random() * 0.6, 0.015 + Math.random() * 0.02, 2500 + Math.random() * 3000, 2, 0.2 + Math.random() * 0.25);
+      noise(t, 0.6, 600, 0.6, 0.06, 18);
     } else if (kind === 'doorOpen') {
       // A door or gate swung open: the latch's click, then the hinge's
       // squealing creak as it swings, rising.

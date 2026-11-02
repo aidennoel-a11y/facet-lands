@@ -17,6 +17,7 @@ import { createSunkenCityLayer } from './world/layers/SunkenCityLayer.js';
 import { addTilledSoil, paintTilled, tilledOrigin } from './render/tilledSoil.js';
 import { GrassCut } from './render/grassCut.js';
 import { CutBlades } from './render/cutBlades.js';
+import { LavaBubbles } from './render/lavaBubbles.js';
 import { SeaLife } from './wildlife/SeaLife.js';
 import { CaveSpiders } from './wildlife/CaveSpiders.js';
 import { cutShroomKey, fellShroom, pickShroom, shroomCapAt, shroomCollide, shroomsCut } from './world/layers/CaveLayer.js';
@@ -266,6 +267,7 @@ lightning.onStrike = (x, y, z, distance) => {
 };
 const grassCut = new GrassCut();
 const cutBlades = new CutBlades(scene);
+const lavaBubbles = new LavaBubbles(scene);
 const bladeTint = new THREE.Color();
 
 // --- The climate, and the tornadoes ---------------------------------------------------------
@@ -1528,6 +1530,15 @@ const controls = new PlayerControls(camera, canvas, {
     const tar = landmarks.waterAt(position.x, position.z, feet - 0.05);
     controls.noJump = !!tar?.tar;
     if (tar?.tar) controls.speedFactor *= 0.3;
+    // (Wading in a river: its current pulls at your legs, the deeper the
+    // harder, and far harder in a flood, during and after a storm.)
+    if (!controls.swimming && controls.mode === 'walk' && !sheltered) {
+      const rw = waterAt(position.x, position.z);
+      if (rw && !rw.lake && !rw.pond && rw.speed > 0 && rw.level > feet + 0.15) {
+        const deep = Math.min(1, (rw.level - feet) / 1.1), pull = rw.speed * (0.25 + 0.75 * deep) * (0.6 + 0.8 * riverFlood.value);
+        controls.blow((rw.fx ?? 0) * pull * 3, (rw.fz ?? 0) * pull * 3, 1 / 60);
+      }
+    }
     if (sand.slow < 1) (controls.speedFactor *= sand.slow), (controls.noJump = true); // (in quicksand)
     // (Through a spider's web in the caves: it clings, and you tear through it slowly.)
     const web = sheltered ? generator.caves?.webAt?.(position.x, feet + 1, position.z) ?? 0 : 0;
@@ -3180,6 +3191,7 @@ function tick(now) {
   caveSounds(dt);
   const swampLamps = glowSwampHere.v > 0.05 ? wonders.lightsNear(camera.position) : [];
   torches.update(worldNow, camera.position, caveGlowLights.length || swampLamps.length ? [...gameLights, ...caveGlowLights, ...swampLamps] : gameLights);
+  lavaBubbles.update(dt, sheltered ? camera.position : null, caveGlowLights, sound, (x, z) => panTowards(camera, x, z));
   updateCaveLife(now / 1000, sheltered ? camera.position : null, (x, y, z) => generator.caves.clearLine(camera.position.x, camera.position.y, camera.position.z, x, y, z));
   // The spiders in the dark, round you when you're down in the caves.
   // The landmarks near you (found, the first time you come to one), and the old mines' timbers.

@@ -227,8 +227,9 @@ export class CaveSpiders {
     }
     if (s.state === 'lurk') {
       s.timer -= dt;
-      if (s.timer <= 0) (s.timer = rnd(2, 6)), (s.target = s.heading + rnd(-2, 2)), (s.moveFor = rnd(0.5, 2));
-      if ((s.moveFor = (s.moveFor ?? 0) - dt) > 0) (want = s.target ?? s.heading), (speed = 1.2);
+      // (Prowling about its patch of rock: creeping a few metres, pausing, on again, up the walls and over the roof.)
+      if (s.timer <= 0) (s.timer = rnd(1.5, 4)), (s.target = s.heading + rnd(-1.6, 1.6)), (s.moveFor = rnd(1.5, 3.5));
+      if ((s.moveFor = (s.moveFor ?? 0) - dt) > 0) (want = (s.target ?? s.heading) + Math.sin(performance.now() / 900 + s.size * 7) * 0.4), (speed = 1.6);
     } else if (s.state === 'hunt') {
       if (d > (s.boss ? 70 : 35) || !level) s.state = 'lurk';
       else if (s.shy > 0) (want = toYou + Math.PI), (speed = 3);

@@ -831,14 +831,16 @@ export function scaffoldModel(w, d, h) {
 
 /** A water mill's house: a stone footing on the bank, a timber mill house, a shingled roof; the wheel turns on its side (see millWheelModel). */
 export function waterMillModel() {
+  // (No mill house: only the wheel's axle, borne on a stone pier on the
+  // bank and a log trestle out in the stream, with the millstone's gear
+  // box at the pier. The wheel turns between them: see millWheelModel.)
   const b = new Parts(171);
-  b.add(new BoxGeometry(2.6, 0.7, 2.4), 0x7e7a72, [0, 0.35, 0]);
-  b.add(new BoxGeometry(2.4, 2.1, 2.2), 0x9a7048, [0, 1.75, 0]);
-  for (const x of [-1.18, 1.18]) for (const z of [-1.08, 1.08]) b.add(new BoxGeometry(0.14, 2.1, 0.14), 0x6e4c32, [x, 1.75, z]);
-  b.add(new BoxGeometry(2.8, 0.08, 1.5), 0x5a4232, [0, 3.15, -0.6], [0.6, 0, 0]);
-  b.add(new BoxGeometry(2.8, 0.08, 1.5), 0x5a4232, [0, 3.15, 0.6], [-0.6, 0, 0]);
-  b.add(new BoxGeometry(0.6, 1.1, 0.06), 0x3a2a1e, [0, 1.25, 1.12]);
-  b.add(new CylinderGeometry(0.1, 0.1, 0.9, 6), 0x5a4232, [1.55, 1.3, 0], [0, 0, Math.PI / 2]); // (the axle out to the wheel)
+  b.add(new BoxGeometry(0.9, 1.25, 0.9), 0x7e7a72, [0.35, 0.62, 0]);
+  b.add(new BoxGeometry(0.6, 0.45, 0.6), 0x6e5a42, [0.35, 1.45, 0]);
+  b.log([2.62, -0.4, -0.45], [2.62, 1.32, 0], 0.08, 0x6e4c32, 0xc8a070, 6);
+  b.log([2.62, -0.4, 0.45], [2.62, 1.32, 0], 0.08, 0x6e4c32, 0xc8a070, 6);
+  b.log([2.62, 0.3, -0.33], [2.62, 0.3, 0.33], 0.05, 0x5a3c24, 0xc8a070, 5);
+  b.log([0.35, 1.3, 0], [2.85, 1.3, 0], 0.1, 0x5a4232, 0xc8a070, 6); // (the axle)
   return b.build();
 }
 

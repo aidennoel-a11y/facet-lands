@@ -198,7 +198,7 @@ export class CaveField {
 
   /** The chamber's floor (with its rises and hollows) under (x, z). */
   chamberFloor(c, x, z) {
-    return c.floor + this.chamberWall.noise2D(x / 46, z / 46) * 5 + this.chamberWall.noise2D(x / 13 + 50, z / 13) * 1.6;
+    return c.floor + this.chamberWall.noise2D(x / 46, z / 46) * 5 + this.chamberWall.noise2D(x / 13 + 50, z / 13) * 0.8; // (rough, but not so knobbly you trip on it)
   }
 
   /** The underground river through (x, z): { across (m from its middle), half (water's half-width), level }, or null. */
@@ -268,7 +268,7 @@ export class CaveField {
   volcanicFloor(x, z) {
     const base = -150 + 10 * this.riverLevel.noise2D(x / 400 + 70, z / 400 - 70); // (deep down: halls up to 90 m high)
     return {
-      floor: base + 4.5 * this.chamberWall.noise2D(x / 40 + 90, z / 40 - 90) + 1.5 * this.chamberWall.noise2D(x / 11 - 40, z / 11),
+      floor: base + 4.5 * this.chamberWall.noise2D(x / 40 + 90, z / 40 - 90) + 0.7 * this.chamberWall.noise2D(x / 11 - 40, z / 11),
       lava: base + 0.8,
     };
   }

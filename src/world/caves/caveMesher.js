@@ -628,7 +628,7 @@ export function meshChunk(grid, field, out = {}) {
  */
 export function liquidChunk(grid, field, pools) {
   const { x0, z0, n, cell, cols } = grid;
-  const parts = { water: [], lava: [] };
+  const parts = { water: [], lava: [] }, lavaDepth = []; // (how deep the lava is at each corner: shallow by the rock, it's cooled to a dark crust)
   const step = 2;
   const f = (x, y, z) => Math.min(gridHeight(grid, x, z) - y, sampleGrid(grid, x, y, z));
   // (Each corner at its own water's level there, worked out from where the
@@ -647,7 +647,7 @@ export function liquidChunk(grid, field, pools) {
       // where it has one: where it runs out into a chamber's open air, no
       // water hangs there). Wherever the floor rises over the water, the
       // rock hides the sheet: so its edge is where the water meets the floor.
-      let level = null, levelAt = null;
+      let level = null, levelAt = null, molten = false;
       const ch = col.chamber;
       if (ch && ch.e < 1 && (ch.c.flooded ? !(f(x, ch.c.floor - 9, z) < 0) : !(f(x, ch.c.lake - 4, z) < 0 && f(x, ch.c.lake - 8, z) < 0))) (level = ch.c.lake), (levelAt = () => ch.c.lake);
       const rv = field.riverAt(x, z, gridHeight(grid, x, z));
@@ -658,15 +658,23 @@ export function liquidChunk(grid, field, pools) {
       // (The lava lakes in the volcanic caverns' low ground.)
       if (col.volc > 0.45) {
         const vf = field.volcanicFloor(x, z);
-        if (vf.floor < vf.lava && f(x, vf.lava - 6, z) >= 0 && vf.lava > (level ?? -Infinity)) (level = vf.lava), (levelAt = (px, pz) => field.volcanicFloor(px, pz).lava);
+        // (Lava wherever the floor dips under its level, rock under the floor:
+        // whole, never with holes in it, and never water.)
+        if (vf.floor < vf.lava && f(x, vf.floor - 1, z) >= 0 && vf.lava > (level ?? -Infinity)) (level = vf.lava), (levelAt = (px, pz) => field.volcanicFloor(px, pz).lava), (molten = true);
       }
       if (level === null) continue;
-      quad(biomeIn(grid, x, level, z) === 2 ? parts.lava : parts.water, x, z, step / 2, levelAt); // (edge to edge, never overlapping: no seams)
+      const isLava = molten || biomeIn(grid, x, level, z) === 2;
+      quad(isLava ? parts.lava : parts.water, x, z, step / 2, levelAt); // (edge to edge, never overlapping: no seams)
+      if (isLava) {
+        const h = step / 2, dep = (px, pz) => (molten ? levelAt(px, pz) - field.volcanicFloor(px, pz).floor : 3);
+        lavaDepth.push(dep(x - h, z - h), dep(x - h, z + h), dep(x + h, z + h), dep(x - h, z - h), dep(x + h, z + h), dep(x + h, z - h));
+      }
     }
   }
   for (let k = 0; k < pools.length; k += 4) {
     const [px, py, pz, r] = [pools[k], pools[k + 1], pools[k + 2], pools[k + 3]];
-    const list = biomeIn(grid, px, py, pz) === 2 ? parts.lava : parts.water;
+    const lavaPool = biomeIn(grid, px, py, pz) === 2, list = lavaPool ? parts.lava : parts.water;
+    if (lavaPool) for (let a = 0; a < 14; a++) lavaDepth.push(r, 0, 0); // (the middle deep, the rim cooled)
     const N = 14, rr = (a) => r * (0.85 + 0.3 * hash2(Math.round(px * 3) + (a % N), Math.round(pz * 3), 77));
     for (let a = 0; a < N; a++) {
       const a0 = (a / N) * Math.PI * 2, a1 = ((a + 1) / N) * Math.PI * 2, r0 = rr(a), r1 = rr(a + 1);
@@ -679,6 +687,15 @@ export function liquidChunk(grid, field, pools) {
     const position = new Float32Array(list);
     const colour = new Float32Array(list.length), c = key === 'lava' ? LAVA_COLOUR : WATER_COLOUR;
     for (let v = 0; v < list.length; v += 3) colour.set(c, v);
+    if (key === 'lava') {
+      // (Cooler by the rock: a dark red crust where it's shallow at the edges, glowing orange out in the deep.)
+      for (let v = 0; v < list.length; v += 3) {
+        const t = Math.min(1, Math.max(0, (lavaDepth[v / 3] ?? 3) / 1.6)), k = t * t * (3 - 2 * t);
+        colour[v] = 0.32 + (c[0] - 0.32) * k;
+        colour[v + 1] = 0.07 + (c[1] - 0.07) * k;
+        colour[v + 2] = 0.03 + (c[2] - 0.03) * k;
+      }
+    }
     out[key] = { position, colour };
   }
   return out;
@@ -939,20 +956,59 @@ export function decorateChunk(grid, field) {
     g.translate(ax - x0, ay, az - z0);
     piece(g, ax, ay, az, (c, cyv, v) => c.set(colour).multiplyScalar(0.85 + hash2(v, Math.round(ax * 7), seed + 61) * 0.25), glow);
   };
-  // A spider's web: strands out from its middle, rings round them, hung
-  // upright across the passage at (x, y, z), `R` across, turned `yaw`.
+  // A spider's web, strung in the rock: its spokes run out from its middle
+  // to where they meet the walls, floor and roof round it (so it's always
+  // fastened to the cave, never standing on nothing), each its own length;
+  // the spiral of its catching silk round them, sagging a little, a strand
+  // or two broken. Set across the passage (its narrowest way), each its own
+  // shape. None where there's too little rock round it to hold one.
+  const webSpan = (grid.n - 1) * cell, webTop = yMin + (ny - 1) * cell;
+  const rockAt = (px, py, pz) => px >= x0 && pz >= z0 && px <= x0 + webSpan && pz <= z0 + webSpan && py >= yMin && py <= webTop && sampleGrid(grid, px, py, pz) > 0.25;
   const web = (x, y, z, R, yaw, s) => {
-    webs.push(x, y, z, R); // (where it hangs, to be caught in: see CaveSystem.webAt)
-    const ux = Math.cos(yaw), uz = Math.sin(yaw), N = 8, pt = (a, r) => [x + ux * Math.cos(a) * r, y + Math.sin(a) * r, z + uz * Math.cos(a) * r];
-    const silk = 0xd8d6cc, faint = [0.05, 0.05, 0.05];
-    for (let k = 0; k < N; k++) {
-      const a = (k / N) * Math.PI * 2 + s, [bx, by, bz] = pt(a, R * (0.85 + 0.15 * Math.sin(k * 3 + s * 9)));
-      rod(x, y, z, bx, by, bz, 0.012, 0.012, silk, faint, 3);
-    }
-    for (const q of [0.3, 0.55, 0.8]) {
+    if (rockAt(x, y, z)) return;
+    const N = 7 + Math.floor(hash2(Math.round(x * 3), Math.round(z * 3), seed + 71) * 5), reach = Math.max(2.5, R * 2.2);
+    const rays = (yw) => {
+      const ux = Math.cos(yw), uz = Math.sin(yw), out = [];
       for (let k = 0; k < N; k++) {
-        const a0 = (k / N) * Math.PI * 2 + s, a1 = ((k + 1) / N) * Math.PI * 2 + s, [ax, ay, az] = pt(a0, R * q), [bx, by, bz] = pt(a1, R * q);
-        rod(ax, ay, az, bx, by, bz, 0.01, 0.01, silk, faint, 3);
+        const a = (k / N) * Math.PI * 2 + s * 6.28 + (hash2(k, Math.round(x * 5), seed + 73) - 0.5) * 0.5, ca = Math.cos(a), sa = Math.sin(a);
+        let hit = null;
+        for (let t = 0.3; t <= reach; t += 0.15) {
+          const px = x + ux * ca * t, py = y + sa * t, pz = z + uz * ca * t;
+          if (rockAt(px, py, pz)) {
+            hit = [px, py, pz, t];
+            break;
+          }
+        }
+        out.push(hit);
+      }
+      return out;
+    };
+    // (The way across the passage: of a few turns, the one whose spokes meet rock soonest, and most often.)
+    let best = null, bestScore = Infinity;
+    for (let q = 0; q < 4; q++) {
+      const yw = yaw + (q / 4) * Math.PI, hits = rays(yw), miss = hits.filter((h) => !h).length;
+      const score = miss * 10 + hits.reduce((n, h) => n + (h ? h[3] : 0), 0);
+      if (score < bestScore) (bestScore = score), (best = hits);
+    }
+    if (!best || best.filter((h) => !h).length > 1) return; // (too little to fasten it to)
+    let span = 0;
+    for (const h of best) if (h) span = Math.max(span, h[3]);
+    webs.push(x, y, z, Math.min(span, 4) * 0.6); // (where it hangs, to be caught in: see CaveSystem.webAt)
+    const silk = 0xd8d6cc, faint = [0.05, 0.05, 0.05];
+    for (let k = 0; k < N; k++) if (best[k]) rod(x, y, z, best[k][0], best[k][1], best[k][2], 0.012, 0.012, silk, faint, 3);
+    // (The spiral: rings out from the middle, each spoke's own length setting how far out it reaches there.)
+    const rings = 3 + Math.floor(hash2(Math.round(z * 3), Math.round(y * 3), seed + 79) * 4);
+    for (let r = 1; r <= rings; r++) {
+      const q = r / (rings + 1);
+      for (let k = 0; k < N; k++) {
+        const A = best[k], B = best[(k + 1) % N];
+        if (!A || !B) continue;
+        if (hash2(k * 13 + r, Math.round(x * 7), seed + 83) < 0.08) continue; // (a broken strand)
+        const pa = [x + (A[0] - x) * q, y + (A[1] - y) * q, z + (A[2] - z) * q], pb = [x + (B[0] - x) * q, y + (B[1] - y) * q, z + (B[2] - z) * q];
+        // (Sagging a touch between the spokes.)
+        const mid = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2 - 0.04 * q * Math.hypot(pb[0] - pa[0], pb[2] - pa[2]), (pa[2] + pb[2]) / 2];
+        rod(pa[0], pa[1], pa[2], mid[0], mid[1], mid[2], 0.008, 0.008, silk, faint, 3);
+        rod(mid[0], mid[1], mid[2], pb[0], pb[1], pb[2], 0.008, 0.008, silk, faint, 3);
       }
     }
   };

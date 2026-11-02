@@ -1846,9 +1846,10 @@ export class Wildlife {
     }
     // At night in the woods, an owl or two up in the trees round you.
     if ((ctx.night ?? 0) > 0.5 && count('owl') < 2) {
-      const s = spot(40, 90, (x, z) => g.getForestDensity(x, z) > 0.3, 8);
-      if (s) {
-        const perch = { x: s.x, z: s.z, y: s.y + rnd(5, 9) };
+      // (On a real tree's crown, never on nothing.)
+      const cam = ctx.camera.position, crowns = this.#crownsNear(ctx, 120).filter((c) => Math.hypot(c[0] - cam.x, c[1] - cam.z) > 40);
+      const c = crowns[Math.floor(Math.random() * crowns.length)], perch = c ? this.#perchOn(c, { ...ctx, winter: 0 }) : null;
+      if (perch) {
         this.animals.push({ kind: 'owl', x: perch.x, y: perch.y, z: perch.z, perch, heading: rnd(0, TAU), pitch: 0, roll: 0, scale: SPECIES.owl.scale * rnd(0.9, 1.1), alive: true, health: SPECIES.owl.health, flap: 0, state: 'perch', timer: rnd(4, 10), coat: new Color(0.95, 0.9, 0.82) });
       }
     }
@@ -2860,8 +2861,10 @@ export class Wildlife {
         if (prey) (a.state = 'swoop'), (a.prey = prey), (prey.owl = a);
         else if (Math.random() < 0.15) {
           // (Or off to another tree, a little way on.)
-          const t = rnd(0, TAU), x = a.x + Math.sin(t) * rnd(20, 50), z = a.z + Math.cos(t) * rnd(20, 50);
-          if (g.getForestDensity(x, z) > 0.25) (a.perch = { x, z, y: g.getHeight(x, z) + rnd(5, 9) }), (a.state = 'fly');
+          // (Onto a real tree's crown, not a spot in the air over the wood.)
+          const near = this.#crownsNear(ctx, 160).filter((c) => { const d = Math.hypot(c[0] - a.x, c[1] - a.z); return d > 15 && d < 60; });
+          const c = near[Math.floor(Math.random() * near.length)], to = c ? this.#perchOn(c, { ...ctx, winter: 0 }) : null;
+          if (to) (a.perch = to), (a.state = 'fly');
         }
       }
       return;
@@ -2902,9 +2905,11 @@ export class Wildlife {
         a.carrying = p;
         const near = Math.hypot(a.x - cam.x, a.z - cam.z);
         if (near < 60) ctx.sound?.call('flutter', ctx.pan(a.x, a.z), Math.max(0.15, 1 - near / 60)), ctx.sound?.call('peep', ctx.pan(a.x, a.z), Math.max(0.1, 0.8 - near / 60));
-        const t = rnd(0, TAU), x = a.x + Math.sin(t) * 40, z = a.z + Math.cos(t) * 40;
-        a.perch = { x, z, y: g.getHeight(x, z) + rnd(6, 9) };
-        a.state = 'fly';
+        // (Up into a real tree a way off; with none, away over the woods, out of sight.)
+        const crowns = this.#crownsNear(ctx, 160).filter((c) => Math.hypot(c[0] - a.x, c[1] - a.z) > 25);
+        const c = crowns[Math.floor(Math.random() * crowns.length)], to = c ? this.#perchOn(c, { ...ctx, winter: 0 }) : null;
+        if (to) (a.perch = to), (a.state = 'fly');
+        else (a.state = 'leave'), (a.away = { x: a.x + rnd(-200, 200), z: a.z + rnd(-200, 200) });
         a.prey = null;
       }
     }

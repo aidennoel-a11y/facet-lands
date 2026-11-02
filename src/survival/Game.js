@@ -403,6 +403,14 @@ export class Game {
         this.#menu(this.hud.toggleSkills(this.record));
         return;
       }
+      // Delete (creative): everything you carry gone, to start afresh.
+      if (e.code === 'Delete' && this.survival.alive && this.mode === 'creative' && !this.hud.busy) {
+        this.inventory.clear();
+        this.inventory.changed?.();
+        this.sound?.call('place', 0, 0.3);
+        this.hotbar?.flash('Inventory cleared');
+        return;
+      }
       if (e.code === 'KeyZ' && this.survival.alive) {
         this.#menu(this.hud.toggleCreative());
         return;
@@ -1050,11 +1058,13 @@ export class Game {
       this.sound?.call('place', 0, 0.5);
       return this.hotbar?.flash(`${ITEMS[s.type].name} taken down`);
     }
-    // (Testing and creative: a site finished outright, nothing brought.)
-    if (this.mode !== 'survival' && this.structures.finish(s)) {
+    // (Testing and creative: the blueprint first, then each stage of it
+    // put up in turn, one a press, nothing brought.)
+    const step = this.mode !== 'survival' ? this.structures.advance(s) : null;
+    if (step) {
       this.sound?.call('place', 0, 0.6);
       this.dirty = true;
-      return this.hotbar?.flash(`The ${ITEMS[s.type]?.name.toLowerCase() ?? 'building'} is built`);
+      return this.hotbar?.flash(step.built ? `The ${ITEMS[s.type]?.name.toLowerCase() ?? 'building'} is built` : `Stage ${step.index} of ${step.of} up: ${step.name}. Q again for the next`);
     }
     // What's done at it: cooked meat, bars, jerky, stew, a boiled waterskin.
     const done = this.structures.takeDone(s);
@@ -1644,10 +1654,7 @@ export class Game {
         this.inventory.take(i);
         this.cooldown = 0.4;
         this.sound?.call('place', 0, 0.5);
-        if (this.mode !== 'survival') {
-          this.structures.finish(site);
-          return this.hotbar?.flash(`The ${item.name.toLowerCase()} is built`);
-        }
+        if (this.mode !== 'survival') return this.hotbar?.flash(`The ${item.name.toLowerCase()}'s blueprint, marked out: Q on it to put up each stage in turn (${stages.length} of them)`);
         const need = this.structures.siteNeeds(site);
         return this.hotbar?.flash(`Site marked out for the ${item.name.toLowerCase()}. First, ${need.name}: bring ${this.#wantsText(need.wants)} (click the site with them)`);
       }

@@ -117,10 +117,9 @@ const KINDS = {
   trophyRack: { make: trophyRackModel, circle: 0.2, tall: 1.9 },
   // (The big ones go up in stages: a site marked out, then each stage
   // built as you bring its materials: see addToSite.)
-  waterMill: { make: waterMillModel, box: [1.3, 1.2], tall: 3.4, jobs: 4, mill: 'water', stages: [
-    { name: 'the stone footing', needs: { rock: 12 }, upTo: 0.24 },
-    { name: 'the mill house', needs: { log: 6 }, upTo: 0.72 },
-    { name: 'the roof', needs: { log: 2, stick: 6 }, upTo: 1 },
+  waterMill: { make: waterMillModel, box: [0.5, 0.5], tall: 1.7, jobs: 4, mill: 'water', stages: [
+    { name: 'the stone pier', needs: { rock: 8 }, upTo: 0.6 },
+    { name: 'the trestle and axle', needs: { log: 3, rope: 1 }, upTo: 1 },
     { name: 'the wheel and millstones', needs: { log: 2, rope: 2, ironBar: 1 }, upTo: 1 },
   ] },
   windmill: { make: windmillModel, circle: 1.5, tall: 7, jobs: 4, mill: 'wind', stages: [
@@ -293,6 +292,18 @@ export class Structures {
     this.#showSite(s);
     this.onChange?.();
     return true;
+  }
+
+  /** One stage on, nothing brought (creative): returns the stage just finished ({ name, index, of, built }), or null. */
+  advance(s) {
+    const st = this.#stages(s);
+    if (!st || this.isBuilt(s)) return null;
+    const k = s.data.stage ?? 0;
+    s.data.stage = k + 1;
+    s.data.got = {};
+    this.#showSite(s);
+    this.onChange?.();
+    return { name: st[k].name, index: k + 1, of: st.length, built: this.isBuilt(s) };
   }
 
   /** Whether it's finished (anything without stages always is). */
