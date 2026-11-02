@@ -663,7 +663,7 @@ export class Multiplayer {
   update(dt, me) {
     const now = performance.now() / 1000;
     for (const r of this.others.values()) r.update(dt, now, this.items);
-    if (!this.connected) return;
+    if (!this.connected || me.ghost) return;
     this.sendWait -= dt;
     if (this.sendWait > 0) return;
     this.sendWait = SEND_EVERY;

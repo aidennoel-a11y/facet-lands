@@ -28,6 +28,7 @@ const GROUPS = ['Tools', 'Materials', 'Trophies', 'Food', 'Herbs', 'Farming', 'W
 const WEAR_COLOUR = {
   coat: '#a8743e', furCloak: '#8a7458', paleCloak: '#e8e4dc', caveCloak: '#3a3634',
   boots: '#6a4428', furBoots: '#5a3e28', gloves: '#9a6a3e', furHat: '#8a7458', strawHat: '#e0c878',
+  camoCloak: '#4a6a2e',
   bronzeArmour: '#c89a4a', chainmail: '#8a929a', leatherCap: '#7a5230', bronzeHelmet: '#c89a4a', steelHelmet: '#a8b0b8',
   armour: '#7a5230', steelArmour: '#8a96a0', scarArmour: '#4a3426', lionArmour: '#c89a5a', tigerArmour: '#d07a2a', crocArmour: '#4a6a3a',
 };
@@ -142,7 +143,9 @@ export class Hud {
         <p class="death-days"></p>
         <p class="death-best"></p>
         <button type="button" class="respawn">Try again</button>
+        <button type="button" class="ghost-go" hidden>Watch as a ghost</button>
       </section>
+      <div class="ghost-bar" hidden>A ghost: unseen, untouching. <b>Tab</b> follow a friend · <b>Enter</b> done watching</div>
       <section class="death won" hidden>
         <h2>The heart of the Lost Keep</h2>
         <p>Every great beast brought down, their trophies set in the altar at the top of the Lost Keep: you have reached the end of the long road.</p>
@@ -157,6 +160,7 @@ export class Hud {
     this.onRespawn = null;
     this.onLeave = null;
     this.el('.respawn').addEventListener('click', () => (this.deathButton === 'leave' ? this.onLeave?.() : this.onRespawn?.()));
+    this.el('.ghost-go').addEventListener('click', () => this.onGhost?.());
     this.el('.skills-button').addEventListener('click', () => this.onSkills?.());
     this.el('.won-on').addEventListener('click', () => ((this.el('.won').hidden = true), this.onWonClose?.()));
     this.sleepAmount = 0;
@@ -549,6 +553,7 @@ export class Hud {
     this.el('.death-best').textContent = longest === null ? '' : days >= longest && days > 0 ? 'Your longest life yet.' : `Your longest: ${n(longest)}.`;
     this.deathButton = button;
     this.el('.respawn').textContent = { again: 'Try again', new: 'Start a new life', leave: 'Back to the menu' }[button];
+    this.el('.ghost-go').hidden = button === 'again'; // (survival: a while yet to watch, as a ghost)
     this.el('.death').hidden = false;
   }
 

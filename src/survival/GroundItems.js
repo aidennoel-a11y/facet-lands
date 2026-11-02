@@ -3,7 +3,7 @@ import { hash2 } from '../noise/random.js';
 import { Inventory } from './Inventory.js';
 import { ITEMS } from './items.js';
 import * as M from './models.js';
-import { coalModel, goldOreModel, mountainOreModel, swordModel, arrowModel, axeModel, boltModel, bowModel, crossbowModel, hoeModel, sickleModel, shearsModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, stickModel, waterskinModel } from './models.js';
+import { coalModel, goldOreModel, mountainOreModel, swordModel, arrowModel, axeModel, boltModel, bowModel, crossbowModel, hoeModel, sickleModel, shearsModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, harpoonModel, stickModel, waterskinModel } from './models.js';
 
 const m4 = new Matrix4(), q = new Quaternion(), e = new Euler(), p = new Vector3(), s = new Vector3(), up = new Vector3(0, 1, 0), tint = new Color();
 const hidden = new Matrix4().makeScale(0, 0, 0);
@@ -89,7 +89,7 @@ export class GroundItems {
       const steel = [0xb8c0c8, 0xeef2f6];
       const make = {
         stick: stickModel, rock: rockModel, flint: flintModel, iron: ironModel, log: logModel, deerSkin: skinModel,
-        spear: () => spearModel(), steelSpear: () => spearModel(0x9aa4b0), bronzeSpear: () => spearModel(0xb8863e),
+        spear: () => spearModel(), harpoon: () => harpoonModel(), steelSpear: () => spearModel(0x9aa4b0), bronzeSpear: () => spearModel(0xb8863e),
         bronzeAxe: () => axeModel(0xc89a4a, 0xe8c070), bronzePickaxe: () => pickaxeModel(0xc89a4a, 0xe8c070), bronzeSword: () => swordModel(0xc89a4a, 0xe8c070, 0x6a4a2a),
         copperBar: () => ironBarModel(0xd0844a), bronzeBar: () => ironBarModel(0xc89a4a), glass: M.glassModel, seedPumpkin: () => M.seedsModel(0xf0e0b0), pumpkin: () => M.pumpkinModel(false), roastPumpkin: () => M.pumpkinModel(true),
         axe: () => axeModel(), steelAxe: () => axeModel(...steel),
@@ -116,7 +116,7 @@ export class GroundItems {
         fangSword: () => swordModel(0xf0e8d4, 0xfaf4e4, 0x5a4a3a), antlerBow: () => bowModel(true, 0xcbb690), tuskPickaxe: () => pickaxeModel(0xe8dcc0, 0xf4ecd8),
         poisonArrow: () => arrowModel(0x6a9a3a), poisonBolt: () => boltModel(0x6a9a3a),
         saddle: () => M.saddleModel(false), greatSaddle: () => M.saddleModel(true), bandage: M.bandageModel, torch: M.torchModel, coalTorch: M.torchModel, candle: M.candleModel, lantern: M.lanternModel,
-        coat: () => M.coatModel(0xa8743e, 0x8a5a2e), furCloak: () => M.coatModel(0x8a7458, 0xa89070), paleCloak: () => M.coatModel(0xe8e4dc, 0xf4f0ea), caveCloak: () => M.coatModel(0x3a3634, 0x4a4644),
+        coat: () => M.coatModel(0xa8743e, 0x8a5a2e), furCloak: () => M.coatModel(0x8a7458, 0xa89070), paleCloak: () => M.coatModel(0xe8e4dc, 0xf4f0ea), caveCloak: () => M.coatModel(0x3a3634, 0x4a4644), camoCloak: () => M.coatModel(0x4a6a2e, 0x7a8a44),
         armour: () => M.coatModel(0x7a5230, 0x5a3a20, 0x8a6038), steelArmour: () => M.coatModel(0x5a4a3a, 0x4a3a2a, 0xb8c0c8),
         scarArmour: () => M.coatModel(0x4a3426, 0x3a281c, 0xb8c0c8), lionArmour: () => M.coatModel(0xc89a5a, 0x6a4026, 0xb8c0c8),
         tigerArmour: () => M.coatModel(0xd8823a, 0x1e1612, 0xb8c0c8), crocArmour: () => M.coatModel(0x5a6a44, 0x3a4a2e, 0xb8c0c8),

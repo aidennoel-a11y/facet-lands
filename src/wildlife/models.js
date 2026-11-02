@@ -1560,6 +1560,46 @@ export function seaTurtle() {
 }
 
 /**
+ * A seal: a fat grey sausage of blubber, mottled darker, short fore
+ * flippers, the hind ones trailing together behind, a round dog's head
+ * with big dark eyes and whiskers.
+ */
+export function seal() {
+  const coat = 0x6e6a64, dark = 0x4a4642, belly = 0x9a948a, flip = 0x3a3632;
+  const body = new Blocks()
+    .box(0.5, 0.42, 0.62, coat, [0, 0.27, 0.12], [0, 0, 0], [0.8, 0.85])
+    .box(0.44, 0.36, 0.46, coat, [0, 0.24, -0.38], [0, 0, 0], [0.7, 0.75])
+    .box(0.28, 0.22, 0.34, coat, [0, 0.18, -0.74], [0, 0, 0], [0.55, 0.6])
+    .box(0.42, 0.06, 0.9, belly, [0, 0.08, -0.12])
+    .box(0.1, 0.02, 0.1, dark, [0.14, 0.48, 0.2])
+    .box(0.08, 0.02, 0.08, dark, [-0.12, 0.46, -0.1])
+    .box(0.07, 0.02, 0.09, dark, [0.06, 0.41, -0.5])
+    .box(0.09, 0.02, 0.07, dark, [-0.08, 0.5, 0.32])
+    .box(0.24, 0.04, 0.2, flip, [0.08, 0.12, -0.98], [0, 0.3, 0], [0.4, 1]) // (the hind flippers, together)
+    .box(0.24, 0.04, 0.2, flip, [-0.08, 0.12, -0.98], [0, -0.3, 0], [0.4, 1]);
+  return {
+    body: body.build(),
+    headPivot: [0, 0.36, 0.42],
+    head: new Blocks()
+      .box(0.26, 0.24, 0.26, coat, [0, 0.02, 0.08], [0, 0, 0], [0.85, 0.85])
+      .box(0.15, 0.12, 0.12, belly, [0, -0.03, 0.24], [0, 0, 0], [0.8, 0.8])
+      .box(0.05, 0.04, 0.03, 0x141210, [0, 0.0, 0.3])
+      .box(0.05, 0.05, 0.03, 0x0a0806, [0.08, 0.07, 0.2])
+      .box(0.05, 0.05, 0.03, 0x0a0806, [-0.08, 0.07, 0.2])
+      .box(0.18, 0.005, 0.005, 0xd8d4cc, [0.1, -0.04, 0.27], [0, 0.4, 0])
+      .box(0.18, 0.005, 0.005, 0xd8d4cc, [-0.1, -0.04, 0.27], [0, -0.4, 0])
+      .build(),
+    antlers: null,
+    // (Short fore flippers out to the sides; the hind ones are in the body, trailing.)
+    fore: limb(0.08, 0.08, { top: [0.1, 0.06], knee: [0.08, 0.05], ankle: [0.1, 0.03], color: coat, foot: [0.16, 0.03, 0.18, flip, 0.03] }),
+    hind: limb(0.02, 0.02, { top: [0.02, 0.02], knee: [0.02, 0.02], ankle: [0.02, 0.02], color: coat }),
+    legs: [[0.24, 0.16, 0.22], [-0.24, 0.16, 0.22], [0.1, 0.1, -0.6], [-0.1, 0.1, -0.6]],
+    torso: [[0, 0.27, -0.1, 0.5, 0.42, 1.3]],
+    skull: [0, 0.02, 0.1, 0.26, 0.24, 0.3],
+  };
+}
+
+/**
  * A giant cave salamander: long and low, a broad flat head, mottled
  * grey-brown, folds of loose skin down its sides, a paddle of a tail.
  */

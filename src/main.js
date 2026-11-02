@@ -1352,7 +1352,7 @@ const ANIMAL_PRINTS = {
   sheep: [PRINT.hoof, 0.08], boar: [PRINT.hoof, 0.1], cougar: [PRINT.paw, 0.12], turkey: [PRINT.paw, 0.1], duck: [PRINT.paw, 0.05],
   tiger: [PRINT.paw, 0.15], lion: [PRINT.paw, 0.14], jaguar: [PRINT.paw, 0.12], panther: [PRINT.paw, 0.12], hyena: [PRINT.paw, 0.1], panda: [PRINT.paw, 0.18],
   mountainGoat: [PRINT.hoof, 0.07], horse: [PRINT.hoof, 0.13], camel: [PRINT.paw, 0.17], elephant: [PRINT.square, 0.4], hippo: [PRINT.square, 0.26],
-  crocodile: [PRINT.paw, 0.14], scorpion: [PRINT.square, 0.025], crab: [PRINT.square, 0.02], seaTurtle: [PRINT.square, 0.12], salamander: [PRINT.paw, 0.05],
+  crocodile: [PRINT.paw, 0.14], scorpion: [PRINT.square, 0.025], crab: [PRINT.square, 0.02], seaTurtle: [PRINT.square, 0.12], seal: [PRINT.square, 0.14], salamander: [PRINT.paw, 0.05],
   // (Those without legs of their own to step with: see Wildlife.#prints. A snake's a smooth trail; a bird on the ground, its little forked feet.)
   snake: [PRINT.square, 0.06], python: [PRINT.square, 0.12], monkey: [PRINT.paw, 0.06],
   songbird: [PRINT.paw, 0.025], starling: [PRINT.paw, 0.025], crow: [PRINT.paw, 0.04], gull: [PRINT.paw, 0.045], hawk: [PRINT.paw, 0.05], owl: [PRINT.paw, 0.05], eagle: [PRINT.paw, 0.06],
@@ -2018,6 +2018,18 @@ ui.fly.addEventListener('change', () => {
 const peaceful = document.getElementById('peaceful');
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
+  // A ghost: Tab from one friend to the next to watch them; Enter, done watching.
+  if (game.ghost && (e.code === 'Tab' || e.code === 'Enter')) {
+    e.preventDefault();
+    if (e.code === 'Enter') return void game.endGhost();
+    const ids = [...mp.others.keys()];
+    if (!ids.length) return void hotbar.flash('No one else is here to watch');
+    const at = ids.indexOf(game.ghostFollow);
+    game.ghostFollow = at + 1 < ids.length ? ids[at + 1] : null;
+    const r = game.ghostFollow != null ? mp.others.get(game.ghostFollow) : null;
+    hotbar.flash(r ? `Watching ${r.name ?? 'a friend'}` : 'Drifting free');
+    return;
+  }
   // U: where each frame's time goes (see Profiler).
   if (e.code === 'KeyU' && !e.metaKey && !e.ctrlKey) {
     prof.toggle();
@@ -3350,7 +3362,19 @@ function tick(now) {
     });
   } else piranha.update(dt, { camera, feet: 0, water: null, generator, alive: false });
   prof.mark('animals');
+  // (A ghost following a friend: drifting along behind and above them.)
+  if (game.ghost && game.ghostFollow != null) {
+    const r = mp.others.get(game.ghostFollow);
+    if (!r) game.ghostFollow = null;
+    else {
+      const p = r.root.position, yaw = controls.euler.y, k = 1 - Math.exp(-dt * 3);
+      camera.position.x += (p.x + Math.sin(yaw) * 4 - camera.position.x) * k;
+      camera.position.y += (p.y + 3 - camera.position.y) * k;
+      camera.position.z += (p.z + Math.cos(yaw) * 4 - camera.position.z) * k;
+    }
+  }
   mp.update(dt, {
+    ghost: !!game.ghost, // (unseen: nothing sent)
     x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x, // (the way you look: yaw first, then pitch)
     crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk', ...airFlags(), ride: !!game.mount,
     pose: game.pose(), // (what's in your hand, what you're doing with it)
@@ -3649,6 +3673,11 @@ if (!TESTING) {
   // wiped at once, before the death screen shows (see Game.#die), and the
   // way out is back to the menu, where the seed waits for a new life.
   game.online = () => mp.connected;
+  // (A ghost: the world gone grey and pale, and nothing solid to it.)
+  game.onGhost = (on) => {
+    canvas.style.filter = on ? 'grayscale(0.85) brightness(1.08) contrast(0.9)' : '';
+    controls.noclip = on;
+  };
   game.onDeath = ({ days, hardcore }) => {
     if (!hardcore || !menu.world) return;
     torches.clearWorld?.();

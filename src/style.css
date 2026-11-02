@@ -773,6 +773,19 @@ kbd {
 .death p:empty {
   display: none;
 }
+.ghost-bar {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: rgba(30, 34, 44, 0.55);
+  color: rgba(220, 226, 236, 0.85);
+  font-size: 13px;
+  pointer-events: none;
+  white-space: nowrap;
+}
 .death .death-best {
   font-size: 13px;
   color: rgba(232, 228, 220, 0.6);

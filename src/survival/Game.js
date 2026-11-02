@@ -51,13 +51,13 @@ const NAMES = {
   rabbit: 'rabbit', hare: 'hare', sheep: 'sheep', boar: 'boar', cougar: 'cougar', turkey: 'turkey', duck: 'duck', snake: 'rattlesnake',
   tiger: 'tiger', jaguar: 'jaguar', monkey: 'monkey', panther: 'black panther', panda: 'giant panda', crocodile: 'crocodile', mountainGoat: 'mountain goat',
   songbird: 'bird', starling: 'starling', crow: 'crow', gull: 'gull', hawk: 'hawk',
-  lion: 'lion', hyena: 'hyena', elephant: 'elephant', hippo: 'hippo', camel: 'camel', scorpion: 'scorpion', crab: 'crab', seaTurtle: 'sea turtle', salamander: 'giant salamander', python: 'python', bat: 'bat', eagle: 'eagle',
+  lion: 'lion', hyena: 'hyena', elephant: 'elephant', hippo: 'hippo', camel: 'camel', scorpion: 'scorpion', crab: 'crab', seaTurtle: 'sea turtle', seal: 'seal', salamander: 'giant salamander', python: 'python', bat: 'bat', eagle: 'eagle',
   horse: 'horse', donkey: 'donkey', mule: 'mule', vulture: 'vulture', goat: 'goat',
 };
 const ATTACKERS = { wolf: 'a wolf', grizzly: 'a grizzly bear', blackBear: 'a black bear', cougar: 'a cougar', moose: 'a moose', boar: 'a wild boar', elk: 'a bull elk', deer: 'a buck', bison: 'a bison', snake: 'a rattlesnake', tiger: 'a tiger', jaguar: 'a jaguar', panther: 'a black panther', crocodile: 'a crocodile', panda: 'a giant panda', mountainGoat: 'a mountain goat', lion: 'a lion', hyena: 'a hyena', elephant: 'an elephant', hippo: 'a hippo', camel: 'a camel', scorpion: 'a scorpion', python: 'a python' };
 const AXES = { axe: 1, bronzeAxe: 1.5, steelAxe: 2, forgedAxe: 3 };
 const PICKS = { pickaxe: 1, bronzePickaxe: 1.3, steelPickaxe: 1.6, forgedPickaxe: 2.2, tuskPickaxe: 3, starPickaxe: 3.6 };
-const SPEARS = new Set(['spear', 'bronzeSpear', 'steelSpear', 'forgedSpear']);
+const SPEARS = new Set(['harpoon', 'spear', 'bronzeSpear', 'steelSpear', 'forgedSpear']);
 const CLUBS = new Set(['club', 'mace', 'warHammer']);
 const SWORDS = new Set(['sword', 'fangSword', 'oldSword', 'starBlade', 'bronzeSword']);
 const BOWS = new Set(['bow', 'antlerBow', 'longbow']);
@@ -494,6 +494,7 @@ export class Game {
       this.hud.renderChest();
     };
     this.hud.onRespawn = () => this.respawn();
+    this.hud.onGhost = () => this.ghostMode();
     this.hud.onLeave = () => this.onLeave?.();
     // (The crafting tree: which tiers you've opened. See #learn.)
     this.hud.unlocked = (tier) => this.unlocked(tier);
@@ -554,7 +555,7 @@ export class Game {
     // (A chest's lid let down as you close it.)
     if (open && this.hud.el?.('.chest-ui') && !this.hud.el('.chest-ui').hidden) this.chestOpen = true;
     if (!open && this.chestOpen) (this.chestOpen = false), this.sound?.call('lidShut', 0, 0.9);
-    this.controls.frozen = open || !this.survival.alive;
+    this.controls.frozen = open || (!this.survival.alive && !this.ghost);
     if (open && document.pointerLockElement) document.exitPointerLock();
   }
 
@@ -834,6 +835,7 @@ export class Game {
 
   /** Q: picks up, picks fruit, drinks, butchers, and uses what you've built (Shift: takes it down). */
   interact(ray, down = false) {
+    if (this.ghost) return;
     if (this.mount) return this.#dismount(true);
     if (this.riding) return this.#getOff(true);
     if (this.climbing) return this.#letGo(true);
@@ -1397,6 +1399,7 @@ export class Game {
 
   /** The mouse pressed down (a bow starts to draw). */
   press() {
+    if (this.ghost) return;
     if (!this.acting || !this.survival.alive || this.hud.busy || this.riding) return;
     if (this.line?.fight) return void (this.reeling = true);
     const s = this.inventory.slots[this.hotbar.index];
@@ -1409,6 +1412,7 @@ export class Game {
 
   /** Click: uses what you're holding, at what you point at. */
   use(ray, placeTorch) {
+    if (this.ghost) return;
     if (!this.acting || !this.survival.alive || this.hud.busy || this.sleeping) return;
     const i = this.hotbar.index;
     const s = this.inventory.slots[i];
@@ -2339,6 +2343,7 @@ export class Game {
   /** Right-click: throws a spear; otherwise the same as Q. */
   /** Right mouse down, holding a blade, an axe or a club: guard up (see hurt). */
   blockStart() {
+    if (this.ghost) return;
     const s = this.inventory.slots[this.hotbar?.index ?? 0];
     if (!this.walking || !this.survival.alive || this.hud.busy || !s) return;
     if (SWORDS.has(s.id) || AXES[s.id] || CLUBS.has(s.id)) this.blocking = { since: this.time };
@@ -2352,6 +2357,7 @@ export class Game {
   }
 
   alt(ray) {
+    if (this.ghost) return;
     if (!this.walking || !this.survival.alive || this.hud.busy) return;
     const i = this.hotbar.index;
     const s = this.inventory.slots[i];
@@ -2551,7 +2557,7 @@ export class Game {
       const hit = this.#aimNear(o, d, REACH + 0.5);
       if (hit) return this.#strike(i, hit, o);
       // A fish, in the water in front of you?
-      if (this.#spearFish(o, d, REACH + 0.8)) this.inventory.wear(i, 1);
+      if (this.#spearFish(o, d, REACH + 0.8, 0.6, ITEMS[this.inventory.slots[i]?.id]?.harpoon)) this.inventory.wear(i, 1);
       else this.sound?.call('whoosh', 0, 0.25);
     });
   }
@@ -2606,7 +2612,7 @@ export class Game {
   }
 
   // Spearing a fish (along a ray, or where a thrown spear goes in): whether one was caught.
-  #spearFish(origin, direction, reach, wide = 0.6) {
+  #spearFish(origin, direction, reach, wide = 0.6, harpoon = false) {
     for (const f of this.fish?.list ?? []) {
       if (f.hidden || f.leap || f.salmon) continue;
       const ox = f.x - origin.x, oy = f.y - origin.y, oz = f.z - origin.z;
@@ -2614,10 +2620,18 @@ export class Game {
       if (t < 0 || t > reach) continue;
       const r = Math.max(wide, (f.size ?? 0.3) * 0.7);
       if (ox * ox + oy * oy + oz * oz - t * t > r * r) continue;
+      // (A big fish: a spear tears out of it; a harpoon's barbs hold, and you haul it in on the line.)
+      const big = (f.size ?? 0.3) > 1;
+      if (big && !harpoon) {
+        this.sound?.call('bigsplash', 0, 0.5);
+        this.hotbar?.flash('The spear tears out of it: too big to hold on a spear. A harpoon would');
+        return true;
+      }
       this.fish.take(f);
-      this.#give('rawFish', (f.size ?? 0.3) > 1 ? 3 : 1);
-      this.sound?.call('splash', 0, 0.5);
-      this.hotbar?.flash('You speared a fish');
+      this.#give('rawFish', big ? Math.round(2 + (f.size ?? 1) * 2) : 1);
+      this.sound?.call(big ? 'bigsplash' : 'splash', 0, 0.5);
+      this.hotbar?.flash(big ? 'Harpooned: you haul the big fish in on the line, fighting all the way' : 'You speared a fish');
+      if (big) this.skill('fishing', 4);
       return true;
     }
     return false;
@@ -2896,10 +2910,10 @@ export class Game {
         sp.vel.multiplyScalar(0.25);
         this.traces?.splash(sp.pos.x, w.level, sp.pos.z, 6, 1.5, 0.6);
         if (sp.fire) (sp.fire = false), sp.mesh.clear(), this.sound?.call('hiss', 0, 0.25); // (doused)
-        if (sp.kind === 'spear' && this.#spearFish(sp.pos.clone().addScaledVector(dir, -1), dir, 2.5)) sp.vel.multiplyScalar(0.2);
+        if (sp.kind === 'spear' && this.#spearFish(sp.pos.clone().addScaledVector(dir, -1), dir, 2.5, 0.6, sp.stack.id === 'harpoon')) sp.vel.multiplyScalar(0.2);
       } else if (w && sp.pos.y < w.level && sp.kind === 'spear' && !sp.done && sp.vel.lengthSq() > 4) {
         // (On through the water, thrown under it: anything in its way.)
-        if (this.#spearFish(sp.pos, dir, sp.vel.length() * dt + 0.3, 0.45)) sp.vel.multiplyScalar(0.2);
+        if (this.#spearFish(sp.pos, dir, sp.vel.length() * dt + 0.3, 0.45, sp.stack.id === 'harpoon')) sp.vel.multiplyScalar(0.2);
       }
       // Into the ground: it sticks there.
       const g = this.groundAt(sp.pos.x, sp.pos.z, sp.pos.y + 1);
@@ -2909,7 +2923,13 @@ export class Game {
         sp.done = true;
         sp.stack.dur = (sp.stack.dur ?? 1) - 1;
         const lost = ITEMS[sp.stack.id]?.fire && !sp.wet ? true : sp.kind !== 'spear' ? Math.random() < 0.25 : sp.stack.dur <= 0; // (a fire arrow burns out where it lands)
-        if (!lost) {
+        // (A harpoon's on its line: you haul it back in, if it's not run out too far.)
+        const reel = !lost && sp.stack.id === 'harpoon' && sp.pos.distanceTo(this.camera.position) < 32;
+        if (reel) {
+          const left = this.inventory.add(sp.stack, this.hotbar?.index);
+          if (!left) this.sound?.call('brush', 0, 0.35), this.hotbar?.flash('You haul the harpoon back in on its line');
+        }
+        if (!lost && !reel) {
           const tilt = q.setFromUnitVectors(FORWARD, dir).clone();
           const y = Number.isFinite(g) ? g : sp.pos.y;
           const short = sp.kind !== 'spear';
@@ -3615,6 +3635,12 @@ export class Game {
     else if (calming && !calming.a.tame && calming.calm > 0.02) this.hud.meter(`The ${NAMES[calming.a.kind]} is settling`, calming.calm);
     else if (this.breaking && this.time < this.breaking.until) this.hud.meter(this.breaking.label, this.breaking.frac);
     else if ((this.survival.breath ?? 100) < 99.5 && this.mode === 'survival') this.hud.meter('Breath', this.survival.breath / 100);
+    else if (this.controls.crouch && this.walking && !this.controls.swimming) {
+      // (Crouched: how much of you shows: moving or still, in the grass or out in the open, lit by a torch or in the dark, in a leaf cloak.)
+      const pl = this.player, stance = pl.moving ? 0.45 : 0.3, night = ctx.night ?? (1 - (ctx.day ?? 1));
+      const seen = stance * (1 - 0.55 * pl.cover) * (pl.camo ? 0.6 : 1) * (pl.torch ? 1.8 : 1) * (0.55 + 0.45 * (1 - night)) * (1 - 0.04 * (pl.sneak ?? 0));
+      this.hud.meter(seen < 0.12 ? 'Hidden' : seen < 0.22 ? 'Barely seen' : 'Seen', Math.min(1, seen / 0.45));
+    }
     else this.hud.meter(null, null);
     this.hud.almanac(this.mode === 'survival' && this.survival.alive ? { day: Math.floor(this.age) + 1, season: ctx.season ?? '', longest: Math.max(longestRun(), Math.floor(this.age)) } : null);
     // (Under thick trees the rain comes through slower; standing in the
@@ -3866,6 +3892,7 @@ export class Game {
     return {
       x: p.x, y: p.y, z: p.z, mode: c.mode, crouch: c.crouch, moving: c.moving, sprint: c.sprinting, sneak: this.skillLevel('sneaking'), quiet: !!ITEMS[this.inventory.feet?.id]?.quiet, alive: this.survival.alive && !this.riding && !this.climbing,
       cover: Math.min(1, this.#grassCover(p.x, p.z) + (ITEMS[this.inventory.worn?.id]?.hush ? 0.35 : 0)),
+      camo: !!ITEMS[this.inventory.worn?.id]?.camo,
       lure: ['wheat', 'seedWheat', 'seedCorn', 'corn'].includes(this.inventory.slots[this.hotbar?.index ?? 0]?.id),
       torch: TORCHES.has(this.inventory.slots[this.hotbar?.index ?? 0]?.id),
       food: !!HORSE_FOOD[this.inventory.slots[this.hotbar?.index ?? 0]?.id],
@@ -3937,7 +3964,35 @@ export class Game {
     this.dirty = true;
   }
 
+  /**
+   * After a death in survival: a while as a ghost, unseen, drifting through
+   * the world, watching your friends go on (Tab: from one to the next).
+   */
+  ghostMode() {
+    if (this.survival.alive) return;
+    this.ghost = true;
+    this.ghostFollow = null;
+    this.hud.el('.death').hidden = true;
+    this.hud.el('.ghost-bar').hidden = false;
+    this.controls.setMode('fly');
+    this.controls.frozen = false;
+    this.onGhost?.(true);
+  }
+
+  /** Done watching: back to the death screen, for a new life (or the menu). */
+  endGhost() {
+    if (!this.ghost) return;
+    this.ghost = false;
+    this.ghostFollow = null;
+    this.hud.el('.ghost-bar').hidden = true;
+    this.hud.el('.death').hidden = false;
+    this.controls.frozen = true;
+    this.onGhost?.(false);
+    this.#menu(true);
+  }
+
   respawn() {
+    if (this.ghost) (this.ghost = false), (this.hud.el('.ghost-bar').hidden = true), this.controls.setMode('walk'), this.onGhost?.(false);
     // (Online in survival: a new life, someone new, from the world's start.)
     const fresh = this.mode === 'survival';
     if (fresh) this.spawn = null;

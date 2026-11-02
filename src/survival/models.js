@@ -124,6 +124,16 @@ export const spearModel = (metal = 0x4a4e58) =>
     .add(new CylinderGeometry(0.035, 0.035, 0.08, 5), 0x4f6a34, [0, 0, 0.95], [Math.PI / 2, 0, 0])
     .build(); // (along +z, its point at the front, centred)
 
+/** A harpoon: a long shaft, a barbed iron head, and its line coiled at the butt. */
+export const harpoonModel = () =>
+  new Parts(13)
+    .add(new CylinderGeometry(0.025, 0.03, 2.1, 5), 0x7a5232, [0, 0, 0], [Math.PI / 2, 0, 0])
+    .add(new ConeGeometry(0.04, 0.24, 4), 0x6a7078, [0, 0, 1.16], [Math.PI / 2, 0, 0])
+    .add(new BoxGeometry(0.16, 0.015, 0.06), 0x5a6068, [0, 0, 1.02], [0, 0, 0])
+    .add(new BoxGeometry(0.015, 0.16, 0.06), 0x5a6068, [0, 0, 1.02], [0, 0, 0])
+    .add(new CylinderGeometry(0.06, 0.06, 0.1, 7), 0xb89a60, [0, 0, -0.85], [Math.PI / 2, 0, 0])
+    .build(); // (a barbed head: it holds what it goes into)
+
 export const axeModel = (metal = 0x8e8a84, edge = 0xbcb8b0) =>
   new Parts(15)
     .add(new CylinderGeometry(0.022, 0.028, 0.62, 5), 0x8a6038, [0, 0.31, 0])

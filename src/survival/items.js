@@ -142,6 +142,7 @@ export const ITEMS = {
   flintSteel: { name: 'Flint and steel', tool: true, durability: 25, weight: 0.3, group: 'Tools' },
   bronzeAxe: { name: 'Bronze axe', tool: true, durability: 140, weight: 1.8, chop: 1.5, sharp: 1.25, group: 'Tools' },
   bronzePickaxe: { name: 'Bronze pickaxe', tool: true, durability: 140, weight: 2, group: 'Tools' },
+  harpoon: { name: 'Harpoon', tool: true, durability: 120, weight: 2, sharp: 1.7, harpoon: true, group: 'Tools' }, // (barbed and on a line: it holds a big fish or a seal, and comes back when thrown)
   bronzeSpear: { name: 'Bronze spear', tool: true, durability: 60, weight: 1.6, sharp: 1.25, group: 'Tools' },
   bronzeSword: { name: 'Bronze sword', tool: true, durability: 150, weight: 1.5, sharp: 2, group: 'Tools' },
   steelAxe: { name: 'Iron axe', tool: true, durability: 180, weight: 2, chop: 2, sharp: 1.5, group: 'Tools' },
@@ -202,6 +203,7 @@ export const ITEMS = {
   bronzeHelmet: { name: 'Bronze helmet', tool: true, wear: 'head', guard: 0.75, durability: 110, weight: 1.6, group: 'Worn' },
   steelHelmet: { name: 'Steel helmet', tool: true, wear: 'head', guard: 0.65, durability: 180, weight: 2, group: 'Worn' },
   crocArmour: { name: 'Croc-scale armour', tool: true, wear: 'armour', durability: 340, protect: 0.16, weight: 11, group: 'Worn' },
+  camoCloak: { name: 'Leaf cloak', tool: true, wear: 'coat', warmth: 0.95, hush: true, camo: true, weight: 1, group: 'Worn' }, // (leaves and vines over hide, smeared with mud: you melt into the brush)
   paleCloak: { name: 'Ghost cloak', tool: true, wear: 'coat', warmth: 0.12, hush: true, weight: 2, group: 'Worn' }, // (pale and soft: the wild notice you less)
   // (Feet, hands, head.)
   boots: { name: 'Leather boots', tool: true, wear: 'feet', warmth: 0.9, quiet: true, weight: 1, group: 'Worn' }, // (soft-soled: quieter going; a snake's fangs mostly in the leather)
@@ -325,7 +327,7 @@ export const SPAWNABLE = {
   deer: 'Deer', elk: 'Elk', moose: 'Moose', bison: 'Bison', blackBear: 'Black bear', grizzly: 'Grizzly bear', wolf: 'Wolf', coyote: 'Coyote', fox: 'Fox',
   cougar: 'Cougar', boar: 'Wild boar', sheep: 'Sheep', rabbit: 'Rabbit', hare: 'Hare', turkey: 'Turkey', mountainGoat: 'Mountain goat', snake: 'Rattlesnake',
   tiger: 'Tiger', jaguar: 'Jaguar', panther: 'Black panther', panda: 'Giant panda', crocodile: 'Crocodile', python: 'Python',
-  horse: 'Horse', lion: 'Lioness', maleLion: 'Lion (male)', hyena: 'Hyena', elephant: 'Elephant', hippo: 'Hippo', camel: 'Camel', scorpion: 'Scorpion', crab: 'Crab', seaTurtle: 'Sea turtle', salamander: 'Giant salamander',
+  horse: 'Horse', lion: 'Lioness', maleLion: 'Lion (male)', hyena: 'Hyena', elephant: 'Elephant', hippo: 'Hippo', camel: 'Camel', scorpion: 'Scorpion', crab: 'Crab', seaTurtle: 'Sea turtle', seal: 'Seal', salamander: 'Giant salamander',
 };
 for (const [kind, name] of Object.entries(SPAWNABLE)) {
   ITEMS[`spawn_${kind}`] = { name: `${name} spawner`, tool: true, spawns: kind === 'maleLion' ? 'lion' : kind, male: kind === 'maleLion', weight: 0, group: 'Spawners' };
@@ -466,6 +468,7 @@ export const RECIPES = [
   { id: 'armour', needs: { deerSkin: 3, vine: 2 }, note: 'Wear it: bites and blows hurt less' },
   { id: 'bronzeAxe', needs: { bronzeBar: 2, stick: 1, vine: 1 }, note: 'Bronze: half again the life of stone, fells trees quicker' },
   { id: 'bronzePickaxe', needs: { bronzeBar: 2, stick: 2 }, note: 'Bronze: half again the life of a stone one' },
+  { id: 'harpoon', needs: { ironBar: 1, log: 1, rope: 1 }, note: 'Barbed, on a line: it holds big fish and seals, and you haul it back when thrown' },
   { id: 'bronzeSpear', needs: { bronzeBar: 1, log: 1, vine: 1 }, note: 'A bronze head: keener and longer-lasting than flint' },
   { id: 'bronzeSword', needs: { bronzeBar: 3, deerSkin: 1 }, note: 'A short, heavy bronze blade: cuts deep' },
   { id: 'leatherCap', needs: { deerSkin: 1, vine: 1 }, note: 'Hardened leather over your head: a bite or a blow there hurts a little less' },
@@ -522,6 +525,7 @@ export const RECIPES = [
   { id: 'glider', needs: { silk: 8, stick: 6, rope: 2 }, note: 'Spider silk stretched on a frame of sticks: carry it and hold Space as you fall from somewhere high to glide down a long way' },
   { id: 'starBlade', needs: { starMetal: 3, steelBar: 1, deerSkin: 1 }, at: 'anvil', note: 'The metal of a fallen star, forged to an edge: the keenest blade there is, and it hardly dulls' },
   { id: 'starPickaxe', needs: { starMetal: 3, stick: 2 }, at: 'anvil', note: 'Star metal: breaks the hardest rock in a few blows, and lasts and lasts' },
+  { id: 'camoCloak', needs: { vine: 6, deerSkin: 1, stick: 2 }, note: 'Vines and leaves over a hide, smeared with mud: crouched, the wild can hardly see you' },
   { id: 'paleCloak', needs: { paleFur: 1, pelt: 2 }, note: 'Pale and soft: warm, and the wild notice you less' },
   { id: 'caveCloak', needs: { caveBearPelt: 1, rope: 1 }, note: 'The warmest thing to wear there is' },
 ];
@@ -533,9 +537,9 @@ export const RECIPES = [
  */
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['glider', 'axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'leatherCap', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor', 'rug', 'gable', 'hatchFloor', 'seedPumpkin', 'greenhouse'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'leatherCap', 'camoCloak', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor', 'rug', 'gable', 'hatchFloor', 'seedPumpkin', 'greenhouse'] },
   { id: 'bronze', name: 'Bronze', tag: 'Smelt copper ore in a furnace, then tin with two copper bars: bronze', unlock: 'bronzeBar', ids: ['bronzeAxe', 'bronzePickaxe', 'bronzeSpear', 'bronzeSword', 'bronzeArmour', 'bronzeHelmet', 'armourStand', 'weaponRack', 'painting'] },
-  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'sailboat', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
+  { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'harpoon', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'sailboat', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'chainmail', 'steelHelmet', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor', 'stoneRoad', 'zipLine', 'starBlade', 'starPickaxe'] },
   { id: 'trophy', name: 'Trophies', tag: 'Bring down one of the great beasts', unlock: 'trophy', ids: ['scarArmour', 'lionArmour', 'tigerArmour', 'crocArmour', 'fangSword', 'antlerBow', 'tuskPickaxe', 'poisonArrow', 'poisonBolt', 'greatSaddle', 'hideRoof', 'paleCloak', 'caveCloak'] },
 ];
@@ -826,6 +830,7 @@ for (const id of Object.keys(ITEMS)) if (ITEMS[id].spawns) ICONS[id] = `<circle 
   ICONS.bedroll = `<path d="M3 20h26v5H3z" fill="#8a5a3a"/><path d="M8 17h20v4H8z" fill="#9a7a58"/><ellipse cx="6" cy="18.5" rx="3" ry="2.2" fill="#ece6d8"/>`;
   ICONS.fancyBed = `<path d="M4 6h24v2H4z" fill="#e8eef2"/><path d="M5 6v22M27 6v22" stroke="#6a3e26" stroke-width="2"/><path d="M6 8h3v12H6zM23 8h3v12h-3z" fill="#dfe8ee"/><path d="M5 20h22v5H5z" fill="#6a3e26"/><path d="M6 17h20v4H6z" fill="#f4f0ea"/><path d="M14 17h12v4H14z" fill="#8a2a2e"/>`;
   re('paleCloak', 'furCloak', [['#8a7458', '#e8e4dc'], ['#c8b89a', '#ffffff']]);
+  re('camoCloak', 'furCloak', [['#8a7458', '#4a6a2e'], ['#c8b89a', '#7a8a44']]);
   re('caveCloak', 'furCloak', [['#8a7458', '#3a3230']]);
 }
 
@@ -852,6 +857,7 @@ ICONS.pumpkin = `<ellipse cx="16" cy="19" rx="11" ry="8" fill="#e07a20"/><path d
 ICONS.roastPumpkin = ICONS.pumpkin.replaceAll('#e07a20', '#b85a20').replaceAll('#b85a14', '#7a3a10');
 ICONS.bronzeAxe = ICONS.axe.replaceAll('#8e8a84', '#c89a4a').replaceAll('#c8c4bc', '#e8c070');
 ICONS.bronzePickaxe = ICONS.pickaxe.replaceAll('#8e8a84', '#c89a4a').replaceAll('#c8c4bc', '#e8c070');
+ICONS.harpoon = ICONS.spear.replaceAll('#5a5e68', '#6a7078').replaceAll('#a8acb4', '#c8ccd4') + `<path d="M22 8l3 1M23 11l-1 3" stroke="#6a7078" stroke-width="1.6"/><circle cx="8" cy="25" r="3" fill="none" stroke="#b89a60" stroke-width="1.6"/>`;
 ICONS.bronzeSpear = ICONS.spear.replaceAll('#5a5e68', '#a87a34').replaceAll('#a8acb4', '#e8c070');
 ICONS.bronzeSword = ICONS.sword.replaceAll('#dfe6ee', '#d0a050').replaceAll('#ffffff', '#f0d080');
 ICONS.armourStand = `<path d="M16 4v24M10 28h12" stroke="#7a5638" stroke-width="2.4"/><circle cx="16" cy="6" r="3" fill="#9a7048"/><path d="M9 10h14l-2 10H11z" fill="#8a949e"/>`;
