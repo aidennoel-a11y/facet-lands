@@ -532,6 +532,16 @@ kbd {
 .hurt-vignette {
   background: radial-gradient(ellipse at center, rgba(160, 0, 0, 0) 45%, rgba(160, 0, 0, 0.75) 100%);
 }
+.frost-edge,
+.grime-edge {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-size: 100% 100%;
+  /* (It creeps in from the edges: the stronger, the further.) */
+  -webkit-mask-image: radial-gradient(ellipse at center, transparent calc(78% - 30% * var(--creep, 0)), #000 calc(100% - 12% * var(--creep, 0)));
+  mask-image: radial-gradient(ellipse at center, transparent calc(78% - 30% * var(--creep, 0)), #000 calc(100% - 12% * var(--creep, 0)));
+}
 .cold-vignette {
   background: radial-gradient(ellipse at center, rgba(220, 238, 255, 0) 40%, rgba(220, 238, 255, 0.9) 100%);
 }

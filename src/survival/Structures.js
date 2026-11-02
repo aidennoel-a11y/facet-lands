@@ -7,7 +7,7 @@ import {
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
   logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, RAISED_MODELS, wallFootingModel,
-  greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
+  greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, bannerModel, BANNER_DESIGNS, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -189,6 +189,8 @@ const KINDS = {
   // (On the floor, walked over; on a wall, hung; over a wall's top, closing a roof's end.)
   rug: { make: () => rugModel(false), flat: true, over: true, steep: 0.6 },
   painting: { make: () => paintingModel(0), hung: true, over: true },
+  // (A banner on its pole, to mark your ground: Q changes its design, paint colours it.)
+  banner: { make: () => bannerModel(), dyeWith: true, box: [0.12, 0.12], tall: 3.4 },
   gable: { make: gableModel, gable: true, over: true },
   // (A floor with a trapdoor: Q opens it; open, you can go up and down through it.)
   hatchFloor: { make: hatchFloorModel, box: [FLOOR_SIZE / 2, FLOOR_SIZE / 2], floor: true, steep: 1.6, hatch: true },
@@ -229,7 +231,21 @@ export class Structures {
   // A painted piece's model, in its dye.
   #dyed(type, dye) {
     const k = KINDS[type];
+    if (k.dyeWith === true) return this.model(type);
     return k.dyeWith ? (this.models[`${type}:${dye}`] ??= k.dyeWith(dye)) : this.model(type);
+  }
+
+  #bannerGeo(d = {}) {
+    const key = `banner:${d.dye ?? 'red'}:${d.mark ?? 'white'}:${d.design ?? 0}`;
+    return (this.models[key] ??= bannerModel(d.dye ?? 'red', d.mark ?? 'white', d.design ?? 0));
+  }
+
+  /** A banner's next design; returns its name. */
+  nextDesign(s) {
+    s.data = { dye: 'red', mark: 'white', ...(s.data ?? {}), design: ((s.data?.design ?? 0) + 1) % BANNER_DESIGNS.length };
+    if (s.body) s.body.geometry = this.#bannerGeo(s.data);
+    this.onChange?.();
+    return BANNER_DESIGNS[s.data.design];
   }
 
   /** Whether it can be painted (the barn's pieces). */
@@ -240,6 +256,14 @@ export class Structures {
   /** Paints it with `dye` ('red', 'white', 'black', 'green', 'yellow', or 'natural' to scrub it back). */
   dye(s, dye) {
     if (!this.canDye(s)) return false;
+    if (s.type === 'banner') {
+      // (A banner: the field first, then the design on it, then the field again…)
+      const d = s.data ?? {}, part = d.next === 'mark' ? 'mark' : 'dye';
+      s.data = { ...d, [part]: dye, next: part === 'mark' ? 'dye' : 'mark' };
+      if (s.body) s.body.geometry = this.#bannerGeo(s.data);
+      this.onChange?.();
+      return part;
+    }
     s.data = { ...(s.data ?? {}), dye };
     if (s.body) s.body.geometry = this.#dyed(s.type, dye);
     if (s.door) s.door.geometry = this.doorModel(s.type, dye);
@@ -807,6 +831,7 @@ export class Structures {
   build(plan, extra = {}) {
     const s = { id: this.nextId++, type: plan.type, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, tilt: plan.tilt ?? null, upper: !!plan.upper, lit: false, fuel: 0, jobs: [], ...(plan.len !== undefined ? { len: plan.len } : {}), ...extra };
     s.jobs = (s.jobs ?? []).map((j) => ({ ...j }));
+    if (s.type === 'banner') s.data = { dye: 'red', mark: 'white', design: 0, ...(s.data ?? {}) };
     if (s.type === 'painting') s.data = { ...(s.data ?? {}), variant: s.data?.variant ?? plan.variant ?? Math.floor(Math.random() * 4) };
     if (s.type === 'chest' || s.type === 'cellar' || s.type === 'shelf' || s.type === 'sailboat' || s.type === 'armourStand' || s.type === 'weaponRack') {
       const inv = new Inventory(s.type === 'cellar' ? 24 : s.type === 'shelf' ? 6 : s.type === 'sailboat' ? 16 : s.type === 'armourStand' || s.type === 'weaponRack' ? 4 : 10);
@@ -818,7 +843,7 @@ export class Structures {
     const bk = KINDS[s.type].bridge;
     const ys = s.data?.ys ?? [0, 0];
     const spanModel = s.type === 'stoneRoad' ? stoneRoadModel(s.len ?? 1, ys) : s.type === 'zipLine' ? zipLineModel(s.len ?? 10, s.rise ?? -3) : s.type === 'ditch' ? ditchModel(s.len ?? 1, ys) : null;
-    const body = new Mesh(spanModel ? spanModel : bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : KINDS[s.type].raised ? RAISED_MODELS[s.type](s.len ?? 3) : s.type === 'painting' ? (this.models[`painting${s.data.variant}`] ??= paintingModel(s.data.variant)) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper), this.material);
+    const body = new Mesh(spanModel ? spanModel : bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : KINDS[s.type].raised ? RAISED_MODELS[s.type](s.len ?? 3) : s.type === 'painting' ? (this.models[`painting${s.data.variant}`] ??= paintingModel(s.data.variant)) : s.type === 'banner' ? this.#bannerGeo(s.data) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper), this.material);
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);

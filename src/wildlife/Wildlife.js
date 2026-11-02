@@ -1260,8 +1260,8 @@ export class Wildlife {
     // (The stronger the wind, the further it carries your scent downwind, and
     // the better hidden you are upwind; creeping doesn't hide your smell.
     // In a dead calm, it spreads a little all round.)
-    const blow = 0.35 + 0.65 * Math.min(1, ctx.wind ?? 0.5), creep = p.crouch && along > 0.3 ? 1.5 : 1;
-    return along > 0 ? (1 + 1.9 * along * blow) * creep : 1 + 0.5 * along * blow;
+    const blow = 0.35 + 0.65 * Math.min(1, ctx.wind ?? 0.5), creep = p.crouch && along > 0.3 ? 1.5 : 1, reek = 1 + 0.35 * (p.smell ?? 0);
+    return (along > 0 ? (1 + 1.9 * along * blow) * creep : 1 + 0.5 * along * blow) * reek;
   }
 
   // The fire (a campfire, a torch) whose light (x, z) is in, if any: { x, z, r }.

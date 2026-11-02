@@ -271,6 +271,7 @@ export class Game {
     this.age = 0;
     this.record.reset();
     this.dead = false;
+    this.grime = 0;
     this.survival.reset();
     this.inventory.clear();
     if (this.mode !== 'survival') for (const [id, n] of TEST_KIT) this.inventory.add(Inventory.stack(id, n));
@@ -690,6 +691,7 @@ export class Game {
       case 'hatchFloor': return s.open ? 'Shut the trapdoor' : 'Open the trapdoor';
       case 'greenhouse': return 'A greenhouse: dig plots inside it; they grow all year';
       case 'painting': return 'A painting (Shift+Q: take it down)';
+      case 'banner': return 'Change the banner\'s design (hold a paint to colour it)';
       case 'rug': return 'A rug (Shift+Q: take it up)';
       case 'chair': return 'Sit and rest';
       case 'repairBench': return held && ITEMS[held.id]?.durability ? `Mend the ${ITEMS[held.id].name.toLowerCase()}` : 'The repair bench: Q with a worn tool in hand';
@@ -876,6 +878,7 @@ export class Game {
     }
     if (t.kind === 'carcass') {
       const got = this.wildlife.butcher(t.animal);
+      this.grime = Math.min(1, (this.grime ?? 0) + 0.25); // (bloody work)
       if (!got) return;
       const lines = [];
       for (const st of got.stuck ?? []) this.#give(st.id, st.count ?? 1, t.animal) && lines.push(ITEMS[st.id].name);
@@ -1148,6 +1151,9 @@ export class Game {
       case 'hatchFloor':
         this.structures.toggle(s);
         return this.sound?.call(s.open ? 'doorOpen' : 'doorClose', 0, 0.6);
+      case 'banner':
+        this.sound?.call('brush', 0, 0.4);
+        return this.hotbar?.flash(`The banner now bears ${this.structures.nextDesign(s)} (Q again: another; paint it with dyes)`);
       case 'chair':
         // (Sitting a while: rested, a little.)
         if (this.time < (this.satUntil ?? 0)) return this.hotbar?.flash('You sit, resting');
@@ -1720,12 +1726,13 @@ export class Game {
     const take = () => this.inventory.take(i);
     // Paint on a barn's wall, door or roof.
     if (ITEMS[s.id]?.dye && this.structures.canDye(at)) {
-      if (at.data?.dye === ITEMS[s.id].dye) return say('It is that colour already');
-      this.structures.dye(at, ITEMS[s.id].dye);
+      if (at.type !== 'banner' && at.data?.dye === ITEMS[s.id].dye) return say('It is that colour already');
+      const part = this.structures.dye(at, ITEMS[s.id].dye);
       take();
       this.cooldown = 0.3;
       this.sound?.call('pour', 0, 0.35);
       this.dirty = true;
+      if (at.type === 'banner') return say(part === 'mark' ? `Its design painted ${ITEMS[s.id].dye} (paint again: the field)` : `The banner's field painted ${ITEMS[s.id].dye} (paint again: its design)`);
       return say(`Painted ${ITEMS[s.id].dye}`);
     }
     // A building site: what it's wanting, brought to it (all you have of it, as far as it's needed).
@@ -3659,6 +3666,20 @@ export class Game {
       cave, inLava: !!ctx.lava,
       sun: 1 - Math.min(1, (ctx.rain ?? 0) * 1.4), wind: Math.min(1, Math.hypot(ctx.wind?.x ?? 0, ctx.wind?.z ?? 0) / 14) * (1 - sheltered),
     };
+    // Blood and dirt: building up slowly as you live rough, and washed off in
+    // the water (a swim, wading deep, a long while in the rain; a hot spring best of all).
+    if (e.active) {
+      const was = this.grime ?? 0;
+      let g = was + dt * 0.0008;
+      if (e.hotSpring) g -= dt * 0.5;
+      else if (this.controls.swimming) g -= dt * 0.3;
+      else if (wading > 0.5) g -= dt * 0.08;
+      g -= dt * 0.006 * (e.rain || 0);
+      this.grime = Math.max(0, Math.min(1, g));
+      if (was > 0.3 && this.grime < 0.05 && (e.hotSpring || this.controls.swimming)) this.hotbar?.flash(e.hotSpring ? 'A hot bath: the blood and dirt soaked off you, warm through' : 'You wash the blood and dirt off');
+      if (e.hotSpring && this.grime < 0.05 && !this.bathed) (this.bathed = true), this.survival.energy = Math.min(100, this.survival.energy + 10);
+      if (!e.hotSpring) this.bathed = false;
+    }
     // How cold the water is that you're in: snow-fed and bitter in the
     // winter, cold in the spring (the melt), up in the mountains, and at
     // night; warm only in the jungle, the swamp, the savanna in summer. In it,
@@ -3795,7 +3816,7 @@ export class Game {
     // (Which way the wind blows, as you look.)
     const w = this.wind?.() ?? { x: 0, z: 0 }, yaw = this.controls.euler.y;
     const along = -w.x * Math.sin(yaw) - w.z * Math.cos(yaw), across = w.x * Math.cos(yaw) - w.z * Math.sin(yaw);
-    this.hud.update(this.survival, this.inventory, { active: walking, load, heavy, wind: Math.atan2(across, along), sheltered: sheltered > 0.5, heatstroke: this.survival.hot > 90 && this.survival.thirst < 40, blizzard: (ctx.blizzard ?? 0) > 0.3 && walking, hotSpring: e.hotSpring, coldWater: this.controls.swimming && !e.hotSpring ? e.waterCold : 0, drying: fire > 0.2 });
+    this.hud.update(this.survival, this.inventory, { active: walking, load, heavy, wind: Math.atan2(across, along), sheltered: sheltered > 0.5, heatstroke: this.survival.hot > 90 && this.survival.thirst < 40, blizzard: (ctx.blizzard ?? 0) > 0.3 && walking, hotSpring: e.hotSpring, grime: this.survival.alive ? (this.grime ?? 0) : 0, coldWater: this.controls.swimming && !e.hotSpring ? e.waterCold : 0, drying: fire > 0.2 });
 
     // Held in your hand.
     this.#drawHeld(dt, held, walking);
@@ -3832,6 +3853,7 @@ export class Game {
       this.shake = Math.min(1, (this.shake ?? 0) + 0.25);
       if (quick) this.hotbar?.flash('Parried!');
       this.survival.hurt(amount, cause);
+      if (amount > 10) this.grime = Math.min(1, (this.grime ?? 0) + amount / 50); // (blood and dirt, after a hard hit)
       return;
     }
     // Armour takes the worst of a bite or a swipe (and wears for it).
@@ -3893,6 +3915,7 @@ export class Game {
       x: p.x, y: p.y, z: p.z, mode: c.mode, crouch: c.crouch, moving: c.moving, sprint: c.sprinting, sneak: this.skillLevel('sneaking'), quiet: !!ITEMS[this.inventory.feet?.id]?.quiet, alive: this.survival.alive && !this.riding && !this.climbing,
       cover: Math.min(1, this.#grassCover(p.x, p.z) + (ITEMS[this.inventory.worn?.id]?.hush ? 0.35 : 0)),
       camo: !!ITEMS[this.inventory.worn?.id]?.camo,
+      smell: this.grime ?? 0, // (blood and dirt on you: smelt further off)
       lure: ['wheat', 'seedWheat', 'seedCorn', 'corn'].includes(this.inventory.slots[this.hotbar?.index ?? 0]?.id),
       torch: TORCHES.has(this.inventory.slots[this.hotbar?.index ?? 0]?.id),
       food: !!HORSE_FOOD[this.inventory.slots[this.hotbar?.index ?? 0]?.id],

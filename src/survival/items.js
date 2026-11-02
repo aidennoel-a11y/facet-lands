@@ -251,6 +251,7 @@ export const ITEMS = {
   weaponRack: { name: 'Weapon rack', place: 'weaponRack', weight: 6, group: 'Building' },
   rug: { name: 'Rug', place: 'rug', weight: 3, group: 'Building' },
   painting: { name: 'Painting', place: 'painting', weight: 2, group: 'Building' },
+  banner: { name: 'Banner', place: 'banner', weight: 2, group: 'Building' },
   gable: { name: 'Gable end', place: 'gable', weight: 9, group: 'Building' }, // (closes the end of a roof, over a wall)
   hatchFloor: { name: 'Floor with a trapdoor', place: 'hatchFloor', weight: 17, group: 'Building' },
   greenhouse: { name: 'Greenhouse', place: 'greenhouse', weight: 30, group: 'Building' },
@@ -428,6 +429,8 @@ export const RECIPES = [
   { id: 'shelf', needs: { log: 2, stick: 3 }, note: 'Shelves: six slots of storage (Q); what\'s on them shows' },
   { id: 'armourStand', needs: { log: 2, stick: 4 }, note: 'A wooden figure to hang your armour, coat, hat and boots on (Q): they show on it' },
   { id: 'weaponRack', needs: { log: 2, stick: 4 }, note: 'A rack for four weapons or tools (Q): they stand in it, shown' },
+  { id: 'banner', needs: { stick: 3, wool: 3 }, note: 'A banner on a pole to mark your ground: Q changes its design, paints colour it' },
+  { id: 'banner', needs: { stick: 3, deerSkin: 1 }, note: 'A banner of hide on a pole: Q changes its design, paints colour it' },
   { id: 'rug', needs: { wool: 4 }, note: 'A woven rug for the floor' },
   { id: 'rug', needs: { pelt: 2 }, note: 'Furs sewn together for the floor' },
   { id: 'painting', needs: { stick: 2, deerSkin: 1, redDye: 1, blackDye: 1 }, note: 'A painting on stretched hide: hung on a wall you point at' },
@@ -537,7 +540,7 @@ export const RECIPES = [
  */
 export const TIERS = [
   { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['glider', 'axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
-  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'leatherCap', 'camoCloak', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor', 'rug', 'gable', 'hatchFloor', 'seedPumpkin', 'greenhouse'] },
+  { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'leatherCap', 'camoCloak', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor', 'rug', 'banner', 'gable', 'hatchFloor', 'seedPumpkin', 'greenhouse'] },
   { id: 'bronze', name: 'Bronze', tag: 'Smelt copper ore in a furnace, then tin with two copper bars: bronze', unlock: 'bronzeBar', ids: ['bronzeAxe', 'bronzePickaxe', 'bronzeSpear', 'bronzeSword', 'bronzeArmour', 'bronzeHelmet', 'armourStand', 'weaponRack', 'painting'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'harpoon', 'pot', 'shears', 'saddle', 'anvil', 'lantern', 'canoe', 'sailboat', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
   { id: 'steel', name: 'Steel', tag: 'Smelt mountain iron ore with coal in a furnace (both from high in the mountains)', unlock: 'steelBar', ids: ['forgedAxe', 'forgedPickaxe', 'forgedSpear', 'sword', 'steelArmour', 'chainmail', 'steelHelmet', 'crossbow', 'bolt', 'woodFloor', 'plankWall', 'plankStairs', 'shingleRoof', 'cutStoneWall', 'cutStoneFloor', 'cutStairs', 'tileRoof', 'fancyBed', 'plankWindow', 'plankDoor', 'cutWindow', 'cutDoor', 'stoneRoad', 'zipLine', 'starBlade', 'starPickaxe'] },
@@ -863,6 +866,7 @@ ICONS.bronzeSword = ICONS.sword.replaceAll('#dfe6ee', '#d0a050').replaceAll('#ff
 ICONS.armourStand = `<path d="M16 4v24M10 28h12" stroke="#7a5638" stroke-width="2.4"/><circle cx="16" cy="6" r="3" fill="#9a7048"/><path d="M9 10h14l-2 10H11z" fill="#8a949e"/>`;
 ICONS.weaponRack = `<path d="M5 26h22M5 10h22" stroke="#7a5638" stroke-width="2.6"/><path d="M9 28L11 4M16 28V4M23 28L21 4" stroke="#b8c0c8" stroke-width="2"/>`;
 ICONS.rug = `<path d="M5 9h22v14H5z" fill="#8a3a2a"/><path d="M8 12h16v8H8z" fill="none" stroke="#d8b060" stroke-width="1.5"/><path d="M12 14h8v4h-8z" fill="#3a5a6a"/>`;
+ICONS.banner = `<path d="M7 3v27" stroke="#6a4a2e" stroke-width="2.4"/><path d="M7 5h18" stroke="#6a4a2e" stroke-width="1.6"/><path d="M9 6h15v16l-3.5-3-4 3-4-3-3.5 3z" fill="#9a2a22"/><path d="M15 6h3v13h-3z" fill="#ece6da"/>`;
 ICONS.painting = `<path d="M5 7h22v18H5z" fill="#5a3a22"/><path d="M8 10h16v12H8z" fill="#2a3a4a"/><path d="M8 22l5-7 4 4 3-3 4 6z" fill="#1a1a20"/><circle cx="20" cy="13" r="2" fill="#d8d0b0"/>`;
 ICONS.gable = `<path d="M3 26L29 26L29 10z" fill="#9a7048"/><path d="M8 26v-3M14 26v-6M20 26v-9M26 26v-12" stroke="#6a4c30"/>`;
 ICONS.hatchFloor = ICONS.woodFloor + '<path d="M12 15l6-3 6 3-6 3z" fill="#5a3c24"/>';

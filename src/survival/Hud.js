@@ -75,6 +75,8 @@ export class Hud {
       <div class="bossbar" hidden><span></span><b><i></i></b></div>
       <div class="hurt-vignette"></div>
       <div class="cold-vignette"></div>
+      <div class="frost-edge"></div>
+      <div class="grime-edge"></div>
       <div class="sleep-fade"></div>
       <button type="button" class="skills-button" hidden title="Skills and achievements (K)" aria-label="Skills and achievements"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.6 8 8.4.8-6.4 5.6 1.9 8.4L16 21.4 8.5 25.8l1.9-8.4L4 11.8l8.4-.8z" fill="#f2d880"/></svg><b></b></button>
       <section class="journal-ui" hidden aria-label="Journal">
@@ -214,6 +216,22 @@ export class Hud {
     this.el('.hurt-vignette').style.opacity = Math.min(0.8, survival.hurtFlash + (survival.health < 25 ? 0.25 + 0.1 * Math.sin(performance.now() / 250) : 0) + (survival.bleeding > 0 ? 0.08 : 0)).toFixed(3);
     this.el('.cold-vignette').style.opacity = (info.active ? Math.min(0.85, (1 - survival.warmth / 100) * 0.9 * Math.min(1, survival.cold * 3)) : 0).toFixed(3);
     this.el('.sleep-fade').style.opacity = this.sleepAmount.toFixed(3);
+    // Frost creeping in from the edges as you freeze; blood and dirt spattered at them after a hard hit, till you wash.
+    const frost = info.active ? Math.max(0, Math.min(1, (0.7 - survival.warmth / 100) / 0.6)) * Math.min(1, survival.cold * 3) : 0;
+    const grime = Math.min(1, info.grime ?? 0);
+    this.#edge('.frost-edge', frost, 'frost');
+    this.#edge('.grime-edge', grime, 'grime');
+  }
+
+  // (An edge layer: its texture made the first time it's needed; how far in it creeps, and how strong.)
+  #edge(sel, v, kind) {
+    const el = this.el(sel), key = Math.round(v * 40);
+    if (el.dataset.k === String(key)) return;
+    el.dataset.k = key;
+    if (v > 0.01 && !el.style.backgroundImage) el.style.backgroundImage = `url(${edgeTexture(kind)})`;
+    el.style.opacity = Math.min(0.7, 0.2 + v * 0.5).toFixed(2);
+    el.style.setProperty('--creep', v.toFixed(3));
+    el.hidden = v <= 0.01;
   }
 
   /** A hit landed (on the head: a bigger mark). */
@@ -588,4 +606,55 @@ export class Hud {
   alive() {
     this.el('.death').hidden = true;
   }
+}
+
+// The frost's feathers and the spatter of blood and mud, drawn once on a canvas: thick at the edges, none in the middle.
+const EDGE_TEX = {};
+function edgeTexture(kind) {
+  if (EDGE_TEX[kind]) return EDGE_TEX[kind];
+  const W = 512, H = 320, c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  let seed = kind === 'frost' ? 7 : 13;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // (A point near an edge: along one of the four sides, a little way in.)
+  const edgePoint = () => {
+    const side = Math.floor(rnd() * 4), t = rnd(), inset = Math.pow(rnd(), 2) * 60;
+    return side === 0 ? [t * W, inset] : side === 1 ? [t * W, H - inset] : side === 2 ? [inset, t * H] : [W - inset, t * H];
+  };
+  if (kind === 'frost') {
+    // Feathered frost: branching strokes growing in from the edges.
+    g.lineCap = 'round';
+    const branch = (x, y, a, len, w, depth) => {
+      if (depth > 4 || len < 3) return;
+      const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+      g.strokeStyle = `rgba(232, 244, 255, ${0.35 + 0.4 * rnd()})`;
+      g.lineWidth = w;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x2, y2);
+      g.stroke();
+      for (let k = 0; k < 3; k++) branch(x + (x2 - x) * (0.3 + 0.6 * rnd()), y + (y2 - y) * (0.3 + 0.6 * rnd()), a + (rnd() < 0.5 ? -1 : 1) * (0.5 + 0.5 * rnd()), len * 0.45, w * 0.7, depth + 1);
+    };
+    for (let n = 0; n < 140; n++) {
+      const [x, y] = edgePoint(), a = Math.atan2(H / 2 - y, W / 2 - x) + (rnd() - 0.5) * 1.2;
+      branch(x, y, a, 18 + rnd() * 34, 1.6, 0);
+    }
+  } else {
+    // Spatter and smears: dark blood and mud, in blots with little drops round them.
+    for (let n = 0; n < 70; n++) {
+      const [x, y] = edgePoint(), mud = rnd() < 0.45, r = 3 + rnd() * 14;
+      g.fillStyle = mud ? `rgba(${70 + rnd() * 20}, ${52 + rnd() * 14}, 34, ${0.5 + 0.4 * rnd()})` : `rgba(${110 + rnd() * 40}, 10, 8, ${0.55 + 0.4 * rnd()})`;
+      g.beginPath();
+      g.ellipse(x, y, r, r * (0.5 + rnd() * 0.6), rnd() * 3, 0, Math.PI * 2);
+      g.fill();
+      for (let k = 0; k < 5; k++) {
+        g.beginPath();
+        g.arc(x + (rnd() - 0.5) * r * 4, y + (rnd() - 0.5) * r * 4, 0.8 + rnd() * 2.2, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  }
+  return (EDGE_TEX[kind] = c.toDataURL());
 }

@@ -1799,6 +1799,47 @@ export const BARN_DYES = {
   green: [0x3e6a3a, 0xece6da], yellow: [0xc8a038, 0x5a3a24], glow: [0x3a9a8a, 0xc8f4e8],
 };
 
+/**
+ * A banner on a pole, to mark your ground: a cloth 0.9 by 1.4 m hung from
+ * a crossbar, its tail cut in two, in a field colour with a design on it in
+ * another (both faces): plain, a stripe down it, a cross, a chevron, a
+ * saltire, quarters, a sun, a wolf's head.
+ */
+export const BANNER_DESIGNS = ['plain', 'a stripe', 'a cross', 'a chevron', 'a saltire', 'quarters', 'a sun', "a wolf's head"];
+export function bannerModel(field = 'red', mark = 'white', design = 0) {
+  const b = new Parts(271 + design), [f] = BARN_DYES[field] ?? BARN_DYES.red, [m] = BARN_DYES[mark] ?? BARN_DYES.white;
+  b.add(new CylinderGeometry(0.045, 0.06, 3.4, 6), 0x6a4a2e, [0, 1.7, 0]);
+  b.add(new CylinderGeometry(0.03, 0.03, 1.1, 5), 0x6a4a2e, [0.45, 3.2, 0], [0, 0, Math.PI / 2]);
+  b.add(new SphereGeometry(0.07, 6, 4), 0x8a8478, [0, 3.43, 0]);
+  const W = 0.9, H = 1.4, cx = 0.5, top = 3.17, cy = top - H / 2;
+  // (The cloth, slightly bellied by the wind; its tail in two points.)
+  b.add(new BoxGeometry(W, H - 0.2, 0.02), f, [cx, cy + 0.1, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  for (const s of [-1, 1]) b.add(new ConeGeometry(W / 4, 0.36, 3), f, [cx + s * W / 4, cy - H / 2 + 0.12, 0], [Math.PI, 0, 0], [1, 1, 0.06]);
+  const at = (x, y, w, h, rz = 0) => {
+    for (const z of [0.013, -0.013]) b.add(new BoxGeometry(w, h, 0.006), m, [cx + x, cy + 0.1 + y, z], [0, 0, rz], [1, 1, 1], 0.02);
+  };
+  if (design === 1) at(0, 0, 0.26, H - 0.2);
+  else if (design === 2) at(0, 0.1, 0.16, H - 0.2), at(0, 0.18, W, 0.16);
+  else if (design === 3) at(-0.2, 0.02, 0.5, 0.16, -0.6), at(0.2, 0.02, 0.5, 0.16, 0.6);
+  else if (design === 4) at(0, 0, 0.14, 1.5, 0.58), at(0, 0, 0.14, 1.5, -0.58);
+  else if (design === 5) at(-W / 4, 0.3, W / 2, 0.6), at(W / 4, -0.3, W / 2, 0.6);
+  else if (design === 6) {
+    for (const z of [0.014, -0.014]) b.add(new CylinderGeometry(0.17, 0.17, 0.006, 12), m, [cx, cy + 0.2, z], [Math.PI / 2, 0, 0]);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      at(Math.cos(a) * 0.27, 0.1 + Math.sin(a) * 0.27, 0.05, 0.14, a - Math.PI / 2);
+    }
+  } else if (design === 7) {
+    // (A wolf's head, howling: a long snout up and back, pricked ears.)
+    at(0, 0, 0.3, 0.32);
+    at(0.12, 0.22, 0.12, 0.3, -0.5);
+    at(-0.1, 0.22, 0.07, 0.16, 0.2);
+    at(0.02, 0.24, 0.07, 0.16, -0.1);
+    at(0, -0.2, 0.22, 0.12);
+  }
+  return b.build();
+}
+
 /** A barn wall, 4 m: tall boards stood on end, battens over the joints, painted; trim at its ends (and round a window or a door's opening). */
 export function barnWallModel(dye = 'natural', what = 'wall') {
   const [paint, trim] = BARN_DYES[dye] ?? BARN_DYES.natural, L = WALL_LENGTH, H = 3.2, o = what === 'wall' ? null : OPENING[what];
