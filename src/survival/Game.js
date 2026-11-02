@@ -1,4 +1,5 @@
 import { difficulty } from '../settings.js';
+import { mulberry32 } from '../noise/random.js';
 import { BoxGeometry, BufferGeometry, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, OctahedronGeometry, Quaternion, Vector3 } from 'three';
 import { seasonUniforms } from '../render/Seasons.js';
 import { LEAF_GEOMETRIES, treeGeometry } from '../world/trees.js';
@@ -496,6 +497,8 @@ export class Game {
     };
     this.hud.onRespawn = () => this.respawn();
     this.hud.onGhost = () => this.ghostMode();
+    // (A chest open in front of you, and a friend online takes from it or puts in: you see it change.)
+    this.structures.onContents = (s) => this.hud.chest?.chest === s.contents && this.hud.renderChest();
     this.hud.onLeave = () => this.onLeave?.();
     // (The crafting tree: which tiers you've opened. See #learn.)
     this.hud.unlocked = (tier) => this.unlocked(tier);
@@ -699,7 +702,7 @@ export class Game {
       case 'windmill': {
         const need = this.structures.siteNeeds(s);
         if (need) return `Building (stage ${need.index + 1} of ${need.of}: ${need.name}): wants ${this.#wantsText(need.wants)}`;
-        const p = s.power ?? 0, working = s.jobs.length ? ` · grinding: ${s.jobs.map((j) => (j.done ? 'flour ready' : `${Math.round(100 - (j.left / j.total) * 100)}%`)).join(', ')}` : ' · click it with wheat or corn';
+        const p = s.power ?? 0, working = s.jobs.length ? ` · ${s.type === 'waterMill' ? 'grinding and sawing' : 'grinding'}: ${s.jobs.map((j) => (j.done ? `${ITEMS[j.out?.id]?.name?.toLowerCase() ?? 'flour'} ready` : `${Math.round(100 - (j.left / j.total) * 100)}%`)).join(', ')}` : s.type === 'waterMill' ? ' · click it with wheat or corn to grind, or a log to saw into planks' : ' · click it with wheat or corn';
         const power = s.type === 'waterMill' ? (p > 0.08 ? 'The wheel turns in the current' : 'No running water at its wheel: set it by a stream') : p > 0.6 ? 'Sails spinning in a stiff wind' : p > 0.08 ? 'Sails turning slowly' : 'Becalmed: waiting for the wind';
         return power + working;
       }
@@ -1848,6 +1851,14 @@ export class Game {
       take();
       this.cooldown = 0.3;
       return say((at.power ?? 0) > 0.08 ? `${ITEMS[s.id].name} in the hopper: flour soon` : at.type === 'windmill' ? `${ITEMS[s.id].name} in the hopper: it will grind when the wind gets up` : `${ITEMS[s.id].name} in the hopper, but there’s no running water here to turn the wheel`);
+    }
+    // The water wheel's saw bench: a log sawn into planks (far more than an axe gets from it).
+    if (at.type === 'waterMill' && s.id === 'log' && this.structures.isBuilt(at)) {
+      if (!this.structures.work(at, { id: 'log', count: 1 }, Inventory.stack('planks', 4), 25)) return say('The saw bench is busy: take the planks first');
+      take();
+      this.cooldown = 0.3;
+      this.sound?.call('wood', 0, 0.5);
+      return say((at.power ?? 0) > 0.08 ? 'A log on the saw bench: four planks soon' : 'A log on the saw bench, but there’s no running water here to drive the saw');
     }
     if (at.type === 'tanningRack' && item.tans) {
       if (!this.structures.work(at, { id: s.id, count: 1 }, Inventory.stack(item.tans, 1), TIMES.tan)) return say('There is a hide on it already');
@@ -4545,6 +4556,10 @@ export class Game {
   ruinChest(c) {
     if (this.ruinChests.has(c.key) || this.structures.list.some((s) => s.ruinKey === c.key)) return;
     this.ruinChests.add(c.key);
+    // (What's in it rolled from the world and the chest's place: the same for everyone, online.)
+    let h = 2166136261;
+    for (const ch of String(c.key)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    const rand = mulberry32(h >>> 0);
     if (c.altar) {
       // The Lost Keep's altar (see #offer).
       const s = this.structures.build({ type: 'keepAltar', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { ruinKey: c.key, offered: [] });
@@ -4555,7 +4570,7 @@ export class Game {
     if (c.city) {
       // A strongroom of the drowned city: its people's gold, pearls, old blades and a map.
       const contents = [];
-      const roll = (id, lo, hi, chance) => Math.random() < chance && contents.push(Inventory.stack(id, lo + Math.floor(Math.random() * (hi - lo + 1))));
+      const roll = (id, lo, hi, chance) => rand() < chance && contents.push(Inventory.stack(id, lo + Math.floor(rand() * (hi - lo + 1))));
       roll('goldBar', 2, 5, 0.9);
       roll('pearl', 2, 6, 0.8);
       roll('crystal', 1, 3, 0.5);
@@ -4574,7 +4589,7 @@ export class Game {
     if (c.wreck) {
       // A wrecked ship's sea chest: rope, iron, a cutlass, salted stores, a little gold.
       const contents = [];
-      const roll = (id, lo, hi, chance) => Math.random() < chance && contents.push(Inventory.stack(id, lo + Math.floor(Math.random() * (hi - lo + 1))));
+      const roll = (id, lo, hi, chance) => rand() < chance && contents.push(Inventory.stack(id, lo + Math.floor(rand() * (hi - lo + 1))));
       roll('rope', 2, 5, 0.9);
       roll('ironBar', 1, 3, 0.7);
       roll('saltedFish', 2, 4, 0.6);
@@ -4598,7 +4613,7 @@ export class Game {
       // ore, his lamp oil long gone.
       this.#achieve('mine');
       const contents = [];
-      const roll = (id, lo, hi, chance) => Math.random() < chance && contents.push(Inventory.stack(id, lo + Math.floor(Math.random() * (hi - lo + 1))));
+      const roll = (id, lo, hi, chance) => rand() < chance && contents.push(Inventory.stack(id, lo + Math.floor(rand() * (hi - lo + 1))));
       roll('steelPickaxe', 1, 1, 0.5);
       roll('iron', 3, 6, 0.9);
       roll('coal', 3, 8, 0.8);
@@ -4625,8 +4640,8 @@ export class Game {
     }
     const contents = [];
     const room = (st) => contents.length < 10 && contents.push(st);
-    for (const [id, lo, hi, chance] of RUIN_LOOT) if (Math.random() < chance * (c.best ? 1.4 : 1)) room(Inventory.stack(id, lo + Math.floor(Math.random() * (hi - lo + 1))));
-    for (const [id, low, best] of RUIN_RARE) if (Math.random() < (c.best ? best : low)) room(Inventory.stack(id, 1));
+    for (const [id, lo, hi, chance] of RUIN_LOOT) if (rand() < chance * (c.best ? 1.4 : 1)) room(Inventory.stack(id, lo + Math.floor(rand() * (hi - lo + 1))));
+    for (const [id, low, best] of RUIN_RARE) if (rand() < (c.best ? best : low)) room(Inventory.stack(id, 1));
     if (!contents.length) room(Inventory.stack('arrow', 5));
     const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents, ruinKey: c.key });
     s.ruinKey = c.key;

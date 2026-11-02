@@ -281,6 +281,7 @@ export const ITEMS = {
   logFloor: { name: 'Log floor', place: 'logFloor', weight: 18, group: 'Building' },
   logStairs: { name: 'Log stairs', place: 'logStairs', weight: 16, group: 'Building' },
   logRoof: { name: 'Log roof', place: 'logRoof', weight: 24, group: 'Building' },
+  planks: { name: 'Planks', weight: 1.5, group: 'Materials' }, // (sawn at a water wheel's saw bench from a log)
   plankWall: { name: 'Plank wall', place: 'plankWall', weight: 18, group: 'Building' },
   plankStairs: { name: 'Plank stairs', place: 'plankStairs', weight: 12, group: 'Building' },
   shingleRoof: { name: 'Shingle roof', place: 'shingleRoof', weight: 16, group: 'Building' },
@@ -394,6 +395,14 @@ export const RECIPES = [
   { id: 'glowDye', needs: { glowcap: 3 }, makes: 2, note: 'Glowcaps from the glowing swamps, crushed to a pale blue-green paint: click a barn piece with it' },
   { id: 'glowTonic', needs: { glowcap: 2, berries: 2 }, note: 'Glowcaps steeped with berries: a drink that mends a little and settles sickness' },
   { id: 'plankWall', needs: { log: 3, stick: 4 }, uses: ['forgedAxe'], note: 'Boards lapped on a squared frame: neat and tight. Needs a steel axe to cut the planks' },
+  { id: 'plankWall', needs: { planks: 5, stick: 2 }, note: 'Sawn planks lapped on a squared frame' },
+  { id: 'plankStairs', needs: { planks: 3, stick: 2 }, note: 'A flight of sawn plank steps with a rail' },
+  { id: 'plankWindow', needs: { planks: 4, stick: 3 }, note: 'A sawn plank wall with a framed casement window' },
+  { id: 'plankDoor', needs: { planks: 5, ironBar: 1 }, note: 'A sawn plank wall with a boarded door on iron hinges' },
+  { id: 'woodFloor', needs: { planks: 5 }, note: 'Sawn planks on posts, 4 m square' },
+  { id: 'chest', needs: { planks: 4 }, note: 'A chest of sawn planks: ten stacks; food keeps three times as long' },
+  { id: 'table', needs: { planks: 2, stick: 2 }, note: 'A table of sawn planks' },
+  { id: 'shelf', needs: { planks: 2, stick: 1 }, note: 'Shelves of sawn planks: six slots of storage' },
   { id: 'plankStairs', needs: { log: 2, stick: 4 }, uses: ['forgedAxe'], note: 'A flight of plank steps with a rail, up to the top of your walls. Needs a steel axe' },
   { id: 'shingleRoof', needs: { log: 3, stick: 2 }, uses: ['forgedAxe'], note: 'Cedar shingles in even courses, set on top of your walls. Needs a steel axe' },
   { id: 'stoneStairs', needs: { rock: 24 }, note: 'Rough stone steps, solid to the ground, up to the top of your walls' },
@@ -866,6 +875,7 @@ ICONS.bronzeSword = ICONS.sword.replaceAll('#dfe6ee', '#d0a050').replaceAll('#ff
 ICONS.armourStand = `<path d="M16 4v24M10 28h12" stroke="#7a5638" stroke-width="2.4"/><circle cx="16" cy="6" r="3" fill="#9a7048"/><path d="M9 10h14l-2 10H11z" fill="#8a949e"/>`;
 ICONS.weaponRack = `<path d="M5 26h22M5 10h22" stroke="#7a5638" stroke-width="2.6"/><path d="M9 28L11 4M16 28V4M23 28L21 4" stroke="#b8c0c8" stroke-width="2"/>`;
 ICONS.rug = `<path d="M5 9h22v14H5z" fill="#8a3a2a"/><path d="M8 12h16v8H8z" fill="none" stroke="#d8b060" stroke-width="1.5"/><path d="M12 14h8v4h-8z" fill="#3a5a6a"/>`;
+ICONS.planks = `<path d="M4 9l18-4 6 3-18 4z" fill="#c8a070"/><path d="M4 9l6 3v4l-6-3z" fill="#8a6440"/><path d="M10 12l18-4v4l-18 4z" fill="#a8845a"/><path d="M4 17l18-4 6 3-18 4z" fill="#d4ae7c"/><path d="M4 17l6 3v4l-6-3z" fill="#8a6440"/><path d="M10 20l18-4v4l-18 4z" fill="#b08a5e"/>`;
 ICONS.banner = `<path d="M7 3v27" stroke="#6a4a2e" stroke-width="2.4"/><path d="M7 5h18" stroke="#6a4a2e" stroke-width="1.6"/><path d="M9 6h15v16l-3.5-3-4 3-4-3-3.5 3z" fill="#9a2a22"/><path d="M15 6h3v13h-3z" fill="#ece6da"/>`;
 ICONS.painting = `<path d="M5 7h22v18H5z" fill="#5a3a22"/><path d="M8 10h16v12H8z" fill="#2a3a4a"/><path d="M8 22l5-7 4 4 3-3 4 6z" fill="#1a1a20"/><circle cx="20" cy="13" r="2" fill="#d8d0b0"/>`;
 ICONS.gable = `<path d="M3 26L29 26L29 10z" fill="#9a7048"/><path d="M8 26v-3M14 26v-6M20 26v-9M26 26v-12" stroke="#6a4c30"/>`;

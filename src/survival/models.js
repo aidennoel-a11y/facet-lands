@@ -851,6 +851,14 @@ export function waterMillModel() {
   b.log([2.62, -0.4, 0.45], [2.62, 1.32, 0], 0.08, 0x6e4c32, 0xc8a070, 6);
   b.log([2.62, 0.3, -0.33], [2.62, 0.3, 0.33], 0.05, 0x5a3c24, 0xc8a070, 5);
   b.log([0.35, 1.3, 0], [2.85, 1.3, 0], 0.1, 0x5a4232, 0xc8a070, 6); // (the axle)
+  // (The saw bench on the bank, driven off the gear box: a log bed on trestles, and a frame saw that rises and falls through it.)
+  for (const z of [-0.9, 0.9]) b.add(new BoxGeometry(0.12, 0.7, 0.5), 0x6e4c32, [-0.7, 0.35, z]);
+  b.add(new BoxGeometry(0.4, 0.1, 2.4), 0x7a5a3c, [-0.7, 0.72, 0]);
+  b.log([-0.7, 0.92, -1.1], [-0.7, 0.92, 0.5], 0.14, 0x6e4c32, 0xc8a070, 6); // (a log on the bed)
+  for (const z of [-0.1, 0.1]) b.add(new BoxGeometry(0.06, 1.2, 0.06), 0x5a4232, [-0.7, 1.15, z * 2.5]);
+  b.add(new BoxGeometry(0.06, 0.06, 0.6), 0x5a4232, [-0.7, 1.72, 0]);
+  b.add(new BoxGeometry(0.01, 1.0, 0.12), 0xa8acb0, [-0.7, 1.15, 0]); // (the blade)
+  b.add(new BoxGeometry(1.0, 0.08, 0.08), 0x5a4232, [-0.15, 1.45, 0]); // (the crank arm to the gears)
   return b.build();
 }
 

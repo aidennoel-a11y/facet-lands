@@ -1640,12 +1640,13 @@ export class Structures {
         s.open = !!rec.open;
         s.door.rotation.y = s.open ? -Math.PI / 2 : 0;
       }
-      if (s.contents && rec.contents) rec.contents.forEach((st, i) => (s.contents.slots[i] = st));
+      if (s.contents && rec.contents) rec.contents.forEach((st, i) => (s.contents.slots[i] = st)), this.onContents?.(s);
       s.jobs = (rec.jobs ?? []).map((j) => ({ ...j }));
       this.#showJobs(s);
       s.caught = s.type === 'fishTrap' ? rec.caught || 0 : !!rec.caught;
       if (s.catchMesh) s.catchMesh.visible = !!s.caught;
       if (rec.data) s.data = { ...rec.data };
+      if (s.type === 'banner' && s.body) s.body.geometry = this.#bannerGeo(s.data);
       if (s.type === 'sign') this.showSign(s);
       if (s.type === 'plot') {
         s.crop = rec.crop ?? null;
