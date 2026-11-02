@@ -1479,13 +1479,27 @@ function airFlags() {
 function thirdPersonView(dt, now) {
   const on = thirdPerson && !loading && (controls.mode === 'walk' || controls.mode === 'fly') && !game.sleeping;
   if (game.hand) game.hand.visible = !on;
-  if (!on) {
+  // (Through your own eyes, on foot: your body and legs there under you when you look down; no head, and the arms are the hand's.)
+  const legs = !on && !loading && controls.mode === 'walk' && !controls.swimming && !game.sleeping && !game.ghost && !game.mount && game.survival.alive && !game.climbing;
+  if (!on && !legs) {
     if (selfFigure) selfFigure.root.visible = false;
     return null;
   }
   if (selfFigure && selfFigure.lookKey !== lookKey) (scene.remove(selfFigure.root), (selfFigure = null)); // (your look changed: dressed anew)
   if (!selfFigure) (selfFigure = new Remote(scene, { id: 'me', name: 'You', colour: '#c8965a', look: myLook })), (selfFigure.lookKey = lookKey);
   selfFigure.tag.visible = false;
+  selfFigure.head.visible = !legs;
+  for (const a of selfFigure.arms) a.visible = !legs;
+  if (legs) {
+    const p = camera.position, yaw = controls.euler.y, back = 0.24;
+    const moved = selfFigure.last ? Math.hypot(p.x - selfFigure.last.x, p.z - selfFigure.last.z) / Math.max(dt, 1e-3) : 0;
+    selfFigure.last = { x: p.x, z: p.z };
+    selfFigure.speedOverride = (selfFigure.speedOverride ?? 0) + (Math.min(moved, 12) - (selfFigure.speedOverride ?? 0)) * Math.min(1, dt * 8);
+    const t = now / 1000, me = { crouch: controls.crouch, sprint: controls.sprinting, swim: false, fly: false, pose: null, ...airFlags() };
+    selfFigure.push([p.x + Math.sin(yaw) * back, p.y - controls.eyeHeight, p.z + Math.cos(yaw) * back, yaw, 0, packFlags(me, mp.items)], t);
+    selfFigure.update(dt, t + 0.15, mp.items);
+    return null;
+  }
   // (How fast you're going, eased: so the stride's swing and rhythm follow it.)
   const p = camera.position, moved = selfFigure.last ? Math.hypot(p.x - selfFigure.last.x, p.z - selfFigure.last.z) / Math.max(dt, 1e-3) : 0;
   selfFigure.last = { x: p.x, z: p.z };
@@ -1554,6 +1568,7 @@ const controls = new PlayerControls(camera, canvas, {
     }
     if (sand.slow < 1) (controls.speedFactor *= sand.slow), (controls.noJump = true); // (in quicksand)
     if (game.blocking) controls.speedFactor *= 0.55; // (guard up: going carefully)
+    controls.speedFactor *= game.dragSlow; // (hauling a carcass on a rope)
     // (Through a spider's web in the caves: it clings, and you tear through it slowly.)
     const web = sheltered ? generator.caves?.webAt?.(position.x, feet + 1, position.z) ?? 0 : 0;
     if (web > 0) {

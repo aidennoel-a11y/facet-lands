@@ -583,7 +583,10 @@ export class Game {
     globalThis.__prof?.mark('  t: before animals');
     const carcass = this.wildlife.aim(origin, direction, reach, true);
     globalThis.__prof?.mark('  t: animals');
-    if (carcass && !carcass.animal.alive) found.push({ kind: 'carcass', distance: carcass.distance, animal: carcass.animal, text: `Butcher the ${NAMES[carcass.animal.kind] ?? 'animal'}` });
+    if (carcass && !carcass.animal.alive) {
+      const big = this.#draggable(carcass.animal), rope = this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'rope';
+      found.push({ kind: 'carcass', distance: carcass.distance, animal: carcass.animal, text: big && rope ? `Tie the rope on the ${NAMES[carcass.animal.kind] ?? 'animal'} to drag it home` : `Butcher the ${NAMES[carcass.animal.kind] ?? 'animal'}${big ? ' (a rope in hand: drag it)' : ''}` });
+    }
     // A tame sheep: to shear, or to feed.
     const beast = carcass?.animal.alive ? carcass.animal : null;
     if (beast?.kind === 'sheep' && beast.tame) {
@@ -841,6 +844,14 @@ export class Game {
   /** Q: picks up, picks fruit, drinks, butchers, and uses what you've built (Shift: takes it down). */
   interact(ray, down = false) {
     if (this.ghost) return;
+    // (Dragging a carcass: Q lets it go.)
+    if (this.dragging) {
+      const a = this.dragging;
+      this.dragging = null;
+      a.dragged = false;
+      this.sound?.call('thump', 0, 0.4);
+      return this.hotbar?.flash(`You let go of the ${NAMES[a.kind] ?? 'carcass'}`);
+    }
     if (this.mount) return this.#dismount(true);
     if (this.riding) return this.#getOff(true);
     if (this.climbing) return this.#letGo(true);
@@ -878,6 +889,13 @@ export class Game {
         return this.hotbar?.flash('An oyster, and inside it, a pearl!');
       }
       return this.hotbar?.flash(`${ITEMS[stack.id].name}${stack.count > 1 ? ` ×${stack.count}` : ''}`);
+    }
+    if (t.kind === 'carcass' && this.#draggable(t.animal) && this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'rope') {
+      if (t.animal.mirrored) return this.hotbar?.flash('Online, only the host can drag a carcass');
+      this.dragging = t.animal;
+      t.animal.dragged = true;
+      this.sound?.call('brush', 0, 0.5);
+      return this.hotbar?.flash(`The rope round the ${NAMES[t.animal.kind] ?? 'carcass'}: drag it home, slowly (Q: let go)`);
     }
     if (t.kind === 'carcass') {
       const got = this.wildlife.butcher(t.animal);
@@ -3691,6 +3709,29 @@ export class Game {
       if (e.hotSpring && this.grime < 0.05 && !this.bathed) (this.bathed = true), this.survival.energy = Math.min(100, this.survival.energy + 10);
       if (!e.hotSpring) this.bathed = false;
     }
+    // A carcass on the rope, hauled along behind you over the ground.
+    if (this.dragging) {
+      const a = this.dragging, gap = 1.6 + (a.scale ?? 1) * 1.2;
+      if (a.gone || a.alive || !e.active || this.controls.swimming || this.riding) (this.dragging = null), (a.dragged = false);
+      else {
+        const dx = cam.x - a.x, dz = cam.z - a.z, d = Math.hypot(dx, dz) || 1;
+        if (d > gap + 6) (this.dragging = null), (a.dragged = false), this.hotbar?.flash('The rope slipped off it');
+        else if (d > gap) {
+          const pull = d - gap;
+          a.x += (dx / d) * pull;
+          a.z += (dz / d) * pull;
+          a.heading = Math.atan2(dx, dz);
+          if (Math.random() < dt * 2) this.sound?.call('brush', 0, 0.25);
+        }
+        a.deadTime = Math.min(a.deadTime ?? 0, 100); // (fresh enough: it won't be left to rot while you haul it)
+        a.claimed = true; // (no scavenger takes it off your rope)
+      }
+    }
+    // (Back by stores a bear got into while you were away: its sign there.)
+    if (this.raided && e.active && Math.hypot(this.raided.x - cam.x, this.raided.z - cam.z) < 14) {
+      this.hotbar?.flash(`Something got into ${this.raided.what} in the night: claw marks, scat, prints as big as your hand spread. A bear`);
+      this.raided = null;
+    }
     // How cold the water is that you're in: snow-fed and bitter in the
     // winter, cold in the spring (the melt), up in the mountains, and at
     // night; warm only in the jungle, the swamp, the savanna in summer. In it,
@@ -4397,29 +4438,58 @@ export class Game {
     return out;
   }
 
+  // A carcass big enough to want dragging (a deer and up): not carried on your back.
+  #draggable(a) {
+    return !!a && !a.alive && !a.gone && ['large', 'huge'].includes(this.wildlife.bulkOf?.(a.kind));
+  }
+
+  /** How much a dragged carcass slows you (0..1 of your speed). */
+  get dragSlow() {
+    const a = this.dragging;
+    return a ? (this.wildlife.bulkOf?.(a.kind) === 'huge' ? 0.35 : 0.55) : 1;
+  }
+
   /** The food at your camp a bear might come for in the night: chests with food in them, racks with meat on. */
   caches() {
-    return this.structures.list
-      .filter((s) => (s.type === 'chest' && s.contents.slots.some((st) => st && ITEMS[st.id].food)) || (s.type === 'dryingRack' && s.jobs.length))
+    const out = this.structures.list
+      .filter((s) => (s.type === 'chest' && s.contents.slots.some((st) => st && ITEMS[st.id].food)) || ((s.type === 'dryingRack' || s.type === 'smokingRack') && s.jobs.length))
       .map((s) => ({ x: s.x, z: s.z, s }));
+    // (And food left lying out on the ground: meat, fish, fruit, a carcass's worth: the smell carries.)
+    const seen = [];
+    for (const d of this.items.drops ?? []) {
+      if (!ITEMS[d.stack?.id]?.food || seen.some((c) => Math.abs(c.x - d.x) < 6 && Math.abs(c.z - d.z) < 6)) continue;
+      const c = { x: d.x, z: d.z, ground: true };
+      seen.push(c);
+      out.push(c);
+    }
+    return out;
   }
 
   /** A bear gets into one: the food's gone. Returns whether there was any. */
   raid(c) {
     const s = c.s;
     let took = false;
-    if (s.type === 'chest') {
+    if (c.ground) {
+      // (The food left out: eaten where it lay, what it couldn't eat scattered.)
+      for (const d of [...(this.items.drops ?? [])]) {
+        if (!ITEMS[d.stack?.id]?.food || Math.hypot(d.x - c.x, d.z - c.z) > 6) continue;
+        this.items.removeDrop(d.uid);
+        took = true;
+      }
+      if (took) this.raided = { x: c.x, z: c.z, what: 'the food you left out' };
+    } else if (s.type === 'chest') {
       s.contents.slots.forEach((st, k) => {
         if (st && ITEMS[st.id].food) (s.contents.slots[k] = null), (took = true);
       });
-      if (took) s.contents.changed?.();
-    } else if (s.jobs?.length) (s.jobs.length = 0), (took = true), this.structures.onChange?.();
+      if (took) s.contents.changed?.(), (this.raided = { x: s.x, z: s.z, what: 'a chest' });
+    } else if (s.jobs?.length) (s.jobs.length = 0), (took = true), this.structures.onChange?.(), (this.raided = { x: s.x, z: s.z, what: 'the meat on the rack' });
     if (took) {
       this.dirty = true;
-      if (Math.hypot(s.x - this.camera.position.x, s.z - this.camera.position.z) < 60) {
+      if (Math.hypot(c.x - this.camera.position.x, c.z - this.camera.position.z) < 60) {
         this.sound?.call('crash', 0, 0.6);
         this.hotbar?.flash('A bear is into your stores!');
-      }
+        this.raided = null;
+      } else this.raided.seen = false; // (found when you come back by: see #checkRaided)
     }
     return took;
   }

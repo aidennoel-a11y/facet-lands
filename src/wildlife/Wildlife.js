@@ -865,6 +865,11 @@ export class Wildlife {
     return best;
   }
 
+  /** How big a kind is to bring down and haul: 'small', 'medium', 'large', 'huge'. */
+  bulkOf(kind) {
+    return BULK[kind] ?? 'medium';
+  }
+
   carcassesNear(x, z, r) {
     return this.animals.filter((a) => !a.alive && a.state === 'dead' && !a.gone && Math.hypot(a.x - x, a.z - z) < r);
   }
