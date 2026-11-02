@@ -1592,7 +1592,7 @@ export function seal() {
     antlers: null,
     // (Short fore flippers out to the sides; the hind ones are in the body, trailing.)
     fore: limb(0.08, 0.08, { top: [0.1, 0.06], knee: [0.08, 0.05], ankle: [0.1, 0.03], color: coat, foot: [0.16, 0.03, 0.18, flip, 0.03] }),
-    hind: limb(0.02, 0.02, { top: [0.02, 0.02], knee: [0.02, 0.02], ankle: [0.02, 0.02], color: coat }),
+    hind: limb(0.02, 0.02, { top: [0.02, 0.02], knee: [0.02, 0.02], ankle: [0.02, 0.02], color: coat, foot: [0.02, 0.01, 0.02, flip, 0] }),
     legs: [[0.24, 0.16, 0.22], [-0.24, 0.16, 0.22], [0.1, 0.1, -0.6], [-0.1, 0.1, -0.6]],
     torso: [[0, 0.27, -0.1, 0.5, 0.42, 1.3]],
     skull: [0, 0.02, 0.1, 0.26, 0.24, 0.3],

@@ -14,7 +14,20 @@ self.onmessage = (event) => {
   if (kind === 'rivers') return world.generator.rivers.share(event.data.delta);
   // (A world starting: made ready, with a cave by where you are, ahead of
   // the first you come to, rather than then.)
-  if (kind === 'warm') return void buildChunkData(world.generator.caves.field, cx, cz, config.chunkSize);
+  if (kind === 'warm') {
+    buildChunkData(world.generator.caves.field, cx, cz, config.chunkSize);
+    handOn();
+    return void self.postMessage({ id, warmed: true });
+  }
   const data = buildChunkData(world.generator.caves.field, cx, cz, config.chunkSize);
   self.postMessage({ id, data }, chunkDataBuffers(data));
+  handOn();
+};
+
+// (What this one has worked out of the lie of the land, the rivers and the
+// natural openings: handed on, for the other cave builders and the land's
+// builders not to work out again. See CaveSystem and ChunkManager.#shareRivers.)
+function handOn() {
+  const delta = world.generator.rivers?.takeFresh?.();
+  if (delta) self.postMessage({ kind: 'rivers', seed: world.seed, delta });
 };

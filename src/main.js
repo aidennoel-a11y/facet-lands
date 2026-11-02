@@ -189,6 +189,7 @@ if (TEST.get('seed')) WORLD.seed = TEST.get('seed');
 if (TEST.get('vd')) WORLD.viewDistance = +TEST.get('vd');
 let generator = new TerrainGenerator(WORLD.seed, WORLD);
 const chunks = new ChunkManager(scene, generator, WORLD, terrainMaterial);
+chunks.takeCaveRivers(); // (the cave builders' rivers handed on to the land's, and back)
 const water = createWaterLayer({ skyColor: dayNight.horizon, skyTop: dayNight.top });
 const rocks = createRockLayer(WORLD);
 const trees = createTreeLayer({ rocks });

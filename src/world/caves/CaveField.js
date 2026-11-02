@@ -460,6 +460,15 @@ export class CaveField {
         }
       }
       this.entrances.set(key, e);
+      // (Handed on too, as the natural openings are, so the main thread and the
+      // other builders needn't work it out again: only one that can be sent
+      // between threads, to be sure; else it's simply worked out there instead.)
+      try {
+        if (e) structuredClone(e);
+        this.#fresh('e', key, e);
+      } catch {
+        // (kept here only)
+      }
     }
     return e;
   }
@@ -814,6 +823,10 @@ export class CaveField {
   /** The openings another thread found (from its takeFresh), taken in. */
   share(list) {
     for (const [type, key, e] of list) {
+      if (type === 'e') {
+        if (!this.entrances.has(key)) this.entrances.set(key, e);
+        continue;
+      }
       const cache = (this.naturals ??= new Map());
       if (!cache.has(key)) cache.set(key, e);
     }

@@ -1,7 +1,7 @@
 import { Box3, BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { buildChunkGeometry, chunkFromData } from './ChunkMesher.js';
 import { FADE_SECONDS, fadeCopy, fadeOpacity } from '../render/chunkFade.js';
-import { shareCaveRivers } from './caves/CaveSystem.js';
+import { onCaveRivers, shareCaveRivers } from './caves/CaveSystem.js';
 import { REGION as RIVER_REGION } from './BigRivers.js';
 
 const LOOKAHEAD = 3; // seconds: the land where you'll be by then is made ready ahead of you
@@ -224,11 +224,16 @@ export class ChunkManager {
     }
   }
 
-  #shareRivers(message, from = null) {
+  #shareRivers(message, from = null, fromCaves = false) {
     if (message.seed !== this.generator.seedText) return;
-    if (from) this.generator.rivers.share(message.delta);
+    if (from || fromCaves) this.generator.rivers.share(message.delta);
     for (const w of [...this.workers, ...(this.mapWorkers ?? [])]) if (w !== from) w.postMessage({ kind: 'rivers', seed: message.seed, config: this.config, delta: message.delta });
-    shareCaveRivers(message.seed, this.config, message.delta);
+    if (!fromCaves) shareCaveRivers(message.seed, this.config, message.delta);
+  }
+
+  /** The cave builders' own rivers and openings, handed on to the land's builders (see CaveSystem). */
+  takeCaveRivers() {
+    onCaveRivers((m) => this.#shareRivers(m, null, true));
   }
 
   rebuildAll() {

@@ -31,6 +31,17 @@ function getWorker() {
           const index = k;
           busy.push(0);
           w.onmessage = (event) => {
+            // (Rivers and openings it worked out: to the other cave builders, and the land's.)
+            if (event.data.kind === 'rivers') {
+              for (const o of workers) if (o !== w) o.postMessage({ kind: 'rivers', seed: event.data.seed, delta: event.data.delta });
+              return void caveRiverSink?.(event.data);
+            }
+            if (event.data.warmed) {
+              // (The first warmed: the rest each warm a neighbouring cave, with what it worked out already shared.)
+              const after = warmAfter.get(event.data.id);
+              warmAfter.delete(event.data.id);
+              return void after?.();
+            }
             const done = requests.get(event.data.id);
             if (!done) return; // (a warm-up's answer)
             requests.delete(event.data.id);
@@ -68,6 +79,13 @@ function dispatch() {
     inFlight.set(job.message.id, job);
     workers[k].postMessage(job.message);
   }
+}
+
+const warmAfter = new Map();
+let caveRiverSink = null;
+/** Where the cave builders' own rivers go (the land's builders: see ChunkManager). */
+export function onCaveRivers(fn) {
+  caveRiverSink = fn;
 }
 
 /** Rivers worked out on another thread, for the cave workers to take in too (see ChunkManager.#shareRivers). */
@@ -124,8 +142,16 @@ export class CaveSystem {
 
   /** The cave workers made ready for this world, each building a cave round (cx, cz) to start with. */
   warm(cx, cz) {
-    getWorker();
-    for (const w of workers) w.postMessage({ kind: 'warm', seed: this.generator.seedText, config: this.config, cx, cz });
+    if (!getWorker()) return;
+    // (One first, the cave nearest you: the slow start, the lie of the land
+    // worked out, done once rather than by all of them at once, competing
+    // with the land being built; then the others, from what it found.)
+    const seed = this.generator.seedText, config = this.config, id = nextId++;
+    warmAfter.set(id, () => {
+      const around = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+      workers.slice(1).forEach((w, k) => w.postMessage({ kind: 'warm', id: nextId++, seed, config, cx: cx + around[k % 4][0], cz: cz + around[k % 4][1] }));
+    });
+    workers[0].postMessage({ kind: 'warm', id, seed, config, cx, cz });
   }
 
   /**
