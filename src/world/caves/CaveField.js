@@ -449,6 +449,11 @@ export class CaveField {
     const key = rx * 65536 + rz;
     let e = this.entrances.get(key);
     if (e === undefined) {
+      // (On the main thread, with workers: not worked out here, which means
+      // working out the land and its rivers for hundreds of metres round, and
+      // held up the loading. The workers find each one as they cut the land
+      // it's in, and hand it on before that land is shown: see share.)
+      if (this.lazy) return null;
       e = this.#makeEntrance(rx, rz);
       if (e) {
         e.mine = this.#layMine(e, rx, rz);
