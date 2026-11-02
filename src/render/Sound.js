@@ -986,14 +986,15 @@ export class Sound {
     } else if (kind === 'lavaBubble') {
       // Lava: a thick bubble swelling and bursting, a deep wet 'blop', the
       // spatter of it falling back, a short hiss.
-      tone(t, 0.25, 'sine', 70 + Math.random() * 30, 140 + Math.random() * 60, 160, 1.2, 0.5);
-      tone(t + 0.18, 0.12, 'sine', 180, 60, 200, 0.8, 0.35);
-      noise(t + 0.15, 0.35, 900, 0.7, 0.18, 22);
-      drops(t + 0.3, 4, 0.4, 0.03, false);
+      // (All low and thick: nothing high or whistling in it.)
+      tone(t, 0.3, 'sine', 55 + Math.random() * 20, 85 + Math.random() * 25, 120, 1.0, 0.55);
+      tone(t + 0.22, 0.16, 'sine', 110, 45, 130, 0.8, 0.4);
+      noise(t + 0.2, 0.45, 320, 0.6, 0.22, 14);
     } else if (kind === 'lavaCrackle') {
       // The crust at its edges cracking as it cools: sharp little ticks and snaps.
-      for (let k = 0; k < 5 + Math.floor(Math.random() * 6); k++) noise(t + Math.random() * 0.6, 0.015 + Math.random() * 0.02, 2500 + Math.random() * 3000, 2, 0.2 + Math.random() * 0.25);
-      noise(t, 0.6, 600, 0.6, 0.06, 18);
+      // (Dull, stony cracks, a crunch, never a chirp.)
+      for (let k = 0; k < 3 + Math.floor(Math.random() * 4); k++) noise(t + Math.random() * 0.7, 0.03 + Math.random() * 0.03, 700 + Math.random() * 700, 0.9, 0.18 + Math.random() * 0.2);
+      noise(t, 0.7, 260, 0.6, 0.08, 10);
     } else if (kind === 'doorOpen') {
       // A door or gate swung open: the latch's click, then the hinge's
       // squealing creak as it swings, rising.
@@ -1006,10 +1007,17 @@ export class Sound {
       tone(t + 0.28, 0.25, 'sine', 110, 55, 160, 0.8, 0.55);
       noise(t + 0.28, 0.12, 500, 0.8, 0.4);
       noise(t + 0.36, 0.04, 2600, 2, 0.25);
+    } else if (kind === 'chestOpen') {
+      // A chest opened: the hasp's click, then the lid's hinges creaking up.
+      noise(t, 0.03, 2200, 2, 0.45);
+      tone(t + 0.05, 0.45, 'sawtooth', 300, 520, 1100, 5, 0.1, 10);
+      noise(t + 0.05, 0.4, 1400, 1.2, 0.08, 20);
     } else if (kind === 'lidShut') {
-      // A chest's lid let down: a soft wooden clunk.
-      tone(t, 0.18, 'sine', 140, 70, 200, 0.8, 0.45);
-      noise(t, 0.08, 700, 0.8, 0.3);
+      // A chest's lid let down: a short creak, a solid wooden clunk, the hasp.
+      tone(t, 0.12, 'sawtooth', 420, 300, 900, 5, 0.06, 8);
+      tone(t + 0.12, 0.22, 'sine', 150, 70, 220, 0.8, 0.7);
+      noise(t + 0.12, 0.1, 800, 0.8, 0.5);
+      noise(t + 0.2, 0.03, 2400, 2, 0.3);
     } else if (kind === 'creak') {
       // A tree about to go: a long groaning creak.
       tone(t, 1.3, 'sawtooth', 70, 110, 260, 4, 0.12, 9);

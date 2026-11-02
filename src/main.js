@@ -1465,7 +1465,7 @@ const eyeSaved = new THREE.Vector3(), behind = new THREE.Vector3();
 // (Off the ground: jumping, falling, gliding. For your figure's pose, and the others' view of you online.)
 function airFlags() {
   const walk = controls.mode === 'walk' && !controls.swimming;
-  return { air: walk && !controls.grounded, rising: controls.velocityY > 0.5, glide: walk && !!controls.gliding };
+  return { air: walk && !controls.grounded && !game.mount, rising: controls.velocityY > 0.5, glide: walk && !!controls.gliding };
 }
 function thirdPersonView(dt, now) {
   const on = thirdPerson && !loading && (controls.mode === 'walk' || controls.mode === 'fly') && !game.sleeping;
@@ -1483,7 +1483,11 @@ function thirdPersonView(dt, now) {
   selfFigure.speedOverride = (selfFigure.speedOverride ?? 0) + (Math.min(moved, 12) - (selfFigure.speedOverride ?? 0)) * Math.min(1, dt * 8);
   const flying = controls.mode === 'fly';
   const t = now / 1000, me = { crouch: controls.crouch, sprint: controls.sprinting || (flying && selfFigure.speedOverride > 4.5), swim: controls.swimming || (flying && controls.underwater), fly: false, pose: game.pose(), ...airFlags() };
-  selfFigure.push([camera.position.x, camera.position.y - controls.eyeHeight, camera.position.z, controls.euler.y, controls.euler.x, packFlags(me, mp.items)], t);
+  // (On a horse: sat in its saddle, facing the way it goes, bounced with its stride.)
+  const m = game.mount;
+  if (m) me.ride = true;
+  const seatY = m ? m.y + 1.5 * m.scale - 0.92 + (game.rideBob ?? 0) : camera.position.y - controls.eyeHeight;
+  selfFigure.push([m ? m.x : camera.position.x, seatY, m ? m.z : camera.position.z, m ? m.heading + Math.PI : controls.euler.y, controls.euler.x, packFlags(me, mp.items)], t);
   selfFigure.update(dt, t + 0.15, mp.items); // (drawn as you are now, not a moment behind as the others are)
   eyeSaved.copy(camera.position);
   camera.getWorldDirection(behind);
@@ -2210,7 +2214,8 @@ function caveSounds(dt) {
       const d = Math.hypot(f.x - p.x, f.y - p.y, f.z - p.z);
       if (d < nd) (nd = d), (near = f);
     }
-    if (near) sound.call('bats', panTowards(camera, near.x, near.z), Math.min(0.8, 6 / (nd + 4)));
+    // (No bats squeaking down in the lava caves: too hot for them.)
+    if (near && generator.caves.biomeAt?.(p.x, p.y, p.z) !== 2) sound.call('bats', panTowards(camera, near.x, near.z), Math.min(0.8, 6 / (nd + 4)));
   }
   const rv = generator.caves.field.riverAt(p.x, p.z, H);
   caveSounds.brook = rv && Math.abs(p.y - rv.level) < 8 ? Math.max(0, 1 - Math.max(0, rv.across - rv.half) / 14) * rv.fade : 0;
@@ -3300,7 +3305,7 @@ function tick(now) {
   prof.mark('animals');
   mp.update(dt, {
     x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x, // (the way you look: yaw first, then pitch)
-    crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk', ...airFlags(),
+    crouch: controls.crouch, sprint: controls.sprinting, swim: controls.swimming, fly: controls.mode !== 'walk', ...airFlags(), ride: !!game.mount,
     pose: game.pose(), // (what's in your hand, what you're doing with it)
   });
   sync.update();

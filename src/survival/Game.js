@@ -552,7 +552,7 @@ export class Game {
   #menu(open) {
     // (A chest's lid let down as you close it.)
     if (open && this.hud.el?.('.chest-ui') && !this.hud.el('.chest-ui').hidden) this.chestOpen = true;
-    if (!open && this.chestOpen) (this.chestOpen = false), this.sound?.call('lidShut', 0, 0.55);
+    if (!open && this.chestOpen) (this.chestOpen = false), this.sound?.call('lidShut', 0, 0.9);
     this.controls.frozen = open || !this.survival.alive;
     if (open && document.pointerLockElement) document.exitPointerLock();
   }
@@ -1082,11 +1082,11 @@ export class Game {
       case 'chest':
         if (s.ruinKey?.startsWith('wreck:')) this.#achieve('wreck');
         if (s.ruinKey?.startsWith('sunken:')) this.#achieve('sunkenWreck');
-        this.sound?.call('creak', 0, 0.35);
+        this.sound?.call('chestOpen', 0, 0.8);
         this.hud.openChest(s.contents, this.inventory);
         return this.#menu(true);
       case 'cellar':
-        this.sound?.call('creak', 0, 0.4);
+        this.sound?.call('chestOpen', 0, 0.8);
         this.hud.openChest(s.contents, this.inventory, 'Root cellar', 'Click to move a stack across · cool and dark: food in here never spoils · E or Esc to close');
         return this.#menu(true);
       case 'fishTrap': {
@@ -1235,7 +1235,7 @@ export class Game {
       case 'sailboat':
         if (!this.structures.isBuilt(s)) return this.hotbar?.flash('She isn\'t finished yet');
         if (this.controls.crouch) {
-          this.sound?.call('creak', 0, 0.4);
+          this.sound?.call('chestOpen', 0, 0.8);
           this.hud.openChest(s.contents, this.inventory, 'The hold', 'Click to move a stack across · E or Esc to close');
           return this.#menu(true);
         }
@@ -1610,10 +1610,7 @@ export class Game {
       this.sound?.call(item.place === 'stoneRoad' ? 'dig' : 'place', 0, 0.6);
       this.#learn(item.place);
       this.dirty = true;
-      if (this.mode !== 'survival') {
-        this.structures.finish(site);
-        return this.hotbar?.flash(`The ${sp.name} is built: ${Math.round(plan.len)} m`);
-      }
+      if (this.mode !== 'survival' && stages) return this.hotbar?.flash(`The ${sp.name}'s blueprint, marked out (${Math.round(plan.len)} m): Q on it to put up each stage in turn (${stages.length} of them)`);
       const need = this.structures.siteNeeds(site);
       if (!need) return this.hotbar?.flash(`The ${sp.name} is laid: ${Math.round(plan.len)} m`);
       return this.hotbar?.flash(`The ${sp.name} is marked out (${Math.round(plan.len)} m). First, ${need.name}: bring ${this.#wantsText(need.wants)} (click the site with them)`);
@@ -3095,7 +3092,13 @@ export class Game {
       const p = this.camera.position;
       // (On its back: the eye a little behind its withers.)
       const back = -0.05 * a.scale;
-      p.set(a.x - Math.sin(a.heading) * back, a.y + 2.65 * a.scale, a.z - Math.cos(a.heading) * back);
+      // (Bounced in the saddle with its stride: a gentle sway at a walk, the
+      // up-and-down jolt of a trot, the long rocking of a gallop.)
+      const v = a.speed ?? 0, beat = v < 2 ? 1.6 : v < 6 ? 2.6 : 1.9, amp = v < 0.3 ? 0 : v < 2 ? 0.03 : v < 6 ? 0.09 : 0.13;
+      this.ridePhase = (this.ridePhase ?? 0) + dt * beat * Math.PI;
+      const target = Math.abs(Math.sin(this.ridePhase)) * amp;
+      this.rideBob = (this.rideBob ?? 0) + (target - (this.rideBob ?? 0)) * Math.min(1, dt * 18);
+      p.set(a.x - Math.sin(a.heading) * back, a.y + 2.65 * a.scale + this.rideBob, a.z - Math.cos(a.heading) * back);
       this.controls.grounded = true;
       this.controls.moving = a.speed > 0.3;
       if (a.balked && !this.balkSaid) (this.balkSaid = true), this.hotbar?.flash('It won\'t go into the cave');

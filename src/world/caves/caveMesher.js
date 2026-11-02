@@ -660,13 +660,26 @@ export function liquidChunk(grid, field, pools) {
         const vf = field.volcanicFloor(x, z);
         // (Lava wherever the floor dips under its level, rock under the floor:
         // whole, never with holes in it, and never water.)
-        if (vf.floor < vf.lava && f(x, vf.floor - 1, z) >= 0 && vf.lava > (level ?? -Infinity)) (level = vf.lava), (levelAt = (px, pz) => field.volcanicFloor(px, pz).lava), (molten = true);
+        // (And only in a cave: open air over it, never lava lying in the solid rock.)
+        if (vf.floor < vf.lava && f(x, vf.floor - 1, z) >= 0 && f(x, vf.lava + 0.4, z) < 0 && f(x, vf.lava + 1.6, z) < 0 && vf.lava > (level ?? -Infinity)) (level = vf.lava), (levelAt = (px, pz) => field.volcanicFloor(px, pz).lava), (molten = true);
       }
       if (level === null) continue;
       const isLava = molten || biomeIn(grid, x, level, z) === 2;
       quad(isLava ? parts.lava : parts.water, x, z, step / 2, levelAt); // (edge to edge, never overlapping: no seams)
       if (isLava) {
-        const h = step / 2, dep = (px, pz) => (molten ? levelAt(px, pz) - field.volcanicFloor(px, pz).floor : 3);
+        // (Its depth there, and how near the rock is round it, at its own level: the
+        // wall, the shore, a boulder or a pillar standing in it. Cooled dark by either.)
+        const near = (px, py, pz) => {
+          for (const r of [0.6, 1.2, 2, 3]) for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2 + r;
+            if (f(px + Math.cos(a) * r, py + 0.35, pz + Math.sin(a) * r) >= 0) return r;
+          }
+          return 4;
+        };
+        const h = step / 2, dep = (px, pz) => {
+          const lv = levelAt(px, pz), d = molten ? lv - field.volcanicFloor(px, pz).floor : 3;
+          return Math.min(d, (near(px, lv, pz) - 0.6) * 0.6);
+        };
         lavaDepth.push(dep(x - h, z - h), dep(x - h, z + h), dep(x + h, z + h), dep(x - h, z - h), dep(x + h, z + h), dep(x + h, z - h));
       }
     }

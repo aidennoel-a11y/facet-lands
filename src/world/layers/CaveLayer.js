@@ -65,7 +65,7 @@ function liquidMaterial(lava) {
           vec3 skin = vec3(0.16, 0.05, 0.03) + vec3(0.25, 0.06, 0.0) * smoothstep(0.3, 0.0, abs(plates) - 0.2);
           float edge = 1.0 - clamp(diffuseColor.r, 0.0, 1.0) * 0.0 - (1.0 - diffuseColor.g / 0.42) * 0.0;
           vec3 base = diffuseColor.rgb / vec3(1.0, 0.42, 0.1); // (1 where it's deep and hot; less where cooled by the rock)
-          diffuseColor.rgb = mix(melt, skin, clamp(crust * 0.8 + (1.0 - base.g) * 0.8, 0.0, 1.0)) * mix(0.55, 1.0, base.r);
+          diffuseColor.rgb = mix(melt, skin, clamp(crust * 0.8 + (1.0 - base.g) * 1.1, 0.0, 1.0)) * mix(0.3, 1.0, base.r); // (dark, near black, against the rock)
         }` : ''}`);
   };
   material.customProgramCacheKey = () => (lava ? 'cave lava 3' : 'cave water');

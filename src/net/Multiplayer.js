@@ -12,7 +12,7 @@ import * as Models from '../wildlife/models.js';
 
 const SEND_EVERY = 1 / 15;
 const DELAY = 0.15; // (how far behind the others are drawn, in seconds: smooth through a late update)
-const FLAG = { crouch: 1, sprint: 2, swim: 4, fly: 8, air: 1 << 28, rising: 1 << 29, glide: 1 << 30 }; // (air: off the ground, jumping or falling; rising: on the way up; glide: under a glider)
+const FLAG = { crouch: 1, sprint: 2, swim: 4, fly: 8, air: 1 << 28, rising: 1 << 29, glide: 1 << 30, ride: 1 << 31 }; // (ride: in a horse's saddle) // (air: off the ground, jumping or falling; rising: on the way up; glide: under a glider)
 // (Also in the flags, above those: what you're doing with what's in your
 // hand (bits 4-6, one of ACTS; bit 7 flips with each new one), what that
 // is (bits 8-15: its place in the list of items, 0 nothing) and how far a
@@ -54,7 +54,7 @@ function nameTag(name, colour) {
 
 /** What you're doing, packed for the others (and for your own figure, seen from behind: see main's third person). */
 export function packFlags(me, items) {
-  let flags = (me.crouch ? FLAG.crouch : 0) | (me.sprint ? FLAG.sprint : 0) | (me.swim ? FLAG.swim : 0) | (me.fly ? FLAG.fly : 0) | (me.air ? FLAG.air : 0) | (me.rising ? FLAG.rising : 0) | (me.glide ? FLAG.glide : 0);
+  let flags = (me.crouch ? FLAG.crouch : 0) | (me.sprint ? FLAG.sprint : 0) | (me.swim ? FLAG.swim : 0) | (me.fly ? FLAG.fly : 0) | (me.air ? FLAG.air : 0) | (me.rising ? FLAG.rising : 0) | (me.glide ? FLAG.glide : 0) | (me.ride ? FLAG.ride : 0);
   // (What's in your hand and what you're doing with it: see ACTS.)
   const p = me.pose;
   if (p && items) {
@@ -153,6 +153,7 @@ export class Remote {
     const crouch = flags & FLAG.crouch, swim = flags & FLAG.swim;
     this.#gait(dt, speed, pitch, !!crouch, !!swim, !!(flags & FLAG.sprint), y);
     this.#air(dt, flags, swim);
+    this.#ride(dt, flags, speed);
     this.#hands(dt, flags, pitch, swim, items);
     this.#emote(dt, flags, speed, swim);
   }
@@ -299,6 +300,38 @@ export class Remote {
     la.rotation.x -= 0.6 * L;
     ra.rotation.x -= 0.6 * L;
     this.body.rotation.x += 0.3 * L;
+  }
+
+  /**
+   * In the saddle: sat astride, thighs out along the horse's flanks, the
+   * shins hanging down into the stirrups, hands forward on the reins; the
+   * body rising and falling a little with the stride, leaning into a gallop.
+   */
+  #ride(dt, flags, speed) {
+    const g = this.gait;
+    g.ride = (g.ride ?? 0) + (((flags & FLAG.ride) !== 0 ? 1 : 0) - (g.ride ?? 0)) * (1 - Math.exp(-dt * 10));
+    const R = g.ride;
+    if (R < 0.01) return;
+    const [lt, rt] = this.legs, [ls, rs] = this.shins, [la, ra] = this.arms, [lf, rf] = this.forearms;
+    const mix = (o, v) => o + (v - o) * R, t = performance.now() / 1000;
+    lt.rotation.x = mix(lt.rotation.x, -1.25);
+    rt.rotation.x = mix(rt.rotation.x, -1.25);
+    lt.rotation.z = mix(lt.rotation.z, -0.42);
+    rt.rotation.z = mix(rt.rotation.z, 0.42);
+    ls.rotation.x = mix(ls.rotation.x, 1.35);
+    rs.rotation.x = mix(rs.rotation.x, 1.35);
+    // (The hands on the reins, moving a little with the horse's head.)
+    const rein = Math.sin(t * 5) * 0.08 * Math.min(1, speed / 3);
+    la.rotation.x = mix(la.rotation.x, -0.75 + rein);
+    ra.rotation.x = mix(ra.rotation.x, -0.75 + rein);
+    la.rotation.z = mix(la.rotation.z, 0.1);
+    ra.rotation.z = mix(ra.rotation.z, -0.1);
+    lf.rotation.x = mix(lf.rotation.x, -0.7);
+    rf.rotation.x = mix(rf.rotation.x, -0.7);
+    this.body.position.y = mix(this.body.position.y, 0.92);
+    this.body.rotation.x = mix(this.body.rotation.x, Math.min(0.35, 0.05 + speed * 0.03));
+    this.body.rotation.z = mix(this.body.rotation.z, 0);
+    this.body.rotation.y = mix(this.body.rotation.y, 0);
   }
 
   // A wave, a cheer, pointing, a bow, sitting down, a shrug (see EMOTES):
