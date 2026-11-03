@@ -1,6 +1,7 @@
 import { BufferAttribute, BufferGeometry, Color, Vector3 } from 'three';
 import { hash2 } from '../noise/random.js';
 import { CaveField } from './caves/CaveField.js';
+const monsoonW = {}; // (scratch: see the monsoon forest's seasons)
 
 
 const color = new Color();
@@ -224,7 +225,9 @@ export function computeChunkData(generator, config, cx, cz, resolution) {
 
     // Tiny per-face brightness shift so neighbouring faces read as facets.
     const shade = 0.93 + hash2(varSeedX, varSeedZ, seed ^ 0x51ed27) * 0.14;
-    const cold = generator.getSeasonality(wx, wz);
+    // (Monsoon forest marked by a cold below nothing: its own seasons, dry then wet. See Seasons.seasonalTerrain.)
+    const monsoon = generator.getBiomeWeights(wx, wz, monsoonW).monsoon ?? 0;
+    const cold = monsoon > 0.05 ? -monsoon : generator.getSeasonality(wx, wz);
     colds[v / 3] = colds[v / 3 + 1] = colds[v / 3 + 2] = cold;
     const r = color.r * shade;
     const g = color.g * shade;

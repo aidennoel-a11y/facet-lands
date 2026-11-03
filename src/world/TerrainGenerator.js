@@ -4204,6 +4204,23 @@ export class TerrainGenerator {
     return smoothstep(0.35, 0.5, m) * smoothstep(0.3, 0.6, green);
   }
 
+  /**
+   * An alpine meadow (0..1): the green, gentle ground deep in a mountain
+   * range, in the valleys and saddles between its rocky heights, open
+   * grass thick with flowers and no trees.
+   */
+  alpineMeadowAt(x, z) {
+    const m = this.getMountainness(x, z);
+    if (m < 0.58) return 0;
+    const w = this.getBiomeWeights(x, z, {});
+    if ((w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + (w.cherry ?? 0) + (w.bamboo ?? 0) + (w.redwood ?? 0) + (w.desert ?? 0) + (w.savanna ?? 0) > 0.4) return 0;
+    const h = this.getBaseHeight(x, z);
+    if (h < (this._config?.seaLevel ?? 2) + 25 || h > 175) return 0;
+    const sx = (this.getBaseHeight(x + 6, z) - this.getBaseHeight(x - 6, z)) / 12, sz = (this.getBaseHeight(x, z + 6) - this.getBaseHeight(x, z - 6)) / 12;
+    const slope = Math.hypot(sx, sz);
+    return smoothstep(0.6, 0.7, m) * (1 - smoothstep(0.12, 0.24, slope));
+  }
+
   getMeadow(x, z) {
     const patch = smoothstep(0.1, 0.35, this.meadowNoise.fbm(x * 0.0022 + 11, z * 0.0022 - 19, 2));
     if (patch <= 0) return 0;
@@ -4517,6 +4534,8 @@ export class TerrainGenerator {
       // (The lower slopes of a range read as the country they are: hills,
       // plains, woods.)
       if (mountains > 0.62) {
+        // (The open, flowery grass in its valleys and saddles.)
+        if (steep < 0.4 && this.alpineMeadowAt(x, z) > 0.5) return 'Alpine meadow';
         // (Forest on the flanks of the range: pine country.)
         if (w.redwood > 0.5) return 'Redwood forest';
         if (w.pine > 0.5) return 'Pine forest';

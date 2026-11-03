@@ -17,13 +17,13 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
   const x0 = cx * size, z0 = cz * size;
   // (A quick look first: any meadow here at all?)
   let any = 0;
-  for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, generator.getMeadow(x0 + (i * size) / 4, z0 + (j * size) / 4), generator.getHighFlowers?.(x0 + (i * size) / 4, z0 + (j * size) / 4) ?? 0);
+  for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, generator.getMeadow(x0 + (i * size) / 4, z0 + (j * size) / 4), generator.getHighFlowers?.(x0 + (i * size) / 4, z0 + (j * size) / 4) ?? 0, generator.alpineMeadowAt?.(x0 + (i * size) / 4, z0 + (j * size) / 4) ?? 0);
   if (any < 0.05) return null;
   const MEADOW_COLOURS = Math.min(colours, 7), ALPINE = [4, 2, 1, 0]; // (the alpine flowers: gentian blue, white, yellow, purple)
   const G = 1.0, n = Math.round(size / G), seed = generator.seed ^ 0xf10e;
   const surface = { normalY: 1 };
   const list = [];
-  let cell = -1, meadow = 0, stream = false, high = 0, heath = 0;
+  let cell = -1, meadow = 0, stream = false, high = 0, heath = 0, alp = 0;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const gi = cx * n + i, gj = cz * n + j;
@@ -40,7 +40,8 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
         stream = meadow > 0.05 && !!generator.rivers?.at(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4, 8);
         // (High in the mountains: the alpine flowers, and on the flatter ground the heather, in great patches.)
         const px = x0 + Math.floor(lx / 8) * 8 + 4, pz = z0 + Math.floor(lz / 8) * 8 + 4;
-        high = generator.getHighFlowers?.(px, pz) ?? 0;
+        alp = generator.alpineMeadowAt?.(px, pz) ?? 0;
+        high = Math.max(generator.getHighFlowers?.(px, pz) ?? 0, alp);
         heath = high > 0 ? Math.max(0, Math.min(1, (generator.meadowNoise.noise2D(px * 0.006 + 71, pz * 0.006 - 33) + 0.1) * 2.5)) : 0;
       }
       const isMeadow = keep <= 0.7 * meadow, isHigh = !isMeadow && keep < 0.75 * high;
@@ -48,11 +49,11 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1.5) || surface.normalY < 0.85 || y > 150) continue;
       if (isHigh) {
-        if (y < 100) continue;
+        if (y < 100 && alp < 0.3) continue;
         if (stream && generator.rivers.at(x0 + lx, z0 + lz, 1.5)) continue;
         // (Heather on the flatter ground, from 110 m up, in its patches; the alpine flowers on the rest.)
-        const heather = y > 110 && surface.normalY > 0.93 && hash2(gi, gj, seed + 6) < heath;
-        if (!heather && keep > 0.3 * high) continue; // (the alpine flowers thinner than a meadow's)
+        const heather = y > (alp > 0.3 ? 70 : 110) && surface.normalY > 0.93 && hash2(gi, gj, seed + 6) < heath;
+        if (!heather && keep > (alp > 0.3 ? 0.75 : 0.3) * high) continue; // (the alpine flowers thinner than a meadow's)
         const tone = generator.meadowNoise.noise2D((x0 + lx) * 0.05, (z0 + lz) * 0.05) * 0.5 + 0.5;
         const pick = heather ? 7 + Math.floor(hash2(gi, gj, seed + 7) * 3) : ALPINE[Math.floor((tone * 2 + hash2(gi, gj, seed + 3) * 1.4) % ALPINE.length)];
         list.push(lx, y, lz, heather ? 0.8 + 0.6 * hash2(gi, gj, seed + 4) : 0.4 + 0.25 * hash2(gi, gj, seed + 4), hash2(gi, gj, seed + 5), pick, surface.normalX ?? 0, surface.normalZ ?? 0);

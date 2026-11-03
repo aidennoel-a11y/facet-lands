@@ -499,34 +499,48 @@ function swampWillow() {
   );
 }
 
-// Weeping willow (swamps): a short, thick trunk under a low dome whose
-// long strands of leaves hang right down to the ground or the water.
+// Weeping willow (by lakes, rivers and in the swamps): a stout trunk that
+// forks low into a few great limbs rising and spreading, a broad, high,
+// rounded crown, and from all round its edge long curtains of fine, pale
+// yellow-green leaves hanging almost to the ground, a veil you can see the
+// trunk through. Some 10 m tall and as wide.
 const WEEPING_BLOBS = [
-  [0, 4.3, 0, 2.3],
-  [1.4, 3.9, 0.6, 1.6],
-  [-1.3, 4.0, -0.7, 1.7],
-  [0.3, 4.0, -1.5, 1.5],
-  [-0.4, 3.9, 1.5, 1.5],
+  [0, 8.6, 0, 2.6],
+  [2.3, 7.6, 0.8, 2.1],
+  [-2.2, 7.7, -0.9, 2.1],
+  [0.6, 7.5, -2.4, 2.0],
+  [-0.8, 7.4, 2.4, 2.0],
+  [1.9, 7.2, -1.9, 1.7],
+  [-1.9, 7.1, 1.8, 1.7],
 ];
 
 function weepingWillow() {
   const rand = mulberry32(1201);
+  const bark = 0x4f4436, barkTip = 0x66594a;
+  // (The great limbs: from the fork at 2.6 m, up and out to each blob of the crown.)
+  const limbs = [];
+  WEEPING_BLOBS.slice(1).forEach(([x, y, z], i) => {
+    const mid = [x * 0.45, 4.6 + rand() * 0.6, z * 0.45];
+    limbs.push(limb([x * 0.04, 2.5, z * 0.04], mid, 0.24, 0.17, bark, barkTip, 1203 + i), limb(mid, [x * 0.85, y - 0.6, z * 0.85], 0.17, 0.08, barkTip, bark, 1213 + i));
+  });
+  limbs.push(limb([0, 2.5, 0], [0.1, 7.6, 0], 0.26, 0.1, bark, barkTip, 1220));
+  // (The curtains: long, slender hanging sprays, two rings of them round the crown's edge, the outer reaching lowest.)
   const strands = [];
-  for (let k = 0; k < 24; k++) {
-    const a = (k / 24) * Math.PI * 2 + rand() * 0.2;
-    const d = 2.0 + rand() * 1.1;
-    const len = 2.9 + rand() * 1.0;
-    const top = 4.1 - (d - 2) * 0.5;
-    const g = new ConeGeometry(0.4 + rand() * 0.15, len, 3, 1);
-    g.rotateX(Math.PI);
-    strands.push(part(g, 0x9fbf5c, 0x7ca043, { x: Math.cos(a) * d, y: top - len / 2, z: Math.sin(a) * d, seed: 1210 + k }));
+  for (let ring = 0; ring < 2; ring++) {
+    const n = ring ? 22 : 36;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 + rand() * 0.15;
+      const d = ring ? 2.4 + rand() * 0.8 : 3.4 + rand() * 1.2;
+      const top = 8.3 - (d - 2.4) * 0.55 + rand() * 0.3;
+      const len = ring ? 3.2 + rand() * 1.4 : 4.6 + rand() * 1.6;
+      const g = new ConeGeometry(0.22 + rand() * 0.12, len, 3, 1);
+      g.rotateX(Math.PI);
+      strands.push(part(g, ring ? 0x8fb04c : 0xa9c662, 0x7c9e40, { x: Math.cos(a) * d, y: top - len / 2, z: Math.sin(a) * d, ry: rand() * 3, seed: 1230 + ring * 40 + k }));
+    }
   }
   return withCrown(
-    [
-      part(new CylinderGeometry(0.3, 0.46, 2.6, 7), 0x5a4a38, 0x6b5842, { y: 1.3, lump: 0.08, seed: 1200 }),
-      ...boughs(WEEPING_BLOBS, 2.2, 2.8, 0x5a4a38, 1202, { thick: 1.1 }),
-    ],
-    [...WEEPING_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x6f9a3e, 0xa2c35e, { x, y, z, sy: 0.6, lump: 0.2, seed: 1240 + i })), ...strands],
+    [part(new CylinderGeometry(0.42, 0.62, 2.8, 7), bark, barkTip, { y: 1.4, lump: 0.1, seed: 1200 }), ...limbs],
+    [...WEEPING_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 1), 0x9ab856, 0xb4cf6c, { x, y, z, sy: 0.62, lump: 0.22, seed: 1280 + i })), ...strands],
   );
 }
 
@@ -1358,7 +1372,7 @@ export const LEAF_GEOMETRIES = {
   silverBirch: leaves(44, [0.3, 0.5], [0x8fbf52, 0xa9d063, 0x7aaa46, 0xbfdc72], crown('silverBirch'), 27),
   aspen: leaves(36, [0.3, 0.5], [0x8cc052, 0xa6d064, 0x78ad48], crown('aspen'), 28),
   baobab: leaves(24, [0.35, 0.6], [0x6f8c3a, 0x86a048, 0x9bb458], crown('baobab'), 29),
-  weepingWillow: leaves(60, [0.3, 0.55], [0x86ab48, 0x9dbd5a, 0xb0cc6c, 0x78a042], crown('weepingWillow'), 30),
+  weepingWillow: leaves(90, [0.25, 0.45], [0x9ab856, 0xa9c662, 0xbcd476, 0x8aaa4a], crown('weepingWillow'), 30),
   mangrove: leaves(50, [0.35, 0.6], [0x3a6a33, 0x4d7d3e, 0x5f8f48], crown('mangrove'), 31),
   jungleGiant: leaves(70, [0.6, 1.0], [0x2f6b2a, 0x3f7d33, 0x4f8f3c, 0x5a9a3a], crown('jungleGiant'), 32),
   jungleCanopy: leaves(60, [0.5, 0.9], [0x2a5e27, 0x3a7431, 0x4a863a, 0x55923c], crown('jungleCanopy'), 33),

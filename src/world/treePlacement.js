@@ -113,7 +113,8 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (oasis > 0.2) likely = Math.max(likely, 0.45 * oasis);
       if (!trees || keep > likely) continue;
       if (generator.mushroomIslandAt?.(wx, wz) > 0.4) continue; // (a mushroom island grows giant mushrooms instead: see MushroomIslandLayer)
-      if (generator.petrifiedAt?.(wx, wz) > 0.45) continue; // (a petrified forest: its trees all stone: see WonderLayer)
+      if (generator.petrifiedAt?.(wx, wz) > 0.45) continue;
+      if (generator.alpineMeadowAt?.(wx, wz) > 0.45 && keep > 0.02) continue; // (an alpine meadow: open grass, a lone tree at most) // (a petrified forest: its trees all stone: see WonderLayer)
       // (A meteor crater: none in its bowl or on its rim, few on the blasted ground round it, more further out.)
       const mc = generator.meteorCraterAt?.(wx, wz, 2.6);
       if (mc && (mc.d < mc.r * 1.25 || keep > (mc.d / mc.r - 1.25) / 1.35)) continue;

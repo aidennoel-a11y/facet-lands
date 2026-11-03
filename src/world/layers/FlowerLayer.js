@@ -6,22 +6,45 @@ import { addWind } from '../../render/wind.js';
 // Wildflowers: lupins, buttercups, daisies, poppies, cornflowers, clover...
 const COLOURS = [0x8a5cc9, 0xf2d23c, 0xf4f1e6, 0xd8322e, 0x4f7fd6, 0xe07ab8, 0xf29a3a].map((c) => new Color(c));
 // (And the heather, high in the mountains: its purples and pinks, from 7 on in the data.)
-const HEATHER = [0x8a4f9a, 0xa65aa8, 0x7a4a72].map((c) => new Color(c));
+const HEATHER = [0xffffff, 0xf0e4f4, 0xe4ece0].map((c) => new Color(c)); // (shades only: the clump has its own colours)
 
-/** A clump of heather: a low, rounded mound of fine purple sprigs, a hand or two high, a little under a metre across. */
+/**
+ * A clump of heather: a low cushion of dark, needle-fine foliage, and
+ * rising from it wiry stems, each ending in a spike of tiny purple-pink
+ * bells; the colours its own (the instance colour only shades it).
+ * Some 50 triangles.
+ */
 function heatherClump() {
-  const pos = [];
-  for (let k = 0; k < 9; k++) {
-    const a = (k / 9) * Math.PI * 2 + (k % 3) * 0.4, r = k % 3 === 0 ? 0 : 0.18 + (k % 2) * 0.14, h = 0.22 - r * 0.25;
-    const x = Math.cos(a) * r, z = Math.sin(a) * r, w = 0.13;
-    // (Each sprig a narrow pyramid of three faces.)
+  const pos = [], col = [];
+  const tri = (a, b, c, hex) => {
+    pos.push(...a, ...b, ...c);
+    const k = new Color(hex);
+    for (let v = 0; v < 3; v++) col.push(k.r, k.g, k.b);
+  };
+  const FOLIAGE = [0x34512a, 0x42602e, 0x3a4a26], STEM = 0x5a4a30, BELLS = [0x9a4fa8, 0xb868b0, 0x86408e, 0xa85aa0];
+  // (The cushion: narrow blades fanning out low from the middle.)
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2 + (k % 2) * 0.3, r = 0.26 + (k % 3) * 0.05, w = 0.07;
+    const tip = [Math.cos(a) * r, 0.1 + (k % 2) * 0.05, Math.sin(a) * r];
+    tri([-Math.sin(a) * w, 0.02, Math.cos(a) * w], [Math.sin(a) * w, 0.02, -Math.cos(a) * w], tip, FOLIAGE[k % 3]);
+    tri([0, 0.14, 0], [-Math.sin(a) * w * 0.6, 0.03, Math.cos(a) * w * 0.6], tip, FOLIAGE[(k + 1) % 3]);
+  }
+  // (The stems, each with its spike of bells: a slim three-sided spire, purple.)
+  for (let k = 0; k < 7; k++) {
+    const a = (k / 7) * Math.PI * 2 + 0.5, r = k === 0 ? 0 : 0.08 + (k % 3) * 0.06, lean = 0.06 + (k % 2) * 0.05;
+    const bx = Math.cos(a) * r, bz = Math.sin(a) * r, h = 0.3 + (k % 3) * 0.07;
+    const tx = bx + Math.cos(a) * lean, tz = bz + Math.sin(a) * lean, mid = h * 0.5;
+    const mx = bx + (tx - bx) * 0.5, mz = bz + (tz - bz) * 0.5;
+    tri([bx - 0.012, 0.02, bz], [bx + 0.012, 0.02, bz], [mx, mid, mz], STEM);
+    const sw = 0.035, bell = BELLS[k % BELLS.length];
     for (let f = 0; f < 3; f++) {
-      const b0 = a + (f / 3) * Math.PI * 2, b1 = b0 + (Math.PI * 2) / 3;
-      pos.push(x + Math.cos(b0) * w, 0, z + Math.sin(b0) * w, x + Math.cos(b1) * w, 0, z + Math.sin(b1) * w, x, h, z);
+      const b0 = (f / 3) * Math.PI * 2, b1 = b0 + (Math.PI * 2) / 3;
+      tri([mx + Math.cos(b0) * sw, mid, mz + Math.sin(b0) * sw], [mx + Math.cos(b1) * sw, mid, mz + Math.sin(b1) * sw], [tx, h, tz], bell);
     }
   }
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
   g.computeVertexNormals();
   return g;
 }
@@ -62,7 +85,7 @@ const tilt = new Quaternion(), lean = new Vector3();
  */
 export function createFlowerLayer(config) {
   const stems = stem(), heads = head(), clump = heatherClump();
-  const heatherMaterial = addWind(new MeshLambertMaterial({ side: DoubleSide, flatShading: true }), { strength: 0.012, speed: 1.4 });
+  const heatherMaterial = addWind(new MeshLambertMaterial({ side: DoubleSide, flatShading: true, vertexColors: true }), { strength: 0.012, speed: 1.4 });
   const bloom = (material, key) => {
     addWind(material, { strength: 0.03, speed: 1.6 });
     const previous = material.onBeforeCompile;

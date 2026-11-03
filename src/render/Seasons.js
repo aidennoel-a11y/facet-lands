@@ -188,7 +188,7 @@ export function seasonalTerrain(material, seaLevel) {
         .replace('#include <common>', '#include <common>\nattribute float aCold;\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;\nvarying float vCold;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSeasonWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvSeasonUp = normal.y;\nvCold = aCold;');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${COMMON}\nuniform float uWet;\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;\nvarying float vCold;`)
+        .replace('#include <common>', `#include <common>\n${COMMON}\nuniform float uWet;\nuniform float uSeasonTime;\nvarying vec3 vSeasonWorld;\nvarying float vSeasonUp;\nvarying float vCold;`)
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
@@ -196,6 +196,17 @@ export function seasonalTerrain(material, seaLevel) {
             vec3 c = diffuseColor.rgb;
             float g = seasonGreen(c);
             c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * g * 0.7);
+            // The monsoon forest: dusty and pale through the dry months; with
+            // the rains (summer into early autumn) a deep, lush green.
+            float monsoon = clamp(-vCold, 0.0, 1.0);
+            if (monsoon > 0.0) {
+              float st = mod(uSeasonTime, 4.0);
+              float rains = smoothstep(0.7, 1.1, st) * (1.0 - smoothstep(2.3, 2.8, st));
+              float ground = smoothstep(0.55, 0.8, abs(vSeasonUp)) * (1.0 - smoothstep(0.7, 0.85, c.r + c.g * 0.2 - c.b * 0.1));
+              float lum = dot(c, vec3(0.3, 0.55, 0.15));
+              c = mix(c, vec3(0.26, 0.5, 0.15) * (lum / 0.42), monsoon * rains * ground * 0.85);
+              c = mix(c, c * vec3(1.08, 0.97, 0.8), monsoon * (1.0 - rains) * 0.45);
+            }
             // (Only where there's a real winter: the jungles stay green.)
             float seasonal = smoothstep(0.3, 0.6, vCold);
             c = mix(c, vec3(0.5, 0.33, 0.1), uAutumn * g * 0.5 * seasonal);
