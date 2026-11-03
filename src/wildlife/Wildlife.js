@@ -24,7 +24,9 @@ function smoothstep(a, b, x) {
 // are jungle to them, all the same creatures living there as down in it.
 function wildWeights(g, x, z, out = {}) {
   const w = g.getBiomeWeights(x, z, out);
-  w.jungle = Math.min(1, (w.jungle ?? 0) + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0));
+  w.jungle = Math.min(1, (w.jungle ?? 0) + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + 0.5 * (w.monsoon ?? 0));
+  // (The ancient oak woods: the forest's animals; the monsoon forest, half the jungle's, half the forest's.)
+  w.temperate = Math.min(1, (w.temperate ?? 0) + (w.oakwood ?? 0) + 0.5 * (w.monsoon ?? 0));
   return w;
 }
 

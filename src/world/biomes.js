@@ -461,6 +461,72 @@ export const BIOMES = {
     },
   },
 
+  // Monsoon forest: round every jungle and jungle range, a band of tall
+  // broadleaf forest that drops its leaves in the dry months (bare, the
+  // ground baked dusty brown under it) and greens again in the rains.
+  monsoon: {
+    id: 'monsoon',
+    name: 'Monsoon forest',
+    palette: [
+      { height: -Infinity, color: 0x6d7456 },
+      { height: -10, color: 0x9a9068 },
+      { height: 0, color: 0xc2ae7e },
+      { height: 4, color: 0x9a9a52 }, // (dusty, dry grass)
+      { height: 20, color: 0x8a9a4a },
+      { height: 80, color: 0x7a904a },
+      { height: 160, color: 0x7a8456 },
+    ],
+    cliff: 0x7a6e5a,
+    cliffSlope: [0.68, 0.48],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.75,
+    trees: {
+      density: 0.85,
+      clumped: true,
+      species: [
+        { type: 'broadleaf', weight: 1.6, minHeight: -99, maxHeight: 999 },
+        { type: 'maple', weight: 0.5, minHeight: -99, maxHeight: 999 },
+        { type: 'oak', weight: 0.3, minHeight: -99, maxHeight: 999 },
+        { type: 'baobab', weight: 0.05, minHeight: -99, maxHeight: 120 },
+        { type: 'bamboo', weight: 0.15, minHeight: -99, maxHeight: 120 },
+        { type: 'bush', weight: 0.6, minHeight: -99, maxHeight: 999 },
+        { type: 'dryBush', weight: 0.3, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // An ancient oak wood: huge old oaks, wide apart, their crowns meeting
+  // over deep shade; mossy dark ground with little grass under them.
+  oakwood: {
+    id: 'oakwood',
+    name: 'Ancient oak wood',
+    palette: [
+      { height: -Infinity, color: 0x6d7456 },
+      { height: -10, color: 0x9a9068 },
+      { height: 0, color: 0xb7aa7c },
+      { height: 4, color: 0x4f7a34 }, // (mossy, shaded)
+      { height: 30, color: 0x48723a },
+      { height: 90, color: 0x52703e },
+      { height: 160, color: 0x6a7456 },
+    ],
+    cliff: 0x6a6e5e,
+    cliffSlope: [0.7, 0.5],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.3,
+    trees: {
+      density: 0.5,
+      clumped: false,
+      species: [
+        { type: 'oak', weight: 3, minHeight: -99, maxHeight: 999 },
+        { type: 'maple', weight: 0.2, minHeight: -99, maxHeight: 999 },
+        { type: 'bush', weight: 0.25, minHeight: -99, maxHeight: 999 },
+        { type: 'appleTree', weight: 0.05, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
   // Birch and aspen parkland: open, tall, golden-green grassland with
   // white-trunked groves of birch and aspen scattered over it, between the
   // plains and the forests.

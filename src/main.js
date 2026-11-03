@@ -1763,6 +1763,7 @@ game.onSnow = () => controls.mode === 'walk' && !sheltered && stepSurface(camera
 game.waveAt = (x, z) => water.waveAt(x, z, WORLD.seaLevel - chunks.groundHeightAt(x, z), generator.getOceanness(x, z)); // (trees carried round in a tornado: see Felling.liftUp)
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 ruins.onChest = (c) => game.ruinChest(c);
+ruins.sun = dayNight.sunDir; // (the Keep's chapel window: see RuinLayer.update)
 // (A treehouse's platform goes round a tree trunk: the nearest one to where you point.)
 game.structures.treeNear = (x, z, r) => {
   let best = null;

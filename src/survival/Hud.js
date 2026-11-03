@@ -378,12 +378,12 @@ export class Hud {
       // (Each way of making it: a log wall from logs, or from sawn planks.)
       const cards = tier.ids.flatMap((id) => RECIPES.flatMap((r, ri) => (r.id === id ? [[id, r, ri]] : []))).map(([id, r, ri]) => {
         const has = Object.entries(r.needs).every(([n, c]) => inventory.count(n) >= c);
-        const station = (!r.at || this.stations?.[r.at]) && (!r.uses || r.uses.some((t) => inventory.count(t) > 0));
+        const station = (!r.at || (r.at === 'bench' ? (this.stations?.bench ?? 0) >= (r.bench ?? 1) : this.stations?.[r.at])) && (!r.uses || r.uses.some((t) => inventory.count(t) > 0));
         const can = open && has && station;
         const needs = Object.entries(r.needs)
           .map(([n, c]) => `<span class="need${inventory.count(n) >= c ? '' : ' short'}" title="${ITEMS[n].name}">${iconSvg(n)}${c}</span>`)
           .join('');
-        const atText = { anvil: 'at an anvil', fire: 'by a lit fire' }[r.at] ?? `at a ${r.at}`;
+        const atText = { anvil: 'at an anvil', fire: 'by a lit fire', bench: ['', 'at a workbench', "at a carpenter's bench", "at a master's bench"][r.bench ?? 1] }[r.at] ?? `at a ${r.at}`;
         const note = `${r.note}${r.at ? ` (${atText})` : ''}`;
         const tool = r.uses ? `<em class="${r.uses.some((t) => inventory.count(t) > 0) ? '' : 'short'}">with ${usesText(r)}</em>` : '';
         return `<button type="button" class="card${can ? ' can' : ''}${open ? '' : ' locked'}${this.pinnedRecipe === ri ? ' pinned-card' : ''}" data-craft="${id}" data-r="${ri}" data-note="${ITEMS[id].name}: ${note.replaceAll('"', '&quot;')}" ${can ? '' : 'aria-disabled="true"'}>

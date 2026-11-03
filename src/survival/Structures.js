@@ -6,7 +6,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, RAISED_MODELS, wallFootingModel,
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, RAISED_MODELS, wallFootingModel,
   greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, bannerModel, BANNER_DESIGNS, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
@@ -159,6 +159,10 @@ const KINDS = {
   beeBox: { make: beeBoxModel, box: [0.3, 0.25], tall: 1.15 },
   sign: { make: signModel, box: [0.45, 0.06], tall: 1.55 },
   repairBench: { make: repairBenchModel, box: [0.8, 0.3], tall: 0.95 },
+  // (Workbenches, by their level: each unlocks better things to make at it. See Game.craft.)
+  workbench: { make: () => workbenchModel(1), box: [0.85, 0.38], tall: 0.95 },
+  carpenterBench: { make: () => workbenchModel(2), box: [0.85, 0.38], tall: 1.8 },
+  masterBench: { make: () => workbenchModel(3), box: [0.85, 0.38], tall: 1.8 },
   waterFilter: { make: waterFilterModel, circle: 0.35, tall: 1.3, jobs: 2 },
   plot: { make: plotModel, circle: 0, tilt: true, reach: 1 },
   rope: { make: ropeStakeModel, circle: 0 },

@@ -2550,3 +2550,36 @@ export function hatchLidModel() {
   b.add(new TorusGeometry(0.06, 0.012, 4, 8), 0x2e2e32, [0, 0.07, HATCH.hv * 2 - 0.15], [Math.PI / 2, 0, 0]);
   return b.build();
 }
+
+/** The last king's crown, from the Lost Keep: a band of old gold, its points, a red stone at the front. */
+export function crownModel() {
+  const P = new Parts(97);
+  P.add(new CylinderGeometry(0.13, 0.12, 0.07, 10, 1, true), 0xd8a838, [0, 0.035, 0]);
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    P.add(new ConeGeometry(0.035, 0.08, 4), 0xe8bc48, [Math.cos(a) * 0.125, 0.11, Math.sin(a) * 0.125]);
+  }
+  P.add(new OctahedronGeometry(0.025), 0xb01a20, [0.13, 0.04, 0]);
+  return P.build();
+}
+
+/** A workbench, by its level: 1 a rough one; 2 a carpenter's, with a vice and a rack of tools; 3 a master's, iron-bound, with more. */
+export function workbenchModel(level = 1) {
+  const b = new Parts(150 + level);
+  const top = level === 1 ? 0x8a6a44 : level === 2 ? 0x9a7048 : 0x7a4e30;
+  b.add(new BoxGeometry(1.7, 0.14, 0.75), top, [0, 0.82, 0]);
+  for (const [x, z] of [[-0.72, -0.28], [0.72, -0.28], [-0.72, 0.28], [0.72, 0.28]]) b.log([x, 0, z], [x, 0.78, z], level === 1 ? 0.07 : 0.06, 0x6e4c32);
+  b.add(new BoxGeometry(1.5, 0.06, 0.6), 0x6e4c32, [0, 0.25, 0]); // (a shelf under)
+  b.add(new BoxGeometry(0.3, 0.06, 0.12), 0xb8b4a8, [-0.4, 0.92, 0.1]); // (a plane)
+  if (level >= 2) {
+    b.add(new BoxGeometry(0.22, 0.2, 0.22), 0x5a5e64, [0.7, 0.99, 0.25]); // (a vice)
+    b.add(new BoxGeometry(1.6, 0.9, 0.06), 0x7a5638, [0, 1.35, -0.38]); // (a tool board behind)
+    for (let k = 0; k < 5; k++) b.add(new BoxGeometry(0.05, 0.35, 0.04), k % 2 ? 0x9aa0a8 : 0x8a5d38, [-0.6 + k * 0.3, 1.4, -0.33]);
+  }
+  if (level >= 3) {
+    for (const x of [-0.84, 0.84]) b.add(new BoxGeometry(0.04, 0.16, 0.8), 0x3a3e44, [x, 0.82, 0]); // (iron bands)
+    b.add(new CylinderGeometry(0.1, 0.12, 0.25, 8), 0xc89a4a, [-0.62, 1.02, 0.2]); // (a brass oil pot)
+    b.add(new BoxGeometry(0.4, 0.08, 0.25), 0x4a4e54, [0.2, 0.93, 0.15]); // (a small anvil block)
+  }
+  return b.build();
+}

@@ -118,6 +118,8 @@ const BANKS = {
   cascades: { mud: 0x4f4a3e, bank: 0x5fa244, rock: 0.35, rockColor: 0x4f5250 },
   pine: { mud: 0x5a4c3e, bank: 0x6f9a4c, rock: 0.1, rockColor: 0x8a8590 },
   jungle: { mud: 0x5a4430, bank: 0x4f9a3c, rock: 0 },
+  monsoon: { mud: 0x6a5032, bank: 0x8a9a4a, rock: 0 },
+  oakwood: { mud: 0x4f4232, bank: 0x5a8a3c, rock: 0 },
   wetland: { mud: 0x4f4232, bank: 0x6a8e44, rock: 0 },
   mangrove: { mud: 0x4f4232, bank: 0x6a8e44, rock: 0 },
   volcanic: { mud: 0x363333, bank: 0x5d6d41, rock: 0 }, // black sand, native grass (its rocky ground: see getVolcanicRocky)
@@ -286,6 +288,15 @@ export class TerrainGenerator {
    * kilometres, warped so the biome borders wander rather than run straight.
    */
   getAridity(x, z, range = this.#rangeField(x, z).value) {
+    const a = this.#aridityRaw(x, z, range);
+    if (a <= 0.44 || a >= 0.74) return a;
+    // (Never a little speck of dry country out in the green: a stretch of
+    // savanna under about 0.3 km² (narrower than about 750 m) goes green.)
+    const keep = this.#minSize('dry', x, z, (px, pz) => smoothstep(0.47, 0.56, this.#aridityRaw(px, pz, this.#rangeField(px, pz, {}).value)), 0.5, 3);
+    return keep >= 1 ? a : 0.44 + (a - 0.44) * keep;
+  }
+
+  #aridityRaw(x, z, range) {
     // A desert always has a wide band of savanna round it: within a few
     // hundred metres of desert country the land is never greener than savanna.
     const a = this.#baseAridity(x, z, range);
@@ -469,12 +480,20 @@ export class TerrainGenerator {
       const kj = smoothstep(0.04, 0.4, jb) * (1 - km); // (all of it its own: nothing else mixed in)
       const cl = this.#cherryLand(x, z), bl = this.#bambooLand(x, z);
       const kc = cl * own * (1 - kj - km), kb = bl * own * (1 - kj - km - kc);
-      if (kj + km + kc + kb > 0) for (const id of BIOME_IDS) out[id] *= 1 - kj - km - kc - kb;
+      // (Round every jungle and every jungle range, a band of monsoon forest; out in
+      // the green lowlands now and then, an ancient oak wood. See #monsoonRing, #oakLand.)
+      const rest = own * (1 - kj - km - kc - kb);
+      const kmz = rest > 0 ? this.#monsoonRing(x, z, jb) * rest : 0;
+      const ko = rest - kmz > 0 ? this.#oakLand(x, z) * (rest - kmz) : 0;
+      const taken = kj + km + kc + kb + kmz + ko;
+      if (taken > 0) for (const id of BIOME_IDS) out[id] *= 1 - taken;
       out.jungleFoothills = kj;
       out.jungleMountains = km;
       out.cherry = kc;
       out.bamboo = kb;
-    } else (out.cherry = 0), (out.bamboo = 0), (out.jungleFoothills = 0), (out.jungleMountains = 0);
+      out.monsoon = kmz;
+      out.oakwood = ko;
+    } else (out.cherry = 0), (out.bamboo = 0), (out.jungleFoothills = 0), (out.jungleMountains = 0), (out.monsoon = 0), (out.oakwood = 0);
     // And now and then a glowing swamp of its own out in the green lowlands
     // (see #glowBlob): wetland, taking over whatever was there.
     const gb = this._probing ? 0 : this.#glowBlob(x, z);
@@ -752,8 +771,9 @@ export class TerrainGenerator {
       this._vnZ = z;
       // (Warped, so the edges of volcanic country wander rather than run
       // for kilometres in a straight line, as such slow noise does.)
-      const wx = x + this.volcanoNoise.fbm(x * 0.0004 + 31, z * 0.0004 - 57, 2) * 1400;
-      const wz = z + this.volcanoNoise.fbm(x * 0.0004 - 83, z * 0.0004 + 19, 2) * 1400;
+      // (Not so hard that the edge folds over on itself: that made holes and claws.)
+      const wx = x + this.volcanoNoise.fbm(x * 0.0004 + 31, z * 0.0004 - 57, 2) * 320;
+      const wz = z + this.volcanoNoise.fbm(x * 0.0004 - 83, z * 0.0004 + 19, 2) * 320;
       this._vn = this.volcanoNoise.fbm(wx * 0.00005 + 900, wz * 0.00005 - 300, 2);
     }
     return this._vn;
@@ -1023,6 +1043,47 @@ export class TerrainGenerator {
       const m = this.getMountainness(px, pz);
       if (m > 0.62 || this.#mountainsAround(px, pz) < 0.22) return 0;
       return this.getAridity(px, pz) < 0.36 && this.#jungleSuit(px, pz) < 0.05 ? 1 : 0;
+    });
+  }
+
+  /**
+   * The band of monsoon forest round every jungle and every jungle range
+   * (0..1): half a kilometre or so of dry-season forest, bare in the dry
+   * months and green in the rains, between the jungle and the country beyond.
+   */
+  #monsoonRing(x, z, jb) {
+    // (Round a jungle: just outside where it begins, by how suited to jungle the country is.)
+    const suit = this.#jungleSuit(x, z);
+    let ring = smoothstep(T.jungle - 0.12, T.jungle - 0.07, suit) * (1 - smoothstep(T.jungle + 0.02, T.jungle + 0.08, suit));
+    // (Only where there's real jungle within 400 m or so: not wherever the country's half suited to it.)
+    if (ring > 0) {
+      let jungle = 0;
+      for (let k = 0; k < 6 && jungle < 0.5; k++) {
+        const a = (k / 6) * Math.PI * 2, px = x + Math.cos(a) * 400, pz = z + Math.sin(a) * 400, r = this.#rangeField(px, pz, {}).value;
+        jungle = Math.max(jungle, this.#jungleZone(px, pz, r, this.getAridity(px, pz, r)));
+      }
+      ring *= smoothstep(0.2, 0.5, jungle);
+    }
+    // (Round a jungle range: not in it, but with it within half a kilometre.)
+    if (ring < 1 && jb < 0.04) {
+      let near = 0;
+      for (let k = 0; k < 6 && near < 1; k++) {
+        const a = (k / 6) * Math.PI * 2 + 0.3;
+        near = Math.max(near, smoothstep(0.02, 0.1, this.#jungleMtn(x + Math.cos(a) * 380, z + Math.sin(a) * 380)));
+      }
+      ring = Math.max(ring, near * (1 - smoothstep(0.01, 0.04, jb)));
+    }
+    return ring;
+  }
+
+  // An ancient oak wood (0..1): now and then, a rounded stretch half a
+  // kilometre to a kilometre across out in the green lowlands, well away
+  // from the mountains, the jungles and the sea.
+  #oakLand(x, z) {
+    return this.#blobs('oakwood', x, z, 3400, 0.35, 260, 480, 0x0a4c, (px, pz) => {
+      if (this.getMountainness(px, pz) > 0.15 || this.#jungleSuit(px, pz) > T.jungle - 0.15) return 0;
+      if (this.#continentBase(px, pz) - this._contLift < -0.05) return 0;
+      return this.getAridity(px, pz) < 0.36 ? 1 : 0;
     });
   }
 
@@ -4130,6 +4191,19 @@ export class TerrainGenerator {
    * Wildflower meadows (0..1): patches of the open plains and the grassy
    * foothills below the mountains where flowers crowd the grass.
    */
+  /**
+   * The mountains' own green high ground (0..1), where the alpine flowers
+   * and the heather grow above the trees and below the bare rock (the
+   * heights themselves are looked at plant by plant: see placeFlowers).
+   */
+  getHighFlowers(x, z) {
+    const m = this.getMountainness(x, z);
+    if (m < 0.35) return 0;
+    const w = this.getBiomeWeights(x, z, {});
+    const green = (w.temperate ?? 0) + (w.pine ?? 0) + (w.cascades ?? 0) + (w.smoky ?? 0) + (w.parkland ?? 0) + (w.oakwood ?? 0);
+    return smoothstep(0.35, 0.5, m) * smoothstep(0.3, 0.6, green);
+  }
+
   getMeadow(x, z) {
     const patch = smoothstep(0.1, 0.35, this.meadowNoise.fbm(x * 0.0022 + 11, z * 0.0022 - 19, 2));
     if (patch <= 0) return 0;
@@ -4168,7 +4242,10 @@ export class TerrainGenerator {
    * lavender and rust (see PetrifiedLayer).
    */
   petrifiedAt(x, z) {
-    const zone = smoothstep(0.58, 0.66, this.mesaNoise.fbm(x * 0.0008 + 300, z * 0.0008 - 120, 2)); // (rare: a few patches in all the dry country)
+    let zone = smoothstep(0.58, 0.66, this.mesaNoise.fbm(x * 0.0008 + 300, z * 0.0008 - 120, 2)); // (rare: a few patches in all the dry country)
+    if (zone <= 0) return 0;
+    // (And only in half the land: a slower noise, over several kilometres, says which half.)
+    zone *= smoothstep(-0.04, 0.04, this.mesaNoise.noise2D(x * 0.00022 - 77, z * 0.00022 + 41));
     if (zone <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
     // (Out on the open, even ground of the savanna and the desert: never the badlands, nor where the land
@@ -4459,6 +4536,8 @@ export class TerrainGenerator {
     if (top === 'jungleMountains') return 'Jungle mountains';
     if (top === 'jungleFoothills') return 'Mountain foothills jungle';
     if (top === 'bamboo') return 'Bamboo forest';
+    if (top === 'monsoon') return 'Monsoon forest';
+    if (top === 'oakwood') return 'Ancient oak wood';
     if (top === 'wetland' && this.glowSwampAt(x, z) > 0.5) return 'Glowing swamp';
     if (top === 'wetland') return height < sea + 2 ? 'Marsh' : 'Wetlands';
     if (top === 'jungle') return 'Jungle';

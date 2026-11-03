@@ -101,7 +101,11 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // grassland between them (only the odd lone tree out there).
       if (biome.id === 'parkland') likely = (0.015 + 0.6 * generator.getParklandGrove(wx, wz)) * (config.treeDensity ?? 1);
       // Round an alpine lake below the snow, a ring of trees.
-      const lake = trees && biome.id === 'temperate' ? generator.rivers.at(wx, wz, 30) : null;
+      const lake = trees && (biome.id === 'temperate' || biome.id === 'parkland' || biome.id === 'oakwood') ? generator.rivers.at(wx, wz, 30) : null;
+      // Weeping willows along some stretches of the rivers and lakes (some
+      // 300 m at a time, about half of them), on the bank, leaning over the water.
+      const willowBank = !!lake && !lake.big && lake.d > lake.water + 0.8 && lake.d < lake.water + 9 && hash2(Math.floor(wx / 300), Math.floor(wz / 300), seed + 31) < 0.5;
+      if (willowBank) likely = Math.max(likely, 0.3);
       const lakeside = !!(lake && lake.alpine && lake.level < 170);
       if (lakeside) likely = Math.max(likely, 0.6);
       // Palms round an oasis.
@@ -187,6 +191,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
         }
       }
       species ??= trees.species[trees.species.length - 1];
+      if (willowBank && hash2(gi, gj, seed + 32) < 0.7) species = { type: 'weepingWillow' };
       if (oasis > 0.2) species = { type: hash2(gi, gj, seed + 17) < 0.8 ? 'junglePalm' : 'dryBush' };
       if (atoll) species = { type: hash2(gi, gj, seed + 17) < 0.85 ? 'junglePalm' : 'bush' };
       // Round an awake volcano: nothing on its cone, and only dead trees
@@ -207,7 +212,8 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // shallows; the drier ground between is open salt grass.)
       if (biome.id === 'mangrove' && species.type === 'mangrove' && ground > seaLevel + 1.3) continue;
 
-      const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale;
+      // (In an ancient oak wood, its oaks huge: old, wide-crowned, far apart.)
+      const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale * (biome.id === 'oakwood' && species.type === 'oak' ? 1.9 + 0.5 * hash2(gi, gj, seed + 33) : 1);
       const warm = warmAt(wx, wz);
       if (species.type === 'bamboo') {
         // A thicket: a clump of separate canes, each of its own height and lean.

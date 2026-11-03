@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, Color, CylinderGeometry, DodecahedronGeometry, Group, Mesh, MeshLambertMaterial } from 'three';
+import { AdditiveBlending, BoxGeometry, BufferAttribute, Color, CylinderGeometry, DodecahedronGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2, mulberry32 } from '../../noise/random.js';
 
@@ -28,7 +28,7 @@ const IVY = [0x2e4a22, 0x3a5a28, 0x34522a];
 
 /** The ruin in grid cell (I, K), if any: { x, z, rot, seed, key } (not yet checked against the land). */
 export function ruinSite(I, K, seed) {
-  if (hash2(I, K, seed ^ 0x52a1) > 0.25) return null; // (one cell in four or so: then only where the land will take one)
+  if (hash2(I, K, seed ^ 0x52a1) > 0.175) return null; // (one cell in six or so: then only where the land will take one)
   const x = (I + 0.15 + 0.7 * hash2(I, K, seed ^ 0x52a2)) * CELL, z = (K + 0.15 + 0.7 * hash2(I, K, seed ^ 0x52a3)) * CELL;
   const kind = Math.min(9, Math.floor(hash2(I, K, seed ^ 0x52a6) * 10));
   return { x, z, rot: hash2(I, K, seed ^ 0x52a4) * Math.PI * 2, seed: Math.floor(hash2(I, K, seed ^ 0x52a5) * 1e9), key: `${I},${K}`, kind, size: RUIN_SIZE[kind] };
@@ -47,7 +47,7 @@ export function ruinFits(site, generator, seaLevel) {
   if (generator.getMountainness(site.x, site.z) > 0.7) return false;
   // (Never out in the desert or on the salt flats: no one built there.)
   const w = generator.getBiomeWeights(site.x, site.z, {});
-  if ((w.desert ?? 0) + (w.saltFlat ?? 0) > 0.35) return false;
+  if ((w.desert ?? 0) + (w.saltFlat ?? 0) > 0.1 || generator.getAridity(site.x, site.z) > 0.7) return false;
   if (generator.caves?.mouthsNear?.(site.x - site.size - 22, site.z - site.size - 22, site.x + site.size + 22, site.z + site.size + 22)?.length) return false;
   return true;
 }
@@ -110,7 +110,7 @@ export function keepSite(generator, seaLevel) {
 // One ruin: its stone, into `parts` (geometries in the chunk's frame, its
 // corner at x0, z0), what's solid of it into `solids` (world), and its
 // chests to `onChest`.
-function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = null, traps = null) {
+function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = null, traps = null, glass = null) {
   const rand = mulberry32(site.seed);
   const rot = site.rot, ca = Math.cos(rot), sa = Math.sin(rot);
   const w = generator.getBiomeWeights(site.x, site.z, {});
@@ -705,6 +705,183 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = 
       // Up on the top: the altar, wanting the trophies of the great beasts (see Game.#offer).
       chest(1.5, 0, keepTop, 'altar', false, { altar: true, rot: rot });
       chest(S - 3, S - 3, ground(S - 3, S - 3), 'court', true);
+
+      // A hall in the court: walls whole, a flat stone roof, a doorway in
+      // its side facing the keep (at `doorV`), high windows; gives its floor.
+      const hall = (u0, v0, u1, v1, H, doorV, { windows = true, roof = true, endGaps = [] } = {}) => {
+        const g0 = ground((u0 + u1) / 2, (v0 + v1) / 2), solidH = () => H;
+        const door = [[0.42, 0.58, 0, 2.5]], win = windows ? [[0.25, 0.32, 2.6, 3.8], [0.68, 0.75, 2.6, 3.8]] : [];
+        wallRun(u0, v0, u1, v0, 0.7, solidH, { gaps: doorV === v0 ? door : win, mossy: 0.2 });
+        wallRun(u0, v1, u1, v1, 0.7, solidH, { gaps: doorV === v1 ? door : endGaps.length ? endGaps : win, mossy: 0.2 });
+        wallRun(u0, v0, u0, v1, 0.7, solidH, { gaps: win, mossy: 0.2 });
+        wallRun(u1, v0, u1, v1, 0.7, solidH, { gaps: win, mossy: 0.2 });
+        if (roof) {
+          block((u0 + u1) / 2, (v0 + v1) / 2, g0 + H + 0.1, u1 - u0 + 0.9, 0.35, v1 - v0 + 0.9, stone());
+          solid((u0 + u1) / 2, (v0 + v1) / 2, (u1 - u0) / 2 + 0.45, (v1 - v0) / 2 + 0.45, g0 + H - 0.1, g0 + H + 0.3);
+        }
+        // (A floor of worn flags.)
+        block((u0 + u1) / 2, (v0 + v1) / 2, g0 - 0.2, u1 - u0 - 0.4, 0.5, v1 - v0 - 0.4, 0x8a867c);
+        return g0;
+      };
+      const BOOKS = [0x6a2a22, 0x2a4a6a, 0x3a5a2a, 0x7a5a2a, 0x4a2a4a, 0x8a7a5a, 0x5a3a1a, 0x2a2a2a];
+      // A bookcase along a wall, from (u1, v1) to (u2, v2), its back to the wall, on the floor at g0: full of old books.
+      const bookcase = (u1, v1, u2, v2, g0, tall = 2.6) => {
+        const len = Math.hypot(u2 - u1, v2 - v1), du = (u2 - u1) / len, dv = (v2 - v1) / len, turn = Math.atan2(-dv, du);
+        const mu = (u1 + u2) / 2, mv = (v1 + v2) / 2;
+        block(mu, mv, g0 + tall / 2, len, tall, 0.12, 0x4a3020, [0, turn, 0]); // (its back)
+        for (const e of [-1, 1]) block(mu + (du * e * len) / 2, mv + (dv * e * len) / 2, g0 + tall / 2, 0.08, tall, 0.5, 0x5a3a24, [0, turn, 0]);
+        const shelves = Math.floor(tall / 0.55);
+        for (let r = 0; r < shelves; r++) {
+          const y = g0 + 0.05 + r * 0.55;
+          block(mu - dv * 0.2, mv + du * 0.2, y, len, 0.05, 0.42, 0x5a3a24, [0, turn, 0]);
+          // (The books: in runs, leaning now and then, gaps where some were taken.)
+          for (let t = 0.06; t < len - 0.1; ) {
+            const w = 0.15 + rand() * 0.35, h = 0.3 + rand() * 0.15;
+            if (rand() > 0.12) block(u1 + du * (t + w / 2) - dv * 0.22, v1 + dv * (t + w / 2) + du * 0.22, y + 0.03 + h / 2, w - 0.02, h, 0.28, BOOKS[Math.floor(rand() * BOOKS.length)], [0, turn, (rand() - 0.5) * 0.08]);
+            t += w;
+          }
+        }
+        solid(mu - dv * 0.2, mv + du * 0.2, len / 2, 0.28, g0 - 0.5, g0 + tall, turn);
+      };
+
+      // The library (in the court's far corner, left of the keep): its walls lined with books.
+      {
+        const u0 = 8, u1 = 18.5, v0 = -18.5, v1 = -9, g0 = hall(u0, v0, u1, v1, 5, v1);
+        bookcase(u0 + 0.9, v0 + 0.45, u1 - 0.9, v0 + 0.45, g0);
+        bookcase(u0 + 0.45, v1 - 1.2, u0 + 0.45, v0 + 1.2, g0);
+        bookcase(u1 - 0.45, v0 + 1.2, u1 - 0.45, v1 - 1.2, g0);
+        // (Two cases standing back to back down the middle.)
+        bookcase(10.5, -14.2, 16, -14.2, g0, 2.1);
+        bookcase(16, -14.6, 10.5, -14.6, g0, 2.1);
+        // (A reading table, a lectern with a great book open on it.)
+        block(13.2, -11.2, g0 + 0.75, 2.4, 0.1, 1.0, 0x6a4a2a);
+        for (const [du, dv] of [[-1.05, -0.4], [1.05, -0.4], [-1.05, 0.4], [1.05, 0.4]]) block(13.2 + du, -11.2 + dv, g0 + 0.37, 0.1, 0.75, 0.1, 0x5a3a24);
+        solid(13.2, -11.2, 1.2, 0.5, g0 - 0.5, g0 + 0.8);
+        block(10, -11.5, g0 + 0.55, 0.3, 1.1, 0.3, 0x5a3a24);
+        block(10, -11.5, g0 + 1.15, 0.7, 0.08, 0.5, 0x5a3a24, [0.35, 0, 0]);
+        block(10, -11.5, g0 + 1.21, 0.62, 0.04, 0.44, 0xe8dcc0, [0.35, 0, 0]);
+        chest(16.8, -10.2, g0, 'library', false, { loot: [['oldMap', 3], ['candle', 4], ['crystal', 2], ['goldBar', 1], ['rope', 2]] });
+      }
+
+      // The throne room, in the great keep: a red carpet from the door to a
+      // dais, and on the throne the last king, long dead, his crown still on him.
+      {
+        const g0 = gk;
+        block(0, -1, g0 + 0.03, 1.6, 0.06, 7, 0x7a1a1a);
+        block(0, 3.6, g0 + 0.2, 6, 0.45, 1.8, stone());
+        solid(0, 3.6, 3, 0.9, g0 - 0.5, g0 + 0.42);
+        const seat = g0 + 0.42 + 0.5, GOLD = 0xb08a3a;
+        block(0, 3.9, seat - 0.25, 1.2, 0.5, 0.9, 0x5a3a24);
+        block(0, 4.35, seat + 1.1, 1.3, 2.3, 0.2, 0x5a3a24);
+        block(0, 4.3, seat + 2.3, 1.5, 0.15, 0.3, GOLD);
+        for (const s of [-1, 1]) {
+          block(s * 0.62, 3.85, seat + 0.25, 0.14, 0.12, 0.85, GOLD);
+          block(s * 0.62, 3.5, seat - 0.05, 0.14, 0.45, 0.12, 0x5a3a24);
+        }
+        solid(0, 4.0, 0.7, 0.55, g0, seat);
+        // (The king's bones: slumped back on his throne, his hands on its arms.)
+        const BONE = 0xd8cfb4;
+        block(0, 3.95, seat + 0.08, 0.36, 0.14, 0.3, BONE); // (pelvis)
+        for (let k = 0; k < 5; k++) block(0, 4.12 - k * 0.01, seat + 0.2 + k * 0.1, 0.06, 0.08, 0.06, BONE); // (spine)
+        for (let k = 0; k < 4; k++) block(0, 4.02, seat + 0.32 + k * 0.1, 0.36 - k * 0.03, 0.03, 0.22, BONE); // (ribs)
+        put(new DodecahedronGeometry(0.12, 0).translate(0, seat + 0.86, 4.0), BONE, 0.08); // (skull)
+        block(0, 3.9, seat + 0.78, 0.12, 0.06, 0.08, BONE); // (jaw, fallen open)
+        for (const s of [-1, 1]) {
+          block(s * 0.3, 3.95, seat + 0.45, 0.05, 0.42, 0.05, BONE, [0.2, 0, s * 0.3]);
+          block(s * 0.55, 3.75, seat + 0.33, 0.05, 0.05, 0.35, BONE);
+          block(s * 0.13, 3.6, seat + 0.08, 0.06, 0.06, 0.5, BONE);
+          block(s * 0.13, 3.33, seat - 0.3, 0.05, 0.5, 0.05, BONE);
+        }
+        // (His crown: one you can take. See Game.ruinChest.)
+        chest(0, 4.0, seat + 0.95, 'crown', false, { crown: true });
+        // (Banners down the walls, faded.)
+        for (const [u, v, turn] of [[-4.5, 1, Math.PI / 2], [4.5, 1, Math.PI / 2], [-4.5, -2.5, Math.PI / 2], [4.5, -2.5, Math.PI / 2]]) block(u, v, g0 + 4, 0.06, 3.2, 1.1, 0x6a1a2a, [0, turn - Math.PI / 2, 0]);
+        chest(2.6, 3.4, g0 + 0.42, 'throne', true);
+      }
+
+      // A tower that fell, in the court's near corner: its far side broken
+      // down, its stair inside still climbing round its walls, steps gone
+      // here and there; at the top what's left of its floor, and a chest.
+      {
+        const u0 = -19, v0 = 9.5, T = 7, u1 = u0 + T, v1 = v0 + T, Ht = 21, gt = ground(u0 + T / 2, v0 + T / 2);
+        const broken = (lo) => (t) => Ht - (lo ? 9 + 5 * Math.abs(Math.sin(t * 5 + 1)) + rand() * 1.5 : Math.max(0, Math.sin(t * 7 + 2) * 2.2 + rand() * 1.4));
+        wallRun(u0, v0, u1, v0, 0.8, broken(false), { gaps: [[0.4, 0.6, 0, 2.5], [0.45, 0.55, 10, 11.2]] });
+        wallRun(u1, v0, u1, v1, 0.8, broken(false), { gaps: [[0.45, 0.55, 6, 7.2], [0.45, 0.55, 14, 15.2]] });
+        wallRun(u0, v1, u1, v1, 0.8, broken(false));
+        wallRun(u0, v0, u0, v1, 0.8, broken(true)); // (fallen: down to half its height, and less)
+        const hs = T / 2 - 0.95, cu = u0 + T / 2, cv = v0 + T / 2, per = 8 * hs, RISE = 0.3, RUN = 0.5;
+        // (A point on the square round inside, `d` along it from the far corner, going round.)
+        const along = (d) => {
+          d %= per;
+          const side = Math.floor(d / (2 * hs)), t = d - side * 2 * hs;
+          return [[cu - hs + t, cv + hs, 0], [cu + hs, cv + hs - t, 1], [cu + hs - t, cv - hs, 0], [cu - hs, cv - hs + t, 1]][side];
+        };
+        const P = 17.5, n = Math.round(P / RISE);
+        let skipped = false;
+        for (let k = 0; k < n; k++) {
+          const top = gt + (k + 1) * RISE, [u, v, across] = along(1 + k * RUN);
+          // (Some gone: never two together, nor the first few, so you can always jump the gap.)
+          if (k > 4 && k < n - 2 && !skipped && rand() < 0.13) { skipped = true; continue; }
+          skipped = false;
+          block(u, v, top - 0.15, across ? 1.1 : RUN + 0.04, 0.3, across ? RUN + 0.04 : 1.1, stone());
+          solid(u, v, across ? 0.55 : RUN / 2 + 0.02, across ? RUN / 2 + 0.02 : 0.55, top - 0.3, top);
+        }
+        // (What's left of the floor at the top: half of it, its edge broken.)
+        const ft = gt + P + RISE;
+        block(cu + 0.9, cv, ft - 0.15, T - 0.8 - 1.8, 0.3, T - 0.8, stone());
+        solid(cu + 0.9, cv, (T - 2.6) / 2, (T - 0.8) / 2, ft - 0.3, ft);
+        chest(cu + 1.6, cv + 1.4, ft, 'fallen tower', true);
+      }
+
+      // The chapel (the court's far corner, right of the keep): its end
+      // wall a great window of coloured glass, and at noon, when the sun
+      // stands high, the light through it lies in colours on its floor.
+      {
+        const u0 = 8, u1 = 18.5, v0 = 9, v1 = 18.5, H = 6.5;
+        const g0 = hall(u0, v0, u1, v1, H, v0, { roof: false, endGaps: [[0.3, 0.7, 1.6, 5.6]] });
+        // (A steep roof of stone slabs.)
+        const half = (u1 - u0) / 2 + 0.5, pitch = 0.6;
+        for (const s of [-1, 1]) block((u0 + u1) / 2 + (s * half) / 2, (v0 + v1) / 2, g0 + H + Math.tan(pitch) * half / 2, half / Math.cos(pitch) + 0.2, 0.3, v1 - v0 + 0.9, stone(), [0, 0, -s * pitch]);
+        for (const v of [v0, v1]) {
+          const tri = new BoxGeometry(u1 - u0, 0.7, 0.7).toNonIndexed();
+          tri.translate((u0 + u1) / 2, g0 + H + 0.35, v);
+          put(tri, stone());
+          block((u0 + u1) / 2, v, g0 + H + 1.4, (u1 - u0) * 0.55, 1.4, 0.7, stone());
+          block((u0 + u1) / 2, v, g0 + H + 2.6, (u1 - u0) * 0.18, 1.0, 0.7, stone());
+        }
+        // (Its altar under the window, candles, and pews down its length.)
+        block((u0 + u1) / 2, v1 - 1.4, g0 + 0.5, 2.4, 1.0, 0.9, 0xd8d0c0);
+        solid((u0 + u1) / 2, v1 - 1.4, 1.2, 0.45, g0 - 0.5, g0 + 1.0);
+        for (const du of [-0.9, 0, 0.9]) block((u0 + u1) / 2 + du, v1 - 1.4, g0 + 1.12, 0.07, 0.24, 0.07, 0xf0e8d0);
+        for (let r = 0; r < 4; r++) for (const s of [-1, 1]) {
+          const u = (u0 + u1) / 2 + s * 2.3, v = v0 + 2 + r * 1.5;
+          block(u, v, g0 + 0.45, 3.2, 0.08, 0.45, 0x6a4a2a);
+          block(u, v + 0.22, g0 + 0.75, 3.2, 0.6, 0.06, 0x6a4a2a);
+          for (const e of [-1.5, 1.5]) block(u + e, v, g0 + 0.22, 0.08, 0.45, 0.45, 0x5a3a24);
+          solid(u, v, 1.6, 0.25, g0 - 0.5, g0 + 0.5);
+        }
+        chest((u0 + u1) / 2 + 2.6, v1 - 1.4, g0, 'chapel', false, { loot: [['candle', 6], ['bandage', 4], ['goldBar', 2], ['crystal', 1]] });
+        // (The window: panes of coloured glass in a lead lattice; and their colours on the floor.)
+        if (glass) {
+          const GLASS = [0xc8202a, 0x2a5ad8, 0xe8b830, 0x2a9a4a, 0x8a3ac8, 0x2ab8c8];
+          const wu0 = u0 + (u1 - u0) * 0.3, wu1 = u0 + (u1 - u0) * 0.7, wy0 = g0 + 1.6, wy1 = g0 + 5.6, cols = 6, rows = 8;
+          const pw = (wu1 - wu0) / cols, ph = (wy1 - wy0) / rows;
+          into = glass.panes;
+          for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+            const c = GLASS[(i * 3 + j * 5 + (i * j) % 4) % GLASS.length];
+            block(wu0 + (i + 0.5) * pw, v1, wy0 + (j + 0.5) * ph, pw - 0.05, ph - 0.05, 0.06, c);
+            // (Its light, thrown down and in across the floor: the window's picture, stretched.)
+            into = glass.glow;
+            block(wu0 + (i + 0.5) * pw, v1 - 1.4 - (rows - j - 0.5) * 0.55, g0 + 0.06 + 0.002 * j, pw * 0.95, 0.02, 0.5, c);
+            into = glass.panes;
+          }
+          into = parts;
+          block((wu0 + wu1) / 2, v1, (wy0 + wy1) / 2, wu1 - wu0, 0.04, 0.03, 0x2a2a2e); // (the lead)
+          for (let i = 0; i <= cols; i++) block(wu0 + i * pw, v1, (wy0 + wy1) / 2, 0.05, wy1 - wy0, 0.08, 0x2a2a2e);
+          for (let j = 0; j <= rows; j++) block((wu0 + wu1) / 2, v1, wy0 + j * ph, wu1 - wu0, 0.05, 0.08, 0x2a2a2e);
+          solid((wu0 + wu1) / 2, v1, (wu1 - wu0) / 2, 0.35, wy0, wy1);
+        }
+      }
       break;
     }
     default: {
@@ -729,6 +906,8 @@ function buildRuin(site, generator, x0, z0, parts, solids, onChest, gateParts = 
 
 export function createRuinLayer(config) {
   const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const glassMaterial = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide, transparent: true, opacity: 0.9 });
+  const glowMaterial = new MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false });
   const fits = new Map(); // "I,K" -> the site, or null
   // (`budget`: how many more places may be worked out now; past it, unknown ones are skipped, and `layer.more` says so.)
   const site = (I, K, generator, budget = null) => {
@@ -803,7 +982,7 @@ export function createRuinLayer(config) {
      */
     sitesRoughly(x, z, r, generator, labelAt) {
       // (Judged from the map's own drawing: no ruin on water, a mountainside or the ice.)
-      const NOT = new Set(['Ocean', 'Coral reef', 'Kelp forest', 'Lake', 'Mountains', 'Snowy peaks', 'Volcano', 'Sea cliffs', 'Wetlands', 'Marsh']);
+      const NOT = new Set(['Ocean', 'Coral reef', 'Kelp forest', 'Lake', 'Mountains', 'Snowy peaks', 'Volcano', 'Sea cliffs', 'Wetlands', 'Marsh', 'Desert', 'Dune sea', 'Salt flats', 'Oasis']);
       const out = [], keep = keepSite(generator, config.seaLevel);
       layer.more = false;
       for (let K = Math.floor((z - r) / CELL); K <= Math.floor((z + r) / CELL); K++) {
@@ -879,6 +1058,15 @@ export function createRuinLayer(config) {
       }
     },
 
+    sun: null, // (the sun's direction: see main.js)
+    /** The chapel's window lit by the day, its colours on the floor at noon. */
+    update() {
+      const y = layer.sun?.y ?? 0.5;
+      glassMaterial.color.setScalar(0.25 + 0.75 * Math.max(0, Math.min(1, (y + 0.1) / 0.4)));
+      glowMaterial.opacity = 0.55 * Math.max(0, Math.min(1, (y - 0.5) / 0.3));
+      glowMaterial.visible = glowMaterial.opacity > 0.01;
+    },
+
     reuseKey({ lod }) {
       return lod > 2 ? 'none' : lod === 0 ? 'ruins0' : 'ruins';
     },
@@ -887,9 +1075,9 @@ export function createRuinLayer(config) {
       if (lod > 2) return null;
       const size = config.chunkSize, x0 = cx * size, z0 = cz * size;
       const I0 = Math.floor(x0 / CELL), K0 = Math.floor(z0 / CELL);
-      const parts = [], list = [], gateParts = [], traps = [];
+      const parts = [], list = [], gateParts = [], traps = [], glass = { panes: [], glow: [] };
       const keep = keepSite(generator, config.seaLevel);
-      if (Math.floor(keep.x / size) === cx && Math.floor(keep.z / size) === cz) buildRuin(keep, generator, x0, z0, parts, list, lod === 0 ? layer.onChest : null, gateParts);
+      if (Math.floor(keep.x / size) === cx && Math.floor(keep.z / size) === cz) buildRuin(keep, generator, x0, z0, parts, list, lod === 0 ? layer.onChest : null, gateParts, null, glass);
       for (let K = K0 - 1; K <= K0 + 1; K++) {
         for (let I = I0 - 1; I <= I0 + 1; I++) {
           const s = site(I, K, generator);
@@ -919,6 +1107,17 @@ export function createRuinLayer(config) {
         group.add(gate);
         gates.add(gate);
         group.userData.gate = gate;
+      }
+      // (The chapel's window: lit by the day; and the light through it on the floor, only when the sun is high.)
+      if (glass.panes.length) {
+        const g = mergeGeometries(glass.panes);
+        const panes = new Mesh(g, glassMaterial);
+        panes.name = 'keep glass';
+        group.add(panes);
+        const glow = new Mesh(mergeGeometries(glass.glow), glowMaterial);
+        glow.name = 'keep glass light';
+        glow.renderOrder = 2;
+        group.add(glow);
       }
       group.userData.key = `${cx},${cz}`;
       group.userData.solids = list;

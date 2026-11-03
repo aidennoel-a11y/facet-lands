@@ -125,6 +125,8 @@ const RUIN_RARE = [['oldMap', 0.4, 0.5], ['oldSword', 0.06, 0.25], ['forgedPicka
 const HARVEST = { pumpkin: [['pumpkin', 2], ['seedPumpkin', 2]], wheat: [['wheat', 3], ['seedWheat', 2]], corn: [['corn', 2], ['seedCorn', 2]], potato: [['potato', 4], ['seedPotato', 1]], carrot: [['carrot', 3], ['seedCarrot', 2]] };
 // Past this much in your pack (kg) you slow down; past twice it, you can't run.
 const LOAD = 55;
+// The workbenches by level (see craft).
+const BENCH_NAMES = { 1: 'workbench (or better)', 2: "carpenter's bench (or better)", 3: "master's bench" };
 
 /** What you start with (for testing: the makings of most things; Z has the rest). */
 export const TEST_KIT = [['axe', 1], ['spear', 1], ['flintSteel', 1], ['bow', 1], ['arrow', 10], ['log', 3], ['vine', 10], ['campfire', 1], ['cookedMeat', 10]];
@@ -202,6 +204,8 @@ export class Game {
     this.harvested = new Map(); // tree key -> time picked (the fruit comes again after a while)
     this.time = 0;
     this.ruinChests = new Set(); // (the ruins' chests set out already: see ruinChest)
+    this.crownTaken = false; // (the last king's crown, off his head: see ruinChest)
+    this.crownOut = false;
     this.ruinsSeen = new Set(); // (the ruins you've been to)
     this.explored = new Set(); // ("cx,cz": the chunks you've been near, the 5 x 5 round you: all the survival map shows)
     // The Lost Keep: its gate opened (all the trophies set in its altar), its heart reached, what the old maps have told of it.
@@ -321,6 +325,8 @@ export class Game {
       for (const k of saved?.shrooms ?? []) this.shrooms.cut.add(k);
     }
     this.ruinChests = new Set(saved?.ruins?.chests ?? []);
+    this.crownTaken = !!saved?.ruins?.crown;
+    this.crownOut = false;
     this.ruinsSeen = new Set(saved?.ruins?.seen ?? []);
     this.explored = new Set(saved?.explored ?? []);
     this.landmarksFound = new Set(saved?.landmarks?.found ?? []); // (the landmarks' keys: found, by you or, online, another)
@@ -374,7 +380,7 @@ export class Game {
       burns: this.burnsJSON?.() ?? null,
       cut: this.cutJSON?.() ?? null,
       shrooms: this.shrooms ? [...this.shrooms.cut] : [],
-      ruins: { chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
+      ruins: { crown: this.crownTaken, chests: [...this.ruinChests], seen: [...this.ruinsSeen], waypoint: this.waypoint },
       explored: [...this.explored],
       landmarks: { found: [...this.landmarksFound], hints: [...this.landmarkHints] },
       journal: { places: [...this.journal.places], animals: [...this.journal.animals] },
@@ -889,6 +895,11 @@ export class Game {
     if (t.kind === 'item') {
       const stack = this.items.take(t.item);
       const left = this.inventory.add(stack, this.hotbar?.index);
+      if (stack.id === 'kingsCrown' && !left && !this.crownTaken) {
+        this.crownTaken = true;
+        this.dirty = true;
+        this.hotbar?.flash("The last king's crown: his reign is over");
+      }
       if (left) {
         if (left === stack.count) {
           this.items.untake(t.item);
@@ -1430,6 +1441,7 @@ export class Game {
     if (!this.unlocked(tier)) return this.hotbar?.flash(`Not yet: ${tier.tag.toLowerCase()} first`);
     if (r.at === 'anvil' && !this.hud.stations?.anvil) return this.hotbar?.flash('Forge that at an anvil: stand by one');
     if (r.at === 'fire' && !this.hud.stations?.fire) return this.hotbar?.flash('Make that by a lit fire: stand by one');
+    if (r.at === 'bench' && (this.hud.stations?.bench ?? 0) < (r.bench ?? 1) && this.mode === 'survival') return this.hotbar?.flash(`Make that at a ${BENCH_NAMES[r.bench ?? 1]}: stand by one`);
     if (r.uses && !r.uses.some((t) => this.inventory.count(t) > 0)) return this.hotbar?.flash(`That needs ${usesText(r)} in your pack to make`);
     if (!Object.entries(r.needs).every(([k, n]) => this.inventory.count(k) >= n)) return this.hotbar?.flash('Not enough to make that');
     for (const [k, n] of Object.entries(r.needs)) this.inventory.remove(k, n);
@@ -3894,7 +3906,7 @@ export class Game {
     if (this.riding) prompt = this.riding.cart ? '<kbd>W</kbd> Push on · <kbd>S</kbd> Brake / back · look to choose a branch · <kbd>Q</kbd> Get out' : '<kbd>W</kbd> Paddle · <kbd>Q</kbd> Get off';
     if (this.mount) prompt = '<kbd>W</kbd> Ride · <kbd>Shift</kbd> Gallop · <kbd>Space</kbd> Jump · <kbd>Q</kbd> Get down';
     if (this.climbing) prompt = '<kbd>W</kbd> Climb · <kbd>S</kbd> Down · <kbd>Q</kbd> Let go';
-    this.hud.stations = { anvil: !!this.structures.nearest('anvil', cam.x, cam.z, 5), fire: this.structures.warmthAt(cam.x, cam.y - this.controls.eyeHeight, cam.z) > 0.05 };
+    this.hud.stations = { bench: this.structures.nearest('masterBench', cam.x, cam.z, 5) ? 3 : this.structures.nearest('carpenterBench', cam.x, cam.z, 5) ? 2 : this.structures.nearest('workbench', cam.x, cam.z, 5) ? 1 : 0, anvil: !!this.structures.nearest('anvil', cam.x, cam.z, 5), fire: this.structures.warmthAt(cam.x, cam.y - this.controls.eyeHeight, cam.z) > 0.05 };
     this.hud.prompt(prompt);
     this.hud.draw(this.drawing ? Math.min(1, (this.time - this.drawing.since) / drawTime(held?.id)) : null);
     // (Which way the wind blows, as you look.)
@@ -4656,6 +4668,24 @@ export class Game {
    * the first time you come near it; there for good after (opened or not).
    */
   ruinChest(c) {
+    if (c.crown) {
+      // The last king's crown, still on his head (until you take it).
+      if (!this.crownTaken && !this.crownOut) {
+        this.crownOut = true;
+        const d = this.items.drop(Inventory.stack('kingsCrown', 1), c.x, c.y, c.z, { turn: c.rot });
+        d.settled = d.stuck = true;
+      }
+      return;
+    }
+    if (c.loot) {
+      // (A chest with set contents: the Keep's library and chapel.)
+      if (this.ruinChests.has(c.key) || this.structures.list.some((s) => s.ruinKey === c.key)) return;
+      this.ruinChests.add(c.key);
+      const s = this.structures.build({ type: 'chest', x: c.x, y: c.y, z: c.z, rot: c.rot, tilt: null }, { contents: c.loot.map(([id, n]) => Inventory.stack(id, n)), ruinKey: c.key });
+      s.ruinKey = c.key;
+      this.dirty = true;
+      return;
+    }
     if (this.ruinChests.has(c.key) || this.structures.list.some((s) => s.ruinKey === c.key)) return;
     this.ruinChests.add(c.key);
     // (What's in it rolled from the world and the chest's place: the same for everyone, online.)

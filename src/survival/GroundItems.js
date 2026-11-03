@@ -109,7 +109,7 @@ export class GroundItems {
         potato: () => M.potatoModel(false), bakedPotato: () => M.potatoModel(true), carrot: M.carrotModel, dough: M.doughModel, bread: M.breadModel, stew: M.stewModel,
         honey: () => M.seedsModel(0xe8a020), rawEgg: () => M.eggModel(false), cookedEgg: () => M.eggModel(true), salt: () => M.seedsModel(0xf4f2ee), oyster: M.oysterModel, seashell: M.seashellModel, pearl: M.pearlModel, straw: M.wheatModel, sand: () => M.seedsModel(0xe2c88a),
         flintSteel: () => M.flintSteelModel(false), fineFlintSteel: () => M.flintSteelModel(true),
-        oldSword: () => swordModel(0xa8aca4, 0xc8ccc4, 0xb08a3a), oldMap: () => M.hideModel(),
+        oldSword: () => swordModel(0xa8aca4, 0xc8ccc4, 0xb08a3a), oldMap: () => M.hideModel(), kingsCrown: M.crownModel,
         starBlade: () => swordModel(0x7a98c8, 0xd4e6ff, 0x3a4050), starPickaxe: () => pickaxeModel(0x5a6a90, 0xd4e6ff), starMetal: M.starMetalModel, glider: M.gliderModel,
         yarrow: () => M.herbModel(0x6a9a44, 0xf0ece0, 0.26, 311), aloe: () => M.herbModel(0x7ab070, null, 0.3, 313), willowBark: () => M.herbModel(0x8a7458, null, 0.08, 317),
         ginseng: () => M.herbModel(0x4a8a34, 0xc02828, 0.2, 319), snakeroot: () => M.herbModel(0x3a7a34, 0xffffff, 0.28, 323),

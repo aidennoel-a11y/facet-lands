@@ -21,6 +21,7 @@ const STEP = 8; // path spacing (m)
 const RIVER_STEPS = 400; // a river is at most ~3 km long
 const STREAM_STEPS = 170; // a stream at most ~1.4 km
 const BEND = (20 * Math.PI) / 180; // the most a course turns at any one point (STEP apart): bends some 35 m round, or wider
+const HARD_BEND = (45 * Math.PI) / 180; // ...and where a rise of the land blocks its way: some 10 m round
 const INFLUENCE = 150; // how far past its channel a river still shapes the land (m): its valley (see valleyWidth)
 
 /**
@@ -697,12 +698,24 @@ export class Rivers {
   }
 
   #add(points, pond, kind, tarn = null) {
+    // (Where something stands in its way, a rise of the land straight on
+    // ahead, well above its water, it may turn hard, as a real river swings
+    // round a spur of hill; elsewhere its bends stay broad and easy.)
+    const g = this.generator;
+    const blocked = points.map((p, k) => {
+      if (k === 0 || k >= points.length - 1) return false;
+      const a = points[k - 1], dx = p.x - a.x, dz = p.z - a.z, l = Math.hypot(dx, dz) || 1;
+      for (const d of [10, 20]) if (g.getBaseHeight(p.x + (dx / l) * d, p.z + (dz / l) * d) > p.level + 3) return true;
+      return false;
+    });
+    // (Near a blocked point, its neighbours too: the hard turn spreads over a few of them.)
+    const near = blocked.map((_, k) => blocked.slice(Math.max(0, k - 2), k + 3).some(Boolean));
     // (Its bends rounded off: a rolling average of its course, some 30 m
     // either way, twice over, tapering to its two ends, which stay put.)
     for (let pass = 0; pass < 2; pass++) {
       const xs = points.map((p) => p.x), zs = points.map((p) => p.z);
       for (let k = 1; k < points.length - 1; k++) {
-        const R = Math.min(4, k, points.length - 1 - k);
+        const R = Math.min(near[k] ? 1 : 4, k, points.length - 1 - k);
         let sx = 0, sz = 0, w = 0;
         for (let q = -R; q <= R; q++) {
           const f = R + 1 - Math.abs(q);
@@ -716,7 +729,7 @@ export class Rivers {
     }
     // (And any bend still sharp, near its ends where the average tapers off,
     // eased out: nowhere does it turn more than BEND at one point.)
-    const P = easeBends(points.map((p) => [p.x, p.z]), BEND);
+    const P = easeBends(points.map((p) => [p.x, p.z]), (k) => (near[k] ? HARD_BEND : BEND));
     points.forEach((p, k) => {
       p.x = P[k][0];
       p.z = P[k][1];

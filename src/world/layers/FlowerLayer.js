@@ -5,6 +5,26 @@ import { addWind } from '../../render/wind.js';
 
 // Wildflowers: lupins, buttercups, daisies, poppies, cornflowers, clover...
 const COLOURS = [0x8a5cc9, 0xf2d23c, 0xf4f1e6, 0xd8322e, 0x4f7fd6, 0xe07ab8, 0xf29a3a].map((c) => new Color(c));
+// (And the heather, high in the mountains: its purples and pinks, from 7 on in the data.)
+const HEATHER = [0x8a4f9a, 0xa65aa8, 0x7a4a72].map((c) => new Color(c));
+
+/** A clump of heather: a low, rounded mound of fine purple sprigs, a hand or two high, a little under a metre across. */
+function heatherClump() {
+  const pos = [];
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2 + (k % 3) * 0.4, r = k % 3 === 0 ? 0 : 0.18 + (k % 2) * 0.14, h = 0.22 - r * 0.25;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r, w = 0.13;
+    // (Each sprig a narrow pyramid of three faces.)
+    for (let f = 0; f < 3; f++) {
+      const b0 = a + (f / 3) * Math.PI * 2, b1 = b0 + (Math.PI * 2) / 3;
+      pos.push(x + Math.cos(b0) * w, 0, z + Math.sin(b0) * w, x + Math.cos(b1) * w, 0, z + Math.sin(b1) * w, x, h, z);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.computeVertexNormals();
+  return g;
+}
 
 /** A flower's stem, 0.45 m tall. */
 function stem() {
@@ -41,7 +61,8 @@ const tilt = new Quaternion(), lean = new Vector3();
  * chunks right around you.
  */
 export function createFlowerLayer(config) {
-  const stems = stem(), heads = head();
+  const stems = stem(), heads = head(), clump = heatherClump();
+  const heatherMaterial = addWind(new MeshLambertMaterial({ side: DoubleSide, flatShading: true }), { strength: 0.012, speed: 1.4 });
   const bloom = (material, key) => {
     addWind(material, { strength: 0.03, speed: 1.6 });
     const previous = material.onBeforeCompile;
@@ -71,8 +92,8 @@ export function createFlowerLayer(config) {
       // (Where they go: worked out by a chunk worker; here only if it wasn't.)
       const data = prepared && prepared.flowers !== undefined ? prepared.flowers : placeFlowers(generator, config, cx, cz, groundHeightAt, COLOURS.length);
       if (!data) return null;
-      const list = [];
-      for (let k = 0; k < data.length; k += 8) list.push([data[k], data[k + 1], data[k + 2], data[k + 3], data[k + 4], COLOURS[data[k + 5]], data[k + 6], data[k + 7]]);
+      const list = [], heather = [];
+      for (let k = 0; k < data.length; k += 8) (data[k + 5] >= 7 ? heather : list).push([data[k], data[k + 1], data[k + 2], data[k + 3], data[k + 4], data[k + 5] >= 7 ? HEATHER[data[k + 5] - 7] : COLOURS[data[k + 5]], data[k + 6], data[k + 7]]);
       const stemMesh = new InstancedMesh(stems, stemMaterial, list.length);
       const headMesh = new InstancedMesh(heads, headMaterial, list.length);
       list.forEach(([x, y, z, sc, r, colour, nx, nz], k) => {
@@ -91,11 +112,27 @@ export function createFlowerLayer(config) {
       headMesh.computeBoundingSphere();
       headMesh.add(stemMesh);
       headMesh.name = 'flowers';
+      // (The heather: low clumps hugging the ground, not on stems; there all year.)
+      if (heather.length) {
+        const hm = new InstancedMesh(clump, heatherMaterial, heather.length);
+        heather.forEach(([x, y, z, sc, r, colour, nx, nz], k) => {
+          p.set(x, y - 0.02, z);
+          tilt.setFromUnitVectors(yAxis, lean.set(nx, 1, nz).normalize());
+          q.setFromAxisAngle(yAxis, r * Math.PI * 2).premultiply(tilt);
+          s.set(sc, sc * (0.7 + 0.6 * r), sc);
+          hm.setMatrixAt(k, m4.compose(p, q, s));
+          hm.setColorAt(k, colour);
+        });
+        hm.computeBoundingSphere();
+        hm.receiveShadow = true;
+        hm.name = 'heather';
+        headMesh.add(hm);
+      }
       return headMesh;
     },
 
     dispose(mesh) {
-      mesh.children[0]?.dispose();
+      for (const child of mesh.children) child.dispose();
       mesh.dispose(); // (the shapes are shared)
     },
   };
