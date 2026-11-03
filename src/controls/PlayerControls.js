@@ -492,7 +492,9 @@ export class PlayerControls {
     const cliff = !ground.inCave && !glide ? this.#cliffAt(pos.x, pos.z, floor) : null;
     if (cliff && feet <= floor + 0.05) {
       feet = floor;
-      this.velocityY = Math.min(this.velocityY, -1.5) - this.gravity * 0.35 * dt; // (the face drags at you, a little)
+      // (The face drags at you: a slide, never faster than some 6 m/s down, so
+      // coming off the foot of a slope never hurts; only a real drop does.)
+      this.velocityY = Math.max(-6, Math.min(this.velocityY, -1.5) - this.gravity * 0.35 * dt);
       this.push.x += cliff.x * 7 * dt;
       this.push.z += cliff.z * 7 * dt;
       const ps = Math.hypot(this.push.x, this.push.z);

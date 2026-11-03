@@ -462,7 +462,9 @@ export class TerrainGenerator {
     const bl = savanna + desert > 0.02 ? this.#badlands(x, z) : 0;
     // (And now and then out in the savanna too: the Black Hills rising out of the dry grassland, as they do.)
     // (Fading out gently as the savanna gives way to the desert: never cut off in a wall.)
-    const dh = savanna > 0.06 && !this._probing ? this.#dryHills(x, z, range) * (1 - bl) * smoothstep(0.06, 0.45, savanna) : 0;
+    // (Never round a desert or a dune sea, though: within some 600 m of one there's only savanna.)
+    let dh = savanna > 0.06 && !this._probing ? this.#dryHills(x, z, range) * (1 - bl) * smoothstep(0.06, 0.45, savanna) : 0;
+    if (dh > 0) dh *= 1 - smoothstep(0.68, 0.76, this.#aridRange(x, z, 0));
     out.savanna = savanna * (1 - bl) * (1 - dh);
     // Salt flats: the dry beds of old lakes in the heart of the deserts.
     const sf = desert > 0.5 ? this.#saltFlat(x, z) : 0;
@@ -501,10 +503,12 @@ export class TerrainGenerator {
       // (Round every jungle and every jungle range, a band of monsoon forest; out in
       // the green lowlands now and then, an ancient oak wood. See #monsoonRing, #oakLand.)
       const rest = own * (1 - kj - km - kc - kb);
-      // (The monsoon forest takes the jungle's in-between ground, never the jungle itself: they meet.)
-      const jungleShare = Math.min(rest, out.jungle * (1 - kj - km - kc - kb));
-      // (And never in the jungle's own body: only where it's thinning out.)
-      const kmz = rest - jungleShare > 0 && out.jungle < 0.5 ? this.#monsoonRing(x, z, jb, a) * (1 - smoothstep(0.2, 0.5, out.jungle)) * (rest - jungleShare) : 0;
+      // (The monsoon forest takes all the in-between ground round a jungle or
+      // a jungle range, savanna too (but never the desert), and never the
+      // jungle itself: so the two always meet, with nothing between.)
+      const free = Math.min(1, own + out.savanna) * (1 - kj - km - kc - kb);
+      const jungleShare = Math.min(free, out.jungle * (1 - kj - km - kc - kb));
+      const kmz = free - jungleShare > 0 ? this.#monsoonRing(x, z, jb, a) * (free - jungleShare) : 0;
       const ko = rest - kmz > 0 ? this.#oakLand(x, z) * (rest - kmz) : 0;
       const taken = kj + km + kc + kb + kmz + ko;
       if (taken > 0) for (const id of BIOME_IDS) out[id] *= 1 - taken;
@@ -1124,7 +1128,7 @@ export class TerrainGenerator {
       ring = smoothstep(0.15, 0.4, near);
     }
     // (And any jungle range within some 1.2 km? Most places, none.)
-    if (ring < 1 && jb < 0.04 && this.#gridMemo('jmAny', x, z, 400, (px, pz) => {
+    if (ring < 1 && jb < 0.26 && this.#gridMemo('jmAny', x, z, 400, (px, pz) => {
       for (const d of [0, 450, 900, 1250]) for (let k = 0; k < (d ? 10 : 1); k++) if (this.#jungleMtn(px + Math.cos((k / 10) * Math.PI * 2) * d, pz + Math.sin((k / 10) * Math.PI * 2) * d) > 0) return 1;
       return 0;
     }) > 0) {
@@ -1133,7 +1137,8 @@ export class TerrainGenerator {
         for (const d of [0, 190, 380, 570]) for (let k = 0; k < (d ? 12 : 1) && m < 1; k++) m = Math.max(m, smoothstep(0.02, 0.1, this.#jungleMtn(px + Math.cos((k / 12) * Math.PI * 2) * d, pz + Math.sin((k / 12) * Math.PI * 2) * d)) * (d > 500 ? 0.6 : 1));
         return m;
       });
-      ring = Math.max(ring, near * (1 - smoothstep(0.01, 0.04, jb)));
+      // (Right up to where the foothills jungle takes over: no strip of anything between.)
+      ring = Math.max(ring, near * (1 - smoothstep(0.18, 0.26, jb)));
     }
     return ring;
   }
@@ -1142,7 +1147,7 @@ export class TerrainGenerator {
   // kilometre to a kilometre across out in the green lowlands, well away
   // from the mountains, the jungles and the sea.
   #oakLand(x, z) {
-    return this.#blobs('oakwood', x, z, 2600, 0.85, 300, 560, 0x0a4c, (px, pz) => {
+    return this.#blobs('oakwood', x, z, 2600, 0.42, 300, 560, 0x0a4c, (px, pz) => {
       // (Its suitedness for jungle is 0 up: anything over a trace of it is too near a jungle.)
       if (this.getMountainness(px, pz) > 0.3 || this.#jungleSuit(px, pz) > 0.02) return 0;
       if (this.#continentBase(px, pz) - this._contLift < -0.4) return 0;
