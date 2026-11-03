@@ -520,7 +520,7 @@ function monsoonKind({ seed, trunkH, trunkR, blobs, leafLow, leafHigh, vines = 6
     part(new CylinderGeometry(trunkR * 0.66, trunkR * 0.8, trunkH * 0.3, 5), moss, 0x6a8a3a, { x: 0.05, y: trunkH * 0.62, sx: 1.06, sz: 1.06, lump: 0.15, seed: seed + 3 }),
     ...boughs(blobs, trunkH * 0.85, trunkH, bark, seed + 4, { thick: 1.2 }),
   ];
-  const leafy = blobs.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 1), leafLow, leafHigh, { x, y, z, sy: 0.72, lump: 0.22, seed: seed + 10 + i }));
+  const leafy = blobs.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), leafLow, leafHigh, { x, y, z, sy: 0.72, lump: 0.22, seed: seed + 10 + i }));
   // (Ferns and moss up on the boughs, where they fork.)
   for (let k = 0; k < 5; k++) {
     const a = (k / 5) * Math.PI * 2 + rand() * 0.4, d = 0.6 + rand() * 0.6;
@@ -594,7 +594,7 @@ function weepingWillow() {
   }
   return withCrown(
     [part(new CylinderGeometry(0.42, 0.62, 2.8, 7), bark, barkTip, { y: 1.4, lump: 0.1, seed: 1200 }), ...limbs],
-    [...WEEPING_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 1), 0x9ab856, 0xb4cf6c, { x, y, z, sy: 0.62, lump: 0.22, seed: 1280 + i })), ...strands],
+    [...WEEPING_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x9ab856, 0xb4cf6c, { x, y, z, sy: 0.62, lump: 0.22, seed: 1280 + i })), ...strands],
   );
 }
 

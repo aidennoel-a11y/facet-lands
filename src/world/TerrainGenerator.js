@@ -288,12 +288,29 @@ export class TerrainGenerator {
    * kilometres, warped so the biome borders wander rather than run straight.
    */
   getAridity(x, z, range = this.#rangeField(x, z).value) {
-    const a = this.#aridityRaw(x, z, range);
-    if (a <= 0.44 || a >= 0.74) return a;
+    // (Asked for several times per point: the last answer remembered.)
+    if (x === this._gaX && z === this._gaZ && range === this._gaR) return this._ga;
+    const v = this.#aridityKept(x, z, range);
+    this._gaX = x;
+    this._gaZ = z;
+    this._gaR = range;
+    return (this._ga = v);
+  }
+
+  #aridityKept(x, z, range) {
+    let a = this.#aridityRaw(x, z, range);
+    if (a <= 0.44) return a;
+    // (Never a little desert: a stretch of it under a couple of square
+    // kilometres (narrower than about 1.6 km) is savanna instead.)
+    if (a > 0.7) {
+      const keepDesert = this.#minSize('desert', x, z, (px, pz) => smoothstep(0.74, 0.8, this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value)), 0.5, 3, 256);
+      a = keepDesert >= 1 ? a : 0.7 + (a - 0.7) * keepDesert;
+      if (a >= 0.74) return a;
+    }
     // (Never a little speck of dry country out in the green: a stretch of
-    // savanna under about 0.3 km² (narrower than about 750 m) goes green.)
+    // savanna narrower than about 1.3 km goes green.)
     // (Judged from the climate and the savanna's own blobs alone: the dry ranges' savanna is always broad.)
-    const keep = this.#minSize('dry', x, z, (px, pz) => smoothstep(0.47, 0.56, Math.max(this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value), 0.6 * this.#savannaBlob(px, pz))), 0.5, 3);
+    const keep = this.#minSize('dry', x, z, (px, pz) => smoothstep(0.47, 0.56, Math.max(this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value), 0.6 * this.#savannaBlob(px, pz))), 0.5, 3, 224);
     return keep >= 1 ? a : 0.44 + (a - 0.44) * keep;
   }
 
@@ -913,12 +930,20 @@ export class TerrainGenerator {
    * Worked out on a 128 m grid (remembered per kind) and blended between
    * its points.
    */
-  #minSize(key, x, z, raw, need, R = 5) {
-    const G = 128; // (R grid cells: 640 m by default)
+  #minSize(key, x, z, raw, need, R = 5, G = 128) {
+    // (R grid cells of G metres: 640 m by default)
     const gx = Math.floor(x / G), gz = Math.floor(z / G);
     const fx = x / G - gx, fz = z / G - gz;
     const all = this._minSize ?? (this._minSize = {});
     const cache = all[key] ?? (all[key] = { raw: new Map(), eroded: new Map(), opened: new Map() });
+    // (Quickly, when the four grid points round it are worked out already: most often they are.)
+    {
+      const op = cache.opened, v00 = op.get(cellKey(gx, gz)), v10 = op.get(cellKey(gx + 1, gz)), v01 = op.get(cellKey(gx, gz + 1)), v11 = op.get(cellKey(gx + 1, gz + 1));
+      if (v00 !== undefined && v10 !== undefined && v01 !== undefined && v11 !== undefined) {
+        const a = v00 + (v10 - v00) * fx, b = v01 + (v11 - v01) * fx;
+        return smoothstep(need * 0.4, need * 0.6, a + (b - a) * fz);
+      }
+    }
     const memo = (map, i, j, f) => {
       const k = cellKey(i, j);
       let v = map.get(k);
@@ -1054,19 +1079,26 @@ export class TerrainGenerator {
    */
   /** `f` at the point of a `G`-metre grid nearest (x, z), remembered (per `key`). */
   #gridMemo(key, x, z, G, f) {
+    // (Blended between the grid's four points round it: smooth, never in steps.)
     const all = (this._gridMemo ??= {}), cache = (all[key] ??= new Map());
-    const i = Math.round(x / G), j = Math.round(z / G), k = cellKey(i, j);
-    let v = cache.get(k);
-    if (v === undefined) {
-      if (cache.size > 60000) cache.clear();
-      cache.set(k, (v = f(i * G, j * G)));
-    }
-    return v;
+    const at = (i, j) => {
+      const k = cellKey(i, j);
+      let v = cache.get(k);
+      if (v === undefined) {
+        if (cache.size > 60000) cache.clear();
+        cache.set(k, (v = f(i * G, j * G)));
+      }
+      return v;
+    };
+    const gx = Math.floor(x / G), gz = Math.floor(z / G), fx = x / G - gx, fz = z / G - gz;
+    const a = at(gx, gz) + (at(gx + 1, gz) - at(gx, gz)) * fx, c = at(gx, gz + 1) + (at(gx + 1, gz + 1) - at(gx, gz + 1)) * fx;
+    return a + (c - a) * fz;
   }
 
   #monsoonRing(x, z, jb) {
     // (Round a jungle: just outside where it begins, by how suited to jungle the country is.)
-    const suit = this.#jungleSuit(x, z);
+    // (The country's suitedness changes slowly: read from a 150 m grid, blended.)
+    const suit = this.#gridMemo('jsuit', x, z, 150, (px, pz) => this.#jungleSuit(px, pz));
     let ring = smoothstep(T.jungle - 0.12, T.jungle - 0.07, suit) * (1 - smoothstep(T.jungle + 0.02, T.jungle + 0.08, suit));
     // (Only where there's real jungle within 400 m or so: not wherever the country's half suited to it.)
     if (ring > 0) {
@@ -1075,12 +1107,23 @@ export class TerrainGenerator {
         const a = (k / 6) * Math.PI * 2;
         // (Looked at on a 100 m grid, remembered: neighbouring points ask after the same places.)
         // (Judged by how well suited to jungle the country there is: well into it, it's jungle.)
-        jungle = Math.max(jungle, this.#gridMemo('js400', x + Math.cos(a) * 400, z + Math.sin(a) * 400, 100, (px, pz) => smoothstep(T.jungle + 0.01, T.jungle + 0.07, this.#jungleSuit(px, pz))));
+        const px = x + Math.cos(a) * 400, pz = z + Math.sin(a) * 400;
+        // (Quickly: is the country there suited to jungle at all? Then, if so, is there real jungle there?)
+        if (this.#gridMemo('js400', px, pz, 100, (qx, qz) => smoothstep(T.jungle + 0.01, T.jungle + 0.07, this.#jungleSuit(qx, qz))) <= 0) continue;
+        jungle = Math.max(jungle, this.#gridMemo('jz400', px, pz, 100, (qx, qz) => {
+          const r = this.#rangeField(qx, qz, {}).value;
+          return this.#jungleZone(qx, qz, r, this.getAridity(qx, qz, r));
+        }));
       }
       ring *= smoothstep(0.2, 0.5, jungle);
     }
     // (Round a jungle range: not in it, but with it within half a kilometre.)
-    if (ring < 1 && jb < 0.04) {
+    // (Quickly first: any jungle range at all within some 700 m? Most places, none.)
+    if (ring < 1 && jb < 0.04 && this.#gridMemo('jmNear', x, z, 300, (px, pz) => {
+      let m = this.#jungleMtn(px, pz);
+      for (let k = 0; k < 8 && m <= 0; k++) for (const d of [350, 700]) m = Math.max(m, this.#jungleMtn(px + Math.cos((k / 8) * Math.PI * 2) * d, pz + Math.sin((k / 8) * Math.PI * 2) * d));
+      return m > 0 ? 1 : 0;
+    }) > 0) {
       let near = 0;
       for (let k = 0; k < 6 && near < 1; k++) {
         const a = (k / 6) * Math.PI * 2 + 0.3;
@@ -1973,6 +2016,18 @@ export class TerrainGenerator {
       for (let k = 0; ok && k < 8; k++) {
         const a = (k / 8) * Math.PI * 2;
         ok = probe.getBaseHeight(x + Math.cos(a) * r * 1.5, z + Math.sin(a) * r * 1.5) < sea - 1;
+      }
+      // (And the sea there for real, not only before the land's later lifts
+      // (the Smoky Mountains and the like): never an island stranded inland.
+      // While that's looked at, no island here, so the land asked after is without it.)
+      if (ok) {
+        this._islands.set(key, null);
+        // (The land before its rivers: they never raise it, and it's far quicker.)
+        ok = this.landHeight(x, z) < sea - 3 && this.getOceanness(x, z) > 0.5;
+        for (let k = 0; ok && k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2 + 0.2;
+          ok = this.landHeight(x + Math.cos(a) * r * 1.6, z + Math.sin(a) * r * 1.6) < sea - 1;
+        }
       }
       if (ok) {
         isl = { x, z, r, top: sea + 2.5 + 10 * (r / 170) + 4 * hash2(i, j, seed + 4) };
@@ -4228,7 +4283,7 @@ export class TerrainGenerator {
     const m = this.getMountainness(x, z);
     if (m < 0.68) return 0;
     // (Only in some of the valleys: a slow noise picks them, a few kilometres apart.)
-    const some = smoothstep(0.42, 0.52, this.meadowNoise.noise2D(x * 0.00045 + 913, z * 0.00045 - 271));
+    const some = smoothstep(0.46, 0.56, this.meadowNoise.noise2D(x * 0.00045 + 913, z * 0.00045 - 271));
     if (some <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
     if ((w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + (w.cherry ?? 0) + (w.bamboo ?? 0) + (w.redwood ?? 0) + (w.desert ?? 0) + (w.savanna ?? 0) > 0.4) return 0;
