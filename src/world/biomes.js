@@ -592,14 +592,14 @@ export const BIOMES = {
     snow: 0xf1f4f7,
     grass: 1,
     trees: {
-      density: 0.55, // (woods here and there on the tops and below the cliffs, open grass between)
+      density: 0.85, // (wooded like the forest, on the tops and below the cliffs, glades between)
       clumped: true,
       species: [
         { type: 'broadleaf', weight: 1, minHeight: 4, maxHeight: 200 },
         { type: 'oak', weight: 0.5, minHeight: 4, maxHeight: 200 },
         { type: 'birch', weight: 0.4, minHeight: 4, maxHeight: 200 },
         { type: 'spruce', weight: 0.5, minHeight: 4, maxHeight: 200 },
-        { type: 'treeFern', weight: 0.15, minHeight: 4, maxHeight: 120 },
+        { type: 'maple', weight: 0.4, minHeight: 4, maxHeight: 200 },
         { type: 'bush', weight: 0.7, minHeight: 4, maxHeight: 200 },
         { type: 'raspberryBush', weight: 0.2, minHeight: 4, maxHeight: 200 },
         { type: 'blueberryBush', weight: 0.15, minHeight: 4, maxHeight: 200 },

@@ -39,7 +39,12 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
   const warmAt = (wx, wz) => {
     const key = Math.floor(wx / 24) * 65536 + Math.floor(wz / 24);
     let v = warmth.get(key);
-    if (v === undefined) warmth.set(key, (v = 1 - smoothstep(0.3, 0.6, generator.getSeasonality(Math.floor(wx / 24) * 24 + 12, Math.floor(wz / 24) * 24 + 12))));
+    if (v === undefined) {
+      const px = Math.floor(wx / 24) * 24 + 12, pz = Math.floor(wz / 24) * 24 + 12;
+      // (The monsoon forest's grass: marked below nothing, for its own dry season. See Seasons.seasonalGrass.)
+      const monsoon = generator.getBiomeWeights(px, pz, {}).monsoon ?? 0;
+      warmth.set(key, (v = monsoon > 0.3 ? -Math.min(1, monsoon * 1.4) : 1 - smoothstep(0.3, 0.6, generator.getSeasonality(px, pz))));
+    }
     return v;
   };
   let count = 0;

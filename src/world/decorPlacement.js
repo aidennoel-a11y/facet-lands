@@ -339,21 +339,25 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
       // (The jungle floor crowded with plants: hardly a bare patch.)
       // (The Cascades: lush, ferns everywhere and small leafy plants among them.)
       const jungle = here[0] * 0.92, ferns = here[1];
-      // (Thickest of all along the water: ferns crowding the banks.)
-      let lush = here[2];
-      if (lush > 0.02) {
-        const sh = generator.rivers?.shoreAt(x0 + lx, z0 + lz, 7);
-        if (sh && sh.e > 0) lush = Math.min(0.92, lush + 0.6 * (1 - sh.e / 7));
+      // (The Cascades: ferns only along the water, crowding its banks, and
+      // thinning out within ten metres or so of it; none out on the open ground.)
+      let lush = 0;
+      if (here[2] > 0.02) {
+        const sh = generator.rivers?.shoreAt(x0 + lx, z0 + lz, 10);
+        if (sh && sh.e > 0) lush = Math.min(0.88, (here[2] / 0.55) * 0.88 * (1 - sh.e / 10));
       }
       if (keep > Math.max(jungle, ferns * 0.6, lush)) continue;
       // (The jungle's: the big-leaved plants, and its five kinds of fern, 2-6: see UnderstoryLayer.)
-      const kind = keep < jungle ? (r < 0.36 ? Math.floor(r / 0.18) : 2 + Math.min(4, Math.floor(((r - 0.36) / 0.64) * 5))) : keep < lush && r < (lush > here[2] + 0.1 ? 0.12 : 0.3) ? 1 : 2;
+      // (The Cascades': all five kinds of fern, 2-6, along the water.)
+      const cascade = keep >= jungle && keep < lush;
+      const kind = keep < jungle ? (r < 0.36 ? Math.floor(r / 0.18) : 2 + Math.min(4, Math.floor(((r - 0.36) / 0.64) * 5))) : cascade ? 2 + Math.min(4, Math.floor(r * 5)) : 2;
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1) || surface.normalY < 0.7) continue;
       if (generator.rivers?.at(x0 + lx, z0 + lz, 1)) continue;
       if (generator.landmarks?.underWater(x0 + lx, z0 + lz, y)) continue;
-      const small = keep >= jungle && kind === 1 ? 0.5 : 1; // (the Cascades' leafy plants knee-high)
-      list.push(kind, lx, y - 0.05, lz, (0.8 + 0.8 * hash2(gi, gj, seed + 4)) * small, hash2(gi, gj, seed + 5), hash2(gi, gj, seed + 6));
+      // (Some of the Cascades' ferns big: a quarter of them twice the size, head-high by the water.)
+      const big = cascade && hash2(gi, gj, seed + 7) < 0.25 ? 1.9 + 0.5 * hash2(gi, gj, seed + 8) : 1;
+      list.push(kind, lx, y - 0.05, lz, (0.8 + 0.8 * hash2(gi, gj, seed + 4)) * big, hash2(gi, gj, seed + 5), hash2(gi, gj, seed + 6));
     }
   }
   return list.length ? new Float32Array(list) : null;

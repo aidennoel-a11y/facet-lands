@@ -385,14 +385,23 @@ export function seasonalTrees(material, leaves = false, randFrom = null, warmFro
 `,
         );
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${COMMON}\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nvarying float vTreeWarm;\nvarying float vTreeY;${leaves || randFrom ? '' : '\nvarying float vTreeNorth;'}`)
+        .replace('#include <common>', `#include <common>\n${COMMON}\nuniform float uSeasonTime;\nvarying vec3 vFall;\nvarying vec3 vSeason;\nvarying vec3 vFlowerAt;\nvarying float vTreeRand;\nvarying float vSeasonUp;\nvarying float vTreeWarm;\nvarying float vTreeY;${leaves || randFrom ? '' : '\nvarying float vTreeNorth;'}`)
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
           {
             vec3 c = diffuseColor.rgb;
-            float leafy = vSeason.x; // (the crown of a deciduous tree)
+            float leafy = max(vSeason.x, 0.0); // (the crown of a deciduous tree)
             float seasonal = 1.0 - vTreeWarm; // (in and near the jungle: no autumn, no winter)
+            // The monsoon forest's trees (their crowns marked below nothing):
+            // through the dry months they lose their green, going a dusty,
+            // dry yellow-brown, and green up again with the rains.
+            float monsoonLeaf = max(-vSeason.x, 0.0);
+            if (monsoonLeaf > 0.0) {
+              float mst = mod(uSeasonTime, 4.0);
+              float mdry = 1.0 - smoothstep(0.75, 1.05, mst) * (1.0 - smoothstep(2.4, 2.75, mst));
+              c = mix(c, vec3(0.6, 0.52, 0.2) * (0.75 + 0.5 * dot(c, vec3(0.33))), monsoonLeaf * mdry * 0.7);
+            }
             // Spring: fresh green, and the bushes dotted with little flowers
             // (pink, white, yellow or lilac, bush by bush).
             c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * leafy * 0.7);
@@ -431,7 +440,7 @@ export function seasonalTrees(material, leaves = false, randFrom = null, warmFro
             float treeSnow = max(max(uWinter, uSnowfall), uHighSnow * smoothstep(80.0, 96.0, vTreeY));
             c = mix(c, vec3(0.86, 0.89, 0.93), treeSnow * vSeason.y * smoothstep(0.3 - 0.2 * uSnowfall, 0.75, vSeasonUp) * 0.85 * seasonal);
             diffuseColor.rgb = c;
-            ${leaves ? 'diffuseColor.a *= 1.0 - uWinter * vSeason.x * seasonal; // the leaves have fallen' : ''}
+            ${leaves ? 'diffuseColor.a *= 1.0 - uWinter * max(vSeason.x, 0.0) * seasonal; // the leaves have fallen' : ''}
           }`,
         );
     },
@@ -445,17 +454,22 @@ export function seasonalGrass(material) {
     material,
     (shader) => {
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uWinter;\nattribute float aWarm;\nvarying float vGrassSeasonal;')
+        .replace('#include <common>', '#include <common>\nuniform float uWinter;\nuniform float uSeasonTime;\nattribute float aWarm;\nvarying float vGrassSeasonal;\nvarying float vGrassDry;')
         .replace(
           '#include <begin_vertex>',
           /* glsl */ `#include <begin_vertex>
-          vGrassSeasonal = 1.0 - aWarm; // (in and near the jungle: no autumn, no winter)
+          vGrassSeasonal = 1.0 - abs(aWarm); // (in and near the jungle: no autumn, no winter)
+          // (The monsoon forest's grass, marked by a warmth below nothing: it
+          // dies back, dry and yellow, through the dry months, and comes up green with the rains.)
+          float gst = mod(uSeasonTime, 4.0);
+          vGrassDry = max(-aWarm, 0.0) * (1.0 - smoothstep(0.75, 1.05, gst) * (1.0 - smoothstep(2.4, 2.75, gst)));
+          transformed.y *= 1.0 - 0.45 * vGrassDry;
           #ifdef USE_INSTANCING_COLOR
             float grassGreen = clamp((instanceColor.g - max(instanceColor.r, instanceColor.b)) * 9.0, 0.0, 1.0);
             transformed.y *= 1.0 - 0.85 * uWinter * grassGreen * vGrassSeasonal;
           #endif`,
         );
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${COMMON}\nvarying float vGrassSeasonal;`).replace(
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${COMMON}\nvarying float vGrassSeasonal;\nvarying float vGrassDry;`).replace(
         '#include <color_fragment>',
         /* glsl */ `#include <color_fragment>
         {
@@ -465,6 +479,7 @@ export function seasonalGrass(material) {
           c = mix(c, vec3(0.55, 0.38, 0.12), uAutumn * g * 0.6 * vGrassSeasonal);
           c = mix(c, vec3(0.7, 0.72, 0.74), uWinter * g * 0.8 * vGrassSeasonal);
           c = mix(c, vec3(0.86, 0.89, 0.93), uSnowfall * g * 0.75 * vGrassSeasonal); // dusted with fresh snow
+          c = mix(c, vec3(0.74, 0.62, 0.3) * (0.8 + 0.4 * dot(c, vec3(0.33))), vGrassDry * 0.85); // (the monsoon forest's, dry)
           diffuseColor.rgb = c;
         }`,
       );

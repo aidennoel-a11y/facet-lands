@@ -30,7 +30,7 @@ export const BIOME_TUNING = {
   // Pine forests: their size (radius scale): higher, more pine forest.
   pine: 1.15,
   // Redwood forests in the heart of the pine forests near a lake or the sea: lower, more redwood.
-  redwood: 0.0,
+  redwood: -0.55,
   // Mangrove coasts on the warm green coasts: lower, more mangrove.
   mangrove: -0.7,
   // How dry a green coast may be and still have mangroves (below where the savanna starts): higher, more.
@@ -473,7 +473,8 @@ export class TerrainGenerator {
     out.badlands = (savanna + desert) * bl;
     out.blackHills = hills + savanna * dh;
     // (The Smoky Mountains reach out over the edge of the savanna too, the green coming with them.)
-    const ssz = out.savanna > 0.02 && !this._probing ? (sz || this.#smokyZone(x, z, range)) : 0;
+    // (No longer reaching out over the savanna's edge: they're their own rounded country, not wrapped round others.)
+    const ssz = 0;
     const smokySavanna = out.savanna * ssz;
     out.savanna -= smokySavanna;
     out.smoky = smoky + smokySavanna;
@@ -544,7 +545,7 @@ export class TerrainGenerator {
       const r = this.#rangeField(px, pz, {}).value;
       const a = this.getAridity(px, pz, r);
       // (Cool green country, well clear of the ranges, the savanna and the jungles.)
-      return a < 0.34 && r < 0.2 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.35 ? 1 : 0;
+      return a < 0.4 && r < 0.2 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.35 ? 1 : 0;
     });
   }
 
@@ -552,7 +553,7 @@ export class TerrainGenerator {
   #cascadesZone(x, z, range) {
     const low = 1 - smoothstep(0.1, 0.25, smoothstep(0.08, 0.55, range + MOUNTAIN_BIAS - this.#drySuppress(x, z)));
     if (low <= 0) return 0;
-    return low * this.#blobs('cascades', x, z, 3200, T.cascades, 900, 1420, 0xca5c, (px, pz) => {
+    return low * this.#blobs('cascades', x, z, 2250, T.cascades, 900, 1420, 0xca5c, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       const a = this.getAridity(px, pz, r);
       // (Wet green country clear of the ranges, the sea, the savanna, the
@@ -1158,7 +1159,7 @@ export class TerrainGenerator {
   // A bamboo forest (0..1): now and then, a rounded patch a little under a
   // kilometre across by a jungle's edge, or by the foothills of a jungle range.
   #bambooLand(x, z) {
-    return this.#blobs('bamboo', x, z, 3000, 0.55, 250, 450, 0xba3b, (px, pz) => {
+    return this.#blobs('bamboo', x, z, 3000, 0.55, 525, 945, 0xba3b, (px, pz) => {
       const j = this.#jungleSuit(px, pz);
       const byJungle = j > 0.02 && j < 0.3;
       const byRange = this.#tropicRange(px, pz) > 0.3 && this.#mountainsAround(px, pz) > 0.12 && this.getMountainness(px, pz) < 0.35;
@@ -1299,7 +1300,7 @@ export class TerrainGenerator {
    * ranges, volcanic country and the sea.
    */
   #glowBlob(x, z) {
-    return this.#blobs('glow', x, z, T.glowCell, T.glowChance, 450, 850, 0x610b, (px, pz) => {
+    return this.#blobs('glow', x, z, T.glowCell, T.glowChance, 520, 980, 0x610b, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       return r < 0.05 && this.getAridity(px, pz, r) < 0.36 && this.#volcanoBelt(px, pz) < 0.3 && this.#mountainsAround(px, pz) < 0.05 && this.#seaCoast(px, pz) < 0.05 && this.getOceanness(px, pz) < 0.1 ? 1 : 0;
     });
@@ -3693,7 +3694,7 @@ export class TerrainGenerator {
     // (Never up against a range's snowy peaks: a band of lower country,
     // several hundred metres at least, between them.)
     const clear = 1 - smoothstep(0.35, 0.55, this.#mountainsAround(x, z));
-    return clear > 0 ? blob * clear * this.#broadFit(x, z, range, 0.12) * this.#greenBuffer(x, z, 0.12) : 0;
+    return clear > 0 ? blob * clear * this.#broadFit(x, z, range, 0.19) * this.#greenBuffer(x, z, 0.19) : 0;
   }
 
   /** The Black Hills out in the savanna (0..1): rounded stretches a few kilometres across, now and then. */

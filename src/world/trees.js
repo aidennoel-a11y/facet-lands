@@ -1351,7 +1351,8 @@ const SEASONAL = {
   baobab: [0, 0, 0], joshuaTree: [0, 0, 0], ocotillo: [0, 0, 0],
   jungleGiant: [0, 0, 0], jungleCanopy: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
   appleTree: [1, 1, 1], raspberryBush: [1, 1, 1], blueberryBush: [1, 1, 1],
-  monsoonTree: [0, 0, 0], monsoonSal: [0, 0, 0], monsoonFig: [0, 0, 0], monsoonFlame: [0, 0, 0], monsoonMango: [0, 0, 0], // (green the year round here: its seasons are the ground's, see Seasons)
+  // (Below nothing: the monsoon forest's, drying yellow through the dry months: see Seasons.seasonalTrees.)
+  monsoonTree: [-1, 0, 0], monsoonSal: [-1, 0, 0], monsoonFig: [-0.6, 0, 0], monsoonFlame: [-1, 0, 0], monsoonMango: [-0.4, 0, 0], // (green the year round here: its seasons are the ground's, see Seasons)
   redwood: [0, 1, 0],
   cherryBlossom: [1, 1, 1], // (its blossom thickest in spring; red-gold in autumn; bare in winter)
   cherryRound: [1, 1, 1],
@@ -1401,7 +1402,7 @@ markSeasons(TREE_GEOMETRIES);
 export function treeGeometry(type, bare) {
   const g = TREE_GEOMETRIES[type];
   if (!g.userData.lean) return g;
-  return bare && SEASONAL[type]?.[0] ? g : g.userData.lean;
+  return bare && SEASONAL[type]?.[0] > 0 ? g : g.userData.lean;
 }
 
 /** Species that are stiff (cacti): they don't sway in the wind. */
