@@ -2667,7 +2667,7 @@ function marshMist(dt) {
     mistState.dry = w.desert + 0.5 * w.savanna;
     mistState.desert = w.desert;
     mistState.devilCountry = w.desert + w.savanna;
-    mistState.mossy = Math.min(1, 0.55 * w.temperate + 0.9 * w.pine + w.jungle + w.wetland + 0.9 * (w.smoky ?? 0));
+    mistState.mossy = Math.min(1, 0.55 * w.temperate + 0.9 * w.pine + w.jungle + w.wetland + 0.9 * (w.smoky ?? 0) + (w.monsoon ?? 0));
     mistState.smoky = w.smoky ?? 0;
   }
   // (Moss on the trees in damp country round about.)

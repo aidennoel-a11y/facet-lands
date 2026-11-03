@@ -292,7 +292,8 @@ export class TerrainGenerator {
     if (a <= 0.44 || a >= 0.74) return a;
     // (Never a little speck of dry country out in the green: a stretch of
     // savanna under about 0.3 km² (narrower than about 750 m) goes green.)
-    const keep = this.#minSize('dry', x, z, (px, pz) => smoothstep(0.47, 0.56, this.#aridityRaw(px, pz, this.#rangeField(px, pz, {}).value)), 0.5, 3);
+    // (Judged from the climate and the savanna's own blobs alone: the dry ranges' savanna is always broad.)
+    const keep = this.#minSize('dry', x, z, (px, pz) => smoothstep(0.47, 0.56, Math.max(this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value), 0.6 * this.#savannaBlob(px, pz))), 0.5, 3);
     return keep >= 1 ? a : 0.44 + (a - 0.44) * keep;
   }
 
@@ -1051,6 +1052,18 @@ export class TerrainGenerator {
    * (0..1): half a kilometre or so of dry-season forest, bare in the dry
    * months and green in the rains, between the jungle and the country beyond.
    */
+  /** `f` at the point of a `G`-metre grid nearest (x, z), remembered (per `key`). */
+  #gridMemo(key, x, z, G, f) {
+    const all = (this._gridMemo ??= {}), cache = (all[key] ??= new Map());
+    const i = Math.round(x / G), j = Math.round(z / G), k = cellKey(i, j);
+    let v = cache.get(k);
+    if (v === undefined) {
+      if (cache.size > 60000) cache.clear();
+      cache.set(k, (v = f(i * G, j * G)));
+    }
+    return v;
+  }
+
   #monsoonRing(x, z, jb) {
     // (Round a jungle: just outside where it begins, by how suited to jungle the country is.)
     const suit = this.#jungleSuit(x, z);
@@ -1059,8 +1072,10 @@ export class TerrainGenerator {
     if (ring > 0) {
       let jungle = 0;
       for (let k = 0; k < 6 && jungle < 0.5; k++) {
-        const a = (k / 6) * Math.PI * 2, px = x + Math.cos(a) * 400, pz = z + Math.sin(a) * 400, r = this.#rangeField(px, pz, {}).value;
-        jungle = Math.max(jungle, this.#jungleZone(px, pz, r, this.getAridity(px, pz, r)));
+        const a = (k / 6) * Math.PI * 2;
+        // (Looked at on a 100 m grid, remembered: neighbouring points ask after the same places.)
+        // (Judged by how well suited to jungle the country there is: well into it, it's jungle.)
+        jungle = Math.max(jungle, this.#gridMemo('js400', x + Math.cos(a) * 400, z + Math.sin(a) * 400, 100, (px, pz) => smoothstep(T.jungle + 0.01, T.jungle + 0.07, this.#jungleSuit(px, pz))));
       }
       ring *= smoothstep(0.2, 0.5, jungle);
     }
@@ -1069,7 +1084,7 @@ export class TerrainGenerator {
       let near = 0;
       for (let k = 0; k < 6 && near < 1; k++) {
         const a = (k / 6) * Math.PI * 2 + 0.3;
-        near = Math.max(near, smoothstep(0.02, 0.1, this.#jungleMtn(x + Math.cos(a) * 380, z + Math.sin(a) * 380)));
+        near = Math.max(near, smoothstep(0.02, 0.1, this.#gridMemo('jm380', x + Math.cos(a) * 380, z + Math.sin(a) * 380, 100, (px, pz) => this.#jungleMtn(px, pz))));
       }
       ring = Math.max(ring, near * (1 - smoothstep(0.01, 0.04, jb)));
     }
@@ -4211,14 +4226,17 @@ export class TerrainGenerator {
    */
   alpineMeadowAt(x, z) {
     const m = this.getMountainness(x, z);
-    if (m < 0.58) return 0;
+    if (m < 0.68) return 0;
+    // (Only in some of the valleys: a slow noise picks them, a few kilometres apart.)
+    const some = smoothstep(0.42, 0.52, this.meadowNoise.noise2D(x * 0.00045 + 913, z * 0.00045 - 271));
+    if (some <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
     if ((w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + (w.cherry ?? 0) + (w.bamboo ?? 0) + (w.redwood ?? 0) + (w.desert ?? 0) + (w.savanna ?? 0) > 0.4) return 0;
     const h = this.getBaseHeight(x, z);
-    if (h < (this._config?.seaLevel ?? 2) + 25 || h > 175) return 0;
+    if (h < 60 || h > 175) return 0;
     const sx = (this.getBaseHeight(x + 6, z) - this.getBaseHeight(x - 6, z)) / 12, sz = (this.getBaseHeight(x, z + 6) - this.getBaseHeight(x, z - 6)) / 12;
     const slope = Math.hypot(sx, sz);
-    return smoothstep(0.6, 0.7, m) * (1 - smoothstep(0.12, 0.24, slope));
+    return some * smoothstep(0.68, 0.76, m) * (1 - smoothstep(0.12, 0.24, slope));
   }
 
   getMeadow(x, z) {

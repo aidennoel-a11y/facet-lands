@@ -6,7 +6,7 @@ const m4 = new Matrix4(), m5 = new Matrix4(), v = new Vector3();
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 // The trees that give a vine or two when chopped up (climbers grow up them).
-const VINY = { broadleaf: 0.6, oak: 0.7, maple: 0.5, weepingWillow: 0.8, swampWillow: 0.8, cypress: 0.7, mangrove: 0.9, jungleGiant: 1, jungleCanopy: 1, junglePalm: 0.6, treeFern: 0.6, baobab: 0.4, bamboo: 0.5, appleTree: 0.4, poplar: 0.4, aspen: 0.3, birch: 0.3, silverBirch: 0.3 };
+const VINY = { monsoonTree: 0.9, monsoonSal: 0.7, monsoonFig: 1, monsoonFlame: 0.4, monsoonMango: 0.6, broadleaf: 0.6, oak: 0.7, maple: 0.5, weepingWillow: 0.8, swampWillow: 0.8, cypress: 0.7, mangrove: 0.9, jungleGiant: 1, jungleCanopy: 1, junglePalm: 0.6, treeFern: 0.6, baobab: 0.4, bamboo: 0.5, appleTree: 0.4, poplar: 0.4, aspen: 0.3, birch: 0.3, silverBirch: 0.3 };
 
 const WOOD = new Color(0xd9b27a);
 

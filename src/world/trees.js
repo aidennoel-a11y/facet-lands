@@ -499,6 +499,60 @@ function swampWillow() {
   );
 }
 
+
+// Monsoon forest trees: five kinds, all lusher than a broadleaf and
+// nothing like the jungle's giants (no buttresses, no layered canopy),
+// their trunks furred with moss and ferns on their boughs:
+//  - teak: a tall, straight, clean trunk and a broad crown of big leaves;
+//  - sal: taller and slimmer still, its crown a high narrow oval;
+//  - fig: a wide, low, spreading crown on a thick trunk, aerial roots
+//    hanging from its limbs to the ground;
+//  - flame of the forest: smaller, crooked, its crown hung with clusters
+//    of orange-red flowers;
+//  - mango: a short trunk under a dense, dark, rounded dome.
+function monsoonKind({ seed, trunkH, trunkR, blobs, leafLow, leafHigh, vines = 6, roots = 0, flowers = 0, lean = 0 }) {
+  const rand = mulberry32(seed);
+  const bark = 0x6a5a48, moss = 0x4f7a2e, mossDeep = 0x3a6424;
+  const wood = [
+    part(new CylinderGeometry(trunkR * 0.7, trunkR, trunkH, 7), bark, 0x7a6a56, { y: trunkH / 2, rz: lean, lump: 0.05, seed }),
+    // (Moss creeping up it, a green fur thickest low down.)
+    part(new CylinderGeometry(trunkR * 0.85, trunkR * 1.08, Math.min(3.2, trunkH * 0.45), 7), mossDeep, moss, { y: Math.min(3.2, trunkH * 0.45) / 2, lump: 0.12, seed: seed + 2 }),
+    part(new CylinderGeometry(trunkR * 0.66, trunkR * 0.8, trunkH * 0.3, 5), moss, 0x6a8a3a, { x: 0.05, y: trunkH * 0.62, sx: 1.06, sz: 1.06, lump: 0.15, seed: seed + 3 }),
+    ...boughs(blobs, trunkH * 0.85, trunkH, bark, seed + 4, { thick: 1.2 }),
+  ];
+  const leafy = blobs.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 1), leafLow, leafHigh, { x, y, z, sy: 0.72, lump: 0.22, seed: seed + 10 + i }));
+  // (Ferns and moss up on the boughs, where they fork.)
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI * 2 + rand() * 0.4, d = 0.6 + rand() * 0.6;
+    leafy.push(part(new ConeGeometry(0.4, 0.5, 5, 1), 0x3f7a2c, 0x6aa040, { x: Math.cos(a) * d, y: trunkH + rand() * 0.6, z: Math.sin(a) * d, sy: 0.6, lump: 0.25, seed: seed + 20 + k }));
+  }
+  const edge = Math.max(...blobs.map(([x, , z, r]) => Math.hypot(x, z) + r * 0.6));
+  // (Vines hanging from the crown's edge.)
+  for (let k = 0; k < vines; k++) {
+    const a = (k / vines) * Math.PI * 2 + rand() * 0.5, d = edge * (0.7 + rand() * 0.25), len = 2 + rand() * 3;
+    const g = new ConeGeometry(0.07, len, 3, 1);
+    g.rotateX(Math.PI);
+    leafy.push(part(g, 0x3a6a26, 0x4f8a34, { x: Math.cos(a) * d, y: trunkH + 0.6 - len / 2, z: Math.sin(a) * d, seed: seed + 30 + k }));
+  }
+  // (A fig's aerial roots: from its limbs straight down to the ground.)
+  for (let k = 0; k < roots; k++) {
+    const a = (k / roots) * Math.PI * 2 + rand() * 0.4, d = 1.2 + rand() * (edge - 1.6), top = trunkH - 0.2;
+    wood.push(part(new CylinderGeometry(0.05, 0.09, top, 4), 0x7a6a56, bark, { x: Math.cos(a) * d, y: top / 2, z: Math.sin(a) * d, seed: seed + 40 + k }));
+  }
+  // (Flowers: clusters of orange-red over the crown.)
+  for (let k = 0; k < flowers; k++) {
+    const [x, y, z, r] = blobs[k % blobs.length], a = rand() * Math.PI * 2, up = rand() * 0.8;
+    leafy.push(part(new IcosahedronGeometry(0.32 + rand() * 0.15, 0), 0xe0461c, 0xf2802a, { x: x + Math.cos(a) * r * 0.85, y: y + r * 0.3 * up, z: z + Math.sin(a) * r * 0.85, sy: 0.8, lump: 0.2, seed: seed + 60 + k }));
+  }
+  return withCrown(wood, leafy);
+}
+const ring = (n, d, y, r, top = null) => [...(top ? [top] : []), ...Array.from({ length: n }, (_, k) => [Math.cos((k / n) * Math.PI * 2 + 0.4) * d, y + (k % 2) * 0.4, Math.sin((k / n) * Math.PI * 2 + 0.4) * d, r])];
+const monsoonTree = () => monsoonKind({ seed: 1500, trunkH: 7.6, trunkR: 0.5, blobs: ring(5, 2.2, 9.3, 2.1, [0, 10.2, 0, 2.6]), leafLow: 0x2f6a26, leafHigh: 0x5f9a3c });
+const monsoonSal = () => monsoonKind({ seed: 1600, trunkH: 10.5, trunkR: 0.46, blobs: [[0, 14.6, 0, 1.9], ...ring(4, 1.3, 12.6, 1.8), [0, 11.4, 0, 1.6]], leafLow: 0x3a6a2a, leafHigh: 0x6a9a44, vines: 4 });
+const monsoonFig = () => monsoonKind({ seed: 1700, trunkH: 5.2, trunkR: 0.85, blobs: ring(6, 3.6, 7, 2.5, [0, 7.8, 0, 3.0]), leafLow: 0x2a5a22, leafHigh: 0x4f8a34, vines: 8, roots: 14 });
+const monsoonFlame = () => monsoonKind({ seed: 1800, trunkH: 4.4, trunkR: 0.32, blobs: ring(3, 1.4, 5.6, 1.5, [0.2, 6.3, 0, 1.7]), leafLow: 0x4a7a2e, leafHigh: 0x7aa84a, vines: 2, flowers: 16, lean: 0.12 });
+const monsoonMango = () => monsoonKind({ seed: 1900, trunkH: 3.4, trunkR: 0.5, blobs: ring(6, 2.4, 5.2, 2.2, [0, 6.6, 0, 2.8]), leafLow: 0x1f4a1e, leafHigh: 0x3a6a2a, vines: 3 });
+
 // Weeping willow (by lakes, rivers and in the swamps): a stout trunk that
 // forks low into a few great limbs rising and spreading, a broad, high,
 // rounded crown, and from all round its edge long curtains of fine, pale
@@ -1275,6 +1329,11 @@ export const TREE_GEOMETRIES = {
   bamboo: bamboo(),
   redwood: redwood(),
   appleTree: appleTree(),
+  monsoonTree: monsoonTree(),
+  monsoonSal: monsoonSal(),
+  monsoonFig: monsoonFig(),
+  monsoonFlame: monsoonFlame(),
+  monsoonMango: monsoonMango(),
   raspberryBush: raspberryBush(),
   blueberryBush: blueberryBush(),
 };
@@ -1292,6 +1351,7 @@ const SEASONAL = {
   baobab: [0, 0, 0], joshuaTree: [0, 0, 0], ocotillo: [0, 0, 0],
   jungleGiant: [0, 0, 0], jungleCanopy: [0, 0, 0], junglePalm: [0, 0, 0], bamboo: [0, 0, 0], // (evergreen, and never snowed on)
   appleTree: [1, 1, 1], raspberryBush: [1, 1, 1], blueberryBush: [1, 1, 1],
+  monsoonTree: [0, 0, 0], monsoonSal: [0, 0, 0], monsoonFig: [0, 0, 0], monsoonFlame: [0, 0, 0], monsoonMango: [0, 0, 0], // (green the year round here: its seasons are the ground's, see Seasons)
   redwood: [0, 1, 0],
   cherryBlossom: [1, 1, 1], // (its blossom thickest in spring; red-gold in autumn; bare in winter)
   cherryRound: [1, 1, 1],
@@ -1362,6 +1422,11 @@ export const LEAF_GEOMETRIES = {
   poplar: leaves(40, [0.35, 0.6], [0x5a9a42, 0x6fae4c, 0x84c05a], crown('poplar'), 16),
   maple: leaves(55, [0.45, 0.8], [0xe07a2c, 0xf2a33c, 0xc9502a, 0xf5c04a, 0xb33a22], crown('maple'), 17),
   bush: leaves(16, [0.25, 0.45], [0x78b556, 0x8fc663, 0x9fd06d], crown('bush'), 13),
+  monsoonTree: leaves(70, [0.4, 0.7], [0x2f6a26, 0x3f7a2c, 0x5f9a3c, 0x4a8a34], crown('monsoonTree'), 36),
+  monsoonSal: leaves(60, [0.35, 0.6], [0x3a6a2a, 0x4f7f34, 0x6a9a44], crown('monsoonSal'), 37),
+  monsoonFig: leaves(80, [0.35, 0.6], [0x2a5a22, 0x3a6a2a, 0x4f8a34], crown('monsoonFig'), 39),
+  monsoonFlame: leaves(40, [0.35, 0.6], [0x4a7a2e, 0x6a9a3e, 0xe0461c, 0xf2802a], crown('monsoonFlame'), 41),
+  monsoonMango: leaves(70, [0.35, 0.6], [0x1f4a1e, 0x2f5a26, 0x3a6a2a], crown('monsoonMango'), 43),
   appleTree: leaves(40, [0.35, 0.6], [0x5a9a42, 0x6fae4c, 0x84c05a, 0x4c8a38], crown('appleTree'), 34),
   raspberryBush: leaves(16, [0.22, 0.4], [0x5f9a44, 0x74ae50, 0x86bc5c], crown('raspberryBush'), 35),
   blueberryBush: leaves(12, [0.2, 0.35], [0x4a7a40, 0x5f8c48, 0x6e9a52], crown('blueberryBush'), 36),
