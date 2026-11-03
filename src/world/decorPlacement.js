@@ -49,10 +49,11 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1.5) || surface.normalY < 0.85 || y > 150) continue;
       if (isHigh) {
-        if (y < 100 && alp < 0.3) continue;
+        // (Below the bare rock and the snow, on the green high ground: some 60 to 103 m.)
+        if (y > 102 || (y < 60 && alp < 0.3)) continue;
         if (stream && generator.rivers.at(x0 + lx, z0 + lz, 1.5)) continue;
         // (Heather on the flatter ground, from 110 m up, in its patches; the alpine flowers on the rest.)
-        const heather = y > (alp > 0.3 ? 70 : 110) && surface.normalY > 0.93 && hash2(gi, gj, seed + 6) < heath;
+        const heather = y > 70 && surface.normalY > 0.93 && hash2(gi, gj, seed + 6) < heath;
         if (!heather && keep > (alp > 0.3 ? 0.75 : 0.3) * high) continue; // (the alpine flowers thinner than a meadow's)
         const tone = generator.meadowNoise.noise2D((x0 + lx) * 0.05, (z0 + lz) * 0.05) * 0.5 + 0.5;
         const pick = heather ? 7 + Math.floor(hash2(gi, gj, seed + 7) * 3) : ALPINE[Math.floor((tone * 2 + hash2(gi, gj, seed + 3) * 1.4) % ALPINE.length)];

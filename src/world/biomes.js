@@ -238,7 +238,7 @@ export const BIOMES = {
       species: [
         { type: 'cypress', weight: 1.4, minHeight: -99, maxHeight: 60 },
         { type: 'swampWillow', weight: 1.0, minHeight: -99, maxHeight: 60 },
-        { type: 'weepingWillow', weight: 0.9, minHeight: -99, maxHeight: 60 },
+        { type: 'weepingWillow', weight: 0.3, minHeight: -99, maxHeight: 40 },
         { type: 'mangrove', weight: 0.8, minHeight: -99, maxHeight: 60 },
         { type: 'bush', weight: 0.6, minHeight: -99, maxHeight: 60 },
         { type: 'deadPine', weight: 0.35, minHeight: -99, maxHeight: 60 },

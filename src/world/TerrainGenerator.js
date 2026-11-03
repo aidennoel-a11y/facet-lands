@@ -303,14 +303,14 @@ export class TerrainGenerator {
     // (Never a little desert: a stretch of it under a couple of square
     // kilometres (narrower than about 1.6 km) is savanna instead.)
     if (a > 0.7) {
-      const keepDesert = this.#minSize('desert', x, z, (px, pz) => smoothstep(0.74, 0.8, this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value)), 0.5, 3, 256);
+      const keepDesert = this.#minSize('desert', x, z, (px, pz) => smoothstep(0.74, 0.8, this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value)), 0.5, 2, 448);
       a = keepDesert >= 1 ? a : 0.7 + (a - 0.7) * keepDesert;
       if (a >= 0.74) return a;
     }
     // (Never a little speck of dry country out in the green: a stretch of
     // savanna narrower than about 1.3 km goes green.)
     // (Judged from the climate and the savanna's own blobs alone: the dry ranges' savanna is always broad.)
-    const keep = this.#minSize('dry', x, z, (px, pz) => smoothstep(0.47, 0.56, Math.max(this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value), 0.6 * this.#savannaBlob(px, pz))), 0.5, 3, 224);
+    const keep = this.#minSize('dry', x, z, (px, pz) => smoothstep(0.47, 0.56, Math.max(this.#baseAridity(px, pz, this.#rangeField(px, pz, {}).value), 0.6 * this.#savannaBlob(px, pz))), 0.5, 2, 384);
     return keep >= 1 ? a : 0.44 + (a - 0.44) * keep;
   }
 
@@ -501,7 +501,10 @@ export class TerrainGenerator {
       // (Round every jungle and every jungle range, a band of monsoon forest; out in
       // the green lowlands now and then, an ancient oak wood. See #monsoonRing, #oakLand.)
       const rest = own * (1 - kj - km - kc - kb);
-      const kmz = rest > 0 ? this.#monsoonRing(x, z, jb) * rest : 0;
+      // (The monsoon forest takes the jungle's in-between ground, never the jungle itself: they meet.)
+      const jungleShare = Math.min(rest, out.jungle * (1 - kj - km - kc - kb));
+      // (And never in the jungle's own body: only where it's thinning out.)
+      const kmz = rest - jungleShare > 0 && out.jungle < 0.5 ? this.#monsoonRing(x, z, jb, a) * (1 - smoothstep(0.2, 0.5, out.jungle)) * (rest - jungleShare) : 0;
       const ko = rest - kmz > 0 ? this.#oakLand(x, z) * (rest - kmz) : 0;
       const taken = kj + km + kc + kb + kmz + ko;
       if (taken > 0) for (const id of BIOME_IDS) out[id] *= 1 - taken;
@@ -1095,40 +1098,41 @@ export class TerrainGenerator {
     return a + (c - a) * fz;
   }
 
-  #monsoonRing(x, z, jb) {
-    // (Round a jungle: just outside where it begins, by how suited to jungle the country is.)
-    // (The country's suitedness changes slowly: read from a 150 m grid, blended.)
-    const suit = this.#gridMemo('jsuit', x, z, 150, (px, pz) => this.#jungleSuit(px, pz));
-    let ring = smoothstep(T.jungle - 0.12, T.jungle - 0.07, suit) * (1 - smoothstep(T.jungle + 0.02, T.jungle + 0.08, suit));
-    // (Only where there's real jungle within 400 m or so: not wherever the country's half suited to it.)
-    if (ring > 0) {
-      let jungle = 0;
-      for (let k = 0; k < 6 && jungle < 0.5; k++) {
-        const a = (k / 6) * Math.PI * 2;
-        // (Looked at on a 100 m grid, remembered: neighbouring points ask after the same places.)
-        // (Judged by how well suited to jungle the country there is: well into it, it's jungle.)
-        const px = x + Math.cos(a) * 400, pz = z + Math.sin(a) * 400;
-        // (Quickly: is the country there suited to jungle at all? Then, if so, is there real jungle there?)
-        if (this.#gridMemo('js400', px, pz, 100, (qx, qz) => smoothstep(T.jungle + 0.01, T.jungle + 0.07, this.#jungleSuit(qx, qz))) <= 0) continue;
-        jungle = Math.max(jungle, this.#gridMemo('jz400', px, pz, 100, (qx, qz) => {
-          const r = this.#rangeField(qx, qz, {}).value;
-          return this.#jungleZone(qx, qz, r, this.getAridity(qx, qz, r));
-        }));
-      }
-      ring *= smoothstep(0.2, 0.5, jungle);
+  #monsoonRing(x, z, jb, aridity = 0) {
+    // (Never out in the desert.)
+    if (aridity > T.desertStart - 0.06) return 0;
+    // Round a jungle, as the foothills jungle rings a jungle range: the
+    // outer edge of the jungle's own country, where it's nearly but not
+    // quite suited to jungle, wherever real jungle (one that's kept: big
+    // enough) lies within some 400 m. It runs right up to the jungle's
+    // edge and takes in the in-between ground, so the two always meet.
+    let ring = 0;
+    // (Only where the country has any trace of suitedness for jungle: it's
+    // averaged over some 250 m, so it reaches out past a jungle's edge, and
+    // the jungle itself has asked for it here already, so it's remembered.)
+    if (aridity <= 0.5 && this.#jungleSuit(x, z) > 0.002) {
+      const near = this.#gridMemo('jDil', x, z, 128, (px, pz) => {
+        let m = 0;
+        for (const d of [0, 128, 256]) for (let k = 0; k < (d ? 8 : 1) && m < 1; k++) {
+          m = Math.max(m, this.#gridMemo('jz128', px + Math.cos((k / 8) * Math.PI * 2) * d, pz + Math.sin((k / 8) * Math.PI * 2) * d, 128, (qx, qz) => {
+            const r = this.#rangeField(qx, qz, {}).value;
+            return this.#jungleZone(qx, qz, r, this.getAridity(qx, qz, r));
+          }));
+        }
+        return m;
+      });
+      ring = smoothstep(0.15, 0.4, near);
     }
-    // (Round a jungle range: not in it, but with it within half a kilometre.)
-    // (Quickly first: any jungle range at all within some 700 m? Most places, none.)
-    if (ring < 1 && jb < 0.04 && this.#gridMemo('jmNear', x, z, 300, (px, pz) => {
-      let m = this.#jungleMtn(px, pz);
-      for (let k = 0; k < 8 && m <= 0; k++) for (const d of [350, 700]) m = Math.max(m, this.#jungleMtn(px + Math.cos((k / 8) * Math.PI * 2) * d, pz + Math.sin((k / 8) * Math.PI * 2) * d));
-      return m > 0 ? 1 : 0;
+    // (And any jungle range within some 1.2 km? Most places, none.)
+    if (ring < 1 && jb < 0.04 && this.#gridMemo('jmAny', x, z, 400, (px, pz) => {
+      for (const d of [0, 450, 900, 1250]) for (let k = 0; k < (d ? 10 : 1); k++) if (this.#jungleMtn(px + Math.cos((k / 10) * Math.PI * 2) * d, pz + Math.sin((k / 10) * Math.PI * 2) * d) > 0) return 1;
+      return 0;
     }) > 0) {
-      let near = 0;
-      for (let k = 0; k < 6 && near < 1; k++) {
-        const a = (k / 6) * Math.PI * 2 + 0.3;
-        near = Math.max(near, smoothstep(0.02, 0.1, this.#gridMemo('jm380', x + Math.cos(a) * 380, z + Math.sin(a) * 380, 100, (px, pz) => this.#jungleMtn(px, pz))));
-      }
+      const near = this.#gridMemo('jmNearV', x, z, 200, (px, pz) => {
+        let m = 0;
+        for (const d of [0, 190, 380, 570]) for (let k = 0; k < (d ? 12 : 1) && m < 1; k++) m = Math.max(m, smoothstep(0.02, 0.1, this.#jungleMtn(px + Math.cos((k / 12) * Math.PI * 2) * d, pz + Math.sin((k / 12) * Math.PI * 2) * d)) * (d > 500 ? 0.6 : 1));
+        return m;
+      });
       ring = Math.max(ring, near * (1 - smoothstep(0.01, 0.04, jb)));
     }
     return ring;
@@ -1138,10 +1142,11 @@ export class TerrainGenerator {
   // kilometre to a kilometre across out in the green lowlands, well away
   // from the mountains, the jungles and the sea.
   #oakLand(x, z) {
-    return this.#blobs('oakwood', x, z, 3400, 0.35, 260, 480, 0x0a4c, (px, pz) => {
-      if (this.getMountainness(px, pz) > 0.15 || this.#jungleSuit(px, pz) > T.jungle - 0.15) return 0;
-      if (this.#continentBase(px, pz) - this._contLift < -0.05) return 0;
-      return this.getAridity(px, pz) < 0.36 ? 1 : 0;
+    return this.#blobs('oakwood', x, z, 2600, 0.85, 300, 560, 0x0a4c, (px, pz) => {
+      // (Its suitedness for jungle is 0 up: anything over a trace of it is too near a jungle.)
+      if (this.getMountainness(px, pz) > 0.3 || this.#jungleSuit(px, pz) > 0.02) return 0;
+      if (this.#continentBase(px, pz) - this._contLift < -0.4) return 0;
+      return this.getAridity(px, pz) < 0.4 ? 1 : 0;
     });
   }
 
@@ -4612,7 +4617,13 @@ export class TerrainGenerator {
         // (Forest on the flanks of the range: pine country.)
         if (w.redwood > 0.5) return 'Redwood forest';
         if (w.pine > 0.5) return 'Pine forest';
-        return 'Mountain foothills';
+        // (Foothills only at the foot of real mountains: bare rock heights within a couple of kilometres.
+        // Elsewhere, high but rounded country, it's named for what grows there.)
+        if (this.#gridMemo('peaksNear', x, z, 500, (px, pz) => {
+          let hi = this.getMountainness(px, pz);
+          for (let k = 0; k < 10 && hi < 0.9; k++) for (const d of [900, 1800]) hi = Math.max(hi, this.getMountainness(px + Math.cos((k / 10) * Math.PI * 2) * d, pz + Math.sin((k / 10) * Math.PI * 2) * d));
+          return smoothstep(0.82, 0.9, hi);
+        }) > 0.5) return 'Mountain foothills';
       }
     }
     const top = Object.keys(w).reduce((a, b) => (w[a] >= w[b] ? a : b));

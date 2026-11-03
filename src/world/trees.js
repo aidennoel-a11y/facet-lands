@@ -553,48 +553,48 @@ const monsoonFig = () => monsoonKind({ seed: 1700, trunkH: 5.2, trunkR: 0.85, bl
 const monsoonFlame = () => monsoonKind({ seed: 1800, trunkH: 4.4, trunkR: 0.32, blobs: ring(3, 1.4, 5.6, 1.5, [0.2, 6.3, 0, 1.7]), leafLow: 0x4a7a2e, leafHigh: 0x7aa84a, vines: 2, flowers: 16, lean: 0.12 });
 const monsoonMango = () => monsoonKind({ seed: 1900, trunkH: 3.4, trunkR: 0.5, blobs: ring(6, 2.4, 5.2, 2.2, [0, 6.6, 0, 2.8]), leafLow: 0x1f4a1e, leafHigh: 0x3a6a2a, vines: 3 });
 
-// Weeping willow (by lakes, rivers and in the swamps): a stout trunk that
-// forks low into a few great limbs rising and spreading, a broad, high,
-// rounded crown, and from all round its edge long curtains of fine, pale
-// yellow-green leaves hanging almost to the ground, a veil you can see the
-// trunk through. Some 10 m tall and as wide.
+// Weeping willow (by lakes and rivers, and in the swamps): a stout trunk
+// forking low into a few great limbs that rise and arch outward like a
+// fountain; from all along their arching ends, a bell-shaped curtain of
+// long, fine, pale streamers falls, sweeping down nearly to the ground,
+// airy enough to see the limbs through; a light cap of leaves on top.
+// Some 11 m tall and 10 across.
 const WEEPING_BLOBS = [
-  [0, 8.6, 0, 2.6],
-  [2.3, 7.6, 0.8, 2.1],
-  [-2.2, 7.7, -0.9, 2.1],
-  [0.6, 7.5, -2.4, 2.0],
-  [-0.8, 7.4, 2.4, 2.0],
-  [1.9, 7.2, -1.9, 1.7],
-  [-1.9, 7.1, 1.8, 1.7],
+  [0, 9.6, 0, 1.9],
+  [1.6, 9.0, 0.5, 1.4],
+  [-1.5, 9.1, -0.6, 1.4],
+  [0.4, 8.9, -1.6, 1.3],
+  [-0.5, 8.9, 1.6, 1.3],
 ];
 
 function weepingWillow() {
   const rand = mulberry32(1201);
   const bark = 0x4f4436, barkTip = 0x66594a;
-  // (The great limbs: from the fork at 2.6 m, up and out to each blob of the crown.)
+  // (The great limbs: up from the fork, then arching out and over.)
   const limbs = [];
-  WEEPING_BLOBS.slice(1).forEach(([x, y, z], i) => {
-    const mid = [x * 0.45, 4.6 + rand() * 0.6, z * 0.45];
-    limbs.push(limb([x * 0.04, 2.5, z * 0.04], mid, 0.24, 0.17, bark, barkTip, 1203 + i), limb(mid, [x * 0.85, y - 0.6, z * 0.85], 0.17, 0.08, barkTip, bark, 1213 + i));
-  });
-  limbs.push(limb([0, 2.5, 0], [0.1, 7.6, 0], 0.26, 0.1, bark, barkTip, 1220));
-  // (The curtains: long, slender hanging sprays, two rings of them round the crown's edge, the outer reaching lowest.)
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + rand() * 0.4, out = 3.4 + rand() * 0.8;
+    const up = [Math.cos(a) * 1.2, 6.8 + rand() * 0.8, Math.sin(a) * 1.2], over = [Math.cos(a) * out, 8.4 + rand() * 0.5, Math.sin(a) * out];
+    limbs.push(limb([0, 2.6, 0], up, 0.24, 0.15, bark, barkTip, 1203 + k), limb(up, over, 0.15, 0.06, barkTip, bark, 1213 + k));
+  }
+  limbs.push(limb([0, 2.6, 0], [0.1, 8.6, 0], 0.24, 0.08, bark, barkTip, 1220));
+  // (The curtain: fine streamers hung all over the bell's surface, outer ones longest, sweeping lowest.)
   const strands = [];
-  for (let ring = 0; ring < 2; ring++) {
-    const n = ring ? 22 : 36;
-    for (let k = 0; k < n; k++) {
-      const a = (k / n) * Math.PI * 2 + rand() * 0.15;
-      const d = ring ? 2.4 + rand() * 0.8 : 3.4 + rand() * 1.2;
-      const top = 8.3 - (d - 2.4) * 0.55 + rand() * 0.3;
-      const len = ring ? 3.2 + rand() * 1.4 : 4.6 + rand() * 1.6;
-      const g = new ConeGeometry(0.22 + rand() * 0.12, len, 3, 1);
-      g.rotateX(Math.PI);
-      strands.push(part(g, ring ? 0x8fb04c : 0xa9c662, 0x7c9e40, { x: Math.cos(a) * d, y: top - len / 2, z: Math.sin(a) * d, ry: rand() * 3, seed: 1230 + ring * 40 + k }));
-    }
+  const n = 110;
+  for (let k = 0; k < n; k++) {
+    const a = rand() * Math.PI * 2, t = Math.sqrt(rand()); // (more of them out towards the rim)
+    const d = 0.8 + t * 4.2;
+    const top = 9.8 - Math.pow(d / 5, 2) * 2.4 + rand() * 0.3; // (the bell's arched top)
+    const bottom = 0.9 + (1 - t) * 3.5 + rand() * 1.2; // (the outer ones down to the ground, the inner shorter)
+    const len = Math.max(1.5, top - bottom);
+    const g = new ConeGeometry(0.1 + rand() * 0.06, len, 3, 1, true);
+    g.rotateX(Math.PI);
+    const shade = rand();
+    strands.push(part(g, shade < 0.5 ? 0xa9c662 : 0x98b856, shade < 0.5 ? 0xc4d87a : 0xb0cc6a, { x: Math.cos(a) * d, y: top - len / 2, z: Math.sin(a) * d, seed: 1230 + k }));
   }
   return withCrown(
     [part(new CylinderGeometry(0.42, 0.62, 2.8, 7), bark, barkTip, { y: 1.4, lump: 0.1, seed: 1200 }), ...limbs],
-    [...WEEPING_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0x9ab856, 0xb4cf6c, { x, y, z, sy: 0.62, lump: 0.22, seed: 1280 + i })), ...strands],
+    [...WEEPING_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0xa4c060, 0xbcd476, { x, y, z, sy: 0.5, lump: 0.15, seed: 1280 + i })), ...strands],
   );
 }
 
