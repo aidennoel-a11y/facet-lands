@@ -322,13 +322,29 @@ export class StartMenu {
     this.#on('[data-go="back"]', () => this.choose());
   }
 
-  create(online = null) {
+  /** A new world: first how you'll play it (survival, creative, testing), then its name, seed and settings. */
+  create(online = null, mode = null) {
+    if (!mode) {
+      this.#show(`
+        <h2 class="sm-head">${online ? 'New world, online' : 'New world'}</h2>
+        <p class="sm-tag">How will you play it?</p>
+        <div class="sm-modes" role="list">
+          ${Object.entries(MODES).filter(([id]) => !online || id !== 'testing').map(([id, m]) => `
+            <button type="button" class="sm-mode" data-mode="${id}">
+              <strong>${m.name}</strong><span>${m.blurb}</span>
+            </button>`).join('')}
+        </div>
+        <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
+      for (const b of this.root.querySelectorAll('.sm-mode')) b.addEventListener('click', () => this.create(online, b.dataset.mode));
+      this.#on('[data-go="back"]', () => (online ? this.online() : this.choose()));
+      return;
+    }
     const seed = freshSeed();
     const card = this.#show(`
-      <h2 class="sm-head">${online ? 'New world, online' : 'New world'}</h2>
+      <h2 class="sm-head">${online ? 'New world, online' : 'New world'}: ${MODES[mode]?.name ?? mode}</h2>
       <label class="sm-field">World name<input id="sm-name" type="text" maxlength="40" value="My world" /></label>
       <label class="sm-field">Seed<input id="sm-seed" type="text" maxlength="24" value="${seed}" /></label>
-      <details class="sm-world">
+      <details class="sm-world" open>
         <summary>World settings <em class="sm-world-sum">The wild: everything as it comes</em></summary>
         <div class="sm-presets" role="radiogroup" aria-label="World preset">
           ${WORLD_PRESETS.map((p, i) => `<button type="button" class="sm-q${i === 0 ? ' sm-picked' : ''}" data-preset="${p.id}" title="${p.blurb}">${p.name}</button>`).join('')}
@@ -337,12 +353,6 @@ export class StartMenu {
           ${WORLD_OPTIONS.map((o) => `<label class="sm-opt"><span>${o.name}</span><input type="range" data-opt="${o.id}" min="0" max="${o.levels.length - 1}" step="1" value="${o.normal ?? 2}" /><output>${o.levels[o.normal ?? 2]}</output></label>`).join('')}
         </div>
       </details>
-      <div class="sm-modes" role="radiogroup" aria-label="Game mode">
-        ${Object.entries(MODES).filter(([id]) => !online || id !== 'testing').map(([id, m], i) => `
-          <button type="button" class="sm-mode${i === 0 ? ' sm-picked' : ''}" data-mode="${id}" role="radio" aria-checked="${i === 0}">
-            <strong>${m.name}</strong><span>${m.blurb}</span>
-          </button>`).join('')}
-      </div>
       <button class="sm-btn sm-primary" data-go="play">${online ? 'Create and open to others' : 'Create world'}</button>
       <p class="sm-note" aria-live="polite"></p>
       <button class="sm-btn sm-ghost" data-go="back">Back</button>`);
@@ -371,16 +381,6 @@ export class StartMenu {
         levels[input.dataset.opt] = Number(input.value);
         for (const o of card.querySelectorAll('[data-preset]')) o.classList.remove('sm-picked');
         showOpts();
-      });
-    }
-    let mode = 'survival';
-    for (const b of card.querySelectorAll('.sm-mode')) {
-      b.addEventListener('click', () => {
-        mode = b.dataset.mode;
-        for (const o of card.querySelectorAll('.sm-mode')) {
-          o.classList.toggle('sm-picked', o === b);
-          o.setAttribute('aria-checked', o === b);
-        }
       });
     }
     this.#on('[data-go="play"]', () => {
@@ -413,7 +413,7 @@ export class StartMenu {
       if (mode !== 'testing') rememberWorld(world);
       this.#play(world);
     });
-    this.#on('[data-go="back"]', () => (online ? this.online() : this.choose()));
+    this.#on('[data-go="back"]', () => this.create(online));
   }
 
   load() {

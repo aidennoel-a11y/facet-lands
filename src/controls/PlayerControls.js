@@ -28,6 +28,9 @@ import { Euler, Vector3 } from 'three';
  *                              current, or null (optional)
  *   collide(position, radius)  pushes position out of solid things (optional)
  */
+// Ground steeper than this (rise over run, about 50 degrees) is a cliff face: you can't stand on it, you fall.
+const CLIFF_SLOPE = 1.2;
+
 export class PlayerControls {
   constructor(camera, domElement, world) {
     this.camera = camera;
@@ -476,7 +479,19 @@ export class PlayerControls {
       return;
     }
 
-    if (feet <= floor || (wasGrounded && this.velocityY <= 0 && feet - floor < 0.6)) {
+    // (On a cliff face, steeper than you could ever stand on: nothing holds you
+    // to it. Walked off its edge, you fall; landing on it, you go on sliding and
+    // falling down it, till you come to ground you can stand on.)
+    const cliff = !ground.inCave && !glide ? this.#cliffAt(pos.x, pos.z, floor) : null;
+    if (cliff && feet <= floor + 0.05) {
+      feet = floor;
+      this.velocityY = Math.min(this.velocityY, -1.5) - this.gravity * 0.35 * dt; // (the face drags at you, a little)
+      this.push.x += cliff.x * 7 * dt;
+      this.push.z += cliff.z * 7 * dt;
+      const ps = Math.hypot(this.push.x, this.push.z);
+      if (ps > 6) (this.push.x *= 6 / ps), (this.push.z *= 6 / ps); // (off its face, not flung far out from it)
+      this.grounded = false;
+    } else if (feet <= floor || (wasGrounded && this.velocityY <= 0 && feet - floor < 0.6)) {
       if (!wasGrounded && this.velocityY < -8 && !this.softLanding) this.onLand?.(-this.velocityY);
       this.softLanding = false;
       feet = floor;
@@ -581,6 +596,20 @@ export class PlayerControls {
    * (The land's own slope, not the rocks and logs and floors on it, which
    * you can still jump up onto.)
    */
+  /**
+   * Whether (x, z) is a cliff face (the land itself steeper than about 50
+   * degrees, under your feet at `floor`): the way down it { x, z }, or null.
+   */
+  #cliffAt(x, z, floor) {
+    const at = this.world.terrainAt;
+    if (!at || this.underground) return null;
+    const here = at(x, z);
+    if (!(Math.abs(floor - here) < 0.3)) return null; // (not on the land itself: a rock, a floor, a log)
+    const d = 0.7, gx = (at(x + d, z) - at(x - d, z)) / (2 * d), gz = (at(x, z + d) - at(x, z - d)) / (2 * d), s = Math.hypot(gx, gz);
+    if (!(s > CLIFF_SLOPE)) return null;
+    return { x: -gx / s, z: -gz / s };
+  }
+
   #onSteep() {
     const at = this.world.terrainAt;
     if (!at || this.underground) return false;

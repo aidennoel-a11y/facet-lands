@@ -499,6 +499,20 @@ export class Game {
     };
     this.hud.onRespawn = () => this.respawn();
     this.hud.onGhost = () => this.ghostMode();
+    // (The inventory's list of how you are: see Hud.renderInventory.)
+    this.hud.statsOf = () => {
+      const s = this.survival, pct = (v) => `${Math.round(v * 100)}%`, f = this.#warmClothes(), clothes = f > 0 ? 1 - f : 0;
+      const load = this.inventory.slots.reduce((n, st) => n + weightOf(st), 0) + ['back', 'head', 'hands', 'feet'].reduce((n, k) => n + weightOf(this.inventory[k]), 0);
+      return [
+        ['Cold tolerance', pct(s.coldHardy ?? 0), s.coldHardy ?? 0],
+        ['Heat tolerance', pct(s.heatHardy ?? 0), s.heatHardy ?? 0],
+        ['Clothes\' warmth', pct(clothes), clothes],
+        ['Wet', pct(s.wet ?? 0), s.wet ?? 0],
+        ['Blood and dirt', pct(this.grime ?? 0), this.grime ?? 0],
+        ['Carrying', `${Math.round(load)} kg`],
+        ['Days survived', `${Math.floor(this.age ?? 0)}`],
+      ];
+    };
     // (A chest open in front of you, and a friend online takes from it or puts in: you see it change.)
     this.structures.onContents = (s) => this.hud.chest?.chest === s.contents && this.hud.renderChest();
     this.hud.onLeave = () => this.onLeave?.();

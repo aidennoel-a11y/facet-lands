@@ -41,6 +41,9 @@ export class Survival {
     this.warmth = 100;
     this.wet = 0; // how soaked you are (swimming, rain), 0..1
     this.cold = 0; // how cold it is where you are, 0..1+
+    // (Hardened by living in it: the cold country's cold, and the desert's heat, 0..1. See update.)
+    this.coldHardy = 0;
+    this.heatHardy = 0;
     this.energy = 100;
     this.sick = 0; // seconds of fever left
     this.bleeding = 0; // seconds of bleeding left (if not bandaged)
@@ -187,7 +190,9 @@ export class Survival {
       if (this.hurt(dt * 0.08 * e.dust, 'the sandstorm')) return;
     }
     // Heatstroke: out in the desert sun too long, dried out, it takes you.
-    this.hot = Math.max(0, Math.min(200, this.hot + dt * (e.exposed ? e.exposed * (this.thirst < 40 ? 1.5 : 1) : -3)));
+    this.hot = Math.max(0, Math.min(200, this.hot + dt * (e.exposed ? e.exposed * (this.thirst < 40 ? 1.5 : 1) * (1 - 0.45 * this.heatHardy) : -3)));
+    // (Living out in the desert sun, you harden to it, slowly; and lose it again, slower, away from it.)
+    if (e.active !== false) this.heatHardy = Math.max(0, Math.min(1, this.heatHardy + dt * ((e.exposed ?? 0) > 0.3 ? 0.0006 : -0.00008)));
     if (this.hot > 90 && this.thirst < 40) {
       this.thirst = Math.max(0, this.thirst - dt * 0.15);
       if (this.hurt(dt * 0.35, 'heatstroke')) return;
@@ -215,8 +220,10 @@ export class Survival {
       this.cold = Math.max(this.cold, e.waterCold);
       this.warmth = Math.max(0, this.warmth - dt * (e.waterCold * 2.6 + this.coldness(e) * 0.3));
       this.energy = Math.max(0, this.energy - dt * 0.08 * e.waterCold);
-    } else if (this.cold > 0.03) this.warmth = Math.max(0, this.warmth - dt * this.cold * 0.55 * (1 - (1 - (e.coat || 1)) * (1 - 0.6 * this.wet))); // (a wet coat's little use)
+    } else if (this.cold > 0.03) this.warmth = Math.max(0, this.warmth - dt * this.cold * 0.55 * (1 - (1 - (e.coat || 1)) * (1 - 0.6 * this.wet)) * (1 - 0.4 * this.coldHardy)); // (a wet coat's little use)
     else this.warmth = Math.min(100, this.warmth + dt * 1.2);
+    // (Living out in the cold, away from the fire, you harden to it, slowly: and lose it again, slower, living warm.)
+    this.coldHardy = Math.max(0, Math.min(1, this.coldHardy + dt * (this.cold > 0.15 && !(e.fire > 0) && !e.hotSpring ? 0.0006 : -0.00008)));
     // What hurts: starving, parched, freezing, standing in the fire.
     if (this.hunger <= 0 && this.hurt(dt * 0.6, 'starvation')) return;
     if (this.thirst <= 0 && this.hurt(dt * 0.9, 'thirst')) return;
@@ -231,12 +238,12 @@ export class Survival {
 
   toJSON() {
     const r = (v) => Math.round(v * 10) / 10;
-    return { health: r(this.health), hunger: r(this.hunger), thirst: r(this.thirst), warmth: r(this.warmth), energy: r(this.energy), sick: Math.round(this.sick), bleeding: Math.round(this.bleeding), venom: Math.round(this.venom), full: Math.round(this.full), fresh: Math.round(this.fresh ?? 0) };
+    return { health: r(this.health), hunger: r(this.hunger), thirst: r(this.thirst), warmth: r(this.warmth), energy: r(this.energy), sick: Math.round(this.sick), bleeding: Math.round(this.bleeding), venom: Math.round(this.venom), full: Math.round(this.full), fresh: Math.round(this.fresh ?? 0), coldHardy: Math.round(this.coldHardy * 1000) / 1000, heatHardy: Math.round(this.heatHardy * 1000) / 1000 };
   }
 
   load(data) {
     if (!data) return;
-    for (const k of ['health', 'hunger', 'thirst', 'warmth', 'energy', 'sick', 'bleeding', 'venom', 'full', 'fresh']) if (Number.isFinite(data[k])) this[k] = data[k];
+    for (const k of ['health', 'hunger', 'thirst', 'warmth', 'energy', 'sick', 'bleeding', 'venom', 'full', 'fresh', 'coldHardy', 'heatHardy']) if (Number.isFinite(data[k])) this[k] = data[k];
     if (this.health <= 0) this.reset();
   }
 }

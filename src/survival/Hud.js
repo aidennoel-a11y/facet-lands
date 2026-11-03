@@ -112,6 +112,7 @@ export class Hud {
               <button type="button" class="slot" data-worn="hands" title="Gloves"></button>
               <button type="button" class="slot" data-worn="feet" title="Boots"></button>
             </div>
+            <ul class="inv-stats" aria-label="How you are"></ul>
           </div>
           <div class="inv-grid">
             <h3>Hotbar</h3>
@@ -473,6 +474,9 @@ export class Hud {
       b.classList.toggle('empty', !st);
     }
     this.el('.inv-person').innerHTML = personSvg(inv);
+    // (How you are: hardened to the cold and the heat, how warm your clothes, how wet and dirty, how laden.)
+    const stats = this.statsOf?.() ?? [];
+    this.el('.inv-stats').innerHTML = stats.map(([label, text, frac]) => `<li><span>${label}</span><b>${text}</b>${frac === undefined ? '' : `<i><em style="width:${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%"></em></i>`}</li>`).join('');
     const grid = this.el('.inv-grid'), note = this.el('.inv-note');
     grid.onclick = (e) => {
       const b = e.target.closest('[data-i]');
