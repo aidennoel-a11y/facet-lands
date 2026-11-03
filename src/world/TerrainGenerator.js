@@ -370,7 +370,7 @@ export class TerrainGenerator {
   #rawAridityAt(x, z) {
     const wx = x + this.aridityNoise.noise2D(x * 0.0008 + 31, z * 0.0008 - 17) * 260;
     const wz = z + this.aridityNoise.noise2D(x * 0.0008 - 53, z * 0.0008 + 71) * 260;
-    const raw = 0.5 + this.aridityNoise.fbm(wx * 0.00016, wz * 0.00016, 3) * 1.3 + this._optDry;
+    const raw = 0.533 + this.aridityNoise.fbm(wx * 0.00016, wz * 0.00016, 3) * 1.3 + this._optDry; // (0.533: a little drier than it was: ~1% of the world from green to savanna, ~0.5% to desert)
     // Wet, green country all round volcanic highlands.
     const belt = this.#volcanoBelt(x, z);
     return belt > 0 ? raw + (Math.min(raw, 0.1) - raw) * belt : raw;
@@ -1328,7 +1328,7 @@ export class TerrainGenerator {
       // (No mountain range within 2 km of its edge, so it never runs into one. See also #jungleMtn.)
       for (let k = 0; k < 12; k++) {
         const a = (k / 12) * Math.PI * 2;
-        for (const d of [rad + 800, rad + 1600]) if (this.getMountainness(px + Math.cos(a) * d, pz + Math.sin(a) * d) > 0.62) return false;
+        for (const d of [rad + 840, rad + 1680]) if (this.getMountainness(px + Math.cos(a) * d, pz + Math.sin(a) * d) > 0.62) return false;
       }
       return true;
     }, 0.4); // (a wide fade: the land eases up into them over a kilometre or so)

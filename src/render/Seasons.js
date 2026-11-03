@@ -423,6 +423,9 @@ export function seasonalTrees(material, leaves = false, randFrom = null, warmFro
             float mossEdge = vTreeNorth + 0.45 * (seasonNoise(vec2(atan(vFlowerAt.z, vFlowerAt.x) * 2.0, vFlowerAt.y * 2.5) + vTreeRand * 17.0) - 0.5);
             float moss = smoothstep(-0.35, 0.75, mossEdge) * (0.55 + 0.45 * seasonNoise(vFlowerAt.xy * 6.0 + vFlowerAt.zy * 5.0 + vTreeRand * 9.0)) * (1.0 - smoothstep(1.2, 3.5, vFlowerAt.y));
             c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * step(0.83, fract(vTreeRand * 13.7)) * moss * 0.75);`}
+            // As winter comes on, the leaves still hanging fade from their autumn
+            // reds and oranges to a dry, dull yellow-brown before they go.
+            c = mix(c, vec3(0.6, 0.5, 0.17) * (0.8 + 0.4 * dot(c, vec3(0.33))), smoothstep(0.0, 0.45, uWinter) * turned * leafy * seasonal * 0.85);
             // Winter: bare grey-brown twigs, and snow on the upward faces.
             c = mix(c, vec3(0.13, 0.1, 0.08), uWinter * leafy * 0.85 * seasonal);
             float treeSnow = max(max(uWinter, uSnowfall), uHighSnow * smoothstep(80.0, 96.0, vTreeY));

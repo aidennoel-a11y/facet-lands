@@ -650,7 +650,7 @@ export class Rivers {
     for (const c of g.volcanoes(x0, z0, x0 + REGION, z0 + REGION)) {
       if (!c.lake || c.x < x0 || c.x >= x0 + REGION || c.z < z0 || c.z >= z0 + REGION) continue;
       const pond = { x: c.x, z: c.z, r: c.rc * 0.6, level: g.craterLevel ? g.craterLevel(c) : g.getBaseHeight(c.x, c.z) + c.depth * 0.35, seed: c.seed, natural: true, crater: true };
-      this.#put({ points: [], pond, tarn: null, kind: 'lake' });
+      this.#put({ points: [], pond, tarn: null, kind: 'lake', seasonal: false });
     }
   }
 
@@ -685,7 +685,7 @@ export class Rivers {
       if (!pond || pond.level < h + 0.3) continue; // it needs a real hollow to hold it
       pond.tint = 1;
       pond.alpine = true;
-      this.#put({ points: [], pond, tarn: null, kind: 'lake' });
+      this.#put({ points: [], pond, tarn: null, kind: 'lake', seasonal: false });
       return;
     }
   }
@@ -703,7 +703,7 @@ export class Rivers {
       pond.tint = 2;
       pond.hot = true;
       pond.hue = sp.hue ?? 0;
-      this.#put({ points: [], pond, tarn: null, kind: 'lake' });
+      this.#put({ points: [], pond, tarn: null, kind: 'lake', seasonal: false });
     }
   }
 
@@ -717,11 +717,11 @@ export class Rivers {
       const pond = this.#pond(o.x, o.z, o.r, rand, Infinity);
       if (!pond) continue;
       pond.oasis = true;
-      this.#put({ points: [], pond, tarn: null, kind: 'lake' });
+      this.#put({ points: [], pond, tarn: null, kind: 'lake', seasonal: false });
     }
   }
 
-  #add(points, pond, kind, tarn = null, seasonal = false) {
+  #add(points, pond, kind, tarn = null, seasonal = undefined) {
     // (Where something stands in its way, a rise of the land straight on
     // ahead, well above its water, it may turn hard, as a real river swings
     // round a spur of hill; elsewhere its bends stay broad and easy.)
@@ -766,6 +766,19 @@ export class Rivers {
    * already): yours, or one worked out by another thread (see share).
    */
   #put(river, shared = false) {
+    // (Any creek, stream or pond lying mostly in the monsoon forest runs only
+    // with the rains: dry the rest of the year. Worked out where it's made,
+    // and handed on with it.)
+    if (!shared && river.seasonal === undefined) {
+      const g = this.generator, at = [];
+      for (let i = 0; i < river.points.length; i += 4) at.push(river.points[i]);
+      if (river.pond) at.push(river.pond);
+      let wet = 0;
+      for (const p of at) if ((g.getBiomeWeights(p.x, p.z, {}).monsoon ?? 0) > 0.4) wet++;
+      river.seasonal = at.length > 0 && wet / at.length >= 0.5;
+      if (river.seasonal && river.pond) river.pond.seasonal = true;
+      if (river.seasonal && river.tarn) river.tarn.seasonal = true;
+    }
     const { points, pond, tarn, kind } = river;
     river.id = this.list.length;
     river.src ??= this.src; // (the region it was made for)
