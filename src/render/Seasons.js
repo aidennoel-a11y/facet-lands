@@ -479,11 +479,17 @@ export function seasonalWater(material) {
     material,
     (shader) => {
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aFreeze;\nvarying float vIce;\nuniform float uWinter;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvIce = aFreeze * smoothstep(0.35, 0.8, uWinter);');
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vIce;').replace(
+        .replace('#include <common>', '#include <common>\nattribute float aFreeze;\nvarying float vIce;\nvarying float vDry;\nuniform float uWinter;\nuniform float uSeasonTime;')
+        .replace(
+          '#include <begin_vertex>',
+          // (A freeze below nothing marks the monsoon forest's creeks and ponds:
+          // full only with the rains, summer into early autumn; dry beds the rest of the year.)
+          '#include <begin_vertex>\nvIce = max(aFreeze, 0.0) * smoothstep(0.35, 0.8, uWinter);\nfloat st = mod(uSeasonTime, 4.0);\nvDry = aFreeze < -0.5 ? 1.0 - smoothstep(0.75, 1.05, st) * (1.0 - smoothstep(2.4, 2.75, st)) : 0.0;',
+        );
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vIce;\nvarying float vDry;').replace(
         '#include <fog_fragment>',
-        /* glsl */ `gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.74, 0.84, 0.9), vIce * 0.85);
+        /* glsl */ `if (vDry > 0.5) discard;
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.74, 0.84, 0.9), vIce * 0.85);
         gl_FragColor.a = mix(gl_FragColor.a, 0.95, vIce);
         #include <fog_fragment>`,
       );

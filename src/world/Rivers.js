@@ -201,6 +201,30 @@ export class Rivers {
         made++;
       }
     }
+    // The monsoon forest: many little creeks, and small ponds, that run
+    // only in the wet season (in the dry they're dry beds and hollows: see
+    // Seasons.seasonalWater). And the jungle ranges: streams tumbling down
+    // them from small pools, and here and there a little lake, all year.
+    let wet = 0;
+    for (let attempt = 0; attempt < 40 && wet < 6; attempt++) {
+      const x = (rx + rand()) * REGION;
+      const z = (rz + rand()) * REGION;
+      const w = g.getBiomeWeights(x, z, {});
+      const monsoon = (w.monsoon ?? 0) > 0.45, jungleRange = (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) > 0.45;
+      if (!monsoon && !jungleRange) continue;
+      if (this.big.waterAt(x, z, 60)) continue;
+      const lake = jungleRange && rand() < 0.25;
+      const pond = this.#pond(x, z, lake ? 14 + rand() * 14 : 4 + rand() * 4, rand, jungleRange ? 0.3 : 0.15);
+      if (!pond) continue;
+      if (monsoon) pond.seasonal = true;
+      wet++;
+      const kind = jungleRange ? 'stream' : 'creek';
+      const course = lake || rand() < 0.35 ? null : this.#trace(pond, kind, rand, []);
+      // (Short ones too: a forest creek of a hundred metres or so, running down to the next hollow.)
+      const ok = course && (monsoon ? course.length >= 12 && course[0].level - course[course.length - 1].level > 0.5 : Rivers.#good(course, kind));
+      if (ok) this.#add(course, pond, kind, course.tarn ?? null, monsoon);
+      else this.#put({ points: [], pond, tarn: null, kind: 'lake', seasonal: monsoon }); // (a pond on its own)
+    }
     this.src = src;
   }
 
@@ -697,7 +721,7 @@ export class Rivers {
     }
   }
 
-  #add(points, pond, kind, tarn = null) {
+  #add(points, pond, kind, tarn = null, seasonal = false) {
     // (Where something stands in its way, a rise of the land straight on
     // ahead, well above its water, it may turn hard, as a real river swings
     // round a spur of hill; elsewhere its bends stay broad and easy.)
@@ -734,7 +758,7 @@ export class Rivers {
       p.x = P[k][0];
       p.z = P[k][1];
     });
-    this.#put({ points, pond, tarn, kind });
+    this.#put({ points, pond, tarn, kind, seasonal });
   }
 
   /**
@@ -749,7 +773,7 @@ export class Rivers {
     let along = 0; // metres from the source
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i], b = points[i + 1];
-      const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, stream: kind === 'stream', along };
+      const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, la: a.level, lb: b.level, wa: a.width, wb: b.width, stream: kind === 'stream', along, seasonal: !!river.seasonal };
       along += Math.hypot(b.x - a.x, b.z - a.z);
       const r = Rivers.channel(Math.max(a.width, b.width) / 2) + Math.min(INFLUENCE, Rivers.valleyWidth(kind === 'stream', seg.along + STEP) * 1.3);
       const box = [Math.min(a.x, b.x) - r, Math.min(a.z, b.z) - r, Math.max(a.x, b.x) + r, Math.max(a.z, b.z) + r];
@@ -1040,7 +1064,7 @@ export class Rivers {
         ({ d, half, level, fx, fz, drop, along, end } = m);
       }
       if (d > half + margin) continue;
-      const found = { level, fx, fz, drop, along, across: d / half, inset: half - d, pond, tint: pond ? item.pond.tint || 0 : 0, hue: pond ? item.pond.hue ?? 0 : 0 };
+      const found = { level, fx, fz, drop, along, across: d / half, inset: half - d, pond, tint: pond ? item.pond.tint || 0 : 0, hue: pond ? item.pond.hue ?? 0 : 0, dry: (pond ? item.pond.seasonal : item.seasonal) ? 1 : 0 };
       if (d - half < bestGap) {
         bestGap = d - half;
         best = found;

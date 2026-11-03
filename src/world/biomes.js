@@ -507,9 +507,9 @@ export const BIOMES = {
       { height: -Infinity, color: 0x6d7456 },
       { height: -10, color: 0x9a9068 },
       { height: 0, color: 0xb7aa7c },
-      { height: 4, color: 0x4f7a34 }, // (mossy, shaded)
-      { height: 30, color: 0x48723a },
-      { height: 90, color: 0x52703e },
+      { height: 4, color: 0x3a5c26 }, // (mossy, deep in the shade of the great oaks)
+      { height: 30, color: 0x35562a },
+      { height: 90, color: 0x3e5630 },
       { height: 160, color: 0x6a7456 },
     ],
     cliff: 0x6a6e5e,

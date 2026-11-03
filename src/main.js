@@ -1018,7 +1018,13 @@ function waterAt(x, z, ice = false) {
   let found = ground < seaLevel ? { level: seaLevel, fx: 0, fz: 0, speed: 0, lake: true } : null;
   // (A river in flood: up its banks, and quicker. Out to where it's spilt over them.)
   const rise = riverFlood.value * FLOOD_RISE;
-  const r = generator.rivers.waterAt(x, z, rise > 0.02 ? 4.5 : 0);
+  let r = generator.rivers.waterAt(x, z, rise > 0.02 ? 4.5 : 0);
+  // (The monsoon forest's creeks and ponds: dry beds outside the rains, as Seasons.seasonalWater draws them.)
+  if (r?.dry) {
+    const st = ((seasonUniforms.uSeasonTime.value % 4) + 4) % 4;
+    const rains = smoothstep(0.75, 1.05, st) * (1 - smoothstep(2.4, 2.75, st));
+    if (rains < 0.5) r = null;
+  }
   const up = r && !r.pond && r.level > WORLD.seaLevel + 0.35 ? rise : 0;
   if (r && (rise <= 0.02 || r.level + up > ground + 0.02) && (!found || r.level + up > found.level)) found = { level: r.level + up, fx: r.fx, fz: r.fz, speed: r.pond ? 0 : (0.6 + Math.min(2.4, Math.max(0, r.drop) * 6)) * (1 + riverFlood.value), pond: r.pond, hot: r.tint === 2, flood: up > 0.05 };
   // (A flash flood down a dry wash: see FlashFloods.)

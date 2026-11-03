@@ -194,6 +194,7 @@ export function riverData(generator, config, cx, cz, grid = GRID) {
       if (w.ripple) flow[k * 4 + 3] = Math.max(flow[k * 4 + 3], 0.45 * (1 - smoothstep(0, 6, w.inset))); // (a falls' pool, churned at the foot of the fall)
       if (w.pond) ice[k] = w.tint === 2 ? 0 : generator.getSeasonality(x, z); // (hot springs never freeze)
       else if (drop > 0.25 && w.tint !== 2) ice[k] = fallIce(generator, x, z) * Math.min(1, (drop - 0.25) / 0.3); // (and falls, where it's cold enough)
+      if (w.dry) ice[k] = -1; // (the monsoon forest's: dry outside the rains; see Seasons.seasonalWater)
       // Its colour: deeper out from the banks, the lake's colours where it
       // gives way to one; see-through, more so at the edges. (Smooth from
       // point to point: no patchwork of faces.)

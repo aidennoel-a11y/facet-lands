@@ -50,7 +50,7 @@ export const BIOME_TUNING = {
   badlands: 0.2,
   badlandsSize: 0.78, // (radius: 0.78 ≈ 40% smaller patches)
   // The Cascades (escarpment country with falls): the chance of a patch per 3.2 km square.
-  cascades: 0.75,
+  cascades: 1,
   // How much of the green country is forest rather than plains: higher, more forest.
   forest: -0.11, // (-0.11: 1% of the map from forest to plains)
 };
@@ -552,12 +552,12 @@ export class TerrainGenerator {
   #cascadesZone(x, z, range) {
     const low = 1 - smoothstep(0.1, 0.25, smoothstep(0.08, 0.55, range + MOUNTAIN_BIAS - this.#drySuppress(x, z)));
     if (low <= 0) return 0;
-    return low * this.#blobs('cascades', x, z, 3200, T.cascades, 825, 1300, 0xca5c, (px, pz) => {
+    return low * this.#blobs('cascades', x, z, 3200, T.cascades, 900, 1420, 0xca5c, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       const a = this.getAridity(px, pz, r);
       // (Wet green country clear of the ranges, the sea, the savanna, the
       // jungles, the volcanoes and the Smoky Mountains.)
-      return a < 0.4 && r < 0.3 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#smokyBlob(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.45 ? 1 : 0;
+      return a < 0.4 && r < 0.32 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#smokyBlob(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.5 ? 1 : 0;
     }) * (1 - smoothstep(0, 0.15, this.#seaCoast(x, z)));
   }
 
@@ -782,7 +782,7 @@ export class TerrainGenerator {
       // Away from them the continent stands higher (fewer, smaller
       // lakes), though the land itself is no higher: `_contLift` is how
       // much of it is that.
-      const basin = smoothstep(0.15, 0.35, this.continentNoise.fbm(x * 0.00005 + 500, z * 0.00005 - 700, 2));
+      const basin = smoothstep(0.11, 0.31, this.continentNoise.fbm(x * 0.00005 + 500, z * 0.00005 - 700, 2));
       this._contLift = 0.45 * (1 - basin);
       this._cont = this.continentNoise.fbm(x * 0.0004, z * 0.0004, 3) + 0.015 + this._contLift - 0.8 * basin - this._optSea;
     }
@@ -1158,7 +1158,7 @@ export class TerrainGenerator {
   // A bamboo forest (0..1): now and then, a rounded patch a little under a
   // kilometre across by a jungle's edge, or by the foothills of a jungle range.
   #bambooLand(x, z) {
-    return this.#blobs('bamboo', x, z, 3000, 0.4, 250, 450, 0xba3b, (px, pz) => {
+    return this.#blobs('bamboo', x, z, 3000, 0.55, 250, 450, 0xba3b, (px, pz) => {
       const j = this.#jungleSuit(px, pz);
       const byJungle = j > 0.02 && j < 0.3;
       const byRange = this.#tropicRange(px, pz) > 0.3 && this.#mountainsAround(px, pz) > 0.12 && this.getMountainness(px, pz) < 0.35;
@@ -1323,12 +1323,12 @@ export class TerrainGenerator {
       if (this.getMountainness(px, pz) > 0.35 || this.#volcanoBelt(px, pz) > 0.6 || this.#smokyBlob(px, pz) > 0.05) return 0;
       // (In the green, well-watered country: they bring their own jungle with them, see #biomeWeights.)
       // (Out into the savanna too: they bring their own wet with them.)
-      return this.getAridity(px, pz, r) < 0.515 && this.#continentBase(px, pz) - this._contLift > -0.32 ? 1 : 0;
+      return this.getAridity(px, pz, r) < 0.55 && this.#continentBase(px, pz) - this._contLift > -0.32 ? 1 : 0;
     }, (px, pz, rad) => {
       // (No mountain range within 2 km of its edge, so it never runs into one. See also #jungleMtn.)
       for (let k = 0; k < 12; k++) {
         const a = (k / 12) * Math.PI * 2;
-        for (const d of [rad + 1000, rad + 2000]) if (this.getMountainness(px + Math.cos(a) * d, pz + Math.sin(a) * d) > 0.6) return false;
+        for (const d of [rad + 800, rad + 1600]) if (this.getMountainness(px + Math.cos(a) * d, pz + Math.sin(a) * d) > 0.62) return false;
       }
       return true;
     }, 0.4); // (a wide fade: the land eases up into them over a kilometre or so)
@@ -2043,7 +2043,12 @@ export class TerrainGenerator {
         isl = { x, z, r, top: sea + 2.5 + 10 * (r / 170) + 4 * hash2(i, j, seed + 4) };
         // (Far out in the deep sea, some are mushroom islands: grey-violet
         // mycelium for ground, giant mushrooms for trees. See MushroomIslandLayer.)
-        if (probe.getBaseHeight(x, z) < sea - 22 && hash2(i, j, seed + 5) < 0.3) isl.mushroom = true; // (a third fewer than they were)
+        // (Only far out, with open sea for a good 1.5 km all round: never just off a coast.)
+        const farOut = () => {
+          for (let k = 0; k < 12; k++) for (const d of [750, 1500]) if (probe.getBaseHeight(x + Math.cos((k / 12) * Math.PI * 2) * d, z + Math.sin((k / 12) * Math.PI * 2) * d) > sea - 2) return false;
+          return true;
+        };
+        if (probe.getBaseHeight(x, z) < sea - 22 && hash2(i, j, seed + 5) < 0.3 && farOut()) isl.mushroom = true; // (a third fewer than they were)
         // (And others, out in the deep sea, coral atolls: a ring of low sandy
         // islets round a shallow lagoon, the reef all round it.)
         else if (probe.getBaseHeight(x, z) < sea - 14 && hash2(i, j, seed + 6) < 0.5) (isl.atoll = true), (isl.top = sea + 2.6 + 1.2 * hash2(i, j, seed + 7)), (isl.r = Math.max(isl.r, 90));
@@ -4293,7 +4298,7 @@ export class TerrainGenerator {
     const m = this.getMountainness(x, z);
     if (m < 0.68) return 0;
     // (Only in some of the valleys: a slow noise picks them, a few kilometres apart.)
-    const some = smoothstep(0.46, 0.56, this.meadowNoise.noise2D(x * 0.00045 + 913, z * 0.00045 - 271));
+    const some = smoothstep(0.48, 0.58, this.meadowNoise.noise2D(x * 0.00045 + 913, z * 0.00045 - 271));
     if (some <= 0) return 0;
     const w = this.getBiomeWeights(x, z, {});
     if ((w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + (w.cherry ?? 0) + (w.bamboo ?? 0) + (w.redwood ?? 0) + (w.desert ?? 0) + (w.savanna ?? 0) > 0.4) return 0;
