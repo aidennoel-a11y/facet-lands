@@ -322,20 +322,19 @@ function crownColour(type) {
 }
 
 /** A tree's card: two triangles, as wide and tall as the tree, mapped to its picture. */
-function impostorGeometry(type) {
-  const { col, row, half, top } = impostors.cells.get(type);
-  const rows = impostors.rows;
-  const u0 = col / COLS, u1 = (col + 1) / COLS;
-  // (The colour pictures are the sheet's top half: v from the top half's foot.)
-  const v0 = (rows + row) / (rows * 2), v1 = (rows + row + 1) / (rows * 2);
+/**
+ * One card shape for every kind (a unit quad: x -1..1 across, y 0..1 up):
+ * all the cards of a square of land, whatever their kind, are one draw;
+ * each card carries its own kind's place on the sheet and its size
+ * (aCard: column, row, half-width, height) and its autumn colour (aFall).
+ */
+function cardQuad() {
   const g = new InstancedBufferGeometry();
-  g.setAttribute('position', new BufferAttribute(new Float32Array([-half, 0, 0, half, 0, 0, half, top, 0, -half, top, 0]), 3));
-  g.setAttribute('uv', new BufferAttribute(new Float32Array([u0, v0, u1, v0, u1, v1, u0, v1]), 2));
+  g.setAttribute('position', new BufferAttribute(new Float32Array([-1, 0, 0, 1, 0, 0, 1, 1, 0, -1, 1, 0]), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2));
   g.setAttribute('normal', new BufferAttribute(new Float32Array(12).fill(0), 3));
   g.setIndex([0, 1, 2, 0, 2, 3]);
   g.setAttribute('aSeason', new BufferAttribute(new Float32Array(12), 3));
-  const fall = FALL[type] ?? [0.85, 0.45, 0.06];
-  g.setAttribute('aFall', new BufferAttribute(new Float32Array([...fall, ...fall, ...fall, ...fall]), 3));
   return g;
 }
 
@@ -419,12 +418,13 @@ export function createFarTreeLayer(config) {
   fadingInstances(material);
 
   // The furthest: the cards (see buildImpostors), turned about their upright to face you.
-  const impostorUniform = { value: null };
+  const impostorUniform = { value: null }, impRowsUniform = { value: 1 };
   const cardMaterial = new MeshLambertMaterial();
   cardMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.uImpostor = impostorUniform;
+    shader.uniforms.uImpRows = impRowsUniform;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 aSpot;\nattribute vec4 aShape;\nvarying float vShade;\nvarying vec2 vImpUv;')
+      .replace('#include <common>', '#include <common>\nattribute vec4 aSpot;\nattribute vec4 aShape;\nattribute vec4 aCard;\nuniform float uImpRows;\nvarying float vShade;\nvarying vec2 vImpUv;')
       .replace(
         '#include <beginnormal_vertex>',
         /* glsl */ `vec3 toCam = cameraPosition - aSpot.xyz;
@@ -439,8 +439,9 @@ export function createFarTreeLayer(config) {
         // (Mirrored or not, tree by tree, so a wood isn't all one tree.)
         float mirror = sin(aShape.y) < 0.0 ? -1.0 : 1.0;
         vec3 right = vec3(camFlat.y, 0.0, -camFlat.x);
-        transformed = right * position.x * mirror * aSpot.w * (1.0 + 0.9 * far) + vec3(0.0, position.y * aShape.x * (1.0 + 0.25 * far), 0.0) + aSpot.xyz;
-        vImpUv = uv;
+        transformed = right * position.x * aCard.z * mirror * aSpot.w * (1.0 + 0.9 * far) + vec3(0.0, position.y * aCard.w * aShape.x * (1.0 + 0.25 * far), 0.0) + aSpot.xyz;
+        // (Its own kind's picture on the sheet: the colour pictures are its top half.)
+        vImpUv = vec2((aCard.x + uv.x) / ${COLS}.0, (uImpRows + aCard.y + uv.y) / (uImpRows * 2.0));
         vShade = 0.82 + aShape.z * 0.3;`,
       );
     shader.fragmentShader = shader.fragmentShader
@@ -471,18 +472,19 @@ export function createFarTreeLayer(config) {
   function pool(type, detailed, tx, tz) {
     // (The furthest, the cards, once their pictures are drawn.)
     const card = !detailed && impostors.cells.has(type) && !FULL.has(type);
-    const key = `${type}:${card ? 2 : detailed ? 1 : 0}:${tx},${tz}`;
+    // (The cards of every kind in a square share one pool: one draw.)
+    const key = card ? `cards:${tx},${tz}` : `${type}:${detailed ? 1 : 0}:${tx},${tz}`;
     let p = pools.get(key);
     if (!p) {
-      const geometry = card ? impostorGeometry(type) : farGeometry(type, detailed);
-      p = { geometry, mesh: null, capacity: 0, count: 0, spot: null, shape: null, fade: null, owner: [], slot: [], lo: Infinity, hi: -1 };
+      const geometry = card ? cardQuad() : farGeometry(type, detailed);
+      p = { geometry, mesh: null, capacity: 0, count: 0, spot: null, shape: null, fade: null, cards: card, cell: null, fall: null, owner: [], slot: [], lo: Infinity, hi: -1 };
       grow(p, 256);
       const size = TILE * config.chunkSize;
       // (The square, from well below the sea to above the highest trees on the highest peaks.)
       geometry.boundingSphere = new Sphere(new Vector3((tx + 0.5) * size, 150, (tz + 0.5) * size), Math.hypot(size / 2, size / 2, 300));
       p.mesh = new Mesh(geometry, card ? cardMaterial : material);
       p.mesh.frustumCulled = true;
-      p.mesh.name = `far ${type}`;
+      p.mesh.name = card ? 'far cards' : `far ${type}`;
       group.add(p.mesh);
       pools.set(key, p);
     }
@@ -498,6 +500,14 @@ export function createFarTreeLayer(config) {
     p.spot = new InstancedBufferAttribute(spot, 4).setUsage(DynamicDrawUsage);
     p.shape = new InstancedBufferAttribute(shape, 4).setUsage(DynamicDrawUsage);
     p.fade = new InstancedBufferAttribute(fade, 1).setUsage(DynamicDrawUsage);
+    if (p.cards) {
+      const cell = new Float32Array(capacity * 4), fall = new Float32Array(capacity * 3);
+      if (p.cell) (cell.set(p.cell.array.subarray(0, p.count * 4)), fall.set(p.fall.array.subarray(0, p.count * 3)));
+      p.cell = new InstancedBufferAttribute(cell, 4).setUsage(DynamicDrawUsage);
+      p.fall = new InstancedBufferAttribute(fall, 3).setUsage(DynamicDrawUsage);
+      p.geometry.setAttribute('aCard', p.cell);
+      p.geometry.setAttribute('aFall', p.fall);
+    }
     p.geometry.setAttribute('aSpot', p.spot);
     p.geometry.setAttribute('aShape', p.shape);
     p.geometry.setAttribute('aFade', p.fade);
@@ -519,8 +529,10 @@ export function createFarTreeLayer(config) {
     const n = data.length / 8;
     if (p.count + n > p.capacity) grow(p, Math.max(p.capacity * 2, p.count + n));
     const slots = [];
+    const c = p.cards ? impostors.cells.get(type) : null, fall = p.cards ? FALL[type] ?? [0.85, 0.45, 0.06] : null;
     for (let k = 0; k < n; k++) {
       const i = p.count++;
+      if (c) (p.cell.array.set([c.col, c.row, c.half, c.top], i * 4), p.fall.array.set(fall, i * 3));
       p.spot.array.set([data[k * 8], data[k * 8 + 1], data[k * 8 + 2], data[k * 8 + 3]], i * 4);
       p.shape.array.set([data[k * 8 + 4], data[k * 8 + 5], data[k * 8 + 6], data[k * 8 + 7]], i * 4); // (w: how warm: see seasonalTrees)
       p.fade.array[i] = fadeNow.value; // (fading in from now)
@@ -541,6 +553,7 @@ export function createFarTreeLayer(config) {
           p.spot.array.copyWithin(i * 4, last * 4, last * 4 + 4);
           p.shape.array.copyWithin(i * 4, last * 4, last * 4 + 4);
           p.fade.array[i] = p.fade.array[last];
+          if (p.cards) (p.cell.array.copyWithin(i * 4, last * 4, last * 4 + 4), p.fall.array.copyWithin(i * 3, last * 3, last * 3 + 3));
           const owner = p.owner[last], at = p.slot[last];
           owner[at] = i;
           p.owner[i] = owner;
@@ -563,6 +576,7 @@ export function createFarTreeLayer(config) {
     /** Draws the furthest trees' pictures (needs the renderer): call once, before the world's built. */
     prepare(renderer) {
       impostorUniform.value = buildImpostors(renderer);
+      impRowsUniform.value = impostors.rows;
     },
 
     update() {
@@ -581,7 +595,7 @@ export function createFarTreeLayer(config) {
           continue;
         }
         if (p.hi < p.lo) continue;
-        for (const a of [p.spot, p.shape, p.fade]) {
+        for (const a of p.cards ? [p.spot, p.shape, p.fade, p.cell, p.fall] : [p.spot, p.shape, p.fade]) {
           a.clearUpdateRanges();
           a.addUpdateRange(p.lo * a.itemSize, (p.hi - p.lo + 1) * a.itemSize);
           a.needsUpdate = true;
