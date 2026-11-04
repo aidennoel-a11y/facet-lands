@@ -360,6 +360,7 @@ export class Hud {
     this.closeAll();
     panel.hidden = false;
     this.renderCraft(inventory);
+    panel.scrollTop = 0; // (opened at its top, where the first tiers are)
     return true;
   }
 

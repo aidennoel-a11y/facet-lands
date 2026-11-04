@@ -41,7 +41,7 @@ function crownOf(type) {
     if (crown && leafy > 0.5) {
       crown.computeBoundingBox();
       const b = crown.boundingBox;
-      out = { bottom: b.min.y, top: b.max.y, radius: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2 };
+      out = { bottom: Math.max(b.min.y, b.max.y * 0.55), top: b.max.y, radius: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2 };
     }
     CROWNS.set(type, out);
   }
@@ -61,7 +61,10 @@ function profileOf(type) {
     if (crown) {
       crown.computeBoundingBox();
       const b = crown.boundingBox;
-      out = { bottom: b.min.y, top: b.max.y, radius: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, cone: CONES.has(type) };
+      // (A broad-leaved tree's hitbox starts no lower than half way up it: the
+      // vines, aerial roots and willow streamers hanging below are no wall.)
+      const bottom = CONES.has(type) || SMALL_PLANTS.has(type) || NO_COLLIDE.has(type) ? b.min.y : Math.max(b.min.y, b.max.y * 0.55);
+      out = { bottom, top: b.max.y, radius: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, cone: CONES.has(type) };
     }
     PROFILES.set(type, out);
   }

@@ -228,6 +228,15 @@ export function seasonalTerrain(material, seaLevel) {
             // (And up in the mountains, from mid autumn to mid spring: see highSnow.)
             float high = uHighSnow * smoothstep(80.0, 96.0, vSeasonWorld.y + 6.0 * (patchy - 0.5)) * smoothstep(0.5, 0.75, abs(vSeasonUp));
             float snow = smoothstep(0.3, 0.6, vCold) * above * max(max(settled, fresh), high);
+            // And in the warm lands (the jungles, the monsoon forest, the dry
+            // country), where there's no real winter: in winter only a thin,
+            // patchy dusting on the flat; after a snowfall, small drifts that
+            // melt as the fresh snow goes.
+            float warmLand = 1.0 - smoothstep(0.3, 0.6, max(vCold, 0.0));
+            float flatUp = smoothstep(0.75, 0.92, abs(vSeasonUp));
+            float dusting = uWinter * 0.28 * flatUp * smoothstep(0.35, 0.65, seasonNoise(vSeasonWorld.xz * 0.35 + 3.0));
+            float drifts = uSnowfall * flatUp * smoothstep(0.55, 0.72, seasonNoise(vSeasonWorld.xz * 0.12 - 11.0)) * 0.85;
+            snow = max(snow, warmLand * above * max(dusting, drifts));
             diffuseColor.rgb = mix(c, vec3(0.86, 0.89, 0.93), snow);
           }`,
         );
@@ -434,9 +443,11 @@ export function seasonalTrees(material, leaves = false, randFrom = null, warmFro
             c = mix(c, vec3(0.25, 0.36, 0.14), uMossy * step(0.83, fract(vTreeRand * 13.7)) * moss * 0.75);`}
             // As winter comes on, the leaves still hanging fade from their autumn
             // reds and oranges to a dry, dull yellow-brown before they go.
-            c = mix(c, vec3(0.6, 0.5, 0.17) * (0.8 + 0.4 * dot(c, vec3(0.33))), smoothstep(0.0, 0.45, uWinter) * turned * leafy * seasonal * 0.85);
+            c = mix(c, vec3(0.68, 0.57, 0.15) * (0.8 + 0.4 * dot(c, vec3(0.33))), smoothstep(0.0, 0.35, uWinter) * turned * leafy * seasonal * 0.95);
             // Winter: bare grey-brown twigs, and snow on the upward faces.
             c = mix(c, vec3(0.13, 0.1, 0.08), uWinter * leafy * 0.85 * seasonal);
+            // (In the warm lands, the jungle's too: a faint dusting on the tops of the crowns, in winter only.)
+            c = mix(c, vec3(0.86, 0.89, 0.93), max(uWinter * 0.22, uSnowfall * 0.35) * vTreeWarm * smoothstep(0.5, 0.85, vSeasonUp));
             float treeSnow = max(max(uWinter, uSnowfall), uHighSnow * smoothstep(80.0, 96.0, vTreeY));
             c = mix(c, vec3(0.86, 0.89, 0.93), treeSnow * vSeason.y * smoothstep(0.3 - 0.2 * uSnowfall, 0.75, vSeasonUp) * 0.85 * seasonal);
             diffuseColor.rgb = c;

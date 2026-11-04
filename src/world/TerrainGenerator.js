@@ -1190,7 +1190,7 @@ export class TerrainGenerator {
     // than half a square kilometre or so: shrunk by 380 m and grown back.)
     const zone = (px, pz) => smoothstep(T.jungle, T.jungle + 0.2, this.#jungleSuit(px, pz));
     const j = zone(x, z);
-    return j > 0 ? j * this.#minSize('jungle', x, z, zone, 0.5, 3) : 0;
+    return j > 0 ? j * this.#minSize('jungle', x, z, zone, 0.5, 3, 157) : 0;
   }
 
   // How suited to jungle the country round (x, z) is: its raw zone averaged
