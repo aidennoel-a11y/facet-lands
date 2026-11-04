@@ -550,6 +550,7 @@ kbd {
 .craft,
 .inv-ui,
 .emotes {
+  pointer-events: auto; /* (#hud lets clicks through to the world; its menus take them) */
   position: fixed;
   left: 50%;
   bottom: 120px;
