@@ -784,6 +784,34 @@ export function fireplaceModel() {
   return b.build();
 }
 
+/**
+ * A chimney wall: a log wall, 4 m long, with a stone fireplace built into
+ * its middle: the firebox open on one side (+z, the room), the hearth out
+ * before it, and the stack rising up through the wall's line and on, well
+ * clear of the roof. One piece: no chimney to push through a wall.
+ */
+export function chimneyWallModel() {
+  const b = new Parts(311), rand = mulberry32(311), L = WALL_LENGTH, ST = [0x8a867c, 0x7e7a72, 0x96928a, 0x726e66];
+  const gap = 0.75; // (half the stonework's width: the logs stop at it)
+  for (let k = 0, y = 0.1; y < 3.15; k++, y += 0.33) {
+    const r = 0.17 + rand() * 0.02, past = k % 2 ? 0.18 : 0.04, col = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
+    b.log([-L / 2 - past, y, 0], [-gap, y, 0], r, col, 0xc8a070, 7);
+    b.log([gap, y, 0], [L / 2 + past, y, 0], r, col, 0xc8a070, 7);
+  }
+  for (const sx of [-1, 1]) b.add(new BoxGeometry(L / 2 - gap, 3.2, 0.18), 0x6a6448, [sx * (L / 2 + gap) / 2, 1.55, 0], [0, 0, 0], [1, 1, 1], 0.06);
+  const stone = (w, h, d, x, y, z) => b.add(new BoxGeometry(w, h, d), ST[Math.floor(rand() * ST.length)], [x, y, z], [0, (rand() - 0.5) * 0.05, 0], [1, 1, 1], 0.05);
+  stone(1.9, 0.2, 1.0, 0, 0.1, 0.45); // (the hearth, out into the room)
+  for (let y = 0.3; y < 1.4; y += 0.28) for (const x of [-0.6, 0.6]) stone(0.36, 0.28, 0.9, x, y, 0.05);
+  stone(1.5, 0.3, 0.9, 0, 1.45, 0.05); // (the lintel)
+  stone(1.5, 1.3, 0.3, 0, 0.75, -0.3); // (the back of the firebox, in the wall's line)
+  for (let y = 1.75, w = 1.5; y < 5.4; y += 0.3, w = Math.max(0.85, w - 0.1)) stone(w, 0.3, 0.8, 0, y, 0.0);
+  b.add(new BoxGeometry(0.95, 0.12, 0.9), 0x5e5a54, [0, 5.45, 0]);
+  b.add(new BoxGeometry(0.75, 0.08, 0.5), 0x2a2420, [0, 0.24, 0.12]); // (the ashes)
+  b.log([0.45, 0.25, 0.4], [0.45, 1.2, 0.4], 0.025, 0x3a3a3a, 0x3a3a3a, 4); // (the crane)
+  b.log([0.45, 1.15, 0.4], [0, 1.15, 0.4], 0.02, 0x3a3a3a, 0x3a3a3a, 4);
+  return b.build();
+}
+
 /** A lantern on a post: a squared post, an arm, the iron lantern hanging, its glass glowing. */
 export function lanternPostModel() {
   const b = new Parts(305);

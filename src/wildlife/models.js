@@ -1497,32 +1497,54 @@ export function scorpion() {
 }
 
 /**
- * A crab: a broad flat shell, red-orange, walking sideways (its long axis
- * along the way it goes: so it scuttles), the two claws held up at one
- * side, eyes on stalks.
+ * A crab: a broad, low, rounded shell, red-orange, wider than it is long,
+ * its face to one side (+x) and so walking sideways (along z); the two
+ * claws held up before its face on jointed arms, the eyes up on stalks.
+ * Eight legs, four down each side: each leg of the rig carries a pair of
+ * them, thin, tapering, splayed out with their knees up (see Wildlife: splay).
  */
+function crabLegs(l1, l2, color, tip) {
+  const upper = new Blocks(), lower = new Blocks();
+  for (const x of [-0.015, 0.015]) {
+    upper.box(0.011, l1, 0.011, color, [x, -l1 / 2, 0], [0, 0, 0], [1.1, 1.1]);
+    lower.box(0.009, l2, 0.009, color, [x, -l2 / 2, 0], [0, 0, 0], [0.4, 0.4]);
+    lower.box(0.006, 0.012, 0.006, tip, [x, -l2 + 0.006, 0]);
+  }
+  return { upper: upper.build(), lower: lower.build(), l1, l2 };
+}
 export function crab() {
-  const shell = 0xc8502a, dark = 0x8a2e16, pale = 0xe8b890;
+  const shell = 0xc8502a, top = 0xd86a34, dark = 0x7a2a14, pale = 0xf0c8a0, leg = 0xb8482a, tip = 0x3a1a0e;
   const body = new Blocks()
-    .box(0.1, 0.045, 0.16, shell, [0, 0.06, 0], [0, 0, 0], [0.8, 0.85])
-    .box(0.08, 0.012, 0.13, pale, [0, 0.036, 0]);
+    .box(0.1, 0.035, 0.15, shell, [0, 0.055, 0], [0, 0, 0], [0.75, 0.82]) // the shell, low and wide
+    .box(0.075, 0.018, 0.11, top, [0, 0.078, 0], [0, 0, 0], [0.7, 0.75]) // its domed top
+    .box(0.03, 0.012, 0.05, dark, [0.02, 0.088, 0]) // a darker mark on it
+    .box(0.085, 0.012, 0.12, pale, [0, 0.036, 0]) // the pale underside
+    .box(0.02, 0.01, 0.14, dark, [0.05, 0.06, 0]); // the rim over its face
   return {
     body: body.build(),
     headPivot: [0.05, 0.06, 0],
     head: new Blocks()
-      .box(0.02, 0.02, 0.06, shell, [0.01, 0, 0])
-      .box(0.05, 0.03, 0.035, dark, [0.05, 0.01, 0.05], [0, 0.4, 0.3]) // the claws
-      .box(0.05, 0.03, 0.035, dark, [0.05, 0.01, -0.05], [0, -0.4, 0.3])
-      .box(0.008, 0.03, 0.008, shell, [0.015, 0.025, 0.018])
-      .box(0.008, 0.03, 0.008, shell, [0.015, 0.025, -0.018])
-      .box(0.014, 0.014, 0.014, 0x0a0806, [0.015, 0.044, 0.018])
-      .box(0.014, 0.014, 0.014, 0x0a0806, [0.015, 0.044, -0.018])
+      // (The eyes on their stalks.)
+      .box(0.007, 0.03, 0.007, shell, [0.005, 0.02, 0.022], [0, 0, -0.2])
+      .box(0.007, 0.03, 0.007, shell, [0.005, 0.02, -0.022], [0, 0, -0.2])
+      .box(0.013, 0.013, 0.013, 0x0a0806, [0.009, 0.038, 0.022])
+      .box(0.013, 0.013, 0.013, 0x0a0806, [0.009, 0.038, -0.022])
+      // (The arms, out and forward, and the claws: the big pincer and the finger.)
+      .box(0.035, 0.014, 0.014, leg, [0.022, -0.005, 0.05], [0, 0.5, 0])
+      .box(0.035, 0.014, 0.014, leg, [0.022, -0.005, -0.05], [0, -0.5, 0])
+      .box(0.045, 0.028, 0.03, shell, [0.055, 0.004, 0.058], [0, 0.25, 0.25], [0.8, 0.9])
+      .box(0.045, 0.028, 0.03, shell, [0.055, 0.004, -0.058], [0, -0.25, 0.25], [0.8, 0.9])
+      .box(0.03, 0.01, 0.012, tip, [0.085, 0.016, 0.06], [0, 0.25, 0.3])
+      .box(0.03, 0.01, 0.012, tip, [0.085, 0.016, -0.06], [0, -0.25, 0.3])
+      .box(0.028, 0.008, 0.01, tip, [0.083, -0.006, 0.062], [0, 0.25, -0.15])
+      .box(0.028, 0.008, 0.01, tip, [0.083, -0.006, -0.062], [0, -0.25, -0.15])
       .build(),
     antlers: null,
-    fore: limb(0.03, 0.04, { top: [0.014, 0.014], knee: [0.012, 0.012], ankle: [0.008, 0.008], color: shell, foot: [0.01, 0.008, 0.012, dark, 0] }),
-    hind: limb(0.03, 0.04, { top: [0.014, 0.014], knee: [0.012, 0.012], ankle: [0.008, 0.008], color: shell, foot: [0.01, 0.008, 0.012, dark, 0] }),
-    legs: [[0.06, 0.06, 0.05], [-0.06, 0.06, 0.05], [0.06, 0.06, -0.05], [-0.06, 0.06, -0.05]],
-    torso: [[0, 0.06, 0, 0.1, 0.05, 0.16]],
+    fore: crabLegs(0.045, 0.055, leg, tip),
+    hind: crabLegs(0.045, 0.055, leg, tip),
+    // (Fore: down the +z side; hind: down the -z side. Each a pair of legs, so four a side.)
+    legs: [[0.022, 0.055, 0.05], [-0.028, 0.055, 0.05], [0.022, 0.055, -0.05], [-0.028, 0.055, -0.05]],
+    torso: [[0, 0.06, 0, 0.1, 0.05, 0.15]],
     skull: [0.04, 0.0, 0, 0.05, 0.03, 0.08],
   };
 }

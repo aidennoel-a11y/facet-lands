@@ -792,6 +792,7 @@ export class Game {
       case 'flowerBed': return 'A flower bed: bees about it make more honey in your bee boxes near by';
       case 'campfire':
       case 'fireplace':
+      case 'chimneyWall':
       case 'furnace': {
         const working = s.jobs.length ? ` · ${s.jobs.map((j) => `${ITEMS[j.stack.id].name.toLowerCase()} ${Math.round(100 - (j.left / j.total) * 100)}%`).join(', ')}` : '';
         return s.lit ? `Burning${working}` : `Cold${working}: light it with flint and steel`;
@@ -3877,7 +3878,7 @@ export class Game {
         prompt = this.plan.ok ? `<kbd>Click</kbd> Let the rope down (${Math.round(this.plan.len)} m)` : null;
       } else if (placing && placing !== 'torch') {
         const at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
-        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'stoneDoor', 'cutWindow', 'cutDoor', 'barnWall', 'barnWindow', 'barnDoor', 'gatehouse', 'dock'].includes(placing) ? Math.PI : 0);
+        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall', 'chimneyWall', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'stoneDoor', 'cutWindow', 'cutDoor', 'barnWall', 'barnWindow', 'barnDoor', 'gatehouse', 'dock'].includes(placing) ? Math.PI : 0);
         this.plan = this.structures.plan(placing, at, yaw + (this.buildTurn ?? 0), ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
         // (A dock: set at the water's edge, out over the water.)
         if (placing === 'dock' && this.plan.ok) {

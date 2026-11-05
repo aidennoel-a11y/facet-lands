@@ -128,7 +128,7 @@ const SPECIES = {
   // A python, by the jungle's water and in its trees' roots (see #snake).
   // The shore's crabs, scuttling sideways about the beaches and the rocks at the water's edge; sea
   // turtles, come up the warm beaches in the summer to dig their nests; the giant salamanders of the cave lakes.
-  crab: { ground: true, grade: 0.9, model: Models.crab, max: 40, fearless: true, walk: 0.35, run: 1.8, flee: 3, calm: 6, radius: 0.1, height: 0.1, health: 3, stride: 0.07, turn: 5, size: 1.5, gaits: DOG, trotBand: 0.5, swims: true },
+  crab: { ground: true, grade: 0.9, model: Models.crab, max: 40, fearless: true, walk: 0.35, run: 1.8, flee: 3, calm: 6, radius: 0.1, height: 0.1, health: 3, stride: 0.06, turn: 5, size: 1.5, gaits: DOG, trotBand: 0.5, swims: true, bottom: true, splay: 0.9 },
   seaTurtle: { ground: true, grade: 0.4, model: Models.seaTurtle, max: 16, fearless: true, walk: 0.18, run: 0.4, flee: 2, calm: 4, radius: 0.45, height: 0.45, health: 60, stride: 0.25, turn: 0.8, size: 1.3, gaits: DOG, trotBand: 0.9, swims: true },
   // Seals, hauled out on the cold shores in a huddle: slow and clumsy on land, into the sea at a fright.
   seal: { ground: true, grade: 0.45, model: Models.seal, max: 24, walk: 0.3, run: 1.6, flee: 14, calm: 30, radius: 0.45, height: 0.5, health: 90, stride: 0.3, turn: 1.0, size: 1.25, gaits: DOG, trotBand: 0.9, swims: true },
@@ -3930,7 +3930,7 @@ export class Wildlife {
     const w = ctx.waterAt?.(a.x, a.z); // (any of them: none walks along the bottom)
     const H = this.rigs[a.kind].model.legs[0][1] * a.scale;
     const swam = a.swimming;
-    a.swimming = !!w && w.level - a.y > H * 0.8;
+    a.swimming = !sp.bottom && !!w && w.level - a.y > H * 0.8; // (a crab walks along the bottom, under the water)
     // (Out of the water, a furred one stops and shakes itself, head to tail, the spray flying.)
     if (swam && !a.swimming && a.alive && SHAKERS.has(a.kind)) a.shakeIn = 0.6 + Math.random() * 1.2;
     if (a.shakeIn > 0 && (a.shakeIn -= dt) <= 0) {
@@ -3957,7 +3957,7 @@ export class Wildlife {
     }
     if (!a.swimming) a.shoreHeading = null;
     if (a.swimming) {
-      a.y = w.level - H * 1.2;
+      a.y = Math.max(w.level - H * 1.2, y === y ? y : -Infinity); // (never down through the bottom)
       a.feet = null;
       // (A crocodile glides through the water: only now and then, hurrying, a swirl and a splash.)
       const croc = a.kind === 'crocodile';
@@ -5131,6 +5131,8 @@ export class Wildlife {
         footAt(foot, p, k, a.gait ?? sp.gaits[0], a.cycle ?? 0, (a.strideLen ?? sp.stride) / s, H, Math.min(1, (a.speed ?? 0) / (sp.walk * 0.3)));
         foot.x *= a.track ?? 1;
       }
+      // (A crab's legs: splayed right out from its sides, the knees up, the feet well out on the ground.)
+      if (sp.splay && !lying) foot.z += (hind ? -1 : 1) * sp.splay * p[1];
       // (A rested hind leg: the hoof tipped up, just touching, the knee bent.)
       if (k === a.cock && (a.cockW ?? 0) > 0.01 && !lying) (foot.y += 0.07 * H * a.cockW), (foot.z += 0.04 * H * a.cockW);
       // Lying down: the legs folded under it (the fore hooves tucked back;

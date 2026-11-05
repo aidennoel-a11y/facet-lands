@@ -7,7 +7,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, ladderLean, RAISED_MODELS, wallFootingModel,
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, chimneyWallModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, ladderLean, RAISED_MODELS, wallFootingModel,
   greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, bannerModel, BANNER_DESIGNS, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
@@ -68,6 +68,8 @@ const KINDS = {
   stiltFloor: { make: () => RAISED_MODELS.stiltFloor(2), box: [FLOOR_SIZE / 2, FLOOR_SIZE / 2], floor: true, raised: 'stilt', steep: 99 },
   stoneFloor: { make: stoneFloorModel, box: [FLOOR_SIZE / 2, FLOOR_SIZE / 2], floor: true, steep: 1.6, stone: true },
   // The building sets: log (with the palisade), plank, rough stone, cut stone.
+  // (A log wall with a stone fireplace and chimney built into it: the fire in the room, the smoke out over the roof.)
+  chimneyWall: { make: chimneyWallModel, box: [WALL_LENGTH / 2, 0.28], tall: 3.3, line: 'wall', len: WALL_LENGTH, fire: 'closed', jobs: 3 },
   logWall: { make: logWallModel, box: [WALL_LENGTH / 2, 0.28], tall: 3.3, line: 'wall', len: WALL_LENGTH },
   plankWall: { make: plankWallModel, box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH },
   cutStoneWall: { make: cutStoneWallModel, box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true },
@@ -524,12 +526,19 @@ export class Structures {
       }
       if (best) {
         const ax = Math.cos(best.rot), az = -Math.sin(best.rot), bx = Math.sin(best.rot), bz = Math.cos(best.rot);
-        const u = Math.round(((x - best.x) * ax + (z - best.z) * az) / FLOOR_SIZE) * FLOOR_SIZE, v = Math.round(((x - best.x) * bx + (z - best.z) * bz) / FLOOR_SIZE) * FLOOR_SIZE;
+        const fu = ((x - best.x) * ax + (z - best.z) * az) / FLOOR_SIZE, fv = ((x - best.x) * bx + (z - best.z) * bz) / FLOOR_SIZE;
+        // (On out from it on its grid, edge to edge; and along that edge in half
+        // steps too, wherever you're pointing: not the one place only.)
+        let u = Math.round(fu), v = Math.round(fv);
+        if (u && !v) v = Math.round(fv * 2) / 2;
+        else if (v && !u) u = Math.round(fu * 2) / 2;
         if (u || v) {
-          x = best.x + ax * u + bx * v;
-          z = best.z + az * u + bz * v;
+          x = best.x + ax * u * FLOOR_SIZE + bx * v * FLOOR_SIZE;
+          z = best.z + az * u * FLOOR_SIZE + bz * v * FLOOR_SIZE;
           rot = best.rot;
-          level = best.y;
+          // (At its level; or, pointed down at the ground well below it, down there on the ground.)
+          const g = ground(x, z);
+          level = point.y !== undefined && Number.isFinite(g) && best.y - g > 0.6 && point.y < (best.y + g) / 2 ? null : best.y;
         }
       } else rot = Math.round(rot / (Math.PI / 2)) * (Math.PI / 2);
     }
@@ -652,7 +661,8 @@ export class Structures {
     if (stairLevel !== null && stairLevel > lo - 0.8 && stairLevel < lo + 0.6) y = stairLevel;
     if (kind.roof) y = roofY ?? hi + 3.2;
     // (A floor laid on from another, at its level if the ground's not in the way.)
-    if (kind.floor && level !== null && level >= hi - 0.05 && level < lo + 1.4) y = level;
+    // (Level with the one it's laid on from, always, unless the ground rises well up through its boards: a floor is one floor.)
+    if (kind.floor && level !== null && level >= hi - 0.45 && level < lo + 1.6) y = level;
     if (upper !== null) y = upper;
     // (A wall along the edge of a floor: stood on the floor's boards, never sunk under them, whatever the ground.)
     let onFloor = false;
@@ -1296,7 +1306,7 @@ export class Structures {
     // (A furnace's fire is in its mouth, at the front.)
     const fx = closed ? Math.sin(s.rot) * 0.45 : 0, fz = closed ? Math.cos(s.rot) * 0.45 : 0;
     flames.uniforms.uCentre.value.set(s.x + fx, s.y, s.z + fz);
-    smoke.uniforms.uCentre.value.set(s.x, s.y + (s.type === 'fireplace' ? 3.4 : 0), s.z);
+    smoke.uniforms.uCentre.value.set(s.x, s.y + (s.type === 'fireplace' ? 3.4 : s.type === 'chimneyWall' ? 4.2 : 0), s.z);
     // (And the thin column it sends up, rising high and leaning off on the
     // wind: a camp's fire seen from far across the land, as it would be.)
     const column = new Puffs(this.scene, 26, () => {

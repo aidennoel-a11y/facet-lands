@@ -2981,10 +2981,33 @@ function applyCaveHaze(dt) {
 
 // --- Loop --------------------------------------------------------------------
 let PIXEL_RATIO = Math.min(window.devicePixelRatio, QUALITY.pixelRatio);
+// The resolution, eased down a step at a time while the frames run slow (a
+// screenful of sea to shade, say) and back up once there's room again: the
+// framerate kept up, the picture only a little softer for it.
+const dynRes = { scale: 1, time: 0, frames: 0, good: 0 };
+function adaptResolution(dt) {
+  if (!startMenu?.world || startMenu.open || dt > 0.25) return;
+  const R = dynRes;
+  R.time += dt;
+  R.frames++;
+  if (R.time < 1.5) return;
+  const fps = R.frames / R.time;
+  R.time = R.frames = 0;
+  const least = Math.min(1, 0.75 / PIXEL_RATIO); // (never below three quarters of a pixel to a pixel)
+  if (fps < 48 && R.scale > least + 0.01) {
+    R.scale = Math.max(least, R.scale - (fps < 35 ? 0.15 : 0.08));
+    R.good = 0;
+    resize();
+  } else if (fps >= 57 && R.scale < 1 && ++R.good >= 4) {
+    R.scale = Math.min(1, R.scale + 0.05);
+    R.good = 0;
+    resize();
+  } else if (fps < 57) R.good = 0;
+}
 function resize() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
-  renderer.setPixelRatio(PIXEL_RATIO);
+  renderer.setPixelRatio(PIXEL_RATIO * dynRes.scale);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -3193,6 +3216,7 @@ function tick(now) {
   // reverse, a fading flash growing ever brighter.)
   const dt = Math.max(0, Math.min(elapsed, 0.1));
   checkPerformance(elapsed);
+  adaptResolution(elapsed);
   // (Once the land's in: the drawing made ready for each number of fire
   // lights, so the first torch lit doesn't stall a frame. See Torches.)
   if (!lightsWarmed && startMenu?.world && chunks.pendingCount === 0) (lightsWarmed = true), torches.prewarm(renderer, scene, camera);
