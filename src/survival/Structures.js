@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, CanvasTexture, Color, Group, Mesh, MeshLambertMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { Puffs } from '../render/Puffs.js';
-import { seasonUniforms } from '../render/Seasons.js';
+import { seasonUniforms, withering } from '../render/Seasons.js';
 import { Inventory } from './Inventory.js';
 import {
   anvilModel, bedModel, campfireModel, caughtModel, chestModel, cropModel, dryingRackModel, FENCE_LENGTH, fenceGateDoorModel, fenceGatePostsModel, fenceModel,
@@ -984,7 +984,7 @@ export class Structures {
       this.showPlant(s);
     }
     if (s.type === 'plot') {
-      s.cropMesh = new Mesh(undefined, this.material);
+      s.cropMesh = new Mesh(undefined, (this.cropMaterial ??= withering(new MeshLambertMaterial({ vertexColors: true, flatShading: true }))));
       s.cropMesh.castShadow = true;
       mesh.add(s.cropMesh);
       this.#showCrop(s);
@@ -1340,11 +1340,21 @@ export class Structures {
         s.ditched = this.ditchDistance(s.x, s.z) < 3.2;
       }
       if (s.ditched) s.watered = Math.max(s.watered ?? 0, 60);
-      if (s.type === 'plot' && s.crop && s.growth < 1) {
+      // (Out in the open, the winter's first snowfall kills what's in the ground: withered, then gone. Under glass it lives on.)
+      if (s.type === 'plot' && s.crop && s.cropMesh) {
+        if (!s.glassCheck || ctx.time > s.glassCheck) (s.glassCheck = ctx.time + 3), (s.underGlass = this.list.some((g) => g.type === 'greenhouse' && Math.abs(g.x - s.x) < 1.9 && Math.abs(g.z - s.z) < 1.9));
+        s.cropMesh.material = s.underGlass ? this.material : this.cropMaterial;
+        if (!s.underGlass && seasonUniforms.uCropGone.value > 0.97) {
+          s.crop = null;
+          s.growth = 0;
+          this.#showCrop(s);
+          this.onChange?.();
+        }
+      }
+      if (s.type === 'plot' && s.crop && s.growth < 1 && (s.underGlass || seasonUniforms.uCropWither.value < 0.05)) {
         // Growing: best in the spring and summer, none in the winter;
         // faster watered, or in the rain.
         // (Under glass: as in high summer all year, and a little quicker still.)
-        if (!s.glassCheck || ctx.time > s.glassCheck) (s.glassCheck = ctx.time + 3), (s.underGlass = this.list.some((g) => g.type === 'greenhouse' && Math.abs(g.x - s.x) < 1.9 && Math.abs(g.z - s.z) < 1.9));
         const season = s.underGlass ? 1.4 : (ctx.winter ?? 0) > 0.6 ? 0 : 0.35 + 0.8 * (ctx.spring ?? 0) + 0.65 * (ctx.summer ?? 0) + 0.25 * (ctx.autumn ?? 0);
         s.watered = Math.max(0, (s.watered ?? 0) - dt);
         const wet = 1 + 0.6 * Math.min(1, (ctx.rain ?? 0) + (s.watered > 0 ? 1 : 0));

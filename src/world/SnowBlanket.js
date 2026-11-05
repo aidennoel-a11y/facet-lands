@@ -114,21 +114,29 @@ export class SnowBlanket {
     }
   }
 
-  /** How high the snow lies over the land at (x, z) (0 where there's none, or it's off the blanket). */
+  /**
+   * How high the snow lies over the land at (x, z) (0 where there's none, or
+   * it's off the blanket): its surface just as it's drawn, facet by facet, so
+   * a footprint lies right on it, neither floating over it nor sunk under it.
+   */
   depthAt(x, z) {
     const d = seasonUniforms.uSnowDepth.value;
     if (d < 0.01 || !Number.isFinite(this.ox)) return 0;
     const fi = (x - this.ox) / CELL, fj = (z - this.oz) / CELL;
     if (fi < 0 || fj < 0 || fi >= N || fj >= N) return 0;
     const i = Math.floor(fi), j = Math.floor(fj), u = fi - i, v = fj - j, V = N + 1, k = j * V + i;
+    // (Each corner as the vertex shader raises it.)
     const at = (q) => {
       const dd = d * this.cover[q];
-      return dd < 0.02 ? -Infinity : this.base[q] + SNOW_DEPTH * dd * smooth(0.02, 0.12, dd);
+      return this.base[q] + (-0.6 + (SNOW_DEPTH * dd + 0.6) * smooth(0.02, 0.12, dd));
     };
     const a = at(k), b = at(k + 1), c = at(k + V), e = at(k + V + 1);
-    if (![a, b, c, e].every(Number.isFinite)) return 0;
-    const top = a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + e * u * v;
-    return Math.max(0, top - this.ground(x, z));
+    // (The cell's two triangles, its diagonal running as the mesh's does.)
+    let top;
+    if ((i + j) & 1) top = u + v <= 1 ? a + (b - a) * u + (c - a) * v : e + (c - e) * (1 - u) + (b - e) * (1 - v);
+    else top = v >= u ? a + (e - c) * u + (c - a) * v : a + (b - a) * u + (e - b) * v;
+    const g = this.ground(x, z);
+    return Number.isFinite(g) ? Math.max(0, top - g) : 0;
   }
 }
 

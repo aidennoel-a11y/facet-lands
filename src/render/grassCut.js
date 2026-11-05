@@ -21,6 +21,17 @@ export class GrassCut {
     this.wait = 0;
   }
 
+  /** Whether the metre at (x, z) has been cut (and not grown back yet). */
+  isCut(x, z) {
+    return this.cells.has(`${Math.floor(x)},${Math.floor(z)}`);
+  }
+
+  /** Whether the metre at (x, z) is one a cut round (cx, cz), `r` metres, would reach (see cut). */
+  static reaches(x, z, cx, cz, r) {
+    const i = Math.floor(x), k = Math.floor(z);
+    return Math.hypot(Math.max(0, Math.abs(i + 0.5 - cx) - 0.5), Math.max(0, Math.abs(k + 0.5 - cz) - 0.5)) <= r;
+  }
+
   /** Cut round (x, z), `r` metres, on `day` (world days). */
   /** Returns how many square metres of it were standing (not cut already). */
   cut(x, z, r, day) {

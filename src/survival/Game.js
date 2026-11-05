@@ -1519,16 +1519,20 @@ export class Game {
       this.cooldown = 0.45;
       this.#animate('chop', 0.35);
       this.sound?.call('brush', 0, 0.7);
+      if (!mown) return; // (nothing standing there to cut)
+      // (Straight into your pack, never left lying about: if there's no room, it's left in the swathe.)
       if (Math.random() < 0.08) {
-        this.#give(['seedWheat', 'seedCarrot'][Math.floor(Math.random() * 2)], 1, { x: at.x, y: at.y + 0.3, z: at.z });
+        const seed = ['seedWheat', 'seedCarrot'][Math.floor(Math.random() * 2)];
+        if (this.inventory.add(Inventory.stack(seed, 1), this.hotbar?.index)) return this.hotbar?.flash('No room for the seeds');
         return this.hotbar?.flash('Seeds, in the cut grass');
       }
       // (Standing grass, cut: an armful of straw, for a bed.)
-      if (mown >= 3) {
-        const n = mown >= 6 ? 2 : 1;
-        this.#give('straw', n, { x: at.x, y: at.y + 0.3, z: at.z });
+      if (mown >= 4) {
+        const n = mown >= 12 ? 2 : 1;
+        const left = this.inventory.add(Inventory.stack('straw', n), this.hotbar?.index);
+        if (left >= n) return this.hotbar?.flash('No room for the straw');
         this.sound?.call('brush', 0, 0.6);
-        return this.hotbar?.flash(`Straw ×${n}`);
+        return this.hotbar?.flash(`Straw ×${n - left}`);
       }
       return;
     }

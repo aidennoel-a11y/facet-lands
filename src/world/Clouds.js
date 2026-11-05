@@ -220,7 +220,7 @@ export class Clouds {
     // swelling, sinking and darkening, the rain hanging under it.
     const wind = Math.hypot(this.wind.x, this.wind.z) || 1;
     const drift = wind * speed;
-    const ease = Math.min(1, dt / 6); // (and no cloud changes in a blink as you move about)
+    const ease = Math.min(1, dt / 24); // (and no cloud changes in a blink as you move about)
     this.travel += speed * dt;
     if (this.travelTarget !== null) {
       this.travelTarget += speed * dt;
@@ -260,7 +260,8 @@ export class Clouds {
         p.y = cloud.userData.targetY;
       } else if (wrapped) cloud.userData.due = true; // (its height over the land there: worked out in a moment, below; out in the fog meanwhile)
       // Ease towards the height that clears the land.
-      p.y += (cloud.userData.targetY - p.y) * Math.min(1, dt * 0.6);
+      // (Coming down slowly as the weather thickens, a few minutes over it; up quickly, to clear a hill.)
+      p.y += (cloud.userData.targetY - p.y) * Math.min(1, dt * (cloud.userData.targetY < p.y ? 0.15 : 0.6));
     }
     // Re-check the land under a couple of clouds each frame (all of them
     // every second or two: the land's height is slow to work out).

@@ -280,7 +280,6 @@ const lavaBubbles = new LavaBubbles(scene);
 const constellationSeen = { wait: 0 };
 const flashFloods = new FlashFloods(scene);
 const aridHere = { v: 0, wait: 0 };
-const bladeTint = new THREE.Color();
 
 // --- The climate, and the tornadoes ---------------------------------------------------------
 //
@@ -1080,9 +1079,16 @@ function groundNormal(x, z) {
  * A footfall at (x, z) heading `heading` (the player's boot, or an
  * animal's hoof or paw): a print in soft ground, a splash in water.
  */
+// (The top of the deep snow, where it lies: its slope, for a footprint to lie flat on it.)
+const snowTop = (x, z) => chunks.groundHeightAt(x, z) + snowBlanket.depthAt(x, z);
+function snowNormal(x, z) {
+  const e = 0.3;
+  return printNormal.set(snowTop(x - e, z) - snowTop(x + e, z), 2 * e, snowTop(x, z - e) - snowTop(x, z + e)).normalize();
+}
 function footfall(x, z, heading, shape, size, loud = 0.5, track = false) {
   const water = waterAt(x, z, true);
-  const y = chunks.groundHeightAt(x, z) + snowBlanket.depthAt(x, z); // (in the deep snow: on its top)
+  const deep = snowBlanket.depthAt(x, z);
+  const y = chunks.groundHeightAt(x, z) + deep; // (in the deep snow: on its top)
   if (!Number.isFinite(y) || water?.frozen) return; // (none on the ice)
   // (Splashing through the swash running up the beach, too.)
   const surf = !water && surfAt(x, z);
@@ -1096,7 +1102,7 @@ function footfall(x, z, heading, shape, size, loud = 0.5, track = false) {
     if (Math.hypot(x - camera.position.x, z - camera.position.z) < 25) sound.call('splash', panTowards(camera, x, z), 0.25 + 0.4 * loud);
     return;
   }
-  let kind = printGround(x, z, y);
+  let kind = deep > 0.04 ? (printColour.copy(SNOW_PRINT).multiplyScalar(0.5 + 0.5 * Math.min(1, dayNight.hemi.intensity)), 'snow') : printGround(x, z, y);
   // (An animal's tracks show faintly even in the grass and the dirt: to follow.)
   if (!kind && track) {
     const jitter = generator.getColorJitter(x, z);
@@ -1104,7 +1110,7 @@ function footfall(x, z, heading, shape, size, loud = 0.5, track = false) {
     printColour.multiplyScalar(0.72);
     kind = 'grass';
   }
-  if (kind) traces.print(x, y, z, heading, shape, size, kind, printColour, groundNormal(x, z));
+  if (kind) traces.print(x, y, z, heading, shape, size, kind, printColour, deep > 0.04 ? snowNormal(x, z) : groundNormal(x, z));
 }
 // Tracks to follow: where the animals have gone lately (a mark every few
 // metres of each one's way), with now and then its droppings, and a twig
@@ -1718,18 +1724,17 @@ const game = new Game({
   // (The long grass cut with a sickle: see GrassCut.)
   // (How much standing grass the blade went through: none on rock, sand, snow or in the water.)
   cutGrass: (x, z, r) => {
-    const fresh = grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24);
+    // (The tufts really standing where the blade swept, not yet cut: none once the winter's killed the grass.)
+    const tufts = seasonUniforms.uGrassGone.value > 0.5 ? [] : grass.tuftsNear(x, z, r + 0.75, (tx, tz) => grassCut.isCut(tx, tz) || !GrassCut.reaches(tx, tz, x, z, r));
+    grassCut.cut(x, z, r, dayNight.day + dayNight.hour / 24);
     if (sync.online) sync.fx.push({ k: 'mow', x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, r });
-    const kind = fresh ? stepSurface(x, z) : null;
-    if (kind === 'grass') {
-      // (The stalks shorn off at the foot, falling over the way the blade swept.)
-      const w = generator.getBiomeWeights(x, z, {}), dry = Math.min(1, (w.savanna ?? 0) + (w.desert ?? 0) + (w.badlands ?? 0));
-      bladeTint.setRGB(0.36 + 0.42 * dry, 0.58 + 0.12 * dry, 0.2 + 0.1 * dry);
+    if (tufts.length) {
+      // (Each sheared off at the foot, falling over the way the blade swept.)
       const fwd = new THREE.Vector3();
       camera.getWorldDirection(fwd);
-      cutBlades.cut(x, z, r, (px, pz) => chunks.groundHeightAt(px, pz), bladeTint, Math.atan2(fwd.x, fwd.z) + Math.PI / 2);
+      cutBlades.fell(tufts, (px, pz) => chunks.groundHeightAt(px, pz), Math.atan2(fwd.x, fwd.z) + Math.PI / 2);
     }
-    return kind === 'grass' || kind === 'dirt' || kind === 'leaves' ? fresh : 0;
+    return tufts.length;
   },
   cutJSON: () => grassCut.toJSON(),
   loadCut: (list) => grassCut.load(list),
@@ -2361,6 +2366,7 @@ const cold = { value: 1, wait: 0 };
 // before the winter comes in earnest. (Online, the host's weather brings it.)
 // (And up in the mountains, now and then from mid autumn to mid spring:
 // see highSnow. Up there, it snows instead of raining then.)
+let wasSnowing = false;
 let firstSnowFalling = false;
 function firstSnow() {
   const d = WORLD.daysPerSeason, t = seasons.time;
@@ -2672,7 +2678,8 @@ const aurora = { value: 0 };
 function northernLights(dt) {
   const winter = seasonUniforms.uWinter.value;
   const h = Math.sin(dayNight.day * 12.9898 + 4.1) * 43758.5453;
-  const tonight = winter > 0.5 || h - Math.floor(h) < 0.35;
+  // (Only some nights: three or so in a winter, and hardly ever at other times of the year.)
+  const tonight = h - Math.floor(h) < (winter > 0.5 ? 0.25 : 0.03);
   const high = THREE.MathUtils.smoothstep(camera.position.y, 110, 220);
   const target = tonight ? Math.min(1, (0.55 + 0.45 * winter) * (0.6 + 0.4 * Math.max(cold.value, high))) : 0;
   aurora.value += ((aurora.force ?? target) - aurora.value) * Math.min(1, dt / 8);
@@ -2941,6 +2948,27 @@ function applySandstorm() {
   }
 }
 
+// Heavy snow: the view closes in, all white, a few tens of metres; worst
+// up in the mountains in a blizzard, where you can hardly see your hand.
+const WHITEOUT = new THREE.Color(0xd4dae0);
+const whiteout = { value: 0, snow: 0 };
+function applyWhiteout(dt) {
+  const mountain = smoothstep(55, 110, camera.position.y);
+  const target = underwater || sheltered ? 0 : whiteout.snow * smoothstep(0.35, 0.85, localRain) * (0.6 + 0.4 * mountain) * (0.75 + 0.25 * Math.max(weather.storm, mountain));
+  whiteout.value += (target - whiteout.value) * Math.min(1, dt / 8);
+  const a = whiteout.value;
+  if (a < 0.002) return;
+  const lum = Math.min(1, 0.3 + 0.7 * Math.min(1, dayNight.light.intensity / 2 + dayNight.hemi.intensity / 3));
+  scene.fog.color.lerp(printColour.copy(WHITEOUT).multiplyScalar(lum), Math.min(1, a * 1.2));
+  scene.fog.near *= 1 - 0.95 * a;
+  const far = 140 - 95 * mountain; // (some 140 m down low; 45 m on the mountains)
+  scene.fog.far += (Math.min(scene.fog.far, far) - scene.fog.far) * a;
+  if (a > 0.7) {
+    dayNight.sky.visible = false;
+    scene.background = scene.fog.color;
+  }
+}
+
 function applyCaveHaze(dt) {
   caveHaze.amount += (caveHaze.target - caveHaze.amount) * Math.min(1, dt * 3);
   const a = caveHaze.amount;
@@ -3193,14 +3221,15 @@ function tick(now) {
   // (Where a bolt strikes, far off: the land before rivers, which is quick to work out.)
   // (Out on high open ground in a storm, not under a roof: the lightning may find you.)
   lightning.exposed = controls.mode === 'walk' && !sheltered && (game.sheltered ?? 0) < 0.5 ? 0.12 * (around.env?.exposure ?? 0) * (1 - (around.env?.canopy ?? 0)) : 0;
-  lightning.update(dt, weather.storm, camera, dayNight, (x, z) => generator.getBaseHeight(x, z), sound, sheltered);
+  // (No thunder and lightning in a winter storm: it's a blizzard, the snow driving.)
+  lightning.update(dt, weather.storm * (seasonUniforms.uWinter.value > 0.5 || firstSnowFalling ? 0 : 1), camera, dayNight, (x, z) => generator.getBaseHeight(x, z), sound, sheltered);
   farLightning(dt);
   afterRain(dt);
   dayNight.viewDir = dir;
   dayNight.yearFrac = ((seasons.time ?? 0) / 4) % 1; // (for the constellations: which are up, and when)
   dayNight.update(dt, camera.position, weather);
   // (Looking up at one of the constellations on a clear night: its name, and its season, once a night.)
-  if (dayNight.constellationsUp && (1 - (around.env?.day ?? 1)) > 0.7 && !sheltered && (constellationSeen.wait -= dt) <= 0) {
+  if (false && dayNight.constellationsUp && (1 - (around.env?.day ?? 1)) > 0.7 && !sheltered && (constellationSeen.wait -= dt) <= 0) {
     constellationSeen.wait = 1;
     const look = camera.getWorldDirection(new THREE.Vector3());
     for (const c of dayNight.constellationsUp) {
@@ -3235,6 +3264,17 @@ function tick(now) {
   // (And it builds up deep, slowly: a foot of it after ten minutes or so of snowing; melting a little slower than the fresh dusting.)
   seasonUniforms.uSnowDepth.value = Math.min(1, Math.max(0, seasonUniforms.uSnowDepth.value + (snowing ? dt / 600 : -dt * thaw * 0.5)));
   snowBlanket.update(camera.position.x, camera.position.z);
+  // The winter's snowfalls, counted: after the first the crops die; after the
+  // second the grass dies back and is gone under the snow, till spring.
+  const st = seasons.time;
+  if (snowing && !wasSnowing && (st > 2.5 || st < 0.15)) seasonUniforms.uSnowfalls.value++;
+  wasSnowing = snowing;
+  if (st > 0.3 && st < 2.4) seasonUniforms.uSnowfalls.value = 0;
+  const grassGone = seasonUniforms.uSnowfalls.value >= 2 && (st > 2.5 || st < 0.15) ? 1 : 0;
+  const cropsDead = seasonUniforms.uSnowfalls.value >= 1 && (st > 2.5 || st < 0.15);
+  seasonUniforms.uCropWither.value += Math.max(-dt / 60, Math.min(dt / 45, (cropsDead ? 1 : 0) - seasonUniforms.uCropWither.value));
+  seasonUniforms.uCropGone.value += Math.max(-dt / 60, Math.min(dt / 90, (cropsDead && seasonUniforms.uCropWither.value > 0.95 ? 1 : 0) - seasonUniforms.uCropGone.value));
+  seasonUniforms.uGrassGone.value += Math.max(-dt / 300, Math.min(dt / 60, grassGone - seasonUniforms.uGrassGone.value));
   game.structures.snowHere.value = snowBlanket.cold(camera.position.x, camera.position.z);
   prof.mark('sky, weather, light');
   shadowReach(dt);
@@ -3256,6 +3296,7 @@ function tick(now) {
   applyCaveHaze(dt);
   applyUnderwater();
   applySandstorm();
+  applyWhiteout(dt);
   prof.mark('fog, haze, water look');
   cloudSky.cover = weather.cover;
   cloudSky.storm = weather.storm;
@@ -3276,7 +3317,9 @@ function tick(now) {
   if (dayNight.playing) game.passDays(dt / (WORLD.dayLengthMinutes * 60));
   // In a cold winter, it snows (over the lands that have one).
   const snow = Math.max(seasonUniforms.uWinter.value, firstSnowing ? (seasons.highSnowing ? smoothstep(60, 85, camera.position.y) : 1) : 0, seasonUniforms.uHighSnow.value * smoothstep(80, 100, camera.position.y)) * coldHere(dt);
-  rain.update(worldNow, camera.position, localRain, clouds.wind, wind, dayNight.horizon, snow);
+  whiteout.snow = snow;
+  // (Snow comes down thicker than rain: a heavy fall, more of it in the air.)
+  rain.update(worldNow, camera.position, Math.min(1, localRain * (1 + 0.6 * snow)), clouds.wind, wind, dayNight.horizon, snow);
   // The tide: in and out twice a day, some 60 cm either way (higher at a storm's surge).
   tide.value = 0.6 * Math.sin((dayNight.day + dayNight.hour / 24) * Math.PI * 4) + 0.5 * (seaStorm.value ?? 0);
   prof.mark('rain, snow, tornado');
@@ -3620,7 +3663,7 @@ requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
 globalThis.__prof = prof;
-window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, snowBlanket, seasonUniforms, get generator() { return generator; }, WORLD };
+window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, snowBlanket, seasonUniforms, whiteout, get localRain() { return localRain; }, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

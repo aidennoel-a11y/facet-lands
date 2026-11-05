@@ -204,11 +204,6 @@ const skyFragment = /* glsl */ `
     float twinkle = 0.75 + 0.25 * sin(time * (2.0 + 3.0 * hash(cell + 5.0)) + hash(cell + 6.0) * 6.28);
     vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.9, 0.72), hash(cell + 9.0));
     col += tint * star * starsShow * (0.5 + 0.5 * hash(cell + 7.0)) * twinkle;
-    // The constellations' bright stars, steady and a touch larger than the rest.
-    for (int i = 0; i < 28; i++) {
-      float c = dot(d, conStars[i]);
-      col += vec3(0.95, 0.96, 1.0) * smoothstep(0.999985, 0.999997, c) * starsShow * 1.4 * (0.9 + 0.1 * sin(time * 1.3 + float(i)));
-    }
 
     // The northern lights: curtains of green light hanging in the northern
     // sky (-z), rippling and drifting, fringed with red and violet above,
@@ -228,7 +223,8 @@ const skyFragment = /* glsl */ `
         float c = rise * rays * ripple;
         auroraCol += mix(vec3(0.18, 1.0, 0.45), vec3(0.75, 0.2, 0.75), smoothstep(0.03, 0.2, above)) * c;
       }
-      col += auroraCol * north * aurora * starsShow * 0.5;
+      // (Low over the north, never up over your head: fading out well short of the top of the sky.)
+      col += auroraCol * north * aurora * starsShow * 0.5 * (1.0 - smoothstep(0.35, 0.6, up));
     }
 
     // Now and then a shooting star streaks across.

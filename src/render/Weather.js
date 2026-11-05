@@ -5,7 +5,7 @@ function smoothstep(a, b, x) {
 
 const STEP = 0.5; // seconds between the history's entries
 const HISTORY = 800; // (so it goes back nearly seven minutes)
-const EASE = 25; // seconds for the cloud to build or break (see update)
+const EASE = 100; // seconds for the cloud to build or break (see update)
 
 /**
  * Kinds of weather, from fine to foul, and what each one means:
@@ -81,7 +81,7 @@ export class Weather {
     }
     this.auto = false;
     this.kind = kind;
-    this.hurry = 6; // picked by hand: change over a couple of seconds, not a minute
+    this.hurry = 24; // picked by hand: change over a couple of seconds, not a minute
   }
 
   /** The weather as it is, for the others online to follow (see follow). */
@@ -215,9 +215,9 @@ export class Weather {
     // Clouds build up (or break) over tens of seconds; rain only falls from
     // thick cloud, starting after it and stopping before it clears. When
     // the weather is picked by hand it all happens within a couple of seconds.
-    const pace = this.hurry > 0 ? 20 : 1;
+    const pace = this.hurry > 0 ? 5 : 1;
     this.hurry = Math.max(0, this.hurry - dt);
-    this.cover += (target.cover - this.cover) * Math.min(1, (dt * pace) / 25);
+    this.cover += (target.cover - this.cover) * Math.min(1, (dt * pace) / EASE);
     const rainTarget = target.rain * smoothstep(0.75, 0.9, this.cover);
     this.rain += (rainTarget - this.rain) * Math.min(1, (dt * pace) / (rainTarget > this.rain ? 12 : 8));
     this.storm += (target.storm * smoothstep(0.5, 0.9, this.rain) - this.storm) * Math.min(1, (dt * pace) / 10);

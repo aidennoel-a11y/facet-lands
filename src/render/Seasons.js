@@ -26,6 +26,10 @@ export const seasonUniforms = {
   uWinter: { value: 0 },
   uWet: { value: 0 }, // how wet the ground is after rain (puddles), 0..1
   uSnowfall: { value: 0 }, // fresh snow lying on everything after it has snowed, 0..1
+  uGrassGone: { value: 0 }, // the grass died back under the snow (after the winter's second snowfall), 0..1; back in spring
+  uSnowfalls: { value: 0 }, // how many times it's snowed this winter (see main)
+  uCropWither: { value: 0 }, // the crops, wild and planted, withered brown by the winter's first snowfall, 0..1
+  uCropGone: { value: 0 }, // and then dead and gone, 0..1 (back with the spring: the wild ones)
   uSnowDepth: { value: 0 }, // how deep the lying snow's built up (see SnowBlanket), 0..1: slowly while it snows
   uMossy: { value: 0 }, // how damp the country round about is: moss on the north sides of the trees (0..1)
   uFruit: { value: 0 }, // the fruit and berries on the trees and bushes: set in early summer, gone by winter (0..1)
@@ -466,7 +470,7 @@ export function seasonalGrass(material) {
     material,
     (shader) => {
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uWinter;\nuniform float uSeasonTime;\nattribute float aWarm;\nvarying float vGrassSeasonal;\nvarying float vGrassDry;')
+        .replace('#include <common>', '#include <common>\nuniform float uWinter;\nuniform float uSeasonTime;\nuniform float uGrassGone;\nattribute float aWarm;\nvarying float vGrassSeasonal;\nvarying float vGrassDry;')
         .replace(
           '#include <begin_vertex>',
           /* glsl */ `#include <begin_vertex>
@@ -479,7 +483,9 @@ export function seasonalGrass(material) {
           #ifdef USE_INSTANCING_COLOR
             float grassGreen = clamp((instanceColor.g - max(instanceColor.r, instanceColor.b)) * 9.0, 0.0, 1.0);
             transformed.y *= 1.0 - 0.85 * uWinter * grassGreen * vGrassSeasonal;
-          #endif`,
+          #endif
+          // (Dead and gone under the snow after the winter's second snowfall, in the lands with a real winter; growing back up in spring.)
+          transformed *= 1.0 - uGrassGone * smoothstep(0.3, 0.7, vGrassSeasonal);`,
         );
       shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${COMMON}\nvarying float vGrassSeasonal;\nvarying float vGrassDry;`).replace(
         '#include <color_fragment>',
@@ -525,5 +531,24 @@ export function seasonalWater(material) {
       );
     },
     'season-water',
+  );
+}
+
+/**
+ * Crops, wild and planted: after the winter's first snowfall they wither,
+ * brown and drooping, and then die down to nothing (see main: uCropWither, uCropGone).
+ */
+export function withering(material) {
+  return hook(
+    material,
+    (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uCropWither;\nuniform float uCropGone;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y *= 1.0 - 0.4 * uCropWither;\ntransformed.xz += transformed.y * uCropWither * vec2(0.25, 0.1);\ntransformed *= 1.0 - uCropGone;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uCropWither;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.27, 0.16) * (0.7 + 0.6 * dot(diffuseColor.rgb, vec3(0.33))), uCropWither * 0.9);');
+    },
+    'withering',
   );
 }

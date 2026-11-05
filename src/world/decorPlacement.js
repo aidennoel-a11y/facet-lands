@@ -37,11 +37,11 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
         meadow = generator.getMeadow(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4);
         // (And whether a stream's anywhere near the patch: then each
         // flower is checked against it.)
-        stream = meadow > 0.05 && !!generator.rivers?.at(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4, 8);
         // (High in the mountains: the alpine flowers, and on the flatter ground the heather, in great patches.)
         const px = x0 + Math.floor(lx / 8) * 8 + 4, pz = z0 + Math.floor(lz / 8) * 8 + 4;
         alp = generator.alpineMeadowAt?.(px, pz) ?? 0;
         high = Math.max(generator.getHighFlowers?.(px, pz) ?? 0, alp);
+        stream = (meadow > 0.05 || high > 0) && !!generator.rivers?.at(px, pz, 8);
         heath = high > 0 ? Math.max(0, Math.min(1, (generator.meadowNoise.noise2D(px * 0.006 + 71, pz * 0.006 - 33) + 0.1) * 2.5)) : 0;
       }
       const isMeadow = keep <= 0.7 * meadow, isHigh = !isMeadow && keep < 0.75 * high;
@@ -51,9 +51,10 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
       if (isHigh) {
         // (Below the bare rock and the snow, on the green high ground: some 60 to 103 m.)
         if (y > 102 || (y < 60 && alp < 0.3)) continue;
-        if (stream && generator.rivers.at(x0 + lx, z0 + lz, 1.5)) continue;
+        if (stream && generator.rivers.at(x0 + lx, z0 + lz, 2.5)) continue; // (never in a stream, nor right on its bank)
+        if (generator.landmarks?.underWater(x0 + lx, z0 + lz, y)) continue; // (nor in a tarn)
         // (Heather on the flatter ground, from 110 m up, in its patches; the alpine flowers on the rest.)
-        const heather = y > 70 && surface.normalY > 0.93 && hash2(gi, gj, seed + 6) < heath;
+        const heather = y > 70 && surface.normalY > 0.93 && hash2(gi, gj, seed + 6) < heath * 0.5;
         if (!heather && keep > (alp > 0.3 ? 0.75 : 0.3) * high) continue; // (the alpine flowers thinner than a meadow's)
         const tone = generator.meadowNoise.noise2D((x0 + lx) * 0.05, (z0 + lz) * 0.05) * 0.5 + 0.5;
         const pick = heather ? 7 + Math.floor(hash2(gi, gj, seed + 7) * 3) : ALPINE[Math.floor((tone * 2 + hash2(gi, gj, seed + 3) * 1.4) % ALPINE.length)];

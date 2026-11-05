@@ -48,6 +48,24 @@ export class CutBlades {
     }
   }
 
+  /**
+   * The tufts that really stood there (see GrassLayer.tuftsNear), cut: each
+   * sheared off at its foot and falling over, at its own height and in its
+   * own colour.
+   */
+  fell(tufts, ground, sweep) {
+    for (const t of tufts.slice(0, 120)) {
+      if (this.list.length >= MAX) this.list.shift();
+      const y = ground(t.x, t.z);
+      if (!Number.isFinite(y)) continue;
+      this.list.push({
+        x: t.x, y: y + 0.04, z: t.z, h: Math.max(0.2, t.h * 0.75), t: -Math.random() * 0.2,
+        fall: sweep + (Math.random() - 0.5) * 1.2, spin: Math.random() * Math.PI * 2,
+        colour: this.colour.setRGB(t.r * 0.95, t.g * 0.95, t.b * 0.95).getHex(),
+      });
+    }
+  }
+
   update(dt) {
     let n = 0;
     const tint = this.colour;

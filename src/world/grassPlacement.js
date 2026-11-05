@@ -12,6 +12,7 @@ function smoothstep(a, b, x) {
 }
 const up = new Vector3(0, 1, 0);
 const color = new Color();
+const SWAMP_GREEN = new Color(0.3, 0.46, 0.16);
 const surface = { normalY: 1 };
 
 /**
@@ -32,7 +33,7 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
 
   const matrices = new Float32Array(cells * cells * 16);
   const colors = new Float32Array(cells * cells * 3);
-  const kinds = new Uint8Array(cells * cells); // 0 tuft, 1 tall seeding stalks, 2 broad clump, 3 sedge, 4 fine golden grass (see GrassLayer)
+  const kinds = new Uint8Array(cells * cells); // 0 tuft, 1 tall seeding stalks, 2 broad clump, 3 sedge, 4 fine golden grass, 5 marsh grass (see GrassLayer)
   // How warm the country is (in and near the jungle: no straw-coloured
   // autumn, no winter): on a 24 m grid, remembered for the chunk.
   const warms = new Float32Array(cells * cells), warmth = new Map();
@@ -44,6 +45,17 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       // (The monsoon forest's grass: marked below nothing, for its own dry season. See Seasons.seasonalGrass.)
       const monsoon = generator.getBiomeWeights(px, pz, {}).monsoon ?? 0;
       warmth.set(key, (v = monsoon > 0.3 ? -Math.min(1, monsoon * 1.4) : 1 - smoothstep(0.3, 0.6, generator.getSeasonality(px, pz))));
+    }
+    return v;
+  };
+  // (How much of a swamp it is here, mangrove or marsh: on a 24 m grid, remembered. There the grass grows everywhere, down to the water.)
+  const swamps = new Map();
+  const swampAt = (wx, wz) => {
+    const key = Math.floor(wx / 24) * 65536 + Math.floor(wz / 24);
+    let v = swamps.get(key);
+    if (v === undefined) {
+      const w = generator.getBiomeWeights(Math.floor(wx / 24) * 24 + 12, Math.floor(wz / 24) * 24 + 12, {});
+      swamps.set(key, (v = smoothstep(0.35, 0.7, (w.mangrove ?? 0) + (w.wetland ?? 0))));
     }
     return v;
   };
@@ -59,28 +71,29 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       // Cheapest tests first (every biome's grass is at most 1, so a spot
       // failing on density alone fails anyway).
       const keep = hash2(gi, gj, seed);
-      const density = generator.getGrassDensity(wx, wz);
+      const swamp = swampAt(wx, wz);
+      const density = Math.max(generator.getGrassDensity(wx, wz), 0.95 * swamp);
       if (keep > density) continue;
       const ground = groundHeightAt(lx, lz, surface);
-      if (!(ground >= seaLevel + 0.7) || surface.normalY < 0.72) continue; // also skips cave mouths
+      if (!(ground >= seaLevel + (swamp > 0.5 ? 0.05 : 0.7)) || surface.normalY < 0.72) continue; // also skips cave mouths (and above the high tide, in a swamp)
       // (A jungle range's mountains: grass up their lower slopes where the trees thin out, a little
       // steeper and higher than elsewhere, but never on their tops.)
       const jmtn = surface.normalY < 0.8 || ground > 120 ? generator.getBiomeWeights(wx, wz, {}).jungleMountains ?? 0 : 0;
       if (surface.normalY < 0.8 && jmtn < 0.5) continue;
       // Near the water only on a lake's grassy shore patches.
       const shore = ground < seaLevel + 5.5 ? generator.getShore(wx, wz, ground) : null;
-      if (ground < seaLevel + 3.5 && !(shore && shore.kind === 'grass')) continue;
-      if (shore && shore.kind !== 'grass' && shore.fade > 0.5) continue;
+      if (swamp < 0.5 && ground < seaLevel + 3.5 && !(shore && shore.kind === 'grass')) continue;
+      if (swamp < 0.5 && shore && shore.kind !== 'grass' && shore.fade > 0.5) continue;
       if (generator.caves?.field.nearEntrance(wx, wz, 0.6)) continue; // nor under an entrance's ledge
       // Only where the ground itself is green (not sand, rock or snow).
       const jitter = generator.getColorJitter(wx, wz);
       const colourHeight = ground + jitter;
-      if ((colourHeight < 6 && !(shore && shore.kind === 'grass')) || colourHeight > (jmtn > 0.5 ? 178 : 140)) continue;
+      if ((colourHeight < 6 && swamp < 0.5 && !(shore && shore.kind === 'grass')) || colourHeight > (jmtn > 0.5 ? 178 : 140)) continue;
       if (generator.onSinter && generator.getBiomeWeights(wx, wz, {}).volcanic > 0.5 && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
       if (generator.onLiveLava?.(wx, wz)) continue; // nor on a lava flow
       // How much grass the biome here grows.
       const oasis = generator.oasisAt ? generator.oasisAt(wx, wz) : 0;
-      if (keep > density * Math.max(generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass, oasis)) continue;
+      if (keep > density * Math.max(generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass, oasis, swamp)) continue;
       const river = generator.rivers?.at(wx, wz, 3);
       if (river && river.d < river.water + 2.5) continue; // nor on a river's muddy banks (reeds grow there)
       if (generator.landmarks?.underWater(wx, wz, ground)) continue; // (nor under a landmark's lake or pools)
@@ -88,7 +101,9 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       generator.surfaceColor(wx, wz, colourHeight, surface.normalY, color, jitter);
       // (Bare grey rock and snow are all but colourless; grassland isn't.)
       const hi = Math.max(color.r, color.g, color.b), lo = Math.min(color.r, color.g, color.b);
-      if (hi - lo < 0.2 * hi) continue;
+      if (hi - lo < 0.2 * hi && swamp < 0.5) continue;
+      // (A swamp's grass a fresh, wet green, whatever the mud under it.)
+      if (swamp > 0) color.lerp(SWAMP_GREEN, 0.75 * swamp);
       // How near the water (a river, stream, pond, lake or the sea): the
       // grass there grows lush and green, with sedges among it.
       const bank = generator.rivers?.shoreAt(wx, wz, 22);
@@ -123,7 +138,9 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       // where it runs yellow.
       const sedge = Math.min(0.6, 0.55 * wet + 0.4 * (bw.wetland + bw.mangrove));
       const golden = 0.25 * smoothstep(0, 0.8, tint) + 0.06;
-      const kind = pick < sedge ? 3 : pick < sedge + golden ? 4 : pick < sedge + golden + 0.35 * stalky ? 1 : pick < sedge + golden + 0.35 * stalky + 0.12 + 0.15 * stalky ? 2 : 0;
+      // (And in the swamps, among them, the marsh grass: soft, broad, arching blades.)
+      const marsh = 0.45 * swamp + 0.12 * wet * (bw.wetland + bw.mangrove > 0.2 ? 1 : 0);
+      const kind = hash2(gi, gj, seed + 10) < marsh ? 5 : pick < sedge ? 3 : pick < sedge + golden ? 4 : pick < sedge + golden + 0.35 * stalky ? 1 : pick < sedge + golden + 0.35 * stalky + 0.12 + 0.15 * stalky ? 2 : 0;
       kinds[count] = kind;
       warms[count] = warmAt(wx, wz);
       position.set(lx, ground - 0.05, lz);

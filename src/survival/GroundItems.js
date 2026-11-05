@@ -1,6 +1,7 @@
 import { Color, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, Quaternion, Vector3, Euler } from 'three';
 import { hash2 } from '../noise/random.js';
 import { Inventory } from './Inventory.js';
+import { withering, seasonUniforms } from '../render/Seasons.js';
 import { ITEMS } from './items.js';
 import * as M from './models.js';
 import { coalModel, goldOreModel, mountainOreModel, swordModel, arrowModel, axeModel, boltModel, bowModel, crossbowModel, hoeModel, sickleModel, shearsModel, fishModel, flintModel, ironBarModel, ironModel, logModel, meatModel, pickaxeModel, potModel, rockModel, rodModel, skinModel, spearModel, harpoonModel, stickModel, waterskinModel } from './models.js';
@@ -278,7 +279,7 @@ export class GroundItems {
     group.userData.key = `${cx},${cz}`;
     for (const [id, list] of Object.entries(found)) {
       if (!list.length) continue;
-      const mesh = new InstancedMesh(this.model(id, id === 'iron' ? 'boulder' : ORE_NODES.has(id) ? 'node' : ''), this.material, list.length);
+      const mesh = new InstancedMesh(this.model(id, id === 'iron' ? 'boulder' : ORE_NODES.has(id) ? 'node' : ''), WILD_CROPS[id] ? (this.cropMaterial ??= withering(new MeshLambertMaterial({ vertexColors: true, flatShading: true }))) : this.material, list.length);
       mesh.name = id;
       list.forEach((it, k) => {
         // (Wild crops: each patch its own size, and sunk a little where the ground slopes.)
@@ -464,7 +465,7 @@ export class GroundItems {
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
         const src = this.chunks.get(`${Math.floor(x / C) + dx},${Math.floor(z / C) + dz}`);
-        for (const it of src?.items ?? []) if (!it.gone && WILD_CROPS[it.id] && Math.hypot(it.x - x, it.z - z) < r) out.push(it);
+        for (const it of src?.items ?? []) if (!it.gone && WILD_CROPS[it.id] && seasonUniforms.uCropGone.value < 0.5 && Math.hypot(it.x - x, it.z - z) < r) out.push(it);
       }
     }
     return out;
@@ -488,7 +489,7 @@ export class GroundItems {
         for (const src of [this.chunks.get(`${ccx + dx},${ccz + dz}`), this.caves.get(`${ccx + dx},${ccz + dz}`)]) {
           if (!src) continue;
           for (const it of src.items) {
-            if (it.gone) continue;
+            if (it.gone || (WILD_CROPS[it.id] && seasonUniforms.uCropGone.value > 0.5)) continue; // (a wild crop died down in the winter: nothing there)
             if (Math.abs(it.x - origin.x) > reach + 1 || Math.abs(it.z - origin.z) > reach + 1) continue;
             consider(it.x, it.y + (it.boulder ? 0.4 : it.node ? 0.2 : 0.08), it.z, it.node ? 0.42 * (it.size ?? 1) : it.key.startsWith('cave:') ? 0.25 * (it.size ?? 1) : 0.18, (t) => ({ kind: 'ground', item: it, id: it.id, distance: t }));
           }

@@ -118,6 +118,36 @@ function sedgeGeometry(seed = 31) {
 }
 
 /**
+ * Marsh grass, in the swamps: a dense, soft clump of broad blades arching
+ * out and over every way, deep green at the foot, yellow-green at the tips,
+ * a few folded over and drooping.
+ */
+function marshGeometry(seed = 53) {
+  const rand = mulberry32(seed);
+  const pos = [], col = [], nor = [];
+  for (let k = 0; k < 12; k++) {
+    const angle = rand() * Math.PI * 2, r = Math.sqrt(rand()) * 0.12;
+    const bx = Math.cos(angle) * r, bz = Math.sin(angle) * r;
+    const half = 0.04 + rand() * 0.03, h = 0.45 + rand() * 0.45, reach = 0.25 + rand() * 0.45;
+    const sx = -Math.sin(angle) * half, sz = Math.cos(angle) * half;
+    // (Two pieces: up and out to the bend, then on over and down to the tip.)
+    const mx = bx + Math.cos(angle) * reach * 0.55, mz = bz + Math.sin(angle) * reach * 0.55, my = h;
+    const tx = bx + Math.cos(angle) * reach, tz = bz + Math.sin(angle) * reach, ty = h * (0.45 + rand() * 0.35);
+    const foot = [0.45, 0.6, 0.38], mid = [0.85, 1.1, 0.7], tip = [1.25, 1.3, 0.75];
+    pos.push(bx + sx, 0, bz + sz, bx - sx, 0, bz - sz, mx + sx * 0.7, my, mz + sz * 0.7);
+    pos.push(bx - sx, 0, bz - sz, mx - sx * 0.7, my, mz - sz * 0.7, mx + sx * 0.7, my, mz + sz * 0.7);
+    pos.push(mx + sx * 0.7, my, mz + sz * 0.7, mx - sx * 0.7, my, mz - sz * 0.7, tx, ty, tz);
+    col.push(...foot, ...foot, ...mid, ...foot, ...mid, ...mid, ...mid, ...mid, ...tip);
+    for (let n = 0; n < 9; n++) nor.push(0, 1, 0);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(nor), 3));
+  g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
+  return g;
+}
+
+/**
  * Fine grass: a low, soft spray of many thin, arching blades whose tips
  * have turned straw-gold.
  */
@@ -151,7 +181,7 @@ export function createGrassLayer(config, { far = false } = {}) {
   const maxLod = far ? config.farGrassMaxLod : config.grassMaxLod;
   // Ordinary tufts, tall seeding stalks, broad, many-bladed clumps, sedges
   // and fine golden grass.
-  const geometries = [tuftGeometry(), tallGeometry(), tuftGeometry(10, 23), sedgeGeometry(), fineGeometry()];
+  const geometries = [tuftGeometry(), tallGeometry(), tuftGeometry(10, 23), sedgeGeometry(), fineGeometry(), marshGeometry()];
   geometries[2].scale(1.6, 0.8, 1.6);
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
   // Double-sided materials flip the normal on back faces, which would turn
@@ -237,6 +267,28 @@ export function createGrassLayer(config, { far = false } = {}) {
     name: far ? 'farGrass' : 'grass',
     material,
     count: 0,
+    placed: new Map(),
+
+    /**
+     * The tufts standing within `r` of (x, z): each { x, z, h, r, g, b, warm } (its
+     * height, its colour). Not those already cut (`isCut(x, z)`).
+     */
+    tuftsNear(x, z, r, isCut) {
+      const out = [], C = config.chunkSize;
+      for (let dz = -1; dz <= 1; dz++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const e = layer.placed.get(`${Math.floor(x / C) + dx},${Math.floor(z / C) + dz}`);
+          if (!e) continue;
+          const m = e.matrices;
+          for (let k = 0; k < e.count; k++) {
+            const tx = e.x0 + m[k * 16 + 12], tz = e.z0 + m[k * 16 + 14];
+            if (Math.abs(tx - x) > r || Math.abs(tz - z) > r || Math.hypot(tx - x, tz - z) > r || isCut?.(tx, tz)) continue;
+            const h = Math.hypot(m[k * 16 + 4], m[k * 16 + 5], m[k * 16 + 6]);
+            out.push({ x: tx, y: m[k * 16 + 13], z: tz, h, r: e.colors[k * 3], g: e.colors[k * 3 + 1], b: e.colors[k * 3 + 2], warm: e.warms?.[k] ?? 0 });
+          }
+        }
+      return out;
+    },
 
     reuseKey: ({ lod, resolution }) => (lod > maxLod ? 'none' : `${resolution}`),
 
@@ -275,12 +327,18 @@ export function createGrassLayer(config, { far = false } = {}) {
       const root = meshes[0];
       for (const m of meshes.slice(1)) root.add(m);
       root.userData.count = count;
+      // (Remembered, where each tuft stands: for the sickle, to cut the grass that's really there.)
+      if (!far) {
+        root.userData.key = `${cx},${cz}`;
+        layer.placed.set(root.userData.key, { x0: cx * config.chunkSize, z0: cz * config.chunkSize, matrices, colors, count, warms: placed.warms });
+      }
       layer.count += count;
       return root;
     },
 
     dispose(mesh) {
       layer.count -= mesh.userData.count;
+      if (mesh.userData.key && layer.placed.get(mesh.userData.key)) layer.placed.delete(mesh.userData.key);
       for (const child of mesh.children) child.geometry.dispose(), child.dispose();
       mesh.geometry.dispose();
       mesh.dispose();
