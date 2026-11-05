@@ -12,9 +12,10 @@ export class CutBlades {
   constructor(scene) {
     // A tuft's cut stalks: a few thin tapering blades from one foot.
     const pos = [];
-    for (let k = 0; k < 4; k++) {
-      const a = (k / 4) * Math.PI + 0.3, w = 0.025, lean = (k - 1.5) * 0.08, cx = Math.cos(a) * w, cz = Math.sin(a) * w;
-      pos.push(-cx, 0, -cz, cx, 0, cz, lean, 1, lean * 0.5);
+    // (A whole tuft's worth: its blades fanned a little apart, as they lie where they fell.)
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI + 0.3, w = 0.03, lean = (k - 3.5) * 0.07, cx = Math.cos(a) * w, cz = Math.sin(a) * w;
+      pos.push(-cx + lean * 0.2, 0, -cz, cx + lean * 0.2, 0, cz, lean, 0.85 + 0.15 * Math.sin(k * 2.3), lean * 0.6);
     }
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
@@ -59,7 +60,7 @@ export class CutBlades {
       const y = ground(t.x, t.z);
       if (!Number.isFinite(y)) continue;
       this.list.push({
-        x: t.x, y: y + 0.04, z: t.z, h: Math.max(0.2, t.h * 0.75), t: -Math.random() * 0.2,
+        x: t.x, y: y + 0.04, z: t.z, h: Math.max(0.3, t.h * 1.05), t: -Math.random() * 0.2,
         fall: sweep + (Math.random() - 0.5) * 1.2, spin: Math.random() * Math.PI * 2,
         colour: this.colour.setRGB(t.r * 0.95, t.g * 0.95, t.b * 0.95).getHex(),
       });
@@ -69,19 +70,20 @@ export class CutBlades {
   update(dt) {
     let n = 0;
     const tint = this.colour;
-    this.list = this.list.filter((b) => (b.t += dt) < 40);
+    this.list = this.list.filter((b) => (b.t += dt) < 130);
     for (const b of this.list) {
       // (Toppling: slow at first, quicker as it goes over, a little bounce as it lands.)
       const u = Math.min(1, Math.max(0, b.t / 0.7)), over = (Math.PI / 2 - 0.08) * (u * u) - (u >= 1 ? 0 : 0) + (u >= 1 ? 0.05 * Math.exp(-(b.t - 0.7) * 8) * Math.sin((b.t - 0.7) * 30) : 0);
       // (Withering into the stubble at the end: lying lower, shrinking.)
-      const wither = 1 - Math.max(0, (b.t - 30) / 10);
+      // (Lying there whole, at its full length, a couple of minutes; only at the very end sinking into the stubble.)
+      const wither = 1 - Math.max(0, (b.t - 120) / 10);
       q.setFromAxisAngle(Y, b.fall);
       q2.setFromAxisAngle(X, over);
       q.multiply(q2).multiply(q2.setFromAxisAngle(Y, b.spin));
       p.set(b.x, b.y - (1 - wither) * 0.05, b.z);
-      m4.compose(p, q, s.set(1, b.h * wither, 1));
+      m4.compose(p, q, s.set(1, b.h * (0.6 + 0.4 * wither), 1));
       this.mesh.setMatrixAt(n, m4);
-      this.mesh.setColorAt(n++, tint.setHex(b.colour).multiplyScalar(1 - 0.35 * Math.min(1, b.t / 30)));
+      this.mesh.setColorAt(n++, tint.setHex(b.colour).multiplyScalar(1 - 0.3 * Math.min(1, b.t / 90)));
     }
     this.mesh.count = n;
     if (n) {

@@ -7,7 +7,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, chimneyWallModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, ladderLean, RAISED_MODELS, wallFootingModel,
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, chimneyWallModel, roofGableModel, flatRoofModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, ladderLean, RAISED_MODELS, wallFootingModel,
   greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, bannerModel, BANNER_DESIGNS, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
@@ -50,8 +50,8 @@ const KINDS = {
   fence: { make: fenceModel, box: [FENCE_LENGTH / 2, 0.12], tall: 1.2, line: 'fence', len: FENCE_LENGTH },
   fenceGate: { make: fenceGatePostsModel, box: [FENCE_LENGTH / 2, 0.12], tall: 1.2, line: 'fence', len: FENCE_LENGTH, door: true },
   // (Roofs: a sloped piece set up on top of the walls, square to the floor under it.)
-  roof: { make: thatchRoofModel, roof: true, steep: 99 },
-  slateRoof: { make: slateRoofPieceModel, roof: true, steep: 99, stone: true },
+  roof: { make: thatchRoofModel, roof: true, steep: 99, gableEnd: 'thatch' },
+  slateRoof: { make: slateRoofPieceModel, roof: true, steep: 99, stone: true, gableEnd: 'slate' },
   woodWindow: { make: woodWindowModel, box: [WALL_LENGTH / 2, 0.28], tall: 3.3, line: 'wall', len: WALL_LENGTH },
   stoneWindow: { make: stoneWindowModel, box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true },
   stoneWall: { make: stoneWallModel, box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true },
@@ -88,14 +88,16 @@ const KINDS = {
   stoneDoor: { make: () => openWallModel('stone', 'door'), box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'stone' },
   cutWindow: { make: () => openWallModel('cut', 'window'), box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true },
   cutDoor: { make: () => openWallModel('cut', 'door'), box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'cut' },
-  logRoof: { make: logRoofModel, roof: true, steep: 99 },
-  shingleRoof: { make: shingleRoofModel, roof: true, steep: 99 },
+  logRoof: { make: logRoofModel, roof: true, steep: 99, gableEnd: 'log' },
+  // (A flat roof, level on the wall tops: to walk about on, or to cap a room.)
+  flatRoof: { make: flatRoofModel, roof: true, flat: true, steep: 99 },
+  shingleRoof: { make: shingleRoofModel, roof: true, steep: 99, gableEnd: 'shingle' },
   // (The barn: board-and-batten walls, a board roof, painted with dye: see dye.)
   barnWall: { make: () => barnWallModel('natural', 'wall'), dyeWith: (d) => barnWallModel(d, 'wall'), box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH },
   barnWindow: { make: () => barnWallModel('natural', 'window'), dyeWith: (d) => barnWallModel(d, 'window'), box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH },
   barnDoor: { make: () => barnWallModel('natural', 'door'), dyeWith: (d) => barnWallModel(d, 'door'), box: [WALL_LENGTH / 2, 0.22], tall: 3.3, line: 'wall', len: WALL_LENGTH, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'barn' },
-  barnRoof: { make: () => barnRoofModel('natural'), dyeWith: (d) => barnRoofModel(d), roof: true, steep: 99 },
-  tileRoof: { make: tileRoofModel, roof: true, steep: 99, stone: true },
+  barnRoof: { make: () => barnRoofModel('natural'), dyeWith: (d) => barnRoofModel(d), roof: true, steep: 99, gableEnd: 'barn' },
+  tileRoof: { make: tileRoofModel, roof: true, steep: 99, stone: true, gableEnd: 'tile' },
   bedroll: { make: bedrollModel, box: [0.5, 1.0], tall: 0.2, bed: true, tilt: true },
   strawBed: { make: strawBedModel, box: [0.55, 1.0], tall: 0.3, bed: true, tilt: true },
   fancyBed: { make: fancyBedModel, box: [0.8, 1.15], tall: 0.8, bed: true },
@@ -928,6 +930,16 @@ export class Structures {
     body.receiveShadow = true;
     mesh.add(body);
     s.body = body;
+    // (A sloped roof's gable ends: shown only where no roof runs on from it. See #roofGables.)
+    if (KINDS[s.type].gableEnd) {
+      const geo = (this.models[`gableEnd:${KINDS[s.type].gableEnd}`] ??= roofGableModel(KINDS[s.type].gableEnd));
+      s.gables = [-1, 1].map((side) => {
+        const m = new Mesh(geo, this.material);
+        m.position.x = side * (FLOOR_SIZE / 2 - 0.06);
+        mesh.add(m);
+        return m;
+      });
+    }
     if (KINDS[s.type].line === 'wall') mesh.add((s.footing = new Mesh(this.models.wallFooting ??= wallFootingModel(), this.material))); // (its footing: see wallFootingModel)
     if (s.type === 'greenhouse') {
       // (Its glass: pale, seen through.)
@@ -1037,6 +1049,20 @@ export class Structures {
   }
 
   /** Takes a structure down (it goes back in your pack as the item it was). */
+  // (A run of roof pieces side by side, sloping the same way at the same
+  // height, is one roof: no gable ends in between them, only at its ends.)
+  #roofGables(s) {
+    if (!KINDS[s.type]?.roof) return;
+    for (const r of this.list) {
+      if (!r.gables || Math.abs(r.x - s.x) > 9 || Math.abs(r.z - s.z) > 9) continue;
+      const ux = Math.cos(r.rot), uz = -Math.sin(r.rot);
+      r.gables.forEach((g, i) => {
+        const side = i ? 1 : -1, nx = r.x + ux * side * FLOOR_SIZE, nz = r.z + uz * side * FLOOR_SIZE;
+        g.visible = !this.list.some((o) => o !== r && KINDS[o.type].roof && !KINDS[o.type].flat && Math.hypot(o.x - nx, o.z - nz) < 0.6 && Math.abs(o.y - r.y) < 0.3 && Math.abs(Math.sin((o.rot - r.rot) / 2)) < 0.1);
+      });
+    }
+  }
+
   // (Snow on a roof, and on a floor with no roof over it.)
   #snowCover(s) {
     const k = KINDS[s.type];
@@ -1052,6 +1078,7 @@ export class Structures {
   // (A wall stacked on another stands on it, not on a footing: only the bottom one of a column has its stones.)
   #footings(s) {
     this.#snowCover(s);
+    this.#roofGables(s);
     if (!KINDS[s.type]?.line) return;
     for (const w of this.list) {
       if (!w.footing || Math.hypot(w.x - s.x, w.z - s.z) > 0.4) continue;
@@ -1842,10 +1869,19 @@ export class Structures {
         if (top === null || t > top) top = t;
         continue;
       }
-      if (!(k.floor || k.stairs) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
+      if (!(k.floor || k.stairs || k.roof) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
       const ox = x - s.x, oz = z - s.z, c = Math.cos(s.rot), sn = Math.sin(s.rot);
       const u = ox * c - oz * sn, v = ox * sn + oz * c;
       let t;
+      if (k.roof) {
+        // (A roof: stood on, its boards or its slope, out to the edge of its overhang.)
+        const h = FLOOR_SIZE / 2, over = 0.28;
+        if (Math.abs(u) > h + over || Math.abs(v) > h + over) continue;
+        t = k.flat ? s.y + 0.22 : s.y + 0.3 + (Math.min(h + over, Math.max(-h - over, v)) + h) * (ROOF_RISE / FLOOR_SIZE);
+        if (t > feetY + 0.7) continue;
+        if (top === null || t > top) top = t;
+        continue;
+      }
       if (k.stairs) {
         // (Up the flight: from its foot to the top of the walls at its head.)
         if (Math.abs(u) > STAIRS_WIDTH / 2 + 0.05 || Math.abs(v) > STAIRS_LENGTH / 2 + 0.05) continue;

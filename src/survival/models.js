@@ -1818,9 +1818,25 @@ function roofPiece(seed, { slate, style = slate ? 'slate' : 'thatch', dye = 'nat
       for (let x = -h - over + (k % 2) * 0.25; x < h + over; x += 0.5) b.add(new BoxGeometry(0.49, 0.07, len / n + 0.06), TI[Math.floor(rand() * TI.length)], [x + 0.25, y, z], [-ang, 0, 0], [1, 1, 1], 0.02);
     } else b.add(new BoxGeometry(ROOF_SIZE + over * 2, 0.16, len / n + 0.12), k % 2 ? 0xc8a860 : 0xb89850, [0, y, z], [-ang, 0, 0], [1, 1, 1], 0.08);
   }
-  // The gable ends, closed: boards, or stone.
-  const gable = { slate: 0x84806e, tile: 0xa8a49a, shingle: 0x9a7448, log: 0x6e4c32, thatch: 0x8a6a44 }[style];
-  for (const x of [-h + 0.06, h - 0.06]) b.add(gableWedge(ROOF_SIZE, ROOF_RISE, 0.12), gable, [x, 0, 0], [0, 0, 0], [1, 1, 1], style === 'tile' || style === 'shingle' ? 0.02 : 0.05);
+  // (The gable ends are their own pieces, shown only where no roof runs on: see roofGableModel, Structures.)
+  return b.build();
+}
+const GABLE_COLOURS = { slate: 0x84806e, tile: 0xa8a49a, shingle: 0x9a7448, log: 0x6e4c32, thatch: 0x8a6a44, barn: 0x7a5a3a };
+/** A roof piece's gable end, closed (boards, or stone): the triangle from the wall top up under the slope, at x = 0. */
+export function roofGableModel(style = 'thatch') {
+  return new Parts(171).add(gableWedge(ROOF_SIZE, ROOF_RISE, 0.12), GABLE_COLOURS[style] ?? 0x8a6a44, [0, 0, 0], [0, 0, 0], [1, 1, 1], style === 'tile' || style === 'shingle' ? 0.02 : 0.05).build();
+}
+
+/**
+ * A flat roof: 4 m square, laid level on the tops of the walls: joists
+ * across, and over them close-laid boards, a little overhang all round,
+ * a low curb round its edge. You can walk about on it.
+ */
+export function flatRoofModel() {
+  const b = new Parts(173), rand = mulberry32(173), h = ROOF_SIZE / 2, over = 0.25;
+  for (const x of [-h + 0.1, -h / 3, h / 3, h - 0.1]) b.add(new BoxGeometry(0.14, 0.16, ROOF_SIZE + over * 2), 0x5a4230, [x, 0.08, 0]);
+  const BOARD = [0x8a663e, 0x7e5c38, 0x94704a, 0x84603a];
+  for (let z = -h - over + 0.15; z < h + over; z += 0.3) b.add(new BoxGeometry(ROOF_SIZE + over * 2, 0.06, 0.29), BOARD[Math.floor(rand() * BOARD.length)], [0, 0.19, z], [0, 0, 0], [1, 1, 1], 0.03);
   return b.build();
 }
 export const thatchRoofModel = () => roofPiece(153, { slate: false });
