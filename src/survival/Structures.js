@@ -461,6 +461,28 @@ export class Structures {
         const up = f.y + 3.2;
         if (Math.abs(point.y - (up + FLOOR_TOP)) < 1.2 && point.y > f.y + 2) upper = up;
       }
+      // (Or up on the tops of the walls themselves, with no floor under them: a
+      // second storey's floor laid across them, in the room they close, its
+      // boards level with their tops.)
+      if (upper === null && point.y !== undefined) {
+        let wall = null, wd = FLOOR_SIZE * 1.6;
+        for (const f of this.list) {
+          if (KINDS[f.type].line !== 'wall') continue;
+          const top = f.y + 3.2;
+          if (Math.abs(point.y - top) > 1.2 || point.y < f.y + 2) continue;
+          const d = Math.hypot(f.x - x, f.z - z);
+          if (d < wd) (wd = d), (wall = f);
+        }
+        if (wall) {
+          const L = FLOOR_SIZE, ux = Math.cos(wall.rot), uz = -Math.sin(wall.rot), vx = Math.sin(wall.rot), vz = Math.cos(wall.rot);
+          const u = (x - wall.x) * ux + (z - wall.z) * uz, v = (x - wall.x) * vx + (z - wall.z) * vz;
+          const gu = Math.round(u / L) * L, gv = (Math.floor(v / L) + 0.5) * L;
+          x = wall.x + ux * gu + vx * gv;
+          z = wall.z + uz * gu + vz * gv;
+          rot = wall.rot;
+          upper = wall.y + 3.2 - FLOOR_TOP;
+        }
+      }
     }
     let stairLevel = null;
     if (kind.stairs) {
@@ -599,7 +621,13 @@ export class Structures {
       }
       if (near) {
         const ax2 = Math.cos(near.rot), az2 = -Math.sin(near.rot), bx2 = Math.sin(near.rot), bz2 = Math.cos(near.rot);
-        const u = Math.round(((x - near.x) * ax2 + (z - near.z) * az2) / FLOOR_SIZE) * FLOOR_SIZE, v = Math.round(((x - near.x) * bx2 + (z - near.z) * bz2) / FLOOR_SIZE) * FLOOR_SIZE;
+        let u = Math.round(((x - near.x) * ax2 + (z - near.z) * az2) / FLOOR_SIZE) * FLOOR_SIZE, v = Math.round(((x - near.x) * bx2 + (z - near.z) * bz2) / FLOOR_SIZE) * FLOOR_SIZE;
+        // (Pointed at a roof piece itself: the next place along from it, on the side you're pointing at, sloped or flat alike.)
+        if (KINDS[near.type].roof && !u && !v) {
+          const du = (x - near.x) * ax2 + (z - near.z) * az2, dv = (x - near.x) * bx2 + (z - near.z) * bz2;
+          if (Math.abs(du) >= Math.abs(dv)) u = (Math.sign(du) || 1) * FLOOR_SIZE;
+          else v = (Math.sign(dv) || 1) * FLOOR_SIZE;
+        }
         x = near.x + ax2 * u + bx2 * v;
         z = near.z + az2 * u + bz2 * v;
         rot = near.rot + Math.round((rot - near.rot) / (Math.PI / 2)) * (Math.PI / 2);
