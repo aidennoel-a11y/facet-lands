@@ -407,6 +407,7 @@ export class PlayerControls {
       return;
     }
 
+    const fromX = pos.x, fromZ = pos.z;
     // Horizontal: move along the ground in the direction you face (ignoring pitch).
     const yaw = this.euler.y;
     const fx = -Math.sin(yaw);
@@ -490,6 +491,9 @@ export class PlayerControls {
     // to it. Walked off its edge, you fall; landing on it, you go on sliding and
     // falling down it, till you come to ground you can stand on.)
     const cliff = !ground.inCave && !glide ? this.#cliffAt(pos.x, pos.z, floor) : null;
+    // (Stepped off an edge, a floor's or a ledge's, far steeper than any slope:
+    // you drop off it, falling, not snapped straight down onto what's below.)
+    const drop = feetNow - floor, ledge = drop > 0.15 && drop > Math.hypot(pos.x - fromX, pos.z - fromZ) * 1.6 + 0.05;
     if (cliff && feet <= floor + 0.05) {
       feet = floor;
       // (The face drags at you: a slide, never faster than some 6 m/s down, so
@@ -500,7 +504,7 @@ export class PlayerControls {
       const ps = Math.hypot(this.push.x, this.push.z);
       if (ps > 6) (this.push.x *= 6 / ps), (this.push.z *= 6 / ps); // (off its face, not flung far out from it)
       this.grounded = false;
-    } else if (feet <= floor || (wasGrounded && this.velocityY <= 0 && feet - floor < 0.6)) {
+    } else if (feet <= floor || (wasGrounded && this.velocityY <= 0 && drop < 0.6 && !ledge)) {
       if (!wasGrounded && this.velocityY < -8 && !this.softLanding) this.onLand?.(-this.velocityY);
       this.softLanding = false;
       feet = floor;

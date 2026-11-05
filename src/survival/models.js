@@ -2338,12 +2338,13 @@ export function sailboatModel() {
 }
 
 /**
- * A ladder `len` m long, its feet at the origin, leaning in towards +z (on
- * a wall or a rock face): two rails, a rung every 30 cm.
+ * A ladder `len` m long, its feet at the origin, stood near upright against
+ * a wall or rock face (leaning in a little towards +z): two rails, a rung every 30 cm.
  */
+export const ladderLean = (len) => Math.min(0.18, len * 0.04);
 export function ladderModel(len = 3) {
   const b = new Parts(203);
-  const h = len * 0.965, off = len * 0.26;
+  const h = len * 0.999, off = ladderLean(len);
   for (const x of [-0.22, 0.22]) b.log([x, 0, 0], [x, h, off], 0.035, 0x8a6038, 0xc8a070, 5);
   for (let y = 0.3; y < h - 0.1; y += 0.3) b.add(new CylinderGeometry(0.022, 0.022, 0.44, 5), 0x9a7048, [0, y, (y / h) * off], [0, 0, Math.PI / 2]);
   return b.build();

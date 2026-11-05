@@ -26,6 +26,7 @@ export const seasonUniforms = {
   uWinter: { value: 0 },
   uWet: { value: 0 }, // how wet the ground is after rain (puddles), 0..1
   uSnowfall: { value: 0 }, // fresh snow lying on everything after it has snowed, 0..1
+  uSnowDepth: { value: 0 }, // how deep the lying snow's built up (see SnowBlanket), 0..1: slowly while it snows
   uMossy: { value: 0 }, // how damp the country round about is: moss on the north sides of the trees (0..1)
   uFruit: { value: 0 }, // the fruit and berries on the trees and bushes: set in early summer, gone by winter (0..1)
   uSeasonTime: { value: 0.6 }, // the time of year, in seasons (0 spring .. 4): for what's ripe when

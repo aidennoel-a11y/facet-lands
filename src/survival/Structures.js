@@ -1,12 +1,13 @@
 import { BufferAttribute, BufferGeometry, CanvasTexture, Color, Group, Mesh, MeshLambertMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { Puffs } from '../render/Puffs.js';
+import { seasonUniforms } from '../render/Seasons.js';
 import { Inventory } from './Inventory.js';
 import {
   anvilModel, bedModel, campfireModel, caughtModel, chestModel, cropModel, dryingRackModel, FENCE_LENGTH, fenceGateDoorModel, fenceGatePostsModel, fenceModel,
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, RAISED_MODELS, wallFootingModel,
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, ladderLean, RAISED_MODELS, wallFootingModel,
   greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, bannerModel, BANNER_DESIGNS, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
@@ -219,6 +220,30 @@ export class Structures {
     this.scene = scene;
     this.modelOf = modelOf;
     this.material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+    // (Roofs, and floors out under the sky: snow settling on their tops after a snowfall, here where it snows.)
+    this.snowMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+    this.snowHere = { value: 0 };
+    this.snowMaterial.onBeforeCompile = (shader) => {
+      shader.uniforms.uSnowfall = seasonUniforms.uSnowfall;
+      shader.uniforms.uSnowDepth = seasonUniforms.uSnowDepth;
+      shader.uniforms.uSnowHere = this.snowHere;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying float vSnowUp;\nvarying vec3 vSnowW;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSnowUp = normalize(mat3(modelMatrix) * objectNormal).y;\nvSnowW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uSnowfall;\nuniform float uSnowDepth;\nuniform float uSnowHere;\nvarying float vSnowUp;\nvarying vec3 vSnowW;')
+        .replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
+          {
+            float n = fract(sin(dot(floor(vSnowW.xz * 2.0), vec2(12.9898, 78.233))) * 43758.5453);
+            float amount = clamp(max(uSnowfall * 0.9, uSnowDepth * 1.4), 0.0, 1.0) * uSnowHere;
+            float snow = smoothstep(0.45, 0.8, vSnowUp) * smoothstep(n * 0.5, n * 0.5 + 0.3, amount);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.91, 0.95), snow);
+          }`,
+        );
+    };
+    this.snowMaterial.customProgramCacheKey = () => 'structure-snow';
     this.models = {};
     this.list = [];
     this.group = new Group();
@@ -587,6 +612,22 @@ export class Structures {
         }
       }
     }
+    // (Then down onto the walls actually round its edges, so it never hangs
+    // over them: on the highest of that storey's, none poking up through it.)
+    if (kind.roof && roofY !== null) {
+      const ux = Math.cos(rot), uz = -Math.sin(rot), vx = Math.sin(rot), vz = Math.cos(rot), h = FLOOR_SIZE / 2;
+      const tops = [];
+      for (const w of this.list) {
+        const k = KINDS[w.type];
+        if (k.line !== 'wall' || Math.abs(w.x - x) > 4 || Math.abs(w.z - z) > 4) continue;
+        const u = (w.x - x) * ux + (w.z - z) * uz, v = (w.x - x) * vx + (w.z - z) * vz;
+        if ((Math.abs(Math.abs(u) - h) < 0.6 && Math.abs(v) < 0.8) || (Math.abs(Math.abs(v) - h) < 0.6 && Math.abs(u) < 0.8)) tops.push(w.y + 3.2);
+      }
+      if (tops.length) {
+        const base = tops.reduce((a, t) => (Math.abs(t - roofY) < Math.abs(a - roofY) ? t : a));
+        roofY = Math.max(...tops.filter((t) => t > base - 2.2 && t < base + 2.2));
+      }
+    }
     const half = kind.box ? kind.box : type === 'raft' ? [1.2, 1.3] : type === 'canoe' ? [0.4, 2.1] : [kind.circle || kind.reach || 0.5, kind.circle || kind.reach || 0.5];
     const ax = Math.cos(rot), az = -Math.sin(rot), bx = Math.sin(rot), bz = Math.cos(rot);
     let lo = Infinity, hi = -Infinity, wet = 0, wetLevel = -Infinity, deep = Infinity;
@@ -613,6 +654,31 @@ export class Structures {
     // (A floor laid on from another, at its level if the ground's not in the way.)
     if (kind.floor && level !== null && level >= hi - 0.05 && level < lo + 1.4) y = level;
     if (upper !== null) y = upper;
+    // (A wall along the edge of a floor: stood on the floor's boards, never sunk under them, whatever the ground.)
+    let onFloor = false;
+    if (kind.line === 'wall') {
+      let fy = -Infinity;
+      for (const f of this.list) {
+        if (!KINDS[f.type].floor || Math.abs(f.x - x) > FLOOR_SIZE || Math.abs(f.z - z) > FLOOR_SIZE) continue;
+        const fu = Math.abs((x - f.x) * Math.cos(f.rot) - (z - f.z) * Math.sin(f.rot)), fv = Math.abs((x - f.x) * Math.sin(f.rot) + (z - f.z) * Math.cos(f.rot));
+        const edge = (Math.abs(fu - FLOOR_SIZE / 2) < 0.35 && fv < 0.35) || (Math.abs(fv - FLOOR_SIZE / 2) < 0.35 && fu < 0.35);
+        const top = f.y + FLOOR_TOP;
+        // (Of the storeys there, the one you're pointing at: its floor nearest under your aim.)
+        if (edge && (!Number.isFinite(fy) || Math.abs(top - (point.y ?? top) + 1) < Math.abs(fy - (point.y ?? fy) + 1))) fy = top;
+      }
+      if (Number.isFinite(fy)) (y = fy), (onFloor = true);
+    }
+    // (A wall stacked on the wall already there: pointed low, under it (where
+    // it stands up off the ground); pointed high, on top of it. Courses running on.)
+    let stacked = false;
+    if (kind.line === 'wall' && point.y !== undefined) {
+      const col = this.list.filter((o) => KINDS[o.type].line === 'wall' && Math.hypot(o.x - x, o.z - z) < 0.4 && Math.abs(Math.sin(o.rot - rot)) < 0.1);
+      if (col.length) {
+        const STEP = 3.3, lowY = Math.min(...col.map((o) => o.y)), highY = Math.max(...col.map((o) => o.y));
+        if (point.y < lowY + 0.9 && lowY > lo + 0.25 && !onFloor) (y = lowY - STEP), (stacked = true), (rot = col[0].rot);
+        else if (point.y > highY + STEP - 0.9) (y = highY + STEP), (stacked = true), (rot = col[0].rot);
+      }
+    }
     // (Laid on the slope: its tilt, from the lie of the ground under it.)
     let tilt = null;
     if (kind.tilt) {
@@ -640,11 +706,11 @@ export class Structures {
       if (wet < 4 || deep < 0.2) (ok = false), (why = 'Set it in water');
       y = wetLevel - 0.4;
     } else if (wet) (ok = false), (why = "Can't build in the water");
-    else if (upper === null && hi - lo > (kind.line ? 1.4 : kind.steep ?? (kind.tilt ? 1.4 : 0.6))) (ok = false), (why = 'The ground is too steep here');
+    else if (upper === null && !stacked && !onFloor && hi - lo > (kind.line ? 1.4 : kind.steep ?? (kind.tilt ? 1.4 : 0.6))) (ok = false), (why = 'The ground is too steep here');
     // Nothing in the way: across its whole footprint (a wall along its
     // length; a roof just where its posts stand, as it goes over things),
     // no tree, bush, boulder, log or other thing built.
-    if (ok && !kind.boat && !kind.water) {
+    if (ok && !kind.boat && !kind.water && !stacked) {
       const spots = [];
       if (kind.roof) spots.length = 0;
       else if (kind.posts) for (const [u, v] of kind.posts) spots.push([u, v, 0.2]);
@@ -668,7 +734,7 @@ export class Structures {
       const s = this.list.find((o) => KINDS[o.type].line === 'wall' && o.type !== type && Math.hypot(o.x - x, o.z - z) < 0.4 && Math.abs(Math.sin(o.rot - rot)) < 0.1);
       if (s && !this.list.some((o) => o !== s && KINDS[o.type].line === 'wall' && Math.hypot(o.x - x, o.z - z) < 0.4)) (replace = s), (ok = true), (why = ''), (y = s.y), (rot = s.rot);
     }
-    return { type, x, y, z, rot, ok, why, tilt, upper: upper !== null, replace };
+    return { type, x, y, z, rot, ok, why, tilt, upper: upper !== null, replace, stacked };
   }
 
   /**
@@ -833,7 +899,7 @@ export class Structures {
 
   /** Builds it. Returns the new structure. */
   build(plan, extra = {}) {
-    const s = { id: this.nextId++, type: plan.type, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, tilt: plan.tilt ?? null, upper: !!plan.upper, lit: false, fuel: 0, jobs: [], ...(plan.len !== undefined ? { len: plan.len } : {}), ...extra };
+    const s = { id: this.nextId++, type: plan.type, x: plan.x, y: plan.y, z: plan.z, rot: plan.rot, tilt: plan.tilt ?? null, upper: !!plan.upper, stacked: !!plan.stacked || undefined, lit: false, fuel: 0, jobs: [], ...(plan.len !== undefined ? { len: plan.len } : {}), ...extra };
     s.jobs = (s.jobs ?? []).map((j) => ({ ...j }));
     if (s.type === 'banner') s.data = { dye: 'red', mark: 'white', design: 0, ...(s.data ?? {}) };
     if (s.type === 'painting') s.data = { ...(s.data ?? {}), variant: s.data?.variant ?? plan.variant ?? Math.floor(Math.random() * 4) };
@@ -852,7 +918,7 @@ export class Structures {
     body.receiveShadow = true;
     mesh.add(body);
     s.body = body;
-    if (KINDS[s.type].line === 'wall') mesh.add(new Mesh(this.models.wallFooting ??= wallFootingModel(), this.material)); // (its footing: see wallFootingModel)
+    if (KINDS[s.type].line === 'wall') mesh.add((s.footing = new Mesh(this.models.wallFooting ??= wallFootingModel(), this.material))); // (its footing: see wallFootingModel)
     if (s.type === 'greenhouse') {
       // (Its glass: pale, seen through.)
       this.glassMaterial ??= new MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.35, depthWrite: false, side: 2 });
@@ -955,15 +1021,39 @@ export class Structures {
     this.list.push(s);
     if (KINDS[s.type].fire && s.lit) this.#kindle(s);
     this.#showJobs(s);
+    this.#footings(s);
     this.onChange?.();
     return s;
   }
 
   /** Takes a structure down (it goes back in your pack as the item it was). */
+  // (Snow on a roof, and on a floor with no roof over it.)
+  #snowCover(s) {
+    const k = KINDS[s.type];
+    if (!k?.roof && !k?.floor) return;
+    for (const f of this.list) {
+      const kf = KINDS[f.type];
+      if (!f.body || (!kf.roof && !kf.floor) || Math.abs(f.x - s.x) > 9 || Math.abs(f.z - s.z) > 9) continue;
+      const open = kf.roof || !this.list.some((r) => KINDS[r.type].roof && r.y > f.y + 1 && Math.abs(r.x - f.x) < 2.2 && Math.abs(r.z - f.z) < 2.2) && !this.list.some((u) => u !== f && KINDS[u.type].floor && u.y > f.y + 1 && Math.abs(u.x - f.x) < 2.2 && Math.abs(u.z - f.z) < 2.2);
+      f.body.material = open ? this.snowMaterial : this.material;
+    }
+  }
+
+  // (A wall stacked on another stands on it, not on a footing: only the bottom one of a column has its stones.)
+  #footings(s) {
+    this.#snowCover(s);
+    if (!KINDS[s.type]?.line) return;
+    for (const w of this.list) {
+      if (!w.footing || Math.hypot(w.x - s.x, w.z - s.z) > 0.4) continue;
+      w.footing.visible = !this.list.some((o) => o !== w && KINDS[o.type].line === 'wall' && Math.hypot(o.x - w.x, o.z - w.z) < 0.4 && o.y < w.y - 1 && o.y > w.y - 3.6);
+    }
+  }
+
   remove(s) {
     this.#douse(s);
     this.group.remove(s.mesh);
     this.list.splice(this.list.indexOf(s), 1);
+    this.#footings(s);
     this.onChange?.();
   }
 
@@ -1498,6 +1588,7 @@ export class Structures {
         const [fd, fy] = s.path[s.path.length - 1];
         for (const h of [0.5, 1.2, 1.9]) points.push([s.x + bx * fd, s.y + fy + h, s.z + bz * fd, 0.9]);
       } else if (s.type === 'rope') for (let h = 0; h <= s.len + 0.5; h += 0.8) points.push([s.x + bx * 0.35, s.y + 0.3 - h, s.z + bz * 0.35, 0.5]);
+      else if (s.type === 'ladder') for (let h = 0.3, L = s.len ?? 3; h < L; h += 0.5) points.push([s.x + bx * ((h / L) * ladderLean(L) - 0.05), s.y + h, s.z + bz * ((h / L) * ladderLean(L) - 0.05), 0.5]);
       else if (s.type === 'plot') points.push([s.x, s.y + 0.25, s.z, 1.1]);
       else if (kd.bridge) for (const v of [0, s.len ?? 6]) for (const side of [-1, 1]) points.push([s.x + ax * side * BRIDGE_WIDTH * 0.5 + bx * v, s.y + (s.rise ?? 0) * (v / (s.len ?? 6)) + 0.7, s.z + az * side * BRIDGE_WIDTH * 0.5 + bz * v, 0.4]);
       else if (s.type === 'trophyRack') points.push([s.x, s.y + 1.5, s.z, 0.6]);
@@ -1545,7 +1636,7 @@ export class Structures {
     return this.list.map((s) => ({
       type: s.type, x: r(s.x), y: r(s.y), z: r(s.z), rot: +s.rot.toFixed(3), lit: s.lit, fuel: Math.round(s.fuel), burnt: !!s.burnt,
       contents: s.contents?.slots, open: !!s.open, rise: s.rise, trophy: s.trophy, eggs: s.eggs, feathers: s.feathers, data: s.data, caught: s.type === 'fishTrap' ? s.caught || 0 : !!s.caught, jobs: s.jobs.map(({ stack, out, left, total, done }) => ({ stack, out, left, total, done })),
-      tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0, upper: s.upper || undefined, offered: s.offered,
+      tilt: s.tilt?.map((v) => +v.toFixed(3)) ?? null, len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop, growth: s.growth, watered: s.watered ? Math.round(s.watered) : 0, fed: s.fed ? Math.round(s.fed) : 0, upper: s.upper || undefined, stacked: s.stacked || undefined, offered: s.offered,
     }));
   }
 
@@ -1680,7 +1771,7 @@ export class Structures {
     this.onChange = null;
     for (const s of list ?? []) {
       if (!KINDS[s.type]) continue;
-      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0, upper: !!s.upper, offered: s.offered, rise: s.rise, trophy: s.trophy, eggs: s.eggs ?? 0, feathers: s.feathers ?? 0, data: s.data ? { ...s.data } : undefined });
+      this.build({ type: s.type, x: s.x, y: s.y, z: s.z, rot: s.rot, tilt: s.tilt }, { lit: s.lit, fuel: s.fuel, burnt: s.burnt, contents: s.contents, open: s.open, caught: s.caught, jobs: s.jobs ?? [], len: s.len, path: s.path, ruinKey: s.ruinKey, crop: s.crop ?? null, growth: s.growth ?? 0, watered: s.watered ?? 0, fed: s.fed ?? 0, upper: !!s.upper, stacked: s.stacked, offered: s.offered, rise: s.rise, trophy: s.trophy, eggs: s.eggs ?? 0, feathers: s.feathers ?? 0, data: s.data ? { ...s.data } : undefined });
     }
     this.onChange = quiet;
   }
@@ -1693,6 +1784,17 @@ export class Structures {
    * The top of a floor at (x, z), or null if there's none: what you stand on
    * there (from `feetY`, if it's not far over your head).
    */
+  /** Whether (x, z) is under a roof or on a floor (for the lying snow: none there). */
+  snowShelterAt(x, z) {
+    for (const s of this.list) {
+      const k = KINDS[s.type];
+      if (!(k.roof || k.floor) || Math.abs(s.x - x) > 3.4 || Math.abs(s.z - z) > 3.4) continue;
+      const ox = x - s.x, oz = z - s.z, u = ox * Math.cos(s.rot) - oz * Math.sin(s.rot), v = ox * Math.sin(s.rot) + oz * Math.cos(s.rot);
+      if (Math.abs(u) < FLOOR_SIZE / 2 + 0.9 && Math.abs(v) < FLOOR_SIZE / 2 + 0.9) return true;
+    }
+    return false;
+  }
+
   floorTop(x, z, feetY = Infinity) {
     let top = null;
     for (const s of this.list) {

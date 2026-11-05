@@ -44,6 +44,7 @@ import { Profiler } from './render/Profiler.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
 import { createFlowerLayer } from './world/layers/FlowerLayer.js';
 import { createSnowLayer } from './world/layers/SnowLayer.js';
+import { SnowBlanket } from './world/SnowBlanket.js';
 import { createUnderstoryLayer } from './world/layers/UnderstoryLayer.js';
 import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
@@ -1081,7 +1082,7 @@ function groundNormal(x, z) {
  */
 function footfall(x, z, heading, shape, size, loud = 0.5, track = false) {
   const water = waterAt(x, z, true);
-  const y = chunks.groundHeightAt(x, z);
+  const y = chunks.groundHeightAt(x, z) + snowBlanket.depthAt(x, z); // (in the deep snow: on its top)
   if (!Number.isFinite(y) || water?.frozen) return; // (none on the ice)
   // (Splashing through the swash running up the beach, too.)
   const surf = !water && surfAt(x, z);
@@ -1752,6 +1753,27 @@ const game = new Game({
     const h = chunks.groundHeightAt(x, z);
     return Number.isFinite(h) ? Math.max(h, rocks.surfaceAt(x, z)) : generator.getHeight(x, z);
   },
+});
+// The deep snow lying over the land round about you (see SnowBlanket).
+const snowColds = new Map();
+const snowBlanket = new SnowBlanket(scene, {
+  ground: (x, z) => chunks.groundHeightAt(x, z),
+  cold: (x, z) => {
+    const key = Math.floor(x / 16) * 65536 + Math.floor(z / 16);
+    let v = snowColds.get(key);
+    if (v === undefined) {
+      if (snowColds.size > 20000) snowColds.clear();
+      const c = generator.getSeasonality(Math.floor(x / 16) * 16 + 8, Math.floor(z / 16) * 16 + 8);
+      const t = Math.min(1, Math.max(0, (c - 0.3) / 0.3));
+      snowColds.set(key, (v = t * t * (3 - 2 * t)));
+    }
+    return v;
+  },
+  wet: (x, z) => {
+    const w = waterAt(x, z, true);
+    return !!w && w.level > chunks.groundHeightAt(x, z) - 0.3;
+  },
+  sheltered: (x, z) => game.structures.snowShelterAt(x, z) || chunks.groundHeightAt(x, z) < WORLD.seaLevel + 0.6,
 });
 game.look = myLook;
 
@@ -3210,6 +3232,10 @@ function tick(now) {
   const sunshine = smooth(0.05, 0.25, dayNight.sunDir.y) * (1 - smooth(0.5, 0.8, weather.cover)) * (weather.rain > 0.05 ? 0 : 1);
   const thaw = sunshine * (1 - smooth(0.6, 0.9, winterNow)) / 240 + (winterNow < 0.05 ? 1 / 120 : 0);
   seasonUniforms.uSnowfall.value = Math.min(1, Math.max(0, seasonUniforms.uSnowfall.value + (snowing ? dt / 60 : -dt * thaw)));
+  // (And it builds up deep, slowly: a foot of it after ten minutes or so of snowing; melting a little slower than the fresh dusting.)
+  seasonUniforms.uSnowDepth.value = Math.min(1, Math.max(0, seasonUniforms.uSnowDepth.value + (snowing ? dt / 600 : -dt * thaw * 0.5)));
+  snowBlanket.update(camera.position.x, camera.position.z);
+  game.structures.snowHere.value = snowBlanket.cold(camera.position.x, camera.position.z);
   prof.mark('sky, weather, light');
   shadowReach(dt);
   northernLights(dt);
@@ -3594,7 +3620,7 @@ requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
 globalThis.__prof = prof;
-window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, get generator() { return generator; }, WORLD };
+window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, snowBlanket, seasonUniforms, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

@@ -28,6 +28,7 @@ ICICLE.translate(0, -0.5, 0);
 ICICLE.computeVertexNormals();
 
 const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), s = new Vector3(), e = new Euler();
+const tilt = new Quaternion(), nrm = new Vector3(), UPV = new Vector3(0, 1, 0);
 
 // Snow (and ice) that builds up through the winter, each piece at its own
 // point in it (see aSnow).
@@ -102,7 +103,13 @@ export function createSnowLayer(config, rocks) {
           if (generator.rivers?.at(x0 + lx, z0 + lz, 1)) continue;
           const w = 1.2 + hash2(gi, gj, seed + 3) * 2.6;
           p.set(lx, y - 0.08, lz);
-          q.setFromEuler(e.set(0, hash2(gi, gj, seed + 4) * Math.PI * 2, 0));
+          // (Lying along the slope it's on, tilted with the ground, not level across it.)
+          const hx = groundHeightAt(lx + 1, lz, surface) - groundHeightAt(lx - 1, lz, surface), hz = groundHeightAt(lx, lz + 1, surface) - groundHeightAt(lx, lz - 1, surface);
+          nrm.set(-hx / 2, 1, -hz / 2);
+          if (!(Math.abs(hx) < 2.5) || !(Math.abs(hz) < 2.5)) nrm.set(0, 1, 0); // (off the chunk's edge, or nothing there)
+          tilt.setFromUnitVectors(UPV, nrm.normalize());
+          q.setFromEuler(e.set(0, hash2(gi, gj, seed + 4) * Math.PI * 2, 0)).premultiply(tilt);
+          p.y -= 0.12 * Math.hypot(hx, hz); // (sunk a little more on a slope, so its uphill edge doesn't stand off the ground)
           s.set(w, 0.16 + hash2(gi, gj, seed + 5) * 0.3, w * (0.6 + 0.5 * hash2(gi, gj, seed + 6)));
           drifts.push(m4.compose(p, q, s).clone());
           // (How cold its winters are: broad, so looked up once per 16 m patch.)

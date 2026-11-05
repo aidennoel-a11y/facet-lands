@@ -8,7 +8,7 @@ import { GroundItems } from './GroundItems.js';
 import { Hud } from './Hud.js';
 import { Inventory } from './Inventory.js';
 import { BLADES, GRINDS, ITEMS, RECIPES, RELICS, TIERS, stackOf, weightOf, tierOf, usesText } from './items.js';
-import { bobberModel, bowModel } from './models.js';
+import { bobberModel, bowModel, ladderLean } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
 import { TreeFinds } from './TreeFinds.js';
@@ -2304,16 +2304,17 @@ export class Game {
     const cam = this.camera.position, yaw = this.controls.euler.y, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const feet = cam.y - this.controls.eyeHeight;
     const no = (why) => ({ type: 'ladder', ok: false, why });
-    const top = (d) => Math.max(this.groundAt(cam.x + fx * d, cam.z + fz * d) ?? -Infinity, this.structures.wallTopAt(cam.x + fx * d, cam.z + fz * d));
+    const top = (d) => Math.max(this.groundAt(cam.x + fx * d, cam.z + fz * d) ?? -Infinity, this.structures.wallTopAt(cam.x + fx * d, cam.z + fz * d, 0));
     let face = null;
-    for (let d = 0.4; d <= 2.6; d += 0.1) if (top(d) > feet + 1.3) { face = d; break; }
+    for (let d = 0.3; d <= 2.8; d += 0.04) if (top(d) > feet + 1.3) { face = d; break; }
     if (face === null) return no('Face a rock wall or the wall of a house, close to it');
     let high = -Infinity;
     for (let d = face; d <= face + 1.2; d += 0.2) high = Math.max(high, top(d));
     const rise = high - feet;
     if (rise > 7) return no('Too high for a ladder (7 m at most): let a rope down from the top');
     const len = rise + 0.7;
-    const base = Math.max(0.3, face - len * 0.26 - 0.05);
+    // (Its feet just out from the foot of the face, its rails flat against it.)
+    const base = Math.max(0.25, face - ladderLean(len) - 0.05);
     const x = cam.x + fx * base, z = cam.z + fz * base, y = this.groundAt(x, z, feet + 0.6);
     if (!Number.isFinite(y) || Math.abs(y - feet) > 0.8) return no('Stand on firm ground at its foot');
     return { type: 'ladder', ok: true, x, y, z, rot: Math.atan2(fx, fz), len: high - y + 0.7, top: high };
@@ -2323,7 +2324,7 @@ export class Game {
   // onto what it leans on; at the foot, off it.
   #climbLadder(s) {
     const fx = Math.sin(s.rot), fz = Math.cos(s.rot), p = this.camera.position, eye = this.controls.eyeHeight;
-    const h = s.len * 0.965, off = s.len * 0.26, topY = s.y + h - 0.6;
+    const h = s.len * 0.999, off = ladderLean(s.len), topY = s.y + h - 0.6;
     this.climbing = s;
     this.climbH = Math.max(s.y, Math.min(topY - 0.3, p.y - eye));
     let rungAt = this.climbH;
@@ -2334,7 +2335,7 @@ export class Game {
       if (this.climbH >= topY) {
         // Over the top: onto the ledge, or the top of the wall.
         this.#letGo();
-        const x = s.x + fx * (off + 0.8), z = s.z + fz * (off + 0.8);
+        const x = s.x + fx * (off + 0.9), z = s.z + fz * (off + 0.9);
         const g = Math.max(this.groundAt(x, z, topY + 1.5) ?? -Infinity, this.structures.wallTopAt(x, z));
         p.set(x, (Number.isFinite(g) ? g : topY + 0.6) + eye + 0.05, z);
         return;
