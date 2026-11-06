@@ -1535,21 +1535,69 @@ function bloomCactus() {
 function cliffVines() {
   const rand = mulberry32(2801);
   const wood = [], crown = [];
-  for (let k = 0; k < 11; k++) {
-    const side = (k / 10 - 0.5) * 2.6 + (rand() - 0.5) * 0.25;
+  for (let k = 0; k < 7; k++) {
+    const side = (k / 6 - 0.5) * 2.6 + (rand() - 0.5) * 0.25;
     const len = 6 + rand() * 7;
     let p = [0.2, 0.25, side];
     const pts = [[1.1, 0.1, side + (rand() - 0.5) * 0.2], [1.45, -0.9, side + (rand() - 0.5) * 0.3]];
     for (let d = 2; d < len; d += 1.8) pts.push([1.5 + 0.25 * Math.sin(d * 0.7 + k) + (rand() - 0.5) * 0.2, -d, side + 0.2 * Math.sin(d * 0.5 + k * 1.3)]);
     for (const q of pts) {
       wood.push(limb(p, q, 0.035, 0.03, 0x3a5a2a, 0x4a6a32, 2810 + wood.length));
-      if (q[1] < 0) crown.push(part(new DodecahedronGeometry(0.22 + rand() * 0.14, 0), 0x2f6a28, 0x5a9a3c, { x: q[0] + 0.1, y: q[1], z: q[2], sx: 0.7, sy: 1.4, lump: 0.3, seed: 2900 + crown.length }));
+      if (q[1] < 0 && (pts.indexOf(q) + k) % 2 === 0) crown.push(part(new IcosahedronGeometry(0.3 + rand() * 0.16, 0), 0x2f6a28, 0x5a9a3c, { x: q[0] + 0.1, y: q[1], z: q[2], sx: 0.7, sy: 1.6, lump: 0.3, seed: 2900 + crown.length }));
       p = q;
     }
   }
   // (The bush on the lip, spilling over.)
   for (const [x, y, z, r] of [[0.3, 0.45, 0, 0.9], [0.9, 0.2, -0.9, 0.7], [0.8, 0.25, 0.9, 0.7], [1.3, -0.2, 0.1, 0.6]]) crown.push(part(new DodecahedronGeometry(r, 0), 0x3a7a2e, 0x6aa848, { x, y, z, sy: 0.7, lump: 0.25, seed: 2990 + crown.length }));
   return withCrown(wood, crown);
+}
+
+// A limber pine (Bristlecone heights): several crooked trunks from one
+// root, leaning apart, each with a ragged, open crown of dark needle tufts.
+function limberPine() {
+  const rand = mulberry32(3001);
+  const bark = 0x5a4a3e, barkTop = 0x7a6a5a, wood = [], crown = [];
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * Math.PI * 2 + rand() * 0.6, lean = 0.35 + rand() * 0.3;
+    const mid = [Math.cos(a) * lean * 1.6, 2.4 + rand() * 0.6, Math.sin(a) * lean * 1.6];
+    const top = [mid[0] + Math.cos(a) * 0.6, mid[1] + 2.2 + rand(), mid[2] + Math.sin(a) * 0.6];
+    wood.push(limb([0, 0, 0], mid, 0.24, 0.16, bark, barkTop, 3010 + k * 2), limb(mid, top, 0.16, 0.07, barkTop, bark, 3011 + k * 2));
+    for (let q = 0; q < 3; q++) {
+      const p = q ? [top[0] + (rand() - 0.5) * 1.6, top[1] - 0.6 - rand() * 1.4, top[2] + (rand() - 0.5) * 1.6] : top;
+      crown.push(part(new DodecahedronGeometry(0.75 + rand() * 0.35, 0), 0x24402c, 0x3e6446, { x: p[0], y: p[1], z: p[2], sy: 0.7, lump: 0.3, seed: 3030 + crown.length }));
+    }
+  }
+  return withCrown(wood, crown);
+}
+
+// A juniper (Bristlecone heights): low, round and bushy, blue-grey-green,
+// its stringy trunk twisting up out of the rock.
+function juniper() {
+  const bark = 0x6a5444;
+  return withCrown(
+    [limb([0, 0, 0], [0.2, 1.1, 0.1], 0.2, 0.14, bark, 0x8a7060, 3101), limb([0.2, 1.1, 0.1], [-0.3, 1.8, 0.2], 0.12, 0.07, bark, bark, 3102)],
+    [[0, 1.8, 0, 1.2], [0.8, 1.4, 0.3, 0.9], [-0.7, 1.5, -0.4, 0.95], [0.1, 2.4, -0.2, 0.8]].map(([x, y, z, r], i) =>
+      part(new DodecahedronGeometry(r, 0), 0x3e5a4e, 0x6a8a78, { x, y, z, sy: 0.85, lump: 0.28, seed: 3110 + i })),
+  );
+}
+
+// A dead bristlecone (Bristlecone heights): an ancient snag, its twisted
+// trunk and limbs bleached silver-white, standing on for centuries.
+function deadBristlecone() {
+  const rand = mulberry32(3201);
+  const dead = 0xc8bca8, deadTop = 0xe6dece, wood = [];
+  let at = [0, 0, 0];
+  for (let k = 0; k < 3; k++) {
+    const next = [at[0] + (rand() - 0.5) * 0.8, at[1] + 1.0 + rand() * 0.5, at[2] + (rand() - 0.5) * 0.7];
+    wood.push(limb(at, next, 0.5 - k * 0.12, 0.4 - k * 0.12, dead, deadTop, 3210 + k));
+    for (let q = 0; q < 2; q++) {
+      const a = rand() * Math.PI * 2, len = 1 + rand() * 1.2;
+      const mid = [next[0] + Math.cos(a) * len * 0.5, next[1] + 0.4 + rand() * 0.4, next[2] + Math.sin(a) * len * 0.5];
+      wood.push(limb(next, mid, 0.13, 0.08, dead, deadTop, 3220 + k * 4 + q * 2), limb(mid, [mid[0] + Math.cos(a + 0.8) * len * 0.5, mid[1] + (rand() - 0.2) * 0.6, mid[2] + Math.sin(a + 0.8) * len * 0.5], 0.08, 0.03, deadTop, dead, 3221 + k * 4 + q * 2));
+    }
+    at = next;
+  }
+  return mergeGeometries(wood);
 }
 
 /** Built once and shared by every chunk. */
@@ -1603,6 +1651,9 @@ export const TREE_GEOMETRIES = {
   pricklyPear: pricklyPear(),
   bloomCactus: bloomCactus(),
   cliffVines: cliffVines(),
+  limberPine: limberPine(),
+  juniper: juniper(),
+  deadBristlecone: deadBristlecone(),
 };
 
 // How each species takes the seasons: [deciduous (leaves turn and fall),
@@ -1621,7 +1672,7 @@ const SEASONAL = {
   // (Below nothing: the monsoon forest's, drying yellow through the dry months: see Seasons.seasonalTrees.)
   monsoonTree: [-1, 0, 0], monsoonSal: [-1, 0, 0], monsoonFig: [-0.6, 0, 0], monsoonFlame: [-1, 0, 0], monsoonMango: [-0.4, 0, 0], // (green the year round here: its seasons are the ground's, see Seasons)
   redwood: [0, 1, 0],
-  spinifex: [0, 0, 0], termiteMound: [0, 0, 0], ghostGum: [0, 0, 0], jacaranda: [0, 0, 0], bristlecone: [0, 1, 0], pricklyPear: [0, 0, 0], bloomCactus: [0, 0, 0], cliffVines: [0, 0, 0],
+  spinifex: [0, 0, 0], termiteMound: [0, 0, 0], ghostGum: [0, 0, 0], jacaranda: [0, 0, 0], bristlecone: [0, 1, 0], pricklyPear: [0, 0, 0], bloomCactus: [0, 0, 0], cliffVines: [0, 0, 0], limberPine: [0, 1, 0], juniper: [0, 1, 0], deadBristlecone: [0, 1, 0],
   cherryBlossom: [1, 1, 1], // (its blossom thickest in spring; red-gold in autumn; bare in winter)
   cherryRound: [1, 1, 1],
 };

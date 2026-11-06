@@ -229,7 +229,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (krumm) species = { type: 'krummholz' };
       if (rim) {
         const q = hash2(gi, gj, seed + 41);
-        species = { type: q < 0.45 ? 'cliffVines' : q < 0.7 ? 'jungleCanopy' : q < 0.8 ? 'junglePalm' : 'bush' };
+        species = { type: q < 0.32 ? 'cliffVines' : q < 0.62 ? 'jungleCanopy' : q < 0.8 ? 'junglePalm' : 'bush' };
       }
       if (oasis > 0.2) species = { type: hash2(gi, gj, seed + 17) < 0.8 ? 'junglePalm' : 'dryBush' };
       if (atoll) species = { type: hash2(gi, gj, seed + 17) < 0.85 ? 'junglePalm' : 'bush' };
@@ -313,7 +313,7 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
   'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm', 'bamboo', 'jungleCanopy',
   'appleTree', 'raspberryBush', 'blueberryBush', 'redwood', 'cherryBlossom', 'cherryRound', 'monsoonTree', 'monsoonSal', 'monsoonFig', 'monsoonFlame', 'monsoonMango', 'krummholz',
-  'spinifex', 'termiteMound', 'ghostGum', 'jacaranda', 'bristlecone', 'pricklyPear', 'bloomCactus', 'cliffVines'];
+  'spinifex', 'termiteMound', 'ghostGum', 'jacaranda', 'bristlecone', 'pricklyPear', 'bloomCactus', 'cliffVines', 'limberPine', 'juniper', 'deadBristlecone'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

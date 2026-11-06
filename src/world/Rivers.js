@@ -181,6 +181,20 @@ export class Rivers {
     const g = this.generator;
     const rand = mulberry32(hash2(rx, rz, this.seed) * 4294967296);
     let made = 0;
+    // (A river gorge's river: rising from a spring at its head, running down
+    // its floor and out the far end on over the land to a lake or the sea.)
+    for (const h of g.gorgeHeads?.(rx * REGION, rz * REGION, (rx + 1) * REGION, (rz + 1) * REGION) ?? []) {
+      const pond = this.#pond(h.x, h.z, 9, rand, 0.4);
+      if (!pond) continue;
+      // (Traced as a stream from its spring, so that wherever it comes to a
+      // hollow beyond the gorge it ends in a little lake there; it runs on
+      // as a river once it reaches the gentle floor.)
+      const course = this.#trace(pond, 'stream', rand, []);
+      if (course && course.length > 4) {
+        this.#add(course, pond, 'stream', course.tarn ?? null);
+        made++;
+      }
+    }
     for (let attempt = 0; attempt < 110 && made < 6; attempt++) {
       const x = (rx + rand()) * REGION;
       const z = (rz + rand()) * REGION;
