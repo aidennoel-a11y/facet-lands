@@ -898,11 +898,10 @@ export const BIOMES = {
       { height: -Infinity, color: 0x7d8466 },
       { height: -14, color: 0xa99c72 },
       { height: 0, color: 0xd8c690 },
-      { height: 6, color: 0xc8c6bc }, // (pale stone, all of it)
-      { height: 40, color: 0xd4d2c8 },
-      { height: 90, color: 0xd0cec4 },
-      { height: 150, color: 0xe2e0d8 }, // (white rock)
-      { height: 230, color: 0xeeece6 },
+      { height: 6, color: 0x9a9468 }, // (dirt and dry grass between the boulders)
+      { height: 40, color: 0x8e9066 },
+      { height: 90, color: 0x9a9470 },
+      { height: 200, color: 0xa49c7a },
     ],
     cliff: 0xe4e0d6,
     cliffSlope: [0.76, 0.56],

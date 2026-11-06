@@ -83,6 +83,22 @@ const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
 // The Cascades' tiers: where each steps up (on its noise), and how far (m).
 const CASCADE_TIERS = [[-0.24, 12], [-0.04, 15], [0.16, 13]];
 const T = BIOME_TUNING;
+/**
+ * A massive boulder's height at (x, z) (0 off it): centred at (px, pz),
+ * `a` by `b` metres across its two axes (turned `ang`), `H` tall; its
+ * outline lumpy, blocky-round (`seed` its own lumps); its top rounded, its
+ * sides curving down to stand sheer at its foot, as a cylinder lying on
+ * its side does (its undercut half hidden in the shadow under it).
+ */
+function boulderShape(x, z, px, pz, a, b, H, ang, seed) {
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const u = ((x - px) * ca + (z - pz) * sa) / a, v = (-(x - px) * sa + (z - pz) * ca) / b;
+  if (u * u + v * v > 1.5) return 0;
+  const th = Math.atan2(v, u);
+  const wob = 1 + 0.11 * Math.sin(3 * th + seed) + 0.07 * Math.sin(5 * th + 2 * seed) + 0.04 * Math.sin(7 * th + 3 * seed);
+  const q = Math.pow(Math.pow(Math.abs(u), 2.6) + Math.pow(Math.abs(v), 2.6), 1 / 2.6) / wob;
+  return q < 1 ? H * (0.45 + 0.55 * Math.sqrt(1 - q * q)) : 0;
+}
 const DUNE = new Color(0xe6b86e); // dune sand
 // The reef itself, every surface of it grown over: the low encrusting and
 // mound corals, sponges and weed, in a living reef's mix of colours (the
@@ -1525,7 +1541,9 @@ export class TerrainGenerator {
     const m = Math.abs(N.fbm(wx * 0.0026 - 300 + o, wz * 0.0026 + 300 - o, 3)) * 2 + N.noise2D(x * 0.02 + 5, z * 0.02 - 5) * 0.012 * inside;
     const sharp = 0.01 / Math.max(0.015, inside * inside);
     let h = 0, face = 0;
-    [0.07, 0.17, 0.28, 0.4, 0.53].forEach((e, i) => {
+    // (The hanging gardens' canyons a good deal wider at the bottom: easy to walk into.)
+    const off = salt ? 0.1 : 0;
+    [0.07, 0.17, 0.28, 0.4, 0.53].map((e) => e + off).forEach((e, i) => {
       const t = smoothstep(e, e + sharp, m);
       const tall = 12 + 6 * smoothstep(-0.6, 0.6, N.noise2D(x * 0.002 + i * 31.7 + o, z * 0.002 - i * 17.3));
       h += t * tall;
@@ -1542,17 +1560,10 @@ export class TerrainGenerator {
    * benches, crags along the crests.
    */
   bristleconeRelief(x, z, bw) {
+    // (The low ground between the boulders: gently rolling dirt and grass, raised a little.)
     const N = this.jungleMtnNoise;
-    const qx = x + N.noise2D(x * 0.0005 - 131, z * 0.0005 + 7) * 240, qz = z + N.noise2D(x * 0.0005 + 7, z * 0.0005 - 131) * 240;
-    const mass = smoothstep(-0.4, 0.8, N.fbm(qx * 0.0008 - 313, qz * 0.0008 + 177, 3));
-    const peaks = Math.pow(N.ridged(qx * 0.0015 - 270, qz * 0.0015 + 90, 4, 2.05, 0.5, 0.01), 1.6);
-    let h = 30 + 110 * mass + 150 * peaks;
-    // (Ledges: the limestone beds stepping up the slopes, a riser and a bench.)
-    const t = h / 9 + N.noise2D(x * 0.004, z * 0.004) * 0.4, fl = Math.floor(t);
-    h += ((fl + smoothstep(0.3, 0.7, t - fl)) * 9 - h) * 0.55;
-    const crags = N.ridged(x * 0.012 + 401, z * 0.012 - 33, 2, 2, 0.5, 0.02) * 10 * smoothstep(0.1, 0.5, peaks);
-    const env = Math.pow(smoothstep(0, 0.85, bw), 1.5);
-    return smoothstep(0, 0.9, bw) * 6 + env * (h + crags);
+    const floor = 14 * smoothstep(0, 0.5, bw) + N.fbm(x * 0.004 + 9, z * 0.004 - 9, 2) * 6 * bw;
+    return floor + smoothstep(0.25, 0.6, bw) * this.#bristleBoulders(x, z);
   }
 
   // How suited to jungle the country round (x, z) is: its raw zone averaged
@@ -4365,23 +4376,49 @@ export class TerrainGenerator {
     let best = 0;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       const i = ci + di, j = cj + dj;
-      if (hash2(i, j, s) > 0.55) continue;
+      if (hash2(i, j, s) > 0.7) continue;
       const cx = (i + 0.3 + 0.4 * hash2(i, j, s + 1)) * C, cz = (j + 0.3 + 0.4 * hash2(i, j, s + 2)) * C;
       const n = 4 + Math.floor(hash2(i, j, s + 3) * 6), ang = hash2(i, j, s + 4) * Math.PI;
       for (let k = 0; k < n; k++) {
-        // (Strung out along a line, as a wall of them is.)
-        const along = (k - n / 2) * 16 + (hash2(i + k, j, s + 5) - 0.5) * 10, off = (hash2(i, j + k, s + 6) - 0.5) * 22;
+        // (Strung out along a line, as a wall of them is, jammed up against each other.)
+        const along = (k - n / 2) * 17 + (hash2(i + k, j, s + 5) - 0.5) * 10, off = (hash2(i, j + k, s + 6) - 0.5) * 18;
         const px = cx + Math.cos(ang) * along - Math.sin(ang) * off, pz = cz + Math.sin(ang) * along + Math.cos(ang) * off;
-        const a = 8 + 10 * hash2(i - k, j + k, s + 7), b = a * (0.6 + 0.5 * hash2(i + k, j - k, s + 8)), H = 10 + 20 * hash2(i + 2 * k, j, s + 9);
-        const r = ang + (hash2(i, j + 2 * k, s + 10) - 0.5) * 0.8, cr = Math.cos(r), sr = Math.sin(r);
-        const u = Math.abs((x - px) * cr + (z - pz) * sr) / a, v = Math.abs(-(x - px) * sr + (z - pz) * cr) / b;
-        const q = u * u * u + v * v * v;
-        if (q >= 1) continue;
-        // (A rounded block: a broad top, its sides curving down steep; every few, one stacked up on another.)
-        best = Math.max(best, H * Math.pow(1 - q, 0.22) + (k % 3 === 2 ? 0.6 * H : 0));
+        const a = 9 + 10 * hash2(i - k, j + k, s + 7), b = a * (0.55 + 0.5 * hash2(i + k, j - k, s + 8)), H = 12 + 22 * hash2(i + 2 * k, j, s + 9);
+        const h = boulderShape(x, z, px, pz, a, b, H, ang + (hash2(i, j + 2 * k, s + 10) - 0.5) * 1.2, hash2(i + 3 * k, j, s + 11) * 50);
+        // (Every few, one sitting up on top of the others.)
+        if (h > 0) best = Math.max(best, h + (k % 3 === 2 ? 0.55 * H : 0));
       }
     }
     return best;
+  }
+
+  /**
+   * Bristlecone heights' great boulders (metres): mountains of bare white
+   * stone, each one a single colossal boulder or a pile of them, their
+   * outlines lumpy, their tops rounded, their sides curving down sheer to
+   * their feet; dirt, grass and the trees in the hollows between.
+   */
+  #bristleBoulders(x, z) {
+    const C = 300, ci = Math.floor(x / C), cj = Math.floor(z / C), s = this.seed ^ 0xb21c;
+    let best = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const i = ci + di, j = cj + dj;
+      const n = 1 + Math.floor(hash2(i, j, s) * 3);
+      for (let k = 0; k < n; k++) {
+        const px = (i + 0.2 + 0.6 * hash2(i + k * 13, j, s + 1)) * C, pz = (j + 0.2 + 0.6 * hash2(i, j + k * 13, s + 2)) * C;
+        const a = 55 + 75 * hash2(i - k, j + k, s + 3), b = a * (0.55 + 0.45 * hash2(i + k, j - k, s + 4)), H = 45 + 110 * hash2(i + 2 * k, j, s + 5);
+        const h = boulderShape(x, z, px, pz, a, b, H, hash2(i, j + 2 * k, s + 6) * Math.PI, hash2(i + 3 * k, j, s + 7) * 50);
+        if (h > 0) best = Math.max(best, h + (k === 2 ? 0.5 * H : 0));
+      }
+    }
+    return best;
+  }
+
+  /** Whether (x, z) is bare rock where nothing grows: up on a great boulder. */
+  bareRockAt(x, z) {
+    const w = this.getBiomeWeights(x, z, {});
+    if ((w.bristlecone ?? 0) > 0.3 && this.#bristleBoulders(x, z) * smoothstep(0.25, 0.6, this.#bristleconeLand(x, z)) > 1.5) return true;
+    return w.blackHills > 0.3 && this.#bigBlocks(x, z) > 1.5;
   }
 
   /**
@@ -5080,7 +5117,9 @@ export class TerrainGenerator {
       // lower down are the foothills.
       const steep = Math.abs(heightAt(x + 3, z) - heightAt(x - 3, z)) / 6 + Math.abs(heightAt(x, z + 3) - heightAt(x, z - 3)) / 6;
       if (w.jungleMountains > 0.5) return 'Jungle mountains';
-      if (height + this.getColorJitter(x, z) > T.mountainsAbove || steep > 0.72) return 'Mountains';
+      // (In the savanna, the low, broken ridges of a range's edge are savanna still: only its real heights read as mountains.)
+      const dry = w.savanna + w.desert + (w.badlands ?? 0) + (w.savannaMountains ?? 0) > 0.5;
+      if (dry ? height > T.mountainsAbove + 45 : height + this.getColorJitter(x, z) > T.mountainsAbove || steep > 0.72) return 'Mountains';
       // (A cherry grove, the foothills jungle, a bamboo forest: on the range's lower slopes, theirs.)
       if (w.cherry > 0.5) return 'Cherry blossom highlands';
       if (w.jungleFoothills > 0.5) return 'Mountain foothills jungle';
@@ -5389,8 +5428,11 @@ export class TerrainGenerator {
     }
     // Bristlecone heights: the white limestone in its beds, a shade apart.
     if ((w.bristlecone ?? 0) > 0.2 && ground > sea + 3) {
-      const k = Math.floor(this.detailNoise.noise2D(x * 0.04, z * 0.04) * 2 + 2);
-      out.lerp(LIMESTONE[Math.max(0, Math.min(3, k))], 0.85 * smoothstep(0.2, 0.5, w.bristlecone));
+      const rock = this.#bristleBoulders(x, z) * smoothstep(0.25, 0.6, this.#bristleconeLand(x, z));
+      if (rock > 0.8) {
+        const k = Math.floor(this.detailNoise.noise2D(x * 0.04, z * 0.04) * 2 + 2);
+        out.lerp(LIMESTONE[Math.max(0, Math.min(3, k))], 0.95 * smoothstep(0.8, 2, rock));
+      }
     }
     // A river gorge's walls: layered rock, brown and grey.
     if (upness < 0.72 && ground > sea + 1) {
