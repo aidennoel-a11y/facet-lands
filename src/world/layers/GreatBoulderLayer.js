@@ -1,10 +1,10 @@
 import { BufferAttribute, BufferGeometry, Color, Group, Mesh, MeshLambertMaterial } from 'three';
 import { hash2 } from '../../noise/random.js';
-import { boulderMake, boulderRing, boulderWobble } from '../TerrainGenerator.js';
+import { boulderMake, boulderRing, boulderRough, boulderWobble } from '../TerrainGenerator.js';
 
 const TILE = 600; // (m: the boulders are drawn in tiles this size)
 const REACH = 2600; // (m: drawn this far round you; they're big, and seen from far off)
-const SIDES = 28, RINGS = 16;
+const SIDES = 40, RINGS = 24;
 const STONE = {
   bristle: [0xe6e2d8, 0xd8d4c8, 0xeeebe4, 0xccc8bc],
   granite: [0xc8b49a, 0xbca48c, 0xd0bca4, 0xb09c88],
@@ -110,7 +110,11 @@ function boulderMesh(b, pos, col) {
       const lump = 1 + (hash2(k * 7 + r * 131, Math.round(b.seed * 10), 0xb0) - 0.5) * 0.06;
       const w = boulderWobble(b, th) * (s >= m.flat ? boulderRing(b, m.flat) : q) * lump;
       const u = (cx / n) * w * b.a, v = (cz / n) * w * b.b;
-      ring.push([b.x + u * ca - v * sa, y, b.z + u * sa + v * ca]);
+      // (Then roughened, as the land is: pushed out or in along its face.)
+      const px = b.x + u * ca - v * sa, pz = b.z + u * sa + v * ca;
+      const ox = px - b.x, oy = (y - b.y) * 1.2, oz = pz - b.z, ol = Math.hypot(ox, oy, oz) || 1;
+      const d = boulderRough(b, px, y, pz);
+      ring.push([px + (ox / ol) * d, y + (oy / ol) * d, pz + (oz / ol) * d]);
     }
     pts.push(ring);
   }
@@ -121,7 +125,11 @@ function boulderMesh(b, pos, col) {
     const h = hash2(k * 13 + r, Math.round(b.seed * 100), 0xb1);
     tint.setHex(palette[Math.floor(h * palette.length)]);
     // (Darker underneath, in the shade of its own bulk.)
-    shade.copy(tint).multiplyScalar(0.62 + 0.38 * Math.min(1, (r / RINGS) * 1.6) * (0.92 + 0.16 * h));
+    // (Patchy, as the land's colour is: weathered darker in places, streaked down the face, darker still in the cracks.)
+    const mx = (p0[0] + p1[0] + p2[0]) / 3, my = (p0[1] + p1[1] + p2[1]) / 3, mz = (p0[2] + p1[2] + p2[2]) / 3;
+    const patch = 0.88 + 0.12 * Math.sin(mx * 0.07 + mz * 0.05 + b.seed) * Math.cos(mz * 0.06 - my * 0.03);
+    const crack = boulderRough(b, mx, my, mz) < -0.6 * Math.min(4, Math.min(b.a, b.b, b.c) * 0.09) ? 0.78 : 1;
+    shade.copy(tint).multiplyScalar((0.62 + 0.38 * Math.min(1, (r / RINGS) * 1.6)) * (0.9 + 0.2 * h) * patch * crack);
     for (const p of [p0, p1, p2]) {
       pos.push(p[0], p[1], p[2]);
       col.push(shade.r, shade.g, shade.b);

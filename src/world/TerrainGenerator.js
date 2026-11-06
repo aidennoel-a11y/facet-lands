@@ -124,6 +124,14 @@ export function boulderRing(b, s) {
   const m = boulderMake(b), t = Math.abs(s);
   return Math.pow(Math.max(0, 1 - Math.pow(t, m.pv)), 1 / m.pv) * (1 - (s > 0 ? m.top : m.foot) * t);
 }
+// The boulders' roughness: lumps, bulges and knobs all over them, as the land's own (the same for all, by where on it).
+const BOULDER_NOISE = new SimplexNoise(0x5b0d);
+/** How far a boulder's surface stands out (or in) at (x, y, z), in metres. */
+export function boulderRough(b, x, y, z) {
+  const size = Math.min(b.a, b.b, b.c);
+  const N = BOULDER_NOISE, o = b.seed * 3.1;
+  return N.noise3D(x * 0.045 + o, y * 0.045, z * 0.045) * Math.min(4, size * 0.09) + N.noise3D(x * 0.13 - o, y * 0.13, z * 0.13) * Math.min(1.6, size * 0.045) + N.noise3D(x * 0.4, y * 0.4 + o, z * 0.4) * Math.min(0.5, size * 0.02);
+}
 export function boulderSpan(b, x, z) {
   const m = boulderMake(b);
   const ca = Math.cos(b.ang), sa = Math.sin(b.ang), dx = x - b.x, dz = z - b.z;
@@ -141,7 +149,9 @@ export function boulderSpan(b, x, z) {
     }
     return lo;
   };
-  return [b.y - 0.85 * b.c * reach(-1), b.y + Math.min(m.flat, reach(1)) * b.c];
+  const top = b.y + Math.min(m.flat, reach(1)) * b.c;
+  // (Its top as rough as it's drawn: you stand on the knobs.)
+  return [b.y - 0.85 * b.c * reach(-1), top + boulderRough(b, x, top, z)];
 }
 const DUNE = new Color(0xe6b86e); // dune sand
 // The reef itself, every surface of it grown over: the low encrusting and
