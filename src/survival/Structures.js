@@ -7,7 +7,7 @@ import {
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
-  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, chimneyWallModel, roofGableModel, flatRoofModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, ladderLean, RAISED_MODELS, wallFootingModel,
+  logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, chimneyWallModel, roofGableModel, flatRoofModel, withLogLift, stepModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, ladderLean, RAISED_MODELS, wallFootingModel,
   greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, bannerModel, BANNER_DESIGNS, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
@@ -89,6 +89,8 @@ const KINDS = {
   cutWindow: { make: () => openWallModel('cut', 'window'), box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true },
   cutDoor: { make: () => openWallModel('cut', 'door'), box: [WALL_LENGTH / 2, 0.32], tall: 3.2, line: 'wall', len: WALL_LENGTH, stone: true, door: true, doorWidth: HOUSE_DOOR_WIDTH, doorStyle: 'cut' },
   logRoof: { make: logRoofModel, roof: true, steep: 99, gableEnd: 'log' },
+  // (A step or two up to a floor standing a little high off the ground: set at its edge, as tall as it needs.)
+  step: { make: () => stepModel(0.6), box: [0.65, 0.45], steps: true, steep: 1.6 },
   // (A flat roof, level on the wall tops: to walk about on, or to cap a room.)
   flatRoof: { make: flatRoofModel, roof: true, flat: true, steep: 99 },
   shingleRoof: { make: shingleRoofModel, roof: true, steep: 99, gableEnd: 'shingle' },
@@ -218,6 +220,13 @@ const KINDS = {
  * ore smelts into bars; on a drying rack meat and fish dry into jerky. A
  * snare catches rabbits; a raft floats. Everything is saved with the world.
  */
+const LOG_WALLS = new Set(['logWall', 'logWindow', 'logDoor', 'chimneyWall']);
+// (Which of the two ways round a wall runs: one way or square across it.)
+const crossWise = (rot) => {
+  const m = (((rot % Math.PI) + Math.PI) % Math.PI) / (Math.PI / 2);
+  return Math.floor(m + 1e-4) % 2 === 1;
+};
+
 export class Structures {
   /** @param modelOf (id) => geometry: how a thing (meat, a pot...) looks, for what's cooking */
   constructor(scene, modelOf) {
@@ -406,7 +415,7 @@ export class Structures {
     const st = this.#stages(s);
     if (!st || !s.body) return;
     const span = !!s.data?.stages;
-    s.fullGeometry ??= span ? s.body.geometry : this.model(s.type, !!s.upper);
+    s.fullGeometry ??= span ? s.body.geometry : this.model(s.type, !!s.upper, s.rot);
     const built = this.isBuilt(s), full = s.fullGeometry;
     s.siteBits?.forEach((m) => m.parent?.remove(m));
     s.siteBits = [];
@@ -427,9 +436,16 @@ export class Structures {
     s.siteBits.push(ghost);
   }
 
-  model(type, upper = false) {
-    const key = upper ? `${type}:upper` : type;
-    return this.models[key] ?? (this.models[key] = KINDS[type].make(upper));
+  /** What kind of thing `type` is (see KINDS). */
+  kind(type) {
+    return KINDS[type];
+  }
+
+  model(type, upper = false, rot = 0) {
+    // (A log wall square across the others: its courses half a log higher, to lie notched over theirs at the corners.)
+    const lift = LOG_WALLS.has(type) && crossWise(rot);
+    const key = `${type}${upper ? ':upper' : ''}${lift ? ':lift' : ''}`;
+    return this.models[key] ?? (this.models[key] = withLogLift(lift, () => KINDS[type].make(upper)));
   }
 
   // --- Building ------------------------------------------------------------------
@@ -516,6 +532,25 @@ export class Structures {
         z = near.z + uz * gu + vz * gv;
         if (KINDS[near.type].line === 'wall') stairLevel = near.y;
       }
+    }
+    let stepTop = null;
+    if (kind.steps) {
+      // Up against the edge of the nearest floor, square to it, facing out
+      // from it, its top level with the boards.
+      let edge = null, bestE = 2.5;
+      for (const f of this.list) {
+        if (!KINDS[f.type].floor || Math.hypot(f.x - x, f.z - z) > FLOOR_SIZE * 1.5) continue;
+        const fa = [Math.cos(f.rot), -Math.sin(f.rot)], fb = [Math.sin(f.rot), Math.cos(f.rot)];
+        for (const [dir, sign] of [[fa, 1], [fa, -1], [fb, 1], [fb, -1]]) {
+          const nx = dir[0] * sign, nz = dir[1] * sign;
+          // (Along that edge, where you're pointing, kept on it.)
+          const along = [-nz, nx], t = Math.max(-FLOOR_SIZE / 2 + 0.65, Math.min(FLOOR_SIZE / 2 - 0.65, (x - f.x) * along[0] + (z - f.z) * along[1]));
+          const ex = f.x + nx * (FLOOR_SIZE / 2 + 0.45) + along[0] * t, ez = f.z + nz * (FLOOR_SIZE / 2 + 0.45) + along[1] * t;
+          const d = Math.hypot(ex - x, ez - z);
+          if (d < bestE) (bestE = d), (edge = { x: ex, z: ez, rot: Math.atan2(-nx, -nz), top: f.y + FLOOR_TOP });
+        }
+      }
+      if (edge) (x = edge.x), (z = edge.z), (rot = edge.rot), (stepTop = edge.top);
     }
     if (type === 'plot') {
       // Plots side by side, square to the nearest, on its 2 m grid: a field.
@@ -738,6 +773,17 @@ export class Structures {
       }
     }
     let ok = true, why = '';
+    let stepRise;
+    if (kind.steps) {
+      // (From the ground at its foot up to the floor: a step or two, never a flight.)
+      const foot = ground(x - Math.sin(rot) * 0.3, z - Math.cos(rot) * 0.3);
+      y = Number.isFinite(foot) ? foot : y;
+      stepRise = stepTop === null ? 0.6 : stepTop - y;
+      if (stepTop === null) (ok = false), (why = 'Set it against the edge of a floor');
+      else if (stepRise < 0.12) (ok = false), (why = 'No step needed here: the floor is level with the ground');
+      else if (stepRise > 1.1) (ok = false), (why = 'Too high for a step: build stairs');
+      stepRise = Math.min(1.1, Math.max(0.12, stepRise));
+    }
     if (kind.boat) {
       if (wet < corners.length || deep < (kind.deep ?? 0.4)) (ok = false), (why = kind.deep ? 'It needs deeper water: a metre or more' : `A ${type} needs open water`);
       y = wetLevel - 0.12;
@@ -746,6 +792,7 @@ export class Structures {
       if (wet < 4 || deep < 0.2) (ok = false), (why = 'Set it in water');
       y = wetLevel - 0.4;
     } else if (wet) (ok = false), (why = "Can't build in the water");
+    else if (kind.steps) {} // (worked out above)
     else if (upper === null && !stacked && !onFloor && hi - lo > (kind.line ? 1.4 : kind.steep ?? (kind.tilt ? 1.4 : 0.6))) (ok = false), (why = 'The ground is too steep here');
     // Nothing in the way: across its whole footprint (a wall along its
     // length; a roof just where its posts stand, as it goes over things),
@@ -774,7 +821,7 @@ export class Structures {
       const s = this.list.find((o) => KINDS[o.type].line === 'wall' && o.type !== type && Math.hypot(o.x - x, o.z - z) < 0.4 && Math.abs(Math.sin(o.rot - rot)) < 0.1);
       if (s && !this.list.some((o) => o !== s && KINDS[o.type].line === 'wall' && Math.hypot(o.x - x, o.z - z) < 0.4)) (replace = s), (ok = true), (why = ''), (y = s.y), (rot = s.rot);
     }
-    return { type, x, y, z, rot, ok, why, tilt, upper: upper !== null, replace, stacked };
+    return { type, x, y, z, rot, ok, why, tilt, upper: upper !== null, replace, stacked, ...(kind.steps ? { len: Math.round(stepRise * 20) / 20 } : {}) };
   }
 
   /**
@@ -896,12 +943,14 @@ export class Structures {
       return;
     }
     const raised = KINDS[plan.type].raised;
-    if (this.ghostType !== plan.type || this.ghostUpper !== !!plan.upper || (raised && Math.abs((plan.len ?? 0) - (this.ghostLen ?? 0)) > 0.25)) {
+    const lifted = LOG_WALLS.has(plan.type) && crossWise(plan.rot);
+    if (this.ghostType !== plan.type || this.ghostUpper !== !!plan.upper || this.ghostLift !== lifted || ((raised || KINDS[plan.type].steps) && Math.abs((plan.len ?? 0) - (this.ghostLen ?? 0)) > 0.05)) {
       this.ghostUpper = !!plan.upper;
+      this.ghostLift = lifted;
       this.ghostLen = plan.len ?? 0;
       if (this.ghost) this.scene.remove(this.ghost);
       this.ghost = new Group();
-      this.ghost.add(new Mesh(raised ? RAISED_MODELS[plan.type](plan.len ?? 3) : this.model(plan.type, !!plan.upper), this.ghostMaterial));
+      this.ghost.add(new Mesh(raised ? RAISED_MODELS[plan.type](plan.len ?? 3) : KINDS[plan.type].steps ? stepModel(plan.len ?? 0.6) : this.model(plan.type, !!plan.upper, plan.rot), this.ghostMaterial));
       if (KINDS[plan.type].door) {
         const door = new Mesh(this.doorModel(plan.type), this.ghostMaterial);
         door.position.x = -this.#doorWidth(plan.type) / 2;
@@ -953,7 +1002,7 @@ export class Structures {
     const bk = KINDS[s.type].bridge;
     const ys = s.data?.ys ?? [0, 0];
     const spanModel = s.type === 'stoneRoad' ? stoneRoadModel(s.len ?? 1, ys) : s.type === 'zipLine' ? zipLineModel(s.len ?? 10, s.rise ?? -3) : s.type === 'ditch' ? ditchModel(s.len ?? 1, ys) : null;
-    const body = new Mesh(spanModel ? spanModel : bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : KINDS[s.type].raised ? RAISED_MODELS[s.type](s.len ?? 3) : s.type === 'painting' ? (this.models[`painting${s.data.variant}`] ??= paintingModel(s.data.variant)) : s.type === 'banner' ? this.#bannerGeo(s.data) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper), this.material);
+    const body = new Mesh(spanModel ? spanModel : bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : KINDS[s.type].steps ? (this.models[`step:${(s.len ?? 0.6).toFixed(2)}`] ??= stepModel(s.len ?? 0.6)) : KINDS[s.type].raised ? RAISED_MODELS[s.type](s.len ?? 3) : s.type === 'painting' ? (this.models[`painting${s.data.variant}`] ??= paintingModel(s.data.variant)) : s.type === 'banner' ? this.#bannerGeo(s.data) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper, s.rot), this.material);
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);
@@ -1484,9 +1533,10 @@ export class Structures {
       // (A chimney beside the fire draws its smoke: it rises from the top of the stack.)
       if (!s.chimneyCheck || ctx.time > s.chimneyCheck) {
         s.chimneyCheck = ctx.time + 2;
-        const ch = this.list.find((c) => c.type === 'chimney' && Math.hypot(c.x - s.x, c.z - s.z) < 2.4);
+        const ch = this.list.find((c) => c.type === 'chimney' && Math.hypot(c.x - s.x, c.z - s.z) < 3);
         if (ch) s.smoke.uniforms.uCentre.value.set(ch.x, ch.y + CHIMNEY_TOP - (kind.fire === 'closed' ? 1.45 : 0.9) + 0.3, ch.z);
-        else s.smoke.uniforms.uCentre.value.set(s.x, s.y, s.z);
+        // (Or up its own stack, a fireplace's or a chimney wall's: out of the top, never in the room.)
+        else s.smoke.uniforms.uCentre.value.set(s.x, s.y + (s.type === 'fireplace' ? 3.4 : s.type === 'chimneyWall' ? 4.2 : 0), s.z);
         s.column?.uniforms.uCentre.value.copy(s.smoke.uniforms.uCentre.value);
       }
       for (const pf of [s.flames, s.smoke, s.column]) {
@@ -1897,10 +1947,19 @@ export class Structures {
         if (top === null || t > top) top = t;
         continue;
       }
-      if (!(k.floor || k.stairs || k.roof) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
+      if (!(k.floor || k.stairs || k.roof || k.steps) || Math.abs(s.x - x) > 3 || Math.abs(s.z - z) > 3) continue;
       const ox = x - s.x, oz = z - s.z, c = Math.cos(s.rot), sn = Math.sin(s.rot);
       const u = ox * c - oz * sn, v = ox * sn + oz * c;
       let t;
+      if (k.steps) {
+        // (A step or two: up its treads to the floor.)
+        if (Math.abs(u) > 0.7 || v < -0.5 || v > 0.5) continue;
+        const n = (s.len ?? 0.6) > 0.38 ? 2 : 1, rise = s.len ?? 0.6;
+        t = s.y + (rise * Math.min(n, Math.floor(((v + 0.45) / 0.9) * n) + 1)) / n;
+        if (t > feetY + 0.7) continue;
+        if (top === null || t > top) top = t;
+        continue;
+      }
       if (k.roof) {
         // (A roof: stood on, its boards or its slope, out to the edge of its overhang.)
         const h = FLOOR_SIZE / 2, over = 0.28;

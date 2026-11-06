@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Mesh, MeshLambertMaterial } from 'three';
+import { BufferAttribute, BufferGeometry, InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, PlaneGeometry, Vector3 } from 'three';
 import { seasonUniforms } from '../render/Seasons.js';
 
 // A blanket of lying snow over the ground round about you: the land itself
@@ -12,7 +12,9 @@ import { seasonUniforms } from '../render/Seasons.js';
 export const SNOW_DEPTH = 0.35;
 const CELL = 2.8; // (the land's own triangles are 2 m: these about twice the area)
 const N = 80; // cells across: 224 m
-const EDGE = 14; // metres of fading out round the edge, into the snow-coloured land beyond
+const EDGE = 14;
+const TRAIL = 700; // (segments of the furrow you leave wading through it)
+const tm = new Matrix4(), along = new Vector3(), across = new Vector3(), upward = new Vector3(), scaleV = new Vector3(); // metres of fading out round the edge, into the snow-coloured land beyond
 
 export class SnowBlanket {
   /**
@@ -66,10 +68,58 @@ export class SnowBlanket {
     this.row = 0;
   }
 
+  /**
+   * The way you've waded through it: a soft, shadowed furrow along the top
+   * of the snow where your legs pushed it aside (fainter than the prints in
+   * it), segment by segment behind you; filled in again by the snow as it
+   * falls, and gone with it when it melts.
+   */
+  wade(x, z, ground) {
+    if (!this.trail) {
+      const g = new PlaneGeometry(1, 1);
+      g.rotateX(-Math.PI / 2);
+      const mat = new MeshLambertMaterial({ color: 0xb4c0d2, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+      this.trail = new InstancedMesh(g, mat, TRAIL);
+      this.trail.count = 0;
+      this.trail.frustumCulled = false;
+      this.trail.receiveShadow = true;
+      this.mesh.parent.add(this.trail);
+      this.trailAt = null;
+      this.trailNext = 0;
+    }
+    const top = (px, pz) => ground(px, pz) + this.depthAt(px, pz);
+    const d = this.depthAt(x, z);
+    if (d < 0.08) return void (this.trailAt = null);
+    if (!this.trailAt) return void (this.trailAt = { x, z });
+    const dx = x - this.trailAt.x, dz = z - this.trailAt.z, len = Math.hypot(dx, dz);
+    if (len < 0.45) return;
+    if (len > 3) return void (this.trailAt = { x, z });
+    const y0 = top(this.trailAt.x, this.trailAt.z), y1 = top(x, z);
+    if (!Number.isFinite(y0) || !Number.isFinite(y1)) return void (this.trailAt = { x, z });
+    // (Along the step, square across it, lying on the slope of the snow.)
+    along.set(dx, y1 - y0, dz).normalize();
+    across.set(dz, 0, -dx).normalize();
+    upward.crossVectors(along, across).normalize();
+    if (upward.y < 0) upward.negate(), across.negate();
+    tm.makeBasis(across, upward, along).scale(scaleV.set(0.62 + Math.random() * 0.08, 1, len + 0.12));
+    tm.setPosition((x + this.trailAt.x) / 2, (y0 + y1) / 2 + 0.02, (z + this.trailAt.z) / 2);
+    this.trail.setMatrixAt(this.trailNext, tm);
+    this.trailNext = (this.trailNext + 1) % TRAIL;
+    this.trail.count = Math.min(TRAIL, this.trail.count + 1);
+    this.trail.instanceMatrix.needsUpdate = true;
+    this.trailAt = { x, z };
+  }
+
   /** Follows you; a few rows of it worked out again each frame (the land loading in, a roof going up). */
   update(x, z) {
     const on = seasonUniforms.uSnowDepth.value > 0.01;
     this.mesh.visible = on;
+    if (this.trail) {
+      // (The furrows fill in as it snows, and go when it's melted.)
+      this.trail.visible = seasonUniforms.uSnowDepth.value > 0.08;
+      this.trail.material.opacity = 0.5 * Math.min(1, (seasonUniforms.uSnowDepth.value - 0.08) * 4);
+      if (!this.trail.visible) this.trail.count = 0;
+    }
     if (!on) return;
     const ox = Math.round(x / CELL) * CELL - (N / 2) * CELL, oz = Math.round(z / CELL) * CELL - (N / 2) * CELL;
     if (Math.abs(ox - this.ox) > CELL * 6 || Math.abs(oz - this.oz) > CELL * 6) {

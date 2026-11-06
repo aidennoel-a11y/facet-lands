@@ -793,8 +793,10 @@ export function fireplaceModel() {
 export function chimneyWallModel() {
   const b = new Parts(311), rand = mulberry32(311), L = WALL_LENGTH, ST = [0x8a867c, 0x7e7a72, 0x96928a, 0x726e66];
   const gap = 0.75; // (half the stonework's width: the logs stop at it)
-  for (let k = 0, y = 0.1; y < 3.15; k++, y += 0.33) {
-    const r = 0.17 + rand() * 0.02, past = k % 2 ? 0.18 : 0.04, col = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
+  logPlate(b, -L / 2 - 0.04, -gap);
+  logPlate(b, gap, L / 2 + 0.04);
+  for (const [k, y] of logCourses().entries()) {
+    const r = 0.17 + rand() * 0.02, past = (k + (LOG_LIFT ? 1 : 0)) % 2 ? 0.18 : 0.04, col = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
     b.log([-L / 2 - past, y, 0], [-gap, y, 0], r, col, 0xc8a070, 7);
     b.log([gap, y, 0], [L / 2 + past, y, 0], r, col, 0xc8a070, 7);
   }
@@ -1785,6 +1787,8 @@ function roofPiece(seed, { slate, style = slate ? 'slate' : 'thatch', dye = 'nat
   // The rafters, low edge to high, and the beams along them.
   for (const x of [-h + 0.15, -h / 3, h / 3, h - 0.15]) b.log([x, -0.05 - over * Math.tan(ang), -h - over], [x, ROOF_RISE - 0.05 + over * Math.tan(ang), h + over], 0.08, 0x5e4630, 0xc8a070, 6);
   for (const [z, y] of [[-h, 0], [h, ROOF_RISE]]) b.log([-h - over, y, z], [h + over, y, z], 0.1, 0x5a4230, 0xc8a070, 6);
+  // (Boards over the rafters, under whatever covers them, so no daylight shows through between its courses.)
+  b.add(new BoxGeometry(ROOF_SIZE + over * 2 - 0.04, 0.05, len), 0x5e4630, [0, 0.07 + ROOF_RISE / 2, 0], [-ang, 0, 0], [1, 1, 1], 0.02);
   // The covering, in courses up the slope.
   const n = { slate: 8, thatch: 5, shingle: 10, tile: 9, log: 1, barn: 1 }[style];
   if (style === 'barn') {
@@ -1825,6 +1829,24 @@ const GABLE_COLOURS = { slate: 0x84806e, tile: 0xa8a49a, shingle: 0x9a7448, log:
 /** A roof piece's gable end, closed (boards, or stone): the triangle from the wall top up under the slope, at x = 0. */
 export function roofGableModel(style = 'thatch') {
   return new Parts(171).add(gableWedge(ROOF_SIZE, ROOF_RISE, 0.12), GABLE_COLOURS[style] ?? 0x8a6a44, [0, 0, 0], [0, 0, 0], [1, 1, 1], style === 'tile' || style === 'shingle' ? 0.02 : 0.05).build();
+}
+
+/**
+ * A step or two up to a floor that stands a little high off the ground:
+ * `rise` m in all, its top level with the floor; a single log step for a
+ * small rise, two for more. The flight runs up towards +z (the floor),
+ * its foot at z = -0.45.
+ */
+export function stepModel(rise = 0.6) {
+  const b = new Parts(177), n = rise > 0.38 ? 2 : 1, d = 0.9 / n, W = 1.3;
+  for (let k = 0; k < n; k++) {
+    const top = (rise * (k + 1)) / n, z = -0.45 + d * (k + 0.5);
+    // (Each tread a split log on a block of the same, down to the ground.)
+    b.add(new BoxGeometry(W, top, d + 0.02), 0x6e5034, [0, top / 2, z + (k < n - 1 ? 0 : 0.01)], [0, 0, 0], [1, 1, 1], 0.03);
+    b.log([-W / 2, top - 0.05, z + d / 2 - 0.08], [W / 2, top - 0.05, z + d / 2 - 0.08], 0.09, 0x7a5a3a, 0xc8a070, 7);
+    b.add(new BoxGeometry(W + 0.04, 0.05, d), 0x8a663e, [0, top + 0.005, z], [0, 0, 0], [1, 1, 1], 0.02);
+  }
+  return b.build();
 }
 
 /**
@@ -1937,10 +1959,32 @@ export const tileRoofModel = () => roofPiece(161, { style: 'tile' });
 // --- The building sets: log, plank, rough stone, cut stone ------------------------
 
 /** A log wall, 4 m long: whole logs laid one on another, saddle-notched, the ends crossing past; moss chinked between. */
+// (Log courses: a wall square across another has its logs half a log higher,
+// so at the corner they lie one on another, notched, never through each
+// other; a flat-topped plate log under the roof keeps the top level.)
+let LOG_LIFT = false;
+export function withLogLift(lift, make) {
+  LOG_LIFT = lift;
+  try {
+    return make();
+  } finally {
+    LOG_LIFT = false;
+  }
+}
+function logCourses() {
+  const ys = [];
+  if (LOG_LIFT) for (let y = -0.065; y < 3.0; y += 0.33) ys.push(y);
+  else for (let y = 0.1; y < 3.15; y += 0.33) ys.push(y);
+  return ys;
+}
+function logPlate(b, x0, x1) {
+  if (LOG_LIFT) b.add(new BoxGeometry(x1 - x0, 0.2, 0.32), 0x6e5034, [(x0 + x1) / 2, 3.14, 0], [0, 0, 0], [1, 1, 1], 0.04);
+}
 export function logWallModel() {
   const b = new Parts(171), rand = mulberry32(171), L = WALL_LENGTH;
-  for (let k = 0, y = 0.1; y < 3.15; k++, y += 0.33) {
-    const r = 0.17 + rand() * 0.02, past = k % 2 ? 0.18 : 0.04;
+  logPlate(b, -L / 2 - 0.04, L / 2 + 0.04);
+  for (const [k, y] of logCourses().entries()) {
+    const r = 0.17 + rand() * 0.02, past = (k + (LOG_LIFT ? 1 : 0)) % 2 ? 0.18 : 0.04;
     b.log([-L / 2 - past, y, (rand() - 0.5) * 0.03], [L / 2 + past, y, (rand() - 0.5) * 0.03], r, [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)], 0xc8a070, 7);
   }
   // (The chinking: moss and clay pressed between the logs.)
@@ -1982,6 +2026,9 @@ export function logFloorModel(upper = false) {
     b.log([-h, FLOOR_TOP - 0.15, z], [h, FLOOR_TOP - 0.15, z], 0.16, [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)], 0xc8a070, 7);
     b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.04, 0.24), 0xa88a5c, [0, FLOOR_TOP - 0.02, z], [0, 0, 0], [1, 1, 1], 0.05); // (adzed flat)
   }
+  // (Boards under the logs, the gaps between them chinked: no light through, seen from the room below.)
+  b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.05, FLOOR_SIZE - 0.02), 0x6a4c32, [0, FLOOR_TOP - 0.29, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.2, FLOOR_SIZE - 0.04), 0x5e4630, [0, FLOOR_TOP - 0.15, 0], [0, 0, 0], [1, 1, 1], 0.02);
   if (upper) return b.build();
   for (const x of [-h + 0.2, h - 0.2]) b.log([x, FLOOR_TOP - 0.42, -h], [x, FLOOR_TOP - 0.42, h], 0.15, 0x5e4630, 0xc8a070, 6);
   for (const x of [-h + 0.2, h - 0.2]) for (const z of [-h + 0.25, 0, h - 0.25]) b.add(new CylinderGeometry(0.17, 0.19, 1.6, 7), 0x5a4230, [x, FLOOR_TOP - 1.3, z]);
@@ -2111,8 +2158,9 @@ export function openWallModel(style, what) {
   const b = new Parts(201 + ['log', 'plank', 'stone', 'cut'].indexOf(style) * 4 + (window ? 0 : 2)), rand = mulberry32(201);
   const inside = (x, y, pad = 0) => Math.abs(x) < o.w / 2 + pad && y > o.lo - pad && y < o.hi + pad;
   if (style === 'log') {
-    for (let k = 0, y = 0.1; y < 3.15; k++, y += 0.33) {
-      const r = 0.17 + rand() * 0.02, past = k % 2 ? 0.18 : 0.04, bark = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
+    logPlate(b, -L / 2 - 0.04, L / 2 + 0.04);
+    for (const [k, y] of logCourses().entries()) {
+      const r = 0.17 + rand() * 0.02, past = (k + (LOG_LIFT ? 1 : 0)) % 2 ? 0.18 : 0.04, bark = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
       if (y > o.lo - r && y < o.hi + r * 0.5) {
         b.log([-L / 2 - past, y, 0], [-o.w / 2 - 0.08, y, 0], r, bark, 0xc8a070, 7);
         b.log([o.w / 2 + 0.08, y, 0], [L / 2 + past, y, 0], r, bark, 0xc8a070, 7);

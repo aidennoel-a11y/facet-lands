@@ -45,6 +45,7 @@ import { createLogLayer } from './world/layers/LogLayer.js';
 import { createFlowerLayer } from './world/layers/FlowerLayer.js';
 import { createSnowLayer } from './world/layers/SnowLayer.js';
 import { SnowBlanket } from './world/SnowBlanket.js';
+import { TREE_GEOMETRIES } from './world/trees.js';
 import { createUnderstoryLayer } from './world/layers/UnderstoryLayer.js';
 import { createLavaLayer } from './world/layers/LavaLayer.js';
 import { createFarTreeLayer } from './world/layers/FarTreeLayer.js';
@@ -1244,6 +1245,7 @@ function playerTraces(dt) {
   walker.left = !walker.left;
   const side = walker.left ? 0.13 : -0.13;
   footfall(pos.x + Math.cos(heading) * side, pos.z - Math.sin(heading) * side, heading, PRINT.square, 0.28, 0.6); // (square: a blocky foot)
+  snowBlanket.wade(pos.x, pos.z, (x, z) => chunks.groundHeightAt(x, z)); // (and the furrow through the deep snow)
   // The sound of it: the footstep on what's underfoot, and now and then (and
   // always over a stick lying there) a branch cracking under it in the woods.
   const loud = (controls.crouch ? 0.35 : controls.sprinting ? 1.1 : 0.7) * (game.inventory.feet ? 0.7 : 1); // (soft boots: quieter)
@@ -2367,6 +2369,7 @@ const cold = { value: 1, wait: 0 };
 // (And up in the mountains, now and then from mid autumn to mid spring:
 // see highSnow. Up there, it snows instead of raining then.)
 let wasSnowing = false;
+const roofScan = { wait: 0 };
 let firstSnowFalling = false;
 function firstSnow() {
   const d = WORLD.daysPerSeason, t = seasons.time;
@@ -3342,6 +3345,18 @@ function tick(now) {
   // In a cold winter, it snows (over the lands that have one).
   const snow = Math.max(seasonUniforms.uWinter.value, firstSnowing ? (seasons.highSnowing ? smoothstep(60, 85, camera.position.y) : 1) : 0, seasonUniforms.uHighSnow.value * smoothstep(80, 100, camera.position.y)) * coldHere(dt);
   whiteout.snow = snow;
+  // (The rain and snow kept off under the roofs and floors near by: looked for twice a second.)
+  if ((roofScan.wait -= dt) <= 0) {
+    roofScan.wait = 0.5;
+    const c = camera.position, near = [];
+    for (const s of game.structures.list) {
+      const k = game.structures.kind?.(s.type);
+      if (!k || !(k.roof || k.floor) || Math.abs(s.x - c.x) > 40 || Math.abs(s.z - c.z) > 40) continue;
+      near.push({ x: s.x, z: s.z, rot: s.rot, top: s.y + (k.roof ? (k.flat ? 0.25 : 1.9) : 0.15), d: Math.hypot(s.x - c.x, s.z - c.z) });
+    }
+    near.sort((a, b) => a.d - b.d);
+    rain.setRoofs(near);
+  }
   // (Snow comes down thicker than rain: a heavy fall, more of it in the air.)
   rain.update(worldNow, camera.position, Math.min(1, localRain * (1 + 0.6 * snow)), clouds.wind, wind, dayNight.horizon, snow);
   // The tide: in and out twice a day, some 60 cm either way (higher at a storm's surge).
@@ -3447,6 +3462,7 @@ function tick(now) {
   // (How much of a glowing swamp you're in, looked at again now and then: its fireflies, its mist, its lights.)
   if (!(worldNow < glowSwampHere.next && glowSwampHere.next - worldNow < 1)) (glowSwampHere.next = worldNow + 0.7), (glowSwampHere.v = sheltered ? 0 : generator.glowSwampAt(camera.position.x, camera.position.z));
   const life = {
+    snowDepth: (x, z) => snowBlanket.depthAt(x, z), // (the deep snow: the birds land on top of it)
     lava: (x, z) => generator.onLiveLava(x, z), // (a live lava flow: kept off; dies in it)
     waveAt: (x, z) => (game.waveAt ? game.waveAt(x, z).y : 0), // (the swell, for a body afloat)
     glowSwamp: glowSwampHere.v,
@@ -3687,7 +3703,7 @@ requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
 globalThis.__prof = prof;
-window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, snowBlanket, seasonUniforms, whiteout, get localRain() { return localRain; }, get generator() { return generator; }, WORLD };
+window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, snowBlanket, seasonUniforms, TREE_GEOMETRIES, whiteout, get localRain() { return localRain; }, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

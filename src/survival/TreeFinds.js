@@ -110,7 +110,9 @@ export class TreeFinds {
     const c = camera.position;
     if (this.wait <= 0) {
       this.wait = 1;
-      this.near = this.#find(c.x, c.z, chunkSize).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z) - Math.hypot(b.x - c.x, b.z - c.z)).slice(0, MAX);
+      // (The wild bees' nests gone with the leaves, from late autumn till the spring.)
+      const bare = season > 2.85 || season < 0.15;
+      this.near = this.#find(c.x, c.z, chunkSize).filter((f) => !(bare && f.kind === 'hive')).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z) - Math.hypot(b.x - c.x, b.z - c.z)).slice(0, MAX);
     }
     // Eggs in the spring and early summer.
     const laying = season > 0.25 && season < 1.6;

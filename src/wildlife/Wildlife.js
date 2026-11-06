@@ -1848,7 +1848,7 @@ export class Wildlife {
     if (day > 0.5) for (const h of this.herds) if (h.night) for (const m of h.members) if (this.#nearest(m.x, m.z) > 120) m.gone = true;
 
     // Flocks wheeling over the woods and fields, by day.
-    if (day > 0.4 && this.flocks.filter((f) => f.kind === 'starling').length < 1) {
+    if (day > 0.4 && (ctx.winter ?? 0) < 0.5 && this.flocks.filter((f) => f.kind === 'starling').length < 1) { // (gone south for the winter)
       const s = spot(260, 380, (x, z) => { const w = wildWeights(g, x, z, {}); return w.temperate + w.savanna + w.pine > 0.6; }, 6);
       if (s) this.#spawnFlock('starling', s, Math.round(rnd(6, 12)));
     }
@@ -1960,7 +1960,7 @@ export class Wildlife {
         }
         if (!home.birds && ctx.day > 0.3 && this.#crowns(ctx.trees, key)) {
           home.birds = true;
-          const list = this.#crowns(ctx.trees, key), n = Math.round(home.rand() * 2.6 * (1 - 0.6 * ctx.winter));
+          const list = this.#crowns(ctx.trees, key), n = Math.round(home.rand() * 2.6 * (1 - 0.88 * ctx.winter)); // (most of them away south in the winter)
           for (let k = 0; k < n && list.length; k++) {
             const i = Math.floor(home.rand() * (list.length / 5)) * 5;
             if (list[i + 3] - list[i + 2] < 2.5) continue;
@@ -4351,7 +4351,7 @@ export class Wildlife {
           a.hop = Math.random() < 0.5 ? rnd(0.08, 0.2) : rnd(0.5, 1.6);
           const d = rnd(0.12, 0.3);
           const nx = a.x + Math.sin(a.heading) * d, nz = a.z + Math.cos(a.heading) * d;
-          const ny = ctx.ground(nx, nz);
+          const ny = ctx.ground(nx, nz) + (ctx.snowDepth?.(nx, nz) ?? 0);
           if (ny > ctx.seaLevel + 0.2) a.hopping = { t: 0, at: this.time, fx: a.x, fz: a.z, fy: a.y, tx: nx, tz: nz, ty: ny + 0.07 * a.scale };
         }
       } else a.hopping = null;
@@ -4366,7 +4366,7 @@ export class Wildlife {
         const perch = c && !toGround ? this.#perchOn(c, ctx) : null;
         if (perch) to = { ...perch, state: 'perch' };
         else {
-          const x = a.x + rnd(-6, 6), z = a.z + rnd(-6, 6), y = ctx.ground(x, z);
+          const x = a.x + rnd(-6, 6), z = a.z + rnd(-6, 6), y = ctx.ground(x, z) + (ctx.snowDepth?.(x, z) ?? 0);
           to = y > ctx.seaLevel + 0.3 ? { x, y: y + 0.07 * a.scale, z, state: 'ground' } : null;
         }
         if (scared && !to) to = { x: a.x + (a.x - ctx.camera.position.x) * 4, y: a.y + 20, z: a.z + (a.z - ctx.camera.position.z) * 4, state: 'gone' };
@@ -4456,7 +4456,7 @@ export class Wildlife {
           for (const b of f.birds) {
             const a = rnd(0, TAU), r = rnd(0.5, 6);
             b.land = { x: x + Math.sin(a) * r, z: z + Math.cos(a) * r };
-            b.land.y = ctx.ground(b.land.x, b.land.z) + 0.06 * b.scale;
+            b.land.y = ctx.ground(b.land.x, b.land.z) + (ctx.snowDepth?.(b.land.x, b.land.z) ?? 0) + 0.06 * b.scale;
           }
         }
       }
@@ -4497,7 +4497,7 @@ export class Wildlife {
         if (Math.random() < dt * 0.7) {
           b.heading += rnd(-1.5, 1.5);
           const nx = b.x + Math.sin(b.heading) * 0.3, nz = b.z + Math.cos(b.heading) * 0.3;
-          b.land = { x: nx, z: nz, y: ctx.ground(nx, nz) + 0.06 * b.scale };
+          b.land = { x: nx, z: nz, y: ctx.ground(nx, nz) + (ctx.snowDepth?.(nx, nz) ?? 0) + 0.06 * b.scale };
           b.x = nx; b.z = nz; b.y = b.land.y;
         }
         return;

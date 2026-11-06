@@ -117,6 +117,13 @@ function sedgeGeometry(seed = 31) {
   return g;
 }
 
+/** The tuft shapes, by kind (see grassPlacement): a tuft, tall seeding stalks, a broad clump, sedge, fine grass, marsh grass. */
+export function grassShapes() {
+  const g = [tuftGeometry(), tallGeometry(), tuftGeometry(10, 23), sedgeGeometry(), fineGeometry(), marshGeometry()];
+  g[2].scale(1.6, 0.8, 1.6);
+  return g;
+}
+
 /**
  * Marsh grass, in the swamps: a dense, soft clump of broad blades arching
  * out and over every way, deep green at the foot, yellow-green at the tips,
@@ -181,8 +188,7 @@ export function createGrassLayer(config, { far = false } = {}) {
   const maxLod = far ? config.farGrassMaxLod : config.grassMaxLod;
   // Ordinary tufts, tall seeding stalks, broad, many-bladed clumps, sedges
   // and fine golden grass.
-  const geometries = [tuftGeometry(), tallGeometry(), tuftGeometry(10, 23), sedgeGeometry(), fineGeometry(), marshGeometry()];
-  geometries[2].scale(1.6, 0.8, 1.6);
+  const geometries = grassShapes();
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
   // Double-sided materials flip the normal on back faces, which would turn
   // the far side of every blade black. Undo the flip: both sides face up.
@@ -283,8 +289,8 @@ export function createGrassLayer(config, { far = false } = {}) {
           for (let k = 0; k < e.count; k++) {
             const tx = e.x0 + m[k * 16 + 12], tz = e.z0 + m[k * 16 + 14];
             if (Math.abs(tx - x) > r || Math.abs(tz - z) > r || Math.hypot(tx - x, tz - z) > r || isCut?.(tx, tz)) continue;
-            const h = Math.hypot(m[k * 16 + 4], m[k * 16 + 5], m[k * 16 + 6]);
-            out.push({ x: tx, y: m[k * 16 + 13], z: tz, h, r: e.colors[k * 3], g: e.colors[k * 3 + 1], b: e.colors[k * 3 + 2], warm: e.warms?.[k] ?? 0 });
+            const h = Math.hypot(m[k * 16 + 4], m[k * 16 + 5], m[k * 16 + 6]), w = Math.hypot(m[k * 16], m[k * 16 + 1], m[k * 16 + 2]);
+            out.push({ x: tx, y: m[k * 16 + 13], z: tz, h, w, kind: e.kinds?.[k] ?? 0, turn: Math.atan2(m[k * 16 + 8], m[k * 16 + 10]), r: e.colors[k * 3], g: e.colors[k * 3 + 1], b: e.colors[k * 3 + 2], warm: e.warms?.[k] ?? 0 });
           }
         }
       return out;
@@ -330,7 +336,7 @@ export function createGrassLayer(config, { far = false } = {}) {
       // (Remembered, where each tuft stands: for the sickle, to cut the grass that's really there.)
       if (!far) {
         root.userData.key = `${cx},${cz}`;
-        layer.placed.set(root.userData.key, { x0: cx * config.chunkSize, z0: cz * config.chunkSize, matrices, colors, count, warms: placed.warms });
+        layer.placed.set(root.userData.key, { x0: cx * config.chunkSize, z0: cz * config.chunkSize, matrices, colors, count, warms: placed.warms, kinds });
       }
       layer.count += count;
       return root;

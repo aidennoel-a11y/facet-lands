@@ -3,6 +3,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  Vector4,
   LineSegments,
   Mesh,
   MeshBasicMaterial,
@@ -46,6 +47,8 @@ export class Rain {
       amount: { value: 0 },
       snow: { value: 0 },
       colour: { value: new Color(0xb8c4d2) },
+      // (The roofs and floors over your head near by: none falls under them. Each x, z, turn, the height of its top; see setRoofs.)
+      roofs: { value: Array.from({ length: 16 }, () => new Vector4(0, 0, 0, -1e9)) },
     };
     this.material = new ShaderMaterial({
       uniforms: this.uniforms,
@@ -60,6 +63,7 @@ export class Rain {
         uniform vec3 travelSnow;
         uniform float amount;
         uniform float snow;
+        uniform vec4 roofs[16];
         attribute vec4 drop;
         attribute float tail;
         varying float vAlpha;
@@ -78,6 +82,14 @@ export class Rain {
           p -= normalize(velocity) * tail * mix(0.9 + 0.5 * drop.w, 0.12, snow);
           // Lighter rain: fewer drops.
           vAlpha = step(drop.w, amount) * (1.0 - 0.6 * tail);
+          // (Not under a roof, nor indoors under a floor above: kept off by it.)
+          for (int i = 0; i < 16; i++) {
+            vec4 r = roofs[i];
+            if (r.w < -1e8) break;
+            vec2 o = p.xz - r.xy;
+            vec2 l = vec2(o.x * cos(r.z) - o.y * sin(r.z), o.x * sin(r.z) + o.y * cos(r.z));
+            if (abs(l.x) < 2.35 && abs(l.y) < 2.35 && p.y < r.w) vAlpha = 0.0;
+          }
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         }`,
       fragmentShader: /* glsl */ `
@@ -103,6 +115,16 @@ export class Rain {
    * @param wind    { x, z } drift of the clouds (m/s), and its strength 0..1
    * @param light   sky colour to tint the drops with
    */
+  /** The roofs (and upper floors) near by: [{ x, z, rot, top }], at most 16, nearest first. */
+  setRoofs(list) {
+    const r = this.uniforms.roofs.value;
+    for (let k = 0; k < 16; k++) {
+      const s = list[k];
+      if (s) r[k].set(s.x, s.z, s.rot, s.top);
+      else r[k].set(0, 0, 0, -1e9);
+    }
+  }
+
   update(time, focus, amount, wind, strength, light, snow = 0) {
     this.mesh.visible = amount > 0.01;
     if (!this.mesh.visible) return;

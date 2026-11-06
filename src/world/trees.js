@@ -553,49 +553,113 @@ const monsoonFig = () => monsoonKind({ seed: 1700, trunkH: 5.2, trunkR: 0.85, bl
 const monsoonFlame = () => monsoonKind({ seed: 1800, trunkH: 4.4, trunkR: 0.32, blobs: ring(3, 1.4, 5.6, 1.5, [0.2, 6.3, 0, 1.7]), leafLow: 0x4a7a2e, leafHigh: 0x7aa84a, vines: 2, flowers: 16, lean: 0.12 });
 const monsoonMango = () => monsoonKind({ seed: 1900, trunkH: 3.4, trunkR: 0.5, blobs: ring(6, 2.4, 5.2, 2.2, [0, 6.6, 0, 2.8]), leafLow: 0x1f4a1e, leafHigh: 0x3a6a2a, vines: 3 });
 
-// Weeping willow (by lakes and rivers, and in the swamps): a stout trunk
-// forking low into a few great limbs that rise and arch outward like a
-// fountain; from all along their arching ends, a bell-shaped curtain of
-// long, fine, pale streamers falls, sweeping down nearly to the ground,
-// airy enough to see the limbs through; a light cap of leaves on top.
-// Some 11 m tall and 10 across.
-const WEEPING_BLOBS = [
-  [0, 9.6, 0, 1.9],
-  [1.6, 9.0, 0.5, 1.4],
-  [-1.5, 9.1, -0.6, 1.4],
-  [0.4, 8.9, -1.6, 1.3],
-  [-0.5, 8.9, 1.6, 1.3],
-];
+// Weeping willow, by the water: a stout, leaning trunk forking at a little
+// over 3 m into a few great limbs that rise steeply; the crown a tall,
+// lopsided fountain thrown out over the water, taller than it is wide (some
+// 13 m by 10), made all of drooping leafy streamers hanging from every
+// height, top to bottom, the dark limbs showing in among them.
+
+/**
+ * One hanging streamer: from `from` (under the crown), out a little along
+ * heading `a` and then down, `len` long, a narrow tapering ribbon of
+ * leaves (its edges toothed, leaf by leaf), turned across the way it hangs
+ * so the curtain shows its face; both sides drawn.
+ */
+function streamer(from, a, len, width, bow, colorTop, colorTip, seed) {
+  const rand = mulberry32(seed);
+  const n = 5, ox = Math.cos(a), oz = Math.sin(a), tx = -oz, tz = ox, twist = (rand() - 0.5) * 0.8;
+  const pts = [];
+  for (let k = 0; k <= n; k++) {
+    const t = k / n;
+    // (Out from under the crown at first, then hanging, the bow easing off; swaying a touch.)
+    const out = bow * Math.sin(Math.min(1, t * 1.6) * Math.PI * 0.5) + (rand() - 0.5) * 0.06;
+    const y = from[1] - len * (t * t * 0.25 + t * 0.75);
+    const half = width * (1 - t * 0.82) * (k % 2 ? 1.25 : 0.8); // (toothed: leaf, gap, leaf)
+    const c = Math.cos(twist * t), sn = Math.sin(twist * t);
+    const wx = tx * c + ox * sn, wz = tz * c + oz * sn;
+    const px = from[0] + ox * out, pz = from[2] + oz * out;
+    pts.push([[px + wx * half, y, pz + wz * half], [px - wx * half, y, pz - wz * half]]);
+  }
+  const positions = [];
+  for (let k = 0; k < n; k++) {
+    const [l0, r0] = pts[k], [l1, r1] = pts[k + 1];
+    for (const flip of [false, true]) {
+      const quad = flip ? [l0, l1, r0, r0, l1, r1] : [l0, r0, l1, r0, r1, l1];
+      for (const q of quad) positions.push(...q);
+    }
+  }
+  // (The tip: a last leaf, to a point.)
+  const [l, r] = pts[n], tip = [(l[0] + r[0]) / 2 + ox * 0.03, l[1] - 0.35, (l[2] + r[2]) / 2 + oz * 0.03];
+  positions.push(...l, ...r, ...tip, ...l, ...tip, ...r);
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+  return part(g, colorTip, colorTop, { seed });
+}
 
 function weepingWillow() {
   const rand = mulberry32(1201);
-  const bark = 0x4f4436, barkTip = 0x66594a;
-  // (The great limbs: up from the fork, then arching out and over.)
-  const limbs = [];
+  const bark = 0x3e352b, barkTip = 0x564a3c;
+  // (Leaning, lopsided: the whole crown thrown out to one side, as a willow by the water grows towards the light over it.)
+  const leanX = 0.16, leanZ = 0.05;
+  const at = (h) => [h * leanX, h * leanZ]; // (the crown's middle at a height)
+  // The trunk: stout, rough, leaning, forking at a little over 3 m into a few great limbs.
+  const fork = [at(3.2)[0], 3.2, at(3.2)[1]];
+  const wood = [
+    limb([0, 0, 0], fork, 0.62, 0.48, bark, barkTip, 1200),
+    part(new CylinderGeometry(0.66, 0.92, 0.6, 8), bark, bark, { y: 0.25, lump: 0.18, seed: 1199 }),
+  ];
+  // (The leafy points all through the crown: a tall fountain, narrow at the top, widest a third of the way down, its sides falling away.)
+  const H = 13.5, R = 5.2;
+  const radiusAt = (h) => R * Math.sin(Math.PI * Math.min(1, Math.max(0, (h - 2.2) / (H - 1.4))) ** 0.8);
+  const tufts = [];
+  for (let k = 0; k < 88; k++) {
+    const h = 4.2 + Math.pow(rand(), 0.8) * (H - 4.6);
+    const a = rand() * Math.PI * 2, r = radiusAt(h) * (0.55 + 0.45 * Math.sqrt(rand()));
+    const [cx, cz] = at(h);
+    tufts.push([cx + Math.cos(a) * r, h, cz + Math.sin(a) * r, a, r / Math.max(0.1, radiusAt(h))]);
+  }
+  // (The great limbs: steeply up from the fork and out towards the crown's parts, the smaller ones on from them to the tufts.)
+  const heads = [];
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + rand() * 0.8, h = 8.5 + rand() * 3.5, [cx, cz] = at(h), r = radiusAt(h) * 0.45;
+    const head = [cx + Math.cos(a) * r, h, cz + Math.sin(a) * r];
+    const mid = [(fork[0] + head[0]) / 2 + Math.cos(a) * 0.4, (fork[1] + head[1]) / 2, (fork[2] + head[2]) / 2 + Math.sin(a) * 0.4];
+    wood.push(limb(fork, mid, 0.36, 0.26, bark, barkTip, 1203 + k), limb(mid, head, 0.26, 0.12, barkTip, bark, 1213 + k));
+    heads.push(head, mid);
+  }
+  tufts.forEach(([x, y, z], i) => {
+    if (i % 3) return;
+    let best = heads[0], bd = Infinity;
+    for (const hp of heads) {
+      const d = Math.hypot(hp[0] - x, hp[1] - y, hp[2] - z);
+      if (d < bd) (bd = d), (best = hp);
+    }
+    if (bd < 6) wood.push(limb(best, [x, y, z], 0.1, 0.035, barkTip, bark, 1230 + i));
+  });
+  // The curtain: from every tuft a few slender, leafy streamers hanging down,
+  // the outer ones longest, the lowest sweeping nearly to the ground, darker
+  // in under the crown, the fresh pale yellow-green at their tips; and at
+  // each tuft a small soft clump of leaves they hang from.
+  const greens = [[0x6f9040, 0xb8d070], [0x7a9c46, 0xc4da7c], [0x688a3c, 0xaac464], [0x80a24a, 0xcade88]];
+  const crownParts = [];
+  tufts.forEach(([x, y, z, a, out], i) => {
+    crownParts.push(part(new IcosahedronGeometry(0.38 + rand() * 0.2, 0), 0x5a7a34, 0x86a64a, { x, y: y + 0.05, z, sy: 0.85, lump: 0.2, seed: 1400 + i }));
+    const n = 5 + Math.floor(rand() * 2.5);
+    for (let j = 0; j < n; j++) {
+      const sa = a + (rand() - 0.5) * 2.4, sr = 0.1 + rand() * 0.55;
+      const sx = x + Math.cos(sa) * sr, sz = z + Math.sin(sa) * sr;
+      const reach = (1.6 + rand() * 2.8) * (0.55 + 0.6 * out);
+      const len = Math.min(y - 0.35, reach + (y < 7 ? rand() * 1.5 : 0));
+      const [cTop, cTip] = greens[Math.floor(rand() * greens.length)];
+      crownParts.push(streamer([sx, y + 0.1, sz], sa, len, 0.17 + rand() * 0.08, 0.15 + 0.35 * out * rand(), cTop, cTip, 1500 + i * 5 + j));
+    }
+  });
+  // (The top, thinner: a few streamers' worth of leaf over the highest limbs.)
   for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * Math.PI * 2 + rand() * 0.4, out = 3.4 + rand() * 0.8;
-    const up = [Math.cos(a) * 1.2, 6.8 + rand() * 0.8, Math.sin(a) * 1.2], over = [Math.cos(a) * out, 8.4 + rand() * 0.5, Math.sin(a) * out];
-    limbs.push(limb([0, 2.6, 0], up, 0.24, 0.15, bark, barkTip, 1203 + k), limb(up, over, 0.15, 0.06, barkTip, bark, 1213 + k));
+    const h = H - 1.2 - rand() * 1.5, [cx, cz] = at(h), aa = rand() * Math.PI * 2, r = radiusAt(h) * 0.5 * rand();
+    crownParts.push(part(new IcosahedronGeometry(0.8 + rand() * 0.4, 0), 0x86a84a, 0xb4cc6c, { x: cx + Math.cos(aa) * r, y: h, z: cz + Math.sin(aa) * r, sy: 0.7, lump: 0.2, seed: 1480 + k }));
   }
-  limbs.push(limb([0, 2.6, 0], [0.1, 8.6, 0], 0.24, 0.08, bark, barkTip, 1220));
-  // (The curtain: fine streamers hung all over the bell's surface, outer ones longest, sweeping lowest.)
-  const strands = [];
-  const n = 110;
-  for (let k = 0; k < n; k++) {
-    const a = rand() * Math.PI * 2, t = Math.sqrt(rand()); // (more of them out towards the rim)
-    const d = 0.8 + t * 4.2;
-    const top = 9.8 - Math.pow(d / 5, 2) * 2.4 + rand() * 0.3; // (the bell's arched top)
-    const bottom = 0.9 + (1 - t) * 3.5 + rand() * 1.2; // (the outer ones down to the ground, the inner shorter)
-    const len = Math.max(1.5, top - bottom);
-    const g = new ConeGeometry(0.1 + rand() * 0.06, len, 3, 1, true);
-    g.rotateX(Math.PI);
-    const shade = rand();
-    strands.push(part(g, shade < 0.5 ? 0xa9c662 : 0x98b856, shade < 0.5 ? 0xc4d87a : 0xb0cc6a, { x: Math.cos(a) * d, y: top - len / 2, z: Math.sin(a) * d, seed: 1230 + k }));
-  }
-  return withCrown(
-    [part(new CylinderGeometry(0.42, 0.62, 2.8, 7), bark, barkTip, { y: 1.4, lump: 0.1, seed: 1200 }), ...limbs],
-    [...WEEPING_BLOBS.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), 0xa4c060, 0xbcd476, { x, y, z, sy: 0.5, lump: 0.15, seed: 1280 + i })), ...strands],
-  );
+  return withCrown(wood, crownParts);
 }
 
 // Mangrove-like swamp tree: a low, dense, dark crown standing on a cage of
@@ -1438,7 +1502,7 @@ export const LEAF_GEOMETRIES = {
   silverBirch: leaves(44, [0.3, 0.5], [0x8fbf52, 0xa9d063, 0x7aaa46, 0xbfdc72], crown('silverBirch'), 27),
   aspen: leaves(36, [0.3, 0.5], [0x8cc052, 0xa6d064, 0x78ad48], crown('aspen'), 28),
   baobab: leaves(24, [0.35, 0.6], [0x6f8c3a, 0x86a048, 0x9bb458], crown('baobab'), 29),
-  weepingWillow: leaves(90, [0.25, 0.45], [0x9ab856, 0xa9c662, 0xbcd476, 0x8aaa4a], crown('weepingWillow'), 30),
+  weepingWillow: leaves(45, [0.25, 0.4], [0x9ab856, 0xa9c662, 0xbcd476, 0x8aaa4a], crown('weepingWillow'), 30),
   mangrove: leaves(50, [0.35, 0.6], [0x3a6a33, 0x4d7d3e, 0x5f8f48], crown('mangrove'), 31),
   jungleGiant: leaves(70, [0.6, 1.0], [0x2f6b2a, 0x3f7d33, 0x4f8f3c, 0x5a9a3a], crown('jungleGiant'), 32),
   jungleCanopy: leaves(60, [0.5, 0.9], [0x2a5e27, 0x3a7431, 0x4a863a, 0x55923c], crown('jungleCanopy'), 33),

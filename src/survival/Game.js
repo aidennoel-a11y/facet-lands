@@ -3877,7 +3877,12 @@ export class Game {
         this.structures.preview(null);
         prompt = this.plan.ok ? `<kbd>Click</kbd> Let the rope down (${Math.round(this.plan.len)} m)` : null;
       } else if (placing && placing !== 'torch') {
-        const at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
+        let at = ctx.planPoint(origin, direction, placing === 'plot' ? REACH + 1 : 6.5) ?? v.copy(origin).addScaledVector(direction.clone().setY(0).normalize(), 3);
+        // (A floor, looked up at the tops of the walls round you: laid up there, a storey up, not only when you jump.)
+        if (this.structures.kind(placing)?.floor && direction.y > 0.08) {
+          const up = this.camera.position.y - this.controls.eyeHeight + 3.2, t = (up - origin.y) / direction.y;
+          if (t > 0 && t < 9 && (!at || at.y < up - 1.3)) at = v.copy(origin).addScaledVector(direction, t);
+        }
         const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall', 'chimneyWall', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'stoneDoor', 'cutWindow', 'cutDoor', 'barnWall', 'barnWindow', 'barnDoor', 'gatehouse', 'dock'].includes(placing) ? Math.PI : 0);
         this.plan = this.structures.plan(placing, at, yaw + (this.buildTurn ?? 0), ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
         // (A dock: set at the water's edge, out over the water.)
