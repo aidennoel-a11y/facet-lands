@@ -1501,11 +1501,40 @@ export class TerrainGenerator {
       const h = this.rivers.carve(x, z, base, rough);
       let g = h - this.landmarks.basinAt(x, z, h);
       if (!this._probing) g = this.#craterCarve(x, z, g);
-      // (Built up where a glacier lies: its ice is the land's top there.)
-      return g + (g > this.rivers.seaLevel + 60 ? this.landmarks.glacierAt(x, z, g)?.ice ?? 0 : 0);
+      // (Built up where a glacier lies: its ice is the land's top there; split
+      // across by crevasses where it flows over the steeper ground.)
+      if (g > this.rivers.seaLevel + 60) {
+        const gl = this.landmarks.glacierAt(x, z, g);
+        if (gl) return g + gl.ice * (1 - 0.9 * this.#crevasse(x, z, gl));
+        return g;
+      }
+      // (Sandbars: long, low ridges of sand out across the shallows off some
+      // coasts, their tops a little under the sea: wade them at high water,
+      // walk them dry at low tide.)
+      const sea = this.rivers.seaLevel;
+      if (g < sea - 0.25 && g > sea - 6) {
+        const coast = smoothstep(0.15, 0.4, this.roughNoise.noise2D(x * 0.0011 + 400, z * 0.0011 - 260));
+        if (coast > 0) {
+          const ridge = 1 - Math.abs(this.roughNoise.noise2D(x * 0.0045 - 90, z * 0.0045 + 51) + 0.25 * this.roughNoise.noise2D(x * 0.02, z * 0.02));
+          const bar = smoothstep(0.86, 0.96, ridge) * coast * smoothstep(sea - 6, sea - 3.5, g);
+          if (bar > 0) g = Math.max(g, g + (sea - 0.3 + 0.12 * this.roughNoise.noise2D(x * 0.07, z * 0.07) - g) * bar);
+        }
+      }
+      return g;
     } finally {
       this.footprint = fp;
     }
+  }
+
+  // (How deep into a crevasse (x, z) lies on a glacier `gl` (0 none .. 1 its
+  // bottom): cracks across the ice, every 15 m or so down its middle and
+  // lower reaches, a few metres wide, broken off here and there.)
+  #crevasse(x, z, gl) {
+    if (gl.q > 0.75 || gl.ice < 3) return 0;
+    const u = gl.u + 4 * this.roughNoise.noise2D(x * 0.02 + 7, z * 0.02 - 3), s = (((u / 15) % 1) + 1) % 1;
+    const crack = 1 - smoothstep(0.07, 0.12, Math.abs(s - 0.5));
+    const broken = smoothstep(-0.25, 0.1, this.roughNoise.noise2D(gl.u * 0.06 + 31, gl.v * 0.09 - 17));
+    return crack * broken * (1 - smoothstep(0.55, 0.75, gl.q));
   }
 
   /**

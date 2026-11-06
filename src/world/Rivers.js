@@ -923,7 +923,7 @@ export class Rivers {
     // only reaches it with its end (the pool below a waterfall, say) may
     // lower it just a little, so a pool's sides are never dug down to the
     // pool below it.
-    let bank = -Infinity, inWater = false, wet = Infinity, wetEnd = Infinity, k = 0, island = -Infinity, cliff = -Infinity;
+    let bank = -Infinity, inWater = false, wet = Infinity, wetEnd = Infinity, k = 0, island = -Infinity, cliff = -Infinity, gorgeH = -Infinity, gorgeMask = null, streamClose = false;
     let edge = Infinity; // metres out from the nearest channel's edge
     for (const item of near) {
       if (item.pond) {
@@ -968,6 +968,7 @@ export class Rivers {
       }
       const { d, level, half, water } = Rivers.#measure(item, x, z, m);
       const w = Rivers.valleyWidth(item.stream, m.along);
+      if (item.stream && d < half + 10) streamClose = true; // (a gorge's walls never built across a stream joining it)
       if (d > half + w * 1.3) continue;
       edge = Math.min(edge, d - half);
       if (d < half) {
@@ -983,7 +984,23 @@ export class Rivers {
         // places than others) up to the land, then the valley side.
         // (The land eases into the valley, rather than meeting it in a crease.)
         if (k === 0) k = 0.75 + 0.55 * (this.meander.noise2D(x * 0.02 + 40, z * 0.02) + 1);
-        h = smin(h, level + 0.2 + Rivers.valleyRise(d - half, item.stream ? k * 0.8 : k, w, item.stream), d - half < 8 ? 0.5 : 4);
+        let rise = Rivers.valleyRise(d - half, item.stream ? k * 0.8 : k, w, item.stream);
+        h = smin(h, level + 0.2 + rise, d - half < 8 ? 0.5 : 4);
+        // (Here and there in the hills, a river runs through a gorge: sheer
+        // rock walls standing up from the water in steps, a narrow ledge at
+        // each to edge along above the torrent, up to the rim, the land
+        // beyond easing back down to its own lie.)
+        if (!item.stream && d - half < 45) {
+          if (gorgeMask === null) gorgeMask = smoothstep(0.18, 0.34, this.meander.noise2D(x * 0.0014 - 70, z * 0.0014 + 33)) * smoothstep(0.08, 0.25, this.generator.getMountainness(x, z));
+          if (gorgeMask > 0) {
+            const e = d - half, top = 18 + 6 * (this.meander.noise2D(x * 0.01, z * 0.01) + 1) * 0.5;
+            const step = Math.floor(Math.max(0, e - 1) / 5), into = Math.max(0, e - 1) - step * 5;
+            const wall = Math.min(top, e < 1 ? e * 0.3 : 0.3 + step * 8 + Math.min(8, into * 4));
+            const reach = (top / 8) * 5 + 1; // (where the walls reach the rim)
+            const g = level + 0.2 + wall * (1 - smoothstep(reach + 6, reach + 34, e));
+            gorgeH = Math.max(gorgeH, g + (h - g) * (1 - gorgeMask));
+          }
+        }
         if (d < half + 8) bank = Math.max(bank, level + 0.2 - Math.max(0, d - half - 3.2) * 0.6);
       }
     }
@@ -1003,6 +1020,7 @@ export class Rivers {
     // no strips of land along a creek out into the water it runs into).
     if (bank > h && bank - base < 1.5) h += (bank - h) * smoothstep(this.seaLevel - 0.1, this.seaLevel + 0.4, base);
     if (cliff > h) h = cliff;
+    if (gorgeH > h && !streamClose) h = gorgeH;
     if (island > h) h = island;
     return h + rough * smoothstep(5, 14, edge);
   }
