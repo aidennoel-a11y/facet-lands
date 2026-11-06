@@ -41,6 +41,11 @@ export const BIOME_TUNING = {
   mesa: 0.06,
   // Wetlands and marshes: their size: higher, more.
   wetland: 1.6,
+  // Where wetlands may lie: their noise's threshold (higher, more), and how far up from the coast (higher, more inland).
+  wetZone: 0.1,
+  wetInland: 0.25,
+  // Jungle country: its noise's threshold (higher, more jungle).
+  jungleZone: 0.06,
   // How much of the wetlands is glowing swamp: lower, more.
   glowSwamp: 0.22,
   // Glowing swamps of their own in the green lowlands: the chance of one per square this size (m).
@@ -1263,7 +1268,7 @@ export class TerrainGenerator {
 
   #jungleZoneRaw(x, z, range, aridity) {
     if (aridity > 0.44) return 0;
-    const zone = smoothstep(-0.62, -0.36, this.jungleNoise.fbm(x * 0.00018 + 70, z * 0.00018 - 30, 2));
+    const zone = smoothstep(-0.5 + T.jungleZone, -0.24 + T.jungleZone, this.jungleNoise.fbm(x * 0.00018 + 70, z * 0.00018 - 30, 2));
     if (zone <= 0) return 0;
     const volcanicNear = 1 - smoothstep(0.4, 0.5, this.#volcanoNoise(x, z));
     if (volcanicNear <= 0) return 0;
@@ -1355,12 +1360,12 @@ export class TerrainGenerator {
     // always the whole savanna's width from any desert.)
     const raw = this.#rawAridity(x, z);
     if (raw > 0.2 || aridity > 0.3 || range > 0.15) return 0;
-    const zone = noise ? smoothstep(-0.45, -0.2, this.wetNoise.fbm(x * 0.00017 + 50, z * 0.00017 - 80, 2)) : 1;
+    const zone = noise ? smoothstep(-0.45 + T.wetZone, -0.2 + T.wetZone, this.wetNoise.fbm(x * 0.00017 + 50, z * 0.00017 - 80, 2)) : 1;
     if (zone <= 0) return 0;
     // (Never near volcanic country.)
     const volcanicNear = 1 - smoothstep(0.26, 0.36, this.#volcanoNoise(x, z));
     if (volcanicNear <= 0) return 0;
-    const low = 1 - smoothstep(0.45, 0.75, this.#continentBase(x, z) - this._contLift);
+    const low = 1 - smoothstep(0.45 + T.wetInland, 0.75 + T.wetInland, this.#continentBase(x, z) - this._contLift); // (inland too, up on the plains: see wetInland)
     let wet = zone * low * (1 - smoothstep(0.08, 0.2, raw)) * (1 - smoothstep(0.16, 0.3, aridity)) * (1 - smoothstep(0.02, 0.15, range));
     if (wet <= 0) return 0;
     // And the country all around stays green for the best part of a

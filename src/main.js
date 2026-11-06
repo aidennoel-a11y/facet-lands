@@ -1023,7 +1023,7 @@ function waterAt(x, z, ice = false) {
   // (The monsoon forest's creeks and ponds: dry beds outside the rains, as Seasons.seasonalWater draws them.)
   if (r?.dry) {
     const st = ((seasonUniforms.uSeasonTime.value % 4) + 4) % 4;
-    const rains = smoothstep(0.75, 1.05, st) * (1 - smoothstep(2.4, 2.75, st));
+    const rains = smoothstep(0.05, 0.3, st) * (1 - smoothstep(1.9, 2.2, st)); // (wet through spring and summer, dry through autumn and winter)
     if (rains < 0.5) r = null;
   }
   const up = r && !r.pond && r.level > WORLD.seaLevel + 0.35 ? rise : 0;

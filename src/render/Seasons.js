@@ -202,11 +202,14 @@ export function seasonalTerrain(material, seaLevel) {
             float g = seasonGreen(c);
             c = mix(c, c * vec3(0.9, 1.15, 0.8), uSpring * g * 0.7);
             // The monsoon forest: dusty and pale through the dry months; with
-            // the rains (summer into early autumn) a deep, lush green.
+            // the rains (spring and summer) a deep, lush green.
             float monsoon = clamp(-vCold, 0.0, 1.0);
             if (monsoon > 0.0) {
               float st = mod(uSeasonTime, 4.0);
-              float rains = smoothstep(0.7, 1.1, st) * (1.0 - smoothstep(2.3, 2.8, st));
+              // (The rains through the spring and summer; dry through the autumn and the winter. Patchy as
+              // they come and go: one hillside greening, or browning, a few days before the next.)
+              float rj = 0.16 * (seasonNoise(vSeasonWorld.xz * 0.006 + 13.0) - 0.5);
+              float rains = smoothstep(0.02 + rj, 0.22 + rj, st) * (1.0 - smoothstep(1.85 + rj, 2.12 + rj, st));
               float ground = smoothstep(0.55, 0.8, abs(vSeasonUp)) * (1.0 - smoothstep(0.7, 0.85, c.r + c.g * 0.2 - c.b * 0.1));
               float lum = dot(c, vec3(0.3, 0.55, 0.15));
               c = mix(c, vec3(0.26, 0.5, 0.15) * (lum / 0.42), monsoon * rains * ground * 0.85);
@@ -423,7 +426,7 @@ export function seasonalTrees(material, leaves = false, randFrom = null, warmFro
             float monsoonLeaf = max(-vSeason.x, 0.0);
             if (monsoonLeaf > 0.0) {
               float mst = mod(uSeasonTime, 4.0);
-              float mdry = 1.0 - smoothstep(0.75, 1.05, mst) * (1.0 - smoothstep(2.4, 2.75, mst));
+              float mdry = 1.0 - smoothstep(0.05, 0.3, mst) * (1.0 - smoothstep(1.9, 2.2, mst));
               c = mix(c, vec3(0.6, 0.52, 0.2) * (0.75 + 0.5 * dot(c, vec3(0.33))), monsoonLeaf * mdry * 0.7);
             }
             // Spring: fresh green, and the bushes dotted with little flowers
@@ -488,7 +491,7 @@ export function seasonalGrass(material) {
           // (The monsoon forest's grass, marked by a warmth below nothing: it
           // dies back, dry and yellow, through the dry months, and comes up green with the rains.)
           float gst = mod(uSeasonTime, 4.0);
-          vGrassDry = max(-aWarm, 0.0) * (1.0 - smoothstep(0.75, 1.05, gst) * (1.0 - smoothstep(2.4, 2.75, gst)));
+          vGrassDry = max(-aWarm, 0.0) * (1.0 - smoothstep(0.03, 0.26, gst) * (1.0 - smoothstep(1.88, 2.16, gst)));
           transformed.y *= 1.0 - 0.45 * vGrassDry;
           #ifdef USE_INSTANCING_COLOR
             float grassGreen = clamp((instanceColor.g - max(instanceColor.r, instanceColor.b)) * 9.0, 0.0, 1.0);
@@ -530,7 +533,7 @@ export function seasonalWater(material) {
           '#include <begin_vertex>',
           // (A freeze below nothing marks the monsoon forest's creeks and ponds:
           // full only with the rains, summer into early autumn; dry beds the rest of the year.)
-          '#include <begin_vertex>\nvIce = max(aFreeze, 0.0) * smoothstep(0.35, 0.8, uWinter);\nfloat st = mod(uSeasonTime, 4.0);\nvDry = aFreeze < -0.5 ? 1.0 - smoothstep(0.75, 1.05, st) * (1.0 - smoothstep(2.4, 2.75, st)) : 0.0;',
+          '#include <begin_vertex>\nvIce = max(aFreeze, 0.0) * smoothstep(0.35, 0.8, uWinter);\nfloat st = mod(uSeasonTime, 4.0);\nvDry = aFreeze < -0.5 ? 1.0 - smoothstep(0.05, 0.3, st) * (1.0 - smoothstep(1.9, 2.2, st)) : 0.0;',
         );
       shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vIce;\nvarying float vDry;').replace(
         '#include <fog_fragment>',
