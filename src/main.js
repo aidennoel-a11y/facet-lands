@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import './render/splitShadow.js'; // (first: the sun's shadow in two maps, before any material copies the shader code)
 import './render/chunkFade.js'; // (likewise: the dither that fades the land's changes of detail)
 import { WORLD } from './config.js';
+import { GreatBoulderLayer } from './world/layers/GreatBoulderLayer.js';
 import { DIFFICULTIES, settings } from './settings.js';
 import { loadLook, onLook } from './character.js';
 import { TerrainGenerator } from './world/TerrainGenerator.js';
@@ -199,6 +200,8 @@ const chunks = new ChunkManager(scene, generator, WORLD, terrainMaterial);
 chunks.takeCaveRivers(); // (the cave builders' rivers handed on to the land's, and back)
 const water = createWaterLayer({ skyColor: dayNight.horizon, skyTop: dayNight.top });
 const rocks = createRockLayer(WORLD);
+// The great boulders of the Black Hills and Bristlecone heights: real rock standing on the land (see GreatBoulderLayer).
+const greatBoulders = new GreatBoulderLayer(scene);
 const trees = createTreeLayer({ rocks });
 const grass = createGrassLayer(WORLD);
 const farGrass = createGrassLayer(WORLD, { far: true });
@@ -858,6 +861,16 @@ function groundAt(x, feetY, z) {
   // (The giant mushrooms' caps, underground and on the mushroom islands: stood on, once you're up there.)
   const cap = shroomCapAt(x, z, feetY);
   if (cap > g.height) g.height = cap;
+  // The great boulders: stood on from above; under the curve of a side,
+  // where there's room to stand, walked in under (its rock the roof
+  // overhead); and where the gap's too low, a wall.
+  if (!g.inCave) {
+    const span = generator.greatBoulderAt(x, z);
+    if (span && span[1] > g.height) {
+      if (feetY > (span[0] + span[1]) / 2 || span[0] - g.height < 2.2) g.height = span[1];
+      else (g.inCave = true), (g.ceiling = Math.min(g.ceiling ?? Infinity, span[0]));
+    }
+  }
   // The roofs of sea caves and spans of sea arches: stood on from above,
   // swum or walked under from below.
   const over = g.height < WORLD.seaLevel + 40 ? generator.overhangAt(x, z) : null;
@@ -3410,6 +3423,7 @@ function tick(now) {
   // The landmarks near you (found, the first time you come to one), and the old mines' timbers.
   if (landmarks.generator !== generator) (landmarks.generator = generator), landmarks.built.forEach((b) => scene.remove(b.group)), landmarks.built.clear();
   landmarks.winter = seasonUniforms.uWinter.value;
+  greatBoulders.update(camera.position.x, camera.position.z, dt, generator, viewDistance() * 0.85);
   prof.mark('torches & cave life');
   denLife(dt);
   thinIce(dt);

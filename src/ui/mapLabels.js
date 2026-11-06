@@ -22,7 +22,6 @@ export const MAP_LABELS = [
   ['Savanna mountains', '#8a5a44'],
   ['Cactus bloom', '#e0a0b0'],
   ['Hanging gardens', '#4f9a5a'],
-  ['Bamboo mist gorge', '#8ac0a0'],
   ['Bristlecone heights', '#e6e2d8'],
   ['River gorge', '#7a6a5e'],
   ['Alpine meadow', '#b8d47a'],
