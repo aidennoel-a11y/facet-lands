@@ -1044,6 +1044,12 @@ export class ChunkManager {
    * actually stand on). Falls back to the generator where nothing is loaded.
    * NaN means there's a cave mouth here: no ground surface at all.
    */
+  /** Whether the land at (x, z) is drawn yet (its chunk built). */
+  hasChunkAt(x, z) {
+    const { chunkSize } = this.config;
+    return this.chunks.has(`${Math.floor(x / chunkSize)},${Math.floor(z / chunkSize)}`);
+  }
+
   groundHeightAt(x, z) {
     const { chunkSize } = this.config;
     const cx = Math.floor(x / chunkSize);

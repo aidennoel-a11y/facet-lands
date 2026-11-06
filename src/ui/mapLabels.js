@@ -23,7 +23,6 @@ export const MAP_LABELS = [
   ['Cactus bloom', '#e0a0b0'],
   ['Hanging gardens', '#4f9a5a'],
   ['Bristlecone heights', '#e6e2d8'],
-  ['River gorge', '#7a6a5e'],
   ['Alpine meadow', '#b8d47a'],
   ['Wildflower meadow', '#d98ac9'],
   ['Giant flower meadow', '#f0a0e0'],

@@ -3423,7 +3423,7 @@ function tick(now) {
   // The landmarks near you (found, the first time you come to one), and the old mines' timbers.
   if (landmarks.generator !== generator) (landmarks.generator = generator), landmarks.built.forEach((b) => scene.remove(b.group)), landmarks.built.clear();
   landmarks.winter = seasonUniforms.uWinter.value;
-  greatBoulders.update(camera.position.x, camera.position.z, dt, generator, viewDistance() * 0.85);
+  greatBoulders.update(camera.position.x, camera.position.z, dt, generator, viewDistance() * 0.85, (x, z) => chunks.hasChunkAt(x, z));
   prof.mark('torches & cave life');
   denLife(dt);
   thinIce(dt);
@@ -3719,7 +3719,7 @@ requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
 globalThis.__prof = prof;
-window.world = { prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, snowBlanket, seasonUniforms, TREE_GEOMETRIES, whiteout, get localRain() { return localRain; }, get generator() { return generator; }, WORLD };
+window.world = { greatBoulders, prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, snowBlanket, seasonUniforms, TREE_GEOMETRIES, whiteout, get localRain() { return localRain; }, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)

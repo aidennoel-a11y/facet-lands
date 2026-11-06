@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, Color, Group, Mesh, MeshLambertMaterial } from 'three';
 import { hash2 } from '../../noise/random.js';
-import { BOULDER_P, BOULDER_PV, boulderWobble } from '../TerrainGenerator.js';
+import { boulderMake, boulderRing, boulderWobble } from '../TerrainGenerator.js';
 
 const TILE = 600; // (m: the boulders are drawn in tiles this size)
 const REACH = 2600; // (m: drawn this far round you; they're big, and seen from far off)
@@ -29,7 +29,7 @@ export class GreatBoulderLayer {
     this.wait = 0;
   }
 
-  update(x, z, dt, generator, reach = REACH) {
+  update(x, z, dt, generator, reach = REACH, loaded = () => true) {
     reach = Math.min(REACH, reach); // (never past where the land itself is drawn)
     // (A new world: its own boulders.)
     if (generator !== this.generator) {
@@ -55,6 +55,8 @@ export class GreatBoulderLayer {
       }
     }
     for (const [key, mesh] of this.tiles) {
+      // (Only once the land under them is there: never hanging in the air over land not yet drawn.)
+      if (mesh && !mesh.visible) mesh.visible = loaded(mesh.userData.cx, mesh.userData.cz);
       if (want.has(key)) continue;
       if (mesh) {
         this.group.remove(mesh);
@@ -75,6 +77,10 @@ export class GreatBoulderLayer {
     g.computeVertexNormals();
     g.computeBoundingSphere();
     const mesh = new Mesh(g, this.material);
+    // (Waiting on the land under its boulders: where the first of them stands.)
+    mesh.userData.cx = list[0].x;
+    mesh.userData.cz = list[0].z;
+    mesh.visible = false;
     mesh.castShadow = mesh.receiveShadow = true;
     this.group.add(mesh);
     return mesh;
@@ -90,23 +96,27 @@ function boulderMesh(b, pos, col) {
   const ca = Math.cos(b.ang), sa = Math.sin(b.ang);
   const palette = STONE[b.kind] ?? STONE.bristle;
   const pts = [];
+  const m = boulderMake(b);
   for (let r = 0; r <= RINGS; r++) {
-    // (From the bottom, s = -1, to the top, s = 1.)
-    const s = -1 + (2 * r) / RINGS;
-    const q = Math.pow(Math.max(0, 1 - Math.pow(Math.abs(s), BOULDER_PV)), 1 / BOULDER_PV);
+    // (From the bottom, s = -1, to the top, s = 1; its top planed flat if it's one of those.)
+    const s = Math.min(m.flat, -1 + (2 * r) / RINGS);
+    const q = boulderRing(b, s);
     const y = b.y + (s < 0 ? 0.85 : 1) * s * b.c;
     const ring = [];
     for (let k = 0; k < SIDES; k++) {
       const th = (k / SIDES) * Math.PI * 2, cx = Math.cos(th), cz = Math.sin(th);
-      const n = Math.pow(Math.pow(Math.abs(cx), BOULDER_P) + Math.pow(Math.abs(cz), BOULDER_P), 1 / BOULDER_P);
-      // (A little roughness on the faces, never enough to show daylight under the ground.)
-      const lump = 1 + (hash2(k * 7 + r * 131, Math.round(b.seed * 10), 0xb0) - 0.5) * 0.05;
-      const w = boulderWobble(b, th) * q * lump;
+      const n = Math.pow(Math.pow(Math.abs(cx), m.p) + Math.pow(Math.abs(cz), m.p), 1 / m.p);
+      // (A little roughness on the faces.)
+      const lump = 1 + (hash2(k * 7 + r * 131, Math.round(b.seed * 10), 0xb0) - 0.5) * 0.06;
+      const w = boulderWobble(b, th) * (s >= m.flat ? boulderRing(b, m.flat) : q) * lump;
       const u = (cx / n) * w * b.a, v = (cz / n) * w * b.b;
       ring.push([b.x + u * ca - v * sa, y, b.z + u * sa + v * ca]);
     }
     pts.push(ring);
   }
+  // (A flat top: closed with a cap over its last ring.)
+  if (m.flat < 1) pts.push(Array.from({ length: SIDES }, () => [b.x, b.y + m.flat * b.c, b.z]));
+  const rings = pts.length - 1;
   const face = (p0, p1, p2, r, k) => {
     const h = hash2(k * 13 + r, Math.round(b.seed * 100), 0xb1);
     tint.setHex(palette[Math.floor(h * palette.length)]);
@@ -117,12 +127,12 @@ function boulderMesh(b, pos, col) {
       col.push(shade.r, shade.g, shade.b);
     }
   };
-  for (let r = 0; r < RINGS; r++) {
+  for (let r = 0; r < rings; r++) {
     for (let k = 0; k < SIDES; k++) {
       const a = pts[r][k], bb = pts[r][(k + 1) % SIDES], c = pts[r + 1][k], d = pts[r + 1][(k + 1) % SIDES];
-      // (Outward-facing, wound anticlockwise seen from outside.)
-      if (r > 0) face(a, c, bb, r, k);
-      if (r < RINGS - 1) face(bb, c, d, r, k);
+      // (Outward-facing, wound anticlockwise seen from outside; none where a ring is a single point.)
+      if (r > 0) face(a, c, bb, Math.min(r, RINGS), k);
+      if (r < rings - 1 || m.flat < 1) face(bb, c, d, Math.min(r, RINGS), k);
     }
   }
 }

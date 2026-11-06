@@ -57,11 +57,11 @@ export const BIOME_TUNING = {
   // Hanging gardens, by the jungles: the chance per 3.2 km square.
   gardens: 0.9,
   // Bristlecone heights (white limestone mountains in the drier country): the chance per 4.2 km square.
-  bristlecone: 0.8,
+  bristlecone: 1,
   // Bamboo mist gorges, by the jungles (rare): the chance per 5 km square.
   bambooGorge: 0, // (none: taken out)
   // River gorges (long, winding gorges with a river at the bottom, out in the hill country): the chance per 5 km square.
-  riverGorge: 0.6, // (per 6 km square, where the country suits: uncommon)
+  riverGorge: 0, // (none: taken out)
   // Savanna mountains (small, steep massifs of bare rock peaks out in the savanna): the chance per 3.6 km square.
   savannaMountains: 0.9,
   // Cactus blooms in the deserts: the chance per 3.8 km square.
@@ -90,17 +90,58 @@ const T = BIOME_TUNING;
  * very same shape).
  */
 export const BOULDER_P = 2.6, BOULDER_PV = 2.3;
+/**
+ * Each boulder's own make (from its seed, remembered on it): how blocky
+ * its outline (p), how its sides curve (pv), its lumps (no two alike, and
+ * never a true circle), how it narrows to its top and to its foot, and
+ * whether its top is planed flat.
+ */
+export function boulderMake(b) {
+  if (b.make) return b.make;
+  const r = (k) => {
+    const v = Math.sin(b.seed * 12.9898 + k * 78.233) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  return (b.make = {
+    p: 2 + 2.2 * r(1),
+    pv: 1.6 + 1.8 * r(2),
+    w: [0.07 + 0.1 * r(3), 0.05 + 0.08 * r(4), 0.03 + 0.06 * r(5), 0.02 + 0.04 * r(6), 0.01 + 0.03 * r(7)],
+    ph: [r(8), r(9), r(10), r(11), r(12)].map((v) => v * 6.283),
+    top: 0.45 * r(13) * r(13), // (narrowing towards its top)
+    foot: 0.12 + 0.4 * r(14), // (and towards its foot: the undercut)
+    flat: r(15) < 0.35 ? 0.5 + 0.35 * r(16) : 1, // (a flat top, planed off, now and then)
+  });
+}
+const LOBES = [2, 3, 5, 7, 11];
 export function boulderWobble(b, th) {
-  return 1 + 0.11 * Math.sin(3 * th + b.seed) + 0.07 * Math.sin(5 * th + 2 * b.seed) + 0.04 * Math.sin(7 * th + 3 * b.seed);
+  const m = boulderMake(b);
+  let w = 1;
+  for (let k = 0; k < 5; k++) w += m.w[k] * Math.sin(LOBES[k] * th + m.ph[k]);
+  return w;
+}
+/** Its outline's reach at height s (-1 its foot .. 1 its crown), as a fraction of its full width. */
+export function boulderRing(b, s) {
+  const m = boulderMake(b), t = Math.abs(s);
+  return Math.pow(Math.max(0, 1 - Math.pow(t, m.pv)), 1 / m.pv) * (1 - (s > 0 ? m.top : m.foot) * t);
 }
 export function boulderSpan(b, x, z) {
+  const m = boulderMake(b);
   const ca = Math.cos(b.ang), sa = Math.sin(b.ang), dx = x - b.x, dz = z - b.z;
   const u = (dx * ca + dz * sa) / b.a, v = (-dx * sa + dz * ca) / b.b;
-  if (u * u + v * v > 1.6) return null;
-  const q = Math.pow(Math.pow(Math.abs(u), BOULDER_P) + Math.pow(Math.abs(v), BOULDER_P), 1 / BOULDER_P) / boulderWobble(b, Math.atan2(v, u));
+  if (u * u + v * v > 1.8) return null;
+  const q = Math.pow(Math.pow(Math.abs(u), m.p) + Math.pow(Math.abs(v), m.p), 1 / m.p) / boulderWobble(b, Math.atan2(v, u));
   if (q >= 1) return null;
-  const ht = b.c * Math.pow(1 - Math.pow(q, BOULDER_PV), 1 / BOULDER_PV);
-  return [b.y - 0.85 * ht, b.y + ht];
+  // (How far up and down its sides reach this far out: found by halving, its outline narrowing steadily both ways.)
+  const reach = (sign) => {
+    let lo = 0, hi = 1;
+    for (let k = 0; k < 12; k++) {
+      const mid = (lo + hi) / 2;
+      if (boulderRing(b, sign * mid) > q) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  };
+  return [b.y - 0.85 * b.c * reach(-1), b.y + Math.min(m.flat, reach(1)) * b.c];
 }
 const DUNE = new Color(0xe6b86e); // dune sand
 // The reef itself, every surface of it grown over: the low encrusting and
@@ -711,7 +752,7 @@ export class TerrainGenerator {
 
   /** Where badlands lie in the dry country (0..1). */
   #badlands(x, z) {
-    return this.#blobs('badlands', x, z, 6000, T.badlands, 700 * T.badlandsSize, 1500 * T.badlandsSize, 0xbad1, (px, pz) => (this.getAridity(px, pz) > T.savannaStart + 0.25 && this.#rangeField(px, pz, {}).value < 0.1 && this.#seaCoast(px, pz) < 0.02 && this.getOceanness(px, pz) < 0.02 ? 1 : 0)) * (1 - smoothstep(0, 0.2, this.#seaCoast(x, z)));
+    return this.#blobs('badlands', x, z, 6000, T.badlands, 600 * T.badlandsSize, 1000 * T.badlandsSize, 0xbad1, (px, pz) => (this.getAridity(px, pz) > T.savannaStart + 0.25 && this.#rangeField(px, pz, {}).value < 0.1 && this.#seaCoast(px, pz) < 0.02 && this.getOceanness(px, pz) < 0.02 ? 1 : 0)) * (1 - smoothstep(0, 0.2, this.#seaCoast(x, z)));
   }
 
   /**
@@ -1359,9 +1400,9 @@ export class TerrainGenerator {
   // drier country (from the green country's edge out into the desert's),
   // clear of the ranges, the sea, the jungles and the volcanoes.
   #bristleconeLand(x, z) {
-    return this.#blobs('bristle', x, z, 3600, T.bristlecone, 1000, 1700, 0xb215, (px, pz) => {
+    return this.#blobs('bristle', x, z, 3000, T.bristlecone, 1000, 1700, 0xb215, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
-      if (this.getMountainness(px, pz) > 0.2 || this.#volcanoBelt(px, pz) > 0.3 || this.#smokyBlob(px, pz) > 0.05 || this.#hillsBlob(px, pz) > 0.05) return 0;
+      if (this.getMountainness(px, pz) > 0.3 || this.#volcanoBelt(px, pz) > 0.3 || this.#smokyBlob(px, pz) > 0.05 || this.#hillsBlob(px, pz) > 0.05) return 0;
       if (this.#seaCoast(px, pz) > 0.02 || this.getOceanness(px, pz) > 0.02 || this.#jungleSuit(px, pz) > 0.01 || this.#jungleMtnBlob(px, pz) > 0.01) return 0;
       // (Never by lush country: no jungle, nor wetland, within a couple of kilometres.)
       for (let k = 0; k < 8; k++) {
@@ -1372,12 +1413,12 @@ export class TerrainGenerator {
         }
       }
       const a = this.getAridity(px, pz, r);
-      return a > 0.34 && a < T.desertStart + 0.06 && this.#continentBase(px, pz) - this._contLift > -0.3 ? 1 : 0;
+      return a > 0.3 && a < T.desertStart + 0.08 ? 1 : 0;
     }, (px, pz, rad) => {
       // (No mountain range within a kilometre of its edge: it never runs into one.)
       for (let k = 0; k < 10; k++) {
         const a = (k / 10) * Math.PI * 2;
-        for (const d of [rad + 500, rad + 1000]) if (this.getMountainness(px + Math.cos(a) * d, pz + Math.sin(a) * d) > 0.5) return false;
+        for (const d of [rad + 400]) if (this.getMountainness(px + Math.cos(a) * d, pz + Math.sin(a) * d) > 0.6) return false;
       }
       return true;
     }, 0.4);
@@ -2266,7 +2307,8 @@ export class TerrainGenerator {
     // (Valleys only in land well above the water: never new lakes.)
     if (valleys > 0) height -= valleys * smoothstep(seaLevel + 3, seaLevel + 30, height);
     // Canyons cut down into it (their floors kept above the sea).
-    if (f.canyonCut > 0) height -= Math.min(f.canyonCut, Math.max(0, height - (seaLevel + 3)));
+    // (Never through savanna mountains.)
+    if (f.canyonCut > 0) height -= Math.min(f.canyonCut * (this._probing ? 1 : 1 - this.#savannaMtnLand(x, z)), Math.max(0, height - (seaLevel + 3)));
     // (And the gorge country's gorges, likewise.)
     if (gorgeDig > 0) height -= Math.min(gorgeDig, Math.max(0, height - (seaLevel + 3)));
     // A river gorge: big rolling hills along each side of it (as the Smoky
@@ -4456,23 +4498,58 @@ export class TerrainGenerator {
         const n = 1 + Math.floor(hash2(i, j, s + 3 + t) * 2.4);
         for (let k = 0; k < n; k++) {
           const px = cx + (k ? (hash2(i + k, j, s + 4) - 0.5) * 140 : 0), pz = cz + (k ? (hash2(i, j + k, s + 5) - 0.5) * 140 : 0);
-          const a = 35 + 60 * hash2(i - k, j + t, s + 6), b = a * (0.6 + 0.4 * hash2(i + k, j - t, s + 7)), c = (0.45 + 0.35 * hash2(i + 2 * k, j + t, s + 8)) * a;
+          const a = 30 + 70 * hash2(i - k, j + t, s + 6), b = a * (0.45 + 0.4 * hash2(i + k, j - t, s + 7)), c = (0.3 + 0.6 * hash2(i + 2 * k, j + t, s + 8)) * a;
           const g = ground(px, pz, a * 0.7);
           const stack = Math.max(-Infinity, ...list.map((o) => on(o, px, pz)));
           const y = Math.max(g + 0.3 * c, Math.min(g + 1.1 * c, stack + 0.45 * c));
           list.push({ x: px, z: pz, y, a, b, c, ang: hash2(i + t, j + k, s + 9) * Math.PI, seed: hash2(i + 3 * k, j + t, s + 10) * 50, kind: 'bristle' });
         }
-      } else if (w.blackHills > 0.6 && hash2(i + t, j, s + 11) < 0.7) {
-        // (A wall of rounded granite blocks jammed up against each other, some stacked on others.)
-        const n = 4 + Math.floor(hash2(i, j + t, s + 12) * 6), ang = hash2(i + t, j, s + 13) * Math.PI;
+      } else if (w.blackHills > 0.6 && hash2(i + t, j, s + 11) < 0.75) {
+        // A granite outcrop, as the Black Hills' are: a crowd of jointed
+        // blocks and pillars, the tallest in its heart and stacked two or
+        // three high into towers split by their joints, smaller ones round
+        // its feet, a few loose boulders tumbled out round it; never in a
+        // tidy line.
+        const R = 22 + 26 * hash2(i, j + t, s + 12), n = 7 + Math.floor(hash2(i + t, j + t, s + 13) * 9), grain = hash2(i + t, j, s + 14) * Math.PI;
         for (let k = 0; k < n; k++) {
-          const along = (k - n / 2) * 17 + (hash2(i + k, j + t, s + 14) - 0.5) * 10, off = (hash2(i + t, j + k, s + 15) - 0.5) * 18;
-          const px = cx + Math.cos(ang) * along - Math.sin(ang) * off, pz = cz + Math.sin(ang) * along + Math.cos(ang) * off;
-          const a = 8 + 9 * hash2(i - k, j + t, s + 16), b = a * (0.6 + 0.4 * hash2(i + k, j - t, s + 17)), c = 6 + 9 * hash2(i + 2 * k, j + t, s + 18);
+          const ra = hash2(i + k * 7, j + t, s + 15) * Math.PI * 2, rd = R * Math.sqrt(hash2(i + t, j + k * 7, s + 16));
+          const px = cx + Math.cos(ra) * rd * 1.3, pz = cz + Math.sin(ra) * rd;
+          const core = 1 - rd / R; // (taller towards its heart)
+          const a = 4 + 10 * hash2(i - k, j + t, s + 17), b = a * (0.4 + 0.45 * hash2(i + k, j - t, s + 18));
+          const c = (4 + 6 * hash2(i + 2 * k, j + t, s + 19)) * (0.7 + 1.1 * core);
           const g = ground(px, pz, a * 0.7);
-          const stack = k % 3 === 2 ? Math.max(-Infinity, ...list.map((o) => on(o, px, pz))) : -Infinity;
-          const y = Math.max(g + 0.3 * c, Math.min(g + 1.4 * c, stack + 0.5 * c));
-          list.push({ x: px, z: pz, y, a, b, c, ang: ang + (hash2(i + t, j + 2 * k, s + 19) - 0.5) * 1.2, seed: hash2(i + 3 * k, j + t, s + 20) * 50, kind: 'granite' });
+          const block = { x: px, z: pz, y: g + 0.35 * c, a, b, c, ang: grain + (hash2(i + t, j + 2 * k, s + 20) - 0.5) * 0.7, seed: hash2(i + 3 * k, j + t, s + 21) * 50, kind: 'granite' };
+          list.push(block);
+        }
+        // (Up on the heart of it, a second tier: broad blocks lying across
+        // the ones below, each resting on two or three of them, never a
+        // lone column one block wide.)
+        const base = list.slice();
+        const ups = Math.floor(n / 3);
+        for (let k = 0; k < ups; k++) {
+          const ra = hash2(i + k * 5, j - t, s + 31) * Math.PI * 2, rd = R * 0.35 * Math.sqrt(hash2(i - t, j + k * 5, s + 32));
+          const px = cx + Math.cos(ra) * rd * 1.3, pz = cz + Math.sin(ra) * rd;
+          const a = 9 + 8 * hash2(i + k, j + t, s + 33), b = a * (0.5 + 0.4 * hash2(i - k, j - t, s + 34)), c = 4 + 5 * hash2(i + 2 * k, j - t, s + 35);
+          const up = { x: px, z: pz, y: 0, a, b, c, ang: grain + (hash2(i + t, j + 3 * k, s + 36) - 0.5) * 0.8, seed: hash2(i + 5 * k, j + t, s + 37) * 50, kind: 'granite' };
+          // (Resting on what's under it: how many below it reach up near its middle.)
+          let hold = 0, top = -Infinity;
+          for (const q of [[0, 0], [0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5]]) {
+            const qx = px + q[0] * a, qz = pz + q[1] * b;
+            let here = -Infinity;
+            for (const o of base) here = Math.max(here, on(o, qx, qz));
+            if (here > -Infinity) hold++;
+            top = Math.max(top, here);
+          }
+          if (hold < 4) continue;
+          up.y = top + 0.4 * c;
+          list.push(up);
+        }
+        // (Loose boulders tumbled out round it.)
+        for (let k = 0; k < 6; k++) {
+          const ra = hash2(i + k * 11, j - t, s + 25) * Math.PI * 2, rd = R * (1.1 + 0.9 * hash2(i - t, j + k * 11, s + 26));
+          const px = cx + Math.cos(ra) * rd, pz = cz + Math.sin(ra) * rd, a = 2.5 + 3.5 * hash2(i + k, j, s + 27);
+          const g = ground(px, pz, a * 0.7);
+          list.push({ x: px, z: pz, y: g + 0.3 * a * 0.7, a, b: a * (0.5 + 0.35 * hash2(i + k, j - k, s + 29)), c: a * (0.4 + 0.5 * hash2(i - k, j + k, s + 30)), ang: ra, seed: hash2(i, j + k, s + 28) * 50, kind: 'granite' });
         }
       }
     }
@@ -5204,7 +5281,7 @@ export class TerrainGenerator {
     }
     if (w.mangrove > 0.5) return 'Mangrove coast';
     if (height < sea + 2.5 && this.getOceanness(x, z) > 0.5 && w.desert < 0.5) return this.blackSandAt(x, z) > 0.5 ? 'Black sand beach' : 'Beach';
-    if (f.canyon > 0.5) return f.canyonFloor > 0.5 ? 'Canyon floor' : 'Canyon';
+    if (f.canyon > 0.5 && !((w.savannaMountains ?? 0) > 0.3)) return f.canyonFloor > 0.5 ? 'Canyon floor' : 'Canyon';
     const mountains = this.getMountainness(x, z);
     // (Land the Smoky Mountains lift is theirs, never a range's snowy peaks.)
     if (mountains > 0.45 && w.smoky > 0.2 && this.#smokyLift(x, z) > 0.5) return 'Smoky Mountains';
