@@ -211,6 +211,27 @@ function spruce() {
   );
 }
 
+// Krummholz, at the treeline: a spruce the wind has beaten down to a
+// crooked, knee-high mat, its trunk bent over and its branches all
+// streaming out one way (downwind, +x), a flag of a few higher shoots.
+function krummholz() {
+  const rand = mulberry32(2101);
+  const wood = [
+    limb([0, 0, 0], [0.35, 0.55, 0.05], 0.16, 0.12, 0x4e3a2a, 0x5e4632, 2100),
+    limb([0.35, 0.55, 0.05], [1.2, 0.85, -0.05], 0.12, 0.06, 0x5e4632, 0x4e3a2a, 2101),
+    limb([0.2, 0.4, 0], [0.5, 1.5, 0.08], 0.07, 0.03, 0x4e3a2a, 0x5e4632, 2102),
+  ];
+  const mats = [];
+  // (The mat: low, flattened clumps of needles, stretched out downwind.)
+  for (let k = 0; k < 7; k++) {
+    const t = k / 6, x = 0.1 + t * 1.6 + (rand() - 0.5) * 0.2, z = (rand() - 0.5) * 0.9 * (1 - 0.4 * t);
+    mats.push(part(new IcosahedronGeometry(0.55 - 0.18 * t, 0), 0x1d4632, 0x356c4a, { x, y: 0.42 - 0.1 * t, z, sx: 1.5, sy: 0.55, sz: 1.1, lump: 0.25, seed: 2110 + k }));
+  }
+  // (The flag: a few shoots up the bent stem, needles only on their lee side.)
+  for (let k = 0; k < 3; k++) mats.push(part(new ConeGeometry(0.28, 0.5, 5), 0x234e38, 0x3a7652, { x: 0.68 + k * 0.08, y: 1.0 + k * 0.22, z: 0.06, rz: -1.2, lump: 0.15, seed: 2120 + k }));
+  return withCrown(wood, mats);
+}
+
 /**
  * Birch-type bark: a chalky trunk ringed with thin dark streaks (lenticels)
  * that wrap part way round it, more of them low down, and a dark, fissured
@@ -593,7 +614,11 @@ function streamer(from, a, len, width, bow, colorTop, colorTip, seed) {
   positions.push(...l, ...r, ...tip, ...l, ...tip, ...r);
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
-  return part(g, colorTip, colorTop, { seed });
+  const made = part(g, colorTip, colorTop, { seed });
+  const pos = made.attributes.position, dangle = new Float32Array(pos.count), top = from[1], drop = len + 0.35;
+  for (let k = 0; k < pos.count; k++) dangle[k] = Math.max(0.02, Math.min(1, (top - pos.getY(k)) / drop));
+  made.userData.dangle = dangle;
+  return made;
 }
 
 function weepingWillow() {
@@ -658,6 +683,11 @@ function weepingWillow() {
   for (let k = 0; k < 6; k++) {
     const h = H - 1.2 - rand() * 1.5, [cx, cz] = at(h), aa = rand() * Math.PI * 2, r = radiusAt(h) * 0.5 * rand();
     crownParts.push(part(new IcosahedronGeometry(0.8 + rand() * 0.4, 0), 0x86a84a, 0xb4cc6c, { x: cx + Math.cos(aa) * r, y: h, z: cz + Math.sin(aa) * r, sy: 0.7, lump: 0.2, seed: 1480 + k }));
+  }
+  // (How far down its streamer each corner hangs: 0 at its top to 1 at its tip, for the wind to swing; the rest of the tree marked stiff, -0.6.)
+  for (const g of [...wood, ...crownParts]) {
+    const n = g.attributes.position.count;
+    g.setAttribute('aDangle', new BufferAttribute(g.userData.dangle ?? new Float32Array(n).fill(-0.6), 1));
   }
   return withCrown(wood, crownParts);
 }
@@ -1366,6 +1396,7 @@ export const TREE_GEOMETRIES = {
   swampWillow: swampWillow(),
   pine: pine(),
   spruce: spruce(),
+  krummholz: krummholz(),
   broadleaf: broadleaf(),
   birch: birch(),
   poplar: poplar(),
@@ -1406,7 +1437,7 @@ export const TREE_GEOMETRIES = {
 // holds snow, flowers in spring].
 // (A deciduous tree's crown shrinks away to nothing in winter, leaving bare boughs.)
 const SEASONAL = {
-  pine: [0, 1, 0], spruce: [0, 1, 0], deadPine: [0, 1, 0],
+  pine: [0, 1, 0], spruce: [0, 1, 0], deadPine: [0, 1, 0], krummholz: [0, 1, 0],
   broadleaf: [1, 1, 0], birch: [1, 1, 0], poplar: [1, 1, 0], maple: [1, 1, 0], bush: [1, 1, 1],
   cypress: [1, 1, 0], swampWillow: [1, 1, 0],
   acacia: [0, 0, 0], cactus: [0, 0, 0], smallCactus: [0, 0, 0], dryBush: [0, 0, 0],
@@ -1482,6 +1513,7 @@ export const LEAF_GEOMETRIES = {
   swampWillow: leaves(50, [0.3, 0.55], [0x6f9a3e, 0x8fb455, 0x9dbd5a, 0x7aa344], crown('swampWillow'), 24),
   pine: leaves(40, [0.35, 0.6], [0x3f8a4a, 0x4f9c57, 0x5fae62, 0x376f3f], crown('pine'), 11),
   spruce: leaves(40, [0.3, 0.5], [0x2c5e44, 0x3a7050, 0x478260], crown('spruce'), 14),
+  krummholz: leaves(16, [0.2, 0.35], [0x2c5e44, 0x3a7050, 0x478260], crown('krummholz'), 15),
   broadleaf: leaves(55, [0.45, 0.8], [0x6aac4a, 0x7fbe55, 0x93cc62, 0x5a9a42, 0xa6d26c], crown('broadleaf'), 12),
   birch: leaves(40, [0.3, 0.55], [0x9cc85a, 0xb6d86c, 0x86b84c, 0xcbe07a], crown('birch'), 15),
   poplar: leaves(40, [0.35, 0.6], [0x5a9a42, 0x6fae4c, 0x84c05a], crown('poplar'), 16),
@@ -1502,7 +1534,7 @@ export const LEAF_GEOMETRIES = {
   silverBirch: leaves(44, [0.3, 0.5], [0x8fbf52, 0xa9d063, 0x7aaa46, 0xbfdc72], crown('silverBirch'), 27),
   aspen: leaves(36, [0.3, 0.5], [0x8cc052, 0xa6d064, 0x78ad48], crown('aspen'), 28),
   baobab: leaves(24, [0.35, 0.6], [0x6f8c3a, 0x86a048, 0x9bb458], crown('baobab'), 29),
-  weepingWillow: leaves(45, [0.25, 0.4], [0x9ab856, 0xa9c662, 0xbcd476, 0x8aaa4a], crown('weepingWillow'), 30),
+  weepingWillow: leaves(1, [0.01, 0.01], [0x9ab856], crown('weepingWillow'), 30), // (its streamers are its leaves: nothing more to set on them)
   mangrove: leaves(50, [0.35, 0.6], [0x3a6a33, 0x4d7d3e, 0x5f8f48], crown('mangrove'), 31),
   jungleGiant: leaves(70, [0.6, 1.0], [0x2f6b2a, 0x3f7d33, 0x4f8f3c, 0x5a9a3a], crown('jungleGiant'), 32),
   jungleCanopy: leaves(60, [0.5, 0.9], [0x2a5e27, 0x3a7431, 0x4a863a, 0x55923c], crown('jungleCanopy'), 33),

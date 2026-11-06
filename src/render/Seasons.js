@@ -291,6 +291,16 @@ export function seasonalRocks(material) {
               float spot = step(0.84, fract(sin(dot(floor(vRockLocal * 9.0), vec3(39.34, 11.13, 83.17))) * 24634.63));
               c = mix(c, patchy > 0.55 ? vec3(0.8, 0.52, 0.2) : vec3(0.72, 0.75, 0.62), vRockMoss.y * spot * 0.75);
             }
+            // Moss, on a damp country's boulders (see RockLayer's rockMoss.x): a
+            // soft cushion over their tops, following the curve of the stone and
+            // creeping down further on the shady north side, its edge ragged.
+            if (vRockMoss.x > 0.0) {
+              float edge = 0.18 * (fract(sin(dot(floor(vRockLocal * 5.0), vec3(17.1, 31.7, 7.3))) * 4375.85) - 0.5);
+              float north = smoothstep(-0.2, 0.6, -vRockNormal.z);
+              float m = smoothstep(0.62 - 0.55 * vRockMoss.x - 0.25 * north + edge, 0.9 - 0.5 * vRockMoss.x - 0.25 * north + edge, vRockNormal.y + 0.35 * (vRockLocal.y + 0.2));
+              vec3 mossCol = mix(vec3(0.24, 0.38, 0.12), vec3(0.36, 0.5, 0.18), fract(sin(dot(floor(vRockLocal * 11.0), vec3(3.1, 7.7, 5.3))) * 1931.7));
+              c = mix(c, mossCol * (0.75 + 0.35 * uSpring) * (1.0 - 0.35 * uWinter), m * vRockMoss.x);
+            }
             float cap = smoothstep(0.45, 0.75, vRockNormal.y);
             float drift = (1.0 - smoothstep(-0.35, 0.05, vRockLocal.y)) * smoothstep(-0.2, 0.5, dot(vRockNormal.xz, vec2(0.8, 0.6)));
             float snow = cool * clamp(max(uWinter * max(cap, drift), uSnowfall * smoothstep(0.1, 0.5, vRockNormal.y)), 0.0, 1.0);

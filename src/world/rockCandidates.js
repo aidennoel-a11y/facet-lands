@@ -67,8 +67,9 @@ export function rockCandidates(generator, config, cx, cz) {
       const bank = river && river.d > river.water + 0.4 ? 1 : 0;
       // (Some lakes and ponds, about one in three, have rocky shores: boulders
       // heaped all round their banks and tumbled into the shallows.)
-      const lk = generator.rivers.at(wx, wz, 9);
-      const rockyLake = lk && (lk.pond || lk.big) && !lk.hot && lk.d > lk.water - 1.6 && lk.d < lk.water + 7 && hash2(Math.floor(wx / 260), Math.floor(wz / 260), seed + 77) < 0.33 ? 1 - smoothstep(3, 7, lk.d - lk.water) : 0;
+      const lk = generator.rivers.at(wx, wz, 12);
+      const rockyLake = lk && (lk.pond || lk.big) && !lk.hot && lk.d > lk.water - 1.6 && lk.d < lk.water + (lk.cliffs ? 10 : 7) && (lk.cliffs || hash2(Math.floor(wx / 260), Math.floor(wz / 260), seed + 77) < 0.33) ? (lk.cliffs ? 1.3 : 1) * (1 - smoothstep(3, lk.cliffs ? 10 : 7, lk.d - lk.water)) : 0;
+      const greatLake = lk && lk.cliffs ? 1 : 0; // (a great alpine lake: great boulders fallen from its cliffs)
       // Flat, bare stone high in the mountains: strewn with boulders
       // and rubble, so it's never a dead plain.
       const jitter = generator.getColorJitter(wx, wz);
@@ -148,7 +149,7 @@ export function rockCandidates(generator, config, cx, cz) {
       if (!bank && generator.rivers.at(wx, wz, 1)) continue; // and rivers
       if (generator.landmarks?.nearFalls(wx, wz, 1.5)) continue; // nor in the falls' pools and notches
       if ((lavaRock > 0 || strewn > 0) && generator.onLiveLava?.(wx, wz)) continue; // and a live lava flow
-      let size = boulder ? 1.3 + hash2(gi, gj, seed + 4) * (1.6 + 1.2 * foothill + 3.2 * foot + 2.5 * cliff + 2.2 * stony + 2.5 * granite + 1.2 * red + 3.5 * blast + 1.2 * strewn) * (bank ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
+      let size = boulder ? 1.3 + 1.2 * greatLake + hash2(gi, gj, seed + 4) * (1.6 + 2.6 * greatLake + 1.2 * foothill + 3.2 * foot + 2.5 * cliff + 2.2 * stony + 2.5 * granite + 1.2 * red + 3.5 * blast + 1.2 * strewn) * (bank && !rockyLake ? 0.4 : 1) : (0.25 + hash2(gi, gj, seed + 4) * 0.6) * (bank ? 1.4 : 1);
       // (Fallen into the water: big enough to stand out of it.)
       if (surf > 0) size = Math.max(size, 2.2 + hash2(gi, gj, seed + 12) * 3.2, (seaLevel - land) * 0.9);
       const sx = size * (0.8 + hash2(gi, gj, seed + 5) * 0.5);

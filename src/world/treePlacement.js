@@ -171,7 +171,10 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const jungleMtn = biome.id === 'jungleMountains';
       if (r < Math.max(jungleMtn ? 1 - smoothstep(0.7, 0.86, upness) : cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(170, 215, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
       // And ever fewer the higher you go (the tree line).
-      if (!lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.95 * smoothstep(95, 175, land) : smoothstep(85, 150, land) * 0.9)) continue;
+      // (At the treeline itself, among the last trees and above them: krummholz, beaten down by the wind.)
+      const treeline = !smoky && !jungleMtn && (biome.id === 'pine' || biome.id === 'temperate' || biome.id === 'cascades' || biome.id === 'parkland') ? smoothstep(100, 128, land) * (1 - smoothstep(140, 150, colourHeight)) : 0;
+      const krumm = treeline > 0 && hash2(gi, gj, seed + 40) < 0.35 * treeline;
+      if (!krumm && !lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.95 * smoothstep(95, 175, land) : smoothstep(85, 150, land) * 0.9)) continue;
 
       // Too steep for roots? (height change per metre)
       if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
@@ -197,6 +200,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       species ??= trees.species[trees.species.length - 1];
       // (Two or three to a stretch of bank, among the other trees there.)
       if (willowHere) species = { type: 'weepingWillow' };
+      if (krumm) species = { type: 'krummholz' };
       if (oasis > 0.2) species = { type: hash2(gi, gj, seed + 17) < 0.8 ? 'junglePalm' : 'dryBush' };
       if (atoll) species = { type: hash2(gi, gj, seed + 17) < 0.85 ? 'junglePalm' : 'bush' };
       // Round an awake volcano: nothing on its cone, and only dead trees
@@ -256,7 +260,8 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
         s: size,
         sy: size * (0.85 + hash2(gi, gj, seed + 6) * 0.35),
         // (Its own x axis lies along (cos rot, -sin rot): a willow's lean is along it.)
-        rot: toWater ? Math.atan2(-toWater[1], toWater[0]) + (hash2(gi, gj, seed + 33) - 0.5) * 0.5 : hash2(gi, gj, seed + 7) * Math.PI * 2,
+        // (Krummholz all streaming the one way, with the prevailing wind.)
+        rot: toWater ? Math.atan2(-toWater[1], toWater[0]) + (hash2(gi, gj, seed + 33) - 0.5) * 0.5 : species.type === 'krummholz' ? 0.7 + (hash2(gi, gj, seed + 7) - 0.5) * 0.5 : hash2(gi, gj, seed + 7) * Math.PI * 2,
         shade: hash2(gi, gj, seed + 8),
         // No tree grows perfectly straight: a small random lean, plus a
         // lean downhill on slopes (up to about 12 degrees).
@@ -275,7 +280,7 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 /** The kinds of tree, in a fixed order (far trees are packed by index). */
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
   'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm', 'bamboo', 'jungleCanopy',
-  'appleTree', 'raspberryBush', 'blueberryBush', 'redwood', 'cherryBlossom', 'cherryRound', 'monsoonTree', 'monsoonSal', 'monsoonFig', 'monsoonFlame', 'monsoonMango'];
+  'appleTree', 'raspberryBush', 'blueberryBush', 'redwood', 'cherryBlossom', 'cherryRound', 'monsoonTree', 'monsoonSal', 'monsoonFig', 'monsoonFlame', 'monsoonMango', 'krummholz'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

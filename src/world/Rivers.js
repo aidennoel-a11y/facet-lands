@@ -364,8 +364,14 @@ export class Rivers {
     }
     const level = low - 0.35;
     if (level < this.seaLevel + 1) return null;
+    // (A bigger pond or lake, now and then, has an island in it.)
+    const ih = hash2(Math.round(x * 3), Math.round(z * 3), 0x15a7);
+    const island = r >= 16 && ih < 0.4 ? (() => {
+      const a = hash2(Math.round(z * 3), Math.round(x * 3), 0x15a8) * Math.PI * 2, off = ih * r * 0.8;
+      return { x: x + Math.cos(a) * off, z: z + Math.sin(a) * off, r: r * (0.13 + 0.1 * hash2(Math.round(x), Math.round(z), 0x15a9)) };
+    })() : null;
     return {
-      x, z, r, level, seed: rand() * 100, outlet,
+      x, z, r, level, seed: rand() * 100, outlet, island,
       // The course leaves from its outlet, starting inside the pond so the
       // water runs on unbroken.
       start: { x: x + outlet[0] * r * 0.55, z: z + outlet[1] * r * 0.55 },
@@ -378,7 +384,7 @@ export class Rivers {
     if (!list) return null;
     for (const item of list) {
       const p = item.pond;
-      if (p && Math.hypot(x - p.x, z - p.z) < Rivers.pondRadius(p, x, z) + 1) return p;
+      if (p && Math.hypot(x - p.x, z - p.z) < Rivers.pondRadius(p, x, z) + 1 && !Rivers.onIsland(p, x, z)) return p;
     }
     return null;
   }
@@ -681,7 +687,12 @@ export class Rivers {
       if (h < 60 || h > 260) continue;
       const bw = g.getBiomeWeights(x, z, {});
       if (bw.temperate + bw.pine < 0.5) continue;
-      const pond = this.#pond(x, z, 20 + rand() * 25, rand, 0.35);
+      // (About two in five a great lake, walled with cliffs along parts of its shore; where the hollow won't hold one, an ordinary tarn.)
+      const great = hash2(Math.round(x), Math.round(z), 0x9a7e) < 0.4;
+      let pond = great ? this.#pond(x, z, 48 + hash2(Math.round(z), Math.round(x), 0x9a7f) * 34, rand, 0.35) : null;
+      if (pond && pond.level < h + 0.3) pond = null;
+      if (pond) pond.cliffs = true;
+      else pond = this.#pond(x, z, 20 + rand() * 25, rand, 0.35);
       if (!pond || pond.level < h + 0.3) continue; // it needs a real hollow to hold it
       pond.tint = 1;
       pond.alpine = true;
@@ -882,6 +893,12 @@ export class Rivers {
   }
 
   /** A pond's (wobbly) radius in the direction of (x, z). */
+  /** Whether (x, z) is up on a pond's island (above its water), if it has one. */
+  static onIsland(pond, x, z) {
+    const i = pond.island;
+    return !!i && !pond.crater && !pond.hot && !pond.oasis && Math.hypot(x - i.x, z - i.z) < i.r;
+  }
+
   static pondRadius(pond, x, z) {
     const a = Math.atan2(z - pond.z, x - pond.x);
     return pond.r * (1 + 0.14 * Math.sin(a * 3 + pond.seed) + 0.07 * Math.sin(a * 5 + pond.seed * 2));
@@ -906,7 +923,7 @@ export class Rivers {
     // only reaches it with its end (the pool below a waterfall, say) may
     // lower it just a little, so a pool's sides are never dug down to the
     // pool below it.
-    let bank = -Infinity, inWater = false, wet = Infinity, wetEnd = Infinity, k = 0;
+    let bank = -Infinity, inWater = false, wet = Infinity, wetEnd = Infinity, k = 0, island = -Infinity, cliff = -Infinity;
     let edge = Infinity; // metres out from the nearest channel's edge
     for (const item of near) {
       if (item.pond) {
@@ -915,6 +932,24 @@ export class Rivers {
         const r = Rivers.pondRadius(pond, x, z);
         const rr = Math.max(r, 2.4);
         edge = Math.min(edge, d - rr);
+        // (Its island: a low, rounded hump of land standing up out of the water, its shore shelving in.)
+        const isl = pond.island;
+        if (isl && !pond.crater && !pond.hot && !pond.oasis) {
+          const di = Math.hypot(x - isl.x, z - isl.z);
+          if (di < isl.r + 2.5) {
+            const t = Math.max(0, isl.r - di);
+            island = Math.max(island, pond.level + 0.55 + Math.min(4, t * 0.35 + 0.03 * t * t) - Math.max(0, di - isl.r) * 0.6);
+            if (di < isl.r) continue;
+          }
+        }
+        // (A great alpine lake: along much of its shore the land stands up in cliffs straight out of the water.)
+        if (pond.cliffs && d >= rr) {
+          const a = Math.atan2(z - pond.z, x - pond.x), along = Math.sin(a * 3 + pond.seed) + 0.5 * Math.sin(a * 7 + pond.seed * 1.7);
+          // (Never across its outlet: the stream runs out through a gap in the cliffs.)
+          const oa = Math.atan2(pond.outlet[1], pond.outlet[0]), gap = Math.abs(Math.atan2(Math.sin(a - oa), Math.cos(a - oa)));
+          const walled = smoothstep(-0.25, 0.25, along) * smoothstep(0.35, 0.75, gap), e = d - rr;
+          if (walled > 0 && e < 16) cliff = Math.max(cliff, pond.level + (0.4 + Math.min(14, e * 4.5 + 3 * Math.max(0, along))) * walled * (1 - smoothstep(9, 16, e)));
+        }
         if (d < rr) {
           const t = d / rr;
           wet = Math.min(wet, pond.level - 0.15 - (0.6 + pond.r * 0.12) * (1 - t * t));
@@ -960,12 +995,15 @@ export class Rivers {
       // land falls well away below the water (over a cliff, down a fall),
       // it's left as it is: the water falls through the air there, rather
       // than on a channel built out from the rock.
-      return wet < base + 1.5 ? wet : h;
+      const out = wet < base + 1.5 ? wet : h;
+      return island > out ? island : out;
     }
     // Banks never lower than the water beside them (except where the land
     // drops away under a fall, and never built up out of a lake or the sea:
     // no strips of land along a creek out into the water it runs into).
     if (bank > h && bank - base < 1.5) h += (bank - h) * smoothstep(this.seaLevel - 0.1, this.seaLevel + 0.4, base);
+    if (cliff > h) h = cliff;
+    if (island > h) h = island;
     return h + rough * smoothstep(5, 14, edge);
   }
 
@@ -985,7 +1023,8 @@ export class Rivers {
         const r = Rivers.pondRadius(pond, x, z);
         const half = Math.max(r, 4.5);
         if (d > half + margin) continue;
-        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, crater: !!pond.crater, alpine: !!pond.alpine, hot: !!pond.hot, oasis: !!pond.oasis, fx: 0, fz: 0, drop: 0 };
+        if (Rivers.onIsland(pond, x, z) && margin < 1) continue; // (out on its island: dry land)
+        if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, crater: !!pond.crater, alpine: !!pond.alpine, cliffs: !!pond.cliffs, hot: !!pond.hot, oasis: !!pond.oasis, fx: 0, fz: 0, drop: 0 };
         continue;
       }
       Rivers.#measure(item, x, z, m);

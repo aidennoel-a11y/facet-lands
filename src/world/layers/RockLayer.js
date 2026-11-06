@@ -307,6 +307,8 @@ export function createRockLayer(config) {
       const cw = generator.getBiomeWeights((cx + 0.5) * config.chunkSize, (cz + 0.5) * config.chunkSize, {});
       const high = generator.getMountainness((cx + 0.5) * config.chunkSize, (cz + 0.5) * config.chunkSize);
       const dry = Math.min(1, 0.8 * high + 0.35 * ((cw.savanna ?? 0) + (cw.volcanic ?? 0)));
+      // (And how damp: in the woods and the wet country many of the boulders wear a cap of moss.)
+      const damp = Math.min(1, (cw.temperate ?? 0) * 0.7 + (cw.pine ?? 0) + (cw.wetland ?? 0) + (cw.redwood ?? 0) + (cw.cascades ?? 0) + (cw.smoky ?? 0) + (cw.oakwood ?? 0) + (cw.monsoon ?? 0) + 0.8 * (cw.jungle ?? 0) + 0.7 * (cw.parkland ?? 0)) * (1 - 0.8 * high);
       let rockIndex = 0;
       let o = 0;
       const ranges = new Map(); // boulder key -> [first vertex, vertex count]
@@ -320,6 +322,10 @@ export function createRockLayer(config) {
           colors.set(shape.color.array, o);
           const vary = 0.5 + hash2(cx * 97 + rockIndex, cz * 89 + rockIndex++, 0x5a55);
           for (let i = 0; i < shape.position.count; i++) mosses[(o / 3 + i) * 2 + 1] = dry * vary;
+          // (Moss on about half the boulders where it's damp, each to its own degree.)
+          const mh = hash2(cx * 131 + rockIndex, cz * 71 + rockIndex, 0x30c5);
+          const moss = m.boulderKey && mh < 0.55 * damp ? 0.55 + 0.45 * (mh / Math.max(0.01, 0.55 * damp)) : 0;
+          if (moss) for (let i = 0; i < shape.position.count; i++) mosses[(o / 3 + i) * 2] = moss;
           for (let i = 0; i < shape.position.count; i++, o += 3) {
             v.fromBufferAttribute(shape.position, i).applyMatrix4(m);
             positions[o] = v.x;

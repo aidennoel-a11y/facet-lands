@@ -76,7 +76,7 @@ export function describeWind(strength) {
  *   fade      [start, end] distance from the camera over which instances
  *             shrink to nothing (used for grass), or null
  */
-export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, gust = 0, still = null } = {}) {
+export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, gust = 0, still = null, dangle = false } = {}) {
   const f = (n) => n.toFixed(4);
   // (A gust bends it right over downwind, and shows the paler undersides:
   // \`vGust\` for the fragment shader.)
@@ -94,7 +94,7 @@ export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, g
     shader.uniforms.uWindStrength = windStrength;
     shader.uniforms.uWindDir = windDirection;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\nuniform float uWindTime;\nuniform float uWindStrength;\nuniform vec2 uWindDir;\nvarying float vGust;\n${GUST}`)
+      .replace('#include <common>', `#include <common>\nuniform float uWindTime;\nuniform float uWindStrength;\nuniform vec2 uWindDir;\nvarying float vGust;\n${dangle ? 'attribute float aDangle;\n' : ''}${GUST}`)
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `#include <begin_vertex>
@@ -108,6 +108,21 @@ export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, g
         ${still ? `float wNear = 1.0 - smoothstep(${f(still[0])}, ${f(still[1])}, distance(wOrigin.xz, cameraPosition.xz));\n        if (wNear > 0.0) {` : 'float wNear = 1.0;\n        {'}
         float wPhase = uWindTime * ${f(speed)} + wOrigin.x * 0.045 + wOrigin.z * 0.037;
         float wBend = windReach(transformed.y) * ${f(strength)} * uWindStrength * wNear;
+        ${dangle ? `// (A weeping willow: the tree itself stiffer than most, but its hanging streamers
+        // swinging freely in the wind, the more the further down them, each its own way.)
+        if (aDangle != 0.0) wBend *= 0.35;
+        float wDangle = max(aDangle, 0.0) * wNear;
+        if (wDangle > 0.0) {
+          float sp = uWindTime * ${f(speed * 1.6)} + position.x * 0.9 + position.z * 0.7 + wOrigin.x * 0.05;
+          vec2 swing = vec2(sin(sp) + 0.4 * sin(sp * 2.3 + position.z * 2.0), cos(sp * 0.85) + 0.4 * sin(sp * 1.9 + position.x * 2.0));
+          vec3 sw = vec3(swing.x, 0.0, swing.y) * (0.12 + 0.45 * uWindStrength) * wDangle * wDangle;
+          // (Blown out downwind, too, in a breeze.)
+          sw.xz += uWindDir * 0.55 * uWindStrength * wDangle * wDangle;
+          #ifdef USE_INSTANCING
+            sw = (inverse(mat3(instanceMatrix)) * sw);
+          #endif
+          transformed += sw;
+        }` : ''}
         transformed.x += (sin(wPhase) + 0.35 * sin(wPhase * 2.7 + position.z)) * wBend;
         transformed.z += (0.6 * cos(wPhase * 0.8) + 0.25 * sin(wPhase * 3.1 + position.x)) * wBend;
         ${gustCode}
@@ -116,7 +131,7 @@ export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, g
       );
     if (!shader.fragmentShader.includes('varying float vGust;')) shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGust;');
   };
-  const key = `wind-${strength}-${speed}-${fade}-${gust}-${still}`;
+  const key = `wind-${strength}-${speed}-${fade}-${gust}-${still}-${dangle}`;
   material.customProgramCacheKey = () => key;
   return material;
 }
