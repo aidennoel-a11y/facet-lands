@@ -762,14 +762,14 @@ export const BIOMES = {
     palette: [
       { height: -Infinity, color: 0x8a6a56 },
       { height: -10, color: 0xb07050 },
-      { height: 0, color: 0xd88a52 },
-      { height: 8, color: 0xc8582a }, // (red sand)
-      { height: 30, color: 0xc4532a },
-      { height: 60, color: 0xb84e2a },
-      { height: 110, color: 0xa65232 },
+      { height: 0, color: 0xd49a68 },
+      { height: 8, color: 0xc07048 }, // (red sand)
+      { height: 30, color: 0xbc6c46 },
+      { height: 60, color: 0xb06846 },
+      { height: 110, color: 0xa0654a },
       { height: 170, color: 0x9a6a5a },
     ],
-    cliff: 0xa8482a,
+    cliff: 0xa86448,
     cliffSlope: [0.7, 0.46],
     snowLine: 9999,
     snow: 0xf1f4f7,
@@ -782,6 +782,39 @@ export const BIOMES = {
         { type: 'termiteMound', weight: 0.22, minHeight: -99, maxHeight: 999 },
         { type: 'ghostGum', weight: 0.09, minHeight: -99, maxHeight: 999 },
         { type: 'dryBush', weight: 0.35, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // Savanna mountains: small, steep massifs of bare red-brown rock peaks,
+  // jagged and furrowed, rising sharply out of the golden savanna; grassy
+  // shoulders round their feet, a few acacias and dry bushes, boulders.
+  savannaMountains: {
+    id: 'savannaMountains',
+    name: 'Savanna mountains',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xdcc58c },
+      { height: 5, color: 0xdcc58c },
+      { height: 8, color: 0xd0b860 }, // (golden grass)
+      { height: 40, color: 0xbcae58 },
+      { height: 70, color: 0xa69a5a }, // (grassy shoulders)
+      { height: 100, color: 0x8e6a4e }, // (bare rock)
+      { height: 200, color: 0x7e5844 },
+    ],
+    cliff: 0x84563e,
+    cliffSlope: [0.8, 0.6],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.7,
+    trees: {
+      density: 0.18,
+      clumped: false,
+      species: [
+        { type: 'acacia', weight: 1, minHeight: -99, maxHeight: 110 },
+        { type: 'dryBush', weight: 1.4, minHeight: -99, maxHeight: 160 },
+        { type: 'bush', weight: 0.3, minHeight: -99, maxHeight: 120 },
       ],
     },
   },
@@ -812,17 +845,19 @@ export const BIOMES = {
       density: 0.32,
       clumped: false,
       species: [
-        { type: 'jacaranda', weight: 2.4, minHeight: -99, maxHeight: 999 },
-        { type: 'acacia', weight: 0.3, minHeight: -99, maxHeight: 999 },
-        { type: 'dryBush', weight: 0.4, minHeight: -99, maxHeight: 999 },
-        { type: 'broadleaf', weight: 0.15, minHeight: -99, maxHeight: 999 },
+        { type: 'jacaranda', weight: 0.9, minHeight: -99, maxHeight: 999 },
+        { type: 'acacia', weight: 1.0, minHeight: -99, maxHeight: 999 },
+        { type: 'dryBush', weight: 0.7, minHeight: -99, maxHeight: 999 },
+        { type: 'baobab', weight: 0.08, minHeight: -99, maxHeight: 999 },
+        { type: 'broadleaf', weight: 0.1, minHeight: -99, maxHeight: 999 },
       ],
     },
   },
 
-  // Hanging gardens: by the jungles, a raised country of rock cut through
-  // by deep, narrow canyons, their walls dripping with water and grown
-  // over with moss, ferns and flowers; tree ferns and palms on the floors.
+  // Hanging gardens: by the jungles, gorge country (as the bamboo mist
+  // gorges' is), its cliff walls dripping with water and grown over with
+  // moss, ferns and flowers, jungle trees leaning out over every edge and
+  // vines and bushes hanging down from them; tree ferns and palms below.
   hangingGardens: {
     id: 'hangingGardens',
     name: 'Hanging gardens',

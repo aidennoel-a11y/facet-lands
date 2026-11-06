@@ -53,7 +53,7 @@ function crownOf(type) {
 // hitboxes: you can push a little way into the leaves, not through them.
 const PROFILES = new Map();
 const CONES = new Set(['pine', 'spruce', 'larch', 'deadPine', 'cypress']);
-export const SMALL_PLANTS = new Set(['bush', 'raspberryBush', 'blueberryBush', 'dryBush', 'smallCactus', 'spinifex', 'pricklyPear']);
+export const SMALL_PLANTS = new Set(['bush', 'raspberryBush', 'blueberryBush', 'dryBush', 'smallCactus', 'spinifex', 'pricklyPear', 'cliffVines']);
 function profileOf(type) {
   if (!PROFILES.has(type)) {
     const crown = TREE_GEOMETRIES[type]?.userData.crown;

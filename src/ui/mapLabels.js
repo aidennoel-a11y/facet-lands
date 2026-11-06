@@ -19,7 +19,7 @@ export const MAP_LABELS = [
   ['Ancient oak wood', '#2c4a22'],
   ['Monsoon forest', '#6f8a3a'],
   ['Jacaranda savanna', '#9a7ad8'],
-  ['Red outback', '#c4532a'],
+  ['Savanna mountains', '#8a5a44'],
   ['Cactus bloom', '#e0a0b0'],
   ['Hanging gardens', '#4f9a5a'],
   ['Bamboo mist gorge', '#8ac0a0'],
@@ -95,7 +95,6 @@ export function mapTile(generator, x0, z0, n, s) {
       else if (s <= 8 && label !== 'Ocean' && label !== 'Lake') {
         const w = generator.rivers.at(x, z, s * 0.5);
         if (w && !w.pond && !w.big) label = 'Creek';
-        else if (!w && generator.rivers.gorgeAt(x, z) > 0.5) label = 'River gorge'; // (the gorges, when zoomed in)
       }
       labels[j * n + i] = MAP_INDEX[label] ?? 255;
       const h = heights[j * (n + 1) + i];

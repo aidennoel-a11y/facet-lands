@@ -88,10 +88,10 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const gi = cx * cells + i;
       const gj = cz * cells + j;
       const keep = hash2(gi, gj, seed);
-      const lx = (i + 0.1 + 0.8 * hash2(gi, gj, seed + 1)) * spacing;
-      const lz = (j + 0.1 + 0.8 * hash2(gi, gj, seed + 2)) * spacing;
-      const wx = originX + lx;
-      const wz = originZ + lz;
+      let lx = (i + 0.1 + 0.8 * hash2(gi, gj, seed + 1)) * spacing;
+      let lz = (j + 0.1 + 0.8 * hash2(gi, gj, seed + 2)) * spacing;
+      let wx = originX + lx;
+      let wz = originZ + lz;
 
       // Near a biome border, each spot takes one biome or the other at random.
       const biome = generator.pickBiome(wx, wz, hash2(gi, gj, seed + 11));
@@ -109,6 +109,30 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const willowBank = !!lake && !lake.alpine && !lake.hot && lake.d > lake.water + 0.3 && lake.d < lake.water + 9 && hash2(Math.floor(wx / 300), Math.floor(wz / 300), seed + 31) < 0.42 && (lake.level ?? 0) < 70 && generator.getMountainness(wx, wz) < 0.35;
       const willowHere = willowBank && hash2(gi, gj, seed + 32) < 0.168;
       if (willowBank) likely = Math.max(likely, 0.3);
+      // In the hanging gardens, along the tops of the cliffs: jungle trees
+      // leaning out over every edge, and vines and bushes hanging down the
+      // faces from them. (The spot moved out to the very lip.)
+      let rim = null;
+      if (biome.id === 'hangingGardens') {
+        const h0 = generator.getHeight(wx, wz);
+        let best = 0;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+          const d = h0 - generator.getHeight(wx + c * 5, wz + sn * 5);
+          if (d > best) (best = d), (rim = [c, sn]);
+        }
+        if (best < 6) rim = null;
+        else {
+          let e = 1;
+          while (e < 5 && h0 - generator.getHeight(wx + rim[0] * (e + 1), wz + rim[1] * (e + 1)) < 1.5) e++;
+          const out = Math.max(0, e - 1.2);
+          lx += rim[0] * out;
+          lz += rim[1] * out;
+          wx += rim[0] * out;
+          wz += rim[1] * out;
+          likely = Math.max(likely, 0.9);
+        }
+      }
       const lakeside = !!(lake && lake.alpine && lake.level < 170);
       if (lakeside) likely = Math.max(likely, 0.6);
       // Palms round an oasis.
@@ -171,7 +195,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const jungleMtn = biome.id === 'jungleMountains';
       // (Bristlecones: the trees of the heights, up to the very tops of their white mountains.)
       const bristle = biome.id === 'bristlecone';
-      if (r < Math.max(jungleMtn ? 1 - smoothstep(0.7, 0.86, upness) : cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(170, 215, colourHeight) : bristle ? smoothstep(280, 320, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
+      if (!rim && r < Math.max(jungleMtn ? 1 - smoothstep(0.7, 0.86, upness) : cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(170, 215, colourHeight) : bristle ? smoothstep(280, 320, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
       // And ever fewer the higher you go (the tree line).
       // (At the treeline itself, among the last trees and above them: krummholz, beaten down by the wind.)
       const treeline = !smoky && !jungleMtn && (biome.id === 'pine' || biome.id === 'temperate' || biome.id === 'cascades' || biome.id === 'parkland') ? smoothstep(100, 128, land) * (1 - smoothstep(140, 150, colourHeight)) : 0;
@@ -179,7 +203,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (!krumm && !lakeside && hash2(gi, gj, seed + 13) < (bristle ? 0.4 * smoothstep(150, 300, land) : smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.95 * smoothstep(95, 175, land) : smoothstep(85, 150, land) * 0.9)) continue;
 
       // Too steep for roots? (height change per metre)
-      if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
+      if (!rim && Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
 
       // Pick a species that is happy at this height (edges blurred a bit).
       // In a birch wood (or aspen stand) the `grove` species take over.
@@ -203,6 +227,10 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // (Two or three to a stretch of bank, among the other trees there.)
       if (willowHere) species = { type: 'weepingWillow' };
       if (krumm) species = { type: 'krummholz' };
+      if (rim) {
+        const q = hash2(gi, gj, seed + 41);
+        species = { type: q < 0.45 ? 'cliffVines' : q < 0.7 ? 'jungleCanopy' : q < 0.8 ? 'junglePalm' : 'bush' };
+      }
       if (oasis > 0.2) species = { type: hash2(gi, gj, seed + 17) < 0.8 ? 'junglePalm' : 'dryBush' };
       if (atoll) species = { type: hash2(gi, gj, seed + 17) < 0.85 ? 'junglePalm' : 'bush' };
       // Round an awake volcano: nothing on its cone, and only dead trees
@@ -245,7 +273,9 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
         continue;
       }
       // (A willow on the bank turned to lean out over the water: towards where the water is nearest.)
-      let toWater = null;
+      let toWater = rim;
+      // (Out over the edge: the trees well over it, the vines hanging straight.)
+      const overLean = rim ? (species.type === 'cliffVines' ? 0 : 0.3) : 0.12;
       if (species.type === 'weepingWillow') {
         const e = 2.5, dAt = (px, pz) => {
           const w = generator.rivers.at(px, pz, 30);
@@ -267,8 +297,8 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
         shade: hash2(gi, gj, seed + 8),
         // No tree grows perfectly straight: a small random lean, plus a
         // lean downhill on slopes (up to about 12 degrees).
-        leanX: (hash2(gi, gj, seed + 9) - 0.5) * 0.08 - gradX * 0.16 + (toWater ? toWater[0] * 0.12 : 0),
-        leanZ: (hash2(gi, gj, seed + 10) - 0.5) * 0.08 - gradZ * 0.16 + (toWater ? toWater[1] * 0.12 : 0),
+        leanX: (hash2(gi, gj, seed + 9) - 0.5) * 0.08 - (rim ? 0 : gradX * 0.16) + (toWater ? toWater[0] * overLean : 0),
+        leanZ: (hash2(gi, gj, seed + 10) - 0.5) * 0.08 - (rim ? 0 : gradZ * 0.16) + (toWater ? toWater[1] * overLean : 0),
         warm,
       });
     }
@@ -283,7 +313,7 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
   'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm', 'bamboo', 'jungleCanopy',
   'appleTree', 'raspberryBush', 'blueberryBush', 'redwood', 'cherryBlossom', 'cherryRound', 'monsoonTree', 'monsoonSal', 'monsoonFig', 'monsoonFlame', 'monsoonMango', 'krummholz',
-  'spinifex', 'termiteMound', 'ghostGum', 'jacaranda', 'bristlecone', 'pricklyPear', 'bloomCactus'];
+  'spinifex', 'termiteMound', 'ghostGum', 'jacaranda', 'bristlecone', 'pricklyPear', 'bloomCactus', 'cliffVines'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

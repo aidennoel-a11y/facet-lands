@@ -1529,6 +1529,29 @@ function bloomCactus() {
   return mergeGeometries([cactus(), ...flowers]);
 }
 
+// Vines hanging over a cliff's edge (the hanging gardens): a curtain of
+// green strands, leafy all the way, from a tangle of bush on the lip; out
+// over the edge (along +x) and down the face below.
+function cliffVines() {
+  const rand = mulberry32(2801);
+  const wood = [], crown = [];
+  for (let k = 0; k < 11; k++) {
+    const side = (k / 10 - 0.5) * 2.6 + (rand() - 0.5) * 0.25;
+    const len = 6 + rand() * 7;
+    let p = [0.2, 0.25, side];
+    const pts = [[1.1, 0.1, side + (rand() - 0.5) * 0.2], [1.45, -0.9, side + (rand() - 0.5) * 0.3]];
+    for (let d = 2; d < len; d += 1.8) pts.push([1.5 + 0.25 * Math.sin(d * 0.7 + k) + (rand() - 0.5) * 0.2, -d, side + 0.2 * Math.sin(d * 0.5 + k * 1.3)]);
+    for (const q of pts) {
+      wood.push(limb(p, q, 0.035, 0.03, 0x3a5a2a, 0x4a6a32, 2810 + wood.length));
+      if (q[1] < 0) crown.push(part(new DodecahedronGeometry(0.22 + rand() * 0.14, 0), 0x2f6a28, 0x5a9a3c, { x: q[0] + 0.1, y: q[1], z: q[2], sx: 0.7, sy: 1.4, lump: 0.3, seed: 2900 + crown.length }));
+      p = q;
+    }
+  }
+  // (The bush on the lip, spilling over.)
+  for (const [x, y, z, r] of [[0.3, 0.45, 0, 0.9], [0.9, 0.2, -0.9, 0.7], [0.8, 0.25, 0.9, 0.7], [1.3, -0.2, 0.1, 0.6]]) crown.push(part(new DodecahedronGeometry(r, 0), 0x3a7a2e, 0x6aa848, { x, y, z, sy: 0.7, lump: 0.25, seed: 2990 + crown.length }));
+  return withCrown(wood, crown);
+}
+
 /** Built once and shared by every chunk. */
 export const TREE_GEOMETRIES = {
   cherryBlossom: cherryBlossom(),
@@ -1579,6 +1602,7 @@ export const TREE_GEOMETRIES = {
   bristlecone: bristlecone(),
   pricklyPear: pricklyPear(),
   bloomCactus: bloomCactus(),
+  cliffVines: cliffVines(),
 };
 
 // How each species takes the seasons: [deciduous (leaves turn and fall),
@@ -1597,7 +1621,7 @@ const SEASONAL = {
   // (Below nothing: the monsoon forest's, drying yellow through the dry months: see Seasons.seasonalTrees.)
   monsoonTree: [-1, 0, 0], monsoonSal: [-1, 0, 0], monsoonFig: [-0.6, 0, 0], monsoonFlame: [-1, 0, 0], monsoonMango: [-0.4, 0, 0], // (green the year round here: its seasons are the ground's, see Seasons)
   redwood: [0, 1, 0],
-  spinifex: [0, 0, 0], termiteMound: [0, 0, 0], ghostGum: [0, 0, 0], jacaranda: [0, 0, 0], bristlecone: [0, 1, 0], pricklyPear: [0, 0, 0], bloomCactus: [0, 0, 0],
+  spinifex: [0, 0, 0], termiteMound: [0, 0, 0], ghostGum: [0, 0, 0], jacaranda: [0, 0, 0], bristlecone: [0, 1, 0], pricklyPear: [0, 0, 0], bloomCactus: [0, 0, 0], cliffVines: [0, 0, 0],
   cherryBlossom: [1, 1, 1], // (its blossom thickest in spring; red-gold in autumn; bare in winter)
   cherryRound: [1, 1, 1],
 };
@@ -1650,10 +1674,10 @@ export function treeGeometry(type, bare) {
 }
 
 /** Species that are stiff (cacti): they don't sway in the wind. */
-export const STIFF = new Set(['cactus', 'smallCactus', 'joshuaTree', 'baobab', 'termiteMound', 'pricklyPear', 'bloomCactus']);
+export const STIFF = new Set(['cactus', 'smallCactus', 'joshuaTree', 'baobab', 'termiteMound', 'pricklyPear', 'bloomCactus', 'cliffVines']);
 
 /** Species too small to bump into. */
-export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus', 'ocotillo', 'raspberryBush', 'blueberryBush', 'spinifex', 'pricklyPear']);
+export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus', 'ocotillo', 'raspberryBush', 'blueberryBush', 'spinifex', 'pricklyPear', 'cliffVines']);
 
 const crown = (type) => onMesh(TREE_GEOMETRIES[type].userData.crown);
 

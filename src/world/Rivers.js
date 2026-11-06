@@ -892,27 +892,9 @@ export class Rivers {
     return out;
   }
 
-  /** Where rivers may run through gorges (0..1): here and there in the hills by the mountains. */
-  #gorgeMask(x, z) {
-    return smoothstep(0.12, 0.3, this.meander.noise2D(x * 0.0014 - 70, z * 0.0014 + 33)) * smoothstep(0.08, 0.25, this.generator.getMountainness(x, z));
-  }
-
-  /**
-   * Whether (x, z) is in a river gorge (0..1): down in it or up its walls,
-   * the river at the bottom (a great river's or a creek's, not a stream's).
-   */
-  gorgeAt(x, z) {
-    const near = this.#near(x, z);
-    if (!near) return 0;
-    let best = 0;
-    const m = (this._gm ??= {});
-    for (const item of near) {
-      if (item.pond || item.stream) continue;
-      const { d, half } = Rivers.#measure(item, x, z, m);
-      const e = d - half;
-      if (e < 40) best = Math.max(best, 1 - smoothstep(26, 40, e));
-    }
-    return best > 0 ? best * this.#gorgeMask(x, z) : 0;
+  /** Where a creek runs through a gorge of its own (0..1): never now (the gorges are the great rivers': see BigRivers). */
+  #gorgeMask() {
+    return 0;
   }
 
   /** A pond's (wobbly) radius in the direction of (x, z). */
