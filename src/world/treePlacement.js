@@ -101,11 +101,13 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // grassland between them (only the odd lone tree out there).
       if (biome.id === 'parkland') likely = (0.015 + 0.6 * generator.getParklandGrove(wx, wz)) * (config.treeDensity ?? 1);
       // Round an alpine lake below the snow, a ring of trees.
-      const lake = trees && (biome.id === 'temperate' || biome.id === 'parkland' || biome.id === 'oakwood') ? generator.rivers.at(wx, wz, 30) : null;
+      const lake = trees && (biome.id === 'temperate' || biome.id === 'parkland' || biome.id === 'oakwood' || biome.id === 'pine' || biome.id === 'wetland' || biome.id === 'cascades' || biome.id === 'smoky') ? generator.rivers.at(wx, wz, 30) : null;
       // Weeping willows along some stretches of the rivers and lakes (some
       // 300 m at a time, about half of them), on the bank, leaning over the water.
       // (Only in the lowlands: never up in the mountains, nor by their icy tarns.)
-      const willowBank = !!lake && !lake.big && lake.d > lake.water + 0.8 && lake.d < lake.water + 9 && hash2(Math.floor(wx / 300), Math.floor(wz / 300), seed + 31) < 0.35 && (lake.level ?? 0) < 70 && generator.getMountainness(wx, wz) < 0.35;
+      // (Rivers, ponds and lakes alike; right down at the water's edge, so they can hang out over it.)
+      const willowBank = !!lake && !lake.alpine && !lake.hot && lake.d > lake.water + 0.3 && lake.d < lake.water + 9 && hash2(Math.floor(wx / 300), Math.floor(wz / 300), seed + 31) < 0.42 && (lake.level ?? 0) < 70 && generator.getMountainness(wx, wz) < 0.35;
+      const willowHere = willowBank && hash2(gi, gj, seed + 32) < 0.168;
       if (willowBank) likely = Math.max(likely, 0.3);
       const lakeside = !!(lake && lake.alpine && lake.level < 170);
       if (lakeside) likely = Math.max(likely, 0.6);
@@ -141,7 +143,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const marsh = biome.id === 'wetland' || biome.id === 'mangrove';
       if (!(ground >= seaLevel + (marsh ? -0.8 : 1.2))) continue; // outside the chunk, in water or over a cave mouth
       if (generator.caves.field.nearEntrance(wx, wz, 3)) continue; // keep cave entrances clear
-      if (generator.rivers.at(wx, wz, 1.5)) continue; // nor in a river or right on its bank
+      if (!willowHere && generator.rivers.at(wx, wz, 1.5)) continue; // nor in a river or right on its bank (a willow excepted: it leans out over the water)
       // How high and how steep, from the land itself rather than this level
       // of detail's mesh (far off, its big triangles can pass metres above
       // or below the ground on a mountainside), so trees don't come and go
@@ -194,7 +196,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       }
       species ??= trees.species[trees.species.length - 1];
       // (Two or three to a stretch of bank, among the other trees there.)
-      if (willowBank && hash2(gi, gj, seed + 32) < 0.14) species = { type: 'weepingWillow' };
+      if (willowHere) species = { type: 'weepingWillow' };
       if (oasis > 0.2) species = { type: hash2(gi, gj, seed + 17) < 0.8 ? 'junglePalm' : 'dryBush' };
       if (atoll) species = { type: hash2(gi, gj, seed + 17) < 0.85 ? 'junglePalm' : 'bush' };
       // Round an awake volcano: nothing on its cone, and only dead trees
@@ -236,6 +238,16 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
         }
         continue;
       }
+      // (A willow on the bank turned to lean out over the water: towards where the water is nearest.)
+      let toWater = null;
+      if (species.type === 'weepingWillow') {
+        const e = 2.5, dAt = (px, pz) => {
+          const w = generator.rivers.at(px, pz, 30);
+          return w ? w.d - w.water : 99;
+        };
+        const gx = dAt(wx + e, wz) - dAt(wx - e, wz), gz = dAt(wx, wz + e) - dAt(wx, wz - e), gl = Math.hypot(gx, gz);
+        if (gl > 0.05) toWater = [-gx / gl, -gz / gl];
+      }
       (placed[species.type] ??= []).push({
         x: lx,
         // Sink the base a little so trunks never float on sloped faces.
@@ -243,12 +255,13 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
         z: lz,
         s: size,
         sy: size * (0.85 + hash2(gi, gj, seed + 6) * 0.35),
-        rot: hash2(gi, gj, seed + 7) * Math.PI * 2,
+        // (Its own x axis lies along (cos rot, -sin rot): a willow's lean is along it.)
+        rot: toWater ? Math.atan2(-toWater[1], toWater[0]) + (hash2(gi, gj, seed + 33) - 0.5) * 0.5 : hash2(gi, gj, seed + 7) * Math.PI * 2,
         shade: hash2(gi, gj, seed + 8),
         // No tree grows perfectly straight: a small random lean, plus a
         // lean downhill on slopes (up to about 12 degrees).
-        leanX: (hash2(gi, gj, seed + 9) - 0.5) * 0.08 - gradX * 0.16,
-        leanZ: (hash2(gi, gj, seed + 10) - 0.5) * 0.08 - gradZ * 0.16,
+        leanX: (hash2(gi, gj, seed + 9) - 0.5) * 0.08 - gradX * 0.16 + (toWater ? toWater[0] * 0.12 : 0),
+        leanZ: (hash2(gi, gj, seed + 10) - 0.5) * 0.08 - gradZ * 0.16 + (toWater ? toWater[1] * 0.12 : 0),
         warm,
       });
     }
