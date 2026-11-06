@@ -63,7 +63,7 @@ export const BIOME_TUNING = {
   // River gorges (long, winding gorges with a river at the bottom, out in the hill country): the chance per 5 km square.
   riverGorge: 0.6, // (per 6 km square, where the country suits: uncommon)
   // Savanna mountains (small, steep massifs of bare rock peaks out in the savanna): the chance per 3.6 km square.
-  savannaMountains: 0.55,
+  savannaMountains: 0.9,
   // Cactus blooms in the deserts: the chance per 3.8 km square.
   cactusBloom: 0.6,
   // How much of the wetlands is glowing swamp: lower, more.
@@ -1480,12 +1480,56 @@ export class TerrainGenerator {
   // Savanna mountains (0..1): now and then out in the savanna, a small,
   // rounded massif half a kilometre to a kilometre across.
   #savannaMtnLand(x, z) {
-    return this.#blobs('savmtn', x, z, 3600, T.savannaMountains, 450, 850, 0x5a7d, (px, pz) => {
-      const r = this.#rangeField(px, pz, {}).value;
-      if (r > 0.12 || this.getMountainness(px, pz) > 0.15 || this.#seaCoast(px, pz) > 0.02 || this.getOceanness(px, pz) > 0.02) return 0;
-      const a = this.getAridity(px, pz, r);
-      return a > T.savannaStart + 0.12 && a < T.desertStart + 0.02 ? 1 : 0;
-    }, null, 0.45);
+    const n = this.#savMtnNear(x, z);
+    return n ? 1 - smoothstep(0.95, 1.25, n.rho) : 0;
+  }
+
+  /**
+   * The savanna mountains of the 3.6 km cell (i, j), if it has some
+   * (remembered): { x, z, R (its radius), ang, stretch, n (how many spurs
+   * fan out round it), s (its own lumps) }.
+   */
+  #savMtnCell(i, j) {
+    const cache = (this._savMtn ??= new Map()), key = cellKey(i, j);
+    let c = cache.get(key);
+    if (c !== undefined) return c;
+    c = null;
+    const s = this.seed ^ 0x5a7d, C = 3600;
+    if (hash2(i, j, s) < T.savannaMountains) {
+      const x = (i + 0.25 + 0.5 * hash2(i, j, s + 1)) * C, z = (j + 0.25 + 0.5 * hash2(i, j, s + 2)) * C;
+      const R = 520 + 380 * hash2(i, j, s + 3);
+      const ok = (px, pz) => {
+        const r = this.#rangeField(px, pz, {}).value;
+        if (r > 0.14 || this.getMountainness(px, pz) > 0.18 || this.#seaCoast(px, pz) > 0.02 || this.getOceanness(px, pz) > 0.02) return false;
+        const a = this.getAridity(px, pz, r);
+        return a > T.savannaStart + 0.12 && a < T.desertStart + 0.04;
+      };
+      let fine = ok(x, z);
+      for (let k = 0; k < 6 && fine; k++) fine = ok(x + Math.cos(k * 1.047) * R, z + Math.sin(k * 1.047) * R);
+      if (fine) c = { x, z, R, ang: hash2(i, j, s + 4) * Math.PI, stretch: 1.2 + 0.6 * hash2(i, j, s + 5), n: 13 + Math.floor(hash2(i, j, s + 6) * 9), s: hash2(i, j, s + 7) * 100, H: 150 + 90 * hash2(i, j, s + 8) };
+    }
+    if (cache.size > 4000) cache.clear();
+    cache.set(key, c);
+    return c;
+  }
+
+  /** The nearest savanna mountains round (x, z): { c, rho (0 its heart .. 1 its foot), th (the way round it) }, or null. */
+  #savMtnNear(x, z) {
+    const C = 3600, ci = Math.floor(x / C), cj = Math.floor(z / C);
+    let best = null;
+    for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) {
+      const c = this.#savMtnCell(i, j);
+      if (!c) continue;
+      const dx = x - c.x, dz = z - c.z;
+      if (dx * dx + dz * dz > (c.R * c.stretch * 1.4) ** 2) continue;
+      const ca = Math.cos(c.ang), sa = Math.sin(c.ang);
+      const u = (dx * ca + dz * sa) / c.stretch, v = -dx * sa + dz * ca;
+      const th = Math.atan2(v, u);
+      const wob = 1 + 0.14 * Math.sin(2 * th + c.s) + 0.08 * Math.sin(3 * th + c.s * 1.7) + 0.05 * Math.sin(5 * th + c.s * 2.3);
+      const rho = Math.hypot(u, v) / (c.R * wob);
+      if (rho < 1.3 && (!best || rho < best.rho)) best = { c, rho, th };
+    }
+    return best;
   }
 
   /**
@@ -1495,26 +1539,26 @@ export class TerrainGenerator {
    * feet and piles of boulders round them.
    */
   savannaMtnRelief(x, z, sw) {
-    const N = this.jungleMtnNoise;
-    const qx = x + N.noise2D(x * 0.0011 + 57, z * 0.0011) * 120, qz = z + N.noise2D(x * 0.0011, z * 0.0011 - 57) * 120;
-    // (The mass: a few broad, rounded summits, not spikes.)
-    const massAt = (px, pz) => smoothstep(-0.55, 0.75, N.fbm(px * 0.0014 + 211, pz * 0.0014 - 133, 3));
-    const mass = massAt(qx, qz);
-    // (Rising out of the grass on a long, concave apron of slid-down sediment: no wall at the edge.)
-    const env = Math.pow(smoothstep(0.02, 0.95, sw), 1.7);
-    const base = env * (20 + 210 * Math.pow(mass, 1.5) * (0.4 + 0.6 * smoothstep(0.3, 0.8, sw)));
-    // (The grooves: gullies and spurs running straight down the slopes,
-    // where the rock and grit have slid down, across the lie of the mass.)
-    const gx = massAt(qx + 8, qz) - massAt(qx - 8, qz), gz = massAt(qx, qz + 8) - massAt(qx, qz - 8), gl = Math.hypot(gx, gz);
-    let grooves = 0;
-    if (gl > 1e-5) {
-      const u = (x * -gz + z * gx) / gl;
-      const g = 1 - Math.abs(Math.sin(u * 0.085 + N.noise2D(x * 0.008 + 3, z * 0.008 - 3) * 2.2));
-      grooves = -g * g * 11 * smoothstep(0.004, 0.03, gl) * smoothstep(0.25, 0.7, sw) * smoothstep(0.08, 0.4, mass);
-    }
-    // (Rounded crowns of bare rock, lightly knobbled.)
-    const knobs = N.fbm(x * 0.02 + 9, z * 0.02 - 9, 2) * 4 * env;
-    return base + grooves + knobs;
+    const near = this.#savMtnNear(x, z);
+    if (!near) return 0;
+    const { c, rho, th } = near, N = this.jungleMtnNoise;
+    // The rocky heart: a craggy massif, its crest broken into summits and
+    // notches, its upper faces steep.
+    const crest = 0.75 + 0.25 * N.ridged(x * 0.004 + c.s, z * 0.004 - c.s, 3, 2, 0.5, 0.02) + 0.12 * N.noise2D(x * 0.011, z * 0.011);
+    const core = c.H * crest * (1 - smoothstep(0.08, 0.5, rho));
+    // Below it the apron of sediment that has slid down off it: a skirt of
+    // spurs fanning out all round, ridge after ridge with gullies between,
+    // high where they leave the rock and sinking away to nothing out in the
+    // grass.
+    const t = smoothstep(0.25, 1.15, rho); // (0 at the rock, 1 out at the foot)
+    const apron = c.H * 0.5 * Math.pow(1 - t, 1.8);
+    const bend = N.noise2D(th * 2 + c.s, rho * 2) * 0.9 + rho * 1.3; // (the spurs wander and curve a little as they run out)
+    const spur = 0.5 + 0.5 * Math.cos(c.n * th + bend);
+    const sub = 0.5 + 0.5 * Math.cos(c.n * 2.3 * th + bend * 1.7 + 1.3);
+    const ridges = Math.pow(spur, 0.7) * 0.75 + sub * 0.25; // (sharp-crested spurs, rounded gullies)
+    const fan = apron * (0.35 + 0.65 * ridges) * (1 - 0.5 * smoothstep(0.75, 1.1, rho) * (1 - ridges));
+    const rough = N.fbm(x * 0.03 + 9, z * 0.03 - 9, 2) * 3 * (1 - t);
+    return Math.max(core, fan) + rough;
   }
 
   /**
@@ -2204,7 +2248,7 @@ export class TerrainGenerator {
     const lakeFade = 1 - smoothstep(0.5, 6, lakes);
     const bcw = this._probing || !(w.bristlecone > 0) ? 0 : this.#bristleconeLand(x, z);
     const smw = this._probing ? 0 : w.savannaMountains ?? 0;
-    const bristle = (bcw > 0.002 ? this.bristleconeRelief(x, z, bcw) : 0) + (smw > 0.002 ? this.savannaMtnRelief(x, z, smw) : 0);
+    const bristle = (bcw > 0.002 ? this.bristleconeRelief(x, z, bcw) : 0) + (smw > 0.002 || (this._probing ? false : this.#savMtnNear(x, z)) ? this.savannaMtnRelief(x, z, smw) : 0);
     const hgw = this._probing ? 0 : w.hangingGardens ?? 0;
     const bgw = this._probing ? 0 : w.bambooGorge ?? 0;
     const gorgeLand = ((bgw > 0.005 ? bgw * this.gorgeRelief(x, z, bgw, 0) : 0) + (hgw > 0.005 ? hgw * this.gorgeRelief(x, z, hgw, 1) : 0)) * lakeFade;
@@ -5417,13 +5461,16 @@ export class TerrainGenerator {
       const bb = this.#bigBlocks(x, z);
       if (bb > 1.5) out.lerp(GRANITE[Math.floor(hash2(Math.floor(x / 4), Math.floor(ground / 4), this.seed ^ 0x6a1) * 3)], 0.85 * smoothstep(1.5, 4, bb) * smoothstep(0.3, 0.6, w.blackHills));
     }
-    // Savanna mountains: bare red-brown rock up their slopes, darker down the
-    // gullies, the grass golden round their feet.
+    // Savanna mountains: the rocky heart bare red-brown rock, and the
+    // steeper faces of the spurs; their gullies and the apron's foot grassed, golden.
     if ((w.savannaMountains ?? 0) > 0.05 && ground > sea + 4) {
-      const rock = smoothstep(0.92, 0.75, upness) * smoothstep(0.1, 0.5, w.savannaMountains) * smoothstep(35, 70, ground);
-      if (rock > 0) {
-        const n = this.detailNoise.noise2D(x * 0.05 + 2, z * 0.05 - 2);
-        out.lerp(SAV_ROCK[n > 0.3 ? 0 : n > -0.3 ? 1 : 2], 0.9 * rock);
+      const near = this.#savMtnNear(x, z);
+      if (near) {
+        const rock = Math.max(1 - smoothstep(0.38, 0.55, near.rho), smoothstep(0.88, 0.7, upness) * (1 - smoothstep(0.6, 0.9, near.rho)));
+        if (rock > 0) {
+          const n = this.detailNoise.noise2D(x * 0.05 + 2, z * 0.05 - 2);
+          out.lerp(SAV_ROCK[n > 0.3 ? 0 : n > -0.3 ? 1 : 2], 0.92 * rock);
+        }
       }
     }
     // Bristlecone heights: the white limestone in its beds, a shade apart.
