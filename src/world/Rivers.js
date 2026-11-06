@@ -892,6 +892,29 @@ export class Rivers {
     return out;
   }
 
+  /** Where rivers may run through gorges (0..1): here and there in the hills by the mountains. */
+  #gorgeMask(x, z) {
+    return smoothstep(0.12, 0.3, this.meander.noise2D(x * 0.0014 - 70, z * 0.0014 + 33)) * smoothstep(0.08, 0.25, this.generator.getMountainness(x, z));
+  }
+
+  /**
+   * Whether (x, z) is in a river gorge (0..1): down in it or up its walls,
+   * the river at the bottom (a great river's or a creek's, not a stream's).
+   */
+  gorgeAt(x, z) {
+    const near = this.#near(x, z);
+    if (!near) return 0;
+    let best = 0;
+    const m = (this._gm ??= {});
+    for (const item of near) {
+      if (item.pond || item.stream) continue;
+      const { d, half } = Rivers.#measure(item, x, z, m);
+      const e = d - half;
+      if (e < 40) best = Math.max(best, 1 - smoothstep(26, 40, e));
+    }
+    return best > 0 ? best * this.#gorgeMask(x, z) : 0;
+  }
+
   /** A pond's (wobbly) radius in the direction of (x, z). */
   /** Whether (x, z) is up on a pond's island (above its water), if it has one. */
   static onIsland(pond, x, z) {
@@ -991,12 +1014,14 @@ export class Rivers {
         // each to edge along above the torrent, up to the rim, the land
         // beyond easing back down to its own lie.)
         if (!item.stream && d - half < 45) {
-          if (gorgeMask === null) gorgeMask = smoothstep(0.18, 0.34, this.meander.noise2D(x * 0.0014 - 70, z * 0.0014 + 33)) * smoothstep(0.08, 0.25, this.generator.getMountainness(x, z));
+          if (gorgeMask === null) gorgeMask = this.#gorgeMask(x, z);
           if (gorgeMask > 0) {
-            const e = d - half, top = 18 + 6 * (this.meander.noise2D(x * 0.01, z * 0.01) + 1) * 0.5;
-            const step = Math.floor(Math.max(0, e - 1) / 5), into = Math.max(0, e - 1) - step * 5;
-            const wall = Math.min(top, e < 1 ? e * 0.3 : 0.3 + step * 8 + Math.min(8, into * 4));
-            const reach = (top / 8) * 5 + 1; // (where the walls reach the rim)
+            // (Tall, and ribbed: buttresses and gullies standing out of the faces all along it.)
+            const e = d - half, top = 24 + 10 * (this.meander.noise2D(x * 0.01, z * 0.01) + 1) * 0.5;
+            const step = Math.floor(Math.max(0, e - 1) / 4), into = Math.max(0, e - 1) - step * 4;
+            const reach = (top / 9) * 4 + 1; // (where the walls reach the rim)
+            const ribs = (Math.abs(this.meander.noise2D(x * 0.11 + 13, z * 0.11 - 7)) * 2 - 0.6) * 3.2 * smoothstep(1.5, 4, e) * (1 - smoothstep(reach - 1, reach + 4, e));
+            const wall = Math.min(top, e < 1 ? e * 0.3 : 0.3 + step * 9 + Math.min(9, into * 6) + ribs);
             const g = level + 0.2 + wall * (1 - smoothstep(reach + 6, reach + 34, e));
             gorgeH = Math.max(gorgeH, g + (h - g) * (1 - gorgeMask));
           }

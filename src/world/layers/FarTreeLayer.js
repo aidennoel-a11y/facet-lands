@@ -26,11 +26,11 @@ import { SMALL_PLANTS } from './TreeLayer.js';
 const CONES = new Set(['pine', 'spruce', 'larch', 'redwood']);
 // (Drawn as their real model however far off: the redwoods, giants seen from far away, and few.)
 const FULL = new Set(['redwood']);
-const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag', 'bamboo']); // (bamboo: a single cane)
+const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag', 'bamboo', 'bloomCactus', 'termiteMound']); // (bamboo: a single cane)
 const CLUMPS = new Set();
 // Crowns held high on a bare trunk (and its bark colour).
 const UMBRELLAS = { jungleGiant: 0x857560, jungleCanopy: 0x6e604c, junglePalm: 0x7d6a52, treeFern: 0x44342a };
-const BARK = { ...UMBRELLAS, birch: 0xd9d6cc, silverBirch: 0xe0ddd2, aspen: 0xcfd0c4, baobab: 0x8a7a66, acacia: 0x6a5240 };
+const BARK = { ...UMBRELLAS, ghostGum: 0xe0d8cc, bristlecone: 0xc8bca8, birch: 0xd9d6cc, silverBirch: 0xe0ddd2, aspen: 0xcfd0c4, baobab: 0x8a7a66, acacia: 0x6a5240 };
 
 /**
  * A few-triangle stand-in for each kind of tree, fitted to its real

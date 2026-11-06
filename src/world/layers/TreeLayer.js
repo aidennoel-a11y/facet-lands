@@ -25,7 +25,7 @@ const down = new Vector3(0, -1, 0);
 // How thick each kind of trunk is (at chest height, for a tree of size 1),
 // and how far off centre it stands (the acacia leans).
 const TRUNK_RADIUS = { krummholz: 0.15, pine: 0.31, spruce: 0.27, broadleaf: 0.34, birch: 0.19, poplar: 0.27, maple: 0.33, acacia: 0.27, deadPine: 0.27, cactus: 0.4, cypress: 0.5, swampWillow: 0.38,
-  oak: 0.5, larch: 0.25, silverBirch: 0.2, aspen: 0.19, baobab: 1.05, joshuaTree: 0.28, charredSnag: 0.28, treeFern: 0.22, weepingWillow: 0.55, monsoonTree: 0.45, monsoonSal: 0.42, monsoonFig: 0.8, monsoonFlame: 0.28, monsoonMango: 0.45, mangrove: 0.8, jungleGiant: 0.75, junglePalm: 0.22, bamboo: 0.9, jungleCanopy: 0.45, appleTree: 0.26, redwood: 1.1, cherryBlossom: 0.3, cherryRound: 0.3 };
+  oak: 0.5, larch: 0.25, silverBirch: 0.2, aspen: 0.19, baobab: 1.05, joshuaTree: 0.28, charredSnag: 0.28, treeFern: 0.22, weepingWillow: 0.55, monsoonTree: 0.45, monsoonSal: 0.42, monsoonFig: 0.8, monsoonFlame: 0.28, monsoonMango: 0.45, mangrove: 0.8, jungleGiant: 0.75, junglePalm: 0.22, bamboo: 0.9, jungleCanopy: 0.45, appleTree: 0.26, redwood: 1.1, cherryBlossom: 0.3, cherryRound: 0.3, termiteMound: 0.75, ghostGum: 0.24, jacaranda: 0.3, bristlecone: 0.5, bloomCactus: 0.4 };
 const TRUNK_OFFSET = { acacia: 0.4 };
 
 // A broad-leaved (deciduous) tree's crown, for a tree of size 1: { bottom,
@@ -53,7 +53,7 @@ function crownOf(type) {
 // hitboxes: you can push a little way into the leaves, not through them.
 const PROFILES = new Map();
 const CONES = new Set(['pine', 'spruce', 'larch', 'deadPine', 'cypress']);
-export const SMALL_PLANTS = new Set(['bush', 'raspberryBush', 'blueberryBush', 'dryBush', 'smallCactus']);
+export const SMALL_PLANTS = new Set(['bush', 'raspberryBush', 'blueberryBush', 'dryBush', 'smallCactus', 'spinifex', 'pricklyPear']);
 function profileOf(type) {
   if (!PROFILES.has(type)) {
     const crown = TREE_GEOMETRIES[type]?.userData.crown;

@@ -1388,6 +1388,147 @@ function cherryRound() {
   );
 }
 
+// Spinifex (the red outback): a low, round hummock of spiky silver-green
+// grass, a few tussocks run together.
+function spinifex() {
+  const rand = mulberry32(2101);
+  const blobs = [];
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + rand() * 0.8, d = k ? 0.35 + rand() * 0.25 : 0;
+    blobs.push(part(new DodecahedronGeometry(0.42 + rand() * 0.18, 0), 0x7f8f6a, 0xb8c6a0, { x: Math.cos(a) * d, y: 0.28, z: Math.sin(a) * d, sy: 0.75, lump: 0.35, seed: 2110 + k }));
+  }
+  // (Spiky tufts sticking up out of it.)
+  for (let k = 0; k < 7; k++) {
+    const a = rand() * Math.PI * 2, d = rand() * 0.5;
+    blobs.push(part(new ConeGeometry(0.06, 0.45 + rand() * 0.3, 3, 1), 0x9aaa82, 0xd0dcb8, { x: Math.cos(a) * d, y: 0.6, z: Math.sin(a) * d, rx: (rand() - 0.5) * 0.6, rz: (rand() - 0.5) * 0.6, seed: 2120 + k }));
+  }
+  return withCrown([], blobs);
+}
+
+// A termite mound (the red outback): a tall, knobbly spire of baked red
+// earth, a smaller one or two leaning against it.
+function termiteMound() {
+  const spire = (x, z, r, h, seed, lean = 0) => part(new CylinderGeometry(r * 0.25, r, h, 7, 3), 0x9a4422, 0xc0683c, { x, z, y: h / 2, rz: lean, lump: 0.14, seed });
+  return mergeGeometries([
+    spire(0, 0, 0.75, 3.4, 2201),
+    spire(0.55, 0.25, 0.45, 2.1, 2202, -0.12),
+    spire(-0.4, -0.35, 0.38, 1.5, 2203, 0.15),
+    part(new IcosahedronGeometry(0.85, 0), 0x8a3c1e, 0xa85230, { y: 0.25, sy: 0.4, lump: 0.2, seed: 2204 }),
+  ]);
+}
+
+// A ghost gum (the red outback): a lone, crooked white trunk forking into
+// a few pale limbs, small tufts of dull green leaves at their ends.
+function ghostGum() {
+  const bark = 0xcfc6b8, barkTop = 0xe8e2d8;
+  const A = [0.2, 3.2, 0], B = [1.1, 5.4, 0.3], C = [-0.8, 5.0, -0.4], D = [0.3, 6.0, -0.5];
+  const wood = [
+    limb([0, 0, 0], A, 0.26, 0.2, bark, barkTop, 2301),
+    limb(A, B, 0.16, 0.08, barkTop, bark, 2302),
+    limb(A, C, 0.15, 0.08, barkTop, bark, 2303),
+    limb(A, D, 0.13, 0.07, barkTop, bark, 2304),
+  ];
+  const tufts = [[1.3, 5.8, 0.4, 0.8], [0.6, 6.1, 0.6, 0.6], [-1.0, 5.4, -0.5, 0.75], [0.35, 6.5, -0.6, 0.7], [-0.3, 6.0, 0.1, 0.55]];
+  return withCrown(wood, tufts.map(([x, y, z, r], i) => part(new DodecahedronGeometry(r, 0), 0x5a6a3e, 0x8a9a5a, { x, y, z, sy: 0.6, lump: 0.3, seed: 2310 + i })));
+}
+
+// A jacaranda: a spreading, umbrella-shaped tree whose whole crown is a
+// cloud of violet-blue blossom.
+const JACARANDA_BLOBS = [
+  [0, 4.6, 0, 1.6, 0.6],
+  [1.7, 4.2, 0.4, 1.3, 0.55],
+  [-1.6, 4.3, -0.3, 1.35, 0.55],
+  [0.4, 4.1, 1.6, 1.2, 0.55],
+  [-0.3, 4.4, -1.6, 1.2, 0.55],
+  [0.9, 5.0, -0.8, 1.0, 0.55],
+];
+function jacaranda() {
+  const bark = 0x4e4640, barkTop = 0x5e544c;
+  return withCrown(
+    [
+      part(new CylinderGeometry(0.2, 0.32, 2.6, 6), bark, barkTop, { y: 1.3, rz: -0.06, seed: 2401 }),
+      limb([0, 2.4, 0], [1.4, 3.9, 0.3], 0.17, 0.08, bark, barkTop, 2402),
+      limb([0, 2.4, 0], [-1.3, 4.0, -0.3], 0.17, 0.08, bark, barkTop, 2403),
+      limb([0, 2.5, 0], [0.3, 3.9, 1.3], 0.15, 0.07, bark, barkTop, 2404),
+      limb([0, 2.5, 0], [-0.2, 4.0, -1.3], 0.15, 0.07, bark, barkTop, 2405),
+      ...boughs(JACARANDA_BLOBS, 2.8, 3.6, bark, 2406),
+    ],
+    JACARANDA_BLOBS.map(([x, y, z, r, sy], i) => part(new IcosahedronGeometry(r, 0), 0x6a50b8, 0xa890e8, { x, y, z, sy, lump: 0.24, seed: 2410 + i })),
+  );
+}
+
+// A bristlecone pine (Bristlecone heights): ancient, short and gnarled, its
+// thick trunk twisted and half of it bleached dead silver, a few tufts of
+// dark needles still alive on the other side.
+function bristlecone() {
+  const rand = mulberry32(2501);
+  const live = 0x6a4a34, dead = 0xc8bca8, deadTop = 0xe0d8c8;
+  const wood = [];
+  // (The trunk: in short crooked lengths, twisting as it goes.)
+  let at = [0, 0, 0];
+  const pts = [];
+  for (let k = 0; k < 4; k++) {
+    const next = [at[0] + (rand() - 0.4) * 0.7, at[1] + 0.9 + rand() * 0.4, at[2] + (rand() - 0.5) * 0.6];
+    wood.push(limb(at, next, 0.55 - k * 0.1, 0.45 - k * 0.1, k % 2 ? dead : live, k % 2 ? deadTop : dead, 2510 + k));
+    pts.push(next);
+    at = next;
+  }
+  // (Dead, bleached limbs, bare and twisting.)
+  for (let k = 0; k < 4; k++) {
+    const from = pts[1 + (k % 3)], a = rand() * Math.PI * 2, len = 1.2 + rand() * 1.0;
+    const mid = [from[0] + Math.cos(a) * len * 0.5, from[1] + 0.5 + rand() * 0.5, from[2] + Math.sin(a) * len * 0.5];
+    const tip = [mid[0] + Math.cos(a + 0.6) * len * 0.5, mid[1] + (rand() - 0.3) * 0.6, mid[2] + Math.sin(a + 0.6) * len * 0.5];
+    wood.push(limb(from, mid, 0.16, 0.1, dead, deadTop, 2520 + k * 2), limb(mid, tip, 0.1, 0.04, deadTop, dead, 2521 + k * 2));
+  }
+  // (The living side: bottle-brush tufts of dark needles.)
+  const crown = [];
+  for (let k = 0; k < 6; k++) {
+    const from = pts[1 + (k % 3)], a = 1.2 + (rand() - 0.5) * 1.6, d = 0.7 + rand() * 0.9;
+    const p = [from[0] + Math.cos(a) * d, from[1] + rand() * 0.6, from[2] + Math.sin(a) * d];
+    wood.push(limb(from, p, 0.12, 0.06, live, live, 2540 + k));
+    crown.push(part(new DodecahedronGeometry(0.5 + rand() * 0.25, 0), 0x22402a, 0x3e6040, { x: p[0], y: p[1] + 0.15, z: p[2], sx: 1.2, sy: 0.7, lump: 0.3, seed: 2550 + k }));
+  }
+  return withCrown(wood, crown);
+}
+
+// Prickly pear (the cactus bloom): a sprawl of flat, round pads, yellow and
+// magenta flowers along their rims.
+function pricklyPear() {
+  const rand = mulberry32(2601);
+  const parts = [];
+  const pad = (x, y, z, r, ry, rz, seed) => {
+    const g = part(new IcosahedronGeometry(r, 0), CACTUS, CACTUS_TOP, { sx: 1, sy: 1.25, sz: 0.28, lump: 0.08, seed });
+    g.rotateZ(rz);
+    g.rotateY(ry);
+    g.translate(x, y, z);
+    return g;
+  };
+  const spots = [[0, 0.45, 0, 0.42, 0, 0], [0.35, 0.95, 0.05, 0.34, 0.5, -0.4], [-0.3, 0.9, 0.1, 0.32, -0.6, 0.45], [0.05, 1.35, -0.05, 0.28, 1.2, 0.1], [0.6, 0.5, 0.35, 0.33, 2.0, -0.6], [-0.5, 0.45, -0.35, 0.3, 0.9, 0.7]];
+  spots.forEach(([x, y, z, r, ry, rz], i) => {
+    parts.push(pad(x, y, z, r, ry, rz, 2610 + i));
+    // (Its flowers on the rim.)
+    for (let k = 0; k < 2; k++) {
+      const c = rand() < 0.55 ? [0xe8c020, 0xf8e060] : [0xd0287a, 0xf060a8];
+      parts.push(part(new IcosahedronGeometry(0.09, 0), c[0], c[1], { x: x + (rand() - 0.5) * 0.3, y: y + r * 1.15, z: z + (rand() - 0.5) * 0.2, sy: 0.7, seed: 2630 + i * 2 + k }));
+    }
+  });
+  return mergeGeometries(parts);
+}
+
+// A saguaro in bloom (the cactus bloom): crowned with waxy white flowers.
+function bloomCactus() {
+  const rand = mulberry32(2701);
+  const flowers = [];
+  for (const [x, y, n] of [[0, 4.55, 6], [0.98, 3.6, 4], [-0.88, 3.9, 4]]) {
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 + rand();
+      flowers.push(part(new IcosahedronGeometry(0.11, 0), 0xf0ead0, 0xfffcf0, { x: x + Math.cos(a) * 0.22, y: y + rand() * 0.12, z: Math.sin(a) * 0.22, sy: 0.7, seed: 2710 + flowers.length }));
+    }
+    flowers.push(part(new IcosahedronGeometry(0.08, 0), 0xe0b020, 0xf8d040, { x, y: y + 0.15, seed: 2760 + flowers.length }));
+  }
+  return mergeGeometries([cactus(), ...flowers]);
+}
+
 /** Built once and shared by every chunk. */
 export const TREE_GEOMETRIES = {
   cherryBlossom: cherryBlossom(),
@@ -1431,6 +1572,13 @@ export const TREE_GEOMETRIES = {
   monsoonMango: monsoonMango(),
   raspberryBush: raspberryBush(),
   blueberryBush: blueberryBush(),
+  spinifex: spinifex(),
+  termiteMound: termiteMound(),
+  ghostGum: ghostGum(),
+  jacaranda: jacaranda(),
+  bristlecone: bristlecone(),
+  pricklyPear: pricklyPear(),
+  bloomCactus: bloomCactus(),
 };
 
 // How each species takes the seasons: [deciduous (leaves turn and fall),
@@ -1449,6 +1597,7 @@ const SEASONAL = {
   // (Below nothing: the monsoon forest's, drying yellow through the dry months: see Seasons.seasonalTrees.)
   monsoonTree: [-1, 0, 0], monsoonSal: [-1, 0, 0], monsoonFig: [-0.6, 0, 0], monsoonFlame: [-1, 0, 0], monsoonMango: [-0.4, 0, 0], // (green the year round here: its seasons are the ground's, see Seasons)
   redwood: [0, 1, 0],
+  spinifex: [0, 0, 0], termiteMound: [0, 0, 0], ghostGum: [0, 0, 0], jacaranda: [0, 0, 0], bristlecone: [0, 1, 0], pricklyPear: [0, 0, 0], bloomCactus: [0, 0, 0],
   cherryBlossom: [1, 1, 1], // (its blossom thickest in spring; red-gold in autumn; bare in winter)
   cherryRound: [1, 1, 1],
 };
@@ -1501,10 +1650,10 @@ export function treeGeometry(type, bare) {
 }
 
 /** Species that are stiff (cacti): they don't sway in the wind. */
-export const STIFF = new Set(['cactus', 'smallCactus', 'joshuaTree', 'baobab']);
+export const STIFF = new Set(['cactus', 'smallCactus', 'joshuaTree', 'baobab', 'termiteMound', 'pricklyPear', 'bloomCactus']);
 
 /** Species too small to bump into. */
-export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus', 'ocotillo', 'raspberryBush', 'blueberryBush']);
+export const NO_COLLIDE = new Set(['bush', 'dryBush', 'smallCactus', 'ocotillo', 'raspberryBush', 'blueberryBush', 'spinifex', 'pricklyPear']);
 
 const crown = (type) => onMesh(TREE_GEOMETRIES[type].userData.crown);
 
@@ -1540,5 +1689,8 @@ export const LEAF_GEOMETRIES = {
   jungleCanopy: leaves(60, [0.5, 0.9], [0x2a5e27, 0x3a7431, 0x4a863a, 0x55923c], crown('jungleCanopy'), 33),
   cherryBlossom: leaves(70, [0.35, 0.65], [0xf4b8cc, 0xf8d0e0, 0xe89ab4, 0xfce4ec, 0xd884a4], crown('cherryBlossom'), 37),
   cherryRound: leaves(70, [0.35, 0.65], [0xf4b8cc, 0xf8d0e0, 0xe89ab4, 0xfce4ec, 0xd884a4], crown('cherryRound'), 38),
+  jacaranda: leaves(70, [0.35, 0.65], [0x8a6ad8, 0xa890e8, 0x7458c0, 0xc0aaf0, 0x9a7ae0], crown('jacaranda'), 44),
+  ghostGum: leaves(24, [0.3, 0.5], [0x6a7a48, 0x82925a, 0x5a6a3e], crown('ghostGum'), 45),
+  bristlecone: leaves(18, [0.25, 0.4], [0x2a4a30, 0x3a5a3a, 0x446a44], crown('bristlecone'), 46),
 };
 markSeasons(LEAF_GEOMETRIES);

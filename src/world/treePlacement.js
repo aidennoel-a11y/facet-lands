@@ -153,7 +153,7 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const land = (hx0 + hx1 + hz0 + hz1) / 4;
       // Nothing but cacti grows on sand (beaches included).
       const colourHeight = land + generator.getColorJitter(wx, wz);
-      if (biome.id !== 'desert' && !marsh && colourHeight < 7) continue;
+      if (biome.id !== 'desert' && biome.id !== 'cactusBloom' && !marsh && colourHeight < 7) continue;
       // Nor on bare rock: the grey band up the mountains, and faces
       // steep enough to show rock (the same test the ground's colour
       // uses). Steep slopes that are still green keep their trees.
@@ -169,12 +169,14 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       // (A jungle range's mountains: jungle thick up their lower slopes, as a jungle is, thinning higher up,
       // their steeper faces bare.)
       const jungleMtn = biome.id === 'jungleMountains';
-      if (r < Math.max(jungleMtn ? 1 - smoothstep(0.7, 0.86, upness) : cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(170, 215, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
+      // (Bristlecones: the trees of the heights, up to the very tops of their white mountains.)
+      const bristle = biome.id === 'bristlecone';
+      if (r < Math.max(jungleMtn ? 1 - smoothstep(0.7, 0.86, upness) : cliff, lakeside || smoky ? 0 : jungleMtn ? smoothstep(170, 215, colourHeight) : bristle ? smoothstep(280, 320, colourHeight) : smoothstep(128, 146, colourHeight))) continue;
       // And ever fewer the higher you go (the tree line).
       // (At the treeline itself, among the last trees and above them: krummholz, beaten down by the wind.)
       const treeline = !smoky && !jungleMtn && (biome.id === 'pine' || biome.id === 'temperate' || biome.id === 'cascades' || biome.id === 'parkland') ? smoothstep(100, 128, land) * (1 - smoothstep(140, 150, colourHeight)) : 0;
       const krumm = treeline > 0 && hash2(gi, gj, seed + 40) < 0.35 * treeline;
-      if (!krumm && !lakeside && hash2(gi, gj, seed + 13) < (smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.95 * smoothstep(95, 175, land) : smoothstep(85, 150, land) * 0.9)) continue;
+      if (!krumm && !lakeside && hash2(gi, gj, seed + 13) < (bristle ? 0.4 * smoothstep(150, 300, land) : smoky ? 0.5 * smoothstep(120, 200, land) : jungleMtn ? 0.95 * smoothstep(95, 175, land) : smoothstep(85, 150, land) * 0.9)) continue;
 
       // Too steep for roots? (height change per metre)
       if (Math.abs(gradX) + Math.abs(gradZ) > 1.5) continue;
@@ -222,13 +224,13 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (biome.id === 'mangrove' && species.type === 'mangrove' && ground > seaLevel + 1.3) continue;
 
       // (In an ancient oak wood, its oaks huge: old, wide-crowned, far apart.)
-      const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale * (biome.id === 'oakwood' && species.type === 'oak' ? 1.9 + 0.5 * hash2(gi, gj, seed + 33) : 1);
+      const size = (0.75 + hash2(gi, gj, seed + 5) * 0.6) * treeScale * (biome.id === 'oakwood' && species.type === 'oak' ? 1.9 + 0.5 * hash2(gi, gj, seed + 33) : species.type === 'jacaranda' ? 1.2 + 0.3 * hash2(gi, gj, seed + 33) : 1);
       const warm = warmAt(wx, wz);
       if (species.type === 'bamboo') {
         // A thicket: a clump of separate canes, each of its own height and lean.
         const list = (placed.bamboo ??= []);
         // (In the bamboo forest, tall bamboo: canes standing each on its own, a metre or two apart.)
-        const giant = biome.id === 'bamboo' ? 1 : 0;
+        const giant = biome.id === 'bamboo' || biome.id === 'bambooGorge' ? 1 : 0;
         const canes = giant ? 2 + Math.floor(hash2(gi, gj, seed + 19) * 2) : 5 + Math.floor(hash2(gi, gj, seed + 19) * 5);
         for (let c = 0; c < canes; c++) {
           const a = hash2(gi + c * 17, gj, seed + 20) * Math.PI * 2, d = c ? (giant ? 1.2 + 1.6 * hash2(gi, gj + c * 17, seed + 21) : 0.3 + 1.1 * hash2(gi, gj + c * 17, seed + 21)) : 0;
@@ -280,7 +282,8 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 /** The kinds of tree, in a fixed order (far trees are packed by index). */
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
   'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm', 'bamboo', 'jungleCanopy',
-  'appleTree', 'raspberryBush', 'blueberryBush', 'redwood', 'cherryBlossom', 'cherryRound', 'monsoonTree', 'monsoonSal', 'monsoonFig', 'monsoonFlame', 'monsoonMango', 'krummholz'];
+  'appleTree', 'raspberryBush', 'blueberryBush', 'redwood', 'cherryBlossom', 'cherryRound', 'monsoonTree', 'monsoonSal', 'monsoonFig', 'monsoonFlame', 'monsoonMango', 'krummholz',
+  'spinifex', 'termiteMound', 'ghostGum', 'jacaranda', 'bristlecone', 'pricklyPear', 'bloomCactus'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

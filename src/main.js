@@ -2705,8 +2705,9 @@ function marshMist(dt) {
     mistState.dry = w.desert + 0.5 * w.savanna;
     mistState.desert = w.desert;
     mistState.devilCountry = w.desert + w.savanna;
-    mistState.mossy = Math.min(1, 0.55 * w.temperate + 0.9 * w.pine + w.jungle + w.wetland + 0.9 * (w.smoky ?? 0) + (w.monsoon ?? 0));
+    mistState.mossy = Math.min(1, 0.55 * w.temperate + 0.9 * w.pine + w.jungle + w.wetland + 0.9 * (w.smoky ?? 0) + (w.monsoon ?? 0) + (w.hangingGardens ?? 0) + (w.bambooGorge ?? 0));
     mistState.smoky = w.smoky ?? 0;
+    mistState.gorge = w.bambooGorge ?? 0;
   }
   // (Moss on the trees in damp country round about.)
   seasonUniforms.uMossy.value += ((mistState.mossy ?? 0) - seasonUniforms.uMossy.value) * Math.min(1, dt / 4);
@@ -2718,7 +2719,8 @@ function marshMist(dt) {
   const foggy = roll < 0.6 ? 0.45 + roll * 0.6 : 0;
   const dawn = smooth(4.3, 5.8, h) * (1 - smooth(8, 9.8, h));
   const low = 1 - smooth(20, 90, camera.position.y);
-  const target = 0.25 * mistState.marsh * low * dawn; // (a light veil: a quarter of what it was)
+  // (And in a bamboo mist gorge, mist hanging in it all day, thickest at dawn.)
+  const target = Math.max(0.25 * mistState.marsh * low * dawn, 0.3 * (mistState.gorge ?? 0) * (0.55 + 0.45 * dawn)); // (a light veil: a quarter of what it was)
   mistState.value += (target - mistState.value) * Math.min(1, dt / 2);
   valleyMist(dt, foggy * dawn * (1 - 0.8 * mistState.dry));
   return mistState.value < 0.002 ? 0 : mistState.value;

@@ -26,7 +26,10 @@ function wildWeights(g, x, z, out = {}) {
   const w = g.getBiomeWeights(x, z, out);
   w.jungle = Math.min(1, (w.jungle ?? 0) + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + 0.5 * (w.monsoon ?? 0));
   // (The ancient oak woods: the forest's animals; the monsoon forest, half the jungle's, half the forest's.)
-  w.temperate = Math.min(1, (w.temperate ?? 0) + (w.oakwood ?? 0) + 0.5 * (w.monsoon ?? 0));
+  w.temperate = Math.min(1, (w.temperate ?? 0) + (w.oakwood ?? 0) + 0.5 * (w.monsoon ?? 0) + 0.6 * (w.bristlecone ?? 0));
+  // (The new country: the outback and the jacaranda savanna are the savanna's; the hanging gardens and the bamboo gorges, the jungle's.)
+  w.savanna = Math.min(1, (w.savanna ?? 0) + (w.outback ?? 0) + (w.jacaranda ?? 0));
+  w.jungle = Math.min(1, w.jungle + (w.hangingGardens ?? 0) + (w.bambooGorge ?? 0));
   return w;
 }
 

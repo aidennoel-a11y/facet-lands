@@ -752,6 +752,205 @@ export const BIOMES = {
       ],
     },
   },
+
+  // The red outback: rust-red sand to the horizon, round hummocks of
+  // silver-green spinifex, termite mounds taller than you, and the odd lone
+  // white-trunked ghost gum. Between the savanna, the mesas and the desert.
+  outback: {
+    id: 'outback',
+    name: 'Red outback',
+    palette: [
+      { height: -Infinity, color: 0x8a6a56 },
+      { height: -10, color: 0xb07050 },
+      { height: 0, color: 0xd88a52 },
+      { height: 8, color: 0xc8582a }, // (red sand)
+      { height: 30, color: 0xc4532a },
+      { height: 60, color: 0xb84e2a },
+      { height: 110, color: 0xa65232 },
+      { height: 170, color: 0x9a6a5a },
+    ],
+    cliff: 0xa8482a,
+    cliffSlope: [0.7, 0.46],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.12,
+    trees: {
+      density: 0.5,
+      clumped: false,
+      species: [
+        { type: 'spinifex', weight: 4, minHeight: -99, maxHeight: 999 },
+        { type: 'termiteMound', weight: 0.22, minHeight: -99, maxHeight: 999 },
+        { type: 'ghostGum', weight: 0.09, minHeight: -99, maxHeight: 999 },
+        { type: 'dryBush', weight: 0.35, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // Jacaranda savanna: golden-green grass with spreading jacarandas
+  // scattered over it, their crowns clouds of violet-blue blossom. By the
+  // savanna's edge.
+  jacaranda: {
+    id: 'jacaranda',
+    name: 'Jacaranda savanna',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xdcc58c },
+      { height: 5, color: 0xdcc58c },
+      { height: 8, color: 0xb8b868 },
+      { height: 30, color: 0xaab060 },
+      { height: 60, color: 0x9aa458 },
+      { height: 110, color: 0x9a9a68 },
+      { height: 160, color: 0x9a8f98 },
+    ],
+    cliff: 0x9a8a8e,
+    cliffSlope: [0.72, 0.5],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.85,
+    trees: {
+      density: 0.32,
+      clumped: false,
+      species: [
+        { type: 'jacaranda', weight: 2.4, minHeight: -99, maxHeight: 999 },
+        { type: 'acacia', weight: 0.3, minHeight: -99, maxHeight: 999 },
+        { type: 'dryBush', weight: 0.4, minHeight: -99, maxHeight: 999 },
+        { type: 'broadleaf', weight: 0.15, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // Hanging gardens: by the jungles, a raised country of rock cut through
+  // by deep, narrow canyons, their walls dripping with water and grown
+  // over with moss, ferns and flowers; tree ferns and palms on the floors.
+  hangingGardens: {
+    id: 'hangingGardens',
+    name: 'Hanging gardens',
+    palette: [
+      { height: -Infinity, color: 0x6d7456 },
+      { height: -10, color: 0x8a8462 },
+      { height: 0, color: 0xa89a74 },
+      { height: 4, color: 0x4f8a38 },
+      { height: 20, color: 0x4a8a36 },
+      { height: 60, color: 0x467e34 },
+      { height: 120, color: 0x557a44 },
+    ],
+    cliff: 0x5e6a46,
+    cliffSlope: [0.7, 0.5],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.8,
+    trees: {
+      density: 0.85,
+      clumped: true,
+      species: [
+        { type: 'treeFern', weight: 1.6, minHeight: -99, maxHeight: 999 },
+        { type: 'junglePalm', weight: 0.6, minHeight: -99, maxHeight: 999 },
+        { type: 'jungleCanopy', weight: 0.5, minHeight: -99, maxHeight: 999 },
+        { type: 'broadleaf', weight: 0.3, minHeight: -99, maxHeight: 999 },
+        { type: 'bush', weight: 0.9, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // Bristlecone heights: mountains of white limestone and dolomite, bare
+  // and bright, with ancient, gnarled bristlecone pines scattered over
+  // them and sage between; snow in winter.
+  bristlecone: {
+    id: 'bristlecone',
+    name: 'Bristlecone heights',
+    palette: [
+      { height: -Infinity, color: 0x7d8466 },
+      { height: -14, color: 0xa99c72 },
+      { height: 0, color: 0xd8c690 },
+      { height: 6, color: 0xa8aa84 }, // (sage and pale gravel)
+      { height: 40, color: 0xb8b8a0 },
+      { height: 90, color: 0xd0cec4 },
+      { height: 150, color: 0xe2e0d8 }, // (white rock)
+      { height: 230, color: 0xeeece6 },
+    ],
+    cliff: 0xe4e0d6,
+    cliffSlope: [0.76, 0.56],
+    snowLine: 330,
+    snow: 0xf1f4f7,
+    grass: 0.3,
+    trees: {
+      density: 0.2,
+      clumped: false,
+      species: [
+        { type: 'bristlecone', weight: 2.2, minHeight: -99, maxHeight: 999 },
+        { type: 'pine', weight: 0.25, minHeight: -99, maxHeight: 120 },
+        { type: 'dryBush', weight: 0.6, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // A bamboo mist gorge: rare, by the jungles. Tier on tier of tall cliffs
+  // crowded close together, deep gorges between, all of it grown over with
+  // giant bamboo, mist hanging in it.
+  bambooGorge: {
+    id: 'bambooGorge',
+    name: 'Bamboo mist gorge',
+    palette: [
+      { height: -Infinity, color: 0x6d7456 },
+      { height: -10, color: 0x9a9068 },
+      { height: 0, color: 0xb7aa7c },
+      { height: 4, color: 0x5f9a40 },
+      { height: 30, color: 0x55923a },
+      { height: 120, color: 0x4f8638 },
+      { height: 220, color: 0x5a7c44 },
+    ],
+    cliff: 0x56604a,
+    cliffSlope: [0.7, 0.5],
+    snowLine: 9999,
+    snow: 0xf1f4f7,
+    grass: 0.6,
+    trees: {
+      density: 1.0,
+      clumped: false,
+      species: [
+        { type: 'bamboo', weight: 3.4, minHeight: -99, maxHeight: 999 },
+        { type: 'treeFern', weight: 0.35, minHeight: -99, maxHeight: 999 },
+        { type: 'broadleaf', weight: 0.2, minHeight: -99, maxHeight: 999 },
+        { type: 'bush', weight: 0.4, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
+
+  // A cactus bloom: a stretch of desert thick with cacti, all of them in
+  // flower: saguaros crowned white, prickly pears yellow and magenta,
+  // barrel cacti pink, ocotillos red-tipped. (Picked within the desert:
+  // see TerrainGenerator.cactusBloomAt.)
+  cactusBloom: {
+    id: 'cactusBloom',
+    name: 'Cactus bloom',
+    palette: [
+      { height: -Infinity, color: 0x8f8a6c },
+      { height: -14, color: 0xb8a574 },
+      { height: 0, color: 0xe6d29c },
+      { height: 14, color: 0xe4c88c },
+      { height: 32, color: 0xdcb87e },
+      { height: 55, color: 0xd0a670 },
+      { height: 90, color: 0xc4966a },
+    ],
+    cliff: 0xc08c66,
+    cliffSlope: [0.7, 0.45],
+    snowLine: 400,
+    snow: 0xf1f4f7,
+    grass: 0,
+    trees: {
+      density: 0.2,
+      clumped: false,
+      species: [
+        { type: 'bloomCactus', weight: 1.4, minHeight: -99, maxHeight: 999 },
+        { type: 'cactus', weight: 0.5, minHeight: -99, maxHeight: 999 },
+        { type: 'pricklyPear', weight: 1.8, minHeight: -99, maxHeight: 999 },
+        { type: 'smallCactus', weight: 1.4, minHeight: -99, maxHeight: 999 },
+        { type: 'ocotillo', weight: 0.7, minHeight: -99, maxHeight: 999 },
+        { type: 'dryBush', weight: 0.25, minHeight: -99, maxHeight: 999 },
+      ],
+    },
+  },
 };
 
 export const BIOME_IDS = Object.keys(BIOMES);

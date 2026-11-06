@@ -46,6 +46,22 @@ export const BIOME_TUNING = {
   wetInland: 0.25,
   // Jungle country: its noise's threshold (higher, more jungle).
   jungleZone: 0.06,
+  // Jungles of their own out in the warm green lowlands: the chance of one per 5.2 km square (higher, more).
+  jungleBlob: 1,
+  // Wetlands and marshes of their own inland, in the flat green country: the chance of one per 4.5 km square.
+  wetBlob: 1,
+  // The red outback, between the savanna and the desert: the chance of a stretch per 4.2 km square.
+  outback: 0.5,
+  // Jacaranda savanna, by the savanna's edge: the chance of a patch per 2.6 km square (the ancient oak woods' size).
+  jacaranda: 0.42,
+  // Hanging gardens, by the jungles: the chance per 3.2 km square.
+  gardens: 0.9,
+  // Bristlecone heights (white limestone mountains in the drier country): the chance per 4.2 km square.
+  bristlecone: 0.8,
+  // Bamboo mist gorges, by the jungles (rare): the chance per 5 km square.
+  bambooGorge: 0.3,
+  // Cactus blooms in the deserts: the chance per 3.8 km square.
+  cactusBloom: 0.6,
   // How much of the wetlands is glowing swamp: lower, more.
   glowSwamp: 0.22,
   // Glowing swamps of their own in the green lowlands: the chance of one per square this size (m).
@@ -108,6 +124,12 @@ const QUICKSAND = new Color(0x9a845a); // (wet, smooth sand: a quicksand)
 const CRATER_SCORCH = new Color(0x4a443e), CRATER_DUST = new Color(0xa49a8a); // (a meteor crater's blasted bowl, and the dust thrown out round it)
 const PETRIFIED_BANDS = [new Color(0x9a948e), new Color(0xa88ea8), new Color(0xb47860), new Color(0xd8c8a8)];
 const GLOW_MOSS = new Color(0x2e5248);
+// The hanging gardens' canyon walls: wet rock streaked dark with water, moss, ferns, flowers (see surfaceColor).
+const GARDEN_WET = new Color(0x3e3a32), GARDEN_MOSS = new Color(0x3f7a30), GARDEN_FERN = new Color(0x5a9a3c);
+const GARDEN_FLOWERS = [new Color(0xe070a0), new Color(0xf0d040), new Color(0xf4f0e8)];
+// Bristlecone heights' limestone beds, and a river gorge's layered walls.
+const LIMESTONE = [new Color(0xeeebe4), new Color(0xd8d4ca), new Color(0xe4e0d4), new Color(0xc8c4b8)];
+const GORGE_ROCK = [new Color(0x7a6a5e), new Color(0x8e7a66), new Color(0x6a625e), new Color(0x9a8470)];
 // Mushroom islands' ground (see surfaceColor).
 const MYCELIUM = new Color(0x8a7a86), MYCELIUM_PALE = new Color(0xa898a0), MYCELIUM_DARK = new Color(0x6e5e70);
 
@@ -132,6 +154,11 @@ const BANKS = {
   desert: { mud: 0xc9a974, bank: 0xb7b066, rock: 0 },
   saltFlat: { mud: 0xc9a974, bank: 0xb7b066, rock: 0 },
   blackHills: { mud: 0x5f4a36, bank: 0x7c9a52, rock: 0.3, rockColor: 0x8a8597 },
+  outback: { mud: 0x8a4a2a, bank: 0x9a9a5a, rock: 0 },
+  jacaranda: { mud: 0x8a7050, bank: 0xa0b05a, rock: 0 },
+  hangingGardens: { mud: 0x4f4232, bank: 0x4f9a3c, rock: 0.3, rockColor: 0x5e5a48 },
+  bristlecone: { mud: 0x8a8478, bank: 0x9aa078, rock: 0.5, rockColor: 0xd8d4ca },
+  bambooGorge: { mud: 0x5a4430, bank: 0x5a9a3c, rock: 0.3, rockColor: 0x56604a },
 };
 for (const b of Object.values(BANKS)) {
   b.mud = new Color(b.mud);
@@ -524,7 +551,27 @@ export class TerrainGenerator {
       out.bamboo = kb;
       out.monsoon = kmz;
       out.oakwood = ko;
-    } else (out.cherry = 0), (out.bamboo = 0), (out.jungleFoothills = 0), (out.jungleMountains = 0), (out.monsoon = 0), (out.oakwood = 0);
+      // The new kinds of country, each taking its share of what was there (see each's own).
+      const take = (id, b, from) => {
+        let t = 0;
+        if (b > 0) for (const f of from) {
+          const q = out[f] * b;
+          out[f] -= q;
+          t += q;
+        }
+        out[id] = t;
+      };
+      const greenIds = ['temperate', 'parkland', 'pine', 'oakwood', 'monsoon', 'cascades'];
+      take('jacaranda', this.#jacarandaLand(x, z), ['temperate', 'parkland', 'pine', 'savanna']);
+      take('outback', this.#outbackLand(x, z), ['savanna', 'desert', 'badlands', 'blackHills']);
+      take('hangingGardens', this.#gardensLand(x, z), greenIds);
+      take('bambooGorge', this.#bambooGorgeLand(x, z), [...greenIds, 'bamboo', 'jungle']);
+      // (Bristlecone heights: taking over whatever was there.)
+      const bc = this.#bristleconeLand(x, z);
+      if (bc > 0) for (const id of BIOME_IDS) out[id] *= 1 - bc;
+      out.bristlecone = bc;
+      out.cactusBloom = 0; // (the desert's: see pickBiome)
+    } else for (const id of ['cherry', 'bamboo', 'jungleFoothills', 'jungleMountains', 'monsoon', 'oakwood', 'jacaranda', 'outback', 'hangingGardens', 'bambooGorge', 'bristlecone', 'cactusBloom']) out[id] = 0;
     // And now and then a glowing swamp of its own out in the green lowlands
     // (see #glowBlob): wetland, taking over whatever was there.
     const gb = this._probing ? 0 : this.#glowBlob(x, z);
@@ -1195,7 +1242,165 @@ export class TerrainGenerator {
     // than half a square kilometre or so: shrunk by 380 m and grown back.)
     const zone = (px, pz) => smoothstep(T.jungle, T.jungle + 0.2, this.#jungleSuit(px, pz));
     const j = zone(x, z);
-    return j > 0 ? j * this.#minSize('jungle', x, z, zone, 0.5, 3, 157) : 0;
+    const own = j > 0 ? j * this.#minSize('jungle', x, z, zone, 0.5, 3, 157) : 0;
+    // (And the jungles of their own out in the warm green lowlands.)
+    return own >= 1 ? own : Math.max(own, this.#jungleBlob(x, z) * (1 - smoothstep(0.4, 0.48, aridity)));
+  }
+
+  // A jungle of its own (0..1): now and then, a rounded stretch a couple of
+  // kilometres across in the warm, wet green lowlands, well clear of the
+  // mountains, the dry country, the Black Hills, the Smoky Mountains and
+  // the volcanoes.
+  #jungleBlob(x, z) {
+    return this.#blobs('jungleBlob', x, z, 3000, T.jungleBlob, 700, 1250, 0x1a9b, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      if (this.getMountainness(px, pz) > 0.18 || this.getOceanness(px, pz) > 0.1) return 0;
+      if (this.#volcanoBelt(px, pz) > 0.4 || this.#smokyZone(px, pz, r) > 0.05 || this.#hillsBlob(px, pz) > 0.05) return 0;
+      return this.getAridity(px, pz, r) < 0.42 ? 1 : 0;
+    });
+  }
+
+  // Wetlands of their own inland (0..1): now and then, a rounded basin a
+  // kilometre or two across out in the flat green country, well away from
+  // the sea, the mountains and the dry country: the land sinks into it, a
+  // maze of pools, reeds and channels (marsh in its heart, wooded swamp
+  // round its edges).
+  #wetBlob(x, z) {
+    return this.#blobs('wetBlob', x, z, 3400, T.wetBlob, 550, 1000, 0x3eb1, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      if (this.getMountainness(px, pz) > 0.08 || this.#seaCoast(px, pz) > 0.05 || this.getOceanness(px, pz) > 0.1) return 0;
+      if (this.#volcanoBelt(px, pz) > 0.4 || this.#smokyZone(px, pz, r) > 0.05 || this.#hillsBlob(px, pz) > 0.05) return 0;
+      return this.getAridity(px, pz, r) < 0.4 ? 1 : 0;
+    });
+  }
+
+  // Jacaranda savanna (0..1): now and then, a rounded patch half a kilometre
+  // to a kilometre across (an ancient oak wood's size) where the green
+  // country gives way to the savanna.
+  #jacarandaLand(x, z) {
+    return this.#blobs('jacaranda', x, z, 2600, T.jacaranda, 300, 560, 0x7ac4, (px, pz) => {
+      if (this.getMountainness(px, pz) > 0.3 || this.#jungleSuit(px, pz) > 0.02) return 0;
+      if (this.#continentBase(px, pz) - this._contLift < -0.4) return 0;
+      const a = this.getAridity(px, pz);
+      return a > T.savannaStart - 0.03 && a < T.savannaStart + 0.17 ? 1 : 0;
+    });
+  }
+
+  // The red outback (0..1): broad stretches between the savanna and the
+  // desert, by the mesas, away from the ranges and the sea.
+  #outbackLand(x, z) {
+    return this.#blobs('outback', x, z, 4200, T.outback, 800, 1500, 0x0b4c, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      if (r > 0.1 || this.#seaCoast(px, pz) > 0.02 || this.getOceanness(px, pz) > 0.02) return 0;
+      const a = this.getAridity(px, pz, r);
+      return a > T.savannaStart + 0.2 && a < T.desertStart + 0.14 ? 1 : 0;
+    });
+  }
+
+  // Hanging gardens (0..1): now and then, a rounded patch by a jungle's edge.
+  #gardensLand(x, z) {
+    return this.#blobs('gardens', x, z, 3200, T.gardens, 420, 700, 0x9a4d, (px, pz) => {
+      const j = this.#jungleSuit(px, pz);
+      if (!(j > 0.02 && j < 0.32) || this.getMountainness(px, pz) > 0.3 || this.#seaCoast(px, pz) > 0.05) return 0;
+      return this.getAridity(px, pz) < 0.42 ? 1 : 0;
+    });
+  }
+
+  // A bamboo mist gorge (0..1): rare, by a jungle or a warm range's foothills.
+  #bambooGorgeLand(x, z) {
+    return this.#blobs('bgorge', x, z, 5000, T.bambooGorge, 420, 720, 0xb6a7, (px, pz) => {
+      const m = this.getMountainness(px, pz);
+      if (m > 0.3 || this.#seaCoast(px, pz) > 0.05) return 0;
+      const j = this.#jungleSuit(px, pz);
+      const byJungle = j > 0.02 && j < 0.35;
+      const byRange = this.#tropicRange(px, pz) > 0.3 && this.#mountainsAround(px, pz) > 0.1;
+      return (byJungle || byRange) && this.getAridity(px, pz) < 0.42 ? 1 : 0;
+    });
+  }
+
+  // Bristlecone heights (0..1): now and then, a rounded massif of white
+  // limestone mountains a couple of kilometres or more across, in the
+  // drier country (from the green country's edge out into the desert's),
+  // clear of the ranges, the sea, the jungles and the volcanoes.
+  #bristleconeLand(x, z) {
+    return this.#blobs('bristle', x, z, 3600, T.bristlecone, 1000, 1700, 0xb215, (px, pz) => {
+      const r = this.#rangeField(px, pz, {}).value;
+      if (this.getMountainness(px, pz) > 0.2 || this.#volcanoBelt(px, pz) > 0.3 || this.#smokyBlob(px, pz) > 0.05 || this.#hillsBlob(px, pz) > 0.05) return 0;
+      if (this.#seaCoast(px, pz) > 0.02 || this.getOceanness(px, pz) > 0.02 || this.#jungleSuit(px, pz) > 0.01 || this.#jungleMtnBlob(px, pz) > 0.01) return 0;
+      const a = this.getAridity(px, pz, r);
+      return a > 0.34 && a < T.desertStart + 0.06 && this.#continentBase(px, pz) - this._contLift > -0.3 ? 1 : 0;
+    }, (px, pz, rad) => {
+      // (No mountain range within a kilometre of its edge: it never runs into one.)
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2;
+        for (const d of [rad + 500, rad + 1000]) if (this.getMountainness(px + Math.cos(a) * d, pz + Math.sin(a) * d) > 0.5) return false;
+      }
+      return true;
+    }, 0.4);
+  }
+
+  /**
+   * A cactus bloom (0..1): now and then, a stretch of the deep desert a
+   * kilometre or two across thick with cacti, all of them in flower. (Its
+   * land is the desert's: see pickBiome.)
+   */
+  cactusBloomAt(x, z) {
+    return this.#blobs('cbloom', x, z, 3800, T.cactusBloom, 550, 1000, 0xcb10, (px, pz) => (this.getAridity(px, pz) > T.desertStart + 0.03 && this.#rangeField(px, pz, {}).value < 0.1 && this.#seaCoast(px, pz) < 0.02 ? 1 : 0));
+  }
+
+  /**
+   * The bamboo mist gorges' land (metres to add): tier on tier of tall
+   * cliffs crowded close together round narrow, winding gorges, the
+   * country between them standing up in stepped towers.
+   */
+  bambooGorgeRelief(x, z, w = 1) {
+    const N = this.escarpNoise;
+    const wx = x + N.noise2D(x * 0.006 + 71, z * 0.006) * 25, wz = z + N.noise2D(x * 0.006, z * 0.006 - 71) * 25;
+    const inside = smoothstep(0.45, 0.95, w);
+    // (Low along the gorges, the noise's zero lines; stepping up away from them.)
+    const m = Math.abs(N.fbm(wx * 0.0026 - 300, wz * 0.0026 + 300, 3)) * 2 + N.noise2D(x * 0.02 + 5, z * 0.02 - 5) * 0.012 * inside;
+    const sharp = 0.01 / Math.max(0.015, inside * inside);
+    let h = 0, face = 0;
+    [0.07, 0.17, 0.28, 0.4, 0.53].forEach((e, i) => {
+      const t = smoothstep(e, e + sharp, m);
+      const tall = 24 + 12 * smoothstep(-0.6, 0.6, N.noise2D(x * 0.002 + i * 31.7, z * 0.002 - i * 17.3));
+      h += t * tall;
+      face = Math.max(face, 4 * t * (1 - t) * w);
+    });
+    const knobs = face > 0 ? (N.noise2D(x * 0.19 + 5, z * 0.19 - 5) * 1.4 + N.ridged(x * 0.08 - 3, z * 0.08 + 9, 2, 2, 0.5, 0.05) * 1.6) * face : 0;
+    return 3 + h + knobs + N.fbm(x * 0.005 + 40, z * 0.005, 2) * 2;
+  }
+
+  /**
+   * The hanging gardens' land (metres to add): a raised country of rock,
+   * its top rolling, cut through by deep, narrow, winding slot canyons.
+   */
+  gardensRelief(x, z, w = 1) {
+    const N = this.mesaNoise;
+    const wx = x + N.noise2D(x * 0.003 - 41, z * 0.003) * 40, wz = z + N.noise2D(x * 0.003, z * 0.003 + 41) * 40;
+    const slot = Math.min(Math.abs(N.noise2D(wx * 0.0035 + 211, wz * 0.0035 - 97)), Math.abs(N.noise2D(wx * 0.006 - 55, wz * 0.006 + 18)) + 0.03);
+    const cut = 1 - smoothstep(0.035, 0.075, slot);
+    const top = 34 + N.fbm(x * 0.004 + 9, z * 0.004 - 9, 2) * 8;
+    return smoothstep(0.15, 0.6, w) * top * (1 - cut * smoothstep(0.3, 0.6, w)) + 3 * w;
+  }
+
+  /**
+   * Bristlecone heights' land (metres to add): a massif of white limestone
+   * mountains, broad-shouldered, their slopes broken into ledges and
+   * benches, crags along the crests.
+   */
+  bristleconeRelief(x, z, bw) {
+    const N = this.jungleMtnNoise;
+    const qx = x + N.noise2D(x * 0.0005 - 131, z * 0.0005 + 7) * 240, qz = z + N.noise2D(x * 0.0005 + 7, z * 0.0005 - 131) * 240;
+    const mass = smoothstep(-0.4, 0.8, N.fbm(qx * 0.0008 - 313, qz * 0.0008 + 177, 3));
+    const peaks = Math.pow(N.ridged(qx * 0.0015 - 270, qz * 0.0015 + 90, 4, 2.05, 0.5, 0.01), 1.6);
+    let h = 30 + 110 * mass + 150 * peaks;
+    // (Ledges: the limestone beds stepping up the slopes, a riser and a bench.)
+    const t = h / 9 + N.noise2D(x * 0.004, z * 0.004) * 0.4, fl = Math.floor(t);
+    h += ((fl + smoothstep(0.3, 0.7, t - fl)) * 9 - h) * 0.55;
+    const crags = N.ridged(x * 0.012 + 401, z * 0.012 - 33, 2, 2, 0.5, 0.02) * 10 * smoothstep(0.1, 0.5, peaks);
+    const env = Math.pow(smoothstep(0, 0.85, bw), 1.5);
+    return smoothstep(0, 0.9, bw) * 6 + env * (h + crags);
   }
 
   // How suited to jungle the country round (x, z) is: its raw zone averaged
@@ -1342,6 +1547,14 @@ export class TerrainGenerator {
 
   /** Where wetlands lie (0..1): patches of the wettest, low-lying, flat country. */
   #wetZone(x, z, range, aridity) {
+    const own = this.#wetZoneOwn(x, z, range, aridity);
+    if (own >= 1) return own;
+    // (And the inland ones: see #wetBlob.)
+    const inland = this.#wetBlob(x, z);
+    return inland > own ? inland * (1 - smoothstep(0.05, 0.2, this.#mountainsAround(x, z))) : own;
+  }
+
+  #wetZoneOwn(x, z, range, aridity) {
     let zone = smoothstep(0, 0.35, this.#wetZoneRaw(x, z, range, aridity, false));
     if (zone <= 0) return 0;
     // (Not in the land rising into the Smoky Mountains: a marsh there would be a pit. Nor anywhere
@@ -1824,7 +2037,15 @@ export class TerrainGenerator {
       const broken = smoothstep(0.1, 0.6, N.noise2D(x * 0.0017 - 90, z * 0.0017 + 90)) * (N.fbm(x * 0.03 + 7, z * 0.03 - 7, 2) * 9 + N.ridged(x * 0.011, z * 0.011, 2, 2, 0.5, 0.02) * 14);
       jungleMtn = smoothstep(0, 0.9, jb) * 8 + env * (peak * high + rough + broken);
     }
-    let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + jungleMtn + volcanic + badlands + cascades + highland + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
+    // The new country's own lie of the land: bristlecone heights, hanging gardens, bamboo mist gorges.
+    const lakeFade = 1 - smoothstep(0.5, 6, lakes);
+    const bcw = this._probing ? 0 : w.bristlecone ?? 0;
+    const bristle = bcw > 0.002 ? this.bristleconeRelief(x, z, bcw) : 0;
+    const hgw = this._probing ? 0 : w.hangingGardens ?? 0;
+    const gardens = hgw > 0.005 ? this.gardensRelief(x, z, hgw) * lakeFade : 0;
+    const bgw = this._probing ? 0 : w.bambooGorge ?? 0;
+    const bgorge = bgw > 0.005 ? bgw * this.bambooGorgeRelief(x, z, bgw) * lakeFade : 0;
+    let height = 14 + (continent - contLift) * 16 + hills + dunes + mountains + blackHills + smoky + jungleMtn + volcanic + badlands + cascades + highland + bristle + gardens + bgorge + f.mesaHeight + f.escarpHeight * (1 - smoothstep(0.5, 6, lakes)) - sea - lakes;
     // (Valleys only in land well above the water: never new lakes.)
     if (valleys > 0) height -= valleys * smoothstep(seaLevel + 3, seaLevel + 30, height);
     // Canyons cut down into it (their floors kept above the sea).
@@ -3307,7 +3528,7 @@ export class TerrainGenerator {
    */
   getSeasonality(x, z) {
     const w = this.getBiomeWeights(x, z, {});
-    const s = w.temperate + w.pine + 0.9 * w.redwood + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + 0.1 * w.badlands + w.parkland + w.cascades;
+    const s = w.temperate + w.pine + 0.9 * w.redwood + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + 0.1 * w.badlands + w.parkland + w.cascades + 0.9 * (w.bristlecone ?? 0);
     // (Near a jungle its warmth reaches out past its edge: no autumn there, and no snow.)
     return s * (1 - smoothstep(0.05, 0.45, this.jungleNear(x, z)));
   }
@@ -4595,7 +4816,7 @@ export class TerrainGenerator {
     for (const id in w) {
       if (skip(id)) continue;
       r -= w[id];
-      if (r < 0) return this.biomes[id];
+      if (r < 0) return id === 'desert' && this.cactusBloomAt(x, z) > 0.5 && this.getFeatures(x, z).erg < 0.3 ? this.biomes.cactusBloom : this.biomes[id];
     }
     return this.biomes.temperate;
   }
@@ -4622,6 +4843,7 @@ export class TerrainGenerator {
       return this.getReef(x, z, height) > 0.4 ? 'Coral reef' : 'Ocean';
     }
     const water = quick ? null : this.rivers.at(x, z, 0);
+    if (!water && !quick && this.rivers.gorgeAt(x, z) > 0.5) return 'River gorge';
     if (water) return water.crater ? 'Crater lake' : water.hot ? 'Hot spring' : water.alpine ? 'Alpine lake' : water.oasis ? 'Oasis' : water.pond ? 'Pond' : water.stream ? 'Mountain stream' : water.big ? 'River' : 'Creek';
     if (this.mushroomIslandAt(x, z) > 0.5) return 'Mushroom island';
     if (this.meteorCraterAt(x, z, 1.3)) return 'Meteor crater';
@@ -4664,10 +4886,13 @@ export class TerrainGenerator {
         if (w.pine > 0.5) return 'Pine forest';
         // (Foothills only at the foot of real mountains: bare rock heights within a couple of kilometres.
         // Elsewhere, high but rounded country, it's named for what grows there.)
-        if (this.#gridMemo('peaksNear', x, z, 500, (px, pz) => {
-          let hi = this.getMountainness(px, pz);
-          for (let k = 0; k < 10 && hi < 0.9; k++) for (const d of [900, 1800]) hi = Math.max(hi, this.getMountainness(px + Math.cos((k / 10) * Math.PI * 2) * d, pz + Math.sin((k / 10) * Math.PI * 2) * d));
-          return smoothstep(0.82, 0.9, hi);
+        // (And only where real mountains stand up: bare rock heights, not just high ground.)
+        if (this.#gridMemo('peaksNear2', x, z, 500, (px, pz) => {
+          let hi = 0;
+          const at = (qx, qz) => (this.getMountainness(qx, qz) > 0.82 ? this.getBaseHeight(qx, qz) : 0);
+          hi = at(px, pz);
+          for (let k = 0; k < 10 && hi < T.mountainsAbove + 25; k++) for (const d of [700, 1400]) hi = Math.max(hi, at(px + Math.cos((k / 10) * Math.PI * 2) * d, pz + Math.sin((k / 10) * Math.PI * 2) * d));
+          return smoothstep(T.mountainsAbove + 5, T.mountainsAbove + 25, hi);
         }) > 0.5) return 'Mountain foothills';
       }
     }
@@ -4686,14 +4911,21 @@ export class TerrainGenerator {
     if (top === 'bamboo') return 'Bamboo forest';
     if (top === 'monsoon') return 'Monsoon forest';
     if (top === 'oakwood') return 'Ancient oak wood';
+    if (top === 'bristlecone') return 'Bristlecone heights';
+    if (top === 'hangingGardens') return 'Hanging gardens';
+    if (top === 'bambooGorge') return 'Bamboo mist gorge';
+    if (top === 'jacaranda') return 'Jacaranda savanna';
+    if (top === 'outback') return f.mesa > 0.28 ? 'Mesas' : 'Red outback';
     if (top === 'wetland' && this.glowSwampAt(x, z) > 0.5) return 'Glowing swamp';
-    if (top === 'wetland') return height < sea + 2 ? 'Marsh' : 'Wetlands';
+    // (Open marsh down at the water, in patches; wooded swamp and wet ground round it, the wetlands.)
+    if (top === 'wetland') return height < sea + 2 && this.wetNoise.noise2D(x * 0.0021 + 31, z * 0.0021 - 17) < 0.2 ? 'Marsh' : 'Wetlands';
     if (top === 'jungle') return 'Jungle';
     if (top === 'pine') return 'Pine forest';
     if (top === 'redwood') return 'Redwood forest';
     if ((top === 'savanna' || top === 'desert') && this.petrifiedAt(x, z) > 0.5) return 'Petrified forest';
     if (top === 'badlands') return 'Badlands';
     if (top === 'desert' && this.oasisAt(x, z) > 0.3) return 'Oasis';
+    if (top === 'desert' && f.erg <= 0.5 && f.mesa <= 0.28 && this.cactusBloomAt(x, z) > 0.5) return 'Cactus bloom';
     if (top === 'desert') return f.erg > 0.5 ? 'Dune sea' : f.mesa > 0.28 ? 'Mesas' : 'Desert';
     if (top === 'savanna') return f.mesa > 0.28 ? 'Mesas' : 'Savanna';
     if (f.escarp > 0.5 && f.escarpHeight > 4) return 'Escarpment';
@@ -4914,6 +5146,30 @@ export class TerrainGenerator {
       const face = (1 - smoothstep(0.78, 0.9, upness)) * smoothstep(0.05, 0.5, w.cascades);
       const layer = Math.floor((ground + this.detailNoise.noise2D(x * 0.03, z * 0.03) * 0.8) / 2.6);
       out.lerp(CASCADE_ROCK[((layer % 3) + 3) % 3], face);
+    }
+    // The hanging gardens' canyon walls: wet, dark rock streaked down with
+    // water, hung with moss and ferns, flowers dotted over them.
+    if ((w.hangingGardens ?? 0) > 0.1 && upness < 0.8) {
+      const face = (1 - smoothstep(0.6, 0.8, upness)) * smoothstep(0.1, 0.5, w.hangingGardens);
+      const N = this.detailNoise;
+      const streak = N.noise2D(x * 0.35 + 3, z * 0.35 - 3) + 0.5 * N.noise2D(x * 0.9, z * 0.9);
+      bankTmp.copy(streak > 0.35 ? GARDEN_WET : streak > -0.25 ? GARDEN_MOSS : GARDEN_FERN);
+      const k = hash2(Math.floor(x * 1.3), Math.floor(z * 1.3) + Math.floor(ground * 1.3) * 977, this.seed ^ 0x6a4d);
+      if (streak > -0.25 && streak < 0.35 && k < 0.1) bankTmp.copy(GARDEN_FLOWERS[Math.floor((k / 0.1) * 3)]);
+      out.lerp(bankTmp, 0.85 * face);
+    }
+    // Bristlecone heights: the white limestone in its beds, a shade apart.
+    if ((w.bristlecone ?? 0) > 0.2 && upness < 0.9 && ground > sea + 6) {
+      const band = Math.floor((ground + this.detailNoise.noise2D(x * 0.02, z * 0.02) * 1.5) / 3.2);
+      out.lerp(LIMESTONE[((band % 4) + 4) % 4], 0.7 * (1 - smoothstep(0.7, 0.9, upness)) * smoothstep(0.2, 0.6, w.bristlecone));
+    }
+    // A river gorge's walls: layered rock, brown and grey.
+    if (upness < 0.72 && ground > sea + 1) {
+      const gz = this.rivers.gorgeAt(x, z);
+      if (gz > 0.05) {
+        const band = Math.floor((ground + this.detailNoise.noise2D(x * 0.04, z * 0.04) * 0.8) / 2.4);
+        out.lerp(GORGE_ROCK[((band % 4) + 4) % 4], 0.8 * gz * (1 - smoothstep(0.55, 0.72, upness)));
+      }
     }
     // Mesa and canyon walls: bands of red and orange sandstone.
     // (Fading gradually into the rock round about: an escarpment's walls
