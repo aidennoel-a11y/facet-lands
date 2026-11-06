@@ -1348,9 +1348,9 @@ export class TerrainGenerator {
       // (Never by lush country: no jungle, nor wetland, within a couple of kilometres.)
       for (let k = 0; k < 8; k++) {
         const a = (k / 8) * Math.PI * 2;
-        for (const d of [1200, 2200]) {
+        for (const d of [1400]) {
           const qx = px + Math.cos(a) * d, qz = pz + Math.sin(a) * d;
-          if (this.#jungleBlob(qx, qz) > 0 || this.#jungleSuit(qx, qz) > 0.01 || this.#jungleMtnBlob(qx, qz) > 0 || this.#wetBlob(qx, qz) > 0) return 0;
+          if (this.#jungleBlob(qx, qz) > 0.5 || this.#jungleSuit(qx, qz) > 0.1 || this.#jungleMtnBlob(qx, qz) > 0.5) return 0;
         }
       }
       const a = this.getAridity(px, pz, r);
