@@ -67,10 +67,10 @@ export const BIOME_TUNING = {
   // Cactus blooms in the deserts: the chance per 3.8 km square.
   cactusBloom: 0.6,
   // How much of the wetlands is glowing swamp: lower, more.
-  glowSwamp: 0.22,
+  glowSwamp: 0.55,
   // Glowing swamps of their own in the green lowlands: the chance of one per square this size (m).
   glowCell: 5000,
-  glowChance: 1,
+  glowChance: 0.45,
   // Badlands in the savanna and the desert: the chance of a patch per 6 km square, and their size.
   badlands: 0.2,
   badlandsSize: 0.78, // (radius: 0.78 ≈ 40% smaller patches)
@@ -549,7 +549,7 @@ export class TerrainGenerator {
     // (No swamp of either kind ever in or right by the mountains: there it would be a pit.)
     if (wz > 0) wz *= 1 - smoothstep(0.05, 0.2, this.#mountainsAround(x, z));
     // (And never touching dry country: none where the savanna or drier lies within some 600 m.)
-    if (wz > 0) wz *= 1 - smoothstep(T.savannaStart + 0.07, T.savannaStart + 0.11, this.#aridAround(x, z));
+    if (wz > 0) wz *= 1 - smoothstep(T.savannaStart + 0.08, T.savannaStart + 0.12, this.#aridRange(x, z, 1));
     // Pine forests: in the hill country leading up to the mountain ranges
     // (see #pineZone).
     const rest = green * (1 - wz) * (1 - jz);
@@ -1363,13 +1363,13 @@ export class TerrainGenerator {
   // maze of pools, reeds and channels (marsh in its heart, wooded swamp
   // round its edges).
   #wetBlob(x, z) {
-    return this.#blobs('wetBlob', x, z, 2400, T.wetBlob, 380, 680, 0x3eb1, (px, pz) => {
+    return this.#blobs('wetBlob', x, z, 2000, T.wetBlob, 450, 800, 0x3eb1, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       if (this.getMountainness(px, pz) > 0.08 || this.#seaCoast(px, pz) > 0.05 || this.getOceanness(px, pz) > 0.1) return 0;
       if (this.#volcanoBelt(px, pz) > 0.4 || this.#smokyZone(px, pz, r) > 0.05 || this.#hillsBlob(px, pz) > 0.05) return 0;
       if (this.getAridity(px, pz, r) >= 0.44) return 0;
       // (Never touching dry country: none of the savanna or drier within some 1.4 km.)
-      for (let k = 0; k < 10; k++) for (const d of [550, 950]) if (this.getAridity(px + Math.cos(k * 0.628) * d, pz + Math.sin(k * 0.628) * d) > T.savannaStart + 0.1) return 0;
+      for (let k = 0; k < 10; k++) for (const d of [650, 1100]) if (this.getAridity(px + Math.cos(k * 0.628) * d, pz + Math.sin(k * 0.628) * d) > T.savannaStart + 0.1) return 0;
       return 1;
     });
   }
