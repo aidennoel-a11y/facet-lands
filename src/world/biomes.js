@@ -35,7 +35,7 @@ export const BIOMES = {
     ],
     cliff: 0x908a9e,
     cliffSlope: [0.72, 0.5], // normal.y where cliff blending starts / is full
-    snowLine: 154, // peaks above this get snow caps
+    snowLine: 185, // peaks above this get snow caps
     snow: 0xf1f4f7,
     grass: 1,
     trees: {
@@ -78,7 +78,7 @@ export const BIOMES = {
     ],
     cliff: 0x9a8a8e,
     cliffSlope: [0.72, 0.5],
-    snowLine: 154,
+    snowLine: 185,
     snow: 0xf1f4f7,
     grass: 0.75,
     trees: {
@@ -229,7 +229,7 @@ export const BIOMES = {
     ],
     cliff: 0x7a7258,
     cliffSlope: [0.72, 0.5],
-    snowLine: 154,
+    snowLine: 185,
     snow: 0xf1f4f7,
     grass: 1,
     trees: {
@@ -268,7 +268,7 @@ export const BIOMES = {
     ],
     cliff: 0x8a8696,
     cliffSlope: [0.72, 0.5],
-    snowLine: 154,
+    snowLine: 185,
     snow: 0xf1f4f7,
     grass: 0.35,
     trees: {
@@ -550,7 +550,7 @@ export const BIOMES = {
     ],
     cliff: 0x908a9e,
     cliffSlope: [0.72, 0.5],
-    snowLine: 154,
+    snowLine: 185,
     snow: 0xf1f4f7,
     grass: 1,
     trees: {
@@ -712,7 +712,7 @@ export const BIOMES = {
     ],
     cliff: 0x86808e,
     cliffSlope: [0.72, 0.5],
-    snowLine: 154,
+    snowLine: 185,
     snow: 0xf1f4f7,
     grass: 0.35,
     trees: {
@@ -874,7 +874,7 @@ export const BIOMES = {
     cliffSlope: [0.7, 0.5],
     snowLine: 9999,
     snow: 0xf1f4f7,
-    grass: 0.8,
+    grass: 1,
     trees: {
       density: 0.85,
       clumped: true,

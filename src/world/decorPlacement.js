@@ -314,7 +314,7 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
   // (A quick look first: any of the forests that have an understory?)
   const cover = (x, z) => {
     const w = generator.getBiomeWeights(x, z, {});
-    return [Math.min(1, w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0)), w.pine * 0.12, (w.cascades ?? 0) * 0.55]; // (the jungle mountains' floor as lush as the jungle's)
+    return [Math.min(1, w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + 0.85 * (w.hangingGardens ?? 0)), w.pine * 0.12, (w.cascades ?? 0) * 0.55]; // (the jungle mountains' floor as lush as the jungle's)
   };
   let any = 0;
   for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, ...cover(x0 + (i * size) / 4, z0 + (j * size) / 4));
