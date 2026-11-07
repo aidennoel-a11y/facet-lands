@@ -35,7 +35,7 @@ export const BIOMES = {
     ],
     cliff: 0x908a9e,
     cliffSlope: [0.72, 0.5], // normal.y where cliff blending starts / is full
-    snowLine: 185, // peaks above this get snow caps
+    snowLine: 154, // peaks above this get snow caps
     snow: 0xf1f4f7,
     grass: 1,
     trees: {
@@ -78,7 +78,7 @@ export const BIOMES = {
     ],
     cliff: 0x9a8a8e,
     cliffSlope: [0.72, 0.5],
-    snowLine: 185,
+    snowLine: 154,
     snow: 0xf1f4f7,
     grass: 0.75,
     trees: {
@@ -229,7 +229,7 @@ export const BIOMES = {
     ],
     cliff: 0x7a7258,
     cliffSlope: [0.72, 0.5],
-    snowLine: 185,
+    snowLine: 154,
     snow: 0xf1f4f7,
     grass: 1,
     trees: {
@@ -268,7 +268,7 @@ export const BIOMES = {
     ],
     cliff: 0x8a8696,
     cliffSlope: [0.72, 0.5],
-    snowLine: 185,
+    snowLine: 154,
     snow: 0xf1f4f7,
     grass: 0.35,
     trees: {
@@ -550,7 +550,7 @@ export const BIOMES = {
     ],
     cliff: 0x908a9e,
     cliffSlope: [0.72, 0.5],
-    snowLine: 185,
+    snowLine: 154,
     snow: 0xf1f4f7,
     grass: 1,
     trees: {
@@ -712,7 +712,7 @@ export const BIOMES = {
     ],
     cliff: 0x86808e,
     cliffSlope: [0.72, 0.5],
-    snowLine: 185,
+    snowLine: 154,
     snow: 0xf1f4f7,
     grass: 0.35,
     trees: {
@@ -845,7 +845,7 @@ export const BIOMES = {
       density: 0.32,
       clumped: false,
       species: [
-        { type: 'jacaranda', weight: 0.9, minHeight: -99, maxHeight: 999 },
+        { type: 'jacaranda', weight: 0.36, minHeight: -99, maxHeight: 999 },
         { type: 'acacia', weight: 1.0, minHeight: -99, maxHeight: 999 },
         { type: 'dryBush', weight: 0.7, minHeight: -99, maxHeight: 999 },
         { type: 'baobab', weight: 0.08, minHeight: -99, maxHeight: 999 },

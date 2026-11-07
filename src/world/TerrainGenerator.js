@@ -130,7 +130,11 @@ const BOULDER_NOISE = new SimplexNoise(0x5b0d);
 export function boulderRough(b, x, y, z) {
   const size = Math.min(b.a, b.b, b.c);
   const N = BOULDER_NOISE, o = b.seed * 3.1;
-  return N.noise3D(x * 0.045 + o, y * 0.045, z * 0.045) * Math.min(4, size * 0.09) + N.noise3D(x * 0.13 - o, y * 0.13, z * 0.13) * Math.min(1.6, size * 0.045) + N.noise3D(x * 0.4, y * 0.4 + o, z * 0.4) * Math.min(0.5, size * 0.02);
+  const d = N.noise3D(x * 0.045 + o, y * 0.045, z * 0.045) * Math.min(4, size * 0.09) + N.noise3D(x * 0.13 - o, y * 0.13, z * 0.13) * Math.min(1.6, size * 0.045) + N.noise3D(x * 0.4, y * 0.4 + o, z * 0.4) * Math.min(0.5, size * 0.02);
+  // (The Black Hills' granite more jagged: sharp-edged knobs and flakes, split along its joints.)
+  if (b.kind !== 'granite') return d;
+  const ridge = 1 - Math.abs(N.noise3D(x * 0.22 + o, y * 0.3, z * 0.22 - o));
+  return d + (ridge * ridge - 0.45) * Math.min(1.6, size * 0.12) + (Math.abs(N.noise3D(x * 0.6 - o, y * 0.6, z * 0.6)) - 0.3) * Math.min(0.7, size * 0.05);
 }
 export function boulderSpan(b, x, z) {
   const m = boulderMake(b);
@@ -645,7 +649,7 @@ export class TerrainGenerator {
       take('bambooGorge', this.#bambooGorgeLand(x, z), [...greenIds, 'bamboo', 'jungle']);
       // (Bristlecone heights: taking over whatever was there.)
       // (Their colour and their trees change sharply at their edge: stone country, not a gradual fade.)
-      const bc = smoothstep(0.3, 0.42, this.#bristleconeLand(x, z));
+      const bc = smoothstep(0.22, 0.55, this.#bristleconeLand(x, z));
       if (bc > 0) for (const id of BIOME_IDS) out[id] *= 1 - bc;
       out.bristlecone = bc;
       out.cactusBloom = 0; // (the desert's: see pickBiome)
@@ -1278,7 +1282,7 @@ export class TerrainGenerator {
   // kilometre to a kilometre across out in the green lowlands, well away
   // from the mountains, the jungles and the sea.
   #oakLand(x, z) {
-    return this.#blobs('oakwood', x, z, 2600, 0.42, 300, 560, 0x0a4c, (px, pz) => {
+    return this.#blobs('oakwood', x, z, 2600, 0.72, 330, 620, 0x0a4c, (px, pz) => {
       // (Its suitedness for jungle is 0 up: anything over a trace of it is too near a jungle.)
       if (this.getMountainness(px, pz) > 0.3 || this.#jungleSuit(px, pz) > 0.02) return 0;
       if (this.#continentBase(px, pz) - this._contLift < -0.4) return 0;
@@ -1330,7 +1334,7 @@ export class TerrainGenerator {
   // mountains, the dry country, the Black Hills, the Smoky Mountains and
   // the volcanoes.
   #jungleBlob(x, z) {
-    return this.#blobs('jungleBlob', x, z, 3000, T.jungleBlob, 700, 1250, 0x1a9b, (px, pz) => {
+    return this.#blobs('jungleBlob', x, z, 2300, T.jungleBlob, 800, 1450, 0x1a9b, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       if (this.getMountainness(px, pz) > 0.18 || this.getOceanness(px, pz) > 0.1) return 0;
       if (this.#volcanoBelt(px, pz) > 0.4 || this.#smokyZone(px, pz, r) > 0.05 || this.#hillsBlob(px, pz) > 0.05) return 0;
@@ -1379,17 +1383,19 @@ export class TerrainGenerator {
   // Hanging gardens (0..1): now and then, a rounded patch by a jungle's edge.
   #gardensLand(x, z) {
     return this.#blobs('gardens', x, z, 3200, T.gardens, 420, 700, 0x9a4d, (px, pz) => {
-      if (this.getMountainness(px, pz) > 0.3 || this.#seaCoast(px, pz) > 0.05 || this.getAridity(px, pz) > 0.42) return 0;
-      // (Not in a jungle, but right by one, or by a jungle range.)
-      if (this.#jungleBlob(px, pz) > 0.3 || this.#jungleSuit(px, pz) > 0.3 || this.#jungleMtnBlob(px, pz) > 0.05) return 0;
+      if (this.getMountainness(px, pz) > 0.3 || this.#seaCoast(px, pz) > 0.02 || this.getOceanness(px, pz) > 0.02 || this.getAridity(px, pz) > 0.42) return 0;
+      // (Not in a jungle, but touching one, or a jungle range: real jungle just past its edge on two sides or more.)
+      const jungle = (qx, qz) => {
+        const r = this.#rangeField(qx, qz, {}).value;
+        return this.#jungleZone(qx, qz, r, this.getAridity(qx, qz, r)) > 0.5 || this.#jungleMtnBlob(qx, qz) > 0.3;
+      };
+      if (jungle(px, pz)) return 0;
+      let touching = 0;
       for (let k = 0; k < 8; k++) {
         const a = (k / 8) * Math.PI * 2;
-        for (const d of [600, 1000]) {
-          const qx = px + Math.cos(a) * d, qz = pz + Math.sin(a) * d;
-          if (this.#jungleBlob(qx, qz) > 0.5 || this.#jungleSuit(qx, qz) > 0.3 || this.#jungleMtnBlob(qx, qz) > 0.2) return 1;
-        }
+        if (jungle(px + Math.cos(a) * 750, pz + Math.sin(a) * 750)) touching++;
       }
-      return 0;
+      return touching >= 2 ? 1 : 0;
     });
   }
 
@@ -4490,10 +4496,16 @@ export class TerrainGenerator {
     if (list) return list;
     list = [];
     const C = 300, s = this.seed ^ 0xb0d1;
+    // (The land under it: its lowest, and how far it falls away across it, so none is set into a cliff.)
+    let fall = 0;
     const ground = (px, pz, r) => {
-      // (The land itself, before its creeks: quick, and near enough for this.)
-      let lo = this.landHeight(px, pz);
-      for (let k = 0; k < 6; k++) lo = Math.min(lo, this.landHeight(px + Math.cos(k * 1.047) * r, pz + Math.sin(k * 1.047) * r));
+      let lo = this.landHeight(px, pz), hi = lo;
+      for (let k = 0; k < 6; k++) {
+        const h = this.landHeight(px + Math.cos(k * 1.047) * r, pz + Math.sin(k * 1.047) * r);
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
+      fall = hi - lo;
       return lo;
     };
     const on = (b, px, pz) => {
@@ -4505,10 +4517,10 @@ export class TerrainGenerator {
       const w = this.getBiomeWeights(cx, cz, {});
       if ((w.bristlecone ?? 0) > 0.6 && hash2(i, j + t, s + 2) < 0.85) {
         // (A colossal boulder, now and then two or three heaped together.)
-        const n = 1 + Math.floor(hash2(i, j, s + 3 + t) * 2.4);
+        const n = 2 + Math.floor(hash2(i, j, s + 3 + t) * 4);
         for (let k = 0; k < n; k++) {
-          const px = cx + (k ? (hash2(i + k, j, s + 4) - 0.5) * 140 : 0), pz = cz + (k ? (hash2(i, j + k, s + 5) - 0.5) * 140 : 0);
-          const a = 30 + 70 * hash2(i - k, j + t, s + 6), b = a * (0.45 + 0.4 * hash2(i + k, j - t, s + 7)), c = (0.3 + 0.6 * hash2(i + 2 * k, j + t, s + 8)) * a;
+          const px = cx + (k ? (hash2(i + k, j, s + 4) - 0.5) * 60 : 0), pz = cz + (k ? (hash2(i, j + k, s + 5) - 0.5) * 60 : 0);
+          const a = 10 + 26 * hash2(i - k, j + t, s + 6), b = a * (0.45 + 0.4 * hash2(i + k, j - t, s + 7)), c = (0.3 + 0.6 * hash2(i + 2 * k, j + t, s + 8)) * a;
           const g = ground(px, pz, a * 0.7);
           const stack = Math.max(-Infinity, ...list.map((o) => on(o, px, pz)));
           const y = Math.max(g + 0.3 * c, Math.min(g + 1.1 * c, stack + 0.45 * c));
@@ -4528,6 +4540,8 @@ export class TerrainGenerator {
           const a = 4 + 10 * hash2(i - k, j + t, s + 17), b = a * (0.4 + 0.45 * hash2(i + k, j - t, s + 18));
           const c = (4 + 6 * hash2(i + 2 * k, j + t, s + 19)) * (0.7 + 1.1 * core);
           const g = ground(px, pz, a * 0.7);
+          // (Not jammed into a cliff or a spire: only where the ground under it is fairly level.)
+          if (fall > 0.6 * c || this.getFormation(px, pz) > 2) continue;
           const block = { x: px, z: pz, y: g + 0.35 * c, a, b, c, ang: grain + (hash2(i + t, j + 2 * k, s + 20) - 0.5) * 0.7, seed: hash2(i + 3 * k, j + t, s + 21) * 50, kind: 'granite' };
           list.push(block);
         }
@@ -5298,7 +5312,7 @@ export class TerrainGenerator {
     if (mountains > 0.45) {
       // (A jungle range's mountains are green to their tops, however high: no snow on them.)
       if (w.jungleMountains > 0.5) return 'Jungle mountains';
-      if (height > 181) return 'Snowy peaks';
+      if (height > 150) return 'Snowy peaks';
       // Mountains are bare rock: above the trees, or sheer. Wooded slopes
       // lower down are the foothills.
       const steep = Math.abs(heightAt(x + 3, z) - heightAt(x - 3, z)) / 6 + Math.abs(heightAt(x, z + 3) - heightAt(x, z - 3)) / 6;
@@ -5436,7 +5450,8 @@ export class TerrainGenerator {
       }
       // A glowing swamp: its moss darker, blue-green.
       const gs = w.wetland > 0.2 ? this.glowSwampAt(x, z) : 0;
-      if (gs > 0.01) out.lerp(GLOW_MOSS, 0.45 * gs);
+      // (Only down in the swamp itself: never a band of it up the hillside round it.)
+      if (gs > 0.01) out.lerp(GLOW_MOSS, 0.45 * gs * (1 - smoothstep(sea + 2.5, sea + 7, ground)) * smoothstep(0.85, 0.95, upness));
     }
     // Quicksand: a patch of smooth, damp-looking sand, a shade darker and
     // flatter than round it (if you know what to look for).

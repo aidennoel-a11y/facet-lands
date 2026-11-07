@@ -4,12 +4,14 @@ import { boulderMake, boulderRing, boulderRough, boulderWobble } from '../Terrai
 
 const TILE = 600; // (m: the boulders are drawn in tiles this size)
 const REACH = 2600; // (m: drawn this far round you; they're big, and seen from far off)
-const SIDES = 40, RINGS = 24;
+// (Their faces about as fine as the land's own, whatever their size.)
+const EDGE = 2.6;
 const STONE = {
   bristle: [0xe6e2d8, 0xd8d4c8, 0xeeebe4, 0xccc8bc],
-  granite: [0xc8b49a, 0xbca48c, 0xd0bca4, 0xb09c88],
+  granite: [0xa8a0a2, 0x9a9294, 0xb2a8a6, 0x8e878c, 0xa49890], // (the Black Hills' own grey, pink-tinged granite)
 };
 const tint = new Color(), shade = new Color();
+const MOSS = new Color(0x4f6e34);
 
 /**
  * The great boulders (see TerrainGenerator.greatBouldersIn): real rock, not
@@ -97,6 +99,8 @@ function boulderMesh(b, pos, col) {
   const palette = STONE[b.kind] ?? STONE.bristle;
   const pts = [];
   const m = boulderMake(b);
+  const SIDES = Math.max(20, Math.min(120, Math.round((Math.PI * (b.a + b.b)) / EDGE)));
+  const RINGS = Math.max(10, Math.min(60, Math.round((Math.PI * b.c * 0.95) / EDGE)));
   for (let r = 0; r <= RINGS; r++) {
     // (From the bottom, s = -1, to the top, s = 1; its top planed flat if it's one of those.)
     const s = Math.min(m.flat, -1 + (2 * r) / RINGS);
@@ -130,6 +134,8 @@ function boulderMesh(b, pos, col) {
     const patch = 0.88 + 0.12 * Math.sin(mx * 0.07 + mz * 0.05 + b.seed) * Math.cos(mz * 0.06 - my * 0.03);
     const crack = boulderRough(b, mx, my, mz) < -0.6 * Math.min(4, Math.min(b.a, b.b, b.c) * 0.09) ? 0.78 : 1;
     shade.copy(tint).multiplyScalar((0.62 + 0.38 * Math.min(1, (r / RINGS) * 1.6)) * (0.9 + 0.2 * h) * patch * crack);
+    // (Moss low down where it meets the ground, in patches, as on the land's own rocks.)
+    if (b.kind === 'granite' && my < b.y - 0.15 * b.c && Math.sin(mx * 0.6 + b.seed) + Math.cos(mz * 0.55 - b.seed) > -0.4) shade.lerp(MOSS, 0.55 + 0.25 * h);
     for (const p of [p0, p1, p2]) {
       pos.push(p[0], p[1], p[2]);
       col.push(shade.r, shade.g, shade.b);
