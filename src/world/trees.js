@@ -541,6 +541,9 @@ function monsoonKind({ seed, trunkH, trunkR, blobs, leafLow, leafHigh, vines = 6
     part(new CylinderGeometry(trunkR * 0.66, trunkR * 0.8, trunkH * 0.3, 5), moss, 0x6a8a3a, { x: 0.05, y: trunkH * 0.62, sx: 1.06, sz: 1.06, lump: 0.15, seed: seed + 3 }),
     ...boughs(blobs, trunkH * 0.85, trunkH, bark, seed + 4, { thick: 1.2 }),
   ];
+  // (The trunk carried on up into the middle of the crown, so it always meets the leaves: no gap between them, seen from below.)
+  const crownMid = Math.max(...blobs.filter(([x, , z]) => Math.hypot(x, z) < 1.5).map(([, y, , r]) => y - r * 0.3), trunkH + 1);
+  wood.push(part(new CylinderGeometry(trunkR * 0.45, trunkR * 0.7, crownMid - trunkH + 0.4, 6), bark, 0x7a6a56, { y: (trunkH + crownMid) / 2 - 0.2, lump: 0.05, seed: seed + 5 }));
   const leafy = blobs.map(([x, y, z, r], i) => part(new IcosahedronGeometry(r, 0), leafLow, leafHigh, { x, y, z, sy: 0.72, lump: 0.22, seed: seed + 10 + i }));
   // (Ferns and moss up on the boughs, where they fork.)
   for (let k = 0; k < 5; k++) {
