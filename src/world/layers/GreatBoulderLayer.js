@@ -118,7 +118,9 @@ function boulderMesh(b, pos, col) {
       const px = b.x + u * ca - v * sa, pz = b.z + u * sa + v * ca;
       const ox = px - b.x, oy = (y - b.y) * 1.2, oz = pz - b.z, ol = Math.hypot(ox, oy, oz) || 1;
       const d = boulderRough(b, px, y, pz);
-      ring.push([px + (ox / ol) * d, y + (oy / ol) * d, pz + (oz / ol) * d]);
+      const qx = px + (ox / ol) * d, qz = pz + (oz / ol) * d;
+      // (Leaning with the ground it sits on: see boulderSpan.)
+      ring.push([qx, y + (oy / ol) * d + (b.sx ?? 0) * (qx - b.x) + (b.sz ?? 0) * (qz - b.z), qz]);
     }
     pts.push(ring);
   }

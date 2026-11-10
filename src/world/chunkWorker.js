@@ -122,14 +122,15 @@ self.onmessage = (event) => {
     out.reeds = reedData(g, config, cx, cz, groundHeightAt, heights);
     if (out.reeds) transfer.push(out.reeds.matrices.buffer, out.reeds.shades.buffer, out.reeds.kinds.buffer, out.reeds.climate.buffer);
   }
-  if (wantTrees) {
-    // Where the trees stand, off the boulders (as RockLayer.bouldersNear).
+  // Where the boulders lie (as RockLayer.bouldersNear): no tree or grass grows up through one.
+  let boulders = null;
+  if (wantTrees || wantGrass) {
     const cells = Math.round(config.chunkSize / config.treeSpacing);
     const margin = config.chunkSize / cells;
     const size = config.chunkSize;
     const x0 = cx * size - margin, z0 = cz * size - margin;
     const x1 = (cx + 1) * size + margin, z1 = (cz + 1) * size + margin;
-    const boulders = [];
+    boulders = [];
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
         for (const c of rocksAt(cx + dx, cz + dz, config)) {
@@ -137,10 +138,10 @@ self.onmessage = (event) => {
         }
       }
     }
-    out.trees = placeTrees(g, config, cx, cz, groundHeightAt, boulders);
   }
+  if (wantTrees) out.trees = placeTrees(g, config, cx, cz, groundHeightAt, boulders);
   if (wantGrass) {
-    out.grass = placeGrass(g, config, cx, cz, groundHeightAt);
+    out.grass = placeGrass(g, config, cx, cz, groundHeightAt, false, boulders);
     transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer, out.grass.kinds.buffer, out.grass.warms.buffer);
   }
   // (The small things, here so the main thread needn't: see decorPlacement.)

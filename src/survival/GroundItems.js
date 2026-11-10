@@ -175,11 +175,12 @@ export class GroundItems {
         const pFlint = wooded > 0.35 || mount > 0.3 ? 0.02 : 0.004;
         // Wild seed in the open grass: wheat and carrot on the plains,
         // corn on the savanna, potatoes up in the hills and the cold.
-        const pSeed = 0.007 * (1 - Math.min(1, forest * 1.6)) * Math.min(1, w.temperate + w.savanna + w.smoky + 0.5 * w.pine);
+        const pSeed = 0.007 * (1 - Math.min(1, forest * 1.6)) * Math.min(1, w.temperate + w.savanna + w.smoky + 0.5 * w.pine) * (1 - Math.min(1, mount / 0.5));
         let id = null;
         const pGold = mesaTop ? 0.005 : 0;
         // Wild crops out on the open plains (and the parkland's meadows), now and then: wheat the likeliest.
-        const pWild = 0.005 * (1 - Math.min(1, forest * 1.8)) * Math.min(1, w.temperate + 0.6 * w.parkland);
+        // (Only on grassy ground: never up on a mountain's bare rock, nor in the high stony country.)
+        const pWild = 0.005 * (1 - Math.min(1, forest * 1.8)) * Math.min(1, w.temperate + 0.6 * w.parkland) * (1 - Math.min(1, mount / 0.4));
         // In the giant flower meadows, wild honey everywhere (dripped from the bees' nests in the stalks);
         // in the petrified forests, fossils and chips of the stone wood.
         const pHoney = meadow > 0.3 && generator.inGiantMeadow?.(x0 + lx, z0 + lz) ? 0.06 * meadow : 0, pFossil = petrified > 0.3 ? 0.05 * petrified : 0, pGlow = glowSwamp > 0.5 ? 0.07 * glowSwamp : 0; // (and in the glowing swamps, glowcaps to pick)
@@ -227,6 +228,8 @@ export class GroundItems {
         if (wet ? !(y < sea - 0.8) : !(y > sea + 0.3) || surface.normalY < 0.72) continue;
         // (No sticks above the trees, and none on a sandy shore.)
         if (id === 'stick' && (y > 150 || y > snowLine - 25 || y < sea + 2.5)) continue;
+        // (Wild crops and seed only on dirt and grass: not on steep ground, the bare rock high up, nor the great boulders.)
+        if ((id in WILD_CROPS || id.startsWith('seed')) && (surface.normalY < 0.85 || y > 128 || y > snowLine - 40 || generator.bareRockAt?.(x0 + lx, z0 + lz))) continue;
         // High in the mountains, some of the loose stone is coal, or the dark
         // ore that steel is made from (see Game.#mine).
         // Now and then, among the loose stones, a lump of rusty iron ore showing

@@ -268,7 +268,9 @@ lightning.onStrike = (x, y, z, distance) => {
     game.hurt(hurt, 'lightning');
     game.hotbar?.flash(distance < 3 ? 'Struck by lightning!' : 'Lightning, right beside you!');
   }
-  if (distance > 1300 || y < WORLD.seaLevel + 2 || waterAt(x, z, true)) return;
+  // (Only near enough to see it start, and only in a real storm: never a fire out of sight, nor out of a clear sky.)
+  if (distance > 500 || y < WORLD.seaLevel + 2 || waterAt(x, z, true)) return;
+  if (!(weather.storm > 0.25)) return;
   // (Never in the rain: only dry lightning sets the grass alight.)
   if (weather.rain > 0.12) return;
   const w = generator.getBiomeWeights(x, z, {});
@@ -1529,9 +1531,10 @@ function thirdPersonView(dt, now) {
   for (const a of selfFigure.arms) a.visible = !legs;
   // (Through your own eyes: the body itself left out too, only the legs under it; it would fill the view looking down.)
   selfFigure.bodyGeo ??= selfFigure.body.geometry;
-  selfFigure.body.geometry = legs ? (EMPTY_GEO ??= new THREE.BufferGeometry()) : selfFigure.bodyGeo;
+  // (Your body there under you too, looking down: chest, belly and legs; only the head and the arms left out.)
+  selfFigure.body.geometry = selfFigure.bodyGeo;
   if (legs) {
-    const p = camera.position, yaw = controls.euler.y, back = 0.24;
+    const p = camera.position, yaw = controls.euler.y, back = 0.3;
     const moved = selfFigure.last ? Math.hypot(p.x - selfFigure.last.x, p.z - selfFigure.last.z) / Math.max(dt, 1e-3) : 0;
     selfFigure.last = { x: p.x, z: p.z };
     selfFigure.speedOverride = (selfFigure.speedOverride ?? 0) + (Math.min(moved, 12) - (selfFigure.speedOverride ?? 0)) * Math.min(1, dt * 8);

@@ -411,7 +411,9 @@ export class Landmarks {
         // round it, the rock country it stands in: massive boulders, some
         // balanced on pedestals, hoodoos with capstones, a fin of rock and a
         // little mesa, smaller rocks and pebbles everywhere, a juniper or two.
-        const band = [0xb4603a, 0xc87a4a, 0x9a4a30, 0xd09060, 0xa85a38], varnish = 0x5a3424, S = 1.5;
+        // (Its rock the country's own: red sandstone in the dry country, the Black Hills' grey granite there.)
+        const granite = (this.generator?.getBiomeWeights(site.x, site.z, {}).blackHills ?? 0) > 0.4;
+        const band = granite ? [0xa8a0a2, 0x9a9294, 0xb2a8a6, 0x8e878c, 0xa49890] : [0xb4603a, 0xc87a4a, 0x9a4a30, 0xd09060, 0xa85a38], varnish = granite ? 0x5a5658 : 0x5a3424, S = 1.5;
         const half = 13 * S, rise = 17 * S;
         for (const sd of [-1, 1]) {
           const [lx, ly, lz] = at(sd * half, 0);

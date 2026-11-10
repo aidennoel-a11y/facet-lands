@@ -21,7 +21,7 @@ const surface = { normalY: 1 };
  * chunk-local), colors (3 each), count }. Only three.js maths, so a worker
  * can do it too.
  */
-export function placeGrass(generator, config, cx, cz, groundHeightAt, far = false) {
+export function placeGrass(generator, config, cx, cz, groundHeightAt, far = false, boulders = null) {
   const { chunkSize, seaLevel } = config;
   // (The far grass: sparser, bigger clumps, seen from a distance.)
   const grassSpacing = far ? config.farGrassSpacing : config.grassSpacing;
@@ -92,6 +92,15 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       if (generator.onSinter && generator.getBiomeWeights(wx, wz, {}).volcanic > 0.5 && generator.onSinter(wx, wz)) continue; // nor on a hot spring's crust
       if (generator.onLiveLava?.(wx, wz)) continue; // nor on a lava flow
       if (generator.bareRockAt?.(wx, wz)) continue; // nor on the great boulders' bare rock
+      // (Nor up through the land's own boulders: [x, z, radius, ...].)
+      if (boulders) {
+        let hit = false;
+        for (let k = 0; k < boulders.length && !hit; k += 3) {
+          const dx = wx - boulders[k], dz = wz - boulders[k + 1], r = boulders[k + 2] + 0.3;
+          if (dx * dx + dz * dz < r * r) hit = true;
+        }
+        if (hit) continue;
+      }
       // How much grass the biome here grows.
       const oasis = generator.oasisAt ? generator.oasisAt(wx, wz) : 0;
       if (keep > density * Math.max(generator.pickBiome(wx, wz, hash2(gi, gj, seed + 7)).grass, oasis, swamp)) continue;

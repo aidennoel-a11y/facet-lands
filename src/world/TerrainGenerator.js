@@ -141,6 +141,7 @@ export function boulderSpan(b, x, z) {
   const ca = Math.cos(b.ang), sa = Math.sin(b.ang), dx = x - b.x, dz = z - b.z;
   const u = (dx * ca + dz * sa) / b.a, v = (-dx * sa + dz * ca) / b.b;
   if (u * u + v * v > 1.8) return null;
+  const tilt = (b.sx ?? 0) * dx + (b.sz ?? 0) * dz; // (leaning with the ground it sits on)
   const q = Math.pow(Math.pow(Math.abs(u), m.p) + Math.pow(Math.abs(v), m.p), 1 / m.p) / boulderWobble(b, Math.atan2(v, u));
   if (q >= 1) return null;
   // (How far up and down its sides reach this far out: found by halving, its outline narrowing steadily both ways.)
@@ -153,9 +154,9 @@ export function boulderSpan(b, x, z) {
     }
     return lo;
   };
-  const top = b.y + Math.min(m.flat, reach(1)) * b.c;
+  const top = b.y + tilt + Math.min(m.flat, reach(1)) * b.c;
   // (Its top as rough as it's drawn: you stand on the knobs.)
-  return [b.y - 0.85 * b.c * reach(-1), top + boulderRough(b, x, top, z)];
+  return [b.y + tilt - 0.85 * b.c * reach(-1), top + boulderRough(b, x, top, z)];
 }
 const DUNE = new Color(0xe6b86e); // dune sand
 // The reef itself, every surface of it grown over: the low encrusting and
@@ -689,7 +690,7 @@ export class TerrainGenerator {
   #cascadesZone(x, z, range) {
     const low = 1 - smoothstep(0.1, 0.25, smoothstep(0.08, 0.55, range + MOUNTAIN_BIAS - this.#drySuppress(x, z)));
     if (low <= 0) return 0;
-    return low * this.#blobs('cascades', x, z, 2250, T.cascades, 900, 1420, 0xca5c, (px, pz) => {
+    return low * this.#blobs('cascades', x, z, 1750, T.cascades, 900, 1420, 0xca5c, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       const a = this.getAridity(px, pz, r);
       // (Wet green country clear of the ranges, the sea, the savanna, the
@@ -1239,6 +1240,13 @@ export class TerrainGenerator {
     return a + (c - a) * fz;
   }
 
+  // Jungle at (x, z) (0..1), from a remembered 128 m grid: quick, for
+  // whether a kind of country is near one (see #gardensLand, #bambooLand).
+  #jungleAt128(x, z) {
+    // (Its suitedness for jungle, already worked out and remembered, well past where jungle starts; or a jungle of its own.)
+    return Math.max(smoothstep(T.jungle + 0.08, T.jungle + 0.16, this.#jungleSuit(x, z)), this.#jungleBlob(x, z));
+  }
+
   #monsoonRing(x, z, jb, aridity = 0) {
     // (Never out in the desert.)
     if (aridity > T.desertStart - 0.06) return 0;
@@ -1304,10 +1312,7 @@ export class TerrainGenerator {
     return this.#blobs('bamboo', x, z, 3000, 0.55, 420, 756, 0xba3b, (px, pz) => {
       if (this.getAridity(px, pz) > 0.42 || this.getMountainness(px, pz) > 0.35) return 0;
       // (Only right by jungle country: a jungle or a jungle range just past its edge.)
-      const jungle = (qx, qz) => {
-        const r = this.#rangeField(qx, qz, {}).value;
-        return this.#jungleZone(qx, qz, r, this.getAridity(qx, qz, r)) > 0.5 || this.#jungleMtnBlob(qx, qz) > 0.3;
-      };
+      const jungle = (qx, qz) => this.#jungleAt128(qx, qz) > 0.5 || this.#jungleMtnBlob(qx, qz) > 0.3;
       if (jungle(px, pz)) return 0;
       for (let k = 0; k < 8; k++) {
         const a = (k / 8) * Math.PI * 2;
@@ -1403,10 +1408,7 @@ export class TerrainGenerator {
     return this.#blobs('gardens', x, z, 3200, T.gardens, 420, 700, 0x9a4d, (px, pz) => {
       if (this.getMountainness(px, pz) > 0.3 || this.#seaCoast(px, pz) > 0.02 || this.getOceanness(px, pz) > 0.02 || this.getAridity(px, pz) > 0.42) return 0;
       // (Not in a jungle, but touching one, or a jungle range: real jungle just past its edge on two sides or more.)
-      const jungle = (qx, qz) => {
-        const r = this.#rangeField(qx, qz, {}).value;
-        return this.#jungleZone(qx, qz, r, this.getAridity(qx, qz, r)) > 0.5 || this.#jungleMtnBlob(qx, qz) > 0.3;
-      };
+      const jungle = (qx, qz) => this.#jungleAt128(qx, qz) > 0.5 || this.#jungleMtnBlob(qx, qz) > 0.3;
       if (jungle(px, pz)) return 0;
       let touching = 0;
       for (let k = 0; k < 8; k++) {
@@ -4518,8 +4520,14 @@ export class TerrainGenerator {
     if (list) return list;
     list = [];
     const C = 300, s = this.seed ^ 0xb0d1;
-    // (The land under it: its lowest, and how far it falls away across it, so none is set into a cliff.)
-    let fall = 0;
+    // (The land under it: its lowest, and how far it falls away across it, so none is set into a cliff;
+    // and its slope, so the boulder sits on it, leaning with it, its foot sunk in all round.)
+    let fall = 0, slope = [0, 0], mid = 0;
+    const plane = (px, pz, r) => {
+      mid = this.landHeight(px, pz);
+      slope = [(this.landHeight(px + r, pz) - this.landHeight(px - r, pz)) / (2 * r), (this.landHeight(px, pz + r) - this.landHeight(px, pz - r)) / (2 * r)];
+      return mid;
+    };
     const ground = (px, pz, r) => {
       let lo = this.landHeight(px, pz), hi = lo;
       for (let k = 0; k < 6; k++) {
@@ -4543,10 +4551,10 @@ export class TerrainGenerator {
         for (let k = 0; k < n; k++) {
           const px = cx + (k ? (hash2(i + k, j, s + 4) - 0.5) * 40 : 0), pz = cz + (k ? (hash2(i, j + k, s + 5) - 0.5) * 40 : 0);
           const a = 5 + 13 * hash2(i - k, j + t, s + 6), b = a * (0.45 + 0.4 * hash2(i + k, j - t, s + 7)), c = (0.3 + 0.6 * hash2(i + 2 * k, j + t, s + 8)) * a;
-          const g = ground(px, pz, a * 0.7);
+          plane(px, pz, a * 0.8);
           const stack = Math.max(-Infinity, ...list.map((o) => on(o, px, pz)));
-          const y = Math.max(g + 0.3 * c, Math.min(g + 1.1 * c, stack + 0.45 * c));
-          list.push({ x: px, z: pz, y, a, b, c, ang: hash2(i + t, j + k, s + 9) * Math.PI, seed: hash2(i + 3 * k, j + t, s + 10) * 50, kind: 'bristle' });
+          const y = Math.max(mid + 0.15 * c, Math.min(mid + 1.1 * c, stack + 0.45 * c));
+          list.push({ sx: slope[0], sz: slope[1], x: px, z: pz, y, a, b, c, ang: hash2(i + t, j + k, s + 9) * Math.PI, seed: hash2(i + 3 * k, j + t, s + 10) * 50, kind: 'bristle' });
         }
       } else if (w.blackHills > 0.6 && hash2(i + t, j, s + 11) < 0.75) {
         // A granite outcrop, as the Black Hills' are: a crowd of jointed
@@ -4564,7 +4572,8 @@ export class TerrainGenerator {
           const g = ground(px, pz, a * 0.7);
           // (Not jammed into a cliff or a spire: only where the ground under it is fairly level.)
           if (fall > 0.6 * c || this.getFormation(px, pz) > 2) continue;
-          const block = { x: px, z: pz, y: g + 0.35 * c, a, b, c, ang: grain + (hash2(i + t, j + 2 * k, s + 20) - 0.5) * 0.7, seed: hash2(i + 3 * k, j + t, s + 21) * 50, kind: 'granite' };
+          plane(px, pz, a * 0.8);
+          const block = { sx: slope[0], sz: slope[1], x: px, z: pz, y: mid + 0.12 * c, a, b, c, ang: grain + (hash2(i + t, j + 2 * k, s + 20) - 0.5) * 0.7, seed: hash2(i + 3 * k, j + t, s + 21) * 50, kind: 'granite' };
           list.push(block);
         }
         // (Up on the heart of it, a second tier: broad blocks lying across
@@ -4595,7 +4604,8 @@ export class TerrainGenerator {
           const ra = hash2(i + k * 11, j - t, s + 25) * Math.PI * 2, rd = R * (1.1 + 0.9 * hash2(i - t, j + k * 11, s + 26));
           const px = cx + Math.cos(ra) * rd, pz = cz + Math.sin(ra) * rd, a = 2.5 + 3.5 * hash2(i + k, j, s + 27);
           const g = ground(px, pz, a * 0.7);
-          list.push({ x: px, z: pz, y: g + 0.3 * a * 0.7, a, b: a * (0.5 + 0.35 * hash2(i + k, j - k, s + 29)), c: a * (0.4 + 0.5 * hash2(i - k, j + k, s + 30)), ang: ra, seed: hash2(i, j + k, s + 28) * 50, kind: 'granite' });
+          plane(px, pz, a * 0.8);
+          list.push({ sx: slope[0], sz: slope[1], x: px, z: pz, y: mid + 0.1 * a * 0.6, a, b: a * (0.5 + 0.35 * hash2(i + k, j - k, s + 29)), c: a * (0.4 + 0.5 * hash2(i - k, j + k, s + 30)), ang: ra, seed: hash2(i, j + k, s + 28) * 50, kind: 'granite' });
         }
       }
     }
@@ -4637,10 +4647,7 @@ export class TerrainGenerator {
 
   /** Whether (x, z) is bare rock where nothing grows: up on a great boulder. */
   bareRockAt(x, z) {
-    const w = this.getBiomeWeights(x, z, {});
-    if ((w.bristlecone ?? 0) < 0.3 && w.blackHills < 0.3) return false;
-    const span = this.greatBoulderAt(x, z);
-    return !!span && span[1] > this.getHeight(x, z) + 0.5;
+    return !!this.greatBoulderAt(x, z);
   }
 
   /**
