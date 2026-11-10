@@ -550,14 +550,15 @@ function monsoonKind({ seed, trunkH, trunkR, blobs, leafLow, leafHigh, vines = 6
   const edge = Math.max(...blobs.map(([x, , z, r]) => Math.hypot(x, z) + r * 0.6));
   // (Vines hanging from the crown's edge.)
   for (let k = 0; k < vines; k++) {
-    const a = (k / vines) * Math.PI * 2 + rand() * 0.5, d = edge * (0.7 + rand() * 0.25), len = 2 + rand() * 3;
+    // (Rooted well up in the crown, under its middle, so their tops are always hidden in the leaves.)
+    const a = (k / vines) * Math.PI * 2 + rand() * 0.5, d = edge * (0.4 + rand() * 0.25), len = 3 + rand() * 3, top = trunkH + 1.8;
     const g = new ConeGeometry(0.07, len, 3, 1);
     g.rotateX(Math.PI);
-    leafy.push(part(g, 0x3a6a26, 0x4f8a34, { x: Math.cos(a) * d, y: trunkH + 0.6 - len / 2, z: Math.sin(a) * d, seed: seed + 30 + k }));
+    wood.push(part(g, 0x3a6a26, 0x4f8a34, { x: Math.cos(a) * d, y: top - len / 2, z: Math.sin(a) * d, seed: seed + 30 + k }));
   }
   // (A fig's aerial roots: from its limbs straight down to the ground.)
   for (let k = 0; k < roots; k++) {
-    const a = (k / roots) * Math.PI * 2 + rand() * 0.4, d = 1.2 + rand() * (edge - 1.6), top = trunkH - 0.2;
+    const a = (k / roots) * Math.PI * 2 + rand() * 0.4, d = 1.2 + rand() * (edge * 0.6 - 1.2), top = trunkH + 1.4; // (up into the crown: never hanging loose under it)
     wood.push(part(new CylinderGeometry(0.05, 0.09, top, 4), 0x7a6a56, bark, { x: Math.cos(a) * d, y: top / 2, z: Math.sin(a) * d, seed: seed + 40 + k }));
   }
   // (Flowers: clusters of orange-red over the crown.)
