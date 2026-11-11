@@ -1581,7 +1581,7 @@ export class Game {
       if (!this.structures.isFire(at)) {
         const tree = this.trees.pick(origin, direction, REACH);
         const fallen = this.felling.pickFallen(origin, direction, REACH);
-        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stake', 'chest', 'bed', 'bedroll', 'strawBed', 'fancyBed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor', 'woodWindow', 'logWall', 'plankWall', 'logFloor', 'logStairs', 'plankStairs', 'logRoof', 'shingleRoof', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof']);
+        const WOODEN = new Set(['wall', 'gate', 'fence', 'fenceGate', 'stall', 'hitchPost', 'trough', 'hayRack', 'stake', 'chest', 'bed', 'bedroll', 'strawBed', 'fancyBed', 'dryingRack', 'tanningRack', 'roof', 'raft', 'woodFloor', 'woodWindow', 'logWall', 'plankWall', 'logFloor', 'logStairs', 'plankStairs', 'logRoof', 'shingleRoof', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof']);
         const wooden = at && WOODEN.has(at.type) ? built : null;
         const near = [tree && { d: tree.distance }, fallen && { d: fallen.distance }, wooden && { d: wooden.distance ?? REACH }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
         if (!near) return this.hotbar?.flash('Strike it at something that will burn: a campfire, a torch, wood, a tree');
@@ -2733,7 +2733,17 @@ export class Game {
   // A fight with a great beast: its name and health at the top of the
   // screen, till it's dead or you've been out of the fight a while.
   #bossFight(a) {
-    this.bossFight = { a, until: this.time + 10 };
+    this.bossFight = { a, until: this.time + 10, drum: this.bossFight?.a === a ? this.bossFight.drum : 0 };
+  }
+
+  /** What a great beast is up to (see Wildlife.onBoss): its coming announced, its moves warned of. */
+  bossEvent(type, a, text) {
+    if (!a.boss || a.mirrored) return;
+    this.#bossFight(a);
+    if (type === 'intro') {
+      this.hud.bossIntro?.(a.boss.name, a.boss.title);
+      this.shake = Math.max(this.shake ?? 0, 0.8);
+    } else if (text) this.hud.bossWarn?.(text, type === 'rage');
   }
 
   #report(a, outcome, head) {
@@ -3571,6 +3581,41 @@ export class Game {
         }
       }
     }
+    // Up on a big mountain, looking out: the country you can see from there,
+    // the way you're looking, goes onto your map (what a ridge hides stays
+    // hidden: each line of sight stops showing land once higher ground's
+    // come between).
+    if (this.mode === 'survival' && this.walking && (this.lookoutWait = (this.lookoutWait ?? 0) - dt) <= 0) {
+      this.lookoutWait = 0.6;
+      const size = this.config.chunkSize ?? 128, sea = this.config.seaLevel ?? 0;
+      const high = cam.y - sea;
+      if (high > 85 && !this.sheltered) {
+        const fwd = this.camera.getWorldDirection(this._look ??= this.camera.position.clone());
+        const yaw = Math.atan2(fwd.x, fwd.z), range = Math.min(2600, 500 + (high - 85) * 14);
+        let found = 0;
+        for (let k = 0; k < 4; k++) {
+          const ang = yaw + (Math.random() - 0.5) * 1.1, sx = Math.sin(ang), sz = Math.cos(ang);
+          let horizon = -Infinity;
+          for (let d = size * 1.5; d < range; d += size * 0.75) {
+            const x = cam.x + sx * d, z = cam.z + sz * d;
+            // (The land as it's drawn out there: none drawn yet, none seen.)
+            const hy = this.landHeightAt?.(x, z);
+            if (!Number.isFinite(hy)) break;
+            const slope = (Math.max(sea, hy) - cam.y) / d;
+            if (slope < horizon - 0.004) continue; // (behind higher ground)
+            horizon = Math.max(horizon, slope);
+            const key = `${Math.floor(x / size)},${Math.floor(z / size)}`;
+            if (!this.explored.has(key)) this.explored.add(key), found++;
+          }
+        }
+        if (found) {
+          this.dirty = true;
+          this.exploredVersion = (this.exploredVersion ?? 0) + 1;
+          if (this.time > (this.lookoutSaid ?? 0)) this.hotbar?.flash('From up here you can see a long way: what you look out over goes onto your map (B)');
+          this.lookoutSaid = this.time + 120;
+        }
+      }
+    }
     // Your journal, kept as you go: where you are (every few seconds), and
     // the creatures you've had a good look at (near, and in front of you).
     this.journalWait = (this.journalWait ?? 0) - dt;
@@ -3687,6 +3732,18 @@ export class Game {
     // (A glider in your pack: hold Space as you fall and you glide; it wears a little each flight.)
     const glider = this.inventory.slots.findIndex((st) => st?.id === 'glider');
     this.controls.canGlide = glider >= 0;
+    // (Skis in your hand: on deep snow, once the winter's second snowfall has come, you slide: see PlayerControls.)
+    const skiHeld = this.inventory.slots[this.hotbar?.index ?? 0]?.id === 'skis';
+    const snowDeep = skiHeld && seasonUniforms.uSnowfalls.value >= 2 && (this.snowDepthAt?.(cam.x, cam.z) ?? 0) > 0.08;
+    if (skiHeld && !snowDeep && !this.skiTold) this.hotbar?.flash(seasonUniforms.uSnowfalls.value >= 2 ? 'No deep snow here to ski on' : 'Skis need deep snow: not till the winter\'s second snowfall has lain');
+    else if (snowDeep && !this.controls.skiOn) this.hotbar?.flash('Skis on: downhill you slide. W to push, S to brake, look to turn, Space to hop');
+    this.skiTold = skiHeld;
+    this.controls.skiOn = snowDeep && this.walking && !this.riding;
+    if (this.controls.skiing && (this.controls.skiSpeed ?? 0) > 2) {
+      if ((this.skiSwish = (this.skiSwish ?? 0) - dt) <= 0) (this.skiSwish = Math.max(0.12, 0.6 - this.controls.skiSpeed * 0.02)), this.sound?.call('brush', 0, Math.min(0.5, 0.1 + this.controls.skiSpeed * 0.02));
+      if ((this.skiWear = (this.skiWear ?? 0) + dt) > 10) (this.skiWear = 0), this.inventory.wear(this.hotbar.index, 1);
+    }
+    this.controls.onSkiCrash = (v) => (this.hurt(Math.min(40, (v - 9) * 2.2), 'a fall on your skis'), this.hotbar?.flash('You crash: too fast into that'));
     if (this.controls.gliding && glider >= 0 && (this.glideWear = (this.glideWear ?? 0) + dt) > 6) (this.glideWear = 0), this.inventory.wear(glider, 1);
     if (picks >= 0 && walking && this.controls.moving && this.controls.climbingSteep) {
       this.survival.energy = Math.max(0, this.survival.energy - dt * 0.25);
@@ -3699,7 +3756,17 @@ export class Game {
     const bf = this.bossFight;
     if (bf && bf.a.alive && !bf.a.gone && Math.hypot(bf.a.x - cam.x, bf.a.z - cam.z) < 40) bf.until = Math.max(bf.until, bf.a.hunting || bf.a.charging > 0 ? this.time + 10 : bf.until);
     if (bf && (!bf.a.alive || bf.a.gone)) bf.until = Math.min(bf.until, (bf.dead ??= this.time) + 3);
-    if (bf && this.time < bf.until) this.hud.boss(bf.a.boss.name, bf.a.spider ? Math.max(0, bf.a.health / bf.a.maxHealth) : Wildlife.bossHealth(bf.a));
+    if (bf && this.time < bf.until) {
+      const left = bf.a.spider ? Math.max(0, bf.a.health / bf.a.maxHealth) : Wildlife.bossHealth(bf.a);
+      this.hud.boss(bf.a.boss.name, left, !!bf.a.enraged);
+      // (The fight's own pulse: a drum, quicker as the beast weakens, quicker still in its rage.)
+      if (bf.a.alive && this.time >= (bf.drum ?? 0)) {
+        const gap = (bf.a.enraged ? 0.36 : 0.62) * (0.75 + 0.25 * left);
+        bf.beat = ((bf.beat ?? 0) + 1) % 4;
+        bf.drum = this.time + gap;
+        this.sound?.call('bossDrum', 0, bf.beat === 0 ? 0.9 : bf.beat === 2 ? 0.6 : 0.35);
+      }
+    }
     else (this.bossFight = null), this.hud.boss(null);
     // Settling a wild horse (how calm it is), or riding one (its wind).
     const calming = this.wildlife.calming;
@@ -3883,7 +3950,7 @@ export class Game {
           const up = this.camera.position.y - this.controls.eyeHeight + 3.2, t = (up - origin.y) / direction.y;
           if (t > 0 && t < 9 && (!at || at.y < up - 1.3)) at = v.copy(origin).addScaledVector(direction, t);
         }
-        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall', 'chimneyWall', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'stoneDoor', 'cutWindow', 'cutDoor', 'barnWall', 'barnWindow', 'barnDoor', 'gatehouse', 'dock'].includes(placing) ? Math.PI : 0);
+        const yaw = this.controls.euler.y + (['wall', 'gate', 'fence', 'fenceGate', 'stall', 'stoneWall', 'stoneFence', 'woodWindow', 'stoneWindow', 'logWall', 'plankWall', 'cutStoneWall', 'chimneyWall', 'logWindow', 'logDoor', 'plankWindow', 'plankDoor', 'stoneDoor', 'cutWindow', 'cutDoor', 'barnWall', 'barnWindow', 'barnDoor', 'gatehouse', 'dock'].includes(placing) ? Math.PI : 0);
         this.plan = this.structures.plan(placing, at, yaw + (this.buildTurn ?? 0), ground, (x, z) => this.waterAt(x, z)?.level ?? null, (x, z, r) => this.#inTheWay(x, z, r));
         // (A dock: set at the water's edge, out over the water.)
         if (placing === 'dock' && this.plan.ok) {
@@ -4032,6 +4099,10 @@ export class Game {
         if ((kind === 'snake' || kind === 'scorpion') && this.inventory.feet) amount *= 0.5;
         this.hurt(amount, a?.boss ? a.boss.name : ATTACKERS[kind] ?? `a ${NAMES[kind] ?? kind}`, { bite: kind !== 'snake' && kind !== 'scorpion' });
       },
+      // (A great beast's blow: thrown back; the ground shaking; your strength drained.)
+      shove: (vx, vz, vy = 0) => (vy > 0 ? c.launch(vx, vy, vz) : ((c.push.x += vx), (c.push.z += vz))),
+      shakeCam: (v) => (this.shake = Math.min(1.5, Math.max(this.shake ?? 0, v))),
+      drain: (n, text) => ((this.survival.energy = Math.max(0, this.survival.energy - n)), text && this.hotbar?.flash(text)),
       poison: (kind = 'snake') => {
         if (this.inventory.feet && Math.random() < 0.6) return this.hotbar?.flash(kind === 'scorpion' ? 'A scorpion: its sting caught in your boot' : 'A rattlesnake struck: its fangs caught in your boot leather');
         this.survival.poison();

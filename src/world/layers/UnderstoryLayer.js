@@ -25,7 +25,7 @@ const DARK = [0.55, 0.62, 0.5], MID = [0.85, 0.92, 0.8], LIGHT = [1.05, 1.1, 0.9
  * leaves on long stalks fanning out and drooping from the middle, about a
  * metre and a half across.
  */
-function leafy(seed, plain = false) {
+function leafy(seed, plain = false, far = false) {
   const tris = [];
   const n = 6;
   for (let k = 0; k < n; k++) {
@@ -51,6 +51,12 @@ function leafy(seed, plain = false) {
     const mid = [base[0] + ca * len * 0.45, base[1] - len * 0.12, base[2] + sa * len * 0.45];
     const tip = [base[0] + ca * len, base[1] - len * 0.45, base[2] + sa * len];
     const l = [mid[0] + px * w, mid[1] + 0.05, mid[2] + pz * w], r = [mid[0] - px * w, mid[1] + 0.05, mid[2] - pz * w];
+    // (Far off: the leaf alone, two triangles of it, the same size and colours.)
+    if (far) {
+      tris.length -= 2;
+      tris.push([base, l, tip, MID, LIGHT, LIGHT], [base, tip, r, MID, LIGHT, LIGHT]);
+      continue;
+    }
     tris.push([base, l, mid, MID, LIGHT, MID], [base, mid, r, MID, MID, LIGHT], [mid, l, tip, MID, LIGHT, LIGHT], [mid, tip, r, MID, LIGHT, LIGHT]);
   }
   return build(tris);
@@ -63,7 +69,7 @@ function leafy(seed, plain = false) {
  * `strap`, a broad, smooth leaf (a bird's-nest fern's) rather than a
  * feathery one; `trunk`, standing on a short stump.
  */
-function fern(seed, { n = 9, len = 0.6, rise = 0.55, droop = 0.6, w = 0.09, strap = false, trunk = 0 } = {}, plain = false) {
+function fern(seed, { n = 9, len = 0.6, rise = 0.55, droop = 0.6, w = 0.09, strap = false, trunk = 0 } = {}, plain = false, far = false) {
   const tris = [];
   if (trunk > 0) {
     // (The stump: a few rough sides, dark and shaggy.)
@@ -88,6 +94,12 @@ function fern(seed, { n = 9, len = 0.6, rise = 0.55, droop = 0.6, w = 0.09, stra
       tris.push([[p0[0] + px * w0, p0[1] - 0.012, p0[2] + pz * w0], [p0[0] - px * w0, p0[1] - 0.012, p0[2] - pz * w0], [p1[0] - px * w1, p1[1] - 0.012, p1[2] - pz * w1], DARK, DARK, MID]);
       tris.push([[p0[0] + px * w0, p0[1] - 0.012, p0[2] + pz * w0], [p1[0] - px * w1, p1[1] - 0.012, p1[2] - pz * w1], [p1[0] + px * w1, p1[1] - 0.012, p1[2] + pz * w1], DARK, MID, MID]);
     }
+    // (Far off: each frond one bent blade, the same length, rise and droop, its widest where the frond's is.)
+    if (far) {
+      const ww = w * (strap ? 0.95 : 1.15), m = pts[1], tip = pts[3];
+      tris.push([pts[0], [m[0] + px * ww, m[1], m[2] + pz * ww], tip, DARK, MID, LIGHT], [pts[0], tip, [m[0] - px * ww, m[1], m[2] - pz * ww], DARK, LIGHT, MID]);
+      continue;
+    }
     for (let sg = 0; sg < 3; sg++) {
       const f = (sg + 0.5) / 3, ww = w * (strap ? 1.1 - 0.5 * f : Math.sin(Math.PI * (0.3 + 0.7 * f)));
       const p0 = pts[sg], p1 = pts[sg + 1];
@@ -105,17 +117,17 @@ function fern(seed, { n = 9, len = 0.6, rise = 0.55, droop = 0.6, w = 0.09, stra
 
 // (Kinds 0 and 1 the big-leaved plants, 2 the common fern, 3-6 the jungle's other ferns: see placeUnderstory.)
 const PLANTS = [
-  { shape: leafy(3), plain: leafy(3, true), colors: [0x3f7d2f, 0x4a8a34, 0x2f6a2a, 0x5a9a3a] },
-  { shape: leafy(11), plain: leafy(11, true), colors: [0x356f2c, 0x4f8f3a, 0x3a7a30] },
-  { shape: fern(7), plain: fern(7, {}, true), colors: [0x4a7f33, 0x5a8f3a, 0x3f7430, 0x6a9a44] },
+  { shape: leafy(3), plain: leafy(3, true), far: leafy(3, true, true), colors: [0x3f7d2f, 0x4a8a34, 0x2f6a2a, 0x5a9a3a] },
+  { shape: leafy(11), plain: leafy(11, true), far: leafy(11, true, true), colors: [0x356f2c, 0x4f8f3a, 0x3a7a30] },
+  { shape: fern(7), plain: fern(7, {}, true), far: fern(7, {}, true, true), colors: [0x4a7f33, 0x5a8f3a, 0x3f7430, 0x6a9a44] },
   // (A shuttlecock fern: tall fronds standing up out of the middle in a vase.)
-  { shape: fern(13, { n: 8, len: 0.45, rise: 1.25, droop: 0.35, w: 0.08 }), plain: fern(13, { n: 8, len: 0.45, rise: 1.25, droop: 0.35, w: 0.08 }, true), colors: [0x5a9a3a, 0x4f8a30, 0x6aa848] },
+  { shape: fern(13, { n: 8, len: 0.45, rise: 1.25, droop: 0.35, w: 0.08 }), plain: fern(13, { n: 8, len: 0.45, rise: 1.25, droop: 0.35, w: 0.08 }, true), far: fern(13, { n: 8, len: 0.45, rise: 1.25, droop: 0.35, w: 0.08 }, true, true), colors: [0x5a9a3a, 0x4f8a30, 0x6aa848] },
   // (A bird's-nest fern: broad smooth bright straps in a rosette.)
-  { shape: fern(19, { n: 10, len: 0.75, rise: 0.5, droop: 0.4, w: 0.13, strap: true }), plain: fern(19, { n: 10, len: 0.75, rise: 0.5, droop: 0.4, w: 0.13, strap: true }, true), colors: [0x6aa83a, 0x7ab848, 0x5a9a30] },
+  { shape: fern(19, { n: 10, len: 0.75, rise: 0.5, droop: 0.4, w: 0.13, strap: true }), plain: fern(19, { n: 10, len: 0.75, rise: 0.5, droop: 0.4, w: 0.13, strap: true }, true), far: fern(19, { n: 10, len: 0.75, rise: 0.5, droop: 0.4, w: 0.13, strap: true }, true, true), colors: [0x6aa83a, 0x7ab848, 0x5a9a30] },
   // (A low lacy fern: many fine fronds lying out flat, wide across.)
-  { shape: fern(23, { n: 14, len: 0.85, rise: 0.25, droop: 0.3, w: 0.06 }), plain: fern(23, { n: 14, len: 0.85, rise: 0.25, droop: 0.3, w: 0.06 }, true), colors: [0x3e6e2c, 0x4a7a34, 0x355f28] },
+  { shape: fern(23, { n: 14, len: 0.85, rise: 0.25, droop: 0.3, w: 0.06 }), plain: fern(23, { n: 14, len: 0.85, rise: 0.25, droop: 0.3, w: 0.06 }, true), far: fern(23, { n: 14, len: 0.85, rise: 0.25, droop: 0.3, w: 0.06 }, true, true), colors: [0x3e6e2c, 0x4a7a34, 0x355f28] },
   // (A little tree fern: fronds arching out from the top of a shaggy stump.)
-  { shape: fern(29, { n: 9, len: 0.8, rise: 0.4, droop: 0.65, w: 0.1, trunk: 0.55 }), plain: fern(29, { n: 9, len: 0.8, rise: 0.4, droop: 0.65, w: 0.1, trunk: 0.55 }, true), colors: [0x4a8a36, 0x3f7a2e, 0x55963c] },
+  { shape: fern(29, { n: 9, len: 0.8, rise: 0.4, droop: 0.65, w: 0.1, trunk: 0.55 }), plain: fern(29, { n: 9, len: 0.8, rise: 0.4, droop: 0.65, w: 0.1, trunk: 0.55 }, true), far: fern(29, { n: 9, len: 0.8, rise: 0.4, droop: 0.65, w: 0.1, trunk: 0.55 }, true, true), colors: [0x4a8a36, 0x3f7a2e, 0x55963c] },
 ];
 const color = new Color();
 const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), tilt = new Quaternion(), s = new Vector3(), yAxis = new Vector3(0, 1, 0), up = new Vector3();
@@ -195,23 +207,33 @@ export function createUnderstoryLayer(config) {
   // fronds and leaves, without the hair-thin stems and the little leaflets,
   // a pixel or two there): half the triangles or less, and a jungle floor
   // holds thousands of them.
-  const NEAR = 35, live = new Set();
+  // (And past 85 m, plainer still: each frond one bent blade, each leaf two
+  // triangles: a sixth of the triangles, where a whole plant's a dozen pixels.)
+  const NEAR = 35, FAR = 85, live = new Set();
   let lastX = Infinity, lastZ = Infinity;
   const sort = (group, ex, ez) => {
+    // (A chunk wholly far off, and sorted so already: nothing to do.)
+    const P = group.userData.plants, bx = Math.max(P.x0 - ex, 0, ex - P.x0 - P.size), bz = Math.max(P.z0 - ez, 0, ez - P.z0 - P.size);
+    const allFar = bx * bx + bz * bz > (FAR + 3) * (FAR + 3);
+    if (allFar && group.userData.allFar && group.userData.sorted) return;
+    group.userData.allFar = allFar;
     group.userData.sorted = true;
     for (const k of group.userData.kinds) {
-      let nf = 0, np = 0;
+      let nf = 0, np = 0, nd = 0;
       for (const [m, c, x, z] of k.items) {
-        const near = (x - ex) ** 2 + (z - ez) ** 2 < NEAR * NEAR;
-        const mesh = near ? k.full : k.plain, n = near ? nf++ : np++;
+        const d2 = (x - ex) ** 2 + (z - ez) ** 2;
+        const mesh = d2 < NEAR * NEAR ? k.full : d2 < FAR * FAR ? k.plain : k.far, n = mesh === k.full ? nf++ : mesh === k.plain ? np++ : nd++;
         mesh.setMatrixAt(n, m);
         mesh.setColorAt(n, c);
       }
       k.full.count = nf;
       k.plain.count = np;
+      k.far.count = nd;
       k.full.visible = nf > 0;
       k.plain.visible = np > 0;
-      for (const mesh of [k.full, k.plain]) {
+      k.far.visible = nd > 0;
+      for (const mesh of [k.full, k.plain, k.far]) {
+        if (!mesh.visible) continue;
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       }
@@ -251,6 +273,7 @@ export function createUnderstoryLayer(config) {
       placed.forEach((list, k) => {
         if (!list.length) return;
         const full = new InstancedMesh(PLANTS[k].shape, material, list.length), plainMesh = new InstancedMesh(PLANTS[k].plain, material, list.length);
+        const farMesh = new InstancedMesh(PLANTS[k].far, material, list.length);
         const items = list.map(([x, y, z, sc, turn, c, gx, gz]) => {
           // (Sunk a little on a slope, so its downhill side doesn't stand off the ground.)
           p.set(x, y - 0.12 * Math.min(1, Math.hypot(gx, gz)) * sc, z);
@@ -261,10 +284,12 @@ export function createUnderstoryLayer(config) {
           return [m4.compose(p, q, s).clone(), new Color().setHex(c), x + x0, z + z0];
         });
         items.forEach(([m, c], i) => (full.setMatrixAt(i, m), full.setColorAt(i, c), plainMesh.setMatrixAt(i, m), plainMesh.setColorAt(i, c)));
-        for (const mesh of [full, plainMesh]) mesh.computeBoundingSphere(), (mesh.receiveShadow = true), root.add(mesh);
-        plainMesh.count = 0; // (all in full, till sorted round you)
-        plainMesh.visible = false;
-        kinds.push({ items, full, plain: plainMesh });
+        items.forEach(([m, c], i) => (farMesh.setMatrixAt(i, m), farMesh.setColorAt(i, c)));
+        for (const mesh of [full, plainMesh, farMesh]) mesh.computeBoundingSphere(), (mesh.receiveShadow = true), root.add(mesh);
+        // (All plain and far off, till sorted round you: see refresh.)
+        full.count = plainMesh.count = 0;
+        full.visible = plainMesh.visible = false;
+        kinds.push({ items, full, plain: plainMesh, far: farMesh });
       });
       root.name = 'understory';
       root.userData.plants = { x0, z0, size, list: where };

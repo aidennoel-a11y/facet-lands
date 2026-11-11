@@ -36,6 +36,16 @@ function wildWeights(g, x, z, out = {}) {
 const TAU = Math.PI * 2;
 const SWAY = { x: 0, z: 0 };
 // The calls that carry far (see #vocalize).
+// The voices of those with no other calling (see #calls, and each kind's own
+// mind): the sound, how far it's heard (m), how long between (s, at the
+// least), when ('day', 'night', or any time), and how loud.
+const IDLE_VOICE = {
+  deer: ['bleat', 90, 60, 'any', 0.4], moose: ['moose', 300, 70, 'any', 0.8], bison: ['grunt', 200, 40, 'day', 0.7], blackBear: ['huff', 90, 50, 'any', 0.6], grizzly: ['huff', 110, 50, 'any', 0.7],
+  fox: ['bark', 220, 70, 'night', 0.6], wolfPup: ['yelp', 80, 40, 'any', 0.5], rabbit: ['squeak', 25, 90, 'any', 0.3], hare: ['squeak', 25, 90, 'any', 0.3], beaver: ['splash', 80, 80, 'any', 0.5],
+  panda: ['panda', 90, 50, 'day', 0.6], crocodile: ['crocBellow', 250, 90, 'any', 0.8], hawk: ['hawk', 300, 45, 'day', 0.6], eagle: ['hawk', 350, 50, 'day', 0.7], vulture: ['vulture', 150, 60, 'day', 0.5],
+  owl: ['owl', 250, 35, 'night', 0.6], seal: ['seal', 200, 35, 'any', 0.7], gull: ['gull', 250, 30, 'day', 0.5], crow: ['caw', 250, 45, 'day', 0.5], python: ['hiss', 20, 40, 'any', 0.4], bat: ['bats', 40, 30, 'night', 0.4],
+  crab: ['click', 8, 40, 'any', 0.25], salamander: ['croak', 30, 60, 'night', 0.3], seaTurtle: ['huff', 20, 90, 'any', 0.25], scorpion: ['scorpion', 8, 40, 'night', 0.3],
+};
 const LOUD_CALLS = new Set(['howl', 'bugle', 'roar', 'moose', 'crocBellow', 'jaguar', 'scream', 'yip', 'trumpet', 'hyena', 'hippo']);
 const angleTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -254,17 +264,42 @@ const BLOWS = { huge: [6, 10, 13], large: [3, 5, 6], medium: [2, 3, 4], small: [
  * big `haul`), for the trophy recipes.
  */
 export const BOSSES = {
-  scar: { kind: 'grizzly', name: 'Old Scar', biomes: ['smoky', 'blackHills'], scale: 1.65, coat: [0.72, 0.68, 0.66], tough: 5, bite: 42, every: 2.4, prime: 'grizzlyPelt', haul: { rawMeat: 14, fur: 5 } },
-  greymane: { kind: 'wolf', name: 'Greymane', biomes: ['pine'], scale: 1.5, coat: [1.45, 1.45, 1.5], tough: 6, bite: 30, every: 1.9, pack: 5, prime: 'alphaFang', haul: { rawMeat: 5, fur: 3 } },
-  ghost: { kind: 'cougar', name: 'The Pale Ghost', biomes: ['redwood'], scale: 1.5, coat: [1.5, 1.48, 1.52], tough: 6, bite: 38, every: 2.0, prime: 'paleFur', haul: { rawMeat: 6, fur: 3 } },
-  oldBull: { kind: 'moose', name: 'The Old Bull', biomes: ['parkland'], scale: 1.45, coat: [0.72, 0.7, 0.68], tough: 4, hit: 55, antlers: true, prime: 'greatAntlers', haul: { rawMeat: 20, hide: 5 } },
-  thunderhead: { kind: 'bison', name: 'Thunderhead', biomes: ['temperate'], scale: 1.5, coat: [0.68, 0.64, 0.62], tough: 4, hit: 55, prime: 'greatHide', primeCount: 2, haul: { rawMeat: 16, hide: 6 } },
-  oldJaw: { kind: 'crocodile', name: 'Old Jaw', biomes: ['wetland', 'mangrove'], scale: 1.75, coat: [0.78, 0.84, 0.72], tough: 4, bite: 48, every: 2.6, prime: 'crocHide', haul: { rawMeat: 14, hide: 5 } },
-  kingmane: { kind: 'lion', name: 'Kingmane', biomes: ['savanna'], scale: 1.5, coat: [0.86, 0.78, 0.72], tough: 5, bite: 40, every: 2.0, antlers: true, prime: 'lionPelt', haul: { rawMeat: 12, fur: 5 } },
-  shadow: { kind: 'tiger', name: 'The Striped Shadow', biomes: ['jungle'], scale: 1.45, coat: [0.8, 0.7, 0.68], tough: 5, bite: 44, every: 2.1, prime: 'tigerPelt', haul: { rawMeat: 12, fur: 5 } },
-  rattler: { kind: 'snake', name: 'The Old Rattler', biomes: ['desert', 'badlands'], scale: 4.6, coat: [0.82, 0.76, 0.68], tough: 18, bite: 30, prime: 'venomSac', primeCount: 3, haul: { rawMeat: 4 } },
-  ironhide: { kind: 'boar', name: 'Ironhide', biomes: ['volcanic'], scale: 1.75, coat: [0.6, 0.6, 0.64], tough: 5, hit: 45, prime: 'boarTusk', haul: { rawMeat: 14, hide: 4 } },
-  caveBear: { kind: 'grizzly', name: 'The Cave Bear', cave: true, scale: 1.75, coat: [0.55, 0.52, 0.52], tough: 6, bite: 45, every: 2.4, prime: 'caveBearPelt', haul: { rawMeat: 15, fur: 6 } },
+  scar: { kind: 'grizzly', name: 'Old Scar', title: 'the scarred bear of the hills', biomes: ['smoky', 'blackHills'], scale: 1.65, coat: [1.0, 0.62, 0.46], eyes: 0xff5a20, cry: 'bossBear', moves: ['slam', 'maul'], combo: true, tough: 5, bite: 42, every: 2.4, prime: 'grizzlyPelt', haul: { rawMeat: 14, fur: 5 } },
+  greymane: { kind: 'wolf', name: 'Greymane', title: 'lord of the pine-wood pack', biomes: ['pine'], scale: 1.5, coat: [1.3, 1.36, 1.55], eyes: 0x70c8ff, cry: 'bossWolf', moves: ['dash', 'maul'], swipes: 2, summon: { kind: 'wolf', n: 3, at: [0.7, 0.35], say: 'Greymane howls: the pack answers' }, tough: 6, bite: 30, every: 1.9, pack: 5, prime: 'alphaFang', haul: { rawMeat: 5, fur: 3 } },
+  ghost: { kind: 'cougar', name: 'The Pale Ghost', title: 'the white cat of the redwoods', biomes: ['redwood'], scale: 1.5, coat: [1.7, 1.7, 1.75], eyes: 0xb8ffe8, cry: 'scream', moves: ['pounce', 'prowl'], tough: 6, bite: 38, every: 2.0, prime: 'paleFur', haul: { rawMeat: 6, fur: 3 } },
+  oldBull: { kind: 'moose', name: 'The Old Bull', title: 'grey king of the parkland', biomes: ['parkland'], scale: 1.45, coat: [1.25, 1.2, 1.12], eyes: 0xffd860, cry: 'bossBull', moves: ['sweep', 'stampede'], run: 1.5, tough: 4, hit: 55, antlers: true, prime: 'greatAntlers', haul: { rawMeat: 20, hide: 5 } },
+  thunderhead: { kind: 'bison', name: 'Thunderhead', title: 'the black bull of the plains', biomes: ['temperate'], scale: 1.5, coat: [0.46, 0.44, 0.52], eyes: 0xff9a30, cry: 'bossBull', moves: ['stampede', 'slam'], chain: 2, tough: 4, hit: 55, prime: 'greatHide', primeCount: 2, haul: { rawMeat: 16, hide: 6 } },
+  oldJaw: { kind: 'crocodile', name: 'Old Jaw', title: 'the moss-backed river dragon', biomes: ['wetland', 'mangrove'], scale: 1.75, coat: [0.6, 1.0, 0.55], eyes: 0xc8ff40, cry: 'bossCroc', moves: ['dash', 'sweep'], roll: true, tough: 4, bite: 48, every: 2.6, prime: 'crocHide', haul: { rawMeat: 14, hide: 5 } },
+  kingmane: { kind: 'lion', name: 'Kingmane', title: 'the golden king of the savanna', biomes: ['savanna'], scale: 1.5, coat: [1.25, 0.95, 0.55], eyes: 0xffc840, cry: 'bossCat', moves: ['roar', 'pounce', 'maul'], swipes: 2, summon: { kind: 'lion', n: 2, at: [0.6], say: 'Kingmane calls his pride' }, tough: 5, bite: 40, every: 2.0, antlers: true, prime: 'lionPelt', haul: { rawMeat: 12, fur: 5 } },
+  shadow: { kind: 'tiger', name: 'The Striped Shadow', title: 'the dark hunter of the jungle', biomes: ['jungle'], scale: 1.45, coat: [0.55, 0.42, 0.48], eyes: 0x50ff90, cry: 'jaguar', moves: ['prowl', 'pounce', 'maul'], tough: 5, bite: 44, every: 2.1, prime: 'tigerPelt', haul: { rawMeat: 12, fur: 5 } },
+  rattler: { kind: 'snake', name: 'The Old Rattler', title: 'the red serpent of the badlands', biomes: ['desert', 'badlands'], scale: 4.6, coat: [1.15, 0.62, 0.42], eyes: 0xffe840, cry: 'bossSnake', moves: ['spit', 'strike', 'whip'], tough: 18, bite: 30, prime: 'venomSac', primeCount: 3, haul: { rawMeat: 4 } },
+  ironhide: { kind: 'boar', name: 'Ironhide', title: 'the iron boar of the fire country', biomes: ['volcanic'], scale: 1.75, coat: [0.5, 0.56, 0.74], eyes: 0xff3010, cry: 'bossBoar', moves: ['stampede', 'uproot'], armour: true, chain: 1, run: 1.7, tough: 5, hit: 45, prime: 'boarTusk', haul: { rawMeat: 14, hide: 4 } },
+  caveBear: { kind: 'grizzly', name: 'The Cave Bear', title: 'the old dark under the mountain', cave: true, scale: 1.9, coat: [0.4, 0.4, 0.5], eyes: 0xd0b0ff, cry: 'bossBear', moves: ['slam', 'rockfall', 'maul'], tough: 6, bite: 45, every: 2.4, prime: 'caveBearPelt', haul: { rawMeat: 15, fur: 6 } },
+};
+/**
+ * The great beasts' moves (see #bossMove). Each is warned of: `tell`, how
+ * long (s) it gathers itself first, with a cry, a word on the screen
+ * (`say`) and, for a blow that lands over a patch of ground, a ring marked
+ * on it (`zone`, m). `min`..`max`: how far off you must be for it to try it.
+ * To come through them: get out of the ring, roll clear (the dodge), or
+ * take it on your weapon (a block; a parry, if timed).
+ */
+const MOVES = {
+  enrage: { tell: 1.5, min: 0, max: 99, cry: true },
+  summon: { tell: 1.5, min: 0, max: 99, cry: true },
+  slam: { tell: 1.15, min: 0, max: 7.5, zone: 6.5, cry: true, say: '$ rears up: get clear!' },
+  maul: { tell: 0.5, min: 0, max: 7, say: '$ comes on, swinging' },
+  rockfall: { tell: 1.0, min: 4, max: 40, cry: true, say: 'The roof is coming down: watch the ground!' },
+  uproot: { tell: 0.8, min: 6, max: 30, say: '$ tears rocks out of the ground' },
+  dash: { tell: 0.65, min: 5, max: 20, say: '$ gathers itself to lunge' },
+  pounce: { tell: 0.7, min: 5, max: 19, say: '$ crouches to spring' },
+  prowl: { tell: 0.3, min: 0, max: 30, say: '$ melts away into the shadows...' },
+  sweep: { tell: 0.8, min: 0, max: 5.5, zone: 5, say: '$ swings round: back off!' },
+  stampede: { tell: 1.3, min: 7, max: 40, cry: true, say: '$ paws the ground: out of its path!' },
+  roar: { tell: 0.9, min: 0, max: 16, zone: 16, zoneColour: 0xffd070, say: '$ draws breath to roar' },
+  spit: { tell: 0.9, min: 5, max: 22, say: '$ rears back to spit' },
+  strike: { tell: 0.7, min: 0, max: 8, say: '$ coils to strike' },
+  whip: { tell: 0.55, min: 0, max: 5, zone: 4.6, say: '$ lashes its tail round' },
 };
 const BOSS_KINDS = new Set(Object.values(BOSSES).map((b) => b.kind));
 const BOSS_RESPAWN_DAYS = 6; // (game days before another of the same rises)
@@ -510,6 +545,25 @@ export class Wildlife {
     a.hunger = Math.max(0, (a.hunger ?? 80) - dt * (100 / 2880));
     a.thirst = Math.max(0, (a.thirst ?? 80) - dt * (100 / 1800));
     if (!a.ridden && !a.led && a.state === 'graze') a.hunger = Math.min(100, a.hunger + dt * 0.7);
+    // (A stable's fittings near it: water in the trough, hay in the rack; tied at a hitching post, it stays there.)
+    if ((a.stableLook = (a.stableLook ?? 0) - dt) <= 0) {
+      a.stableLook = 3;
+      a.stable = { trough: false, hay: false, post: null };
+      for (const st of ctx.structures?.list ?? []) {
+        if (st.type !== 'trough' && st.type !== 'hayRack' && st.type !== 'hitchPost') continue;
+        const d = Math.hypot(st.x - a.x, st.z - a.z);
+        if (st.type === 'trough' && d < 12) a.stable.trough = true;
+        else if (st.type === 'hayRack' && d < 12) a.stable.hay = true;
+        else if (st.type === 'hitchPost' && d < 7 && !a.stable.post) a.stable.post = { x: st.x, z: st.z };
+      }
+    }
+    if (a.stable?.trough) a.thirst = Math.min(100, a.thirst + dt * 2);
+    if (a.stable?.hay) a.hunger = Math.min(100, a.hunger + dt * 0.5);
+    if (a.stable?.post && !a.ridden && !a.led) {
+      a.home = a.stable.post;
+      if (Math.hypot(a.x - a.stable.post.x, a.z - a.stable.post.z) > 3.5) a.goal = { x: a.stable.post.x + 1.5, z: a.stable.post.z + 1.5 };
+      else if (a.goal && !a.goal.water) a.goal = null;
+    }
     const w = ctx.waterAt?.(a.x + Math.sin(a.heading) * 1.5, a.z + Math.cos(a.heading) * 1.5);
     if (w && !a.ridden) a.thirst = Math.min(100, a.thirst + dt * 4);
     if (a.ridden && w) a.thirst = Math.min(100, a.thirst + dt * 2);
@@ -748,6 +802,15 @@ export class Wildlife {
         let [lame, down, dead] = sp.bird || a.kind === 'rabbit' || a.kind === 'snake' || a.kind === 'duck' || a.kind === 'scorpion' || a.kind === 'crab' ? [1, 1, 1] : BLOWS[sp.bulk];
     // (A great beast takes many times the blows, never lamed or brought
     // down before the end; a blow to its head is only a harder one.)
+    // (Ironhide: a blow from in front only rings off its hide, unless it's winded.)
+    if (a.boss?.armour && from && !a.mirrored && a.mv?.stage !== 'rest') {
+      const dx = from.x - a.x, dz = from.z - a.z, d = Math.hypot(dx, dz) || 1;
+      if ((dx * Math.sin(a.heading) + dz * Math.cos(a.heading)) / d > 0.25) {
+        this.ctx?.sound?.call('clang', 0, 0.8);
+        this.onBoss?.('move', a, `${a.boss.name}'s hide turns the blow: strike from behind, or when it's winded`);
+        return 'hit';
+      }
+    }
     if (a.boss) {
       dead *= a.boss.tough;
       lame = down = Infinity;
@@ -959,14 +1022,306 @@ export class Wildlife {
       a.hunting = false;
       a.charging = 0;
       a.notice = 0;
+      a.mv = null;
       a.goal = { x: a.lair.x, z: a.lair.z };
       a.home = a.goal;
       if (a.herd) a.herd.hunting = false;
       return;
     }
-    if (!onFoot) return;
+    if (!onFoot || a.mirrored) return;
     if (sp.predator && t.d < 30 && !a.hunting) this.#enrage(a);
-    else if (sp.charger && t.d < 22 && !(a.charging > 0) && (a.chargeCool ?? 0) <= 0) this.#charge(a);
+    else if (sp.charger && t.d < 22 && !(a.charging > 0) && (a.chargeCool ?? 0) <= 0 && !a.mv) this.#charge(a);
+    this.#bossPick(a, t, ctx);
+  }
+
+  // What a great beast does next (see MOVES): the first sight of it, its
+  // name called; at half its strength, its rage (quicker from then on, and
+  // some with more to them); its pack called in; else one of its own moves
+  // that suits how far off you are, never the same twice running.
+  #bossPick(a, t, ctx) {
+    const B = a.boss;
+    if (!a.met) {
+      if (t.d > 34) return;
+      a.met = true;
+      a.mvNext = this.time + 3;
+      ctx.sound?.call(B.cry, ctx.pan(a.x, a.z), 1);
+      this.onBoss?.('intro', a);
+    }
+    if (a.mv || a.leap || !a.alive) return;
+    const health = Wildlife.bossHealth(a);
+    if (!a.enraged && health <= 0.5) return void ((a.enraged = true), this.#bossStart(a, 'enrage', ctx));
+    if (B.summon && (a.summons ?? 0) < B.summon.at.length && health <= B.summon.at[a.summons ?? 0]) return void ((a.summons = (a.summons ?? 0) + 1), this.#bossStart(a, 'summon', ctx));
+    if (this.time < (a.mvNext ?? 0) || t.d > 45) return;
+    const can = B.moves.filter((id) => (id !== a.lastMove || B.moves.length === 1) && t.d >= MOVES[id].min && t.d <= MOVES[id].max);
+    if (can.length) this.#bossStart(a, can[Math.floor(Math.random() * can.length)], ctx);
+  }
+
+  #bossStart(a, id, ctx) {
+    const M = MOVES[id], B = a.boss;
+    a.mv = { id, t: 0, stage: 'tell', tell: M.tell * (a.enraged && id !== 'enrage' ? 0.8 : 1), n: 0 };
+    a.lastMove = id;
+    a.charging = 0;
+    a.threaten = 0;
+    a.windup = 0;
+    a.ready = false;
+    const say = id === 'enrage' ? `${B.name} is enraged!` : id === 'summon' ? B.summon.say : M.say?.replace('$', B.name);
+    if (say) this.onBoss?.(id === 'enrage' ? 'rage' : 'move', a, say);
+    if (M.cry) ctx.sound?.call(B.cry, ctx.pan(a.x, a.z), 1);
+    else ctx.sound?.call(a.kind === 'snake' ? 'rattle' : a.kind === 'wolf' ? 'snarl' : a.kind === 'crocodile' ? 'hiss' : 'growl', ctx.pan(a.x, a.z), 0.9);
+    if (M.zone) ctx.fx?.warn(a.x, a.z, M.zone, a.mv.tell, M.zoneColour);
+  }
+
+  /**
+   * A great beast in the middle of one of its moves (see MOVES): what it
+   * does this step, and where it's to go ({ want, speed, state }, as the
+   * rest of #walker has them). Gathering itself first (the `tell`), then the
+   * move, then a breath after it (`rest`): your moment to strike.
+   */
+  #bossMove(a, sp, t, dt, ctx) {
+    const m = a.mv, B = a.boss, p = ctx.player, fx = ctx.fx, pan = ctx.pan(a.x, a.z);
+    const face = Math.atan2(p.x - a.x, p.z - a.z), power = B.bite ?? B.hit;
+    const reach = (sp.predator?.reach ?? sp.charger?.reach ?? 1.5) + (sp.radius ?? 0.4) * a.scale;
+    const onFoot = p.mode === 'walk' && p.alive;
+    const hit = (amount) => onFoot && p.damage(amount * rnd(0.9, 1.1), a.kind, a);
+    const shove = (v, ang, up = 0) => onFoot && p.shove?.(Math.sin(ang) * v, Math.cos(ang) * v, up);
+    const rest = (s) => ((m.stage = 'rest'), (m.t = 0), (m.rest = s));
+    const still = (state = 'threat') => ({ want: face, speed: 0, state });
+    m.t += dt;
+    if (!onFoot && m.stage !== 'rest') rest(0.5);
+    if (m.stage === 'rest') {
+      if (m.t >= m.rest) (a.mv = null), (a.mvNext = this.time + rnd(2.2, 4) * (a.enraged ? 0.55 : 1)), (a.ready = false);
+      return { want: a.heading, speed: 0, state: 'look' };
+    }
+    if (m.stage === 'tell') {
+      if (m.t < m.tell) {
+        const low = m.id === 'pounce' || m.id === 'dash' || m.id === 'maul' || m.id === 'prowl';
+        if (low) a.crouch = 1;
+        // (Pawing the ground: the dust flying.)
+        if (m.id === 'stampede' && m.t > (m.pawed ?? 0)) (m.pawed = m.t + 0.35), fx?.wave(a.x, a.z, 2.5, 0.35), ctx.sound?.call('thump', pan, 0.6);
+        return still(low ? 'stalk' : 'threat');
+      }
+      m.stage = 'act';
+      m.t = 0;
+      m.dir = face;
+      m.tx = p.x;
+      m.tz = p.z;
+    }
+    switch (m.id) {
+      case 'enrage':
+        ctx.sound?.call(B.cry, pan, 1);
+        p.shakeCam?.(1);
+        fx?.wave(a.x, a.z, 14, 0.7, 0xff5030);
+        if (t.d < 9) shove(8, face, 2);
+        rest(0.6);
+        break;
+      case 'roar':
+        // A roar that goes through you: your strength drains out of you.
+        ctx.sound?.call(B.cry, pan, 1);
+        p.shakeCam?.(1);
+        fx?.wave(a.x, a.z, 16, 0.6, 0xffd070);
+        if (t.d < 16 && onFoot) p.drain?.(35, 'The roar goes through you: your strength drains away');
+        rest(0.8);
+        break;
+      case 'slam': {
+        // Up on its hind legs, and down with all its weight: the ground jumps.
+        const R = MOVES.slam.zone;
+        ctx.sound?.call('thump', pan, 1);
+        ctx.sound?.call('rumble', pan, 0.7);
+        if (t.d < 30) p.shakeCam?.(0.9);
+        fx?.wave(a.x, a.z, R, 0.45);
+        if (t.d < R) hit(power * 0.95), shove(11, face, 4.5);
+        rest(a.enraged && B.combo ? 0.45 : 1.6);
+        break;
+      }
+      case 'sweep': case 'whip': {
+        // Its head (its antlers, its tail) swung right round: you're thrown aside.
+        const R = MOVES[m.id].zone;
+        a.lunge = 0.35;
+        ctx.sound?.call('whoosh', pan, 1);
+        fx?.wave(a.x, a.z, R, 0.3);
+        if (t.d < R) hit(power * 0.6), shove(12, face + (Math.random() < 0.5 ? 1.1 : -1.1), 3);
+        rest(1.3);
+        break;
+      }
+      case 'maul': {
+        // Blow after blow, coming on all the while.
+        if (m.t >= m.n * 0.5) {
+          m.n++;
+          a.lunge = 0.3;
+          ctx.sound?.call('whoosh', pan, 0.8);
+          if (t.d < reach + 1.3) hit(power * 0.36);
+        }
+        if (m.n >= (B.swipes ?? 3)) rest(1.5);
+        return { want: face, speed: t.d > reach ? sp.run * 0.75 : 0, state: 'hunt' };
+      }
+      case 'rockfall': case 'uproot': {
+        // Rocks: shaken out of the roof, or torn up and flung; each one's
+        // place marked on the ground a moment before it lands.
+        const flung = m.id === 'uproot', total = flung ? 3 : a.enraged ? 7 : 5, gap = flung ? 0.3 : 0.45, fall = flung ? 0.8 : 0.95;
+        m.rocks ??= [];
+        if (m.n < total && m.t >= m.n * gap) {
+          const x = p.x + (m.n ? rnd(-3, 3) : 0), z = p.z + (m.n ? rnd(-3, 3) : 0);
+          m.n++;
+          fx?.warn(x, z, 2.4, fall);
+          if (flung) fx?.glob({ x: a.x, y: a.y + 1.5, z: a.z }, { x, y: ctx.ground(x, z) ?? a.y, z }, fall, 0x5a5650, 0.7, 4), (a.lunge = 0.3);
+          else fx?.rock(x, z, fall);
+          m.rocks.push({ x, z, at: m.t + fall });
+        }
+        for (const r of m.rocks) {
+          if (r.done || m.t < r.at) continue;
+          r.done = true;
+          ctx.sound?.call('crash', ctx.pan(r.x, r.z), 0.8);
+          fx?.wave(r.x, r.z, 3, 0.35);
+          if (Math.hypot(p.x - r.x, p.z - r.z) < 2.4) hit(22), p.shakeCam?.(0.6);
+        }
+        if (m.n >= total && m.rocks.every((r) => r.done)) rest(1.1);
+        return still();
+      }
+      case 'dash': {
+        // A lunge, straight and very fast, the way it was facing as it went.
+        a.heading = m.dir;
+        a.speed = 23;
+        if (!m.struck && t.d < reach + 0.9) {
+          m.struck = true;
+          hit(power * 1.1);
+          // (A crocodile's got hold of you: it rolls.)
+          if (B.roll && onFoot) return (m.id = 'roll'), (m.t = 0), (m.n = 0), this.onBoss?.('move', a, `${B.name} has hold of you: it rolls!`), still('hunt');
+        }
+        if (m.t > 0.75) (a.speed = 0), rest(m.struck ? 1.0 : 1.9);
+        return { want: m.dir, speed: 23, state: 'charge' };
+      }
+      case 'roll':
+        if (m.t >= m.n * 0.45) m.n++, hit(power * 0.3), p.shakeCam?.(0.7), shove(5, rnd(0, TAU), 1);
+        if (m.n >= 3) rest(2);
+        return still('hunt');
+      case 'stampede': {
+        // Head down and away, straight as a thrown spear: it can't turn. If
+        // it misses you it's winded, a long moment.
+        a.heading = m.dir;
+        a.speed = 21;
+        if (!m.struck && t.d < reach + 1.3) (m.struck = true), hit(power * 1.2), shove(14, m.dir, 5);
+        if (m.t > (B.run ?? 2.1)) {
+          a.speed = 0;
+          fx?.wave(a.x, a.z, 7, 0.5);
+          ctx.sound?.call('thump', pan, 1);
+          if (t.d < 25) p.shakeCam?.(0.7);
+          if (t.d < 7 && !m.struck) hit(14), shove(7, face, 2);
+          // (In its rage, round and at you again.)
+          if (a.enraged && (m.again ?? 0) < (B.chain ?? 0)) return (m.again = (m.again ?? 0) + 1), (m.stage = 'tell'), (m.t = 0), (m.tell = 0.75), (m.struck = false), still();
+          rest(m.struck ? 1.3 : 2.8);
+        }
+        return { want: m.dir, speed: 21, state: 'charge' };
+      }
+      case 'pounce':
+        // A spring through the air to where you stood as it left the ground.
+        if (!m.sprung) {
+          m.sprung = true;
+          const d = Math.min(19, t.d), T = 0.5 + d / 38, k = d / (t.d || 1);
+          a.leap = { t: 0, vx: ((m.tx - a.x) * k) / T, vz: ((m.tz - a.z) * k) / T, vy: 4.9 * T };
+          a.heading = face;
+          fx?.warn(a.x + (m.tx - a.x) * k, a.z + (m.tz - a.z) * k, 2.8, T);
+          ctx.sound?.call('whoosh', pan, 0.9);
+        } else if (!a.leap) rest(1.3);
+        return still('hunt');
+      case 'prowl': {
+        // Off out of sight, round behind you, and in again from there.
+        const far = (m.phase ?? 0) === 0;
+        if (far && (m.t > 2.2 || t.d > 30)) (m.phase = 1), (m.t = 0);
+        if (!far) {
+          const bx = p.x - ctx.forward.x * 15, bz = p.z - ctx.forward.z * 15, left = Math.hypot(bx - a.x, bz - a.z);
+          if (left < 5 || m.t > 4) return (m.id = 'pounce'), (m.stage = 'tell'), (m.t = 0), (m.tell = 0.45), (m.sprung = false), ctx.sound?.call('hiss', pan, 0.7), still('stalk');
+          a.speed = Math.max(a.speed, sp.run);
+          return { want: Math.atan2(bx - a.x, bz - a.z), speed: sp.run * 1.2, state: 'hunt' };
+        }
+        m.side ??= Math.random() < 0.5 ? 1 : -1;
+        a.speed = Math.max(a.speed, sp.run);
+        return { want: face + Math.PI + m.side * 0.9, speed: sp.run * 1.25, state: 'hunt' };
+      }
+      case 'summon': {
+        const S = B.summon;
+        for (let k = 0; k < S.n; k++) {
+          const ang = rnd(0, TAU), r = rnd(20, 27);
+          const w = this.#spawnWalker(S.kind, p.x + Math.sin(ang) * r, p.z + Math.cos(ang) * r, null);
+          if (w) (w.hunting = true), (w.notice = 9), (w.aggressive = true), (w.summoned = true);
+        }
+        rest(0.8);
+        break;
+      }
+      default:
+        rest(0.5);
+    }
+    return still();
+  }
+
+  /**
+   * The Old Rattler's moves (it isn't a walker: see #snake): spitting its
+   * venom from a way off (a pool of it left on the ground: keep out of
+   * it), a strike the whole length of itself, and its tail lashed round
+   * when you're close. Returns whether it's in the middle of one.
+   */
+  #serpentBoss(a, t, dt, ctx) {
+    const p = ctx.player, B = a.boss, fx = ctx.fx, pan = ctx.pan(a.x, a.z), onFoot = p && p.mode === 'walk' && p.alive && !ctx.tame;
+    // (Its venom lying on the ground.)
+    a.pools = (a.pools ?? []).filter((q) => this.time < q.until);
+    if (onFoot) for (const q of a.pools) if (Math.hypot(p.x - q.x, p.z - q.z) < q.r && this.time > (a.poolBit ?? 0)) (a.poolBit = this.time + 1.5), p.damage(5, a.kind, a), p.poison?.();
+    if (!onFoot || a.mirrored || t.d > 60) return void (a.mv = null), false;
+    this.#bossPick(a, t, ctx);
+    const m = a.mv;
+    if (!m) return false;
+    const face = Math.atan2(p.x - a.x, p.z - a.z);
+    m.t += dt;
+    a.state = 'coil';
+    a.timer = 6;
+    a.heading += angleTo(a.heading, face) * Math.min(1, dt * (m.stage === 'tell' ? 5 : 1));
+    if (m.stage === 'rest') {
+      if (m.t >= m.rest) (a.mv = null), (a.mvNext = this.time + rnd(2, 3.5) * (a.enraged ? 0.55 : 1));
+      return true;
+    }
+    if (m.stage === 'tell') {
+      if (m.t < m.tell) return true;
+      m.stage = 'act';
+      m.t = 0;
+    }
+    const rest = (s) => ((m.stage = 'rest'), (m.t = 0), (m.rest = s));
+    if (m.id === 'enrage') {
+      ctx.sound?.call(B.cry, pan, 1);
+      p.shakeCam?.(0.8);
+      fx?.wave(a.x, a.z, 12, 0.7, 0xff5030);
+      rest(0.6);
+    } else if (m.id === 'spit') {
+      // (Three of them, in its rage.)
+      const shots = a.enraged ? 3 : 1;
+      if (m.n < shots && m.t >= m.n * 0.5) {
+        m.n++;
+        const x = p.x + (m.n > 1 ? rnd(-2.5, 2.5) : 0), z = p.z + (m.n > 1 ? rnd(-2.5, 2.5) : 0), y = ctx.ground(x, z) ?? a.y;
+        a.strike = 0.25;
+        ctx.sound?.call('hiss', pan, 1);
+        fx?.glob({ x: a.x, y: a.y + 1.6, z: a.z }, { x, y, z }, 0.65, 0x9adf30, 0.3, 2.5);
+        fx?.warn(x, z, 2.3, 0.65, 0x9adf30);
+        (m.shots ??= []).push({ x, z, at: m.t + 0.65 });
+      }
+      for (const q of m.shots ?? []) {
+        if (q.done || m.t < q.at) continue;
+        q.done = true;
+        ctx.sound?.call('splash', ctx.pan(q.x, q.z), 0.6);
+        fx?.pool(q.x, q.z, 2.6, 7);
+        a.pools.push({ x: q.x, z: q.z, r: 2.6, until: this.time + 7 });
+        if (Math.hypot(p.x - q.x, p.z - q.z) < 2.3) p.damage(10, a.kind, a), p.poison?.(), (a.poolBit = this.time + 1.5);
+      }
+      if (m.n >= shots && (m.shots ?? []).every((q) => q.done)) rest(1.2);
+    } else if (m.id === 'strike') {
+      // Its whole length thrown at you: only if it's still pointing your way.
+      a.strike = 0.3;
+      ctx.sound?.call('hiss', pan, 1);
+      if (t.d < 8 && Math.abs(angleTo(a.heading, face)) < 0.5) p.damage(B.bite * rnd(0.9, 1.1), a.kind, a), p.poison?.();
+      rest(1.7);
+    } else if (m.id === 'whip') {
+      ctx.sound?.call('whoosh', pan, 1);
+      fx?.wave(a.x, a.z, MOVES.whip.zone, 0.3);
+      if (t.d < MOVES.whip.zone) p.damage(18, a.kind, a), p.shove?.(Math.sin(face) * 12, Math.cos(face) * 12, 3);
+      rest(1.2);
+    } else rest(0.5);
+    return true;
   }
 
   // A wolf or a bear watching for you: it notices you if you're in sight a
@@ -994,7 +1349,7 @@ export class Wildlife {
     const cubs = a.herd && (a.kind === 'blackBear' || a.kind === 'grizzly') && !a.young && a.herd.members.some((m) => m.young && m.alive);
     // (Lions by day, hyenas but in the dark: lying up, seldom troubled unless you come right up.)
     const idle = (pr.dusk && (ctx.dusk ?? 0) < 0.15 && ctx.day > 0.35) || (pr.night && ctx.day > 0.3);
-    const sight = difficulty.wild * pr.sight * (p.crouch ? (p.camo ? 0.35 : 0.55) : 1) * (0.7 + 0.3 * ctx.day) * (1 - 0.55 * (a.forest ?? 0)) * this.#scent(a, ctx) * (idle ? 0.3 : 1);
+    const sight = difficulty.wild * pr.sight * (p.crouch ? (p.camo ? 0.35 : 0.55) : 1) * (0.7 + 0.3 * ctx.day + 0.75 * (ctx.night ?? 0) * (this.#fireAt(p.x, p.z, ctx, 14) ? 0 : 1)) * (1 - 0.55 * (a.forest ?? 0)) * this.#scent(a, ctx) * (idle ? 0.3 : 1);
     if (t.d < pr.close * (p.crouch ? 0.7 : 1) * (cubs ? 1.6 : 1) * (idle ? 0.5 : 1) || atDen) a.notice = Math.max(a.notice ?? 0, 2.4);
     else if (t.d < sight) a.notice = (a.notice ?? 0) + dt;
     else a.notice = Math.max(0, (a.notice ?? 0) - dt * 0.5);
@@ -1027,7 +1382,7 @@ export class Wildlife {
     if (this.#fireAt(b.x, b.z, ctx, 4)) return false;
     let fence = 0;
     for (const st of ctx.structures?.list ?? []) {
-      if (!/fence|Fence|wall|Wall|gate|Gate/.test(st.type)) continue;
+      if (!/fence|Fence|wall|Wall|gate|Gate|stall/.test(st.type)) continue;
       if (Math.abs(st.x - b.x) < 12 && Math.abs(st.z - b.z) < 12 && ++fence >= 4) return false;
     }
     return true;
@@ -1400,6 +1755,18 @@ export class Wildlife {
       else if (a.kind === 'monkey') this.#monkey(a, step, c);
       else this.#songbird(a, step, c);
       if (SPECIES[a.kind].bird && !SPECIES[a.kind].climber) this.#overTrees(a, step, c);
+      // (Every creature has a voice: those with no calling of their own
+      // above, now and then, when you're near enough to hear it.)
+      const voice = IDLE_VOICE[a.kind];
+      if (voice && a.alive && !a.hibernating && !a.boss) {
+        a.voiceWait = (a.voiceWait ?? rnd(8, 50)) - step;
+        if (a.voiceWait <= 0) {
+          a.voiceWait = rnd(voice[2], voice[2] * 2.5);
+          const far = Math.hypot(a.x - cam.x, a.z - cam.z);
+          const awake = voice[3] === 'night' ? (c.night ?? 0) > 0.4 : voice[3] === 'day' ? (c.night ?? 0) < 0.4 : true;
+          if (awake && far < voice[1] && !(a.fear > 0) && !a.swimming) c.sound?.call(voice[0], c.pan(a.x, a.z), Math.min(0.8, (0.25 + 0.75 * (1 - far / voice[1])) * (voice[4] ?? 0.6)));
+        }
+      }
       globalThis.__prof?.mark('  an: others');
       this.#prints(a, c);
       globalThis.__prof?.mark('  an: prints');
@@ -3469,7 +3836,13 @@ export class Wildlife {
       a.feet = null;
       return;
     }
-    if (a.ridden) {
+    if (a.mv && a.boss) {
+      const mv = this.#bossMove(a, sp, t, dt, ctx);
+      want = mv.want;
+      speed = mv.speed;
+      a.state = mv.state;
+      if (speed === 0 && Math.abs(angleTo(a.heading, want)) > 0.02) a.heading += angleTo(a.heading, want) * Math.min(1, dt * 5);
+    } else if (a.ridden) {
       // Ridden (see Game): where the rider steers it, as fast as they ask;
       // a small jump now and then (`hop`). Never into a cave.
       want = a.rideWant ?? a.heading;
@@ -3716,7 +4089,7 @@ export class Wildlife {
     }
     // Fire: the hunters won't come into its light (a campfire, a torch held
     // up): they keep off at its edge, pacing, growling.
-    if ((a.hunting || a.stalking || a.raid) && !ctx.tame) {
+    if ((a.hunting || a.stalking || a.raid) && !ctx.tame && !a.mv) {
       const fire = this.#fireAt(p.x, p.z, ctx, 1.5) ?? (a.raid ? this.#fireAt(a.raid.x, a.raid.z, ctx, 1) : null);
       if (fire) {
         const d = Math.hypot(a.x - fire.x, a.z - fire.z), out = Math.atan2(a.x - fire.x, a.z - fire.z);
@@ -4187,13 +4560,14 @@ export class Wildlife {
     // A rattlesnake rattles; a python, bigger, hisses and draws its head
     // back: either way, a warning before it strikes (a python's no venom,
     // but a heavy, crushing bite).
+    const busy = a.boss ? this.#serpentBoss(a, t, dt, ctx) : false;
     const python = a.kind === 'python' || !!a.boss, aware = a.boss ? 10 : python ? 7 : 5, reach = a.boss ? 3.6 : python ? 2.8 : 1.8;
     if (onFoot && t.d < aware && a.state !== 'flee') {
       if (a.state !== 'coil') (a.state = 'coil'), (a.timer = rnd(4, 8)), (a.warnedAt = this.time);
       a.rattle = (a.rattle ?? 0) - dt;
       if (a.rattle <= 0) (a.rattle = python && !a.boss ? 1.3 : 0.7), ctx.sound?.call(python && !a.boss ? 'hiss' : 'rattle', ctx.pan(a.x, a.z), Math.min(1, (a.boss ? 8 : 3) / (t.d + 1)));
       a.heading += angleTo(a.heading, Math.atan2(p.x - a.x, p.z - a.z)) * Math.min(1, dt * 4);
-      if (t.d < reach && a.strikeCd <= 0 && this.time - (a.warnedAt ?? 0) > (a.boss ? 1.2 : 0.7)) {
+      if (!busy && t.d < reach && a.strikeCd <= 0 && this.time - (a.warnedAt ?? 0) > (a.boss ? 1.2 : 0.7)) {
         a.strike = 0.25;
         a.strikeCd = python ? 2.6 : 2.2;
         ctx.sound?.call('hiss', ctx.pan(a.x, a.z), 0.8);
@@ -4732,13 +5106,15 @@ export class Wildlife {
     E.count = 0;
     const cam = ctx?.camera?.position;
     const dark = Math.min(1, Math.max(0, ((ctx?.night ?? 0) - 0.3) / 0.4));
-    if (!cam || dark <= 0 || this.hidden) {
+    if (!cam || this.hidden) {
       this.watchers = [];
       return (E.visible = false);
     }
-    this.#watchers(ctx, cam, dark);
+    if (dark > 0) this.#watchers(ctx, cam, dark);
+    else this.watchers = [];
     for (const a of this.animals) {
-      if (!ctx.eyeLight) break;
+      // (A great beast's eyes burn with their own light, each its own colour, day or night.)
+      if (!a.boss && (!ctx.eyeLight || dark <= 0)) continue;
       if (!a.alive || !a.hm || E.count > 158) continue;
       const eye = this.rigs[a.kind]?.meshes.head?.geometry.userData.eye;
       if (!eye) continue;
@@ -4748,10 +5124,10 @@ export class Wildlife {
       // (Side to side only: grazing, its head down, its eyes still catch the light.)
       const e = a.hm.elements, fl = Math.hypot(e[8], e[10]) || 1, dh = Math.hypot(cam.x - a.x, cam.z - a.z) || 1;
       const look = (e[8] * (cam.x - a.x) + e[10] * (cam.z - a.z)) / (fl * dh);
-      if (look < 0.35) continue;
-      const k = Math.min(1, (look - 0.35) / 0.35) * dark * Math.min(1, 1.4 - d / 70);
-      const size = Math.max(0.03, d * 0.0028);
-      tint.setHex(SHINE[a.kind] ?? 0xb8e070).multiplyScalar(k);
+      if (look < (a.boss ? 0.05 : 0.35)) continue;
+      const k = a.boss ? (0.55 + 0.45 * dark) * (a.enraged ? 1.5 : 1) : Math.min(1, (look - 0.35) / 0.35) * dark * Math.min(1, 1.4 - d / 70);
+      const size = Math.max(0.03, d * 0.0028) * (a.boss ? 1.7 : 1);
+      tint.setHex(a.boss?.eyes ?? SHINE[a.kind] ?? 0xb8e070).multiplyScalar(k);
       for (const sx of [1, -1]) {
         if (E.count >= 160) break;
         pos.set(sx * eye[0], eye[1], eye[2] + 0.01).applyMatrix4(a.hm);

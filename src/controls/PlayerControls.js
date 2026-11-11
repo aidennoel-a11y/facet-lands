@@ -414,7 +414,48 @@ export class PlayerControls {
     const fz = -Math.cos(yaw);
     let mx = fx * input.forward - fz * input.strafe;
     let mz = fz * input.forward + fx * input.strafe;
-    const len = Math.hypot(mx, mz);
+    let len = Math.hypot(mx, mz);
+    // On skis, on deep snow (see Game: `skiOn`): you slide. The slope takes
+    // you (the steeper, the faster); the way you look is the way your skis
+    // turn, carving round; W, a push with your sticks along the flat; S, the
+    // brake; and nothing but a little drag to slow you otherwise.
+    this.skiing = false;
+    if (this.skiOn || (this.skiVel && Math.hypot(this.skiVel.x, this.skiVel.z) > 0.5 && !this.grounded)) {
+      const v = (this.skiVel ??= { x: 0, z: 0 });
+      this.skiing = true;
+      if (this.grounded) {
+        const feetY = pos.y - this.eyeHeight, e = 1.2;
+        const h = (x, z) => this.#ground(x, feetY, z).stand;
+        const gx = (h(pos.x + e, pos.z) - h(pos.x - e, pos.z)) / (2 * e), gz = (h(pos.x, pos.z + e) - h(pos.x, pos.z - e)) / (2 * e);
+        if (Number.isFinite(gx) && Number.isFinite(gz) && Math.abs(gx) < 3 && Math.abs(gz) < 3) (v.x -= gx * 8.5 * dt), (v.z -= gz * 8.5 * dt);
+        let sp = Math.hypot(v.x, v.z);
+        // (Carving: your speed swung round toward where you're looking.)
+        if (sp > 0.3) {
+          const turn = Math.atan2(v.x * fz - v.z * fx, v.x * fx + v.z * fz); // (from the way you face to the way you're going)
+          const by = Math.max(-1, Math.min(1, turn)) * Math.min(1, dt * 2.6), c = Math.cos(by), s2 = Math.sin(by);
+          const nx = v.x * c - v.z * s2, nz = v.x * s2 + v.z * c, grip = 1 - Math.min(0.5, Math.abs(turn)) * dt * 0.9; // (a hard turn scrubs speed off)
+          v.x = nx * grip;
+          v.z = nz * grip;
+        }
+        if (input.forward > 0 && v.x * fx + v.z * fz < 6.5) (v.x += fx * 5 * dt), (v.z += fz * 5 * dt);
+        const drag = Math.exp(-dt * (input.forward < 0 ? 2.6 : 0.1));
+        v.x *= drag;
+        v.z *= drag;
+        sp = Math.hypot(v.x, v.z);
+        if (sp > 32) (v.x *= 32 / sp), (v.z *= 32 / sp);
+        if (input.up > 0 && sp > 3) this.velocityY = Math.max(this.velocityY, 4.5), (this.grounded = false); // (a hop)
+      }
+      const sx = v.x * dt, sz = v.z * dt, was = Math.hypot(v.x, v.z);
+      if (!this.#tryMove(sx, sz)) {
+        // (Into something: a stop, and a hard one if you were going fast.)
+        if (!this.#tryMove(sx, 0) && !this.#tryMove(0, sz)) (v.x = 0), (v.z = 0);
+        else (v.x *= 0.6), (v.z *= 0.6);
+        if (was > 11) this.onSkiCrash?.(was);
+      }
+      this.skiSpeed = Math.hypot(v.x, v.z);
+      this.moving = this.skiSpeed > 0.5;
+      len = 0;
+    } else if (this.skiVel) (this.skiVel.x = 0), (this.skiVel.z = 0), (this.skiSpeed = 0);
     if (len > 0) {
       const step = (this.currentSpeed * dt) / len;
       mx *= step;

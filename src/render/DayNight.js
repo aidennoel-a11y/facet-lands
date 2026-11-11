@@ -26,7 +26,7 @@ const PALETTE = {
   twilightDull: { top: 0x2a3860, horizon: 0x7a7488, hemiSky: 0x8a8aa8, hemiGround: 0x303040 },
   night: { top: 0x070d22, horizon: 0x1a2748, hemiSky: 0x7083b8, hemiGround: 0x1c2230 },
 };
-const HEMI_INTENSITY = { day: 1.4, golden: 1.2, twilight: 0.95, night: 0.6 };
+const HEMI_INTENSITY = { day: 1.4, golden: 1.2, twilight: 0.95, night: 0.2 }; // (night: all but black with no moon; you need a light)
 const MOONLESS = new Color(0x020306); // (the sky on a dark night, near the horizon)
 
 // Sunlight: deep orange at the horizon, gold a little higher, near-white by day.
@@ -596,7 +596,7 @@ export class DayNight {
     mood('hemiGround', w, this.hemi.groundColor, dull);
     greyed(this.hemi.color, overcast * 0.9);
     greyed(this.hemi.groundColor, overcast * 0.8);
-    this.hemi.intensity = (w.day * HEMI_INTENSITY.day + w.golden * HEMI_INTENSITY.golden + w.twilight * HEMI_INTENSITY.twilight + w.night * HEMI_INTENSITY.night * (0.85 + 0.15 * this.moonlight)) * (1 - 0.25 * rain - 0.3 * storm) + 0.05 * overcast * w.day * (1 - storm) - 0.15 * overcast * w.day; // (night: starlight alone enough, once your eyes are used to it, to make out what's near)
+    this.hemi.intensity = (w.day * HEMI_INTENSITY.day + w.golden * HEMI_INTENSITY.golden + w.twilight * HEMI_INTENSITY.twilight + w.night * HEMI_INTENSITY.night * (0.45 + 0.55 * this.moonlight)) * (1 - 0.25 * rain - 0.3 * storm) + 0.05 * overcast * w.day * (1 - storm) - 0.15 * overcast * w.day; // (night: starlight alone enough, once your eyes are used to it, to make out what's near)
     if (this.flash > 0) {
       this.hemi.color.lerp(FLASH, Math.min(1, this.flash));
       this.hemi.intensity += this.flash * 3;
@@ -627,7 +627,7 @@ export class DayNight {
       light.color.copy(MOON).lerp(tmp.setRGB(0.75, 0.3, 0.2), this.eclipse);
       // (A full moon lights the land well; a thin one, barely.)
       // (Strong enough, with so little light from the sky, to cast dark shadows.)
-      light.intensity = 0.75 * full * smoothstep(0.12, 0.3, -e) * (1 - 0.85 * overcast) * (1 - 0.75 * this.eclipse);
+      light.intensity = 0.95 * full * smoothstep(0.12, 0.3, -e) * (1 - 0.85 * overcast) * (1 - 0.75 * this.eclipse);
     }
 
     // Clouds catch the low sun: gold, then orange-red, pink and purple as it

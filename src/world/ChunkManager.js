@@ -2,6 +2,10 @@ import { Box3, BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { buildChunkGeometry, chunkFromData } from './ChunkMesher.js';
 import { FADE_SECONDS, fadeCopy, fadeOpacity } from '../render/chunkFade.js';
 import { onCaveRivers, shareCaveRivers } from './caves/CaveSystem.js';
+import { keepDelta, loadDeltas } from './riverStore.js';
+
+// (This build of the game: its builders' file, named for what's in it. See riverStore.)
+const BUILD = new URL('./chunkWorker.js', import.meta.url).pathname.split('/').pop();
 import { REGION as RIVER_REGION } from './BigRivers.js';
 
 const LOOKAHEAD = 3; // seconds: the land where you'll be by then is made ready ahead of you
@@ -224,11 +228,34 @@ export class ChunkManager {
     }
   }
 
-  #shareRivers(message, from = null, fromCaves = false) {
+  #shareRivers(message, from = null, fromCaves = false, kept = false) {
     if (message.seed !== this.generator.seedText) return;
-    if (from || fromCaves) this.generator.rivers.share(message.delta);
+    if (from || fromCaves || kept) this.generator.rivers.share(message.delta);
+    // (Kept for the next time this world's opened: see riverStore.)
+    if (!kept) keepDelta(message.seed, BUILD, message.delta);
     for (const w of [...this.workers, ...(this.mapWorkers ?? [])]) if (w !== from) w.postMessage({ kind: 'rivers', seed: message.seed, config: this.config, delta: message.delta });
     if (!fromCaves) shareCaveRivers(message.seed, this.config, message.delta);
+  }
+
+  /**
+   * What was kept of this world from the last time it was open (its rivers
+   * and landmarks: see riverStore), given to every builder before any of
+   * them starts; no building till it's in (a moment), so none of them works
+   * it all out again. Called for each new world: see #dispatch.
+   */
+  #recall() {
+    const seed = this.generator.seedText;
+    if (this.recalled === seed) return true;
+    if (this.recalling === seed) return false;
+    this.recalling = seed;
+    const done = (list) => {
+      if (this.recalling !== seed || this.generator.seedText !== seed) return;
+      this.recalled = seed;
+      for (const delta of list) this.#shareRivers({ seed, delta }, null, false, true);
+      if (list.length) this.scouted = true; // (nothing to scout: they all have the rivers already)
+    };
+    Promise.race([loadDeltas(seed, BUILD), new Promise((r) => setTimeout(() => r([]), 4000))]).then(done, () => done([]));
+    return false;
   }
 
   /** The cave builders' own rivers and openings, handed on to the land's builders (see CaveSystem). */
@@ -440,6 +467,7 @@ export class ChunkManager {
    * Called every frame and whenever a worker finishes one.
    */
   #dispatch() {
+    if (this.workers.length && !this.#recall()) return;
     while (this.workers.length && this.queue.length) {
       // (A new world: one job at first, to one worker, which works out the
       // rivers round about; the rest start once they have its rivers to

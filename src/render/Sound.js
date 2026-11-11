@@ -25,6 +25,8 @@ const CLIPS = {
   bark: 3, 'wolf-growl': 1, 'bear-growl': 3, 'bear-huff': 3, hiss: 1, pig: 2, sheep: 3, turkey: 1, frog: 3,
   'bird-cardinal': 3, 'bird-bluebird': 3, 'bird-goldfinch': 3,
   horse: 5, roar: 4, elephant: 3, cattle: 4, goat: 4, rabbit: 4,
+  'wolf-howl': 3, owl: 1, eagle: 2, goose: 3, hippo: 1, camel: 1, moose: 1, monkey: 3, parrot: 4, toucan: 1, croc: 1, boar: 1, fox: 3, tiger: 1,
+  bigcat: 1, bat: 1, vulture: 1, seal: 1, 'bear-roar': 1, cavebear: 1, sabre: 2, panda: 1, donkey: 2, chick: 1, yelp: 1, deer: 2,
 };
 
 // (A number 0..1 for these, the same for everyone online.)
@@ -809,6 +811,37 @@ export class Sound {
       case 'hurt': done = c('hurt', 1, 0.9); break;
       case 'bark': done = c('bark', 1.3, 0.9); break; // (a fox: a dog's bark, higher)
       case 'snarl': done = c('wolf-growl', 1, 1); break;
+      // (Recordings of the real animals: see public/sounds/CREDITS.md.)
+      case 'howl': done = c('wolf-howl', 0.92 + 0.14 * r, 0.9); break;
+      case 'yip': done = c('fox', 1.05 + 0.2 * r, 0.7); break; // (a coyote: a fox's yapping, near enough)
+      case 'owl': done = c('owl', 0.95 + 0.1 * r, 0.7); break;
+      case 'hawk': done = c('eagle', 0.95 + 0.15 * r, 0.7); break;
+      case 'honk': done = c('goose', 0.95 + 0.1 * r, 0.7); break;
+      case 'hippo': done = c('hippo', 0.9 + 0.15 * r, 1); break;
+      case 'camel': done = c('camel', 0.9 + 0.15 * r, 0.9); break;
+      case 'chatter': case 'howler': done = c('monkey', kind === 'howler' ? 0.7 : 0.95 + 0.15 * r, 0.8); break;
+      case 'parrot': done = c('parrot', 0.95 + 0.15 * r, 0.7); break;
+      case 'toucan': done = c('toucan', 0.95 + 0.1 * r, 0.7); break;
+      case 'crocBellow': done = c('croc', 0.8 + 0.15 * r, 1); break;
+      case 'squeal': done = c('boar', 1 + 0.2 * r, 0.8); break;
+      case 'jaguar': case 'chuff': done = c('tiger', kind === 'chuff' ? 1.1 : 0.9 + 0.1 * r, 0.9); break;
+      case 'scream': done = c('bigcat', 0.9 + 0.15 * r, 1); break; // (a cougar)
+      case 'bats': done = c('bat', 0.95 + 0.2 * r, 0.6); break;
+      case 'vulture': done = c('vulture', 0.95 + 0.1 * r, 0.7); break;
+      case 'seal': done = c('seal', 0.95 + 0.1 * r, 0.8); break;
+      case 'panda': case 'mew': done = c('panda', kind === 'mew' ? 1.3 : 1, 0.7); break;
+      case 'bray': done = c('donkey', 0.95 + 0.1 * r, 0.9); break;
+      case 'peep': done = c('chick', 1 + 0.2 * r, 0.5); break;
+      case 'yelp': done = c('yelp', 0.95 + 0.15 * r, 0.8); break;
+      case 'snort': case 'bleat': done = c('deer', kind === 'snort' ? 0.8 : 1 + 0.15 * r, 0.7); break;
+      // The great beasts' own voices: deeper, longer, each its own.
+      case 'bossBear': done = c('cavebear', 0.8 + 0.1 * r, 1.3) || c('bear-roar', 0.7, 1.3) || c('bear-growl', 0.6, 1.3); break;
+      case 'bossCat': done = c('sabre', 0.8 + 0.12 * r, 1.3) || c('roar', 0.7, 1.3); break;
+      case 'bossWolf': done = c('wolf-howl', 0.72, 1.2); if (done) c('wolf-growl', 0.7, 1.2, t + 0.1); break;
+      case 'bossBull': done = c('moose', 0.6 + 0.08 * r, 1.3) || c('cattle', 0.45, 1.3, t, { lowpass: 1500 }); break;
+      case 'bossBoar': done = c('boar', 0.5 + 0.05 * r, 1.3); if (done) c('pig', 0.5, 1.1, t + 0.15); break;
+      case 'bossCroc': done = c('croc', 0.6 + 0.06 * r, 1.4); break;
+      case 'bossSnake': done = c('hiss', 0.5 + 0.08 * r, 1.4); break;
       case 'growl': done = c('bear-growl', 0.85 + 0.2 * r, 1); break;
       case 'huff': done = c('bear-huff', 1, 1); break;
       case 'hiss': done = c('hiss', 0.8 + 0.3 * r, 0.8); break;
@@ -819,7 +852,8 @@ export class Sound {
       case 'roar': done = c('roar', 0.85 + 0.15 * r, 1); break; // (a lion, a tiger)
       case 'trumpet': done = c('elephant', 0.9 + 0.15 * r, 1); break;
       case 'grunt': done = c('cattle', 0.62 + 0.08 * r, 0.9, t, { lowpass: 1800 }); break; // (a bison: a deep grunting bellow)
-      case 'bellow': case 'moose': done = c('cattle', 0.55 + 0.1 * r, 1, t, { lowpass: 1500 }); break; // (a moose: lower still, longer)
+      case 'moose': done = c('moose', 0.9 + 0.12 * r, 1) || c('cattle', 0.55 + 0.1 * r, 1, t, { lowpass: 1500 }); break;
+      case 'bellow': done = c('cattle', 0.55 + 0.1 * r, 1, t, { lowpass: 1500 }); break; // (a moose: lower still, longer)
       case 'squeak': done = c('rabbit', 1 + 0.2 * r, 0.6); break;
       case 'gobble': done = c('turkey', 1, 0.9); break;
       case 'croak': done = c('frog', 1, 0.8); break;
@@ -1267,6 +1301,10 @@ export class Sound {
       // A telling blow: a sharp crack over the thud of it.
       noise(t, 0.04, 2600, 2, 0.4);
       tone(t, 0.18, 'sine', 160, 70, 220, 0.8, 0.5);
+    } else if (kind === 'bossDrum') {
+      // The drum of a fight with a great beast: a deep skin struck.
+      tone(t, 0.32, 'sine', 82, 38, 120, 0.9, 0.6);
+      wash(t, 0.06, 'lowpass', 180, 0.5, 0.002);
     } else if (kind === 'thump') {
       // A thump on the ground (a rabbit's warning; a body falling).
       wash(t, 0.12, 'lowpass', 220, 0.5, 0.003);

@@ -1027,6 +1027,42 @@ export function fenceModel() {
   for (const y of [0.45, 0.95]) b.log([-h, y, 0.06], [h, y, 0.06], 0.05, 0x8a6a44, 0xc8a070, 5);
   return b.build();
 }
+/** A stable's stall side: boards to chest height between stout posts, a rail along the top. */
+export function stallModel() {
+  const b = new Parts(131), h = FENCE_LENGTH / 2;
+  for (const x of [-h + 0.09, h - 0.09]) b.log([x, -0.2, 0], [x, 1.7, 0], 0.09, 0x6e5438, 0xc8a070, 6);
+  for (let k = 0; k < 5; k++) b.add(new BoxGeometry(FENCE_LENGTH - 0.2, 0.22, 0.05), [0x9a7448, 0x8a663e, 0xa47e50][k % 3], [0, 0.18 + k * 0.245, 0], [0, 0, 0], [1, 1, 1], 0.05);
+  b.log([-h, 1.5, 0], [h, 1.5, 0], 0.055, 0x7a5a38, 0xc8a070, 6);
+  return b.build();
+}
+/** A hitching post: two posts and a rail to tie a horse to. */
+export function hitchPostModel() {
+  const b = new Parts(133);
+  for (const x of [-0.75, 0.75]) b.log([x, -0.2, 0], [x, 1.1, 0], 0.08, 0x6e5438, 0xc8a070, 6);
+  b.log([-0.95, 0.98, 0], [0.95, 0.98, 0], 0.06, 0x8a6a44, 0xc8a070, 6);
+  b.add(new TorusGeometry(0.07, 0.015, 4, 8), 0x4a4a4e, [0.3, 0.9, 0.07]);
+  return b.build();
+}
+/** A water trough: a long box of planks on two feet, full of water. */
+export function troughModel() {
+  const b = new Parts(135);
+  b.add(new BoxGeometry(1.7, 0.08, 0.5), 0x7a5a38, [0, 0.3, 0]);
+  for (const z of [-0.26, 0.26]) b.add(new BoxGeometry(1.8, 0.36, 0.06), 0x8a663e, [0, 0.46, z], [z > 0 ? -0.12 : 0.12, 0, 0]);
+  for (const x of [-0.87, 0.87]) b.add(new BoxGeometry(0.06, 0.36, 0.56), 0x84603a, [x, 0.46, 0]);
+  for (const x of [-0.6, 0.6]) b.add(new BoxGeometry(0.12, 0.3, 0.6), 0x5e4630, [x, 0.14, 0]);
+  b.add(new BoxGeometry(1.66, 0.02, 0.44), 0x4a86a8, [0, 0.56, 0], [0, 0, 0], [1, 1, 1], 0);
+  return b.build();
+}
+/** A hay rack: a slatted manger on legs, heaped with hay. */
+export function hayRackModel() {
+  const b = new Parts(137);
+  for (const [x, z] of [[-0.7, -0.3], [0.7, -0.3], [-0.7, 0.3], [0.7, 0.3]]) b.log([x, -0.1, z], [x, 1.1, z * 1.5], 0.05, 0x6e5438, 0xc8a070, 5);
+  for (let k = 0; k < 7; k++) for (const z of [-1, 1]) b.log([-0.66 + k * 0.22, 0.55, z * 0.12], [-0.66 + k * 0.22, 1.1, z * 0.44], 0.022, 0x8a6a44, 0xc8a070, 4);
+  for (const z of [-0.45, 0.45]) b.log([-0.75, 1.1, z], [0.75, 1.1, z], 0.04, 0x7a5a38, 0xc8a070, 5);
+  b.add(new BoxGeometry(1.35, 0.5, 0.5), 0xd8c070, [0, 0.95, 0], [0.1, 0.05, 0.04], [1, 1, 1], 0.22);
+  b.add(new BoxGeometry(1.1, 0.3, 0.6), 0xc8b060, [0.05, 1.2, 0], [-0.08, 0.3, 0.05], [1, 1, 1], 0.22);
+  return b.build();
+}
 /** A fence gate: its two posts... */
 export function fenceGatePostsModel() {
   const b = new Parts(101), h = FENCE_LENGTH / 2;
@@ -2460,6 +2496,16 @@ export const starMetalModel = () =>
     .add(new OctahedronGeometry(0.04, 0), 0x9ac8ff, [0.06, 0.15, 0.04])
     .add(new OctahedronGeometry(0.035, 0), 0x7ab0f0, [-0.07, 0.12, -0.03])
     .build();
+// A pair of skis: two long boards, their tips turned up, a leather binding on each.
+export const skisModel = () => {
+  const b = new Parts(47);
+  for (const x of [-0.07, 0.07]) {
+    b.add(new BoxGeometry(0.09, 0.02, 1.5), x < 0 ? 0xa87a48 : 0x9a6e40, [x, 0.02, 0]);
+    b.add(new BoxGeometry(0.09, 0.02, 0.2), 0xa87a48, [x, 0.06, 0.82], [-0.5, 0, 0]);
+    b.add(new BoxGeometry(0.11, 0.05, 0.14), 0x3a2a1c, [x, 0.05, -0.05]);
+  }
+  return b.build();
+};
 // A silk glider, folded: a bundle of pale silk on its sticks.
 export const gliderModel = () =>
   new Parts(43)

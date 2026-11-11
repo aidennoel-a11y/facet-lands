@@ -52,3 +52,13 @@ License texts:
 | `horse-1` | GoodListener | CC BY 3.0 | freesound.org/people/GoodListener/sounds/322454 (via VoxeLibre) |
 | `horse-2` | ERH | CC BY 3.0 | freesound.org/people/ERH/sounds/32043 (via VoxeLibre) |
 | `rabbit-*` | Alshred | CC0 1.0 | freesound.org/people/Alshred/sounds/403773 (via VoxeLibre) |
+
+Animal voices added later (trimmed, mono MP3):
+
+| Files | Author | License | Source |
+| --- | --- | --- | --- |
+| `wolf-howl-*`, `owl-1`, `eagle-*`, `goose-*`, `hippo-1`, `camel-1`, `moose-1`, `monkey-*`, `parrot-*`, `toucan-1`, `croc-1`, `boar-1`, `fox-*`, `tiger-1`, `bigcat-1`, `bat-1`, `vulture-1`, `seal-1`, `hiss-2`, `bear-roar-1` | freesound.org contributors Lauramel, Gleith, Theveomammoth11, Vataa, D-Jones, Pol, Robinhood76, Stackpool, vilatzara, viorelvio, newagesoup, slunali, fr0608bg, reinsamba, kangaroovindaloo, breviceps, guyburns, tyler7687, navadaux, fairhavencollection, acclivity, sarena6487528 (as credited by the mod) | Creative Commons (as stated by the mod) | github.com/Skandarella/animalworld (Animal World mod by Liil/Wilhelmine) |
+| `cavebear-1`, `sabre-*` | as credited by the mod | Creative Commons (as stated by the mod) | github.com/Skandarella/livingfloatlands |
+| `panda-1` | mobs_animal contributors | CC0 / MIT (mod license) | mobs_animal (TenPlus1) |
+| `donkey-*`, `chick-1`, `yelp-1` | VoxeLibre contributors | see VoxeLibre CREDITS | github.com/VoxeLibre/VoxeLibre (mobs_mc) |
+| `deer-*` | ElCeejo (Animalia mod) | MIT (repository license) | github.com/ElCeejo/animalia |

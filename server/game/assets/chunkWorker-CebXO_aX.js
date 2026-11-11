@@ -1,0 +1,216 @@
+// Builds chunks off the main thread: the terrain mesh, where rocks lie,
+// and where the far trees stand. It rebuilds its own copy of the world
+// generator from the seed, which makes exactly the same world as the main
+// thread's (whatever order anything is asked for in).
+import { TerrainGenerator } from './TerrainGenerator.js';
+import { chunkDataBuffers, chunkSurface, computeChunkData } from './ChunkMesher.js';
+import { rockCandidates } from './rockCandidates.js';
+import { packFarTrees, placeTrees } from './treePlacement.js';
+import { placeGrass } from './grassPlacement.js';
+import { placeCorals, placeFlowers, placeLogs, placeSeaweed, placeUnderstory, surfSpots } from './decorPlacement.js';
+import { waterData } from './waterData.js';
+import { riverData, riverGrid } from './riverData.js';
+import { reedData } from './reedData.js';
+import { minimapPixels } from '../ui/minimapPixels.js';
+import { mapTile } from '../ui/mapLabels.js';
+
+let world = null; // { seed, generator }
+const rocks = new Map(); // "cx,cz" -> rock candidates (recently used last)
+// (The ones worked out here, to hand on to the other workers with the
+// rivers: each chunk's are wanted by its neighbours too, often on another worker.)
+let rocksFresh = [];
+
+function rocksAt(cx, cz, config) {
+  const key = `${cx},${cz}`;
+  let list = rocks.get(key);
+  if (list) rocks.delete(key);
+  else (list = rockCandidates(world.generator, config, cx, cz)), rocksFresh.push([key, list]);
+  rocks.set(key, list);
+  if (rocks.size > 300) rocks.delete(rocks.keys().next().value);
+  return list;
+}
+
+self.onmessage = (event) => {
+  const { id, seed, config, cx, cz, resolution, wantRocks, wantTrees, wantGrass, wantFarGrass, wantFarTrees, wantRivers, wantReeds, wantUnderstory } = event.data;
+  if (!world || world.seed !== seed) {
+    world = { seed, generator: new TerrainGenerator(seed, config) };
+    rocks.clear(), (rocksFresh = []);
+  }
+  const g = world.generator;
+  if (event.data.kind === 'sites') {
+    // Where the landmarks lie in some squares of the map (for the main
+    // thread, so it needn't work out the land and its rivers there itself).
+    self.postMessage({ id, result: event.data.squares.map(([kind, i, k]) => g.landmarks.site(kind, i, k)) });
+    return;
+  }
+  if (event.data.kind === 'describe') {
+    // What kind of country the player is in (for the panel).
+    self.postMessage({ id, result: g.describe(event.data.x, event.data.z) });
+    return;
+  }
+  if (event.data.kind === 'waterSounds') {
+    // The waterfalls and running water near the player (for their sounds).
+    const { x, z } = event.data, R = 260;
+    const falls = [], runs = [];
+    for (const course of g.rivers.inBox(x - R, z - R, x + R, z + R)) {
+      const P = course.points;
+      let best = null;
+      // (Not where it lies still: across the pond it rises from, or the lake it ends in.)
+      const still = (p) => [course.pond, course.tarn].some((w) => w?.r && Math.hypot(p.x - w.x, p.z - w.z) < w.r + 3);
+      for (let i = 0; i < P.length - 1; i++) {
+        const a = P[i], b = P[i + 1];
+        if (still(a) && still(b)) continue;
+        const dx = b.x - a.x, dz = b.z - a.z, run = Math.hypot(dx, dz) || 1, drop = a.level - b.level;
+        if (drop / run >= 0.4 && drop >= 0.8 && Math.hypot(b.x - x, b.z - z) < R) falls.push({ x: b.x, y: b.level, z: b.z, drop, width: Math.max(a.width, b.width) });
+        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (run * run)));
+        const px = a.x + dx * t, pz = a.z + dz * t, d = Math.hypot(px - x, pz - z);
+        if (d < 150 && (!best || d < best.d)) best = { d, x: px, z: pz, y: a.level + (b.level - a.level) * t, steep: drop / run, width: a.width + (b.width - a.width) * t, stream: course.kind === 'stream' };
+      }
+      // (Where the water lies open and still either side of it, a lake or a
+      // pond it runs through, it makes no sound of running.)
+      if (best) {
+        const P0 = course.points[0], P1 = course.points[course.points.length - 1];
+        const ux = P1.x - P0.x, uz = P1.z - P0.z, ul = Math.hypot(ux, uz) || 1, off = best.width * 1.5 + 6;
+        const under = (s) => g.getHeight(best.x + (-uz / ul) * off * s, best.z + (ux / ul) * off * s) < best.y - 0.15;
+        const ahead = (s) => g.getHeight(best.x + (ux / ul) * off * s, best.z + (uz / ul) * off * s) < best.y - 0.15;
+        if ((under(1) && under(-1)) || (best.steep < 0.004 && (under(1) || under(-1)) && ahead(1) && ahead(-1))) best = null;
+      }
+      if (best) runs.push(best);
+    }
+    const near = (p) => Math.hypot(p.x - x, p.z - z);
+    falls.sort((p, q) => near(p) - near(q));
+    runs.sort((p, q) => p.d - q.d);
+    self.postMessage({ id, result: { falls: falls.slice(0, 8), runs: runs.slice(0, 6) } });
+    return;
+  }
+  if (event.data.kind === 'plan') {
+    // The great rivers round (x, z) laid out ahead of time (shared with the others as it's sent back).
+    g.getBaseHeight(event.data.x, event.data.z);
+    self.postMessage({ id, result: null });
+    return;
+  }
+  if (event.data.kind === 'map') {
+    // A tile of the big map.
+    const { x0, z0, n, s } = event.data;
+    const result = mapTile(g, x0, z0, n, s);
+    self.postMessage({ id, result }, [result.labels.buffer, result.shade.buffer]);
+    return;
+  }
+  if (event.data.kind === 'minimap') {
+    const { n, s, seaLevel } = event.data;
+    const result = minimapPixels(g, cx, cz, n, s, seaLevel);
+    self.postMessage({ id, result }, [result.buffer]);
+    return;
+  }
+  const data = computeChunkData(g, config, cx, cz, resolution);
+  const out = { id, data, rocks: null, trees: null, grass: null, farTrees: null, water: null };
+  if (wantRocks) {
+    // This chunk's rocks and its neighbours' (trees keep off boulders across the border).
+    out.rocks = [];
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const list = rocksAt(cx + dx, cz + dz, config);
+        out.rocks.push({ cx: cx + dx, cz: cz + dz, list: Array.from(list), snowLine: list.snowLine });
+      }
+    }
+  }
+  const transfer = [];
+  const { groundHeightAt, heights } = chunkSurface(g, config, cx, cz, resolution, data);
+  // The lake or sea over it, if any.
+  out.water = waterData(g, config, cx, cz, heights);
+  if (out.water) for (const a of Object.values(out.water)) if (a) transfer.push(a.buffer);
+  // River, stream and pond water (at every level of detail), and the reeds along their banks (close by).
+  if (wantRivers) {
+    out.river = riverData(g, config, cx, cz, riverGrid(config, resolution));
+    if (out.river) {
+      for (const k of ['positions', 'colors', 'flows', 'streaks', 'freezes', 'mouths']) transfer.push(out.river[k].buffer);
+      if (out.river.spray) for (const a of Object.values(out.river.spray)) transfer.push(a.buffer);
+    }
+  }
+  if (wantReeds) {
+    out.reeds = reedData(g, config, cx, cz, groundHeightAt, heights);
+    if (out.reeds) transfer.push(out.reeds.matrices.buffer, out.reeds.shades.buffer, out.reeds.kinds.buffer, out.reeds.climate.buffer);
+  }
+  // Where the boulders lie (as RockLayer.bouldersNear): no tree or grass grows up through one.
+  let boulders = null;
+  if (wantTrees || wantGrass) {
+    const cells = Math.round(config.chunkSize / config.treeSpacing);
+    const margin = config.chunkSize / cells;
+    const size = config.chunkSize;
+    const x0 = cx * size - margin, z0 = cz * size - margin;
+    const x1 = (cx + 1) * size + margin, z1 = (cz + 1) * size + margin;
+    boulders = [];
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (const c of rocksAt(cx + dx, cz + dz, config)) {
+          if (c.boulder && c.wx > x0 && c.wx < x1 && c.wz > z0 && c.wz < z1) boulders.push(c.wx, c.wz, Math.max(c.sx, c.sz) * 0.93);
+        }
+      }
+    }
+  }
+  if (wantTrees) out.trees = placeTrees(g, config, cx, cz, groundHeightAt, boulders);
+  if (wantGrass) {
+    out.grass = placeGrass(g, config, cx, cz, groundHeightAt, false, boulders);
+    transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer, out.grass.kinds.buffer, out.grass.warms.buffer);
+  }
+  // (The small things, here so the main thread needn't: see decorPlacement.)
+  if (wantGrass) {
+    out.flowers = placeFlowers(g, config, cx, cz, groundHeightAt);
+    if (out.flowers) transfer.push(out.flowers.buffer);
+  }
+  if (wantReeds) {
+    out.logs = placeLogs(g, config, cx, cz, groundHeightAt);
+    if (out.logs) transfer.push(out.logs.pieces.buffer);
+    out.corals = placeCorals(g, config, cx, cz, groundHeightAt, heights.gridY);
+    if (out.corals) transfer.push(out.corals.buffer);
+    out.seaweed = placeSeaweed(g, config, cx, cz, groundHeightAt);
+    if (out.seaweed) transfer.push(out.seaweed.buffer);
+    // (The surf: only by the sea, any of the chunk's own ground under it; see SeaCoastLayer.)
+    if (g.seaCaves && heights.gridY.some((y) => y < config.seaLevel - 0.5)) out.surf = surfSpots(g, cx * config.chunkSize, cz * config.chunkSize, config.chunkSize, config.seaLevel);
+  }
+  if (wantUnderstory) {
+    out.understory = placeUnderstory(g, config, cx, cz, groundHeightAt);
+    if (out.understory) transfer.push(out.understory.buffer);
+  }
+  if (wantFarGrass) {
+    out.farGrass = placeGrass(g, config, cx, cz, groundHeightAt, true);
+    transfer.push(out.farGrass.matrices.buffer, out.farGrass.colors.buffer, out.farGrass.kinds.buffer, out.farGrass.warms.buffer);
+  }
+  if (wantFarTrees) {
+    out.farTrees = packFarTrees(placeTrees(g, config, cx, cz, groundHeightAt, null), cx, cz, config.chunkSize);
+    for (const a of Object.values(out.farTrees)) transfer.push(a.buffer);
+  }
+  transfer.push(...chunkDataBuffers(data));
+  self.postMessage(out, transfer);
+};
+
+// Rivers: what this worker works out is handed on (before the job's
+// result, so the others have it before they're given their next jobs),
+// and what the others worked out taken in (see ChunkManager.#shareRivers).
+{
+  const handle = self.onmessage, post = self.postMessage.bind(self);
+  self.onmessage = (event) => {
+    const { kind, seed, config, delta } = event.data;
+    if (kind === 'rivers') {
+      if (!world || world.seed !== seed) {
+        world = { seed, generator: new TerrainGenerator(seed, config) };
+        rocks.clear(), (rocksFresh = []);
+      }
+      world.generator.rivers.share(delta);
+      // (Rock spots another worker worked out: kept, if there's room, as if worked out here.)
+      for (const [key, list] of delta.rocks ?? []) if (!rocks.has(key) && rocks.size < 300) rocks.set(key, list);
+      return;
+    }
+    const out = [];
+    self.postMessage = (message, transfer) => out.push([message, transfer]);
+    try {
+      handle(event);
+    } finally {
+      self.postMessage = post;
+    }
+    const fresh = world?.generator.rivers.takeFresh(), rf = rocksFresh;
+    rocksFresh = [];
+    if (fresh || rf.length) post({ kind: 'rivers', seed: world.seed, delta: { list: [], rivers: [], streams: [], covered: [], ...fresh, rocks: rf.length ? rf : undefined } });
+    for (const [message, transfer] of out) post(message, transfer);
+  };
+}

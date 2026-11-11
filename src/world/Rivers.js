@@ -108,6 +108,11 @@ export class Rivers {
     return (i + 32768) * 65536 + (j + 32768);
   }
 
+  /** Whether the rivers and streams that can reach (x, z) are worked out already (so the land there's quick to ask for). */
+  coveredAt(x, z) {
+    return this.covered.has(this.#key(Math.floor(x / REGION), Math.floor(z / REGION)));
+  }
+
   /** Makes sure every river and stream that can reach (x, z) exists. */
   #ensure(x, z) {
     const rx = Math.floor(x / REGION), rz = Math.floor(z / REGION);

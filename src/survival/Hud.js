@@ -73,6 +73,8 @@ export class Hud {
       <div class="draw" hidden><i></i></div>
       <div class="meter" hidden><span></span><b><i></i></b></div>
       <div class="bossbar" hidden><span></span><b><i></i></b></div>
+      <div class="bossintro" hidden><b></b><span></span></div>
+      <div class="bosswarn" hidden></div>
       <div class="hurt-vignette"></div>
       <div class="cold-vignette"></div>
       <div class="frost-edge"></div>
@@ -270,12 +272,39 @@ export class Hud {
   }
 
   /** A great beast you're fighting: its name and health (0..1) at the top of the screen; or none (null). */
-  boss(name, health) {
+  boss(name, health, enraged = false) {
     const el = this.el('.bossbar');
     el.hidden = name === null;
     if (name === null) return;
+    el.classList.toggle('enraged', enraged);
     if (this.bossName !== name) (this.bossName = name), (el.querySelector('span').textContent = name);
     el.querySelector('i').style.width = `${Math.round(Math.max(0, Math.min(1, health)) * 1000) / 10}%`;
+  }
+
+  /** A great beast, met: its name across the screen a few seconds. */
+  bossIntro(name, title) {
+    const el = this.el('.bossintro');
+    el.querySelector('b').textContent = name;
+    el.querySelector('span').textContent = title ?? '';
+    el.hidden = false;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(this.introTimer);
+    this.introTimer = setTimeout(() => (el.hidden = true), 4200);
+  }
+
+  /** What it's about to do: a line under its name, a moment. */
+  bossWarn(text, rage = false) {
+    const el = this.el('.bosswarn');
+    el.textContent = text;
+    el.hidden = false;
+    el.classList.toggle('rage', rage);
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(this.warnTimer);
+    this.warnTimer = setTimeout(() => (el.hidden = true), rage ? 3000 : 2200);
   }
 
   draw(amount) {

@@ -66,6 +66,15 @@ self.onmessage = (event) => {
         const px = a.x + dx * t, pz = a.z + dz * t, d = Math.hypot(px - x, pz - z);
         if (d < 150 && (!best || d < best.d)) best = { d, x: px, z: pz, y: a.level + (b.level - a.level) * t, steep: drop / run, width: a.width + (b.width - a.width) * t, stream: course.kind === 'stream' };
       }
+      // (Where the water lies open and still either side of it, a lake or a
+      // pond it runs through, it makes no sound of running.)
+      if (best) {
+        const P0 = course.points[0], P1 = course.points[course.points.length - 1];
+        const ux = P1.x - P0.x, uz = P1.z - P0.z, ul = Math.hypot(ux, uz) || 1, off = best.width * 1.5 + 6;
+        const under = (s) => g.getHeight(best.x + (-uz / ul) * off * s, best.z + (ux / ul) * off * s) < best.y - 0.15;
+        const ahead = (s) => g.getHeight(best.x + (ux / ul) * off * s, best.z + (uz / ul) * off * s) < best.y - 0.15;
+        if ((under(1) && under(-1)) || (best.steep < 0.004 && (under(1) || under(-1)) && ahead(1) && ahead(-1))) best = null;
+      }
       if (best) runs.push(best);
     }
     const near = (p) => Math.hypot(p.x - x, p.z - z);

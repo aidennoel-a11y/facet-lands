@@ -3,7 +3,7 @@ import { Puffs } from '../render/Puffs.js';
 import { seasonUniforms, withering } from '../render/Seasons.js';
 import { Inventory } from './Inventory.js';
 import {
-  anvilModel, bedModel, campfireModel, caughtModel, chestModel, cropModel, dryingRackModel, FENCE_LENGTH, fenceGateDoorModel, fenceGatePostsModel, fenceModel,
+  stallModel, hitchPostModel, troughModel, hayRackModel, anvilModel, bedModel, campfireModel, caughtModel, chestModel, cropModel, dryingRackModel, FENCE_LENGTH, fenceGateDoorModel, fenceGatePostsModel, fenceModel,
   furnaceModel, GATE_DOOR_WIDTH, gateDoorModel, gateFrameModel, grindstoneModel, meatStripModel, plotModel, raftModel, ROOF_SIZE, roofModel,
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
@@ -163,6 +163,11 @@ const KINDS = {
   orchardBerry: { make: plantingModel, circle: 0, grows: 'raspberryBush' },
   plantedOak: { make: plantingModel, circle: 0.3, tall: 6, grows: 'oak' },
   coop: { make: coopModel, box: [0.85, 0.7], tall: 1.6 },
+  // (A stable's fittings: stall sides (they join like fences), a rail to tie a horse to, water and hay for them.)
+  stall: { make: stallModel, box: [FENCE_LENGTH / 2, 0.1], tall: 1.6, line: 'fence', len: FENCE_LENGTH },
+  hitchPost: { make: hitchPostModel, box: [0.95, 0.1], tall: 1.1 },
+  trough: { make: troughModel, box: [0.9, 0.3], tall: 0.65 },
+  hayRack: { make: hayRackModel, box: [0.8, 0.45], tall: 1.3 },
   beeBox: { make: beeBoxModel, box: [0.3, 0.25], tall: 1.15 },
   sign: { make: signModel, box: [0.45, 0.06], tall: 1.55 },
   repairBench: { make: repairBenchModel, box: [0.8, 0.3], tall: 0.95 },

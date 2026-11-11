@@ -917,7 +917,12 @@ export function createRuinLayer(config) {
         if (budget.left <= 0) return (layer.more = true), null;
         budget.left--;
       }
-      const s = ruinSite(I, K, generator.seed), keep = keepSite(generator, config.seaLevel);
+      const s = ruinSite(I, K, generator.seed);
+      // (Looked for a few at a time (the map's marks): not where the land's
+      // rivers aren't worked out yet, which would mean working them out
+      // here, a long wait; left till the builders have, and tried again.)
+      if (budget && s && generator.rivers?.coveredAt && !generator.rivers.coveredAt(s.x, s.z)) return (layer.more = true), null;
+      const keep = keepSite(generator, config.seaLevel);
       // (None crowding the Lost Keep.)
       fits.set(key, s && Math.hypot(s.x - keep.x, s.z - keep.z) > 160 && ruinFits(s, generator, config.seaLevel) ? s : null);
     }

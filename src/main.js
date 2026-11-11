@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import './render/splitShadow.js'; // (first: the sun's shadow in two maps, before any material copies the shader code)
 import './render/chunkFade.js'; // (likewise: the dither that fades the land's changes of detail)
 import { WORLD } from './config.js';
+import { BossFx } from './render/BossFx.js';
 import { GreatBoulderLayer } from './world/layers/GreatBoulderLayer.js';
 import { DIFFICULTIES, settings } from './settings.js';
 import { loadLook, onLook } from './character.js';
@@ -1809,6 +1810,10 @@ controls.onDodge = () => {
   sound.call('brush', 0, 0.5);
 };
 wildlife.onCrit = () => game.hotbar?.flash('A telling blow, to the head');
+const bossFx = new BossFx(scene);
+game.landHeightAt = (x, z) => chunks.groundHeightAt(x, z); // (for the view from a mountain: see Game)
+game.snowDepthAt = (x, z) => snowBlanket.depthAt(x, z); // (for skis: see Game)
+wildlife.onBoss = (type, a, text) => game.bossEvent(type, a, text);
 game.onSnow = () => controls.mode === 'walk' && !sheltered && stepSurface(camera.position.x, camera.position.z) === 'snow'; // (where there's snow to pack a pot with) // (a stone road laid: the grass gone under it)
 // (The sea's and the lakes' waves under a boat: see WaterLayer.waveAt.)
 game.waveAt = (x, z) => water.waveAt(x, z, WORLD.seaLevel - chunks.groundHeightAt(x, z), generator.getOceanness(x, z)); // (trees carried round in a tornado: see Felling.liftUp)
@@ -2541,7 +2546,8 @@ function waterSounds(dt, e) {
       brook += v;
       brookPan += v * panTowards(camera, r.x, r.z);
     } else {
-      const v = Math.min(1, 0.3 + r.width / 10) / (1 + (d / 22) ** 2);
+      // (A broad river on the level slides by all but silent; it's the fall of the ground that makes it rush.)
+      const v = (Math.min(1, 0.3 + r.width / 10) * Math.min(1, 0.12 + r.steep * 45)) / (1 + (d / 22) ** 2);
       river += v;
       riverPan += v * panTowards(camera, r.x, r.z);
     }
@@ -2748,7 +2754,7 @@ const CLEARED = { campfire: 1, furnace: 1.1, bed: 1.2, chest: 0.7, anvil: 0.7, g
   woodFloor: 2.9, stoneFloor: 2.9, chimney: 0.95, cellar: 1.9, smokingRack: 1.1, roof: 0.3, slateRoof: 0.3,
   logFloor: 2.9, cutStoneFloor: 2.9, logStairs: 2.2, plankStairs: 2.2, stoneStairs: 2.2, cutStairs: 2.2, logRoof: 0.3, shingleRoof: 0.3, tileRoof: 0.3, bedroll: 1.1, fancyBed: 1.3 };
 // (Walls and fences: a strip of clearings along their length; see clearGrass.)
-const CLEARED_LINE = { wall: 0.55, gate: 0.55, stoneWall: 0.6, fence: 0.4, fenceGate: 0.4, stoneFence: 0.5, woodWindow: 0.55, stoneWindow: 0.6, logWall: 0.55, plankWall: 0.5, cutStoneWall: 0.6, logWindow: 0.55, logDoor: 0.55, plankWindow: 0.5, plankDoor: 0.5, stoneDoor: 0.6, cutWindow: 0.6, cutDoor: 0.6, barnWall: 0.5, barnWindow: 0.5, barnDoor: 0.5 };
+const CLEARED_LINE = { wall: 0.55, gate: 0.55, stoneWall: 0.6, fence: 0.4, fenceGate: 0.4, stall: 0.4, stoneFence: 0.5, woodWindow: 0.55, stoneWindow: 0.6, logWall: 0.55, plankWall: 0.5, cutStoneWall: 0.6, logWindow: 0.55, logDoor: 0.55, plankWindow: 0.5, plankDoor: 0.5, stoneDoor: 0.6, cutWindow: 0.6, cutDoor: 0.6, barnWall: 0.5, barnWindow: 0.5, barnDoor: 0.5 };
 // The grass round you and the bigger animals near you bends away from them.
 const SMALL = new Set(['rabbit', 'hare', 'duck', 'snake', 'songbird', 'parrot', 'toucan', 'starling', 'crow', 'gull', 'hawk', 'wolfPup', 'bat', 'eagle', 'scorpion', 'crab']);
 // (Where you've just been: the plants you pushed through spring back up
@@ -2784,7 +2790,7 @@ function clearGrass() {
     const line = CLEARED_LINE[s.type];
     if (line) {
       // (Along the wall: a clearing every metre of it.)
-      const len = s.type.toLowerCase().includes('fence') ? 3 : 4, ax = Math.cos(s.rot), az = -Math.sin(s.rot);
+      const len = s.type.toLowerCase().includes('fence') || s.type === 'stall' ? 3 : 4, ax = Math.cos(s.rot), az = -Math.sin(s.rot);
       for (let u = -len / 2 + 0.5; u <= len / 2 - 0.5 + 1e-6; u += 1) near.push([d, { x: s.x + ax * u, z: s.z + az * u, type: s.type }, line]);
       continue;
     }
@@ -3513,12 +3519,14 @@ function tick(now) {
     underwater, rain: localRain, storm: weather.storm, stormComing: weather.approaching?.storm ?? 0, snowing: snowing ? snow : 0, wind, windDir: windDirection.value, meadow: Math.min(1, env.grass + env.wetland + 0.3 * env.woods),
     sheltered, sound, pan: (x, z) => (sound.from(x, z), panTowards(camera, x, z)), tame: peaceful?.checked ?? WORLD.tameWildlife,
     player: game.player, structures: game.structures,
+    fx: bossFx, // (a great beast's moves, shown: see BossFx)
     // (Online: the others, for the host's animals to mind; their calls, to be heard by everyone.)
     others: sync.others(), people: sync.people(), netTime: mp.roomTime(),
     emit: (n, x, z, v, d, heard) => sync.emit(n, x, z, v, d, heard), emitTo: (id, what) => sync.emitTo(id, what),
   };
   prof.mark('sound & surroundings');
   wildlife.update(dt, life);
+  bossFx.update(dt, wildGround);
   heartbeat(dt);
   coralLayer.refresh(camera.position);
   mushrooms.refresh(camera.position);
@@ -3600,7 +3608,7 @@ function tick(now) {
   sound.ambience(sheltered ? { ...env, woods: 0, jungle: 0, grass: 0, wetland: 0, wind: 0, gust: 0, fall: 0, river: 0, brook: caveSounds.brook ?? 0, brookPan: 0, canopy: 0, exposure: 0, storm: 0 } : env);
   // (The ground trembles as a volcano rumbles.)
   lavaHeat(dt);
-  const tremble = !controls.swimming ? (volcanoes.shake > 0 ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0) + (quake.shake > 0 ? (Math.sin(now * 0.041) + 0.6 * Math.sin(now * 0.097 + 1.3)) * 0.16 * quake.shake : 0) : 0;
+  const tremble = !controls.swimming ? (volcanoes.shake > 0 ? Math.sin(now * 0.05) * 0.07 * volcanoes.shake : 0) + (quake.shake > 0 ? (Math.sin(now * 0.041) + 0.6 * Math.sin(now * 0.097 + 1.3)) * 0.16 * quake.shake : 0) + ((game.shake ?? 0) > 0.3 ? Math.sin(now * 0.06) * 0.09 * Math.min(1.5, game.shake) : 0) : 0; // (and a great beast's blows: see Game.bossEvent)
   camera.position.y += tremble;
   prof.mark('ambient sound');
   const eye = thirdPersonView(dt, now);
