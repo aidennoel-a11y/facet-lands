@@ -292,6 +292,8 @@ export class GroundItems {
       });
       mesh.computeBoundingSphere();
       mesh.castShadow = true;
+      // (Little things, a stick, a flint: their shadows only close by, where they show. See ChunkManager.cull.)
+      mesh.userData.smallShadow = id !== 'iron' && !ORE_NODES.has(id);
       mesh.receiveShadow = true;
       group.add(mesh);
     }

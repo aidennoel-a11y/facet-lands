@@ -22,6 +22,7 @@ export const mistLight = { value: 1 };
 export const riverFlood = { value: 0 };
 export const FLOOD_RISE = 0.45; // (m, at the height of a flood: as far up the banks as the water's sheet runs)
 import { riverData, riverGrid } from '../riverData.js';
+import { createTiler } from '../tileMerge.js';
 import { seasonalWater, seasonUniforms } from '../../render/Seasons.js';
 import { SPARKLE_HEAD, sparkleUniforms } from '../../render/waterSparkle.js';
 import { RIPPLES, RIPPLE_GLSL } from '../../render/Traces.js';
@@ -281,18 +282,29 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
     return mesh;
   }
 
+  // Far off (past some 400 m: see TILE_LOD), the rivers of several chunks
+  // drawn as one (see tileMerge): one draw for a square, not one a chunk.
+  const TILE_LOD = 2;
+  let tiler = null;
+  const tilerFor = (config) => (tiler ??= createTiler({ chunkSize: config.chunkSize, material, name: 'river', renderOrder: 0, pad: 0.5 }));
+
   return {
     name: 'rivers',
     material,
+    get tileGroup() {
+      return tiler?.group ?? null;
+    },
+    tilesFor: (config) => tilerFor(config).group,
 
     update(time) {
       uniforms.uTime.value = time;
+      tiler?.flush();
     },
 
-    // (At every level of detail, on a grid as fine as its land's: see riverGrid.)
-    reuseKey: ({ resolution, config }) => `grid:${riverGrid(config, resolution)}`,
+    // (At every level of detail, on a grid as fine as its land's: see riverGrid. Far off, merged.)
+    reuseKey: ({ resolution, config, lod }) => `${lod >= TILE_LOD ? 'tiled:' : ''}grid:${riverGrid(config, resolution)}`,
 
-    build({ cx, cz, resolution, generator, config, prepared }) {
+    build({ cx, cz, lod, resolution, generator, config, prepared }) {
       if (!generator.rivers) return null;
       // (Worked out by the chunk's worker, or here.)
       const data = prepared && prepared.river !== undefined ? prepared.river : riverData(generator, config, cx, cz, riverGrid(config, resolution));
@@ -307,13 +319,19 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
       geometry.computeVertexNormals();
       geometry.computeBoundingSphere();
       geometry.boundingSphere.radius += 0.5; // (the current heaves it a little)
-      const mesh = new Mesh(geometry, material);
-      mesh.name = 'river';
-      mesh.renderOrder = 0; // before the lake or sea, so where it runs on over one that doesn't show through
-      mesh.receiveShadow = true;
       const group = new Group();
       group.name = 'rivers';
-      group.add(mesh);
+      if (lod >= TILE_LOD) {
+        // (Far off: into its square's one mesh; this chunk keeps only a handle on it.)
+        group.userData.tile = tilerFor(config).add(cx, cz, geometry);
+        group.userData.geometry = geometry;
+      } else {
+        const mesh = new Mesh(geometry, material);
+        mesh.name = 'river';
+        mesh.renderOrder = 0; // before the lake or sea, so where it runs on over one that doesn't show through
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      }
       const falls = data.spray ? spray(data.spray) : null;
       if (falls) group.add(falls);
       if (data.spray?.mist) group.add(mist(data.spray));
@@ -321,6 +339,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
     },
 
     dispose(group) {
+      if (group.userData.tile) (tiler?.remove(group.userData.tile), (group.userData.tile = null), group.userData.geometry?.dispose());
       for (const child of group.children) {
         if (child.name === 'mist') {
           child.geometry.index = null; // (the puff's shape is shared)

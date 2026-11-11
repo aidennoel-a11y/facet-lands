@@ -1,4 +1,5 @@
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, Mesh, MeshPhongMaterial } from 'three';
+import { createTiler } from '../tileMerge.js';
+import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshPhongMaterial } from 'three';
 import { waterData } from '../waterData.js';
 import { windDirection, windStrength } from '../../render/wind.js';
 import { seasonUniforms } from '../../render/Seasons.js';
@@ -400,12 +401,22 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
   };
   material.customProgramCacheKey = () => 'water-v4';
 
+  // Far off (see TILE_LOD), the water of several chunks drawn as one (see tileMerge).
+  const TILE_LOD = 2;
+  let tiler = null;
+  const tilerFor = (config) => (tiler ??= createTiler({ chunkSize: config.chunkSize, material, name: 'water', renderOrder: 1, pad: waveHeight * 12 }));
+
   return {
     name: 'water',
     material,
+    get tileGroup() {
+      return tiler?.group ?? null;
+    },
+    tilesFor: (config) => tilerFor(config).group,
 
     update(time) {
       uniforms.uTime.value = time;
+      tiler?.flush();
     },
 
     /**
@@ -462,9 +473,9 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
       return { swash: false, breaker: u > 0.74 && u < 0.84 && height > 0.12, height, u };
     },
 
-    reuseKey: ({ resolution }) => `${resolution}`,
+    reuseKey: ({ resolution, lod }) => `${lod >= TILE_LOD ? 'tiled:' : ''}${resolution}`,
 
-    build({ cx, cz, heights, generator, config, prepared }) {
+    build({ cx, cz, lod, heights, generator, config, prepared }) {
       // (Worked out by the chunk's worker, or here.)
       const data = prepared?.water !== undefined ? prepared.water : waterData(generator, config, cx, cz, heights, resolution);
       if (!data) return null;
@@ -486,6 +497,14 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
       // Waves move vertices about; pad the bounds so culling stays correct.
       geometry.boundingSphere.radius += waveHeight * 12;
 
+      if (lod >= TILE_LOD) {
+        // (Far off: into its square's one mesh; this chunk keeps only a handle on it, and the geometry.)
+        const stub = new Group();
+        stub.name = 'water';
+        stub.userData.tile = tilerFor(config).add(cx, cz, geometry);
+        stub.userData.geometry = geometry;
+        return stub;
+      }
       const mesh = new Mesh(geometry, material);
       mesh.name = 'water';
       mesh.renderOrder = 1;
@@ -494,6 +513,12 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
     },
 
     dispose(object) {
+      if (object.userData.tile) {
+        tiler?.remove(object.userData.tile);
+        object.userData.tile = null;
+        object.userData.geometry?.dispose();
+        return;
+      }
       object.geometry.dispose();
     },
   };

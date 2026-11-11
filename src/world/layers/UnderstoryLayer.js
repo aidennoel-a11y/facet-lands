@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, Color, DoubleSide, DynamicDrawUsage, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../../noise/random.js';
 import { addWind } from '../../render/wind.js';
 import { GRASS_PUSHERS, grassPushers } from './GrassLayer.js';
@@ -210,33 +210,73 @@ export function createUnderstoryLayer(config) {
   // (And past 85 m, plainer still: each frond one bent blade, each leaf two
   // triangles: a sixth of the triangles, where a whole plant's a dozen pixels.)
   const NEAR = 35, FAR = 85, live = new Set();
-  let lastX = Infinity, lastZ = Infinity;
-  const sort = (group, ex, ez) => {
-    // (A chunk wholly far off, and sorted so already: nothing to do.)
-    const P = group.userData.plants, bx = Math.max(P.x0 - ex, 0, ex - P.x0 - P.size), bz = Math.max(P.z0 - ez, 0, ez - P.z0 - P.size);
-    const allFar = bx * bx + bz * bz > (FAR + 3) * (FAR + 3);
-    if (allFar && group.userData.allFar && group.userData.sorted) return;
-    group.userData.allFar = allFar;
-    group.userData.sorted = true;
-    for (const k of group.userData.kinds) {
-      let nf = 0, np = 0, nd = 0;
-      for (const [m, c, x, z] of k.items) {
-        const d2 = (x - ex) ** 2 + (z - ez) ** 2;
-        const mesh = d2 < NEAR * NEAR ? k.full : d2 < FAR * FAR ? k.plain : k.far, n = mesh === k.full ? nf++ : mesh === k.plain ? np++ : nd++;
+  let lastX = Infinity, lastZ = Infinity, changed = true;
+  // Every near chunk's plants drawn together: for each kind, one mesh in
+  // full, one plain, one far (see sort), shared by all the chunks: three
+  // draws a kind, not three a kind for every chunk. Their instances in the
+  // world's own frame.
+  const all = new Group();
+  all.name = 'understory';
+  const shared = PLANTS.map((pl) => {
+    const make = (shape) => {
+      const mesh = new InstancedMesh(shape, material, 64);
+      mesh.count = 0;
+      mesh.visible = false;
+      mesh.frustumCulled = false; // (spread over the chunks all round you)
+      mesh.receiveShadow = true;
+      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+      all.add(mesh);
+      return mesh;
+    };
+    return { full: make(pl.shape), plain: make(pl.plain), far: make(pl.far) };
+  });
+  // (Grown, when there are more plants than room: its buffers made afresh.)
+  const room = (k, which, need) => {
+    const mesh = shared[k][which];
+    if (mesh.instanceMatrix.count >= need) return mesh;
+    const size = Math.max(need, mesh.instanceMatrix.count * 2);
+    const fresh = new InstancedMesh(mesh.geometry, material, size);
+    fresh.frustumCulled = false;
+    fresh.receiveShadow = true;
+    fresh.instanceMatrix.setUsage(DynamicDrawUsage);
+    fresh.setColorAt(0, white);
+    all.remove(mesh);
+    mesh.dispose();
+    all.add(fresh);
+    return (shared[k][which] = fresh);
+  };
+  const white = new Color(1, 1, 1);
+  const sort = (ex, ez) => {
+    const counts = shared.map(() => ({ full: 0, plain: 0, far: 0 }));
+    // (How many of each first, so there's room.)
+    for (const group of live) for (const k of group.userData.kinds) {
+      const c = counts[k.kind];
+      for (const it of k.items) {
+        const d2 = (it[2] - ex) ** 2 + (it[3] - ez) ** 2;
+        it[4] = d2 < NEAR * NEAR ? 'full' : d2 < FAR * FAR ? 'plain' : 'far';
+        c[it[4]]++;
+      }
+    }
+    shared.forEach((_, k) => {
+      for (const w of ['full', 'plain', 'far']) {
+        const mesh = room(k, w, counts[k][w]);
+        mesh.count = 0;
+      }
+    });
+    for (const group of live) for (const k of group.userData.kinds) {
+      const S = shared[k.kind];
+      for (const [m, c, , , w] of k.items) {
+        const mesh = S[w], n = mesh.count++;
         mesh.setMatrixAt(n, m);
         mesh.setColorAt(n, c);
       }
-      k.full.count = nf;
-      k.plain.count = np;
-      k.far.count = nd;
-      k.full.visible = nf > 0;
-      k.plain.visible = np > 0;
-      k.far.visible = nd > 0;
-      for (const mesh of [k.full, k.plain, k.far]) {
-        if (!mesh.visible) continue;
-        mesh.instanceMatrix.needsUpdate = true;
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-      }
+    }
+    for (const S of shared) for (const w of ['full', 'plain', 'far']) {
+      const mesh = S[w];
+      mesh.visible = mesh.count > 0;
+      if (!mesh.visible) continue;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
   };
 
@@ -245,6 +285,10 @@ export function createUnderstoryLayer(config) {
     material,
 
     reuseKey: ({ lod }) => (lod > 0 ? 'none' : 'near'),
+    tilesFor: () => all,
+    get tileGroup() {
+      return all;
+    },
 
     build({ cx, cz, lod, generator, groundHeightAt, prepared }) {
       if (lod > 0) return null;
@@ -267,49 +311,42 @@ export function createUnderstoryLayer(config) {
         where.push(x0 + data[k + 1], z0 + data[k + 3], data[k + 4]);
       }
       if (!placed.some((l) => l.length)) return null;
-      // (Each kind twice over: in full for the plants near you, plain for the
-      // rest; sorted between them as you move: see refresh.)
+      // (Drawn with every near chunk's, in the shared meshes: see sort. Here,
+      // each plant's world transform and colour, by kind.)
       const root = new Group(), kinds = [];
       placed.forEach((list, k) => {
         if (!list.length) return;
-        const full = new InstancedMesh(PLANTS[k].shape, material, list.length), plainMesh = new InstancedMesh(PLANTS[k].plain, material, list.length);
-        const farMesh = new InstancedMesh(PLANTS[k].far, material, list.length);
         const items = list.map(([x, y, z, sc, turn, c, gx, gz]) => {
           // (Sunk a little on a slope, so its downhill side doesn't stand off the ground.)
-          p.set(x, y - 0.12 * Math.min(1, Math.hypot(gx, gz)) * sc, z);
+          p.set(x + x0, y - 0.12 * Math.min(1, Math.hypot(gx, gz)) * sc, z + z0);
           up.set(-gx * 0.7, 1, -gz * 0.7).normalize();
           tilt.setFromUnitVectors(yAxis, up);
           q.setFromAxisAngle(yAxis, turn * Math.PI * 2).premultiply(tilt);
           s.set(sc, sc * (0.85 + 0.3 * turn), sc);
-          return [m4.compose(p, q, s).clone(), new Color().setHex(c), x + x0, z + z0];
+          return [m4.compose(p, q, s).clone(), new Color().setHex(c), x + x0, z + z0, 'full'];
         });
-        items.forEach(([m, c], i) => (full.setMatrixAt(i, m), full.setColorAt(i, c), plainMesh.setMatrixAt(i, m), plainMesh.setColorAt(i, c)));
-        items.forEach(([m, c], i) => (farMesh.setMatrixAt(i, m), farMesh.setColorAt(i, c)));
-        for (const mesh of [full, plainMesh, farMesh]) mesh.computeBoundingSphere(), (mesh.receiveShadow = true), root.add(mesh);
-        // (All plain and far off, till sorted round you: see refresh.)
-        full.count = plainMesh.count = 0;
-        full.visible = plainMesh.visible = false;
-        kinds.push({ items, full, plain: plainMesh, far: farMesh });
+        kinds.push({ kind: k, items });
       });
       root.name = 'understory';
       root.userData.plants = { x0, z0, size, list: where };
       root.userData.kinds = kinds;
       plantSets.add(root.userData.plants);
       live.add(root);
+      changed = true;
       return root;
     },
 
     dispose(group) {
       plantSets.delete(group.userData.plants);
-      live.delete(group);
-      for (const child of group.children) child.dispose(); // (the shapes are shared)
+      if (live.delete(group)) changed = true;
     },
 
     /** Sorts the near chunks' plants into full and plain round `eye` (when you've moved a few metres). */
     refresh(eye) {
       const moved = Math.hypot(eye.x - lastX, eye.z - lastZ) >= 4;
-      if (moved) (lastX = eye.x), (lastZ = eye.z);
-      for (const group of live) if (moved || !group.userData.sorted) sort(group, eye.x, eye.z);
+      if (!moved && !changed) return;
+      (lastX = eye.x), (lastZ = eye.z), (changed = false);
+      sort(eye.x, eye.z);
     },
   };
 }

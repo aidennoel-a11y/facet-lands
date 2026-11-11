@@ -125,6 +125,7 @@ export class ChunkManager {
     const { surface, caves } = this.visibility;
     chunk.mesh.visible = surface && !chunk.merged;
     for (const tile of this.tiles.values()) if (tile.mesh) tile.mesh.visible = surface;
+    for (const layer of this.layers) if (layer.tileGroup) layer.tileGroup.visible = surface;
     // (From the surface, only the caves behind a mouth within a few dozen
     // metres: any further and the opening is too small to see into, and
     // the tunnels would only cost triangles.)
@@ -137,6 +138,8 @@ export class ChunkManager {
 
   addLayer(layer) {
     this.layers.push(layer);
+    // (A layer that merges its far chunks' meshes into squares: those drawn from here too. See tileMerge.)
+    if (layer.tilesFor) this.root.add(layer.tilesFor(this.config));
     this.rebuildAll();
   }
 

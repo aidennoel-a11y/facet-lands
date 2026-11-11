@@ -466,7 +466,7 @@ export function createFarTreeLayer(config) {
   // side): instances packed at the front, a chunk's handle knowing which
   // slots are its own. A square out of view (behind you, off to the side)
   // isn't drawn at all: its pool's bounds are the square's.
-  const TILE = 6;
+  const TILE = 10; // (squares of 1.3 km: a handful in view, so few draws; still left undrawn behind you)
   const pools = new Map();
   const leaving = []; // ({ handle, at }) trees fading out, oldest first
   function pool(type, detailed, tx, tz) {
