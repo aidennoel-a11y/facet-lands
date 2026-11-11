@@ -625,7 +625,9 @@ export class TerrainGenerator {
       const free = Math.min(1, own + out.savanna) * (1 - kj - km - kc - kb);
       const jungleShare = Math.min(free, out.jungle * (1 - kj - km - kc - kb));
       const kmz = free - jungleShare > 0 ? this.#monsoonRing(x, z, jb, a) * (free - jungleShare) : 0;
-      const ko = rest - kmz > 0 ? this.#oakLand(x, z) * (rest - kmz) : 0;
+      // (Never on the jungle's own ground: only the rest of the green country.)
+      const oakRoom = rest - kmz - jungleShare;
+      const ko = oakRoom > 0 ? this.#oakLand(x, z) * oakRoom : 0;
       const taken = kj + km + kc + kb + kmz + ko;
       if (taken > 0) for (const id of BIOME_IDS) out[id] *= 1 - taken;
       out.jungleFoothills = kj;
@@ -1301,6 +1303,11 @@ export class TerrainGenerator {
     return this.#blobs('oakwood', x, z, 2600, 0.72, 330, 620, 0x0a4c, (px, pz) => {
       // (Its suitedness for jungle is 0 up: anything over a trace of it is too near a jungle.)
       if (this.getMountainness(px, pz) > 0.3 || this.#jungleSuit(px, pz) > 0.02) return 0;
+      // (And no jungle, nor a jungle range, anywhere within a kilometre of it.)
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2, qx = px + Math.cos(a) * 1000, qz = pz + Math.sin(a) * 1000;
+        if (this.#jungleAt128(qx, qz) > 0.05 || this.#jungleMtnBlob(qx, qz) > 0.05) return 0;
+      }
       if (this.#continentBase(px, pz) - this._contLift < -0.4) return 0;
       return this.getAridity(px, pz) < 0.4 ? 1 : 0;
     });

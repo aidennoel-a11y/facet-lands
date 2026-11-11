@@ -1,22 +1,4 @@
-import {
-  BufferAttribute,
-  BufferGeometry,
-  Color,
-  LinearFilter,
-  LinearMipmapLinearFilter,
-  OrthographicCamera,
-  Scene,
-  ShaderMaterial,
-  WebGLRenderTarget,
-  DynamicDrawUsage,
-  Group,
-  InstancedBufferAttribute,
-  InstancedBufferGeometry,
-  Mesh,
-  MeshLambertMaterial,
-  Sphere,
-  Vector3,
-} from 'three';
+import { BufferAttribute, BufferGeometry, Color, LinearFilter, LinearMipmapLinearFilter, OrthographicCamera, Scene, ShaderMaterial, WebGLRenderTarget, DynamicDrawUsage, Group, InstancedBufferAttribute, InstancedBufferGeometry, Mesh, MeshLambertMaterial, Sphere, Vector3, MeshDepthMaterial, RGBADepthPacking } from 'three';
 import { FADE_SECONDS } from '../../render/chunkFade.js';
 import { seasonalTrees } from '../../render/Seasons.js';
 import { FALL, TREE_GEOMETRIES } from '../trees.js';
@@ -152,6 +134,61 @@ function farGeometry(type, detailed) {
         lobe(centre.x + Math.cos(a) * r * 0.55, centre.z + Math.sin(a) * r * 0.55, yb - (box.max.y - yb) * 0.25, yb + (box.max.y - yb) * 0.55, r * 0.5, 0, 0.3);
       }
       trunk(yb + (box.max.y - yb) * 0.2, Math.max(0.25, r * 0.07));
+    }
+  } else if (type === 'oak' || type === 'weepingWillow') {
+    // A lumpy ball of foliage: two rings of `sides` round its middle, dark
+    // under, bright on top (for the clumps of an oak's crown).
+    const sides = detailed ? 7 : 5;
+    const under = shade(0.66), low = shade(0.88), high = shade(1.06), crest = shade(1.2);
+    const ball = (cx, cy, cz, rad, ry, turn) => {
+      const ringAt = (y, q, t) => Array.from({ length: sides }, (_, k) => {
+        const a = (k / sides) * Math.PI * 2 + t, l = q * (1 + 0.16 * Math.sin(k * 12.9898 + cx * 3.1 + cz * 1.7));
+        return [cx + Math.cos(a) * l, y, cz + Math.sin(a) * l];
+      });
+      const lo = ringAt(cy - ry * 0.35, rad * 0.95, turn), hi = ringAt(cy + ry * 0.4, rad * 0.8, turn + Math.PI / sides);
+      const top = [cx, cy + ry, cz], bottom = [cx, cy - ry * 0.85, cz];
+      for (let k = 0; k < sides; k++) {
+        const m = (k + 1) % sides;
+        tri(lo[k], lo[m], bottom, low, low, under);
+        tri(lo[m], lo[k], hi[k], low, low, high);
+        tri(hi[k], hi[m], lo[m], high, high, low);
+        tri(hi[m], hi[k], top, high, high, crest);
+      }
+    };
+    if (type === 'oak') {
+      // An old oak: a broad, low, irregular crown of several great clumps,
+      // wider than it's tall, on a thick short trunk.
+      const cy = y0 + h * 0.62, ry = h * 0.3;
+      ball(centre.x, cy + ry * 0.25, centre.z, r * 0.62, ry, 0);
+      for (let k = 0; k < (detailed ? 4 : 3); k++) {
+        const a = (k / (detailed ? 4 : 3)) * Math.PI * 2 + 0.6, d = r * 0.48;
+        ball(centre.x + Math.cos(a) * d, cy - ry * (0.15 + 0.12 * (k % 2)), centre.z + Math.sin(a) * d, r * 0.5, ry * 0.78, a);
+      }
+      trunk(y0 + h * 0.45, Math.max(0.3, r * 0.12));
+    } else {
+      // A weeping willow: a rounded head, and from it a curtain of hanging
+      // strands sweeping out and down nearly to the ground, its hem ragged.
+      const n = detailed ? 10 : 7, headY = y0 + h * 0.78;
+      ball(centre.x, headY, centre.z, r * 0.62, h * 0.22, 0);
+      const shoulder = Array.from({ length: n }, (_, k) => {
+        const a = (k / n) * Math.PI * 2;
+        return [centre.x + Math.cos(a) * r * 0.7, headY + h * 0.02, centre.z + Math.sin(a) * r * 0.7];
+      });
+      const hem = Array.from({ length: n }, (_, k) => {
+        const a = ((k + 0.5) / n) * Math.PI * 2, drop = 0.1 + 0.12 * (0.5 + 0.5 * Math.sin(k * 2.7));
+        return [centre.x + Math.cos(a) * r * 1.02, y0 + h * drop, centre.z + Math.sin(a) * r * 1.02];
+      });
+      const curtain = shade(0.95), hemC = shade(0.72), inside = shade(0.55);
+      for (let k = 0; k < n; k++) {
+        const m = (k + 1) % n;
+        // (Each strand-hang a long drooping panel, seen from outside and in.)
+        tri(shoulder[m], shoulder[k], hem[k], curtain, curtain, hemC);
+        tri(shoulder[k], shoulder[m], hem[k], inside, inside, inside);
+        const nextHem = hem[m];
+        tri(shoulder[m], hem[k], nextHem, curtain, hemC, hemC);
+        tri(hem[k], shoulder[m], nextHem, inside, inside, inside);
+      }
+      trunk(headY, Math.max(0.25, r * 0.08));
     }
   } else if (CLUMPS.has(type) || SPIKES.has(type) || (CONES.has(type) && !detailed)) {
     const spike = SPIKES.has(type), clump = CLUMPS.has(type);
@@ -417,6 +454,25 @@ export function createFarTreeLayer(config) {
   seasonalTrees(material, false, 'aShape.z', 'aShape.w', 'aSpot.y');
   fadingInstances(material);
 
+  // (The redwoods, giants seen from far off, cast their shadows however far
+  // off they are, out to the shadows' reach: their depth drawn the same way.)
+  const depthMaterial = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+  depthMaterial.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aSpot;\nattribute vec4 aShape;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        {
+          float c = cos(aShape.y), s = sin(aShape.y);
+          transformed.xz = mat2(c, -s, s, c) * transformed.xz;
+          transformed *= vec3(aSpot.w, aShape.x, aSpot.w);
+          transformed += aSpot.xyz;
+        }`,
+      );
+  };
+  depthMaterial.customProgramCacheKey = () => 'far-trees-depth';
+
   // The furthest: the cards (see buildImpostors), turned about their upright to face you.
   const impostorUniform = { value: null }, impRowsUniform = { value: 1 };
   const cardMaterial = new MeshLambertMaterial();
@@ -484,6 +540,7 @@ export function createFarTreeLayer(config) {
       geometry.boundingSphere = new Sphere(new Vector3((tx + 0.5) * size, 150, (tz + 0.5) * size), Math.hypot(size / 2, size / 2, 300));
       p.mesh = new Mesh(geometry, card ? cardMaterial : material);
       p.mesh.frustumCulled = true;
+      if (FULL.has(type) && !card) (p.mesh.castShadow = true), (p.mesh.customDepthMaterial = depthMaterial);
       p.mesh.name = card ? 'far cards' : `far ${type}`;
       group.add(p.mesh);
       pools.set(key, p);
