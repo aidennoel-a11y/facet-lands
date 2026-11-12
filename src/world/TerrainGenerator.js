@@ -2342,7 +2342,9 @@ export class TerrainGenerator {
     }
     // The new country's own lie of the land: bristlecone heights, hanging gardens, bamboo mist gorges.
     const lakeFade = 1 - smoothstep(0.5, 6, lakes);
-    const bcw = this._probing || !(w.bristlecone > 0) ? 0 : this.#bristleconeLand(x, z);
+    // (Rising from nothing where the heights begin (their share's first above
+    // nought at 0.22 of the patch: see #biomeWeights), so never a step at their edge.)
+    const bcw = this._probing || !(w.bristlecone > 0) ? 0 : Math.max(0, (this.#bristleconeLand(x, z) - 0.22) / 0.78);
     const smw = this._probing ? 0 : w.savannaMountains ?? 0;
     const bristle = (bcw > 0.002 ? this.bristleconeRelief(x, z, bcw) : 0) + (smw > 0.002 || (this._probing ? false : this.#savMtnNear(x, z)) ? this.savannaMtnRelief(x, z, smw) : 0);
     const hgw = this._probing ? 0 : w.hangingGardens ?? 0;
@@ -2392,7 +2394,9 @@ export class TerrainGenerator {
     // Salt flats: dead flat, a metre or so below the desert round them.
     if (w.saltFlat > 0) {
       const flat = 14 + (continent - contLift) * 16 + mountains - sea - 1.2;
-      height += (flat - height) * smoothstep(0.05, 0.6, w.saltFlat / (w.saltFlat + w.desert));
+      // (Only where the salt and the desert round it are the country: where something else has
+      // taken over (bristlecone heights, a range), it fades out, never a wall cut down to the flat.)
+      height += (flat - height) * smoothstep(0.05, 0.6, w.saltFlat / (w.saltFlat + w.desert)) * smoothstep(0.03, 0.4, w.saltFlat + w.desert);
     }
     // Mangrove coasts: the land eases down to a maze of mud banks and
     // channels just above the tide, and the sea off them shoals into warm

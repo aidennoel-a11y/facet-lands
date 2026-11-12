@@ -228,7 +228,11 @@ export function createUnderstoryLayer(config) {
       all.add(mesh);
       return mesh;
     };
-    return { full: make(pl.shape), plain: make(pl.plain), far: make(pl.far) };
+    // (The plants right round you cast their shadows, basic ones: their
+    // shapes as they are, not swaying. Further off they'd be specks.)
+    const full = make(pl.shape);
+    full.castShadow = true;
+    return { full, plain: make(pl.plain), far: make(pl.far) };
   });
   // (Grown, when there are more plants than room: its buffers made afresh.)
   const room = (k, which, need) => {
@@ -238,6 +242,7 @@ export function createUnderstoryLayer(config) {
     const fresh = new InstancedMesh(mesh.geometry, material, size);
     fresh.frustumCulled = false;
     fresh.receiveShadow = true;
+    fresh.castShadow = which === 'full';
     fresh.instanceMatrix.setUsage(DynamicDrawUsage);
     fresh.setColorAt(0, white);
     all.remove(mesh);
