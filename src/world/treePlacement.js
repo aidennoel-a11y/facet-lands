@@ -288,8 +288,9 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       }
       (placed[species.type] ??= []).push({
         x: lx,
-        // Sink the base a little so trunks never float on sloped faces.
-        y: ground - 0.3 * size,
+        // Sink the base a little so trunks never float on sloped faces: more
+        // the steeper it is, so the downhill side of the trunk's foot is in the ground too.
+        y: ground - 0.3 * size - Math.min(1.5, Math.hypot(gradX, gradZ) * (0.4 * size + 0.25)),
         z: lz,
         s: size,
         sy: size * (0.85 + hash2(gi, gj, seed + 6) * 0.35),

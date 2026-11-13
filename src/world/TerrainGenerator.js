@@ -766,6 +766,16 @@ export class TerrainGenerator {
     // (And well away from the big mountain ranges: on the low ground.)
     const ranges = 1 - smoothstep(0.12, 0.25, this.#rangeField(x, z, {}).value);
     if (ranges <= 0) return 0;
+    // (Never in or by the jungles, their hanging gardens or monsoon country: redwoods are the cool coast's.)
+    const jungly = this.#gridMemo('rwJungle', x, z, 256, (px, pz) => {
+      if (this.#jungleSuit(px, pz) > 0.005 || this.#gardensLand(px, pz) > 0) return 1;
+      for (let k = 0; k < 8; k++) {
+        const qx = px + Math.cos(k * 0.785) * 900, qz = pz + Math.sin(k * 0.785) * 900;
+        if (this.#jungleAt128(qx, qz) > 0.05 || this.#jungleMtnBlob(qx, qz) > 0.05 || this.#gardensLand(qx, qz) > 0) return 1;
+      }
+      return 0;
+    });
+    if (jungly > 0) return 0;
     return groves * ranges * Math.max(lake, this.#seaCoast(x, z));
   }
 
@@ -968,7 +978,7 @@ export class TerrainGenerator {
    * country between them and anything else).
    */
   #volcanoZone(x, z, range) {
-    if (smoothstep(0.51, 0.61, this.#volcanoNoise(x, z)) <= 0) return 0;
+    if (smoothstep(0.52, 0.62, this.#volcanoNoise(x, z)) <= 0) return 0;
     // (Never a little scrap of it: under about a square kilometre, it goes.)
     // (Mountain ranges cut into it too, so they count before it's sized.)
     const keep = this.#minSize('volcanic', x, z, (px, pz) => this.#volcanoRaw(px, pz) * (1 - smoothstep(0.02, 0.2, this.#rangeField(px, pz, {}).value)), 0.5, 4.5);
@@ -985,7 +995,8 @@ export class TerrainGenerator {
   }
 
   #volcanoRawAt(x, z) {
-    const zone = smoothstep(0.51, 0.61, this.#volcanoNoise(x, z));
+    // (A little higher up the noise than it was: the biggest highlands a little smaller.)
+    const zone = smoothstep(0.52, 0.62, this.#volcanoNoise(x, z));
     if (zone <= 0) return 0;
     let ring = Infinity;
     for (let k = 0; k < 10; k++) {
@@ -1290,8 +1301,21 @@ export class TerrainGenerator {
         for (const d of [0, 190, 380, 570]) for (let k = 0; k < (d ? 12 : 1) && m < 1; k++) m = Math.max(m, smoothstep(0.02, 0.1, this.#jungleMtn(px + Math.cos((k / 12) * Math.PI * 2) * d, pz + Math.sin((k / 12) * Math.PI * 2) * d)) * (d > 500 ? 0.6 : 1));
         return m;
       });
+      // (Not where it's a real mountain range that stands there, not a jungle one: the monsoon
+      // forest rings the jungle's own mountains, never ordinary mountains.)
       // (Right up to where the foothills jungle takes over: no strip of anything between.)
       ring = Math.max(ring, near * (1 - smoothstep(0.18, 0.26, jb)));
+    }
+    // (But never round an ordinary mountain: within some 400 m of one, the
+    // country round it is its own (foothills, forest), not monsoon forest.
+    // The monsoon forest rings the jungles and the jungle's own mountains.)
+    if (ring > 0) {
+      const peaks = this.#gridMemo('mzRange', x, z, 128, (px, pz) => {
+        let m = this.#rangeField(px, pz, {}).value;
+        for (const d of [200, 400]) for (let k = 0; k < 8; k++) m = Math.max(m, this.#rangeField(px + Math.cos(k * 0.785) * d, pz + Math.sin(k * 0.785) * d, {}).value);
+        return m;
+      });
+      ring *= 1 - smoothstep(0.42, 0.55, peaks);
     }
     return ring;
   }
@@ -4314,7 +4338,7 @@ export class TerrainGenerator {
 
   /** The Black Hills out in the savanna (0..1): rounded stretches a few kilometres across, now and then. */
   #dryHills(x, z, range) {
-    return this.#blobs('hillsDry', x, z, 7500, 1, 1900, 3200, 0xd4b1, (px, pz) => {
+    return this.#blobs('hillsDry', x, z, 7500, 1, 1900, 2880, 0xd4b1, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value, a = this.getAridity(px, pz, r);
       // (The open savanna, well short of the desert, clear of the ranges and of volcanic country.)
       return a > T.savannaStart + 0.12 && a < T.desertStart - 0.02 && r < 0.12 && this.#volcanoNoise(px, pz) < 0.26 ? 1 : 0;
@@ -4323,7 +4347,7 @@ export class TerrainGenerator {
 
   /** Where the Black Hills' blobs lie (0..1), before they're fitted to the land. */
   #hillsBlob(x, z) {
-    return this.#blobs('hills', x, z, 8000, 1, 1500, 2600, 0xb1ac, (px, pz) => this.#greenFit(px, pz));
+    return this.#blobs('hills', x, z, 8000, 1, 1500, 2340, 0xb1ac, (px, pz) => this.#greenFit(px, pz));
   }
 
   /**
