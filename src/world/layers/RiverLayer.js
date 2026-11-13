@@ -1,3 +1,4 @@
+import { TORCH_GLINT } from '../../render/torchGlint.js';
 import { boundsOf, throwReach } from '../../render/cullBounds.js';
 import {
   BoxGeometry,
@@ -184,6 +185,8 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
           gl_FragColor.a = mix(gl_FragColor.a, 1.0, white * 0.7);
           // Sun glitter on the smooth stretches (not under a cloud's shadow), and rings in the rain.
           float calm = (1.0 - vFlow.w) * (1.0 - white);
+          // (Firelight on it: see torchGlint.)
+          ${TORCH_GLINT}
           gl_FragColor.rgb += sunGlitter(vRiverWorld, normal, -V, uTime) * calm * (1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r * 1.6);
           gl_FragColor.rgb += rainRings(vRiverWorld, uTime) * 0.2 * calm;
           { float sr = splashRings(vRiverWorld); gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 1.0), sr); gl_FragColor.a = max(gl_FragColor.a, sr); } // (splashes' rings: see Traces)

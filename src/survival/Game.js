@@ -3994,7 +3994,7 @@ export class Game {
 
     // Held in your hand.
     this.#drawHeld(dt, held, walking);
-    if (TORCHES.has(held?.id) && walking) lights.push(held.id === 'coalTorch' ? { x: cam.x, y: cam.y - 0.2, z: cam.z, strength: 44, reach: 42 } : { x: cam.x, y: cam.y - 0.2, z: cam.z, strength: 22, reach: 22 });
+    if (TORCHES.has(held?.id) && walking) lights.push(held.id === 'coalTorch' ? { x: cam.x, y: cam.y - 0.2, z: cam.z, strength: 44, reach: 42, held: true } : { x: cam.x, y: cam.y - 0.2, z: cam.z, strength: 22, reach: 22, held: true }); // (its own light, casting shadows: see main, heldTorchLight)
 
     // Saving now and then.
     this.saveWait -= dt;

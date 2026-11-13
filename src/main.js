@@ -1716,6 +1716,91 @@ function testView() {
 testView();
 const body = new PlayerBody(scene);
 const torches = new Torches(scene, { maxLights: 14 });
+
+// The torch in your hand: its own light, held out a little to your right
+// and below your eyes, casting shadows all round you (the grass, the trees,
+// the rocks, everything near) so the dark beyond its reach closes in.
+// Its shadows redrawn every other frame: they only move as you do.
+const heldLight = new THREE.PointLight(0xffa24a, 0, 22, 1.35);
+heldLight.castShadow = true;
+heldLight.shadow.mapSize.set(512, 512);
+heldLight.shadow.camera.near = 0.15;
+heldLight.shadow.camera.far = 30;
+heldLight.shadow.bias = -0.004;
+heldLight.shadow.normalBias = 0.03;
+heldLight.shadow.autoUpdate = false;
+heldLight.visible = false;
+scene.add(heldLight);
+// (The grass casts its shadows for the torch alone: in the sun's and the
+// moon's maps it's thrown away before anything's drawn, see grassNoSun.)
+const grassNoSun = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+grassNoSun.onBeforeCompile = (shader) => {
+  shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position = vec4(0.0, 0.0, -2.0, 1.0);');
+};
+grassNoSun.customProgramCacheKey = () => 'grass-no-sun';
+// (Nor do you cast a shadow from your own torch, nor the torch itself: it's
+// held out by you, and your body, your arm and its stick would only put
+// everything round you in the dark. Their depth from it thrown away.)
+const noTorchShadow = new THREE.MeshDistanceMaterial();
+noTorchShadow.onBeforeCompile = (shader) => {
+  shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position = vec4(0.0, 0.0, -2.0, 1.0);');
+};
+noTorchShadow.customProgramCacheKey = () => 'no-torch-shadow';
+function unshadowed(root) {
+  root?.traverse((m) => m.isMesh && m.customDistanceMaterial !== noTorchShadow && (m.customDistanceMaterial = noTorchShadow));
+}
+const torchGrass = { at: null, on: new Set(), frame: 0 };
+const _hand = new THREE.Vector3(), _right = new THREE.Vector3(), _fwd = new THREE.Vector3();
+function heldTorchLight(held, time) {
+  if (renderer.shadowMap.autoUpdate && !dayNight.light.shadow.autoUpdate) dayNight.light.shadow.autoUpdate = true;
+  const on = !!held && controls.mode === 'walk';
+  if (on !== heldLight.visible) heldLight.visible = on;
+  if (!on) {
+    for (const m of torchGrass.on) m.castShadow = false;
+    torchGrass.on.clear();
+    torchGrass.at = null;
+    return;
+  }
+  camera.getWorldDirection(_fwd);
+  _right.crossVectors(_fwd, camera.up).normalize();
+  _hand.copy(camera.position).addScaledVector(_right, 0.32).addScaledVector(_fwd, 0.35);
+  _hand.y -= 0.28;
+  heldLight.position.copy(_hand);
+  unshadowed(game.hand);
+  unshadowed(selfFigure?.root);
+  const f = 0.85 + 0.15 * Math.sin(time * 13) * Math.sin(time * 7.3 + 1.7);
+  heldLight.intensity = held.strength * f;
+  heldLight.distance = held.reach;
+  heldLight.color.setHex(held.strength > 30 ? 0xffe2b8 : 0xffa24a);
+  heldLight.shadow.camera.far = held.reach + 4;
+  if (++torchGrass.frame % 2 === 0) {
+    heldLight.shadow.needsUpdate = true;
+    // (Underground the shadows aren't redrawn every frame, the sun's not
+    // at all: the torch's own asked for, and only it.)
+    if (!renderer.shadowMap.autoUpdate) {
+      renderer.shadowMap.needsUpdate = true;
+      dayNight.light.shadow.autoUpdate = false;
+      dayNight.farLight.shadow.needsUpdate = false;
+    }
+  }
+  // (The grass of the chunks round you set casting, every few metres you go.)
+  const p = camera.position;
+  if (!torchGrass.at || Math.hypot(p.x - torchGrass.at.x, p.z - torchGrass.at.z) > 6) {
+    torchGrass.at = { x: p.x, z: p.z };
+    const C = WORLD.chunkSize, want = new Set();
+    for (const chunk of chunks.chunks.values()) {
+      const x0 = chunk.cx * C, z0 = chunk.cz * C, dx = Math.max(x0 - p.x, 0, p.x - x0 - C), dz = Math.max(z0 - p.z, 0, p.z - z0 - C);
+      if (dx * dx + dz * dz > (held.reach + 6) ** 2) continue;
+      for (const { layer, object } of chunk.layerObjects) {
+        if (layer !== grass) continue;
+        object.traverse((m) => m.isMesh && want.add(m));
+      }
+    }
+    for (const m of torchGrass.on) if (!want.has(m)) m.castShadow = false;
+    for (const m of want) (m.castShadow = true), (m.customDepthMaterial = grassNoSun);
+    torchGrass.on = want;
+  }
+}
 torches.loadWorld(WORLD.seed);
 
 // --- Staying alive -----------------------------------------------------------------
@@ -3420,6 +3505,7 @@ function tick(now) {
   caveSounds(dt);
   const swampLamps = glowSwampHere.v > 0.05 ? wonders.lightsNear(camera.position) : [];
   torches.update(worldNow, camera.position, caveGlowLights.length || swampLamps.length ? [...gameLights, ...caveGlowLights, ...swampLamps] : gameLights);
+  heldTorchLight(gameLights.find((l) => l.held), worldNow);
   if ((aridHere.wait -= dt) <= 0) {
     aridHere.wait = 3;
     const w = generator.getBiomeWeights(camera.position.x, camera.position.z, {});

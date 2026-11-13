@@ -1,3 +1,4 @@
+import { TORCH_GLINT } from '../../render/torchGlint.js';
 import { createTiler } from '../tileMerge.js';
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshPhongMaterial } from 'three';
 import { waterData } from '../waterData.js';
@@ -376,6 +377,8 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
           gl_FragColor.a = mix(gl_FragColor.a, 1.0, white * 0.75);
           // Sun glitter (not where a cloud's shadow lies), and rings in the rain.
           float open = (1.0 - vIce) * (1.0 - white) * (1.0 - below);
+          // (Firelight on it: see torchGlint.)
+          ${TORCH_GLINT}
           gl_FragColor.rgb += sunGlitter(vWorld, normal, -V, uTime) * open * (1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r * 1.6);
           gl_FragColor.rgb += rainRings(vWorld, uTime) * 0.22 * open;
           { float sr = splashRings(vWorld); gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 1.0), sr); gl_FragColor.a = max(gl_FragColor.a, sr); } // (splashes' rings: see Traces)

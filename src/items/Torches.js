@@ -57,8 +57,8 @@ export class Torches {
     this.innerFlame = new OctahedronGeometry(0.08, 0).scale(1, 1.5, 1);
     this.stickMaterial = new MeshLambertMaterial({ color: 0x6b4a2f, flatShading: true });
     this.headMaterial = new MeshLambertMaterial({ color: 0x2e2620, flatShading: true });
-    this.outerMaterial = new MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9 });
-    this.innerMaterial = new MeshBasicMaterial({ color: 0xffd070 });
+    this.outerMaterial = new MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9, fog: false });
+    this.innerMaterial = new MeshBasicMaterial({ color: 0xffd070, fog: false });
     // A crystal lamp: crystals in an iron ring on a stone, glowing cold blue of themselves, for ever.
     this.lampBase = new CylinderGeometry(0.16, 0.2, 0.12, 6).translate(0, 0.06, 0);
     this.lampCrystal = new OctahedronGeometry(0.12, 0).scale(0.7, 2.2, 0.7).translate(0, 0.38, 0);
@@ -72,6 +72,7 @@ export class Torches {
       transparent: true,
       depthWrite: false,
       opacity: 0.7,
+      fog: false, // (a flame in the dark: seen from far off, through the night's haze)
     });
 
     this.lights = [];
@@ -404,11 +405,14 @@ export class Torches {
       t.distance = t.group.position.distanceToSquared(cameraPosition);
       // (The glow smaller close to: its light is on everything round
       // about, and up close a big halo only dazzles.)
-      t.glow.scale.setScalar((0.9 + 0.25 * f) * (0.5 + 0.5 * Math.min(1, Math.sqrt(t.distance) / 6)));
+      // (And far off, never smaller than a bright point: a torch is seen a long way off in the dark.)
+      const away = Math.sqrt(t.distance);
+      t.glow.scale.setScalar((0.9 + 0.25 * f) * (0.5 + 0.5 * Math.min(1, away / 6)) * Math.max(1, away / 35));
       t.flicker = f;
     }
     const all = this.torches.filter((t) => t.lit);
     for (const x of extra) {
+      if (x.held) continue; // (the torch in your hand has a light of its own, casting shadows: see main)
       x.distance = (x.x - cameraPosition.x) ** 2 + (x.y - cameraPosition.y) ** 2 + (x.z - cameraPosition.z) ** 2;
       all.push(x);
     }
