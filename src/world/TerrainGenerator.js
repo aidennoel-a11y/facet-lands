@@ -680,7 +680,7 @@ export class TerrainGenerator {
   #parkland(x, z, range) {
     const low = 1 - smoothstep(0.15, 0.3, smoothstep(0.08, 0.55, range + MOUNTAIN_BIAS - this.#drySuppress(x, z)));
     if (low <= 0) return 0;
-    return low * this.#blobs('parkland', x, z, 5000, 1, 1530, 3060, 0xb12c, (px, pz) => {
+    return low * this.#blobs('parkland', x, z, 4600, 1, 1530, 3060, 0xb12c, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       const a = this.getAridity(px, pz, r);
       // (Cool green country, well clear of the ranges, the savanna and the jungles.)
@@ -1300,7 +1300,7 @@ export class TerrainGenerator {
   // kilometre to a kilometre across out in the green lowlands, well away
   // from the mountains, the jungles and the sea.
   #oakLand(x, z) {
-    return this.#blobs('oakwood', x, z, 2600, 0.95, 350, 660, 0x0a4c, (px, pz) => {
+    return this.#blobs('oakwood', x, z, 2600, 0.88, 345, 650, 0x0a4c, (px, pz) => {
       // (Its suitedness for jungle is 0 up: anything over a trace of it is too near a jungle.)
       if (this.getMountainness(px, pz) > 0.3 || this.#jungleSuit(px, pz) > 0.02) return 0;
       // (And no jungle, nor a jungle range, anywhere within a kilometre of it.)
