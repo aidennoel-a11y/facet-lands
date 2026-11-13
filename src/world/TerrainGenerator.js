@@ -680,11 +680,11 @@ export class TerrainGenerator {
   #parkland(x, z, range) {
     const low = 1 - smoothstep(0.15, 0.3, smoothstep(0.08, 0.55, range + MOUNTAIN_BIAS - this.#drySuppress(x, z)));
     if (low <= 0) return 0;
-    return low * this.#blobs('parkland', x, z, 4600, 1, 1530, 3060, 0xb12c, (px, pz) => {
+    return low * this.#blobs('parkland', x, z, 5000, 1, 1530, 3060, 0xb12c, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       const a = this.getAridity(px, pz, r);
       // (Cool green country, well clear of the ranges, the savanna and the jungles.)
-      return a < 0.4 && r < 0.2 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.35 ? 1 : 0;
+      return a < 0.4 && r < 0.3 && this.#volcanoBelt(px, pz) < 0.3 && this.#jungleNear(px, pz) < 0.05 && this.#continentBase(px, pz) - this._contLift > -0.35 ? 1 : 0;
     });
   }
 
