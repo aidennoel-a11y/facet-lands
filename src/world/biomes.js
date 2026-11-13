@@ -349,7 +349,6 @@ export const BIOMES = {
         { type: 'maple', weight: 0.5, minHeight: 20, maxHeight: 999 },
         { type: 'pine', weight: 0.45, minHeight: 60, maxHeight: 999 },
         { type: 'bush', weight: 0.5, minHeight: -99, maxHeight: 999 },
-        { type: 'bamboo', weight: 0.15, minHeight: -99, maxHeight: 60 },
       ],
     },
   },

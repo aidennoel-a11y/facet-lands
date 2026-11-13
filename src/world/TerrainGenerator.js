@@ -680,7 +680,7 @@ export class TerrainGenerator {
   #parkland(x, z, range) {
     const low = 1 - smoothstep(0.15, 0.3, smoothstep(0.08, 0.55, range + MOUNTAIN_BIAS - this.#drySuppress(x, z)));
     if (low <= 0) return 0;
-    return low * this.#blobs('parkland', x, z, 5000, 1, 1300, 2600, 0xb12c, (px, pz) => {
+    return low * this.#blobs('parkland', x, z, 5000, 1, 1530, 3060, 0xb12c, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       const a = this.getAridity(px, pz, r);
       // (Cool green country, well clear of the ranges, the savanna and the jungles.)
@@ -1300,7 +1300,7 @@ export class TerrainGenerator {
   // kilometre to a kilometre across out in the green lowlands, well away
   // from the mountains, the jungles and the sea.
   #oakLand(x, z) {
-    return this.#blobs('oakwood', x, z, 2600, 0.72, 330, 620, 0x0a4c, (px, pz) => {
+    return this.#blobs('oakwood', x, z, 2600, 0.95, 350, 660, 0x0a4c, (px, pz) => {
       // (Its suitedness for jungle is 0 up: anything over a trace of it is too near a jungle.)
       if (this.getMountainness(px, pz) > 0.3 || this.#jungleSuit(px, pz) > 0.02) return 0;
       // (And no jungle, nor a jungle range, anywhere within a kilometre of it.)
@@ -1323,7 +1323,7 @@ export class TerrainGenerator {
       if (jungle(px, pz)) return 0;
       for (let k = 0; k < 8; k++) {
         const a = (k / 8) * Math.PI * 2;
-        if (jungle(px + Math.cos(a) * 700, pz + Math.sin(a) * 700)) return 1;
+        if (jungle(px + Math.cos(a) * 500, pz + Math.sin(a) * 500)) return 1;
       }
       return 0;
     });
@@ -3862,6 +3862,31 @@ export class TerrainGenerator {
    * Black Hills and volcanic highlands do; the savanna barely; the desert not.
    */
   getSeasonality(x, z) {
+    // (Averaged over some 100 m round, on a 32 m grid (remembered) blended
+    // between its points: where the winter ends, at the edge of the dry
+    // country, the snow thins out over a hundred metres, never a hard line.)
+    const G = 32, gx = Math.floor(x / G), gz = Math.floor(z / G), fx = x / G - gx, fz = z / G - gz;
+    const cache = (this._seasonGrid ??= new Map());
+    if (cache.size > 60000) cache.clear();
+    const at = (i, j) => {
+      const key = cellKey(i, j);
+      let v = cache.get(key);
+      if (v === undefined) {
+        const cx = i * G, cz = j * G;
+        v = this.#seasonalityAt(cx, cz) * 2;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          v += this.#seasonalityAt(cx + Math.cos(a) * 55, cz + Math.sin(a) * 55);
+        }
+        cache.set(key, (v /= 10));
+      }
+      return v;
+    };
+    const a0 = at(gx, gz), b0 = at(gx + 1, gz), c0 = at(gx, gz + 1), d0 = at(gx + 1, gz + 1);
+    return (a0 * (1 - fx) + b0 * fx) * (1 - fz) + (c0 * (1 - fx) + d0 * fx) * fz;
+  }
+
+  #seasonalityAt(x, z) {
     const w = this.getBiomeWeights(x, z, {});
     const s = w.temperate + w.pine + 0.9 * w.redwood + w.wetland + w.blackHills + w.smoky + 0.85 * w.volcanic + 0.15 * w.savanna + 0.1 * w.badlands + w.parkland + w.cascades + 0.9 * (w.bristlecone ?? 0);
     // (Near a jungle its warmth reaches out past its edge: no autumn there, and no snow.)

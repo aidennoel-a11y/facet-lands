@@ -216,19 +216,21 @@ function spruce() {
 // streaming out one way (downwind, +x), a flag of a few higher shoots.
 function krummholz() {
   const rand = mulberry32(2101);
+  // A gnarled stem, bent low and running off downwind, all of it under the needles.
   const wood = [
-    limb([0, 0, 0], [0.35, 0.55, 0.05], 0.16, 0.12, 0x4e3a2a, 0x5e4632, 2100),
-    limb([0.35, 0.55, 0.05], [1.2, 0.85, -0.05], 0.12, 0.06, 0x5e4632, 0x4e3a2a, 2101),
-    limb([0.2, 0.4, 0], [0.5, 1.5, 0.08], 0.07, 0.03, 0x4e3a2a, 0x5e4632, 2102),
+    limb([0, 0, 0], [0.3, 0.32, 0.02], 0.14, 0.11, 0x4e3a2a, 0x5e4632, 2100),
+    limb([0.3, 0.32, 0.02], [1.0, 0.42, -0.04], 0.1, 0.05, 0x5e4632, 0x4e3a2a, 2101),
   ];
   const mats = [];
-  // (The mat: low, flattened clumps of needles, stretched out downwind.)
-  for (let k = 0; k < 7; k++) {
-    const t = k / 6, x = 0.1 + t * 1.6 + (rand() - 0.5) * 0.2, z = (rand() - 0.5) * 0.9 * (1 - 0.4 * t);
-    mats.push(part(new IcosahedronGeometry(0.55 - 0.18 * t, 0), 0x1d4632, 0x356c4a, { x, y: 0.42 - 0.1 * t, z, sx: 1.5, sy: 0.55, sz: 1.1, lump: 0.25, seed: 2110 + k }));
+  // (The mat: a low, dense cushion of needles, thick at the root and
+  // tapering away downwind, its top shorn flat by the wind.)
+  for (let k = 0; k < 9; k++) {
+    const t = k / 8, x = -0.05 + t * 1.5 + (rand() - 0.5) * 0.18, z = (rand() - 0.5) * 0.8 * (1 - 0.45 * t);
+    mats.push(part(new IcosahedronGeometry(0.5 - 0.17 * t, 1), 0x1d4632, 0x356c4a, { x, y: 0.4 - 0.12 * t, z, sx: 1.35, sy: 0.6, sz: 1.15, lump: 0.18, seed: 2110 + k }));
   }
-  // (The flag: a few shoots up the bent stem, needles only on their lee side.)
-  for (let k = 0; k < 3; k++) mats.push(part(new ConeGeometry(0.28, 0.5, 5), 0x234e38, 0x3a7652, { x: 0.68 + k * 0.08, y: 1.0 + k * 0.22, z: 0.06, rz: -1.2, lump: 0.15, seed: 2120 + k }));
+  // (Its flag: a short tuft standing up out of the mat at its root, leaning downwind.)
+  mats.push(part(new ConeGeometry(0.3, 0.75, 6), 0x234e38, 0x3a7652, { x: 0.12, y: 0.85, z: 0.02, rz: -0.35, lump: 0.12, seed: 2120 }));
+  mats.push(part(new ConeGeometry(0.22, 0.5, 6), 0x234e38, 0x3a7652, { x: 0.32, y: 0.72, z: -0.12, rz: -0.5, lump: 0.12, seed: 2121 }));
   return withCrown(wood, mats);
 }
 

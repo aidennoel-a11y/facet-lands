@@ -235,7 +235,8 @@ export function seasonalTerrain(material, seaLevel) {
             float fresh = uSnowfall * smoothstep(0.35, 0.6, abs(vSeasonUp));
             // (And up in the mountains, from mid autumn to mid spring: see highSnow.)
             float high = uHighSnow * smoothstep(80.0, 96.0, vSeasonWorld.y + 6.0 * (patchy - 0.5)) * smoothstep(0.5, 0.75, abs(vSeasonUp));
-            float snow = smoothstep(0.3, 0.6, vCold) * above * max(max(settled, fresh), high);
+            // (Thinning out gently where the winter ends: see getSeasonality.)
+            float snow = smoothstep(0.12, 0.8, vCold) * above * max(max(settled, fresh), high);
             // And in the warm lands (the jungles, the monsoon forest, the dry
             // country), where there's no real winter: in winter only a thin,
             // patchy dusting on the flat; after a snowfall, small drifts that
