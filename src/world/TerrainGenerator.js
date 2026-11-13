@@ -1300,7 +1300,7 @@ export class TerrainGenerator {
   // kilometre to a kilometre across out in the green lowlands, well away
   // from the mountains, the jungles and the sea.
   #oakLand(x, z) {
-    return this.#blobs('oakwood', x, z, 2600, 1, 360, 680, 0x0a4c, (px, pz) => {
+    return this.#blobs('oakwood', x, z, 2600, 0.84, 360, 680, 0x0a4c, (px, pz) => {
       // (Its suitedness for jungle is 0 up: anything over a trace of it is too near a jungle.)
       if (this.getMountainness(px, pz) > 0.3 || this.#jungleSuit(px, pz) > 0.02) return 0;
       // (And no jungle, nor a jungle range, anywhere within a kilometre of it.)
