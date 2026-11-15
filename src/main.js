@@ -1721,8 +1721,8 @@ const torches = new Torches(scene, { maxLights: 14 });
 // The torch in your hand: its own light, held out a little to your right
 // and below your eyes, casting shadows all round you (the grass, the trees,
 // the rocks, everything near) so the dark beyond its reach closes in.
-// Its shadows redrawn every frame, sharp, swaying as the grass and the
-// leaves sway and the flame flickers.
+// Its shadows redrawn every other frame (thirty times a second: enough to
+// sway as the grass and the leaves sway, at half the cost), sharp.
 const heldLight = new THREE.PointLight(0xffa24a, 0, 22, 1.35);
 heldLight.castShadow = true;
 heldLight.shadow.mapSize.set(1024, 1024);
@@ -1779,7 +1779,7 @@ function heldTorchLight(held, time) {
   heldLight.distance = held.reach;
   heldLight.color.setHex(held.strength > 30 ? 0xffe2b8 : 0xffa24a);
   heldLight.shadow.camera.far = held.reach + 4;
-  {
+  if (++torchGrass.frame % 2 === 0) {
     heldLight.shadow.needsUpdate = true;
     // (Underground the shadows aren't redrawn every frame, the sun's not
     // at all: the torch's own asked for, and only it.)
@@ -1796,7 +1796,7 @@ function heldTorchLight(held, time) {
     const C = WORLD.chunkSize, want = new Set();
     for (const chunk of chunks.chunks.values()) {
       const x0 = chunk.cx * C, z0 = chunk.cz * C, dx = Math.max(x0 - p.x, 0, p.x - x0 - C), dz = Math.max(z0 - p.z, 0, p.z - z0 - C);
-      if (dx * dx + dz * dz > (held.reach + 6) ** 2) continue;
+      if (dx * dx + dz * dz > Math.min(held.reach + 6, 18) ** 2) continue; // (beyond that, a blade's shadow is lost in the dark anyway)
       for (const { layer, object } of chunk.layerObjects) {
         if (layer !== grass) continue;
         object.traverse((m) => m.isMesh && want.add(m));

@@ -4,7 +4,7 @@ import { Remote } from '../net/Multiplayer.js';
 /**
  * The Character page's picture of you: your figure as the world draws it,
  * standing in a little light of its own, breathing, looking about. Drag it
- * round; left alone it turns slowly. A renderer of its own, let go of by
+ * round. A renderer of its own, let go of by
  * `dispose` when the page closes.
  */
 export function characterPreview(canvas, look) {
@@ -29,7 +29,7 @@ export function characterPreview(canvas, look) {
   floor.receiveShadow = true;
   scene.add(floor);
 
-  let fig = null, yaw = 0.5, spin = 0, idle = 0, view = 'full', t = 0, frame = 0, last = performance.now();
+  let fig = null, yaw = 0.5, view = 'full', t = 0, frame = 0, last = performance.now();
   const cam = { y: 1.05, dist: 4.0, look: 0.98 };
   const want = () => (view === 'face' ? { y: 1.68, dist: 1.75, look: 1.56 } : { y: 1.05, dist: 4.0, look: 0.98 });
 
@@ -50,22 +50,18 @@ export function characterPreview(canvas, look) {
   canvas.addEventListener('pointermove', (e) => {
     if (!drag) return;
     yaw = drag.yaw + (e.clientX - drag.x) * 0.012;
-    idle = 0;
   });
-  const up = () => ((drag = null), (idle = 0));
+  const up = () => (drag = null);
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', up);
 
   function tick(now) {
-    if (!canvas.isConnected) return dispose();
+    // (Its page closed, or the menu hidden: let go of it, never drawing behind the game.)
+    if (!canvas.isConnected || !canvas.offsetParent) return dispose();
     frame = requestAnimationFrame(tick);
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     t += dt;
-    idle += dt;
-    // (Left alone a while, it turns slowly on its own.)
-    spin += ((idle > 2.5 && !drag ? 0.35 : 0) - spin) * Math.min(1, dt * 2);
-    yaw += spin * dt;
     const w = canvas.clientWidth, h = canvas.clientHeight;
     if (w && h && (canvas.width !== Math.round(w * renderer.getPixelRatio()) || canvas.height !== Math.round(h * renderer.getPixelRatio()))) {
       renderer.setSize(w, h, false);
@@ -104,7 +100,7 @@ export function characterPreview(canvas, look) {
   }
   return {
     setLook,
-    setView: (v) => ((view = v), (idle = 0)),
+    setView: (v) => (view = v),
     dispose,
   };
 }

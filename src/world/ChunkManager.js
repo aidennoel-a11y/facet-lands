@@ -4,8 +4,8 @@ import { FADE_SECONDS, fadeCopy, fadeOpacity } from '../render/chunkFade.js';
 import { onCaveRivers, shareCaveRivers } from './caves/CaveSystem.js';
 import { keepDelta, loadDeltas } from './riverStore.js';
 
-// (This build of the game: its builders' file, named for what's in it. See riverStore.)
-const BUILD = new URL('./chunkWorker.js', import.meta.url).pathname.split('/').pop();
+// (This build of the game, named when it was built: see vite.config and riverStore.)
+const BUILD = typeof __BUILD_ID__ === 'undefined' ? 'dev' : __BUILD_ID__;
 import { REGION as RIVER_REGION } from './BigRivers.js';
 
 const LOOKAHEAD = 3; // seconds: the land where you'll be by then is made ready ahead of you
