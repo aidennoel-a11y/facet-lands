@@ -2227,3 +2227,175 @@ kbd {
   outline: 2px solid #f0e2be;
   outline-offset: 1px;
 }
+
+/* The Character page: you, in 3D, beside the choices, in tabs. */
+.sm-card.sm-card-wide {
+  width: min(820px, 100%);
+}
+.cc {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 640px) {
+  .cc {
+    grid-template-columns: 1fr;
+  }
+}
+.cc-stage {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+.cc-view {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 52vh;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+  background: radial-gradient(ellipse at 50% 38%, #6a7e62 0%, #3a4a36 55%, #222c20 100%);
+  box-shadow: inset 0 0 0 2px rgba(240, 226, 190, 0.28);
+  clip-path: polygon(0 10px, 12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+.cc-view:active {
+  cursor: grabbing;
+}
+.cc-tools {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.cc-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(232, 220, 184, 0.6);
+}
+.cc-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.cc-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 2px solid rgba(240, 226, 190, 0.2);
+}
+.start-menu button[type='button'].cc-tab {
+  flex: 1;
+  font: 700 15px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 4px 7px;
+  border: 0;
+  cursor: pointer;
+  color: rgba(232, 220, 184, 0.65);
+  background: rgba(20, 26, 18, 0.25);
+}
+.start-menu button[type='button'].cc-tab:hover {
+  color: #f4ecd6;
+}
+.start-menu button[type='button'].cc-tab.cc-on {
+  color: #fff8e6;
+  background: rgba(122, 154, 74, 0.45);
+  box-shadow: inset 0 -3px 0 #a8c86a;
+}
+.cc-page {
+  display: grid;
+  gap: 14px;
+}
+.cc-row {
+  display: grid;
+  gap: 6px;
+}
+.cc-label {
+  font: 600 14px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e8dcb8;
+}
+.cc-label span {
+  margin-left: 6px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 400;
+  color: rgba(232, 220, 184, 0.7);
+}
+.cc-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.start-menu button[type='button'].cc-chip {
+  font: 600 14px 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.05em;
+  padding: 5px 11px;
+  border: 0;
+  cursor: pointer;
+  color: #e8dcb8;
+  background: rgba(74, 90, 63, 0.6);
+  clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+  transition: background 0.12s;
+}
+.start-menu button[type='button'].cc-chip:hover {
+  background: rgba(104, 126, 82, 0.75);
+}
+.start-menu button[type='button'].cc-chip.cc-on {
+  background: #7a9a4a;
+  color: #fff8e6;
+}
+.start-menu .cc-opts .cc-sw {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  background: var(--c);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.35);
+  transition: transform 0.1s;
+}
+.start-menu .cc-opts .cc-sw:hover {
+  transform: scale(1.12);
+}
+.start-menu .cc-opts .cc-sw.cc-on {
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.25), 0 0 0 2px #1c241c, 0 0 0 4px #f0e2be;
+}
+.start-menu .cc-opts .cc-own {
+  background: conic-gradient(#c84a3a, #c8a43a, #5a9a4a, #3a7ac8, #8a4ac8, #c84a3a);
+}
+.start-menu .cc-opts .cc-own.cc-on {
+  background: var(--c);
+}
+.start-menu .cc-opts .cc-own::after {
+  content: '+';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 700 18px sans-serif;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+}
+.cc-own input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.cc-foot {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 8px;
+}
+.cc-foot .sm-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

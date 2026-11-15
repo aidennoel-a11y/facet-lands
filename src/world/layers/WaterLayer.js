@@ -1,4 +1,4 @@
-import { TORCH_GLINT } from '../../render/torchGlint.js';
+import { TORCH_GLINT, waterLit } from '../../render/torchGlint.js';
 import { createTiler } from '../tileMerge.js';
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshPhongMaterial } from 'three';
 import { waterData } from '../waterData.js';
@@ -69,7 +69,7 @@ const BREAKERS = /* glsl */ `
   }`;
 
 export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor = new Color(0xd6e8f7), skyTop = new Color(0x7fb4e6) } = {}) {
-  const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor }, uSkyTop: { value: skyTop }, uTide: tide };
+  const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor }, uSkyTop: { value: skyTop }, uWaterLit: waterLit, uTide: tide };
 
   const material = new MeshPhongMaterial({
     vertexColors: true,
@@ -267,6 +267,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
         /* glsl */ `#include <common>
         uniform vec3 uSky;
         uniform vec3 uSkyTop;
+        uniform float uWaterLit;
         uniform float uTime;
         uniform float uWind;
         uniform vec2 uWindDir;
@@ -369,11 +370,11 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
             float holes = smoothstep(0.3, 0.75, n3 * 0.6 + n4 * 0.5);
             float lace = smoothstep(0.7, 1.3, vSwash) * (0.6 + 0.4 * holes) + smoothstep(0.1, 0.6, vSwash) * holes * 0.8;
             breaking = max(breaking, min(1.0, lace) * (1.0 - vIce));
-            gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.55, 0.72, 0.7), vSheet * 0.35);
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.55, 0.72, 0.7) * uWaterLit, vSheet * 0.35);
             gl_FragColor.a = mix(gl_FragColor.a, 0.42, vSheet * (1.0 - smoothstep(0.1, 0.6, vSwash)));
           }
           float white = max(max(breaking, cap), lap) * (1.0 - vIce) * (1.0 - 0.7 * below);
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.95, 0.97, 0.98), white * 0.85);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.95, 0.97, 0.98) * uWaterLit, white * 0.85);
           gl_FragColor.a = mix(gl_FragColor.a, 1.0, white * 0.75);
           // Sun glitter (not where a cloud's shadow lies), and rings in the rain.
           float open = (1.0 - vIce) * (1.0 - white) * (1.0 - below);
@@ -381,7 +382,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
           ${TORCH_GLINT}
           gl_FragColor.rgb += sunGlitter(vWorld, normal, -V, uTime) * open * (1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r * 1.6);
           gl_FragColor.rgb += rainRings(vWorld, uTime) * 0.22 * open;
-          { float sr = splashRings(vWorld); gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 1.0), sr); gl_FragColor.a = max(gl_FragColor.a, sr); } // (splashes' rings: see Traces)
+          { float sr = splashRings(vWorld); gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 1.0) * uWaterLit, sr); gl_FragColor.a = max(gl_FragColor.a, sr); } // (splashes' rings: see Traces)
           #ifdef USE_FOG
           // (Out past Snell's window, some 49° off straight up, the surface
           // is a mirror, silvery, the water under it shown back rippling with
@@ -396,7 +397,7 @@ export function createWaterLayer({ resolution = 16, waveHeight = 0.45, skyColor 
           #endif
           gl_FragColor.a = mix(gl_FragColor.a, 0.92, below);
           // Winter: lakes freeze over.
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.74, 0.84, 0.9), vIce * 0.85);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.74, 0.84, 0.9) * uWaterLit, vIce * 0.85);
           gl_FragColor.a = mix(gl_FragColor.a, 0.95, vIce);
         }
         #include <fog_fragment>`,

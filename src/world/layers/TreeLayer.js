@@ -1,5 +1,5 @@
 import { Color, DoubleSide, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Raycaster, Vector3 } from 'three';
-import { addWind, gustAt, windReach, windDepthMaterial, windDirection, windStrength, windTime } from '../../render/wind.js';
+import { addWind, gustAt, windReach, windDepthMaterial, windDistanceMaterial, windDirection, windStrength, windTime } from '../../render/wind.js';
 import { seasonalTrees, seasonUniforms } from '../../render/Seasons.js';
 import { LEAF_GEOMETRIES, NO_COLLIDE, STIFF, TREE_GEOMETRIES, treeGeometry } from '../trees.js';
 import { placeTrees } from '../treePlacement.js';
@@ -101,7 +101,7 @@ export function createTreeLayer({ rocks = null } = {}) {
   };
   seasonalTrees(material);
   seasonalTrees(leafMaterial, true);
-  const depthMaterial = windDepthMaterial(WIND);
+  const depthMaterial = windDepthMaterial(WIND), distanceMaterial = windDistanceMaterial(WIND); // (the sun's shadows, a torch's: swaying as the tree does)
   // Cacti stand stiff: no sway.
   const stiffMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
 
@@ -587,7 +587,7 @@ export function createTreeLayer({ rocks = null } = {}) {
         mesh.castShadow = lod <= (config.treeShadowLod ?? Infinity); // (out past the shadows' reach, none to cast)
         mesh.userData.smallShadow = NO_COLLIDE.has(type); // (a bush: its shadow only close by, see ChunkManager.cull)
         mesh.receiveShadow = true;
-        if (!stiff) mesh.customDepthMaterial = depthMaterial;
+        if (!stiff) (mesh.customDepthMaterial = depthMaterial), (mesh.customDistanceMaterial = distanceMaterial);
         group.add(mesh);
         count += list.length;
 
@@ -603,6 +603,7 @@ export function createTreeLayer({ rocks = null } = {}) {
           leavesMesh.userData.smallShadow = NO_COLLIDE.has(type);
           leavesMesh.receiveShadow = true;
           leavesMesh.customDepthMaterial = depthMaterial;
+          leavesMesh.customDistanceMaterial = distanceMaterial;
           group.add(leavesMesh);
         }
       }

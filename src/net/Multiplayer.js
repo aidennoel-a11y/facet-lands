@@ -94,10 +94,15 @@ export class Remote {
     });
     this.body.position.y = 0.92;
     this.head.position.set(0, 0.5, 0.01);
-    this.arms.forEach((a, k) => a.position.set(k ? -0.23 : 0.23, 0.46, 0));
-    this.legs.forEach((l, k) => l.position.set(k ? -0.09 : 0.09, -0.04, 0));
+    const sh = parts.shoulder ?? 0.23, hip = parts.hip ?? 0.09;
+    this.arms.forEach((a, k) => a.position.set(k ? -sh : sh, 0.46, 0));
+    this.legs.forEach((l, k) => l.position.set(k ? -hip : hip, -0.04, 0));
     this.body.add(this.head, ...this.arms, ...this.legs);
-    this.root.add(this.body);
+    // (Through a frame scaled to how tall they are: the name over them stays put.)
+    this.frame = new Group();
+    this.frame.scale.setScalar(parts.scale ?? 1);
+    this.frame.add(this.body);
+    this.root.add(this.frame);
     // (Their hands, to hold what they're holding.)
     this.hands = this.forearms.map((arm) => {
       const g = new Group();

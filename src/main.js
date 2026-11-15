@@ -76,7 +76,8 @@ import { Piranha } from './wildlife/Piranha.js';
 import { ShootingStars } from './render/ShootingStars.js';
 import { DustDevils, Sandstorm, Volcanoes, Wildfires } from './render/Phenomena.js';
 import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
-import { describeWind, gustAt, updateWind, windDirection, windStrength } from './render/wind.js';
+import { waterLit } from './render/torchGlint.js';
+import { describeWind, distanceLike, gustAt, updateWind, windDirection, windStrength } from './render/wind.js';
 import { FallingLeaves } from './render/FallingLeaves.js';
 import { Wildlife } from './wildlife/Wildlife.js';
 import { Insects } from './wildlife/Insects.js';
@@ -1720,10 +1721,11 @@ const torches = new Torches(scene, { maxLights: 14 });
 // The torch in your hand: its own light, held out a little to your right
 // and below your eyes, casting shadows all round you (the grass, the trees,
 // the rocks, everything near) so the dark beyond its reach closes in.
-// Its shadows redrawn every other frame: they only move as you do.
+// Its shadows redrawn every frame, sharp, swaying as the grass and the
+// leaves sway and the flame flickers.
 const heldLight = new THREE.PointLight(0xffa24a, 0, 22, 1.35);
 heldLight.castShadow = true;
-heldLight.shadow.mapSize.set(512, 512);
+heldLight.shadow.mapSize.set(1024, 1024);
 heldLight.shadow.camera.near = 0.15;
 heldLight.shadow.camera.far = 30;
 heldLight.shadow.bias = -0.004;
@@ -1749,7 +1751,7 @@ noTorchShadow.customProgramCacheKey = () => 'no-torch-shadow';
 function unshadowed(root) {
   root?.traverse((m) => m.isMesh && m.customDistanceMaterial !== noTorchShadow && (m.customDistanceMaterial = noTorchShadow));
 }
-const torchGrass = { at: null, on: new Set(), frame: 0 };
+const torchGrass = { at: null, on: new Set(), frame: 0, distance: null };
 const _hand = new THREE.Vector3(), _right = new THREE.Vector3(), _fwd = new THREE.Vector3();
 function heldTorchLight(held, time) {
   if (renderer.shadowMap.autoUpdate && !dayNight.light.shadow.autoUpdate) dayNight.light.shadow.autoUpdate = true;
@@ -1766,6 +1768,10 @@ function heldTorchLight(held, time) {
   _hand.copy(camera.position).addScaledVector(_right, 0.32).addScaledVector(_fwd, 0.35);
   _hand.y -= 0.28;
   heldLight.position.copy(_hand);
+  // (The flame dances a little, and the shadows with it.)
+  heldLight.position.x += 0.025 * Math.sin(time * 9.1) * Math.sin(time * 3.7 + 0.6);
+  heldLight.position.y += 0.03 * Math.abs(Math.sin(time * 11.3 + 1.1));
+  heldLight.position.z += 0.025 * Math.sin(time * 8.3 + 2.1) * Math.sin(time * 4.1);
   unshadowed(game.hand);
   unshadowed(selfFigure?.root);
   const f = 0.85 + 0.15 * Math.sin(time * 13) * Math.sin(time * 7.3 + 1.7);
@@ -1773,7 +1779,7 @@ function heldTorchLight(held, time) {
   heldLight.distance = held.reach;
   heldLight.color.setHex(held.strength > 30 ? 0xffe2b8 : 0xffa24a);
   heldLight.shadow.camera.far = held.reach + 4;
-  if (++torchGrass.frame % 2 === 0) {
+  {
     heldLight.shadow.needsUpdate = true;
     // (Underground the shadows aren't redrawn every frame, the sun's not
     // at all: the torch's own asked for, and only it.)
@@ -1797,7 +1803,9 @@ function heldTorchLight(held, time) {
       }
     }
     for (const m of torchGrass.on) if (!want.has(m)) m.castShadow = false;
-    for (const m of want) (m.castShadow = true), (m.customDepthMaterial = grassNoSun);
+    // (Its shadows from the torch moved as the grass is: swaying, bent aside, cut.)
+    torchGrass.distance ??= distanceLike(grass.material);
+    for (const m of want) (m.castShadow = true), (m.customDepthMaterial = grassNoSun), (m.customDistanceMaterial = torchGrass.distance);
     torchGrass.on = want;
   }
 }
@@ -3364,6 +3372,8 @@ function tick(now) {
   dayNight.viewDir = dir;
   dayNight.yearFrac = ((seasons.time ?? 0) / 4) % 1; // (for the constellations: which are up, and when)
   dayNight.update(dt, camera.position, weather);
+  // (The light on the water, for its foam and ice: see waterLit. A night with no moon, near black.)
+  waterLit.value = Math.min(1, 0.03 + dayNight.hemi.intensity / 1.2 + dayNight.light.intensity * 0.3);
   // (Looking up at one of the constellations on a clear night: its name, and its season, once a night.)
   if (false && dayNight.constellationsUp && (1 - (around.env?.day ?? 1)) > 0.7 && !sheltered && (constellationSeen.wait -= dt) <= 0) {
     constellationSeen.wait = 1;

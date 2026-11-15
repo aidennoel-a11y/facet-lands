@@ -830,53 +830,148 @@ export const frog = () => new Blocks()
 export function person(look = 0x3a86c8) {
   // (`look`: a shirt's colour, or a whole look: see character.js.)
   const L = typeof look === 'number' ? { shirt: look } : look;
-  const shirt = L.shirt ?? 0x3a86c8, skin = L.skin ?? 0xd8a47a, hair = L.hair ?? 0x3a2a1e, trousers = L.trousers ?? 0x3a3a44, boots = 0x2a2018, pack = 0x7a5a32;
-  const style = L.hairStyle ?? 'cropped', beard = L.beard ?? 'none', marks = L.marks ?? 'none';
+  const shirt = L.shirt ?? 0x3a86c8, skin = L.skin ?? 0xd8a47a, hair = L.hair ?? 0x3a2a1e, trousers = L.trousers ?? 0x3a3a44, boots = L.boots ?? 0x2a2018, pack = 0x7a5a32;
+  const eyes = L.eyes ?? 0x3a2a1e, accent = L.accent ?? 0x8a2a20;
+  const style = L.hairStyle ?? 'cropped', beard = L.beard ?? 'none', marks = L.marks ?? 'none', top = L.top ?? 'tunic', extra = L.extra ?? 'none';
+  const W = { slim: 0.9, broad: 1.13 }[L.build] ?? 1, D = { slim: 0.94, broad: 1.1 }[L.build] ?? 1;
+  const scale = { short: 0.94, tall: 1.06 }[L.height] ?? 1;
+  const mix = (a, b, t) => {
+    const ch = (s) => Math.round(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t) << s;
+    return ch(16) | ch(8) | ch(0);
+  };
+  const shade = mix(skin, 0x000000, 0.12), lip = mix(skin, 0x6a2a24, 0.35), brow = mix(hair, 0x000000, 0.15);
+  const scar = mix(skin, 0xc87a6a, 0.6);
+  // The head: a face with some shape to it (brow, nose, ears, mouth, eyes with whites to them).
   const head = new Blocks()
-    .box(0.08, 0.08, 0.08, skin, [0, 0.04, 0]) // neck
-    .box(0.22, 0.24, 0.22, skin, [0, 0.19, 0.01]) // head
-    .box(0.035, 0.03, 0.01, 0x1a1410, [0.05, 0.2, 0.125]) // eyes
-    .box(0.035, 0.03, 0.01, 0x1a1410, [-0.05, 0.2, 0.125]);
-  if (style === 'hood') head.box(0.27, 0.27, 0.26, shirt, [0, 0.24, -0.01]).box(0.27, 0.1, 0.06, shirt, [0, 0.33, 0.1]);
-  else if (style !== 'shaved') {
-    head.box(0.24, 0.08, 0.24, hair, [0, 0.31, -0.005]).box(0.24, style === 'long' ? 0.3 : 0.14, 0.05, hair, [0, style === 'long' ? 0.16 : 0.22, -0.1]);
-    if (style === 'long') for (const s of [-1, 1]) head.box(0.04, 0.22, 0.12, hair, [s * 0.12, 0.18, -0.04]);
-    if (style === 'tied') head.box(0.06, 0.14, 0.06, hair, [0, 0.22, -0.15]);
-  } else head.box(0.225, 0.02, 0.225, hair, [0, 0.31, 0.01]);
-  if (beard === 'full') head.box(0.2, 0.12, 0.06, hair, [0, 0.09, 0.11]).box(0.22, 0.05, 0.04, hair, [0, 0.14, 0.12]);
-  else if (beard === 'stubble') head.box(0.2, 0.08, 0.02, hair, [0, 0.11, 0.115]);
-  if (marks === 'cheek') head.box(0.012, 0.07, 0.012, 0xa86a5a, [0.07, 0.16, 0.122], [0, 0, 0.5]);
-  else if (marks === 'eye') head.box(0.012, 0.11, 0.012, 0xa86a5a, [-0.05, 0.2, 0.128], [0, 0, -0.2]);
-  else if (marks === 'grime') head.box(0.08, 0.05, 0.01, 0x5a4a3a, [0.06, 0.13, 0.121]);
+    .box(0.085, 0.08, 0.085, skin, [0, 0.04, 0]) // neck
+    .box(0.22, 0.24, 0.22, skin, [0, 0.19, 0.01], [0, 0, 0], [1, 1]) // head
+    .box(0.2, 0.06, 0.03, shade, [0, 0.105, 0.105]) // jaw, a shade darker
+    .box(0.03, 0.05, 0.045, skin, [0.115, 0.19, 0]) // ears
+    .box(0.03, 0.05, 0.045, skin, [-0.115, 0.19, 0])
+    .box(0.03, 0.048, 0.026, shade, [0, 0.17, 0.128]) // nose
+    .box(0.06, 0.013, 0.01, lip, [0, 0.125, 0.122]); // mouth
+  for (const s of [1, -1]) {
+    head.box(0.046, 0.03, 0.01, 0xe6e0d4, [s * 0.05, 0.2, 0.121]); // the white of the eye
+    head.box(0.022, 0.028, 0.008, eyes, [s * 0.048, 0.2, 0.127]); // the iris
+    head.box(0.008, 0.008, 0.004, 0xf4f2ec, [s * 0.054, 0.207, 0.132]); // its glint
+    head.box(0.055, 0.014, 0.014, style === 'shaved' || style === 'balding' ? brow : hair, [s * 0.05, 0.225, 0.122], [0, 0, s * -0.08]); // brow
+  }
+  const fringe = () => head.box(0.235, 0.04, 0.03, hair, [0, 0.292, 0.11]);
+  const sides = (h = 0.08, y = 0.265) => {
+    for (const s of [-1, 1]) head.box(0.022, h, 0.17, hair, [s * 0.115, y, -0.02]);
+  };
+  const cap = () => head.box(0.24, 0.08, 0.24, hair, [0, 0.31, -0.005]);
+  const back = (h = 0.14, y = 0.22) => head.box(0.24, h, 0.05, hair, [0, y, -0.1]);
+  if (style === 'hood') {
+    const hood = extra === 'none' ? shirt : accent;
+    head.box(0.27, 0.27, 0.26, hood, [0, 0.24, -0.01]).box(0.27, 0.1, 0.06, hood, [0, 0.33, 0.1]).box(0.2, 0.08, 0.2, hood, [0, 0.05, -0.04]);
+    for (const s of [-1, 1]) head.box(0.03, 0.2, 0.06, hood, [s * 0.125, 0.18, 0.1]);
+  } else if (style === 'shaved') head.box(0.225, 0.02, 0.225, mix(hair, skin, 0.45), [0, 0.31, 0.01]);
+  else if (style === 'mohawk') {
+    head.box(0.225, 0.02, 0.225, mix(hair, skin, 0.55), [0, 0.31, 0.01]);
+    head.box(0.05, 0.08, 0.27, hair, [0, 0.35, -0.01], [0, 0, 0], [0.7, 0.95]);
+  } else if (style === 'balding') {
+    sides(0.1, 0.235);
+    back(0.13, 0.215);
+  } else if (style === 'curly') {
+    head.box(0.27, 0.11, 0.27, hair, [0, 0.32, -0.005], [0, 0, 0], [0.85, 0.85]);
+    for (const [x, y, z] of [[0.1, 0.33, 0.09], [-0.09, 0.34, 0.1], [0.12, 0.27, -0.06], [-0.12, 0.28, -0.05], [0, 0.36, -0.07], [0.05, 0.24, -0.13], [-0.06, 0.22, -0.12]]) head.box(0.08, 0.07, 0.08, hair, [x, y, z]);
+    sides(0.1, 0.25);
+    back(0.18, 0.2);
+  } else {
+    cap();
+    fringe();
+    sides();
+    back(style === 'long' ? 0.32 : 0.14, style === 'long' ? 0.15 : 0.22);
+    if (style === 'long') for (const s of [-1, 1]) head.box(0.04, 0.24, 0.13, hair, [s * 0.125, 0.16, -0.04]);
+    if (style === 'tied') head.box(0.07, 0.07, 0.06, accent, [0, 0.24, -0.14]).box(0.06, 0.16, 0.06, hair, [0, 0.14, -0.16], [0.25, 0, 0]);
+    if (style === 'braid') for (let k = 0; k < 4; k++) head.box(0.055 - k * 0.006, 0.07, 0.055, k % 2 ? brow : hair, [0, 0.18 - k * 0.07, -0.15 - k * 0.012]);
+  }
+  const stubble = mix(skin, hair, 0.3);
+  if (beard === 'stubble') head.box(0.2, 0.075, 0.02, stubble, [0, 0.11, 0.113]);
+  if (beard === 'moustache' || beard === 'goatee') head.box(0.085, 0.022, 0.016, hair, [0, 0.14, 0.13]);
+  if (beard === 'goatee') head.box(0.06, 0.07, 0.04, hair, [0, 0.09, 0.115]);
+  if (beard === 'full' || beard === 'long') head.box(0.21, 0.12, 0.06, hair, [0, 0.09, 0.11]).box(0.085, 0.022, 0.03, hair, [0, 0.14, 0.13]).box(0.03, 0.08, 0.1, hair, [0.105, 0.14, 0.07]).box(0.03, 0.08, 0.1, hair, [-0.105, 0.14, 0.07]);
+  if (beard === 'long') head.box(0.15, 0.13, 0.05, hair, [0, -0.01, 0.12], [0, 0, 0], [1.3, 1]);
+  if (marks === 'cheek') head.box(0.012, 0.07, 0.012, scar, [0.07, 0.16, 0.122], [0, 0, 0.5]);
+  else if (marks === 'eye') head.box(0.012, 0.11, 0.012, scar, [-0.05, 0.2, 0.131], [0, 0, -0.2]);
+  else if (marks === 'grime') head.box(0.08, 0.05, 0.01, mix(skin, 0x3a2e22, 0.55), [0.06, 0.15, 0.121]).box(0.05, 0.03, 0.01, mix(skin, 0x3a2e22, 0.5), [-0.07, 0.24, 0.121]);
+  else if (marks === 'paint') head.box(0.2, 0.024, 0.01, 0x9a3a1e, [0, 0.183, 0.124]).box(0.016, 0.06, 0.01, 0x9a3a1e, [0, 0.11, 0.123]);
+  else if (marks === 'freckles') for (const [x, y] of [[0.06, 0.17], [0.08, 0.18], [0.045, 0.165], [-0.06, 0.17], [-0.08, 0.18], [-0.045, 0.165], [0.02, 0.18], [-0.02, 0.18]]) head.box(0.01, 0.01, 0.004, mix(skin, 0x6a3a1e, 0.45), [x, y, 0.122]);
+  if (extra === 'headband' && style !== 'hood') head.box(0.25, 0.032, 0.25, accent, [0, 0.272, 0.005]);
+  if (extra === 'earring') head.box(0.014, 0.03, 0.014, 0xd0a840, [0.132, 0.16, 0.01]);
+  if (extra === 'scarf') head.box(0.17, 0.07, 0.17, accent, [0, 0.03, 0]);
+
+  // The body: chest, belt, the pack, and what's worn over it.
+  const body = new Blocks()
+    .box(0.36 * W, 0.5, 0.2 * D, shirt, [0, 0.26, 0], [0, 0, 0], [0.92, 0.9]) // chest
+    .box(0.34 * W, 0.12, 0.19 * D, trousers, [0, -0.02, 0]) // hips
+    .box(0.37 * W, 0.045, 0.205 * D, 0x3a2a1c, [0, 0.03, 0]) // belt
+    .box(0.05, 0.04, 0.01, 0xa89060, [0, 0.03, 0.105 * D]) // its buckle
+    .box(0.14, 0.04, 0.03, mix(shirt, 0x000000, 0.25), [0, 0.5, 0.085 * D]) // the neckline
+    .box(0.3, 0.36, 0.14, pack, [0, 0.3, -0.17 * D]) // the pack
+    .box(0.26, 0.08, 0.14, 0x5a4024, [0, 0.5, -0.17 * D]); // its flap
+  for (const s of [-1, 1]) body.box(0.035, 0.42, 0.025, 0x4a3420, [s * 0.1 * W, 0.28, 0.1 * D]); // its straps
+  const dark = mix(shirt, 0x000000, 0.3);
+  if (top === 'coat') {
+    body.box(0.4 * W, 0.24, 0.23 * D, shirt, [0, -0.15, 0], [0, 0, 0], [0.95, 0.95]); // the coat's skirts
+    body.box(0.02, 0.7, 0.012, dark, [0, 0.12, 0.112 * D]); // where it closes
+    for (const y of [0.42, 0.3, 0.18]) body.box(0.022, 0.022, 0.01, 0xa89060, [0.025, y, 0.118 * D]);
+    body.box(0.3 * W, 0.08, 0.22 * D, dark, [0, 0.5, 0.01]); // the collar
+  } else if (top === 'vest') {
+    body.box(0.3 * W, 0.42, 0.012, mix(shirt, 0x3a2a1c, 0.5), [0, 0.26, 0.104 * D]); // the jerkin's leather front
+    body.box(0.02, 0.4, 0.014, dark, [0, 0.26, 0.112 * D]);
+  } else if (top === 'tunic' || top === 'cloak') body.box(0.37 * W, 0.08, 0.205 * D, shirt, [0, -0.06, 0]); // the tunic's hem, over the belt
+  if (top === 'cloak') {
+    body.box(0.44 * W, 0.8, 0.035, accent, [0, 0.1, -0.265 * D], [0.06, 0, 0], [0.75, 1]); // the cloak, down the back over the pack
+    for (const s of [-1, 1]) body.box(0.08, 0.06, 0.24 * D, accent, [s * 0.18 * W, 0.5, -0.04]);
+    body.box(0.04, 0.04, 0.02, 0xa89060, [0.12 * W, 0.47, 0.11 * D]); // its clasp
+  }
+  if (extra === 'scarf') body.box(0.07, 0.24, 0.02, accent, [0.06, 0.38, 0.115 * D], [0, 0, 0.1]);
+  if (extra === 'necklace') for (let k = -3; k <= 3; k++) body.box(0.022, k ? 0.022 : 0.05, 0.014, k ? 0xe0d6c0 : 0xd8ccb0, [k * 0.03, k ? 0.44 + Math.abs(k) * 0.014 : 0.42, 0.113 * D]); // (beads, and a tooth hung from them)
+  if (extra === 'mantle') body.box(0.46 * W, 0.1, 0.28 * D, 0x8a7458, [0, 0.5, -0.01], [0, 0, 0], [0.8, 0.85]).box(0.3 * W, 0.08, 0.06, 0x9a8466, [0, 0.45, 0.1 * D]);
+
+  const sleeve = top === 'vest' ? skin : shirt;
+  const aw = 0.1 * (0.92 + 0.08 * W);
+  const cuff = top === 'coat' ? dark : sleeve;
+  const lw = 0.14 * (0.94 + 0.06 * W);
   return {
-    body: new Blocks()
-      .box(0.36, 0.5, 0.2, shirt, [0, 0.26, 0], [0, 0, 0], [0.92, 0.9]) // chest
-      .box(0.34, 0.12, 0.19, trousers, [0, -0.02, 0]) // belt and hips
-      .box(0.3, 0.36, 0.14, pack, [0, 0.3, -0.17]) // the pack
-      .box(0.26, 0.08, 0.14, 0x5a4024, [0, 0.5, -0.17]) // its flap
-      .build(),
+    scale, // (how tall: the whole figure, scaled)
+    shoulder: 0.23 * W, // (how far out the arms hang)
+    hip: 0.09 * (0.9 + 0.1 * W),
+    body: body.build(),
     head: head.build(),
     arm: new Blocks()
-      .box(0.1, 0.32, 0.11, shirt, [0, -0.16, 0]) // sleeve
+      .box(aw, 0.32, 0.11, sleeve, [0, -0.16, 0]) // sleeve
       .box(0.085, 0.26, 0.09, skin, [0, -0.45, 0]) // forearm
       .box(0.09, 0.08, 0.09, skin, [0, -0.62, 0.01]) // hand
       .build(),
     leg: new Blocks()
-      .box(0.14, 0.46, 0.15, trousers, [0, -0.23, 0])
+      .box(lw, 0.46, 0.15, trousers, [0, -0.23, 0])
       .box(0.12, 0.38, 0.13, trousers, [0, -0.62, 0])
       .box(0.13, 0.1, 0.22, boots, [0, -0.86, 0.04]) // boot
-      .build(),    // (The same limbs in two, to bend: the upper arm from the shoulder,
+      .build(),
+    // (The same limbs in two, to bend: the upper arm from the shoulder,
     // the forearm and hand from the elbow, 0.32 down; the thigh from the
     // hip, the shin and boot from the knee, 0.44 down.)
-    upperArm: new Blocks().box(0.1, 0.34, 0.11, shirt, [0, -0.16, 0]).build(),
-    forearm: new Blocks()
-      .box(0.085, 0.28, 0.09, skin, [0, -0.13, 0])
-      .box(0.09, 0.08, 0.09, skin, [0, -0.3, 0.01])
+    upperArm: new Blocks()
+      .box(aw, 0.34, 0.11, sleeve, [0, -0.16, 0])
+      .box(aw * 1.08, 0.1, 0.12, top === 'vest' ? mix(shirt, 0x3a2a1c, 0.5) : sleeve, [0, -0.03, 0]) // the shoulder
       .build(),
-    thigh: new Blocks().box(0.14, 0.48, 0.15, trousers, [0, -0.22, 0]).build(),
+    forearm: (() => {
+      const f = new Blocks()
+        .box(0.085, 0.28, 0.09, skin, [0, -0.13, 0])
+        .box(0.09, 0.08, 0.09, skin, [0, -0.3, 0.01])
+        .box(0.03, 0.035, 0.07, skin, [0.03, -0.31, 0.06]); // the thumb
+      if (top !== 'vest') f.box(0.095, 0.1, 0.1, cuff, [0, -0.02, 0]); // sleeve down past the elbow
+      return f.build();
+    })(),
+    thigh: new Blocks().box(lw, 0.48, 0.15, trousers, [0, -0.22, 0]).build(),
     shin: new Blocks()
       .box(0.12, 0.4, 0.13, trousers, [0, -0.18, 0])
-      .box(0.13, 0.1, 0.22, boots, [0, -0.42, 0.04]) // boot
+      .box(0.135, 0.16, 0.145, boots, [0, -0.33, 0.005]) // the boot's leg
+      .box(0.13, 0.1, 0.22, boots, [0, -0.42, 0.04]) // the boot
+      .box(0.135, 0.025, 0.23, mix(boots, 0x000000, 0.4), [0, -0.465, 0.04]) // its sole
       .build(),
   };
 }

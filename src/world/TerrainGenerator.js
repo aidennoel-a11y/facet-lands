@@ -80,6 +80,11 @@ export const BIOME_TUNING = {
   forest: -0.11, // (-0.11: 1% of the map from forest to plains)
 };
 const MOUNTAIN_BIAS = BIOME_TUNING.mountainBias;
+// How much of a range's peaks stand at (x, z), from the range's strength
+// there. (A weak range, its strength barely over the line, kept low: green
+// hills, not rocky knobs scattered over the lowlands; a strong one as tall
+// as ever.)
+const rangeCore = (r) => smoothstep(0.3, 0.72, r) * (0.5 + 0.5 * smoothstep(0.36, 0.54, r));
 // The Cascades' tiers: where each steps up (on its noise), and how far (m).
 const CASCADE_TIERS = [[-0.24, 12], [-0.04, 15], [0.16, 13]];
 const T = BIOME_TUNING;
@@ -2126,7 +2131,7 @@ export class TerrainGenerator {
   broadHeight(x, z) {
     const field = this.#rangeField(x, z, {});
     const range = field.value + MOUNTAIN_BIAS - this.#drySuppress(x, z);
-    const mask = smoothstep(0.08, 0.55, range), core = smoothstep(0.3, 0.72, range);
+    const mask = smoothstep(0.08, 0.55, range), core = rangeCore(range);
     const dry = this.#rawAridityAt(x, z);
     const cont = this.#continentBase(x, z);
     const contLift = this._contLift; // (kept now: what follows looks at other points, which replace it)
@@ -2182,7 +2187,7 @@ export class TerrainGenerator {
       // (The peaks rise only where the range is strong for some 400 m all
       // round: every range starts with a good band of foothills, rather
       // than a mountainside standing straight up out of the plain.)
-      const core = smoothstep(0.3, 0.72, Math.min(range, this._probing ? range : this.#rangeInner(x, z) + 0.06));
+      const core = rangeCore(Math.min(range, this._probing ? range : this.#rangeInner(x, z) + 0.06));
       // Broad bowls and valleys in the range, so it's not one solid massif:
       // sheltered hollows low enough for forest, between ridges and peaks.
       const bowl = core > 0 ? smoothstep(0, 0.6, this.bowlNoise.fbm(x * 0.0007, z * 0.0007, 2)) * core * 0.6 : 0;

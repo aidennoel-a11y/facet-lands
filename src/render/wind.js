@@ -1,4 +1,4 @@
-import { MeshDepthMaterial, RGBADepthPacking, Vector2 } from 'three';
+import { MeshDepthMaterial, MeshDistanceMaterial, RGBADepthPacking, Vector2 } from 'three';
 
 // Shared clock and strength for every wind-blown material; call updateWind()
 // once per frame.
@@ -139,4 +139,31 @@ export function addWind(material, { strength = 0.02, speed = 1.2, fade = null, g
 /** Depth material for shadows that sways the same way as the visible mesh. */
 export function windDepthMaterial(options) {
   return addWind(new MeshDepthMaterial({ depthPacking: RGBADepthPacking }), options);
+}
+
+/** The same, for a point light's shadows (a torch's): swaying with the mesh. */
+export function windDistanceMaterial(options) {
+  return addWind(new MeshDistanceMaterial(), options);
+}
+
+/**
+ * A point light's shadow material moved exactly as `material` moves its
+ * vertices (wind, pushes, cuts, seasons: whatever its own shader does to
+ * them), so the shadows a torch throws sway and bend with what throws them.
+ * (Only for materials whose vertex changes need nothing a distance shader
+ * lacks, such as normals.)
+ */
+export function distanceLike(material) {
+  const m = new MeshDistanceMaterial();
+  m.onBeforeCompile = (shader, renderer) => material.onBeforeCompile.call(material, shader, renderer);
+  m.customProgramCacheKey = () => `${material.customProgramCacheKey?.() ?? ''}|distance`;
+  return m;
+}
+
+/** The same for the sun's and the moon's shadows. */
+export function depthLike(material) {
+  const m = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+  m.onBeforeCompile = (shader, renderer) => material.onBeforeCompile.call(material, shader, renderer);
+  m.customProgramCacheKey = () => `${material.customProgramCacheKey?.() ?? ''}|depth`;
+  return m;
 }

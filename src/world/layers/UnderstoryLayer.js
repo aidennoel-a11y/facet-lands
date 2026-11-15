@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, DynamicDrawUsage, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import { hash2 } from '../../noise/random.js';
-import { addWind } from '../../render/wind.js';
+import { addWind, depthLike, distanceLike } from '../../render/wind.js';
 import { GRASS_PUSHERS, grassPushers } from './GrassLayer.js';
 import { placeUnderstory } from '../decorPlacement.js';
 
@@ -202,6 +202,9 @@ function addPush(material) {
  */
 export function createUnderstoryLayer(config) {
   const material = addPush(addWind(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide, flatShading: true }), { strength: 0.02, speed: 1.3 }));
+  // (Their shadows, the sun's and a torch's, swaying and bent aside with them.)
+  const shadowDepth = depthLike(material), shadowDistance = distanceLike(material);
+  const casting = (mesh) => ((mesh.castShadow = true), (mesh.customDepthMaterial = shadowDepth), (mesh.customDistanceMaterial = shadowDistance));
 
   // Within some 35 m of you, each plant in full; past that, plain (the same
   // fronds and leaves, without the hair-thin stems and the little leaflets,
@@ -228,10 +231,10 @@ export function createUnderstoryLayer(config) {
       all.add(mesh);
       return mesh;
     };
-    // (The plants right round you cast their shadows, basic ones: their
-    // shapes as they are, not swaying. Further off they'd be specks.)
+    // (The plants right round you cast their shadows, swaying as they do.
+    // Further off they'd be specks.)
     const full = make(pl.shape);
-    full.castShadow = true;
+    casting(full);
     return { full, plain: make(pl.plain), far: make(pl.far) };
   });
   // (Grown, when there are more plants than room: its buffers made afresh.)
@@ -242,7 +245,7 @@ export function createUnderstoryLayer(config) {
     const fresh = new InstancedMesh(mesh.geometry, material, size);
     fresh.frustumCulled = false;
     fresh.receiveShadow = true;
-    fresh.castShadow = which === 'full';
+    if (which === 'full') casting(fresh);
     fresh.instanceMatrix.setUsage(DynamicDrawUsage);
     fresh.setColorAt(0, white);
     all.remove(mesh);

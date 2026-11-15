@@ -1,4 +1,4 @@
-import { TORCH_GLINT } from '../../render/torchGlint.js';
+import { TORCH_GLINT, waterLit } from '../../render/torchGlint.js';
 import { boundsOf, throwReach } from '../../render/cullBounds.js';
 import {
   BoxGeometry,
@@ -47,7 +47,7 @@ import { RIPPLES, RIPPLE_GLSL } from '../../render/Traces.js';
  * up where it lands (all worked out on the GPU from the time).
  */
 export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
-  const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor }, uSkyTop: { value: skyTop } };
+  const uniforms = { uTime: { value: 0 }, uSky: { value: skyColor }, uSkyTop: { value: skyTop }, uWaterLit: waterLit };
   const material = new MeshPhongMaterial({
     vertexColors: true,
     transparent: true,
@@ -101,6 +101,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
         uniform float uFlood;
         uniform vec3 uSky;
         uniform vec3 uSkyTop;
+        uniform float uWaterLit;
         varying vec4 vFlow;
         varying float vStreaks;
         varying float vMouth;
@@ -173,7 +174,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
           white = max(white, smoothstep(0.85, 1.05, abs(vFlow.y)) * smoothstep(0.6, 0.8, froth) * 0.35 * min(1.0, vFlow.z * 0.6) * vStreaks);
           // (In flood: brown with the mud it's carrying, churning white wherever it runs.)
           float flood = uFlood * vMouth;
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.43, 0.36, 0.25), flood * 0.6);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.43, 0.36, 0.25) * uWaterLit, flood * 0.6);
           gl_FragColor.a = mix(gl_FragColor.a, 0.92, flood * 0.6);
           white = max(white, flood * step(0.01, vFlow.z) * smoothstep(0.6, 0.9, froth) * 0.55);
           // (Bubbles and specks of scum riding the current, always: so even a
@@ -181,7 +182,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
           float drift = uTime * (0.6 + 2.0 * vFlow.z) * (1.0 + uFlood);
           float flecks = step(0.01, vFlow.z) * (1.0 - vFlow.w) * smoothstep(0.74, 0.88, waterNoise(vec2(vFlow.x * 1.4 - drift * 1.4, vFlow.y * 9.0 + 11.0))) * (0.3 + 0.25 * min(1.0, vFlow.z));
           white = max(white, flecks * vStreaks);
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 0.98), white * 0.85);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 0.98) * uWaterLit, white * 0.85);
           gl_FragColor.a = mix(gl_FragColor.a, 1.0, white * 0.7);
           // Sun glitter on the smooth stretches (not under a cloud's shadow), and rings in the rain.
           float calm = (1.0 - vFlow.w) * (1.0 - white);
@@ -189,7 +190,7 @@ export function createRiverLayer(skyColor, skyTop = new Color(0x7fb4e6)) {
           ${TORCH_GLINT}
           gl_FragColor.rgb += sunGlitter(vRiverWorld, normal, -V, uTime) * calm * (1.0 - uCloudStrength * texture2D(uCloudShadow, (vCloudXZ - uCloudOrigin) / uCloudSize).r * 1.6);
           gl_FragColor.rgb += rainRings(vRiverWorld, uTime) * 0.2 * calm;
-          { float sr = splashRings(vRiverWorld); gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 1.0), sr); gl_FragColor.a = max(gl_FragColor.a, sr); } // (splashes' rings: see Traces)
+          { float sr = splashRings(vRiverWorld); gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.93, 0.97, 1.0) * uWaterLit, sr); gl_FragColor.a = max(gl_FragColor.a, sr); } // (splashes' rings: see Traces)
           gl_FragColor.a *= vMouth; // (giving way to the lake or sea it runs into)
         }
         #include <fog_fragment>`,

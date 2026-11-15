@@ -8,7 +8,8 @@ import { DEFAULT_SERVER, VERSION, openWorlds } from '../net/Multiplayer.js';
 import { describeHardware, graphicsInfo, MAX_VIEW, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
 import { DEFAULTS, DIFFICULTIES, saveSettings, settings } from '../settings.js';
 import { ACTIONS, bind, keyName, keyOf, listenForKey, resetKeys } from '../keys.js';
-import { LOOK_CHOICES, LOOK_DEFAULT, loadLook, saveLook } from '../character.js';
+import { LOOK_CHOICES, LOOK_COLOURS, LOOK_DEFAULT, loadLook, randomLook, saveLook } from '../character.js';
+import { characterPreview } from './CharacterPreview.js';
 import { WORLD_OPTIONS, WORLD_PRESETS, describeOptions, parseSeed, seedWith } from '../worldOptions.js';
 
 const WORLDS_KEY = 'facet-lands:worlds';
@@ -191,6 +192,9 @@ export class StartMenu {
   #show(html) {
     this.root.hidden = false;
     this.root.classList.toggle('sm-over-world', !!this.world);
+    this.preview?.dispose();
+    this.preview = null;
+    this.card.classList.remove('sm-card-wide');
     this.card.innerHTML = html;
     if (document.pointerLockElement) document.exitPointerLock();
     return this.card;
@@ -208,11 +212,6 @@ export class StartMenu {
       <button class="sm-btn sm-primary" data-go="start">Start</button>
       <button class="sm-btn" data-go="character">Character</button>
       <button class="sm-btn" data-go="settings">Settings</button>
-      <div class="sm-quality" role="radiogroup" aria-label="Graphics">
-        <span>Graphics</span>
-        ${Object.entries(QUALITY).map(([id, q]) => `<button type="button" class="sm-q${id === quality() ? ' sm-picked' : ''}" data-q="${id}" role="radio" aria-checked="${id === quality()}" title="${q.blurb}">${q.name}</button>`).join('')}
-      </div>
-      <p class="sm-qnote">${QUALITY[quality()].blurb}${qualityChosen() ? '' : ' <em>Picked to suit this computer.</em>'}</p>
       <p class="sm-hw">${esc(describeHardware())}</p>
       ${graphicsInfo().software ? `<p class="sm-warn"><strong>Your graphics card isn't being used.</strong> The browser is drawing the game on the processor instead, which is very slow. Install your computer's graphics driver (from its maker's support site), and check hardware acceleration is on in the browser's settings (Chrome: Settings, System, "Use graphics acceleration when available").</p>` : ''}
       ${graphicsInfo().integrated ? `<p class="sm-warn"><strong>The game is on your processor's built-in graphics.</strong> If this computer also has a graphics card of its own (an NVIDIA GeForce, say), the browser isn't using it. On Windows: Settings, System, Display, Graphics; pick your browser (add it if it's not listed), Options, "High performance"; then close every browser window and open it again.</p>` : ''}
@@ -220,13 +219,6 @@ export class StartMenu {
     this.#on('[data-go="start"]', () => this.choose());
     this.#on('[data-go="settings"]', () => this.settings(() => this.title()));
     this.#on('[data-go="character"]', () => this.character(() => this.title()));
-    // (Put into effect when a world starts: see main's useQuality.)
-    for (const b of this.card.querySelectorAll('.sm-q')) {
-      b.addEventListener('click', () => {
-        setQuality(b.dataset.q);
-        this.title();
-      });
-    }
   }
 
   choose() {
@@ -503,6 +495,11 @@ export class StartMenu {
     const pick = (name, options, value) => `<div class="sm-quality sm-set" role="radiogroup" aria-label="${name}"><span>${name}</span>${options.map(([id, label]) => `<button type="button" class="sm-q${id === value ? ' sm-picked' : ''}" data-set="${name}" data-v="${id}" role="radio" aria-checked="${id === value}">${label}</button>`).join('')}</div>`;
     const card = this.#show(`
       <h2 class="sm-head">Settings</h2>
+      <div class="sm-quality" role="radiogroup" aria-label="Graphics">
+        <span>Graphics</span>
+        ${Object.entries(QUALITY).map(([id, q]) => `<button type="button" class="sm-q sm-gq${id === quality() ? ' sm-picked' : ''}" data-q="${id}" role="radio" aria-checked="${id === quality()}" title="${q.blurb}">${q.name}</button>`).join('')}
+      </div>
+      <p class="sm-qnote">${QUALITY[quality()].blurb}${qualityChosen() ? '' : ' <em>Picked to suit this computer.</em>'} <em>(Takes effect when a world is next started.)</em></p>
       <label class="sm-field sm-slide">View distance <output>${km(view)}</output><input type="range" data-k="view" min="5" max="${MAX_VIEW}" step="1" value="${view}" /></label>
       ${pick('Grass', [[0.5, 'Less'], [1, 'Normal'], [1.6, 'More']], s.grass)}
       ${pick('Shadows', [['off', 'Off'], ['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], s.shadows)}
@@ -540,6 +537,13 @@ export class StartMenu {
         this.settings(back);
       });
     }
+    // (The graphics preset: put into effect when a world starts, see main's useQuality.)
+    for (const b of card.querySelectorAll('.sm-gq')) {
+      b.addEventListener('click', () => {
+        setQuality(b.dataset.q);
+        this.settings(back);
+      });
+    }
     // (A control put on another key: the next key pressed.)
     for (const b of card.querySelectorAll('[data-key]')) {
       b.addEventListener('click', () => {
@@ -566,49 +570,96 @@ export class StartMenu {
   character(back) {
     const look = loadLook();
     const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
-    const NAMES = { skin: 'Skin', hair: 'Hair', hairStyle: 'Hair worn', beard: 'Beard', shirt: 'Shirt', trousers: 'Trousers', marks: 'Marks' };
-    const rows = Object.entries(LOOK_CHOICES).map(([k, opts]) => `<div class="sm-quality sm-set sm-look"><span>${NAMES[k]}</span>${opts.map(([label, v]) => typeof v === 'number'
-      ? `<button type="button" class="sm-q sm-swatch${v === look[k] ? ' sm-picked' : ''}" data-look="${k}" data-v="${v}" title="${label}" aria-label="${label}" style="background:${hex(v)}"></button>`
-      : `<button type="button" class="sm-q${v === look[k] ? ' sm-picked' : ''}" data-look="${k}" data-v="${v}">${label}</button>`).join('')}</div>`).join('');
+    const NAMES = { skin: 'Skin', eyes: 'Eyes', marks: 'Marks', hairStyle: 'Hair', hair: 'Hair colour', beard: 'Beard', build: 'Build', height: 'Height', top: 'Wearing', shirt: 'Cloth', trousers: 'Trousers', boots: 'Boots', extra: 'Something more', accent: 'Its colour' };
+    const TABS = [['Face', ['skin', 'eyes', 'marks']], ['Hair', ['hairStyle', 'hair', 'beard']], ['Body', ['build', 'height', 'skin']], ['Clothes', ['top', 'shirt', 'trousers', 'boots']], ['Extras', ['extra', 'accent']]];
+    const nameOf = (k) => LOOK_CHOICES[k].find(([, v]) => v === look[k])?.[0] ?? 'Your own';
+    const row = (k) => {
+      const opts = LOOK_CHOICES[k], colour = LOOK_COLOURS.has(k);
+      const items = opts.map(([label, v]) => colour
+        ? `<button type="button" class="cc-sw" data-look="${k}" data-v="${v}" title="${label}" aria-label="${label}" style="--c:${hex(v)}"></button>`
+        : `<button type="button" class="cc-chip" data-look="${k}" data-v="${v}">${label}</button>`).join('');
+      const own = colour ? `<label class="cc-sw cc-own" title="Any colour"><input type="color" data-own="${k}" value="${hex(look[k])}" aria-label="${NAMES[k]}: any colour"></label>` : '';
+      return `<div class="cc-row"><div class="cc-label">${NAMES[k]} <span data-name="${k}"></span></div><div class="cc-opts">${items}${own}</div></div>`;
+    };
     const card = this.#show(`
       <h2 class="sm-head">Character</h2>
-      <canvas class="sm-portrait" width="120" height="180"></canvas>
-      ${rows}
+      <div class="cc">
+        <div class="cc-stage">
+          <canvas class="cc-view" aria-label="Your character; drag to turn"></canvas>
+          <div class="cc-tools">
+            <button type="button" class="cc-chip" data-cc="full">Whole</button>
+            <button type="button" class="cc-chip" data-cc="face">Face</button>
+            <button type="button" class="cc-chip" data-cc="dice">Surprise me</button>
+          </div>
+          <p class="cc-hint">Drag to turn</p>
+        </div>
+        <div class="cc-panel">
+          <div class="cc-tabs" role="tablist">${TABS.map(([t], n) => `<button type="button" role="tab" class="cc-tab" data-tab="${n}">${t}</button>`).join('')}</div>
+          ${TABS.map(([, keys], n) => `<div class="cc-page" data-page="${n}">${keys.map(row).join('')}</div>`).join('')}
+        </div>
+      </div>
       <p class="sm-note">A hard country, and it shows on those who live in it.</p>
-      <button class="sm-btn" data-go="reset">Back to the default</button>
-      <button class="sm-btn sm-primary" data-go="back">Done</button>`);
-    // (The picture: you from the front, as blocks, as the world draws you.)
-    const c = card.querySelector('.sm-portrait').getContext('2d');
-    const box = (x, y, w, h, col) => ((c.fillStyle = typeof col === 'number' ? hex(col) : col), c.fillRect(x, y, w, h));
-    c.fillStyle = '#26301f';
-    c.fillRect(0, 0, 120, 180);
-    box(42, 120, 16, 50, look.trousers), box(62, 120, 16, 50, look.trousers), box(40, 166, 18, 8, 0x2a2018), box(62, 166, 18, 8, 0x2a2018);
-    box(36, 66, 48, 58, look.shirt), box(24, 68, 12, 44, look.shirt), box(84, 68, 12, 44, look.shirt), box(25, 108, 10, 14, look.skin), box(85, 108, 10, 14, look.skin);
-    box(54, 56, 12, 10, look.skin), box(44, 22, 32, 36, look.skin);
-    if (look.hairStyle === 'hood') box(40, 14, 40, 22, look.shirt), box(38, 20, 6, 36, look.shirt), box(76, 20, 6, 36, look.shirt);
-    else if (look.hairStyle !== 'shaved') {
-      box(42, 16, 36, 10, look.hair);
-      if (look.hairStyle === 'long') box(40, 20, 6, 38, look.hair), box(74, 20, 6, 38, look.hair);
-    } else box(44, 20, 32, 3, look.hair);
-    box(51, 34, 6, 4, '#1a1410'), box(63, 34, 6, 4, '#1a1410');
-    if (look.beard === 'full') box(46, 44, 28, 16, look.hair);
-    else if (look.beard === 'stubble') box(47, 46, 26, 9, `${hex(look.hair)}88`);
-    if (look.marks === 'cheek') box(66, 40, 2, 10, '#a86a5a');
-    else if (look.marks === 'eye') box(53, 28, 2, 16, '#a86a5a');
-    else if (look.marks === 'grime') box(62, 42, 10, 6, '#5a4a3a88');
+      <div class="cc-foot">
+        <button class="sm-btn" data-go="undo">Undo</button>
+        <button class="sm-btn" data-go="reset">Default</button>
+        <button class="sm-btn sm-primary" data-go="back">Done</button>
+      </div>`);
+    card.classList.add('sm-card-wide');
+    const preview = (this.preview = characterPreview(card.querySelector('.cc-view'), look));
+    const history = [];
+    const refresh = () => {
+      for (const b of card.querySelectorAll('[data-look]')) b.classList.toggle('cc-on', String(look[b.dataset.look]) === b.dataset.v);
+      for (const i of card.querySelectorAll('[data-own]')) {
+        const k = i.dataset.own, listed = LOOK_CHOICES[k].some(([, v]) => v === look[k]);
+        i.parentElement.classList.toggle('cc-on', !listed);
+        i.parentElement.style.setProperty('--c', hex(look[k]));
+        if (!listed) i.value = hex(look[k]);
+      }
+      for (const n of card.querySelectorAll('[data-name]')) n.textContent = nameOf(n.dataset.name);
+      card.querySelector('[data-go="undo"]').disabled = !history.length;
+    };
+    const change = (patch, remember = true) => {
+      if (remember) history.push({ ...look });
+      if (history.length > 50) history.shift();
+      Object.assign(look, patch);
+      saveLook({ ...look });
+      preview.setLook(look);
+      refresh();
+    };
     for (const b of card.querySelectorAll('[data-look]')) {
       b.addEventListener('click', () => {
-        const k = b.dataset.look, v = b.dataset.v;
-        look[k] = typeof LOOK_DEFAULT[k] === 'number' ? Number(v) : v;
-        saveLook(look);
-        this.character(back);
+        const k = b.dataset.look;
+        change({ [k]: LOOK_COLOURS.has(k) ? Number(b.dataset.v) : b.dataset.v });
       });
     }
-    this.#on('[data-go="reset"]', () => {
-      saveLook({ ...LOOK_DEFAULT });
-      this.character(back);
-    });
+    for (const i of card.querySelectorAll('[data-own]')) {
+      // (While the picker is being dragged, the figure follows; one step to undo for the whole drag.)
+      let started = false;
+      i.addEventListener('input', () => {
+        change({ [i.dataset.own]: Number.parseInt(i.value.slice(1), 16) }, !started);
+        started = true;
+      });
+      i.addEventListener('change', () => (started = false));
+    }
+    const tab = (n) => {
+      for (const t of card.querySelectorAll('.cc-tab')) t.classList.toggle('cc-on', t.dataset.tab === String(n)), t.setAttribute('aria-selected', t.dataset.tab === String(n));
+      for (const p of card.querySelectorAll('.cc-page')) p.hidden = p.dataset.page !== String(n);
+      view(n === 0 || n === 1 ? 'face' : 'full');
+    };
+    const view = (v) => {
+      preview.setView(v);
+      card.querySelector('[data-cc="face"]').classList.toggle('cc-on', v === 'face');
+      card.querySelector('[data-cc="full"]').classList.toggle('cc-on', v === 'full');
+    };
+    for (const t of card.querySelectorAll('.cc-tab')) t.addEventListener('click', () => tab(Number(t.dataset.tab)));
+    this.#on('[data-cc="face"]', () => view('face'));
+    this.#on('[data-cc="full"]', () => view('full'));
+    this.#on('[data-cc="dice"]', () => change(randomLook()));
+    this.#on('[data-go="undo"]', () => history.length && change(history.pop(), false));
+    this.#on('[data-go="reset"]', () => change({ ...LOOK_DEFAULT }));
     this.#on('[data-go="back"]', back);
+    tab(0);
+    refresh();
   }
 
   /** Out of a survival life that's over, back to the title (nothing saved). */
@@ -621,6 +672,8 @@ export class StartMenu {
 
   resume() {
     this.paused = false;
+    this.preview?.dispose();
+    this.preview = null;
     this.root.hidden = true;
   }
 }

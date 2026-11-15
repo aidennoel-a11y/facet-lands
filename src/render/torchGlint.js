@@ -26,3 +26,11 @@ export const TORCH_GLINT = /* glsl */ `
   }
   #endif
 `;
+
+/**
+ * How much light there is on the water (0 a black night .. 1 broad day), for
+ * what's drawn on it in colours of its own, not lit by three's lights: foam,
+ * ice, a splash's rings, the swash. Without it they'd shine white on a night
+ * with no moon. Set each frame (see main).
+ */
+export const waterLit = { value: 1 };
