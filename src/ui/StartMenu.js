@@ -7,7 +7,7 @@
 import { DEFAULT_SERVER, VERSION, openWorlds } from '../net/Multiplayer.js';
 import { describeHardware, graphicsInfo, MAX_VIEW, QUALITY, quality, qualityChosen, setQuality } from '../quality.js';
 import { DEFAULTS, DIFFICULTIES, saveSettings, settings } from '../settings.js';
-import { ACTIONS, bind, keyName, keyOf, listenForKey, resetKeys } from '../keys.js';
+import { ACTIONS, FIXED_KEYS, bind, keyName, keyOf, listenForKey, resetKeys } from '../keys.js';
 import { LOOK_CHOICES, LOOK_COLOURS, LOOK_DEFAULT, loadLook, randomLook, saveLook } from '../character.js';
 import { characterPreview } from './CharacterPreview.js';
 import { WORLD_OPTIONS, WORLD_PRESETS, describeOptions, parseSeed, seedWith } from '../worldOptions.js';
@@ -196,6 +196,7 @@ export class StartMenu {
     this.preview = null;
     this.card.classList.remove('sm-card-wide');
     this.card.innerHTML = html;
+    window.dispatchEvent(new Event('sm-page')); // (its page turning: see main, the menus' sounds)
     if (document.pointerLockElement) document.exitPointerLock();
     return this.card;
   }
@@ -506,12 +507,19 @@ export class StartMenu {
       <label class="sm-field sm-slide">Mouse sensitivity <output>${s.sensitivity.toFixed(2)}×</output><input type="range" data-k="sensitivity" min="0.25" max="2.5" step="0.05" value="${s.sensitivity}" /></label>
       <label class="sm-field sm-slide">Field of view <output>${s.fov}°</output><input type="range" data-k="fov" min="50" max="100" step="1" value="${s.fov}" /></label>
       <label class="sm-field sm-slide">Brightness <output>${(s.brightness ?? 1).toFixed(2)}×</output><input type="range" data-k="brightness" min="0.6" max="1.6" step="0.05" value="${s.brightness ?? 1}" /></label>
-      <label class="sm-field sm-slide">Volume <output>${(s.volume ?? 1).toFixed(2)}×</output><input type="range" data-k="volume" min="0" max="1.5" step="0.05" value="${s.volume ?? 1}" /></label>
+      <label class="sm-field sm-slide">Volume (all) <output>${(s.volume ?? 1).toFixed(2)}×</output><input type="range" data-k="volume" min="0" max="1.5" step="0.05" value="${s.volume ?? 1}" /></label>
+      ${[['effectsVol', 'Effects (steps, tools, fire)'], ['animalsVol', 'Animals and birds'], ['weatherVol', 'Rain and thunder'], ['ambienceVol', 'Surroundings (wind, water, sea)'], ['menuVol', 'Menus']].map(([k, label]) => `<label class="sm-field sm-slide sm-sub">${label} <output>${(s[k] ?? 1).toFixed(2)}×</output><input type="range" data-k="${k}" min="0" max="1.5" step="0.05" value="${s[k] ?? 1}" /></label>`).join('')}
+      ${pick('Frame rate limit', [[0, 'None'], [30, '30'], [60, '60'], [120, '120']], s.fpsCap ?? 0)}
+      <p class="sm-note">A limit saves battery and keeps a laptop cooler; with none, the game draws as fast as your screen and computer allow.</p>
       ${pick('Light rays', [['on', 'On'], ['off', 'Off']], s.rays === false ? 'off' : 'on')}
       ${pick('Difficulty', Object.entries(DIFFICULTIES).map(([id, d]) => [id, d.name]), s.difficulty ?? 'normal')}
       <p class="sm-note">Difficulty: how much harm things do you, how fast you grow hungry and thirsty, how far off the hunters notice you. Peaceful: nothing attacks.</p>
       <h3 class="sm-head" style="font-size:1rem;margin-top:12px">Controls</h3>
-      <div class="sm-keys">${ACTIONS.map(([id, label]) => `<div class="sm-key"><span>${label}</span><button type="button" class="sm-q" data-key="${id}">${keyName(keyOf(id))}</button></div>`).join('')}</div>
+      <div class="sm-keys">${ACTIONS.map(([id, label]) => {
+        // (Another control on the same key: both marked, and named.)
+        const clash = [...ACTIONS.filter(([o]) => o !== id && keyOf(o) === keyOf(id)).map(([, l]) => l), ...FIXED_KEYS.filter(([code, l]) => code === keyOf(id) && !(id === 'inventory' && l === 'Inventory')).map(([, l]) => `${l} (fixed)`)];
+        return `<div class="sm-key${clash.length ? ' sm-clash' : ''}"><span>${label}${clash.length ? `<em>Same key as: ${esc(clash.join(', '))}</em>` : ''}</span><button type="button" class="sm-q" data-key="${id}">${keyName(keyOf(id))}</button></div>`;
+      }).join('')}</div>
       <p class="sm-note">Click a control, then press the key for it (Esc to leave it as it is). The mouse buttons stay as they are.</p>
       <button class="sm-btn" data-go="keys">Keys back to the defaults</button>
       <p class="sm-note">More view and grass look better but ask more of your computer. Grass changes show as the land round you is next built.</p>
@@ -531,8 +539,8 @@ export class StartMenu {
     }
     for (const b of card.querySelectorAll('[data-set]')) {
       b.addEventListener('click', () => {
-        const k = { Grass: 'grass', Shadows: 'shadows', 'Light rays': 'rays', Difficulty: 'difficulty' }[b.dataset.set];
-        s[k] = k === 'grass' ? +b.dataset.v : k === 'rays' ? b.dataset.v === 'on' : b.dataset.v;
+        const k = { Grass: 'grass', Shadows: 'shadows', 'Light rays': 'rays', Difficulty: 'difficulty', 'Frame rate limit': 'fpsCap' }[b.dataset.set];
+        s[k] = k === 'grass' || k === 'fpsCap' ? +b.dataset.v : k === 'rays' ? b.dataset.v === 'on' : b.dataset.v;
         changed();
         this.settings(back);
       });

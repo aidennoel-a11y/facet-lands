@@ -546,7 +546,12 @@ export class PlayerControls {
       if (ps > 6) (this.push.x *= 6 / ps), (this.push.z *= 6 / ps); // (off its face, not flung far out from it)
       this.grounded = false;
     } else if (feet <= floor || (wasGrounded && this.velocityY <= 0 && drop < 0.6 && !ledge)) {
-      if (!wasGrounded && this.velocityY < -8 && !this.softLanding) this.onLand?.(-this.velocityY);
+      if (!wasGrounded && this.velocityY < -8 && !this.softLanding) {
+        this.onLand?.(-this.velocityY);
+        // (Your knees taking it: the view dips, and comes back up as you straighten. See the eye's easing.)
+        const dip = Math.min(0.55, (-this.velocityY - 8) * 0.045 + 0.12);
+        this.eyeHeight -= dip;
+      }
       this.softLanding = false;
       feet = floor;
       this.velocityY = 0;

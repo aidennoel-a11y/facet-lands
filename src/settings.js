@@ -11,7 +11,7 @@
  *  fov          the field of view, degrees (up and down)
  */
 const KEY = 'facet-lands:settings';
-export const DEFAULTS = { view: null, grass: 1, shadows: 'normal', sensitivity: 1, fov: 60, brightness: 1, volume: 1, rays: true, difficulty: 'normal' };
+export const DEFAULTS = { view: null, grass: 1, shadows: 'normal', sensitivity: 1, fov: 60, brightness: 1, volume: 1, effectsVol: 1, animalsVol: 1, weatherVol: 1, ambienceVol: 1, menuVol: 1, fpsCap: 0, rays: true, difficulty: 'normal' };
 
 /**
  * How hard survival is (see Game, Survival, Wildlife): `hurt`, how much

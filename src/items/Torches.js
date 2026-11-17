@@ -446,15 +446,31 @@ export class Torches {
       } else if (t.group) {
         light.color.setHex(t.coal ? 0xffe2b8 : 0xffa24a);
         light.position.copy(t.group.localToWorld(this._flame.set(0, FLAME_HEIGHT + 0.1, 0)));
+        this.#dance(light, time, t.phase ?? 0, 0.06, t.flicker);
         light.intensity = (t.coal ? 60 : 30) * t.flicker;
         light.distance = t.coal ? 48 : 26;
       } else {
         light.color.setHex(t.colour ?? 0xffa24a);
         light.position.set(t.x, t.y, t.z);
         const f = t.steady ? 1 : 0.85 + 0.15 * Math.sin(time * 11 + t.x) * Math.sin(time * 6.1 + t.z);
+        if (!t.steady) this.#dance(light, time, t.x * 0.37 + t.z * 0.61, 0.14 * Math.min(2, (t.reach ?? 26) / 18), f); // (a campfire's bigger flames, bigger moves)
         light.intensity = t.strength * f;
         light.distance = t.reach ?? 26;
       }
     });
+  }
+
+  /**
+   * A flame's light dancing with it: its centre swaying a little side to side
+   * and bobbing up as the flames leap (`amp` metres), redder as it dies down,
+   * yellower as it flares; so the light and the shadows move on the trunks
+   * and walls round a fire, not only brighten and dim.
+   */
+  #dance(light, time, phase, amp, flare) {
+    light.position.x += amp * (Math.sin(time * 5.3 + phase) * 0.6 + Math.sin(time * 13.1 + phase * 2.3) * 0.4);
+    light.position.z += amp * (Math.sin(time * 4.7 + phase * 1.7) * 0.6 + Math.sin(time * 11.7 + phase) * 0.4);
+    light.position.y += amp * 1.4 * Math.max(0, Math.sin(time * 7.9 + phase * 0.7));
+    const k = Math.max(-1, Math.min(1, (flare - 0.92) * 8));
+    light.color.offsetHSL(0.012 * k, 0, 0);
   }
 }

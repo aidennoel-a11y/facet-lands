@@ -80,6 +80,8 @@ export class Hud {
       <div class="frost-edge"></div>
       <div class="grime-edge"></div>
       <div class="sleep-fade"></div>
+      <p class="sleep-note" hidden></p>
+      <div class="morning-card" hidden><b></b><span></span></div>
       <button type="button" class="skills-button" hidden title="Skills and achievements (K)" aria-label="Skills and achievements"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.6 8 8.4.8-6.4 5.6 1.9 8.4L16 21.4 8.5 25.8l1.9-8.4L4 11.8l8.4-.8z" fill="#f2d880"/></svg><b></b></button>
       <section class="journal-ui" hidden aria-label="Journal">
         <header><h2>Journal</h2><p>What you've found on your travels · Y or Esc to close</p></header>
@@ -90,6 +92,8 @@ export class Hud {
         <ol class="skill-list"></ol>
         <h2 class="ach-head">Achievements</h2>
         <ol class="ach-list"></ol>
+        <h2>Statistics</h2>
+        <table class="stat-table"><thead><tr><th></th><th>This life</th><th>Every life</th></tr></thead><tbody></tbody></table>
       </section>
       <section class="craft" hidden aria-label="Crafting">
         <header><h2>Crafting</h2><p>Click to make · right-click to pin it on screen · Tab or Esc to close · Z for every item</p></header>
@@ -339,6 +343,26 @@ export class Hud {
     if (b.querySelector('b').textContent !== t) b.querySelector('b').textContent = t;
   }
 
+  /** A line over the sleep's dark (waiting on the others to sleep, online), or none (null). */
+  sleepNote(text) {
+    const el = this.el('.sleep-note');
+    el.hidden = !text;
+    if (text) el.textContent = text;
+  }
+
+  /** The morning's card as you wake: a big line ("Day 12") and a small one ("Spring · day 3 of 12"). */
+  morningCard(big, small) {
+    const el = this.el('.morning-card');
+    el.querySelector('b').textContent = big;
+    el.querySelector('span').textContent = small ?? '';
+    el.hidden = false;
+    el.classList.remove('mc-show');
+    void el.offsetWidth;
+    el.classList.add('mc-show');
+    clearTimeout(this.morningT);
+    this.morningT = setTimeout(() => (el.hidden = true), 5200);
+  }
+
   toggleSkills(record) {
     const panel = this.el('.skills-ui');
     if (!panel.hidden) return this.closeAll();
@@ -356,6 +380,7 @@ export class Hud {
     }).join('');
     const done = ACHIEVEMENTS.filter((a) => record.done.has(a.id)).length;
     this.el('.ach-head').textContent = `Achievements · ${done} of ${ACHIEVEMENTS.length}`;
+    if (this.stats) this.el('.stat-table tbody').innerHTML = this.stats.rows().map(([label, life, all]) => `<tr><th>${label}</th><td>${life}</td><td>${all}</td></tr>`).join('');
     this.el('.ach-list').innerHTML = ACHIEVEMENTS.map((a) => {
       const day = record.done.get(a.id);
       return `<li class="${day ? 'got' : ''}"><b>${day ? '★' : '☆'} ${a.name}</b><p>${a.what}${day ? ` · day ${day}` : ''}</p></li>`;

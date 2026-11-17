@@ -77,6 +77,8 @@ import { ShootingStars } from './render/ShootingStars.js';
 import { DustDevils, Sandstorm, Volcanoes, Wildfires } from './render/Phenomena.js';
 import { Seasons, seasonalTerrain, seasonUniforms } from './render/Seasons.js';
 import { waterLit } from './render/torchGlint.js';
+import { Social } from './net/Social.js';
+import { BirdBurst } from './render/BirdBurst.js';
 import { describeWind, distanceLike, gustAt, updateWind, windDirection, windStrength } from './render/wind.js';
 import { FallingLeaves } from './render/FallingLeaves.js';
 import { Wildlife } from './wildlife/Wildlife.js';
@@ -264,6 +266,7 @@ function skyNews() {
 // Lightning may set the land alight where it strikes: dry ground with
 // something on it to burn (not sand, snow, bare rock or water).
 lightning.onStrike = (x, y, z, distance) => {
+  if (distance < 400) birdBurst.fright(x, y, z, 1.2); // (a strike near the trees: the birds in them up and away)
   // Right by you: it knocks you flat, or kills you.
   if (distance < 14 && controls.mode === 'walk') {
     const hurt = distance < 3 ? 70 : 120 / (distance * distance) * 9;
@@ -1543,6 +1546,7 @@ function thirdPersonView(dt, now) {
     const t = now / 1000, me = { crouch: controls.crouch, sprint: controls.sprinting, swim: false, fly: false, pose: null, ...airFlags() };
     selfFigure.push([p.x + Math.sin(yaw) * back, p.y - controls.eyeHeight, p.z + Math.cos(yaw) * back, yaw, 0, packFlags(me, mp.items)], t);
     selfFigure.update(dt, t + 0.15, mp.items);
+    selfFigure.setWet(game.survival?.wet ?? 0);
     return null;
   }
   // (How fast you're going, eased: so the stride's swing and rhythm follow it.)
@@ -1557,6 +1561,7 @@ function thirdPersonView(dt, now) {
   const seatY = m ? m.y + 1.5 * m.scale - 0.92 + (game.rideBob ?? 0) : camera.position.y - controls.eyeHeight;
   selfFigure.push([m ? m.x : camera.position.x, seatY, m ? m.z : camera.position.z, m ? m.heading + Math.PI : controls.euler.y, controls.euler.x, packFlags(me, mp.items)], t);
   selfFigure.update(dt, t + 0.15, mp.items); // (drawn as you are now, not a moment behind as the others are)
+  selfFigure.setWet(game.survival?.wet ?? 0); // (soaked: darker, see Remote.setWet)
   eyeSaved.copy(camera.position);
   camera.getWorldDirection(behind);
   // (Back along the way you look, a little up: stopped short of the ground.)
@@ -1944,6 +1949,68 @@ sync.shrooms = shroomsCut;
 sync.tornado = (f) => tornadoes.spawn(f.x, f.z, f.heading, { speed: f.speed, life: f.life, R: f.R, delay: f.delay, seed: f.seed });
 sync.ignite = (x, y, z) => fires.ignite(x, y, z, (px, pz) => generator.getBaseHeight(px, pz));
 sync.cutShroom = cutShroomKey;
+// Playing together: talk, who's here, the host's say, the night slept through together (see Social).
+let myName = 'You';
+const social = new Social({
+  mp, sound,
+  setHour: (h) => (dayNight.hour = h),
+  where: () => camera.position,
+  myName: () => myName,
+  myColour: () => '#c8965a',
+  relock: () => {
+    try {
+      renderer.domElement.requestPointerLock?.()?.catch?.(() => {});
+    } catch {
+      // (Click to take the mouse again.)
+    }
+  },
+  onKicked: () => {
+    mp.leave();
+    game.hotbar?.flash('The host removed you from this world: you play on in it alone');
+  },
+});
+social.roomDifficulty = settings().difficulty ?? 'normal';
+sync.onSocial = (f, from) => social.receive(f, from);
+mp.onPeople = (joined, leftId) => social.changed(joined, leftId);
+mp.onError = (message) => game.hotbar?.flash(message);
+game.onBed = (on) => social.bed(on);
+game.sleepReady = () => social.ready();
+// The night going by while you sleep: the hours run on in a few seconds, the
+// stars wheeling over and the sun coming up (alone, or the host, for
+// everyone; a guest watches the host's sky and waits for its morning).
+game.sleepLapse = {
+  start() {
+    const h = dayNight.hour;
+    this.from = h;
+    this.span = h > 6.5 ? 24 - h + 6.5 : 6.5 - h;
+    this.t = 0;
+    this.dur = Math.min(6, 2.5 + this.span * 0.3);
+    this.guest = mp.connected && !mp.isHost;
+  },
+  step(dt) {
+    this.t += dt;
+    if (this.guest) {
+      const days = social.takeMorning();
+      if (days === null && this.t < 20 && mp.connected) return false; // (still the host's night: or, the host gone, given up on)
+      game.passDays(days ?? this.span / 24);
+      return true;
+    }
+    const u = Math.min(1, this.t / this.dur), e = u * u * (3 - 2 * u);
+    dayNight.hour = (this.from + this.span * e) % 24;
+    if (u < 1) return false;
+    const days = this.span / 24;
+    dayNight.hour = 6.5;
+    seasons.update(days, 1);
+    game.passDays(days);
+    if (mp.connected) (mp.setHour(6.5), social.morning(days));
+    return true;
+  },
+};
+// (The morning's card: the days of this life, and the season's.)
+game.dayLabel = () => {
+  const d = WORLD.daysPerSeason, into = (seasons.time % 1) * d;
+  return { big: game.mode === 'survival' ? `Day ${Math.floor(game.age) + 1}` : 'Morning', small: `${seasons.name} · day ${Math.floor(into) + 1} of ${d}` };
+};
 game.treeFinds.onStir = (f) => sync.online && sync.fx.push({ k: 'bees', x: Math.round((f.tx ?? f.x) * 10) / 10, z: Math.round((f.tz ?? f.z) * 10) / 10 });
 chunks.addLayer(game.items.layer);
 // (The world's time of day, moon and season, kept with its save.)
@@ -1969,9 +2036,48 @@ controls.onLand = (speed) => {
   if (!caveFocus.under && (controls.speedFactor < 0.9 || (game.player.cover ?? 0) > 0.6)) surface = 'bush';
   const harm = Math.max(0, speed - 13 * Math.sqrt(LANDING[surface] ?? 1.1)) * 6.5;
   if (harm > 0) game.hurt(harm, 'a fall');
+  // (A puff of whatever you came down on, kicked up round your feet: the harder, the bigger.)
+  if (speed > 9.5 && controls.mode === 'walk') {
+    const DUST = { snow: 0xeef2f6, sand: 0xd8c49a, rock: 0x9a958c, gravel: 0x8a857c, mud: 0x6a5a44, grass: 0xa89c78, leaves: 0x8a6a40, dirt: 0x9a8466, wood: 0x9a7a54, bush: 0x7a8a5a };
+    game.felling.dust({ x: p.x, y: p.y - controls.eyeHeight, z: p.z }, Math.min(1.6, 0.6 + (speed - 9.5) * 0.08), DUST[surface] ?? 0xa89c80, 9);
+    if (harm <= 0) sound.call('thump', 0, Math.min(0.7, 0.25 + (speed - 9.5) * 0.04));
+  }
 };
 
+// Birds bursting up out of the trees at a fright: see BirdBurst. Only where
+// there are trees round it to hold birds, by day mostly (at night, a few).
+const birdBurst = new BirdBurst(scene);
+birdBurst.fright = (x, y, z, scale = 1) => {
+  if (Math.hypot(x - camera.position.x, z - camera.position.z) > 220 || sheltered) return;
+  const w = generator.getBiomeWeights(x, z, {});
+  const wooded = (w.temperate ?? 0) * 0.8 + (w.pine ?? 0) + (w.jungle ?? 0) + (w.redwood ?? 0) + (w.parkland ?? 0) * 0.6 + (w.smoky ?? 0) + (w.cascades ?? 0) + (w.bamboo ?? 0) * 0.7 + (w.cherry ?? 0) + (w.wetland ?? 0) * 0.5;
+  if (wooded < 0.25) return;
+  const day = 1 - (game.night ?? 0) * 0.75;
+  const n = Math.round((8 + 10 * Math.min(1, wooded)) * scale * day);
+  if (n < 2) return;
+  birdBurst.burst(x, y, z, { n, r: 14 * scale + 6, canopy: (w.redwood ?? 0) > 0.5 ? 30 : (w.jungle ?? 0) > 0.5 ? 20 : 11 });
+  const d = Math.hypot(x - camera.position.x, z - camera.position.z), loud = Math.max(0.1, 0.8 - d / 250);
+  sound.from(x, z);
+  sound.call('flutter', panTowards(camera, x, z), loud);
+  sound.from(x, z);
+  setTimeout(() => sound.call(Math.random() < 0.5 ? 'caw' : 'peep', panTowards(camera, x, z), loud * 0.7), 250);
+};
+game.onFright = (x, y, z, scale) => birdBurst.fright(x, y, z, scale);
+game.onChop = (x, z, fell) => fallingLeaves.shake(x, z, fell ? 25 : 5 + Math.floor(Math.random() * 4));
+
 // --- HUD -----------------------------------------------------------------------
+// (Everyone else online, for the maps: where each is, which way they face, their name and colour.)
+function othersOnMap() {
+  if (!mp.connected) return [];
+  const out = [];
+  for (const r of mp.others.values()) {
+    const s = r.snaps.at(-1)?.s;
+    if (!s) continue;
+    const at = r.root.visible ? r.root.position : { x: s[0], z: s[2] };
+    out.push({ x: at.x, z: at.z, heading: -s[3], name: r.name, colour: r.colour });
+  }
+  return out;
+}
 const minimap = new Minimap(document.getElementById('minimap'));
 minimap.worker = (message) => chunks.task(message); // redrawn off the main thread
 
@@ -1989,6 +2095,7 @@ const bigMap = new BiomeMap({
   // (Testing: the ruins marked on it too.)
   // (A few new places worked out each time it's drawn: it fills in over a moment, never freezing. In survival, only those you've been to.)
   landmarks: (x, z, r) => game.landmarksForMap(x, z, r),
+  others: () => othersOnMap(),
   more: () => game.mode === 'testing' && !!game.landmarkMore, // (testing: the landmarks still being found, drawn again in a moment)
   ruins: (x, z, r, labelAt) => (game.mode === 'testing' ? ruins.sitesRoughly(x, z, Math.min(r, 20000), generator, labelAt) : ruins.sitesOf(game.ruinsSeen, generator)),
   // (Testing: the shipwrecks too, on the beaches and sunk out at sea.)
@@ -3326,6 +3433,15 @@ function tick(now) {
     requestAnimationFrame(tick);
     return;
   }
+  // (The frame-rate limit, if one's set in Settings: frames skipped till it's time for the next.)
+  if (frameCap.fps) {
+    const period = 1000 / frameCap.fps;
+    if (now - frameCap.last < period - 2) {
+      requestAnimationFrame(tick);
+      return;
+    }
+    frameCap.last = now - Math.min(period, Math.max(0, now - frameCap.last - period)); // (kept in step, not drifting late)
+  }
   menuFrame = now;
   const started = performance.now();
   prof.begin();
@@ -3491,6 +3607,7 @@ function tick(now) {
   const autumn = seasonUniforms.uAutumn.value, spring = seasonUniforms.uSpring.value, winter = seasonUniforms.uWinter.value;
   // (In and near the jungle no leaves turn and fall.)
   const turning = smoothstep(0.3, 0.6, cold.value);
+  birdBurst.update(dt);
   if (!underwater) fallingLeaves.update(dt, camera, trees.crowns, WORLD.chunkSize, (x, z) => chunks.groundHeightAt(x, z), { autumn: autumn * turning, spring, winter: winter * turning, summer: Math.max(0, 1 - (autumn + winter) * turning - spring) }, wind, windDirection.value, sheltered);
   prof.mark('falling leaves');
   body.update(controls, dt);
@@ -3646,6 +3763,7 @@ function tick(now) {
       camera.position.z += (p.z + Math.cos(yaw) * 4 - camera.position.z) * k;
     }
   }
+  social.update(dt);
   mp.update(dt, {
     ghost: !!game.ghost, // (unseen: nothing sent)
     x: camera.position.x, y: camera.position.y - controls.eyeHeight, z: camera.position.z, yaw: controls.euler.y, pitch: controls.euler.x, // (the way you look: yaw first, then pitch)
@@ -3701,6 +3819,7 @@ function tick(now) {
   env.panTo = (a) => panTowards(camera, camera.position.x + Math.cos(a) * 40, camera.position.z + Math.sin(a) * 40);
   // (Underground the wind and the water above are shut out: only the river in the rock, if there's one near.)
   env.rush = controls.gliding ? Math.min(1, Math.max(0, ((controls.glideSpeed ?? 0) - 5) / 30)) : 0;
+  sound.approaching(weather.auto !== false ? weather.coming : null, dt, sheltered || (game.indoors?.walls ?? 0) > 0.5); // (rain on its way, heard before it's here)
   sound.ambience(sheltered ? { ...env, woods: 0, jungle: 0, grass: 0, wetland: 0, wind: 0, gust: 0, fall: 0, river: 0, brook: caveSounds.brook ?? 0, brookPan: 0, canopy: 0, exposure: 0, storm: 0 } : env);
   // (The ground trembles as a volcano rumbles.)
   lavaHeat(dt);
@@ -3751,7 +3870,10 @@ function tick(now) {
   minimap.marks = [...(keepMark && shown.keep !== false ? [{ x: keepMark.x, z: keepMark.z, r: keepMark.r, kind: 'keep' }] : []), ...(game.waypoint ? [{ x: game.waypoint.x, z: game.waypoint.z, kind: 'goal' }] : []), ...(shown.ruins !== false ? ruinMarks.list : [])];
   prof.mark('map marks (ruins)');
   minimap.fog = game.mode === 'survival' ? { explored: game.explored, size: WORLD.chunkSize, version: game.exploredVersion ?? 0 } : null;
+  minimap.others = othersOnMap();
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
+  // (The big map, open online: redrawn now and then, so the others move on it.)
+  if (mp.connected && bigMap.isOpen && (mapOthersWait = (mapOthersWait ?? 0) - dt) <= 0) (mapOthersWait = 1), bigMap.draw();
   prof.mark('minimap');
 
   // (And within the land's share: each layer's building, and the terrain's.)
@@ -3821,12 +3943,42 @@ function tick(now) {
 }
 let describing = false;
 var frameLength = 1 / 60;
+var mapOthersWait = 0;
+var frameCap = { fps: 0, last: 0 }; // (see Settings: the frame-rate limit)
+
+// The menus' sounds (see Sound.ui): a soft wooden click for a button, a page
+// turning as a menu page changes, and the inventory, crafting, journal and
+// chests opening and shutting.
+if (!TESTING) {
+  document.addEventListener('click', (e) => {
+    if (e.target.closest?.('button, .slot, [role=tab], [role=radio], summary')) sound.ui('click');
+  }, true);
+  let lastHover = null;
+  document.addEventListener('pointerover', (e) => {
+    const b = e.target.closest?.('.start-menu button, .start-menu .cc-sw');
+    if (b && b !== lastHover) sound.ui('hover');
+    lastHover = b;
+  });
+  const panels = ['.craft', '.chest-ui', '.inv-ui', '.journal-ui', '.skills-ui', '.stats-ui'];
+  const seen = new WeakMap();
+  new MutationObserver((list) => {
+    for (const m of list) {
+      const el = m.target;
+      if (m.attributeName !== 'hidden' || !panels.some((p) => el.matches?.(p))) continue;
+      if (seen.get(el) === el.hidden) continue;
+      seen.set(el, el.hidden);
+      sound.ui(el.hidden ? 'close' : 'open');
+    }
+  }).observe(document.body, { attributes: true, attributeFilter: ['hidden'], subtree: true });
+  // (A menu page changed: see StartMenu.#show.)
+  window.addEventListener('sm-page', () => sound.ui('page'));
+}
 var ruinMarks = { wait: 0, list: [], testing: null };
 requestAnimationFrame(tick);
 
 // Exposed for tinkering from the dev console.
 globalThis.__prof = prof;
-window.world = { greatBoulders, prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, snowBlanket, seasonUniforms, TREE_GEOMETRIES, whiteout, get localRain() { return localRain; }, get generator() { return generator; }, WORLD };
+window.world = { social, birdBurst, greatBoulders, prof, flood, riverFlood, startQuake: (power = 1) => (quake.at = { start: mp.roomTime() ?? performance.now() / 1000, dur: 10, power }), rockfalls, fireSeason, avalanches, startAvalanche, THREE, landmarks, mineProps, geese, tornadoes, spawnTornado, dayNight, spiders, bigMap, mp, sync, waterAt, game, traces, fish, fires, spiders, volcanoes, sandstorm, devils, renderer, scene, camera, chunks, farTrees, trees, fallingLeaves, cloudShadowUniforms, wildlife, insects, water, rivers, controls, dayNight, clouds, weather, seasons, rain, lightning, sound, showers, aurora, bow, rayEffects, torches, hotbar, groundAt, placeTrees, snowBlanket, seasonUniforms, TREE_GEOMETRIES, whiteout, get localRain() { return localRain; }, get generator() { return generator; }, WORLD };
 
 // (The rest of a test address: the time of day, weather and season, and
 // the panels hidden for a clean picture. See TEST.)
@@ -3873,6 +4025,7 @@ let joinedHour = null;
 // one), with &server=ws://… and &name=….
 if (TEST.get('mp')) {
   const url = TEST.get('server') ?? 'ws://localhost:8787', name = TEST.get('name') ?? 'Tester';
+  myName = name;
   const go = TEST.get('mp') === 'host'
     ? mp.host(url, name, { name: 'Test world', seed: WORLD.seed, mode: 'creative' }, dayNight.hour, WORLD.dayLengthMinutes)
     : mp.join(url, TEST.get('mp'), name).then((w) => (dayNight.hour = w.hour));
@@ -3889,6 +4042,8 @@ if (!TESTING) {
     renderer.domElement.style.filter = (s.brightness ?? 1) === 1 ? '' : `brightness(${s.brightness})`;
     sound.volume = s.volume ?? 1;
     sound.setEnabled?.(sound.enabled ?? true);
+    sound.setLevels({ effects: s.effectsVol ?? 1, animals: s.animalsVol ?? 1, weather: s.weatherVol ?? 1, ambience: s.ambienceVol ?? 1, menu: s.menuVol ?? 1 });
+    frameCap.fps = s.fpsCap ?? 0;
     if ((s.rays ?? true) !== ui.rays.checked) ui.rays.click();
     if (peaceful && !!peaceful.checked !== !!DIFFICULTIES[s.difficulty]?.peaceful && (live || DIFFICULTIES[s.difficulty]?.peaceful)) peaceful.click();
     if (live && startMenu?.world) {
@@ -3933,9 +4088,9 @@ if (!TESTING) {
     onQuit: () => mp.leave(),
     // Online: open your new world to others (the room keeps its clock from
     // yours), or join someone's (their world's seed, their time of day).
-    onHost: ({ url, name, world }) => mp.host(url, name, { name: world.name, seed: world.seed, mode: world.mode }, dayNight.hour, WORLD.dayLengthMinutes),
+    onHost: ({ url, name, world }) => ((myName = name || 'You'), mp.host(url, name, { name: world.name, seed: world.seed, mode: world.mode }, dayNight.hour, WORLD.dayLengthMinutes)),
     onJoin: ({ url, code, name }) =>
-      mp.join(url, code, name).then((w) => {
+      ((myName = name || 'You'), mp.join(url, code, name)).then((w) => {
         joinedHour = w.hour;
         return { id: `online-${w.code}`, name: w.world.name, seed: w.world.seed, mode: w.world.mode, guest: true };
       }),

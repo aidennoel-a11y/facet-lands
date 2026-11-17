@@ -37,7 +37,8 @@ const STYLE = `
  * @param teleport  (x, z) => take you there
  */
 export class BiomeMap {
-  constructor({ task, where, teleport, ruins, fog, keep, more, landmarks, wrecks }) {
+  constructor({ task, where, teleport, ruins, fog, keep, more, landmarks, wrecks, others }) {
+    this.others = others; // (() => the other players online: { x, z, heading, name, colour })
     this.wrecks = wrecks; // ((x, z, r) => the shipwrecks to mark, round there: testing)
     this.landmarks = landmarks; // ((x, z, r) => the landmarks to mark: { x, z, name, found })
     this.more = more; // (() => whether the ruins aren't all worked out yet: drawn again in a moment)
@@ -424,6 +425,32 @@ export class BiomeMap {
       ctx.fillText(l.name, lx + 9, ly + 4);
     }
     if (this.more?.() && !this.moreSoon) this.moreSoon = setTimeout(() => ((this.moreSoon = null), this.draw()), 60);
+    // The others online: an arrow in each one's colour, their name by it.
+    for (const o of this.others?.() ?? []) {
+      const ox = (o.x - x0) / scale, oy = (o.z - z0) / scale;
+      if (ox < -10 || oy < -10 || ox > w + 10 || oy > n + 10) continue;
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.rotate(o.heading ?? 0);
+      ctx.beginPath();
+      ctx.moveTo(0, -9);
+      ctx.lineTo(6, 7);
+      ctx.lineTo(0, 3);
+      ctx.lineTo(-6, 7);
+      ctx.closePath();
+      ctx.fillStyle = o.colour ?? '#5ab0ff';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+      ctx.font = 'bold 11px system-ui';
+      ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+      ctx.lineWidth = 3;
+      ctx.fillStyle = '#fff';
+      ctx.strokeText(o.name, ox + 10, oy + 4);
+      ctx.fillText(o.name, ox + 10, oy + 4);
+    }
     // You, as an arrow.
     const p = this.where();
     const mx = (p.x - x0) / scale, my = (p.z - z0) / scale;

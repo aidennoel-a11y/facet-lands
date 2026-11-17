@@ -12,6 +12,7 @@ import { bobberModel, bowModel, ladderLean } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
 import { TreeFinds } from './TreeFinds.js';
+import { Stats } from './Stats.js';
 import { Progress, SKILLS } from './Progress.js';
 import { EQUINE, Wildlife } from '../wildlife/Wildlife.js';
 import { LANDMARKS, FOUND_KINDS } from '../world/landmarkSites.js';
@@ -145,6 +146,8 @@ export const TEST_KIT = [['axe', 1], ['spear', 1], ['flintSteel', 1], ['bow', 1]
  * you built back down; R to drop one (Shift+R the stack), E for what you carry, Tab to craft, Z
  * for every item (testing), C / Ctrl to crouch.
  */
+const handDir = new Vector3(); // (scratch: see the hand's sway)
+
 export class Game {
   /**
    * @param o { scene, camera, controls, chunks, trees, rocks, mushrooms, fish,
@@ -165,8 +168,10 @@ export class Game {
       this.survival.hurtFlash = Math.max(this.survival.hurtFlash ?? 0, 0.5);
     };
     this.record = new Progress(); // (your skills, and what you've achieved, this life)
+    this.stats = new Stats(); // (how far, how many, how high: this life and every life, see Stats)
     this.survival = new Survival();
     this.hud = new Hud(o.hudRoot);
+    this.hud.stats = this.stats;
     Object.defineProperty(this.hud, 'spawners', { get: () => this.mode === 'testing' }); // (the animal spawners: for testing only)
     this.items = new GroundItems(o.scene, o.config);
     this.structures = new Structures(o.scene, (id) => this.items.model(id));
@@ -176,6 +181,7 @@ export class Game {
       if (d < 30) this.hotbar?.flash(`${ITEMS[out.id].name} ready at the ${ITEMS[s.type].name.toLowerCase()}`);
     };
     this.felling = new Felling(o.scene, o.trees, this.items);
+    this.inventory.onBreak = (id) => this.#toolBroke(id);
     this.treeFinds.felling = this.felling; // (a struck tree rocks its nests with it)
     // (What grows in an orchard planting: the same trees and bushes as the wild ones, at its size.)
     // (A water mill's wheel: turned by running water just off its side.)
@@ -275,6 +281,7 @@ export class Game {
   newLife() {
     this.age = 0;
     this.record.reset();
+    this.stats.reset();
     this.dead = false;
     this.grime = 0;
     this.survival.reset();
@@ -359,6 +366,7 @@ export class Game {
       this.spawn = saved.player.spawn ?? null;
       this.age = saved.player.age ?? 0;
       this.record.load(saved.player.record);
+      this.stats.load(saved.player.numbers);
       this.hud.alive();
       this.controls.frozen = false;
     } else {
@@ -385,8 +393,9 @@ export class Game {
       landmarks: { found: [...this.landmarksFound], hints: [...this.landmarkHints] },
       journal: { places: [...this.journal.places], animals: [...this.journal.animals] },
       keep: this.keep,
-      player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), record: this.record.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
+      player: this.survival.alive ? { inventory: this.inventory.toJSON(), stats: this.survival.toJSON(), record: this.record.toJSON(), numbers: this.stats.toJSON(), spawn: this.spawn, age: Math.round(this.age * 1000) / 1000 } : null,
     };
+    this.stats.saveTotals();
     try {
       localStorage.setItem(`facet-lands:survival:${this.saveKey}`, JSON.stringify(data));
     } catch {
@@ -426,6 +435,7 @@ export class Game {
         this.#menu(this.hud.toggleCreative());
         return;
       }
+      if ((e.code === 'Escape' || e.code === 'Space') && this.sleeping?.phase === 'wait' && this.getUp()) return;
       if (e.code === 'Escape' && this.hud.busy && this.survival.alive) {
         this.hud.closeAll();
         this.#menu(false);
@@ -1222,6 +1232,7 @@ export class Game {
           this.#give('stick', 2, s);
           if (Math.random() < 0.4) this.#give('sapling', 1, s);
           this.sound?.call('treefall', 0, 0.6);
+          this.stats.add('trees');
           this.dirty = true;
           return this.hotbar?.flash('Timber! Logs ×4, sticks ×2');
         }
@@ -1449,6 +1460,7 @@ export class Game {
     const n = r.makes ?? 1;
     const got = this.#give(id, n);
     this.skill('crafting', 1);
+    this.stats.add('crafted', n);
     this.sound?.call('craft', 0, 0.5);
     this.hotbar?.flash(`Made: ${ITEMS[id].name}${n > 1 ? ` ×${n}` : ''}${got < n ? ' (some on the ground: no room)' : ''}`);
   }
@@ -2494,6 +2506,7 @@ export class Game {
       // (Where along the trunk the blade bites: where you aimed.)
       const at = origin.y + direction.y * tree.distance;
       const result = this.felling.chop(tree, origin, at, this.wind?.() ?? { x: 0, z: 0 }, power);
+      this.onChop?.(tree.x, tree.z, result === 'fell'); // (leaves shaken down from it: see FallingLeaves.shake)
       // (A wild bees' nest up in it: stirred up by the blows, they come out after you.)
       {
         const held = this.inventory.slots[this.hotbar.index], smoked = held?.id === 'torch' || held?.id === 'coalTorch';
@@ -2503,6 +2516,7 @@ export class Game {
         this.sound?.call('creak', 0, 0.7);
         // (Now and then a seedling from round its foot: to plant.)
         if (Math.random() < 0.3 && !CACTI.has(tree.type)) this.items.drop(Inventory.stack('sapling', 1), tree.x + 0.6, tree.y + 0.5, tree.z);
+        this.stats.add('trees');
         this.hotbar?.flash('Timber!');
       } else if (result === 'bush') {
         this.items.drop(Inventory.stack('stick', 1 + Math.floor(Math.random() * 2)), tree.x, tree.y + 0.8, tree.z);
@@ -2740,10 +2754,72 @@ export class Game {
   bossEvent(type, a, text) {
     if (!a.boss || a.mirrored) return;
     this.#bossFight(a);
+    if (type === 'intro' || type === 'rage') this.onFright?.(a.x, a.y, a.z, 2); // (its roar: every bird for a long way round up out of the trees)
     if (type === 'intro') {
       this.hud.bossIntro?.(a.boss.name, a.boss.title);
       this.shake = Math.max(this.shake ?? 0, 0.8);
     } else if (text) this.hud.bossWarn?.(text, type === 'rage');
+  }
+
+  // The numbers kept as you go (see Stats): how far you've gone and how, how high, how deep.
+  #tally(dt, ctx) {
+    if (this.mode !== 'survival' || !this.survival.alive || this.sleeping) return;
+    const cam = this.camera.position, last = (this._tallyAt ??= { x: cam.x, z: cam.z });
+    const d = Math.hypot(cam.x - last.x, cam.z - last.z);
+    last.x = cam.x;
+    last.z = cam.z;
+    if (d > 0.005 && d < 20 * Math.max(dt, 0.016)) {
+      const c = this.controls;
+      if (this.riding || c.vehicle) this.stats.add('ridden', d);
+      else if (c.swimming) this.stats.add('swum', d);
+      else if (c.gliding) this.stats.add('glided', d);
+      else if (c.mode === 'walk') this.stats.add('walked', d);
+    }
+    if ((this.tallyWait = (this.tallyWait ?? 0) - dt) > 0) return;
+    this.tallyWait = 1;
+    const feet = cam.y - (this.controls.eyeHeight ?? 1.7);
+    if (!ctx?.cave) this.stats.max('highest', feet);
+    else {
+      const depth = this.generator().getHeight(cam.x, cam.z) - feet;
+      if (depth > 2) this.stats.max('deepest', depth);
+    }
+  }
+
+  /**
+   * Your shot went home: a soft thunk, and the crosshair flicks (redder for
+   * a head shot, a ring for a kill), so you know it hit, however far off.
+   */
+  /**
+   * A tool worn through, breaking in your hand: a sharp crack, splinters (or
+   * shards of stone, or of metal) flying out in front of you, and word of it.
+   */
+  #toolBroke(id) {
+    const item = ITEMS[id];
+    if (!item) return;
+    this.sound?.call('crack', 0, 0.7);
+    const c = this.camera, f = new Vector3();
+    c.getWorldDirection(f);
+    const right = new Vector3().crossVectors(f, c.up).normalize();
+    const at = c.position.clone().addScaledVector(f, 0.7).addScaledVector(right, 0.28);
+    at.y -= 0.3;
+    const name = `${id} ${item.name}`.toLowerCase();
+    const colour = /iron|steel|bronze|copper|metal/.test(name) ? 0x8a8e94 : /stone|flint|obsidian|rock/.test(name) ? 0x7a756c : 0x9a7448;
+    this.felling.spray(at, c.position.clone().addScaledVector(f, -2), colour);
+    this.felling.spray(at, c.position.clone().addScaledVector(f, -2), 0x6a4a2a); // (and its haft)
+    this.hotbar?.flash(`Your ${item.name.toLowerCase()} broke`);
+  }
+
+  #hitMark(head, killed) {
+    this.sound?.call('thunk', 0, head ? 0.75 : 0.55);
+    const c = document.getElementById('crosshair');
+    if (!c) return;
+    c.classList.remove('ch-hit', 'ch-head', 'ch-kill');
+    void c.offsetWidth; // (so it plays again, hit after hit)
+    c.classList.add('ch-hit');
+    if (head) c.classList.add('ch-head');
+    if (killed) c.classList.add('ch-kill');
+    clearTimeout(this._hitMarkT);
+    this._hitMarkT = setTimeout(() => c.classList.remove('ch-hit', 'ch-head', 'ch-kill'), 450);
   }
 
   #report(a, outcome, head) {
@@ -2751,6 +2827,7 @@ export class Game {
     const held = this.inventory.slots[this.hotbar?.index ?? 0]?.id;
     if (held === 'bow' || held === 'antlerBow' || held === 'crossbow') this.skill('archery', outcome === 'dead' ? 5 : 3);
     if (outcome === 'dead') {
+      this.stats.add(a.boss ? 'beasts' : 'hunted');
       this.#achieve('hunt');
       if (['grizzly', 'blackBear', 'moose', 'bison'].includes(a.kind)) this.#achieve('biggame');
       if (a.boss) this.#achieve('boss');
@@ -2944,6 +3021,7 @@ export class Game {
       if (hit?.spider && !sp.done) {
         const shot = SHOTS[sp.kind];
         this.#hitSpider(hit, (shot.sharp ?? ITEMS[sp.stack.id]?.sharp ?? 1) * (sp.power ?? 1) * (ITEMS[sp.stack.id]?.venom ? 2 : 1), sp.pos);
+        this.#hitMark(false, !hit.animal?.alive);
         sp.done = true;
         sp.life = 0;
         continue;
@@ -2961,6 +3039,7 @@ export class Game {
           this.#fireArrowLands(hit.animal.x, hit.animal.y, hit.animal.z, 0.25);
         }
         this.#wounded(hit, sp.pos);
+        this.#hitMark(hit.head, outcome === 'dead');
         this.#report(hit.animal, outcome, hit.head);
         if (hit.animal.boss) this.#bossFight(hit.animal);
         sp.done = true;
@@ -3192,6 +3271,7 @@ export class Game {
     const kg = Math.round(f.kg * 10) / 10;
     this.#give(k.item ?? 'rawFish', Math.max(1, Math.min(4, Math.round(kg / 1.4))));
     this.skill('fishing', 4 + Math.round(f.pull * 3));
+    this.stats.add('fish');
     if (this.record.count('fish') >= 10) this.#achieve('fish10');
     const key = `bestFish:${k.id}`, best = this.record.counts[key] ?? 0;
     const record = kg * 10 > best;
@@ -3458,41 +3538,94 @@ export class Game {
     if (this.wildlife.animals.some((a) => a.hunting)) return this.hotbar?.flash("You can't sleep with danger this close");
     if (this.night < 0.5 && this.survival.energy > 50) return this.hotbar?.flash('You can only sleep at night, or when worn out');
     this.spawn = { x: bed.x, y: bed.y + 0.5 + this.controls.standingEye, z: bed.z };
-    this.sleeping = { t: 0, bed, woke: false };
+    this.sleeping = { t: 0, bed, phase: 'down', morning: false };
     this.sound?.call('rustle', 0, 0.4);
     this.#menu(true);
     this.dirty = true;
+    this.onBed?.(true); // (online: the others told you're in bed: see Social)
   }
 
+  /** Out of bed before the night's over (online, waiting on the others: Esc or Space). */
+  getUp() {
+    const s = this.sleeping;
+    if (!s || s.phase !== 'wait') return false;
+    this.sleeping = null;
+    this.hud.sleepAmount = 0;
+    this.hud.sleepNote(null);
+    this.#menu(false);
+    this.onBed?.(false);
+    return true;
+  }
+
+  /**
+   * The night in bed: the view darkening (not to black: the night sky still
+   * shows), then, once everyone's in bed (alone, at once), the night going by
+   * in a few seconds, the stars wheeling over and the sun coming up; then
+   * awake, the morning's card, and up. See sleepLapse (main) and Social.
+   */
   #sleepStep(dt) {
     const s = this.sleeping;
     s.t += dt;
-    // Into the dark, a night passes, out of it.
-    this.hud.sleepAmount = s.t < 1.2 ? s.t / 1.2 : s.t < 2.2 ? 1 : Math.max(0, 1 - (s.t - 2.2) / 1.2);
-    if (s.t > 1.4 && !s.woke) {
-      s.woke = true;
-      this.sleepUntilMorning?.();
-      this.survival.sleep();
-      // (A great bed: you wake whole. A bedroll on the hard ground: stiff, not quite rested.)
-      if (s.bed.type === 'fancyBed') (this.survival.health = Math.min(100, this.survival.health + 40)), this.hotbar?.flash('You wake in the great bed, rested and whole');
-      else if (s.bed.type === 'bedroll') (this.survival.energy = Math.min(this.survival.energy, 75)), this.hotbar?.flash('You wake stiff from the hard ground');
-      else if (s.bed.type === 'strawBed') (this.survival.energy = Math.min(this.survival.energy, 85)), this.hotbar?.flash('You wake on the straw, rested, if a little itchy');
-      else this.hotbar?.flash('You wake, rested');
-      // (Out in the rain all night, no roof over you: soaked, chilled, hardly rested.)
-      if ((this.rainOnYou ?? 0) > 0.2) {
-        const sv = this.survival;
-        sv.wet = 1;
-        sv.warmth = Math.max(5, sv.warmth - 35);
-        sv.energy = Math.min(sv.energy, 50);
-        sv.health = Math.max(5, sv.health - 6);
-        this.hotbar?.flash('A night out in the rain, no roof over you: soaked and chilled to the bone');
-      }
+    const DIM = 0.62;
+    if (s.phase === 'down') {
+      this.hud.sleepAmount = DIM * Math.min(1, s.t / 1.2);
+      if (s.t >= 1.2) (s.phase = 'wait'), (s.t = 0);
+      return;
     }
-    if (s.t > 3.4) {
+    if (s.phase === 'wait') {
+      this.hud.sleepAmount = DIM;
+      const ready = this.sleepReady?.() ?? { all: true };
+      if (!ready.all) {
+        this.hud.sleepNote(`Waiting for everyone to sleep: ${ready.inBed} of ${ready.of} in bed · Esc to get up`);
+        return;
+      }
+      this.hud.sleepNote(null);
+      s.phase = 'lapse';
+      s.t = 0;
+      this.sleepLapse?.start();
+      return;
+    }
+    if (s.phase === 'lapse') {
+      // (The night going by: a little lighter, to watch it.)
+      this.hud.sleepAmount = DIM - 0.18 * Math.min(1, s.t / 1.5);
+      const done = this.sleepLapse ? this.sleepLapse.step(dt) : true;
+      if (!done) return;
+      s.phase = 'up';
+      s.t = 0;
+      this.#wake(s);
+      return;
+    }
+    // Up: the dark lifting.
+    const from = DIM - 0.18;
+    this.hud.sleepAmount = Math.max(0, from * (1 - s.t / 1.4));
+    if (s.t > 1.4) {
       this.sleeping = null;
       this.hud.sleepAmount = 0;
       this.#menu(false);
+      this.onBed?.(false);
     }
+  }
+
+  // Awake, the night over: rested (as well as the bed allows), and the morning's card.
+  #wake(s) {
+    this.survival.sleep();
+    // (A great bed: you wake whole. A bedroll on the hard ground: stiff, not quite rested.)
+    if (s.bed.type === 'fancyBed') (this.survival.health = Math.min(100, this.survival.health + 40)), this.hotbar?.flash('You wake in the great bed, rested and whole');
+    else if (s.bed.type === 'bedroll') (this.survival.energy = Math.min(this.survival.energy, 75)), this.hotbar?.flash('You wake stiff from the hard ground');
+    else if (s.bed.type === 'strawBed') (this.survival.energy = Math.min(this.survival.energy, 85)), this.hotbar?.flash('You wake on the straw, rested, if a little itchy');
+    else this.hotbar?.flash('You wake, rested');
+    // (Out in the rain all night, no roof over you: soaked, chilled, hardly rested.)
+    if ((this.rainOnYou ?? 0) > 0.2) {
+      const sv = this.survival;
+      sv.wet = 1;
+      sv.warmth = Math.max(5, sv.warmth - 35);
+      sv.energy = Math.min(sv.energy, 50);
+      sv.health = Math.max(5, sv.health - 6);
+      this.hotbar?.flash('A night out in the rain, no roof over you: soaked and chilled to the bone');
+    }
+    this.stats.add('nights', 1);
+    const label = this.dayLabel?.();
+    if (label) this.hud.morningCard(label.big, label.small);
   }
 
   // --- Snares, and fires left burning ---------------------------------------------------
@@ -3547,6 +3680,7 @@ export class Game {
   update(dt, ctx) {
     this.lastCtx = ctx; // (the weather, for striking a fire: see use)
     this.time += dt;
+    this.#tally(dt, ctx);
     this.night = ctx.night;
     this.winter = ctx.winter;
     this.cooldown = Math.max(0, this.cooldown - dt);
@@ -3656,6 +3790,7 @@ export class Game {
     this.felling.update(dt, ground, (x, y, z, size) => {
       const d = Math.hypot(x - cam.x, z - cam.z);
       this.sound?.call('treefall', 0, Math.min(1, 0.4 + size / 20) / (1 + d / 30));
+      this.onFright?.(x, y, z, Math.min(1.5, 0.5 + size / 14)); // (the birds in the trees round it up and away: see BirdBurst)
     });
     this.#flyAll(dt);
     globalThis.__prof?.mark('  g: flyAll');
@@ -4133,6 +4268,7 @@ export class Game {
 
   #die() {
     this.dead = true;
+    if (this.mode === 'survival') (this.stats.add('deaths'), this.stats.saveTotals());
     // What you carried lies where you fell.
     this.#getOff();
     this.#dismount();
@@ -4207,6 +4343,7 @@ export class Game {
 
   /** Time going by (game days), for how long this life has lasted. */
   passDays(days) {
+    if (this.mode === 'survival' && this.survival.alive) this.stats.add('days', days);
     this.worldDays = (this.worldDays ?? 0) + days; // (the world's own days, for what grows back)
     if (!this.survival.alive || this.mode !== 'survival') return;
     const before = this.age;
@@ -4464,11 +4601,33 @@ export class Game {
         this.grip.add(mesh);
       }
     }
-    // Bobbing as you walk.
-    this.bob = (this.bob ?? 0) + dt * (this.controls.moving ? (this.controls.sprinting ? 13 : 8) : 0);
+    // Bobbing as you walk, in step with how fast you're really going (eased
+    // in and out, never stopping dead); swaying a little behind as you turn
+    // and look up or down; and at rest, the slow rise and fall of breathing.
+    const cam = this.camera.position, last = (this._handLast ??= { x: cam.x, z: cam.z, yaw: 0, pitch: 0, sway: { x: 0, y: 0 }, pace: 0 });
+    const speed = dt > 0 ? Math.min(12, Math.hypot(cam.x - last.x, cam.z - last.z) / dt) : 0;
+    last.x = cam.x;
+    last.z = cam.z;
+    const grounded = this.controls.mode === 'walk' && this.controls.grounded !== false && !this.controls.swimming;
+    last.pace += ((grounded ? Math.min(1, speed / 6) : 0) - last.pace) * Math.min(1, dt * 6);
+    this.bob = (this.bob ?? 0) + dt * (5 + 1.25 * Math.min(speed, 8)) * (last.pace > 0.02 ? 1 : 0);
+    const fwd = this.camera.getWorldDirection(handDir), yaw = Math.atan2(fwd.x, fwd.z), pitch = Math.asin(Math.max(-1, Math.min(1, fwd.y)));
+    let dyaw = yaw - last.yaw;
+    dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+    const dpitch = pitch - last.pitch;
+    last.yaw = yaw;
+    last.pitch = pitch;
+    const k = Math.min(1, dt * 9);
+    last.sway.x += (Math.max(-0.06, Math.min(0.06, dyaw * 0.9)) - last.sway.x) * k; // (it lags behind as you turn)
+    last.sway.y += (Math.max(-0.05, Math.min(0.05, -dpitch * 0.9)) - last.sway.y) * k;
     const low = this.controls.crouch ? 0.03 : 0;
     const heavy = id === 'log' ? 0.05 : 0;
-    this.hand.position.set(0.3 + Math.sin(this.bob) * 0.015, -0.33 - Math.abs(Math.cos(this.bob)) * (0.02 + heavy) - low, -0.62);
+    const amp = last.pace * (0.6 + 0.6 * Math.min(1, speed / 7)), breathe = Math.sin((this.time ?? 0) * 1.7) * 0.004 * (1 - last.pace);
+    this.hand.position.set(
+      0.3 + Math.sin(this.bob) * 0.022 * amp + last.sway.x,
+      -0.33 - Math.abs(Math.cos(this.bob)) * (0.028 + heavy) * amp - low + breathe + last.sway.y,
+      -0.62 + Math.abs(Math.cos(this.bob)) * 0.01 * amp,
+    );
     // Resting pose, and the swing on top of it.
     let rx = AXES[id] || PICKS[id] ? -0.25 : 0, ry = 0, rz = AXES[id] || PICKS[id] ? 0.12 : 0, px = 0, py = 0, pz = 0;
     const a = this.anim;

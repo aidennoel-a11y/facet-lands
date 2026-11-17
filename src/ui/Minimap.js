@@ -117,6 +117,20 @@ export class Minimap {
       ctx.strokeStyle = '#f4efe6';
       ctx.stroke();
     }
+    // The others online: a dot in each one's colour (at the edge, pointing, if they're further off).
+    for (const o of this.others ?? []) {
+      let x = (o.x - position.x) / s, z = (o.z - position.z) / s;
+      const d = Math.hypot(x, z), lim = (n * 0.75) / 2 - 3;
+      const far = d > lim;
+      if (far) (x *= lim / d), (z *= lim / d);
+      ctx.beginPath();
+      ctx.arc(x, z, far ? 1.8 : 2.6, 0, Math.PI * 2);
+      ctx.fillStyle = o.colour ?? '#5ab0ff';
+      ctx.fill();
+      ctx.lineWidth = 0.9;
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+    }
     // Ruins you've found (a small grey keep), and the mark an old map
     // made (a red cross: at the map's edge, pointing, if it's further off).
     const edge = (n * 0.75) / 2 - 4;

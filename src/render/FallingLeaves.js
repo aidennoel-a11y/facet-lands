@@ -56,7 +56,55 @@ export class FallingLeaves {
    * @param season    { autumn, summer, spring, winter } (0..1)
    * @param wind      0..1, and `dir` ({ x, y }: which way it blows)
    */
+  /**
+   * A tree shaken (chopped, or brushed past): `n` leaves shaken loose from
+   * the crown nearest (x, z), in the season's colours. None from the bare
+   * trees of winter, nor from pines (their crowns aren't among these).
+   */
+  shake(x, z, n = 6, near = 6) {
+    const season = this.season;
+    if (!season || season.winter > 0.7 || !this.ground) return;
+    let best = -1, bestD = near;
+    for (let k = 0; k < this.crowns.length; k += 5) {
+      const d = Math.hypot(this.crowns[k] - x, this.crowns[k + 1] - z) - this.crowns[k + 4];
+      if (d < bestD) (bestD = d), (best = k);
+    }
+    if (best < 0) return;
+    const [cx, cz, bottom, top, r] = this.crowns.slice(best, best + 5);
+    for (let i = 0; i < n && this.leaves.length < MAX; i++) {
+      const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * r * 0.8;
+      const lx = cx + Math.cos(a) * d, lz = cz + Math.sin(a) * d;
+      const autumn = Math.random() < season.autumn / (season.autumn + 0.25);
+      const palette = autumn ? AUTUMN : GREEN;
+      this.leaves.push({
+        x: lx, z: lz, y: bottom + Math.random() * (top - bottom) * 0.6,
+        floor: this.ground(lx, lz) + 0.02,
+        fall: 0.7 + Math.random() * 0.6,
+        phase: Math.random() * 100, flutter: 1.5 + Math.random() * 2,
+        spin: (Math.random() - 0.5) * 7, tilt: Math.random() * Math.PI * 2,
+        lying: 0, colour: palette[Math.floor(Math.random() * palette.length)],
+        size: 0.8 + Math.random() * 0.6,
+      });
+    }
+  }
+
   update(dt, camera, crowns, chunkSize, ground, season, wind, dir, hidden) {
+    this.season = season;
+    this.ground = ground;
+    // (Pushing through a low crown, moving: a few leaves knocked loose now and then.)
+    {
+      const p = camera.position, last = (this.lastAt ??= { x: p.x, z: p.z });
+      const moved = Math.hypot(p.x - last.x, p.z - last.z);
+      last.x = p.x;
+      last.z = p.z;
+      if (!hidden && moved > 0.02 && moved < 2) {
+        for (let k = 0; k < this.crowns.length; k += 5) {
+          const [cx, cz, bottom, , r] = this.crowns.slice(k, k + 5);
+          if (bottom > p.y + 0.3 || bottom < p.y - 3.5) continue; // (only the crowns low enough to brush through)
+          if (Math.hypot(cx - p.x, cz - p.z) < r * 0.9 && Math.random() < moved * 0.9) this.shake(cx, cz, 1 + Math.floor(Math.random() * 2), 0.5);
+        }
+      }
+    }
     // Every second or so, the broad-leaved crowns within 70 m.
     this.wait -= dt;
     if (this.wait <= 0) {

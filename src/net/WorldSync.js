@@ -153,7 +153,10 @@ export class WorldSync {
     else if (msg.t === 'wild') {
       if (!this.mp.isHost) this.wildlife.receive(msg.w, msg.w.t);
     } else if (msg.t === 'fx') {
-      for (const f of msg.fx) this.#play(f);
+      for (const f of msg.fx) {
+        if (f?.k === 'social') this.onSocial?.(f, msg.from); // (talk, beds, the host's say: see Social)
+        else this.#play(f);
+      }
     } else if (msg.t === 'tohost' && this.mp.isHost) {
       const m = msg.m;
       if (m?.k === 'crowns' && typeof m.key === 'string' && Array.isArray(m.list)) this.wildlife.remoteCrowns.set(m.key, m.list);

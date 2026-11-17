@@ -72,7 +72,7 @@ export class Remote {
     this.colour = colour;
     this.snaps = []; // [{ at, s }]
     const parts = Models.person(look ?? Number.parseInt(colour.slice(1), 16));
-    const mat = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+    const mat = (this.material = new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
     this.root = new Group();
     this.body = new Mesh(parts.body, mat);
     this.head = new Mesh(parts.head, mat);
@@ -123,6 +123,17 @@ export class Remote {
     this.root.visible = false;
     this.walk = 0;
     scene.add(this.root);
+  }
+
+  /**
+   * Soaked through (0..1): the clothes (and the rest) darker, as wet cloth
+   * goes, a little bluer and duller. (Your own figure: see main.)
+   */
+  setWet(w) {
+    const k = Math.max(0, Math.min(1, w));
+    if (Math.abs(k - (this.wet ?? 0)) < 0.01) return;
+    this.wet = k;
+    this.material.color.setRGB(1 - 0.36 * k, 1 - 0.34 * k, 1 - 0.27 * k);
   }
 
   push(s, at) {
@@ -625,6 +636,7 @@ export class Multiplayer {
           resolve(msg);
         } else if (msg.t === 'error') {
           if (this.id === null) fail(msg.message);
+          else this.onError?.(msg.message);
         } else this.#receive(msg);
       };
     });
@@ -644,10 +656,13 @@ export class Multiplayer {
     } else if (msg.t === 'joined') {
       this.#add(msg);
       this.onChange?.();
+      this.onPeople?.(msg.name ?? 'Someone', null);
     } else if (msg.t === 'left') {
+      const name = this.others.get(msg.id)?.name;
       this.others.get(msg.id)?.dispose(this.scene);
       this.others.delete(msg.id);
       this.onChange?.();
+      this.onPeople?.(null, msg.id, name);
     } else if (msg.t === 'hour') {
       this.onHour?.(msg.hour);
     } else if (msg.t === 'host') {

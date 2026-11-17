@@ -566,6 +566,20 @@ export class Felling {
     }
   }
 
+  /** A puff of dust from the ground at `point`, `size` across (a hard landing, say), low and spreading. */
+  dust(point, size = 1, color = 0xb8a88c, n = 10) {
+    for (let k = 0; k < n; k++) {
+      const mat = new MeshLambertMaterial({ color, transparent: true, opacity: 0.4, depthWrite: false });
+      const mesh = new Mesh(this.dustGeometry ??= new IcosahedronGeometry(0.5, 0), mat);
+      const a = (k / n) * Math.PI * 2 + rnd(-0.3, 0.3);
+      mesh.position.set(point.x + Math.cos(a) * 0.3 * size, point.y + 0.1, point.z + Math.sin(a) * 0.3 * size);
+      mesh.scale.setScalar(rnd(0.25, 0.45) * size);
+      this.scene.add(mesh);
+      const out = rnd(1.2, 2.4) * size;
+      this.chips.push({ mesh, dust: true, grow: rnd(1, 1.8), vx: Math.cos(a) * out, vy: rnd(0.2, 0.7), vz: Math.sin(a) * out, life: rnd(0.9, 1.5), full: 1.5, spin: rnd(0.5, 2) });
+    }
+  }
+
   #chipMaterial(color) {
     if (!color) return this.chipMaterial;
     this.rockChips ??= new Map();
@@ -690,7 +704,10 @@ export class Felling {
     for (const c of this.chips) {
       c.life -= dt;
       if (c.dust) {
-        // (Dust: drifting up and out, swelling, fading away.)
+        // (Dust: drifting up and out, slowing as it spreads, swelling, fading away.)
+        const drag = Math.max(0, 1 - 2.2 * dt);
+        c.vx *= drag;
+        c.vz *= drag;
         c.mesh.position.x += c.vx * dt;
         c.mesh.position.y += c.vy * dt;
         c.mesh.position.z += c.vz * dt;

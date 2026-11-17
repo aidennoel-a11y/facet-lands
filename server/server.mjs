@@ -20,6 +20,7 @@
 //     { t: 'wild', w }        the host's animals (passed on)
 //     { t: 'fx', fx }         sounds and the like, where they happen (passed on)
 //     { t: 'tohost', m }      to the host only (a guest's arrow in an animal, say)
+//     { t: 'kick', id }       the host removing a player
 //   server -> client
 //     { t: 'welcome', id, code, host, world, hour, dayLength, time, edits, sky, players: [{ id, name, colour, s }] }
 //     { t: 'joined', id, name, colour }     { t: 'left', id }    { t: 'host', id } (a new host)
@@ -167,6 +168,13 @@ function onMessage(ws, data) {
     broadcast(ws.room, { t: 'wild', w: msg.w }, ws.player);
   } else if (msg.t === 'fx' && Array.isArray(msg.fx)) {
     broadcast(ws.room, { t: 'fx', fx: msg.fx, from: ws.player.id }, ws.player);
+  } else if (msg.t === 'kick' && ws.room.host === ws.player.id && Number.isFinite(msg.id) && msg.id !== ws.player.id) {
+    // (The host removing someone: told, and shut out.)
+    const out = ws.room.players.get(msg.id);
+    if (out) {
+      send(out.ws, { t: 'error', message: 'The host removed you from this world.' });
+      setTimeout(() => out.ws.close(), 200);
+    }
   } else if (msg.t === 'tohost' && msg.m) {
     const host = ws.room.players.get(ws.room.host);
     if (host && host !== ws.player) send(host.ws, { t: 'tohost', m: msg.m, from: ws.player.id });

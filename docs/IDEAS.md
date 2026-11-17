@@ -15,6 +15,11 @@ the code is the check of what's in the game.
 | [ideas-50-biomes.md](ideas-50-biomes.md) | Biomes (50) |
 | [ideas-60-terrain.md](ideas-60-terrain.md) | Terrain and exploration (60) |
 | [ideas-100-e-polish.md](ideas-100-e-polish.md) | Settings, game feel, sound, menus, the living world, playing together, Steam (100) |
+| [ideas-100-f-explore.md](ideas-100-f-explore.md) | Exploring, getting better, new lands, fun, after the Lost Keep (100) |
+
+## Built so far from the lists
+
+- List E (Nov 2026): 1, 3, 12, 16, 20, 23, 24, 28, 31, 32, 38, 41, 49, 57, 60, 62, 70, 71, 72, 77, 78, plus everyone shown on the maps online
 
 ## Suggested in conversation (not in a list)
 

@@ -25,7 +25,11 @@ export const ACTIONS = [
   ['wave', 'Wave', 'KeyG'],
   ['emotes', 'Emotes', 'KeyT'],
   ['clearInventory', 'Clear inventory (creative)', 'Delete'],
+  ['chat', 'Chat (online)', 'Enter'],
+  ['players', 'Players online', 'Backquote'],
 ];
+/** Keys the game keeps for itself, that can't be changed (a control set on one clashes with it: see Settings). */
+export const FIXED_KEYS = [['Tab', 'Crafting'], ['KeyY', 'Journal'], ['KeyK', 'Skills'], ['KeyZ', 'Creative items'], ['KeyI', 'Inventory'], ['Escape', 'Menu']];
 
 let bindings = {};
 try {

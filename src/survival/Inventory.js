@@ -119,6 +119,7 @@ export class Inventory {
     if (s.dur <= 0) {
       this.slots[i] = null;
       this.changed();
+      this.onBreak?.(s.id); // (it snapping: see Game, a tool breaking)
       return true;
     }
     this.changed();

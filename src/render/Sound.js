@@ -36,6 +36,9 @@ function hash01(...n) {
   return ((h ^ (h >>> 12)) >>> 0) / 4294967296;
 }
 
+// The calls that aren't creatures' (see call): heard on the effects channel.
+const EFFECTS = new Set(['brush', 'chop', 'clang', 'click', 'crack', 'crackle', 'craft', 'crash', 'creak', 'crit', 'dig', 'drink', 'drip', 'eat', 'grind', 'heartbeat', 'hurt', 'ignite', 'paddle', 'pickup', 'place', 'pour', 'rumble', 'sandslide', 'scrape', 'shake', 'splash', 'bigsplash', 'stab', 'strike', 'thump', 'thunk', 'treebump', 'treefall', 'twang', 'twig', 'wave', 'whoosh', 'winch']);
+
 export class Sound {
   constructor() {
     this.enabled = true;
@@ -62,6 +65,16 @@ export class Sound {
     this.muffle.frequency.value = 20000;
     this.muffle.connect(this.master);
     this.master.connect(ctx.destination);
+    // The channels, each with its own loudness (see setLevels and Settings):
+    // the land's own sounds round you, the animals, the weather, and the menus.
+    // (Single sounds, a step or a call, are made as loud as their channel
+    // instead: see `level`.)
+    this.bus = {};
+    for (const k of ['ambience', 'animals', 'weather', 'menu']) {
+      this.bus[k] = ctx.createGain();
+      this.bus[k].gain.value = this.levels?.[k] ?? 1;
+      this.bus[k].connect(k === 'menu' ? this.master : this.muffle); // (the menus never muffled underground)
+    }
     // The open air's echo: every call and step carries a soft tail of
     // reflections off the land and the trees (a dry synthetic sound is what
     // makes a sound feel like a cartoon). A stereo impulse of noise dying
@@ -103,7 +116,7 @@ export class Sound {
     this.rainRoof = ctx.createBiquadFilter();
     this.rainRoof.type = 'lowpass';
     this.rainRoof.frequency.value = 20000;
-    this.rainGain.connect(this.rainRoof).connect(this.muffle);
+    this.rainGain.connect(this.rainRoof).connect(this.bus.weather);
     const hiss = ctx.createBufferSource();
     hiss.buffer = this.noise;
     hiss.loop = true;
@@ -198,8 +211,8 @@ export class Sound {
     gain.gain.value = 0;
     const pan = panned && ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     src.connect(filter).connect(gain);
-    if (pan) gain.connect(pan).connect(this.muffle);
-    else gain.connect(this.muffle);
+    if (pan) gain.connect(pan).connect(this.bus.ambience);
+    else gain.connect(this.bus.ambience);
     src.start(0, Math.random() * 3);
     return { gain, filter, pan };
   }
@@ -272,8 +285,8 @@ export class Sound {
     humGain.gain.value = 0;
     const humPan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     hum.connect(humGain);
-    if (humPan) humGain.connect(humPan).connect(this.muffle);
-    else humGain.connect(this.muffle);
+    if (humPan) humGain.connect(humPan).connect(this.bus.ambience);
+    else humGain.connect(this.bus.ambience);
     this.beds.buzz = { gain: humGain, filter: hum, pan: humPan };
     // Insects buzz: their hiss throbbing twenty-odd times a second.
     const lfo = ctx.createOscillator();
@@ -319,7 +332,7 @@ export class Sound {
     const peak = e.high * (0.4 + 0.6 * (e.exposure ?? 0));
     // (Gliding: the air rushing past you, louder and higher the faster you go.)
     const rush = e.rush ?? 0;
-    set(this.beds.wind, (0.075 * peak * (0.35 + e.wind) + 0.06 * e.wind * e.wind * (0.7 + 0.6 * gust)) * (0.7 + 0.3 * quiet) * lie + 0.22 * rush * rush, rush > 0.02 ? 0.25 : 0.8);
+    set(this.beds.wind, ((0.075 * peak * (0.35 + e.wind) + 0.06 * e.wind * e.wind * (0.7 + 0.6 * gust)) * (0.7 + 0.3 * quiet) * lie + 0.22 * rush * rush) * (1 + 0.9 * (this.windRise ?? 0)), rush > 0.02 ? 0.25 : 0.8); // (and rising ahead of rain on its way: see approaching)
     set(this.beds.gust, (0.03 * e.high * e.wind + 0.015 * e.wind * e.wind) * (0.4 + 1.3 * gust) * quiet * lie + 0.09 * rush * rush * (0.6 + 0.8 * gust), rush > 0.02 ? 0.25 : 0.6);
     this.beds.wind.filter.frequency.setTargetAtTime(300 + 260 * e.wind + 160 * gust + 120 * Math.sin(t * 0.13) + 1400 * rush, t, rush > 0.02 ? 0.25 : 1);
     // How much the loud sounds round you (the surf, the wind on the tops,
@@ -344,8 +357,8 @@ export class Sound {
       if (!this.streamOut) {
         this.streamOut = this.ctx.createGain();
         this.streamPan = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-        if (this.streamPan) this.streamOut.connect(this.streamPan).connect(this.muffle);
-        else this.streamOut.connect(this.muffle);
+        if (this.streamPan) this.streamOut.connect(this.streamPan).connect(this.bus.ambience);
+        else this.streamOut.connect(this.bus.ambience);
       }
       if (t > (this.next.stream ?? 0)) {
         const len = this.#clip('stream', this.streamOut, t + 0.02, 0.9 + Math.random() * 0.2, 1, { fade: 0.8 });
@@ -377,7 +390,7 @@ export class Sound {
         g.gain.value = 0;
         const pn = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
         src.connect(g);
-        (pn ? g.connect(pn) : g).connect(this.muffle);
+        (pn ? g.connect(pn) : g).connect(this.bus.ambience);
         src.start(0, Math.random() * src.buffer.duration);
         this.shore[name] = { gain: g, pan: pn };
       }
@@ -521,7 +534,7 @@ export class Sound {
     if (pan) pan.pan.value = Math.random() * 1.6 - 0.8;
     const out = ctx.createGain();
     out.gain.value = (0.02 + 0.03 * Math.random()) * Math.min(1, amount);
-    (pan ? out.connect(pan).connect(this.muffle) : out.connect(this.muffle));
+    (pan ? out.connect(pan).connect(this.bus.animals) : out.connect(this.bus.animals));
     const base = tropical > 0.5 && Math.random() < 0.5 ? 900 + Math.random() * 700 : 2200 + Math.random() * 2400;
     const notes = 2 + Math.floor(Math.random() * 5);
     for (let k = 0; k < notes; k++) {
@@ -551,7 +564,7 @@ export class Sound {
     g.gain.value = 0;
     const osc = ctx.createOscillator();
     osc.frequency.value = f;
-    osc.connect(g).connect(this.muffle);
+    osc.connect(g).connect(this.bus.animals);
     const v = (0.006 + 0.008 * Math.random()) * Math.min(1, amount);
     for (let k = 0; k < 3; k++) {
       const s = t + k * 0.05;
@@ -582,7 +595,7 @@ export class Sound {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime((0.015 + 0.02 * Math.random()) * Math.min(1, amount), t + 0.03);
     g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    osc.connect(low).connect(g).connect(this.muffle);
+    osc.connect(low).connect(g).connect(this.bus.animals);
     osc.start(t);
     osc.stop(t + len + 0.05);
     // Often a second croak straight after.
@@ -611,6 +624,7 @@ export class Sound {
   }
 
   call(kind, pan = 0, volume = 1) {
+    volume *= this.level(EFFECTS.has(kind) ? 'effects' : 'animals');
     const src = this._from?.set ? this._from : null;
     if (src) src.set = false;
     let cutoff = 20000;
@@ -1468,6 +1482,10 @@ export class Sound {
    * (running: louder, sharper).
    */
   step(surface, volume = 1) {
+    volume *= this.level('effects');
+    // (Boots on a wooden floor indoors: louder, and the room's walls ringing with them.)
+    const room = surface === 'wood' ? Math.min(1, (this.indoors ?? 0) * (0.5 + 0.5 * (this.shut ?? 0)) * 1.4) : 0;
+    volume *= 1 + 0.7 * room;
     if (!this.ctx || !this.enabled || volume < 0.02) return;
     const ctx = this.ctx;
     const t = ctx.currentTime + 0.005;
@@ -1475,7 +1493,7 @@ export class Sound {
     out.gain.value = volume * 0.6 * (0.85 + Math.random() * 0.3);
     out.connect(this.muffle);
     const send = ctx.createGain();
-    send.gain.value = 0.1;
+    send.gain.value = 0.1 + 0.35 * room;
     out.connect(send).connect(this.verb);
     const burst = (start, len, type, f, q, peak, attack = 0.004) => {
       const src = ctx.createBufferSource();
@@ -1502,6 +1520,8 @@ export class Sound {
     const grains = (start, n, spread, f, peak) => {
       for (let k = 0; k < n; k++) burst(start + Math.random() * spread, 0.012 + Math.random() * 0.012, 'bandpass', f * (0.7 + Math.random() * 0.7), 2, peak * (0.5 + Math.random() * 0.5), 0.002);
     };
+    // (The boards booming hollow under you, indoors.)
+    if (room > 0.15) thud(t, 85, 0.1, 0.07 * room);
     // Recorded footsteps where we have them (see CLIPS).
     const take = {
       grass: ['step-grass', 1, 0.3], leaves: ['step-gravel', 1.15, 0.2], dirt: ['step-dirt', 1, 0.32], rock: ['step-rock', 1, 0.3],
@@ -1590,6 +1610,101 @@ export class Sound {
     }
   }
 
+  /**
+   * Weather on its way (`coming`: { kind, in } seconds off, see
+   * Weather.coming): heard before it's here. Rain: a far hiss off to one side,
+   * growing as it nears, and the wind getting up ahead of it; a storm: that,
+   * and thunder grumbling far off now and then. Call every frame.
+   */
+  approaching(coming, dt, sheltered = false) {
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const wet = coming && (coming.kind === 'rain' || coming.kind === 'storm');
+    const k = wet ? Math.max(0, Math.min(1, 1 - coming.in / 60)) : 0;
+    if (k > 0 && !this.farRain) {
+      const src = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = this.noise;
+      src.loop = true;
+      lp.type = 'lowpass';
+      lp.frequency.value = 700;
+      lp.Q.value = 0.3;
+      g.gain.value = 0;
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      if (pan) pan.pan.value = Math.random() < 0.5 ? -0.6 : 0.6; // (coming from one side)
+      src.connect(lp).connect(g);
+      (pan ? g.connect(pan) : g).connect(this.bus.weather);
+      src.start();
+      this.farRain = { src, lp, g };
+    }
+    this.windRise = k * (coming?.kind === 'storm' ? 1 : 0.55) * (sheltered ? 0.3 : 1);
+    if (this.farRain) {
+      this.farRain.g.gain.setTargetAtTime(0.07 * k * k * (sheltered ? 0.35 : 1), t, 1.2);
+      this.farRain.lp.frequency.setTargetAtTime(500 + 1400 * k, t, 1.2); // (nearer, brighter)
+      if (k === 0 && this.farRain.g.gain.value < 0.001) {
+        this.farRain.src.stop();
+        this.farRain = null;
+      }
+    }
+    // (A storm: thunder far off, a grumble every half minute or so as it comes.)
+    if (coming?.kind === 'storm' && k > 0.15 && Math.random() < dt * 0.035 * (0.5 + k)) this.thunder(5200 - 2400 * k + Math.random() * 1200, Math.random() * 2 - 1);
+  }
+
+  /** How loud a channel is set (see Settings): 'effects', 'animals', 'weather', 'ambience', 'menu'. */
+  level(channel) {
+    return this.levels?.[channel] ?? 1;
+  }
+
+  /** The channels' loudness, each 0..1.5 (see Settings). */
+  setLevels(levels) {
+    this.levels = { ...levels };
+    if (!this.bus) return;
+    for (const [k, g] of Object.entries(this.bus)) g.gain.setTargetAtTime(this.level(k), this.ctx.currentTime, 0.05);
+  }
+
+  /**
+   * A menu's sound: 'click' (a button), 'hover' (over one, very soft),
+   * 'page' (a page of the journal or a menu turned), 'open', 'close'.
+   * Wooden and papery, like the rest of the world's things.
+   */
+  ui(kind) {
+    if (!this.ctx || !this.enabled || this.level('menu') <= 0.01) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.005, out = this.bus.menu;
+    const knock = (at, f, len, peak) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(), bp = ctx.createBiquadFilter();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(f, at);
+      o.frequency.exponentialRampToValueAtTime(f * 0.6, at + len);
+      bp.type = 'bandpass';
+      bp.frequency.value = f * 1.5;
+      bp.Q.value = 1.2;
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(peak, at + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+      o.connect(bp).connect(g).connect(out);
+      o.start(at);
+      o.stop(at + len + 0.02);
+    };
+    const rustle = (at, len, peak, f = 3200) => {
+      const src = ctx.createBufferSource(), g = ctx.createGain(), bp = ctx.createBiquadFilter();
+      src.buffer = this.noise;
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(f, at);
+      bp.frequency.exponentialRampToValueAtTime(f * 0.5, at + len);
+      bp.Q.value = 0.7;
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(peak, at + len * 0.3);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+      src.connect(bp).connect(g).connect(out);
+      src.start(at, Math.random() * 3);
+      src.stop(at + len + 0.02);
+    };
+    if (kind === 'click') knock(t, 520, 0.07, 0.16);
+    else if (kind === 'hover') knock(t, 900, 0.03, 0.025);
+    else if (kind === 'page') rustle(t, 0.22, 0.09);
+    else if (kind === 'open') (knock(t, 330, 0.09, 0.12), rustle(t + 0.02, 0.16, 0.05, 2400));
+    else if (kind === 'close') (knock(t, 260, 0.08, 0.1), rustle(t, 0.12, 0.04, 1800));
+  }
+
   setEnabled(on) {
     this.enabled = on;
     if (this.master) this.master.gain.setTargetAtTime(on ? this.volume ?? 1 : 0, this.ctx.currentTime, 0.1);
@@ -1602,7 +1717,7 @@ export class Sound {
     const t = this.ctx.currentTime;
     this.indoors = indoors;
     this.shut = shut;
-    this.rainGain.gain.setTargetAtTime(rain * 0.16 * (1 - 0.55 * indoors), t, 0.5);
+    this.rainGain.gain.setTargetAtTime(rain * 0.16 * (1 - 0.55 * indoors), t, 0.5); // (its channel's loudness: see bus)
     this.rainRoof.frequency.setTargetAtTime(indoors > 0.5 ? 700 + 900 * (1 - shut) : 20000, t, 0.4);
     // (The drumming on the roof: a soft, low patter, close over your head.)
     if (this.beds?.roof) {
@@ -1621,7 +1736,7 @@ export class Sound {
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const near = Math.max(0, Math.min(1, 1 - (distance - 250) / 1300)); // 1 close .. 0 far
-    const faint = Math.min(1, 2400 / Math.max(2400, distance)); // (and quieter still, well beyond)
+    const faint = Math.min(1, 2400 / Math.max(2400, distance)) * this.level('weather'); // (and quieter still, well beyond)
     const out = ctx.createGain();
     out.gain.value = faint;
     const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
