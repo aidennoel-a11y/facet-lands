@@ -5,7 +5,7 @@ import { boulderMake, boulderRing, boulderRough, boulderWobble } from '../Terrai
 const TILE = 600; // (m: the boulders are drawn in tiles this size)
 const REACH = 2600; // (m: drawn this far round you; they're big, and seen from far off)
 // (Their faces about as fine as the land's own, whatever their size.)
-const EDGE = 2.6;
+const EDGE = 1.7;
 const STONE = {
   bristle: [0xe6e2d8, 0xd8d4c8, 0xeeebe4, 0xccc8bc],
   granite: [0xa8a0a2, 0x9a9294, 0xb2a8a6, 0x8e878c, 0xa49890], // (the Black Hills' own grey, pink-tinged granite)
@@ -101,11 +101,14 @@ function boulderMesh(b, pos, col) {
   const palette = STONE[b.kind] ?? STONE.bristle;
   const pts = [];
   const m = boulderMake(b);
-  const SIDES = Math.max(20, Math.min(120, Math.round((Math.PI * (b.a + b.b)) / EDGE)));
-  const RINGS = Math.max(10, Math.min(60, Math.round((Math.PI * b.c * 0.95) / EDGE)));
+  const SIDES = Math.max(24, Math.min(170, Math.round((Math.PI * (b.a + b.b)) / EDGE)));
+  // (Rings spaced evenly round its curve, not evenly up it: so its broad,
+  // rounded top gets as many, as small, faces as its sides, never a few
+  // great flat ones.)
+  const RINGS = Math.max(14, Math.min(90, Math.round((Math.PI * (0.5 * Math.max(b.a, b.b) + 0.6 * b.c)) / EDGE)));
   for (let r = 0; r <= RINGS; r++) {
     // (From the bottom, s = -1, to the top, s = 1; its top planed flat if it's one of those.)
-    const s = Math.min(m.flat, -1 + (2 * r) / RINGS);
+    const s = Math.min(m.flat, Math.sin(-Math.PI / 2 + (Math.PI * r) / RINGS));
     const q = boulderRing(b, s);
     const y = b.y + (s < 0 ? 0.85 : 1) * s * b.c;
     const ring = [];
@@ -113,7 +116,7 @@ function boulderMesh(b, pos, col) {
       const th = (k / SIDES) * Math.PI * 2, cx = Math.cos(th), cz = Math.sin(th);
       const n = Math.pow(Math.pow(Math.abs(cx), m.p) + Math.pow(Math.abs(cz), m.p), 1 / m.p);
       // (A little roughness on the faces.)
-      const lump = 1 + (hash2(k * 7 + r * 131, Math.round(b.seed * 10), 0xb0) - 0.5) * 0.06;
+      const lump = 1 + (hash2(k * 7 + r * 131, Math.round(b.seed * 10), 0xb0) - 0.5) * 0.07;
       const w = boulderWobble(b, th) * (s >= m.flat ? boulderRing(b, m.flat) : q) * lump;
       const u = (cx / n) * w * b.a, v = (cz / n) * w * b.b;
       // (Then roughened, as the land is: pushed out or in along its face.)

@@ -159,7 +159,10 @@ self.onmessage = (event) => {
     if (out.flowers) transfer.push(out.flowers.buffer);
   }
   if (wantReeds) {
-    out.logs = placeLogs(g, config, cx, cz, groundHeightAt);
+    // (Clear of the boulders, this chunk's and its neighbours'.)
+    const stones = [];
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) for (const c of rocksAt(cx + dx, cz + dz, config)) if (c.boulder) stones.push(c.wx, c.wz, Math.max(c.sx, c.sz) * 0.85);
+    out.logs = placeLogs(g, config, cx, cz, groundHeightAt, stones);
     if (out.logs) transfer.push(out.logs.pieces.buffer);
     out.corals = placeCorals(g, config, cx, cz, groundHeightAt, heights.gridY);
     if (out.corals) transfer.push(out.corals.buffer);

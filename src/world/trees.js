@@ -7,6 +7,7 @@ import {
   CylinderGeometry,
   DodecahedronGeometry,
   IcosahedronGeometry,
+  OctahedronGeometry,
   Quaternion,
   Vector3,
 } from 'three';
@@ -924,31 +925,54 @@ function bamboo() {
  * and on its stouter side) and pale, shaggy strands of beard moss hanging
  * from its limbs. For the temperate rainforest's dripping giants.
  */
-function mossOn(out, rand, { r0, r1, height, upTo, limbs = [], seed }) {
+function mossOn(out, rand, { r0, r1, height, upTo, limbs = [], seed, beards = out }) {
   const MOSS = 0x4f7a2a, MOSS_TOP = 0x7aa03a, BEARD = 0x9aa864, BEARD_TIP = 0xc4c890;
   const radius = (y) => r0 + (r1 - r0) * (y / height);
+  const sc = Math.min(1, 0.35 + r0 * 0.7); // (smaller on a slim trunk)
   // (Patches hugging the bark: set into the trunk, only their outer face showing, long up and down.)
-  for (let k = 0; k < 18; k++) {
+  for (let k = 0, n = Math.round(14 * sc); k < n; k++) {
     const y = Math.pow(rand(), 1.5) * upTo, a = rand() * Math.PI * 2, r = radius(y) * 0.86;
-    const size = 0.16 + rand() * 0.2 * (1 - y / upTo) + 0.06;
-    const g = new IcosahedronGeometry(size, 0);
+    const size = (0.16 + rand() * 0.2 * (1 - y / upTo) + 0.06) * sc;
+    const g = new OctahedronGeometry(size, 0);
     g.scale(0.55, 2.4, 1.15); // (thin out from the bark, long along it)
     g.rotateY(-a);
     out.push(part(g, 0x3f5e26, 0x5a7e32, { x: Math.cos(a) * r, y: y + 0.25, z: Math.sin(a) * r, lump: 0.2, seed: seed + k }));
   }
   // (A collar of moss round the foot, over the roots.)
-  for (let k = 0; k < 7; k++) {
-    const a = (k / 7) * Math.PI * 2 + rand() * 0.4, r = r0 * (1.2 + rand() * 0.3);
-    out.push(part(new IcosahedronGeometry(0.45 + rand() * 0.25, 0), 0x3f6a24, MOSS, { x: Math.cos(a) * r, y: 0.1, z: Math.sin(a) * r, sy: 0.45, lump: 0.25, seed: seed + 40 + k }));
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI * 2 + rand() * 0.4, r = r0 * (1.2 + rand() * 0.3);
+    out.push(part(new IcosahedronGeometry((0.45 + rand() * 0.25) * sc, 0), 0x3f6a24, MOSS, { x: Math.cos(a) * r, y: 0.1, z: Math.sin(a) * r, sy: 0.45, lump: 0.25, seed: seed + 40 + k }));
   }
   // Beard moss streaming down off the limbs.
   for (const [lx, ly, lz] of limbs) {
     const n = 2 + Math.floor(rand() * 3);
     for (let k = 0; k < n; k++) {
       const len = 0.8 + rand() * 1.4, jx = (rand() - 0.5) * 0.5, jz = (rand() - 0.5) * 0.5;
-      out.push(part(new ConeGeometry(0.12 + rand() * 0.08, len, 4, 1), BEARD_TIP, BEARD, { x: lx + jx, y: ly - len / 2, z: lz + jz, rx: Math.PI, seed: seed + 80 + k }));
+      beards.push(part(new ConeGeometry(0.12 + rand() * 0.08, len, 3, 2), BEARD_TIP, BEARD, { x: lx + jx, y: ly - len / 2, z: lz + jz, rx: Math.PI, seed: seed + 80 + k }));
     }
   }
+}
+
+/**
+ * The rainforest's trees in the wind (see addWind's aDangle): the great
+ * trunks and limbs stiff, only leaning a little; the foliage fluttering on
+ * them; the beard moss swinging free from where it hangs, the more the
+ * further down each strand.
+ */
+const FLUTTER = 0.5;
+function rainforestSway(wood, crown, beards) {
+  const fill = (g, v) => g.setAttribute('aDangle', new BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
+  for (const g of wood) fill(g, -0.6);
+  for (const g of crown) fill(g, FLUTTER);
+  for (const g of beards) {
+    const p = g.attributes.position;
+    let top = -Infinity, bottom = Infinity;
+    for (let k = 0; k < p.count; k++) (top = Math.max(top, p.getY(k))), (bottom = Math.min(bottom, p.getY(k)));
+    const d = new Float32Array(p.count);
+    for (let k = 0; k < p.count; k++) d[k] = Math.max(0.03, Math.min(1, ((top - p.getY(k)) / Math.max(0.3, top - bottom)) * 0.95));
+    g.setAttribute('aDangle', new BufferAttribute(d, 1));
+  }
+  return withCrown([...wood, ...beards], crown);
 }
 
 // Sitka spruce: a giant of the rainforest coast, some 34 m, its straight
@@ -973,14 +997,15 @@ function sitkaSpruce() {
     wood.push(limb([0, y, 0], end, 0.13, 0.05, barkTop, bark, 4120 + k));
     if (k < 6) limbs.push([end[0] * 0.7, y - 0.6, end[2] * 0.7]);
   }
-  mossOn(wood, rand, { r0: 1.0, r1: 0.42, height: 24, upTo: 7, limbs, seed: 4200 });
+  const beards = [];
+  mossOn(wood, rand, { r0: 1.0, r1: 0.42, height: 24, upTo: 7, limbs, seed: 4200, beards });
   const crown = [];
   // (Ragged, drooping tiers: each a wide, flattish cone, a little off true, the gaps between showing the limbs.)
   const tiers = [[3.6, 3.6, 13], [3.4, 3.4, 15.4], [3.1, 3.3, 17.8], [2.8, 3.2, 20.2], [2.4, 3.1, 22.6], [2.0, 3.0, 25], [1.5, 2.8, 27.3], [1.0, 2.6, 29.4], [0.55, 2.4, 31.3]];
   tiers.forEach(([r, h, y], i) => {
     crown.push(part(new ConeGeometry(r, h, 8, 1), 0x1c3f34, 0x2f5e4a, { x: (rand() - 0.5) * 0.4, y, z: (rand() - 0.5) * 0.4, lump: 0.22, seed: 4300 + i }));
   });
-  return withCrown(wood, crown);
+  return rainforestSway(wood, crown, beards);
 }
 
 // Western red cedar: a broad, fluted, buttressed red trunk, mossy at the
@@ -990,7 +1015,7 @@ function cedar() {
   const rand = mulberry32(4401);
   const bark = 0x7e4630, barkTop = 0x9a5a3e;
   // (Fluted: the trunk's sides rippled into ridges, and flared wide at the foot.)
-  const trunk = new CylinderGeometry(0.4, 1.1, 20, 14, 6);
+  const trunk = new CylinderGeometry(0.4, 1.1, 20, 10, 5);
   const p = trunk.attributes.position;
   for (let k = 0; k < p.count; k++) {
     const x = p.getX(k), z = p.getZ(k), y = p.getY(k) + 10;
@@ -1002,13 +1027,13 @@ function cedar() {
   const wood = [part(trunk, bark, barkTop, { y: 10, lump: 0.04, seed: 4400 })];
   const limbs = [], crown = [];
   // The boughs: sweeping out and down, then up at the tip (J-shaped), a lacy flat spray on each.
-  for (let k = 0; k < 16; k++) {
-    const a = k * 2.4 + rand() * 0.4, y = 7 + k * 1.15, out = 4.2 - k * 0.2;
+  for (let k = 0; k < 12; k++) {
+    const a = k * 2.4 + rand() * 0.4, y = 7 + k * 1.5, out = 4.2 - k * 0.26;
     const mid = [Math.cos(a) * out * 0.6, y - 1.4, Math.sin(a) * out * 0.6], tip = [Math.cos(a) * out, y - 1.1, Math.sin(a) * out];
     wood.push(limb([0, y, 0], mid, 0.12, 0.07, barkTop, bark, 4420 + k));
     wood.push(limb(mid, tip, 0.07, 0.03, bark, barkTop, 4460 + k));
     if (k < 8) limbs.push([mid[0], mid[1], mid[2]]);
-    const spray = new DodecahedronGeometry(1, 0);
+    const spray = new IcosahedronGeometry(1, 0);
     spray.scale(out * 0.55, 0.32, 1.1);
     spray.rotateY(-a);
     spray.rotateZ(0.12);
@@ -1017,8 +1042,72 @@ function cedar() {
   // (Filling in round the trunk, and its drooping leader.)
   for (const [r, h, y] of [[2.6, 6, 12], [2.0, 6, 17.5], [1.3, 5.5, 22.5]]) crown.push(part(new ConeGeometry(r, h, 7, 1), 0x264a24, 0x3f6a34, { y, lump: 0.2, seed: 4600 + y }));
   crown.push(part(new ConeGeometry(0.35, 3, 5, 1), 0x2f5a2c, 0x46743a, { x: 0.35, y: 26.2, rz: -0.35, seed: 4620 }));
-  mossOn(wood, rand, { r0: 1.1, r1: 0.4, height: 20, upTo: 6, limbs, seed: 4700 });
-  return withCrown(wood, crown);
+  const beards = [];
+  mossOn(wood, rand, { r0: 1.1, r1: 0.4, height: 20, upTo: 6, limbs, seed: 4700, beards });
+  return rainforestSway(wood, crown, beards);
+}
+
+// Western hemlock: the rainforest's slender tree, some 20 m on a thin, dark
+// trunk; its sprays soft and feathery in drooping layers, its leader
+// nodding over at the top.
+function hemlock() {
+  const rand = mulberry32(4801);
+  const bark = 0x4a3a30, barkTop = 0x5e4a3c;
+  const trunk = new CylinderGeometry(0.1, 0.36, 19, 7, 5);
+  const p = trunk.attributes.position;
+  for (let k = 0; k < p.count; k++) {
+    const y = p.getY(k) + 9.5;
+    if (y > 2) continue;
+    const flare = 1 + 0.35 * Math.pow(1 - y / 2, 2);
+    p.setXYZ(k, p.getX(k) * flare, p.getY(k), p.getZ(k) * flare);
+  }
+  const wood = [part(trunk, bark, barkTop, { y: 9.5, lump: 0.04, seed: 4800 })];
+  const crown = [], limbs = [];
+  // (Layer on layer of drooping sprays: flattish, lopsided, each a little lower at its tip.)
+  for (let k = 0; k < 13; k++) {
+    const y = 5 + k * 1.05, out = 2.5 * (1 - k / 15) + 0.4, a = k * 2.4 + rand() * 0.6;
+    const tip = [Math.cos(a) * out, y - 0.7, Math.sin(a) * out];
+    wood.push(limb([0, y, 0], tip, 0.06, 0.025, barkTop, bark, 4810 + k));
+    if (k < 5) limbs.push([tip[0] * 0.6, y - 0.4, tip[2] * 0.6]);
+    const spray = new IcosahedronGeometry(1, 0);
+    spray.scale(out * 0.6, 0.28, 0.9);
+    spray.rotateY(-a);
+    spray.rotateZ(0.25);
+    crown.push(part(spray, 0x2a5232, 0x3e6e44, { x: Math.cos(a) * out * 0.55, y: y - 0.5, z: Math.sin(a) * out * 0.55, lump: 0.22, seed: 4830 + k }));
+  }
+  for (const [r, h, y] of [[1.9, 5, 8], [1.5, 5, 12], [1.0, 4.5, 15.5]]) crown.push(part(new ConeGeometry(r, h, 7, 1), 0x264c2e, 0x3a6640, { y, lump: 0.22, seed: 4860 + y }));
+  crown.push(part(new ConeGeometry(0.28, 2.6, 5, 1), 0x2e5836, 0x44744a, { x: 0.4, y: 18.6, rz: -0.55, seed: 4870 })); // (its nodding leader)
+  const beards = [];
+  mossOn(wood, rand, { r0: 0.4, r1: 0.1, height: 19, upTo: 3.5, limbs, seed: 4880, beards });
+  return rainforestSway(wood, crown, beards);
+}
+
+// Red alder: a slim, pale, mottled trunk (grey with white lichen), forking
+// into a few thin limbs under a light, open, rounded crown; some 13 m, the
+// broad-leaved tree of the rainforest's streams and clearings.
+function alder() {
+  const rand = mulberry32(4901);
+  const bark = 0x8e8c84, barkTop = 0xb4b2a8;
+  const wood = [part(new CylinderGeometry(0.13, 0.24, 8, 7, 3), bark, barkTop, { y: 4, lump: 0.05, seed: 4900 })];
+  // (White lichen blotches on the bark.)
+  for (let k = 0; k < 10; k++) {
+    const y = 0.6 + rand() * 6.5, a = rand() * Math.PI * 2, r = 0.24 - (y / 8) * 0.1;
+    const g = new IcosahedronGeometry(0.09 + rand() * 0.07, 0);
+    g.scale(0.4, 1.6, 1);
+    g.rotateY(-a);
+    wood.push(part(g, 0xdedcd2, 0xeceae2, { x: Math.cos(a) * r * 0.85, y, z: Math.sin(a) * r * 0.85, seed: 4905 + k }));
+  }
+  const crown = [];
+  for (let k = 0; k < 4; k++) {
+    const a = k * 1.7 + rand() * 0.5, tip = [Math.cos(a) * 1.8, 11 + rand() * 1.5, Math.sin(a) * 1.8];
+    wood.push(limb([0, 7.4, 0], tip, 0.09, 0.04, bark, barkTop, 4920 + k));
+    wood[wood.length - 1].userData.bough = true;
+  }
+  const blobs = [[0, 11.2, 0, 2.4], [1.5, 10.4, 0.6, 1.8], [-1.2, 10.7, -0.9, 1.9], [0.4, 12.4, -0.5, 1.7], [-0.6, 9.6, 1.2, 1.6], [1.0, 9.4, -1.4, 1.5]];
+  blobs.forEach(([x, y, z, r], i) => crown.push(part(new IcosahedronGeometry(r, 0), 0x5c8a3e, 0x7aa64e, { x, y, z, sy: 0.85, lump: 0.2, seed: 4940 + i })));
+  const beards = [];
+  mossOn(wood, rand, { r0: 0.24, r1: 0.13, height: 8, upTo: 2.5, limbs: [], seed: 4960, beards });
+  return rainforestSway(wood, crown, beards);
 }
 
 function redwood() {
@@ -1747,6 +1836,8 @@ export const TREE_GEOMETRIES = {
   redwood: redwood(),
   sitkaSpruce: sitkaSpruce(),
   cedar: cedar(),
+  hemlock: hemlock(),
+  alder: alder(),
   appleTree: appleTree(),
   monsoonTree: monsoonTree(),
   monsoonSal: monsoonSal(),
@@ -1784,7 +1875,7 @@ const SEASONAL = {
   // (Below nothing: the monsoon forest's, drying yellow through the dry months: see Seasons.seasonalTrees.)
   monsoonTree: [-1, 0, 0], monsoonSal: [-1, 0, 0], monsoonFig: [-0.6, 0, 0], monsoonFlame: [-1, 0, 0], monsoonMango: [-0.4, 0, 0], // (green the year round here: its seasons are the ground's, see Seasons)
   redwood: [0, 1, 0],
-  sitkaSpruce: [0, 1, 0], cedar: [0, 1, 0],
+  sitkaSpruce: [0, 1, 0], cedar: [0, 1, 0], hemlock: [0, 1, 0], alder: [1, 1, 0],
   spinifex: [0, 0, 0], termiteMound: [0, 0, 0], ghostGum: [0, 0, 0], jacaranda: [0, 0, 0], bristlecone: [0, 1, 0], pricklyPear: [0, 0, 0], bloomCactus: [0, 0, 0], cliffVines: [0, 0, 0], limberPine: [0, 1, 0], juniper: [0, 1, 0], deadBristlecone: [0, 1, 0],
   cherryBlossom: [1, 1, 1], // (its blossom thickest in spring; red-gold in autumn; bare in winter)
   cherryRound: [1, 1, 1],
@@ -1793,7 +1884,7 @@ const SEASONAL = {
 // a kind turns the same: birches a vibrant yellow, maples scarlet, oaks russet...
 export const FALL = {
   birch: [0.98, 0.78, 0.04], silverBirch: [0.95, 0.72, 0.06], aspen: [1.0, 0.62, 0.02], poplar: [0.86, 0.8, 0.12],
-  maple: [0.82, 0.07, 0.03], broadleaf: [0.95, 0.4, 0.03], oak: [0.5, 0.2, 0.05], larch: [0.9, 0.55, 0.06],
+  alder: [0.62, 0.55, 0.12], maple: [0.82, 0.07, 0.03], broadleaf: [0.95, 0.4, 0.03], oak: [0.5, 0.2, 0.05], larch: [0.9, 0.55, 0.06],
   cypress: [0.62, 0.22, 0.06], swampWillow: [0.72, 0.68, 0.14], weepingWillow: [0.85, 0.78, 0.22],
   bush: [0.68, 0.08, 0.05], appleTree: [0.85, 0.5, 0.08], raspberryBush: [0.45, 0.05, 0.1], blueberryBush: [0.75, 0.06, 0.12],
   cherryBlossom: [0.85, 0.25, 0.08],
@@ -1851,6 +1942,8 @@ export const LEAF_GEOMETRIES = {
   pine: leaves(40, [0.35, 0.6], [0x3f8a4a, 0x4f9c57, 0x5fae62, 0x376f3f], crown('pine'), 11),
   spruce: leaves(40, [0.3, 0.5], [0x2c5e44, 0x3a7050, 0x478260], crown('spruce'), 14),
   sitkaSpruce: leaves(90, [0.4, 0.75], [0x24503e, 0x316250, 0x3e7460], crown('sitkaSpruce'), 44),
+  hemlock: leaves(80, [0.3, 0.55], [0x2c5a36, 0x3a6c42, 0x4a7e50], crown('hemlock'), 46),
+  alder: leaves(60, [0.35, 0.65], [0x6a9a46, 0x7eae52, 0x92c060, 0x5c8a3e], crown('alder'), 47),
   cedar: leaves(110, [0.4, 0.8], [0x32602c, 0x40723a, 0x548a46, 0x2a5226], crown('cedar'), 45),
   krummholz: leaves(16, [0.2, 0.35], [0x2c5e44, 0x3a7050, 0x478260], crown('krummholz'), 15),
   broadleaf: leaves(55, [0.45, 0.8], [0x6aac4a, 0x7fbe55, 0x93cc62, 0x5a9a42, 0xa6d26c], crown('broadleaf'), 12),
@@ -1883,4 +1976,9 @@ export const LEAF_GEOMETRIES = {
   ghostGum: leaves(24, [0.3, 0.5], [0x6a7a48, 0x82925a, 0x5a6a3e], crown('ghostGum'), 45),
   bristlecone: leaves(18, [0.25, 0.4], [0x2a4a30, 0x3a5a3a, 0x446a44], crown('bristlecone'), 46),
 };
+// (The rainforest's: their leaves flutter with the foliage they're set on, the tree itself stiff; see rainforestSway.)
+for (const type of ['sitkaSpruce', 'cedar', 'hemlock', 'alder']) {
+  const g = LEAF_GEOMETRIES[type];
+  if (g) g.setAttribute('aDangle', new BufferAttribute(new Float32Array(g.attributes.position.count).fill(FLUTTER), 1));
+}
 markSeasons(LEAF_GEOMETRIES);

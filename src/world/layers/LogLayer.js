@@ -85,6 +85,37 @@ export function createLogLayer(config) {
 
     reuseKey: ({ lod }) => (lod > 1 ? 'none' : 'near'),
 
+    /**
+     * The highest log at (x, z) (world): { bottom, top } of it there, or
+     * null. (A trunk lying up across a boulder has room under it.)
+     */
+    spanAt(x, z) {
+      const size = config.chunkSize;
+      const cx = Math.floor(x / size), cz = Math.floor(z / size);
+      let best = null;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const list = solids.get(`${cx + dx},${cz + dz}`);
+        if (!list) continue;
+        for (let k = 0; k < list.length; k += 8) {
+          const ox = x - list[k + 1], oz = z - list[k + 3], len = list[k + 4], r = list[k + 5];
+          if (Math.abs(ox) > len + r || Math.abs(oz) > len + r) continue;
+          let top, bottom;
+          if (list[k] === 1) {
+            if (ox * ox + oz * oz >= r * r * 0.7) continue;
+            (top = list[k + 2]), (bottom = -Infinity);
+          } else {
+            const a = list[k + 6];
+            const along = ox * Math.cos(a) - oz * Math.sin(a), across = ox * Math.sin(a) + oz * Math.cos(a);
+            if (Math.abs(along) > len / 2 || Math.abs(across) >= r) continue;
+            const mid = list[k + 2] + 0.9 * r + along * list[k + 7], h = Math.sqrt(r * r - across * across);
+            (top = mid + h), (bottom = mid - h);
+          }
+          if (!best || top > best.top) best = { top, bottom };
+        }
+      }
+      return best;
+    },
+
     /** The top of any log or stump at (x, z) (world), or -Infinity. */
     surfaceAt(x, z) {
       const size = config.chunkSize;

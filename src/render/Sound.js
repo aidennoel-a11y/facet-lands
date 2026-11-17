@@ -315,7 +315,10 @@ export class Sound {
     if (!this.ctx || !this.beds) return;
     this.env = env;
     const t = this.ctx.currentTime;
-    const e = env, quiet = 1 - 0.6 * e.snowy; // snow deadens everything
+    // (Up a jungle mountain it sounds just as the jungle below does: the
+    // height counts for nothing there, nor the open ridge's wind.)
+    const jl = Math.min(1, Math.max(0, (env.jungle - 0.3) / 0.4));
+    const e = jl > 0 ? { ...env, high: env.high * (1 - jl), exposure: (env.exposure ?? 0) * (1 - jl) } : env, quiet = 1 - 0.6 * e.snowy; // snow deadens everything
     // (No bugs or frogs up on the mountains, in the snow or the cold.)
     const lowland = (1 - Math.min(1, Math.max(0, (e.high - 0.25) / 0.4))) * (1 - e.snowy);
     // (The jungle's life goes on up its mountains: not hushed by the height there.)

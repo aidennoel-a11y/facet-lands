@@ -1,4 +1,5 @@
 import { hash2 } from '../noise/random.js';
+import { leanSites } from './leanLogs.js';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -83,6 +84,16 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
     }
     return false;
   };
+  let leans = null;
+  const underLean = (x, z) => {
+    leans ??= leanSites(generator, config, cx, cz);
+    for (const b of leans) {
+      const dx = b.lx - b.ux, dz = b.lz - b.uz, L2 = dx * dx + dz * dz;
+      const t = Math.max(0, Math.min(1, ((x - b.ux) * dx + (z - b.uz) * dz) / L2));
+      if (Math.hypot(b.ux + dx * t - x, b.uz + dz * t - z) < b.r + 1.8) return true;
+    }
+    return false;
+  };
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
       const gi = cx * cells + i;
@@ -162,6 +173,8 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       if (biome.id === 'temperate' && hash2(gi, gj, seed + 16) < smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) continue;
       if (crowded(gi, gj, likely)) continue;
       if (onRock(wx, wz, i, j)) continue;
+      // (Nor up through a great fallen trunk lying across a boulder.)
+      if (biome.id === 'rainforest' && underLean(wx, wz)) continue;
 
       const ground = groundHeightAt(lx, lz);
       // (In a wetland trees grow down to the water, and dead ones stand
@@ -316,7 +329,7 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
   'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm', 'bamboo', 'jungleCanopy',
   'appleTree', 'raspberryBush', 'blueberryBush', 'redwood', 'cherryBlossom', 'cherryRound', 'monsoonTree', 'monsoonSal', 'monsoonFig', 'monsoonFlame', 'monsoonMango', 'krummholz',
-  'spinifex', 'termiteMound', 'ghostGum', 'jacaranda', 'bristlecone', 'pricklyPear', 'bloomCactus', 'cliffVines', 'limberPine', 'juniper', 'deadBristlecone', 'sitkaSpruce', 'cedar'];
+  'spinifex', 'termiteMound', 'ghostGum', 'jacaranda', 'bristlecone', 'pricklyPear', 'bloomCactus', 'cliffVines', 'limberPine', 'juniper', 'deadBristlecone', 'sitkaSpruce', 'cedar', 'hemlock', 'alder'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a

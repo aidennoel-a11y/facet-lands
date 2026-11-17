@@ -1,4 +1,5 @@
 import { hash2 } from '../noise/random.js';
+import { leanSites } from './leanLogs.js';
 
 // Where the small things go on a chunk (wildflowers in the meadows, corals
 // on the reefs, the surf bursting on the rocks): worked out by the chunk
@@ -264,11 +265,35 @@ function smoothstep(a, b, x) {
  * tilt, scale x, y, z] for each, flat; `solid` as LogLayer keeps them, to
  * be walked on. Null if there are none.
  */
-export function placeLogs(generator, config, cx, cz, groundHeightAt) {
+export function placeLogs(generator, config, cx, cz, groundHeightAt, boulders = null) {
   const size = config.chunkSize, sea = config.seaLevel;
   const x0 = cx * size, z0 = cz * size;
   const G = 9, n = Math.round(size / G), seed = generator.seed ^ 0x106;
   const pieces = [], solid = [];
+  // (Never through a boulder, nor a great boulder: a log from (ax, az) to
+  // (bx, bz) of radius r, clear of them all, but for the one at `skip`.)
+  const clear = (ax, az, bx, bz, r, skip = null) => {
+    const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+    if (boulders) for (let k = 0; k < boulders.length; k += 3) {
+      const px = boulders[k], pz = boulders[k + 1];
+      if (skip && Math.abs(px - skip[0]) < 0.6 && Math.abs(pz - skip[1]) < 0.6) continue;
+      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / L2));
+      if (Math.hypot(ax + dx * t - px, az + dz * t - pz) < boulders[k + 2] + r * 0.8) return false;
+    }
+    for (let k = 0; k <= 4; k++) if (generator.greatBoulderAt?.(ax + (dx * k) / 4, az + (dz * k) / 4)) return false;
+    return true;
+  };
+  // The rainforest's great trunks lying across boulders, one end up on the rock (see leanLogs).
+  for (const b of leanSites(generator, config, cx, cz)) {
+    if (!clear(b.ux, b.uz, b.lx, b.lz, b.r, [b.bx, b.bz])) continue;
+    const top = generator.getHeight(b.bx, b.bz) + b.sy * 0.55; // (the rock's crown, the log settled a little into it)
+    const cU = top + b.r * 0.7, cL = generator.getHeight(b.lx, b.lz) + b.r * 0.55; // (its middle line, at each end)
+    const len = Math.hypot(b.lx - b.ux, b.lz - b.uz);
+    const dx = (b.lx - b.ux) / len, dz = (b.lz - b.uz) / len, a = Math.atan2(-dz, dx); // (its far end, along +a, the foot)
+    const mx = (b.ux + b.lx) / 2, mz = (b.uz + b.lz) / 2, Y = (cU + cL) / 2 - 0.9 * b.r;
+    pieces.push(0, mx - x0, Y, mz - z0, a, Math.atan2(cL - cU, len), len, b.r * 2, b.r * 2);
+    solid.push(0, mx, Y, mz, len, b.r, a, (cL - cU) / len);
+  }
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const gi = cx * n + i, gj = cz * n + j;
@@ -292,6 +317,7 @@ export function placeLogs(generator, config, cx, cz, groundHeightAt) {
       const a = hash2(gi, gj, seed + 4) * Math.PI * 2;
       if (isStump) {
         const r = 0.35 + 0.25 * hash2(gi, gj, seed + 5);
+        if (!clear(wx, wz, wx, wz, r)) continue;
         const sy = (0.6 + 0.8 * hash2(gi, gj, seed + 7)) * r / 0.5;
         pieces.push(1, lx, y - 0.1, lz, a, 0, r / 0.5, sy, r / 0.5);
         solid.push(1, wx, y - 0.1 + 0.8 * sy, wz, 0, r, 0, 0);
@@ -299,13 +325,16 @@ export function placeLogs(generator, config, cx, cz, groundHeightAt) {
       }
       // A log lies along the ground, following its slope.
       const giant = 1 + 1.3 * (w.rainforest ?? 0); // (the rainforest's fallen trunks: long and thick)
-      const len = (3 + 4.5 * hash2(gi, gj, seed + 5)) * giant, r = (0.22 + 0.2 * hash2(gi, gj, seed + 6)) * giant;
+      // (And now and then a colossal one, a fallen giant as big as the trees standing round it.)
+      const colossal = (w.rainforest ?? 0) > 0.5 && hash2(gi, gj, seed + 9) < 0.3;
+      const len = colossal ? 16 + 10 * hash2(gi, gj, seed + 5) : (3 + 4.5 * hash2(gi, gj, seed + 5)) * giant, r = colossal ? 0.75 + 0.4 * hash2(gi, gj, seed + 6) : (0.22 + 0.2 * hash2(gi, gj, seed + 6)) * giant;
       const ca = Math.cos(a), sa = Math.sin(a);
       const ex = lx + ca * len * 0.5, ez = lz - sa * len * 0.5, bx = lx - ca * len * 0.5, bz = lz + sa * len * 0.5;
       const inside = (x, z) => x >= 0 && z >= 0 && x < size && z < size;
       if (!inside(ex, ez) || !inside(bx, bz)) continue;
       const ya = groundHeightAt(ex, ez), yb = groundHeightAt(bx, bz);
       if (!(ya > sea + 1) || !(yb > sea + 1) || Math.abs(ya - yb) > len * 0.45) continue;
+      if (!clear(x0 + ex, z0 + ez, x0 + bx, z0 + bz, r)) continue;
       const mid = Math.min(y, (ya + yb) / 2);
       pieces.push(0, lx, mid - r * 0.35, lz, a, Math.atan2(ya - yb, len), len, r * 2, r * 2);
       solid.push(0, wx, mid - r * 0.35, wz, len, r, a, (ya - yb) / len);
@@ -327,8 +356,12 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
     const w = generator.getBiomeWeights(x, z, {});
     return [Math.min(1, w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + 0.85 * (w.hangingGardens ?? 0)), w.pine * 0.12, (w.cascades ?? 0) * 0.55, (w.rainforest ?? 0) * 0.82]; // (the temperate rainforest: ferns crowding its whole floor) // (the jungle mountains' floor as lush as the jungle's)
   };
-  let any = 0;
-  for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, ...cover(x0 + (i * size) / 4, z0 + (j * size) / 4));
+  let any = 0, anyRain = 0;
+  for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) {
+    const c = cover(x0 + (i * size) / 4, z0 + (j * size) / 4);
+    any = Math.max(any, ...c);
+    anyRain = Math.max(anyRain, c[3]);
+  }
   if (any < 0.02) return null;
   const G = 2.2, n = Math.round(size / G), seed = generator.seed ^ 0x0d57;
   const surface = { normalY: 1 };
@@ -364,14 +397,35 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
       // (The Cascades': all five kinds of fern, 2-6, along the water.)
       const cascade = keep >= jungle && keep < lush;
       const rainFern = keep >= jungle && !cascade && keep < rain; // (sword ferns and lady ferns, big and many, all five kinds)
-      const kind = keep < jungle ? (r < 0.36 ? Math.floor(r / 0.18) : 2 + Math.min(4, Math.floor(((r - 0.36) / 0.64) * 5))) : cascade || rainFern ? 2 + Math.min(4, Math.floor(r * 5)) : 2;
+      // (The rainforest's: over half of them low ferns lying close to the ground, kinds 7 and 5.)
+      const low = rainFern && hash2(gi, gj, seed + 9) < 0.58;
+      const kind = low ? (r < 0.6 ? 7 : 5) : keep < jungle ? (r < 0.36 ? Math.floor(r / 0.18) : 2 + Math.min(4, Math.floor(((r - 0.36) / 0.64) * 5))) : cascade || rainFern ? 2 + Math.min(4, Math.floor(r * 5)) : 2;
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1) || surface.normalY < 0.7) continue;
       if (generator.rivers?.at(x0 + lx, z0 + lz, 1)) continue;
       if (generator.landmarks?.underWater(x0 + lx, z0 + lz, y)) continue;
       // (Some of the Cascades' ferns big: a quarter of them twice the size, head-high by the water.)
-      const big = cascade && hash2(gi, gj, seed + 7) < 0.25 ? 1.9 + 0.5 * hash2(gi, gj, seed + 8) : rainFern ? 1.3 + 0.9 * hash2(gi, gj, seed + 8) : 1;
+      const big = cascade && hash2(gi, gj, seed + 7) < 0.25 ? 1.9 + 0.5 * hash2(gi, gj, seed + 8) : rainFern ? (low ? 0.75 + 0.4 * hash2(gi, gj, seed + 8) : 1.3 + 0.9 * hash2(gi, gj, seed + 8)) : 1;
       list.push(kind, lx, y - 0.05, lz, (0.8 + 0.8 * hash2(gi, gj, seed + 4)) * big, hash2(gi, gj, seed + 5), hash2(gi, gj, seed + 6));
+    }
+  }
+  // The rainforest's moss: deep cushions of it over the floor, kind 8,
+  // thick where it's rainforest through and through. (Only looked for where there's any.)
+  if (anyRain >= 0.05) {
+    const M = 3.2, nm = Math.round(size / M), ms = seed ^ 0x3055, rainAt = new Map();
+    for (let j = 0; j < nm; j++) for (let i = 0; i < nm; i++) {
+      const gi = cx * nm + i, gj = cz * nm + j;
+      const keep = hash2(gi, gj, ms);
+      if (keep > 0.8) continue;
+      const lx = (i + hash2(gi, gj, ms + 1)) * M, lz = (j + hash2(gi, gj, ms + 2)) * M;
+      const pc = Math.floor(lx / 8) * 64 + Math.floor(lz / 8);
+      let rain = rainAt.get(pc);
+      if (rain === undefined) rainAt.set(pc, (rain = cover(x0 + Math.floor(lx / 8) * 8 + 4, z0 + Math.floor(lz / 8) * 8 + 4)[3]));
+      if (keep > rain * 0.85) continue;
+      const y = groundHeightAt(lx, lz, surface);
+      if (!(y > sea + 1) || surface.normalY < 0.6) continue;
+      if (generator.rivers?.at(x0 + lx, z0 + lz, 1.2)) continue;
+      list.push(8, lx, y - 0.06, lz, 0.9 + 1.1 * hash2(gi, gj, ms + 4), hash2(gi, gj, ms + 5), hash2(gi, gj, ms + 6));
     }
   }
   return list.length ? new Float32Array(list) : null;

@@ -865,7 +865,16 @@ let floorTop = null; // (see the Game, below: what's laid on the ground)
 function groundAt(x, feetY, z) {
   const g = generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
   // Boulders are solid: you stand on their tops (and walk into their sides as walls).
-  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), logs.surfaceAt(x, z), ruins.surfaceAt(x, z, feetY), landmarks.surfaceAt(x, z), geysers.surfaceAt?.(x, z) ?? -Infinity);
+  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), ruins.surfaceAt(x, z, feetY), landmarks.surfaceAt(x, z), geysers.surfaceAt?.(x, z) ?? -Infinity);
+  // (A log: stood on; but one lying up across a boulder, with head room
+  // under it, walked in under, its trunk the roof overhead.)
+  if (!g.inCave) {
+    const lg = logs.spanAt(x, z);
+    if (lg && lg.top > g.height) {
+      if (feetY > (lg.bottom + lg.top) / 2 || lg.bottom - g.height < 2.0) g.height = lg.top;
+      else (g.inCave = true), (g.ceiling = Math.min(g.ceiling ?? Infinity, lg.bottom));
+    }
+  }
   // (On a floor you've laid: its boards or flags.)
   const floor = floorTop?.(x, z, feetY);
   if (floor !== null && floor !== undefined) g.height = Math.max(g.height, floor);

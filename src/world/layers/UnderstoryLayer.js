@@ -115,6 +115,42 @@ function fern(seed, { n = 9, len = 0.6, rise = 0.55, droop = 0.6, w = 0.09, stra
   return build(tris);
 }
 
+/**
+ * A cushion of moss on the forest floor: a low, lumpy mound, about a metre
+ * across and a hand or two deep, its top knobbled with smaller tufts; real
+ * depth, not a stain on the ground. (Its colour pale on the tops of the
+ * tufts and dark down its sides.)
+ */
+function mossCushion(seed, sides = 9, tufts = 5) {
+  const tris = [];
+  const rim = (k, r) => {
+    const a = (k / sides) * Math.PI * 2;
+    const w = r * (0.8 + 0.4 * hash2(k, 1, seed));
+    return [Math.cos(a) * w, 0, Math.sin(a) * w];
+  };
+  const mound = (cx, cz, r, h, base, sd) => {
+    const out = [], mid = [];
+    for (let k = 0; k < sides; k++) {
+      const [x, , z] = rim(k + sd, r);
+      out.push([cx + x, base - 0.04, cz + z]);
+      mid.push([cx + x * 0.6, base + h * (0.62 + 0.25 * hash2(k, 7, seed + sd)), cz + z * 0.6]);
+    }
+    const top = [cx, base + h, cz];
+    for (let k = 0; k < sides; k++) {
+      const n = (k + 1) % sides;
+      tris.push([out[k], mid[k], out[n], DARK, MID, DARK]);
+      tris.push([out[n], mid[k], mid[n], DARK, MID, MID]);
+      tris.push([mid[k], top, mid[n], MID, LIGHT, MID]);
+    }
+  };
+  mound(0, 0, 1, 0.3, 0, 0);
+  for (let t = 0; t < tufts; t++) {
+    const a = hash2(t, 3, seed) * Math.PI * 2, d = 0.25 + 0.45 * hash2(t, 4, seed);
+    mound(Math.cos(a) * d, Math.sin(a) * d, 0.22 + 0.16 * hash2(t, 5, seed), 0.12 + 0.08 * hash2(t, 6, seed), 0.3 * (1 - d * d) * 0.85, 11 * (t + 1));
+  }
+  return build(tris);
+}
+
 // (Kinds 0 and 1 the big-leaved plants, 2 the common fern, 3-6 the jungle's other ferns: see placeUnderstory.)
 const PLANTS = [
   { shape: leafy(3), plain: leafy(3, true), far: leafy(3, true, true), colors: [0x3f7d2f, 0x4a8a34, 0x2f6a2a, 0x5a9a3a] },
@@ -128,6 +164,10 @@ const PLANTS = [
   { shape: fern(23, { n: 14, len: 0.85, rise: 0.25, droop: 0.3, w: 0.06 }), plain: fern(23, { n: 14, len: 0.85, rise: 0.25, droop: 0.3, w: 0.06 }, true), far: fern(23, { n: 14, len: 0.85, rise: 0.25, droop: 0.3, w: 0.06 }, true, true), colors: [0x3e6e2c, 0x4a7a34, 0x355f28] },
   // (A little tree fern: fronds arching out from the top of a shaggy stump.)
   { shape: fern(29, { n: 9, len: 0.8, rise: 0.4, droop: 0.65, w: 0.1, trunk: 0.55 }), plain: fern(29, { n: 9, len: 0.8, rise: 0.4, droop: 0.65, w: 0.1, trunk: 0.55 }, true), far: fern(29, { n: 9, len: 0.8, rise: 0.4, droop: 0.65, w: 0.1, trunk: 0.55 }, true, true), colors: [0x4a8a36, 0x3f7a2e, 0x55963c] },
+  // (The rainforest's low deer ferns and oak ferns: fronds lying out almost flat, close to the ground.)
+  { shape: fern(31, { n: 12, len: 0.7, rise: 0.1, droop: 0.18, w: 0.07 }), plain: fern(31, { n: 12, len: 0.7, rise: 0.1, droop: 0.18, w: 0.07 }, true), far: fern(31, { n: 12, len: 0.7, rise: 0.1, droop: 0.18, w: 0.07 }, true, true), colors: [0x3f7430, 0x4a8236, 0x55903c] },
+  // (Its moss: deep cushions of it carpeting the floor, over the roots and stones.)
+  { shape: mossCushion(37, 7, 3), plain: mossCushion(37, 5, 2), far: mossCushion(37, 4, 0), colors: [0x4f7f2a, 0x5a8c2e, 0x46742a, 0x6a962e, 0x3f6a26], moss: true },
 ];
 const color = new Color();
 const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), tilt = new Quaternion(), s = new Vector3(), yAxis = new Vector3(0, 1, 0), up = new Vector3();
@@ -316,7 +356,7 @@ export function createUnderstoryLayer(config) {
         const pl = PLANTS[data[k]];
         const [gx, gz] = lean(data[k + 1], data[k + 3]);
         placed[data[k]].push([data[k + 1], data[k + 2], data[k + 3], data[k + 4], data[k + 5], pl.colors[Math.floor(data[k + 6] * pl.colors.length)], gx, gz]);
-        where.push(x0 + data[k + 1], z0 + data[k + 3], data[k + 4]);
+        if (!pl.moss) where.push(x0 + data[k + 1], z0 + data[k + 3], data[k + 4]); // (moss: nothing to rustle through)
       }
       if (!placed.some((l) => l.length)) return null;
       // (Drawn with every near chunk's, in the shared meshes: see sort. Here,

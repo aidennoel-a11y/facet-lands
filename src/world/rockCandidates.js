@@ -1,4 +1,5 @@
 import { hash2 } from '../noise/random.js';
+import { leanSites } from './leanLogs.js';
 
 /** How many rock shapes there are of each stone (see RockLayer). */
 export const ROCK_SHAPE_COUNT = 5;
@@ -50,8 +51,8 @@ export function rockCandidates(generator, config, cx, cz) {
       const bw = generator.getBiomeWeights(wx, wz, {});
       const granite = bw.blackHills;
       // Redwood forests: mossy boulders and stones here and there among the giants.
-      // (And the temperate rainforest: boulders strewn thick over its floor, every one of them mossed over.)
-      const red = bw.redwood + 2.4 * (bw.rainforest ?? 0);
+      // (The temperate rainforest: only a few, its floor deep in moss and ferns, not stones.)
+      const red = bw.redwood + 0.25 * (bw.rainforest ?? 0);
       // Round a volcano that blew itself apart: a vast field of the
       // boulders and rocks it threw out, black and brown.
       const blast = bw.volcanic + bw.temperate + bw.pine + bw.smoky > 0.3 && bw.desert < 0.5 ? generator.blastAt(wx, wz) : 0;
@@ -62,7 +63,7 @@ export function rockCandidates(generator, config, cx, cz) {
       // Wetlands are soft mud and grass: few stones.
       // (And the volcanic highlands: rock heaped on their rocky ground,
       // hardly any out on the native grass.)
-      const soft = (1 - 0.85 * bw.wetland) * (bw.volcanic > 0.05 ? 1 + bw.volcanic * (2.2 * generator.getVolcanicRocky(wx, wz) - 0.8) : 1);
+      const soft = (1 - 0.85 * bw.wetland) * (1 - 0.75 * (bw.rainforest ?? 0)) * (bw.volcanic > 0.05 ? 1 + bw.volcanic * (2.2 * generator.getVolcanicRocky(wx, wz) - 0.8) : 1);
       // Stones along river banks, on the mud just beside the water.
       const river = generator.rivers.at(wx, wz, 3.5);
       const bank = river && river.d > river.water + 0.4 ? 1 : 0;
@@ -165,6 +166,12 @@ export function rockCandidates(generator, config, cx, cz) {
         shape: Math.floor(hash2(gi, gj, seed + 11) * ROCK_SHAPE_COUNT) + (blast > 0.15 ? 3 * ROCK_SHAPE_COUNT : bw.volcanic > 0.5 || strewn > 0.1 ? 2 * ROCK_SHAPE_COUNT : dry ? ROCK_SHAPE_COUNT : 0),
       });
     }
+  }
+  // (The rainforest's boulders that a great fallen trunk lies across: see leanLogs.)
+  for (const b of leanSites(generator, config, cx, cz)) {
+    const gx = (generator.getHeight(b.bx + 2, b.bz) - generator.getHeight(b.bx - 2, b.bz)) / 4;
+    const gz = (generator.getHeight(b.bx, b.bz + 2) - generator.getHeight(b.bx, b.bz - 2)) / 4;
+    list.push({ lx: b.bx - x0, lz: b.bz - z0, wx: b.bx, wz: b.bz, jitter: generator.getColorJitter(b.bx, b.bz), boulder: true, slope: Math.min(0.3, Math.hypot(gx, gz)), sx: b.sx, sy: b.sy, sz: b.sz, surf: false, rx: 0.04, ry: b.ry, rz: -0.03, shape: Math.floor(hash2(Math.round(b.bx), Math.round(b.bz), seed + 50) * ROCK_SHAPE_COUNT), lean: true });
   }
   list.snowLine = snowLine;
   return list;

@@ -750,15 +750,19 @@ export const BIOMES = {
     snow: 0xf1f4f7,
     grass: 0.22,
     trees: {
-      density: 0.62,
+      // (Thick: the giants as many as ever, about 0.4 of the spots; the rest
+      // of the trees between them smaller, slimmer ones.)
+      density: 1.0,
       clumped: false,
       species: [
         { type: 'sitkaSpruce', weight: 1, minHeight: -99, maxHeight: 150 },
         { type: 'cedar', weight: 0.9, minHeight: -99, maxHeight: 130 },
-        { type: 'spruce', weight: 0.3, minHeight: -99, maxHeight: 170 },
-        { type: 'maple', weight: 0.08, minHeight: -99, maxHeight: 80 }, // (a bigleaf maple, here and there by the streams)
-        { type: 'blueberryBush', weight: 0.25, minHeight: -99, maxHeight: 140 }, // (huckleberry)
-        { type: 'bush', weight: 0.12, minHeight: -99, maxHeight: 120 },
+        { type: 'hemlock', weight: 1.1, minHeight: -99, maxHeight: 160 },
+        { type: 'alder', weight: 0.6, minHeight: -99, maxHeight: 90 },
+        { type: 'spruce', weight: 0.45, minHeight: -99, maxHeight: 170 },
+        { type: 'maple', weight: 0.1, minHeight: -99, maxHeight: 80 }, // (a bigleaf maple, here and there by the streams)
+        { type: 'blueberryBush', weight: 0.35, minHeight: -99, maxHeight: 140 }, // (huckleberry)
+        { type: 'bush', weight: 0.25, minHeight: -99, maxHeight: 120 },
       ],
     },
   },

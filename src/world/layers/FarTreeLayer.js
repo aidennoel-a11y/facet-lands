@@ -5,7 +5,7 @@ import { FALL, TREE_GEOMETRIES } from '../trees.js';
 import { packFarTrees, placeTrees } from '../treePlacement.js';
 import { SMALL_PLANTS } from './TreeLayer.js';
 
-const CONES = new Set(['pine', 'spruce', 'larch', 'redwood', 'sitkaSpruce', 'cedar']);
+const CONES = new Set(['pine', 'spruce', 'larch', 'redwood', 'sitkaSpruce', 'cedar', 'hemlock']);
 // (Drawn as their real model however far off: the redwoods, giants seen from far away, and few.)
 const FULL = new Set(['redwood']);
 const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag', 'bamboo', 'bloomCactus', 'termiteMound']); // (bamboo: a single cane)
@@ -322,7 +322,10 @@ export function buildImpostors(renderer) {
   types.forEach((type, k) => {
     const geometry = TREE_GEOMETRIES[type];
     if (!geometry.attributes.normal) geometry.computeVertexNormals();
-    const { half, top } = treeBox(type);
+    // (Each picture with a margin of empty space above and to the sides, so
+    // far off, blurred, it never picks up the edge of the next one on the
+    // sheet: no stray streaks over the trees. The card is made as much bigger.)
+    const box = treeBox(type), half = box.half * 1.12, top = box.top * 1.1;
     Object.assign(camera, { left: -half, right: half, top, bottom: 0 });
     camera.position.y = 0;
     camera.updateProjectionMatrix();

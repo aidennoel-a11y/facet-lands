@@ -137,7 +137,8 @@ const BOULDER_NOISE = new SimplexNoise(0x5b0d);
 export function boulderRough(b, x, y, z) {
   const size = Math.min(b.a, b.b, b.c);
   const N = BOULDER_NOISE, o = b.seed * 3.1;
-  const d = N.noise3D(x * 0.045 + o, y * 0.045, z * 0.045) * Math.min(4, size * 0.09) + N.noise3D(x * 0.13 - o, y * 0.13, z * 0.13) * Math.min(1.6, size * 0.045) + N.noise3D(x * 0.4, y * 0.4 + o, z * 0.4) * Math.min(0.5, size * 0.02);
+  const d = N.noise3D(x * 0.045 + o, y * 0.045, z * 0.045) * Math.min(4, size * 0.09) + N.noise3D(x * 0.13 - o, y * 0.13, z * 0.13) * Math.min(1.6, size * 0.045) + N.noise3D(x * 0.4, y * 0.4 + o, z * 0.4) * Math.min(0.5, size * 0.02)
+    + (Math.abs(N.noise3D(x * 0.24 + o, y * 0.24, z * 0.24 - o)) - 0.25) * Math.min(1.4, size * 0.05); // (facets and knobs, the top never smoothly domed)
   // (The Black Hills' granite more jagged: sharp-edged knobs and flakes, split along its joints.)
   if (b.kind !== 'granite') return d;
   const ridge = 1 - Math.abs(N.noise3D(x * 0.22 + o, y * 0.3, z * 0.22 - o));
@@ -1118,6 +1119,41 @@ export class TerrainGenerator {
   }
 
   /**
+   * A kind of country (`raw` at a point, 0..1) grown out all round by
+   * about `R` cells of `G` metres (a dilation), on a grid remembered per
+   * kind and blended between its points.
+   */
+  #grown(key, x, z, raw, R = 2, G = 100) {
+    const gx = Math.floor(x / G), gz = Math.floor(z / G), fx = x / G - gx, fz = z / G - gz;
+    const all = this._grown ?? (this._grown = {});
+    const cache = all[key] ?? (all[key] = { raw: new Map(), grown: new Map() });
+    const memo = (map, i, j, f) => {
+      const k = cellKey(i, j);
+      let v = map.get(k);
+      if (v === undefined) {
+        v = f(i, j);
+        if (map.size > 40000) map.clear();
+        map.set(k, v);
+      }
+      return v;
+    };
+    const rawAt = (i, j) => memo(cache.raw, i, j, () => raw(i * G, j * G));
+    const grownAt = (i, j) => memo(cache.grown, i, j, () => {
+      let v = rawAt(i, j);
+      for (const [d, n] of [[R / 2, 8], [R, 12]]) {
+        for (let q = 0; q < n && v < 1; q++) {
+          const a = (q / n) * Math.PI * 2;
+          v = Math.max(v, rawAt(i + Math.round(Math.cos(a) * d), j + Math.round(Math.sin(a) * d)));
+        }
+      }
+      return v;
+    });
+    const a = grownAt(gx, gz) + (grownAt(gx + 1, gz) - grownAt(gx, gz)) * fx;
+    const b = grownAt(gx, gz + 1) + (grownAt(gx + 1, gz + 1) - grownAt(gx, gz + 1)) * fx;
+    return smoothstep(0.2, 0.8, a + (b - a) * fz);
+  }
+
+  /**
    * Keeps a patch of some kind of country (`raw` at a point, 0..1) only
    * where it's part of a real stretch of it, a rounded one: the patch is
    * shrunk by about 650 m all round (`R` cells of 128 m) and grown back
@@ -1413,7 +1449,13 @@ export class TerrainGenerator {
     // than half a square kilometre or so: shrunk by 380 m and grown back.)
     const zone = (px, pz) => smoothstep(T.jungle, T.jungle + 0.2, this.#jungleSuit(px, pz));
     const j = zone(x, z);
-    const own = j > 0 ? j * this.#minSize('jungle', x, z, zone, 0.5, 3, 157) : 0;
+    const own0 = j > 0 ? j * this.#minSize('jungle', x, z, zone, 0.5, 3, 157) : 0;
+    // (Every one grown out some 200 m all round, so the smallest is twice the
+    // size it was; as many of them as ever, none dropped for being small.)
+    const own = own0 >= 1 ? own0 : Math.max(own0, this.#grown('jungle', x, z, (px, pz) => {
+      const v = zone(px, pz);
+      return v > 0 ? v * this.#minSize('jungle', px, pz, zone, 0.5, 3, 157) : 0;
+    }));
     // (And the jungles of their own out in the warm green lowlands.)
     return own >= 1 ? own : Math.max(own, this.#jungleBlob(x, z) * (1 - smoothstep(0.4, 0.48, aridity)));
   }
@@ -1423,7 +1465,7 @@ export class TerrainGenerator {
   // mountains, the dry country, the Black Hills, the Smoky Mountains and
   // the volcanoes.
   #jungleBlob(x, z) {
-    return this.#blobs('jungleBlob', x, z, 2300, T.jungleBlob, 800, 1450, 0x1a9b, (px, pz) => {
+    return this.#blobs('jungleBlob', x, z, 2300, T.jungleBlob, 1130, 1450, 0x1a9b, (px, pz) => {
       const r = this.#rangeField(px, pz, {}).value;
       if (this.getMountainness(px, pz) > 0.18 || this.getOceanness(px, pz) > 0.1) return 0;
       if (this.#volcanoBelt(px, pz) > 0.4 || this.#smokyZone(px, pz, r) > 0.05 || this.#hillsBlob(px, pz) > 0.05) return 0;
