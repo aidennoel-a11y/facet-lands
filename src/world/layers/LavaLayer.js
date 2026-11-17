@@ -157,15 +157,21 @@ export function createLavaLayer(config) {
         if (c.active && c.flows.length) {
           let prev = null;
           const f = c.flows[0], end = generator.lavaEnd(c), d0 = c.rc * 0.6; // (from the lake's edge, out through the notch in the rim)
-          for (let d = d0; d < end.d; d += 3) {
+          // (Its front: the stream narrowing into a rounded tongue over its last
+          // stretch, sinking into the rubble it's pushed up, not cut off square.)
+          const tipLen = Math.min(30, (end.d - d0) * 0.3), steps = [];
+          for (let d = d0; d < end.d - tipLen; d += 3) steps.push(d);
+          for (let k = 0; k <= 10; k++) steps.push(end.d - tipLen + tipLen * (k / 10) - 0.01);
+          for (const d of steps) {
             const p = generator.lavaPath(c, d);
             if (!p) continue;
             const ca = Math.cos(p.angle), sa = Math.sin(p.angle);
             const px = c.x + ca * d, pz = c.z + sa * d;
             const floor = generator.getBaseHeight(px, pz) - (p.tube ? 3.6 : 0);
             // (Brimming in its channel, level with the land it cut; cooling as it goes, crusted over at its end.)
-            const y = floor + 1.0;
-            const half = p.half * 1.12; // (its edges tucked under the levees)
+            const tip = Math.max(0, (d - (end.d - tipLen)) / tipLen);
+            const y = floor + 1.0 - 0.5 * tip * tip;
+            const half = p.half * 1.12 * Math.sqrt(Math.max(0.0025, 1 - tip * tip)); // (its edges tucked under the levees)
             const cool = Math.min(1, 0.6 * ((d - d0) / (f.len * 0.85 - d0)) + Math.max(0, 1 - (end.d - d) / 40)); // (crusting over towards its end, into the rubble there)
             const pts = [-1, -0.5, 0, 0.5, 1].map((t) => [px - sa * half * t, y, pz + ca * half * t, d, half * t, Math.abs(t), cool, rows.length]);
             rows.push({ y, pts: pts.map((q) => [q[0], q[2]]) });

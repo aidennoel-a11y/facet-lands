@@ -256,6 +256,7 @@ export const ITEMS = {
   weaponRack: { name: 'Weapon rack', place: 'weaponRack', weight: 6, group: 'Building' },
   rug: { name: 'Rug', place: 'rug', weight: 3, group: 'Building' },
   painting: { name: 'Painting', place: 'painting', weight: 2, group: 'Building' },
+  flag: { name: 'Flag', place: 'flag', weight: 0.4, group: 'Building' }, // (plant it anywhere: your name and colour on it, for all to see, and on the map)
   banner: { name: 'Banner', place: 'banner', weight: 2, group: 'Building' },
   gable: { name: 'Gable end', place: 'gable', weight: 9, group: 'Building' }, // (closes the end of a roof, over a wall)
   hatchFloor: { name: 'Floor with a trapdoor', place: 'hatchFloor', weight: 17, group: 'Building' },
@@ -488,6 +489,8 @@ export const RECIPES = [
   { id: 'ladder', needs: { log: 1, stick: 8 }, note: 'Face a rock wall or the wall of your house, close to it, and set it up (up to 7 m): Q to climb. Shift+Q takes it down' },
   { id: 'sailboat', needs: { stick: 6, rope: 2 }, uses: ['steelAxe', 'forgedAxe'], at: 'bench', bench: 2, note: 'Mark out a sailboat on deep water (a metre or more); then lay the keel and ribs, plank the hull, deck her over, step the mast and bend on the sail. Sails with the wind (fastest with it across or behind you), with a hold for 16 stacks (crouch and click her). Needs a steel axe' },
   { id: 'canoe', needs: { log: 2, stick: 2 }, uses: ['steelAxe', 'forgedAxe'], note: 'A log hollowed out with a steel axe: set it on the water and Q to climb in. Twice as quick as a raft, it glides between strokes and rides a river\'s current. Shift+Q to carry it (heavy)' },
+  { id: 'flag', needs: { stick: 1, wool: 1 }, note: 'A small flag in your colour on a light pole: plant it anywhere (a summit, a cave, an island, a find) and it bears your name and the day; others see it, and it shows on the map' },
+  { id: 'flag', needs: { stick: 1, deerSkin: 1 }, note: 'A small flag of leather on a light pole: plant it anywhere, your name on it, shown on the map' },
   { id: 'sign', needs: { log: 1, stick: 2 }, note: 'A board on a post: Q at it to write on it (a name for your camp, a warning, the way home)' },
   { id: 'candle', needs: { beeswax: 1, vine: 1 }, makes: 2, note: 'Two beeswax candles: a small soft light to set on a table or a shelf, or on a wall (lit as you set it)' },
   { id: 'lantern', needs: { ironBar: 1, candle: 1, deerSkin: 1 }, note: 'A candle behind panes of scraped hide in an iron frame: a steady light the rain and wind don\'t put out. Hang it on a wall or set it down' },
@@ -571,7 +574,7 @@ export const RECIPES = [
  * in RECIPES is in one of them.
  */
 export const TIERS = [
-  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['glider', 'skis', 'axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
+  { id: 'stone', name: 'Stone', tag: 'From the start', ids: ['glider', 'skis', 'axe', 'pickaxe', 'spear', 'sickle', 'torch', 'coalTorch', 'caveLamp', 'silkRope', 'bow', 'arrow', 'strawHat', 'fishingRod', 'bandage', 'campfire', 'flintSteel', 'hoe', 'rope', 'stake', 'flag', 'snare', 'fineFlintSteel', 'leanTo', 'strawBed'] },
   { id: 'camp', name: 'Camp', tag: 'Set down a campfire', unlock: 'campfire', ids: ['workbench', 'carpenterBench', 'gatehouse', 'fireplace', 'lanternPost', 'flowerBed', 'stall', 'hitchPost', 'trough', 'hayRack', 'dock', 'ditch', 'barnWall', 'barnWindow', 'barnDoor', 'barnRoof', 'redDye', 'whiteDye', 'blackDye', 'greenDye', 'yellowDye', 'glowDye', 'glowTonic', 'appleSapling', 'berryCutting', 'sapling', 'waterskin', 'waterFilter', 'logBridge', 'ropeBridge', 'chair', 'table', 'shelf', 'trophyRack', 'coop', 'sign', 'ladder', 'beeBox', 'candle', 'pail', 'cheese', 'boots', 'furBoots', 'gloves', 'furHat', 'longbow', 'fireArrow', 'quiver', 'backpack', 'saddlebags', 'repairBench', 'saltedMeat', 'saltedFish', 'dryingRack', 'tanningRack', 'coat', 'armour', 'leatherCap', 'camoCloak', 'furCloak', 'chest', 'bed', 'furnace', 'fence', 'fenceGate', 'wall', 'gate', 'roof', 'raft', 'grindstone', 'dough', 'stoneFloor', 'stoneWall', 'stoneStairs', 'stoneFence', 'chimney', 'chimneyWall', 'slateRoof', 'cellar', 'fishTrap', 'smokingRack', 'woodWindow', 'stoneWindow', 'logWall', 'logFloor', 'logStairs', 'logRoof', 'flatRoof', 'step', 'bedroll', 'logWindow', 'logDoor', 'stoneDoor', 'treePlatform', 'treeDeck', 'stiltFloor', 'rug', 'banner', 'gable', 'hatchFloor', 'seedPumpkin', 'greenhouse'] },
   { id: 'bronze', name: 'Bronze', tag: 'Smelt copper ore in a furnace, then tin with two copper bars: bronze', unlock: 'bronzeBar', ids: ['bronzeAxe', 'bronzePickaxe', 'bronzeSpear', 'bronzeSword', 'bronzeArmour', 'bronzeHelmet', 'armourStand', 'weaponRack', 'painting'] },
   { id: 'iron', name: 'Iron', tag: 'Smelt iron ore into a bar in a furnace', unlock: 'ironBar', ids: ['steelAxe', 'steelPickaxe', 'steelSpear', 'harpoon', 'pot', 'shears', 'saddle', 'anvil', 'masterBench', 'lantern', 'canoe', 'sailboat', 'climbingPicks', 'waterMill', 'windmill', 'fineDough'] },
@@ -686,6 +689,7 @@ export const ICONS = {
   furnace: `<path d="M5 29V12l11-8 11 8v17z" fill="#8e8a84"/><path d="M5 12l11-8 11 8" fill="none" stroke="#6a665e" stroke-width="1.4"/><path d="M11 29v-8a5 5 0 0 1 10 0v8z" fill="#2a2420"/><path d="M13 29v-5a3 3 0 0 1 6 0v5z" fill="#ff8a2a"/><path d="M7 16h18M7 21h4M21 21h4" stroke="#6a665e"/>`,
   wall: `<path d="M4 29V9l2-4 2 4v20M10 29V8l2-4 2 4v21M16 29V9l2-4 2 4v20M22 29V8l2-4 2 4v21" fill="#8a6a44" stroke="#5a3c24" stroke-width="1"/><path d="M3 14h26M3 23h26" stroke="#5a3c24" stroke-width="2.4"/>`,
   gate: `<path d="M3 29V6l2-3 2 3v23M25 29V6l2-3 2 3v23" fill="#6e5234"/><path d="M8 28V10h16v18z" fill="#8a6a44"/><path d="M12 10v18M16 10v18M20 10v18" stroke="#5a3c24"/><path d="M8 13l16 12" stroke="#5a3c24" stroke-width="2"/>`,
+  flag: `<path d="M9 30V3" stroke="#6a4a2e" stroke-width="2.4"/><path d="M10 4h15l-4 5 4 5H10z" fill="#d8442e"/><path d="M10 4h15l-4 5H10z" fill="#ea5a40"/>`,
   stake: `<path d="M13 30V9l3-7 3 7v21z" fill="#8a6a44"/><path d="M16 2l3 7v21h-3z" fill="#6e5234"/><path d="M13 14h6M13 22h6" stroke="#4a3220" stroke-width="1.4"/>`,
   chest: `<path d="M4 14h24v14H4z" fill="#8a6038"/><path d="M4 14l2-7h20l2 7z" fill="#a8744a"/><path d="M4 18h24M16 14v14" stroke="#5a3c24" stroke-width="1.6"/><path d="M14 16h4v4h-4z" fill="#3a2a1a"/>`,
   bed: `<path d="M3 22h26v5H3z" fill="#7a5232"/><path d="M4 16h24v6H4z" fill="#ece6d8"/><path d="M4 16h8v6H4z" fill="#f6f2e8"/><path d="M14 17h14v5H14z" fill="#a8743e"/><path d="M3 12h3v15H3zM26 18h3v9h-3z" fill="#5a3c24"/>`,

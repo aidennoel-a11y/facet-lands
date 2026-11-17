@@ -1735,7 +1735,10 @@ export class Game {
       }
       // (A big one: its site marked out, to be built up stage by stage.)
       const stages = this.structures.stagesOf(plan.type);
-      const site = this.structures.build(plan, stages ? { data: { stage: 0, got: {} } } : {});
+      // (A flag: its planter's name and colour on it, the day, and where it stands. See Structures.showFlag.)
+      const me = plan.type === 'flag' ? this.flagger?.() ?? {} : null;
+      const site = this.structures.build(plan, stages ? { data: { stage: 0, got: {} } } : me ? { data: { owner: me.name ?? 'You', colour: me.colour ?? 0xd8442e, day: Math.floor(this.age ?? 0) + 1, place: me.place ?? '' } } : {});
+      if (me) this.hotbar?.flash(`Your flag, planted${me.place ? ` in the ${me.place.toLowerCase()}` : ''}: it shows on the map`);
       if (stages) {
         this.#learn(plan.type);
         this.inventory.take(i);

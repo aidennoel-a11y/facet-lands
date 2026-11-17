@@ -402,7 +402,7 @@ export class CaveField {
     // broad patches of much the same size, a kilometre or so across.)
     const patch = (ox, oz, scale) => 1.35 * sm(0.42, 0.6, this.kind.noise2D(x / scale + ox, z / scale + oz));
     return {
-      lush: 0.75 * (w.jungle + w.mangrove + 0.8 * w.wetland + 0.7 * w.redwood + 0.6 * w.smoky) + 0.15 * n + patch(210, -150, 1900),
+      lush: 0.75 * (w.jungle + w.mangrove + 0.8 * w.wetland + 0.7 * w.redwood + 0.8 * (w.rainforest ?? 0) + 0.6 * w.smoky) + 0.15 * n + patch(210, -150, 1900),
       volcanic: 1.2 * w.volcanic + 0.25 * m + patch(-300, 210, 2100),
       ice: sm(120, 190, H) * (1 - w.jungle - w.desert) + 0.35 * (w.pine + w.blackHills) * sm(0.2, 0.6, n * 0.5 + 0.5) + 0.2 * m,
       dry: w.desert + w.badlands + 0.5 * w.savanna + w.saltFlat,

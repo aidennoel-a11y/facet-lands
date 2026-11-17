@@ -723,6 +723,46 @@ export const BIOMES = {
     },
   },
 
+  // Temperate rainforest: the cold, wet coast under the mountains. Giant
+  // Sitka spruce and red cedar, every trunk and boulder furred with moss,
+  // beard moss hanging from the limbs, the floor a deep carpet of moss and
+  // ferns over fallen logs; always dripping, always green. (Not the redwood
+  // forest: its own trees, its own ground.)
+  rainforest: {
+    id: 'rainforest',
+    name: 'Temperate rainforest',
+    palette: [
+      { height: -Infinity, color: 0x6f7a5e },
+      { height: -14, color: 0x8f9470 },
+      { height: 0, color: 0xa8a47e }, // (a grey shingle shore)
+      { height: 4, color: 0x56763a },
+      { height: 8, color: 0x3f6a2a }, // deep moss
+      { height: 30, color: 0x41652c },
+      { height: 60, color: 0x4a6a34 },
+      { height: 95, color: 0x5d7044 },
+      { height: 122, color: 0x76805e },
+      { height: 148, color: 0x8d8b98 },
+      { height: 210, color: 0x7f7d92 },
+    ],
+    cliff: 0x6e7a62, // (green-grey: moss over the rock)
+    cliffSlope: [0.74, 0.52],
+    snowLine: 190,
+    snow: 0xf1f4f7,
+    grass: 0.22,
+    trees: {
+      density: 0.62,
+      clumped: false,
+      species: [
+        { type: 'sitkaSpruce', weight: 1, minHeight: -99, maxHeight: 150 },
+        { type: 'cedar', weight: 0.9, minHeight: -99, maxHeight: 130 },
+        { type: 'spruce', weight: 0.3, minHeight: -99, maxHeight: 170 },
+        { type: 'maple', weight: 0.08, minHeight: -99, maxHeight: 80 }, // (a bigleaf maple, here and there by the streams)
+        { type: 'blueberryBush', weight: 0.25, minHeight: -99, maxHeight: 140 }, // (huckleberry)
+        { type: 'bush', weight: 0.12, minHeight: -99, maxHeight: 120 },
+      ],
+    },
+  },
+
   // Badlands (like the Badlands of South Dakota): sharp, eroded ridges,
   // spires and buttes banded cream, buff, rose and grey, gullied all over,
   // over a floor of dry prairie grass.

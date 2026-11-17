@@ -535,6 +535,7 @@ export class PlayerControls {
     // (Stepped off an edge, a floor's or a ledge's, far steeper than any slope:
     // you drop off it, falling, not snapped straight down onto what's below.)
     const drop = feetNow - floor, ledge = drop > 0.15 && drop > Math.hypot(pos.x - fromX, pos.z - fromZ) * 1.6 + 0.05;
+    this.sliding = !!(cliff && feet <= floor + 0.05);
     if (cliff && feet <= floor + 0.05) {
       feet = floor;
       // (The face drags at you: a slide, never faster than some 6 m/s down, so

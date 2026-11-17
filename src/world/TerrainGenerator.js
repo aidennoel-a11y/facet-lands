@@ -31,6 +31,8 @@ export const BIOME_TUNING = {
   pine: 1.15,
   // Redwood forests in the heart of the pine forests near a lake or the sea: lower, more redwood.
   redwood: -0.55,
+  // The temperate rainforest: the chance, in each 7 km square, of a stretch of it (where the coast and the mountains allow).
+  rainforest: 0.55,
   // Mangrove coasts on the warm green coasts: lower, more mangrove.
   mangrove: -0.7,
   // How dry a green coast may be and still have mangroves (below where the savanna starts): higher, more.
@@ -184,6 +186,7 @@ const GLACIER_SNOW = [0xf2f6fa, 0xe8eff6, 0xdfe9f2, 0xf6f8fa].map((c) => new Col
 const MORAINE = [0x6a6660, 0x7a756c, 0x5a5650, 0x8a847a].map((c) => new Color(c));
 const pickColor = (list, h) => list[Math.floor(h * list.length)];
 const ICY_ROCK = new Color(0x7d8ea4); // rock glazed with ice
+const LAKE_CLIFF = [new Color(0x7a7874), new Color(0x8a8780), new Color(0x6c6a66)]; // the bare grey stone of a great alpine lake's walls
 const GRAVEL = new Color(0x8a8590);
 const CASCADE_MOSS = new Color(0x3a7a2a); // thick moss on the Cascades' ground
 const CASCADE_CLAY = new Color(0x8e5c40); // bare reddish clay
@@ -558,11 +561,18 @@ export class TerrainGenerator {
     if (wz > 0) wz *= 1 - smoothstep(T.savannaStart + 0.08, T.savannaStart + 0.12, this.#aridRange(x, z, 1));
     // Pine forests: in the hill country leading up to the mountain ranges
     // (see #pineZone).
-    const rest = green * (1 - wz) * (1 - jz);
+    const rest0 = green * (1 - wz) * (1 - jz);
+    // The temperate rainforest: a few stretches of the cool, wet coast under
+    // the mountains (see #rainforestZone): its own, taking the forest and the
+    // plains it lies over.
+    const tz = rest0 > 0 && !this._probing ? this.#rainforestZone(x, z) : 0;
+    out.rainforest = rest0 * tz;
+    const rest = rest0 * (1 - tz);
     const pz = rest > 0 ? this.#pineZone(x, z, range, a) : 0;
     // Redwood forests: in the heart of some pine forests (surrounded by
     // them), near a lake or the sea.
-    const rz = pz > 0.5 ? this.#redwoodZone(x, z) * smoothstep(0.6, 0.95, pz) : 0;
+    // (Never in or against a rainforest: the two are their own forests, kept apart.)
+    const rz = pz > 0.5 && tz < 0.02 ? this.#redwoodZone(x, z) * smoothstep(0.6, 0.95, pz) * (1 - smoothstep(0, 0.02, tz)) : 0;
     const open = rest * (1 - pz);
     // Birch and aspen parkland: rounded stretches of the green lowlands
     // (not up towards the ranges), open grass with groves in it.
@@ -760,6 +770,29 @@ export class TerrainGenerator {
     const v = a + (b - a) * fz;
     this._lastWeights.x = NaN; // (the remembered weights were another point's)
     return v;
+  }
+
+  /**
+   * The temperate rainforest (0..1): uncommon stretches a kilometre or two
+   * across, only on the cool, wet sea coast with mountains rising close
+   * behind it (within some 3 km), never in the dry country, nor by the
+   * jungles, nor where a redwood forest grows.
+   */
+  #rainforestZone(x, z) {
+    return this.#blobs('rainforest', x, z, 7000, T.rainforest, 1000, 1800, 0x7a1f, (px, pz) => {
+      // (Out over the sea itself is fine: a stretch of it runs right down to the shore.)
+      if (this.getOceanness(px, pz) > 0.5) return 1;
+      if (this.#seaCoast(px, pz, 2500) < 0.05) return 0;
+      if (this.#rawAridityAt(px, pz) > T.savannaStart - 0.12) return 0;
+      if (this.#jungleSuit(px, pz) > 0.001 || this.#gardensLand(px, pz) > 0) return 0;
+      // (Mountains close behind it.)
+      let peak = this.#rangeField(px, pz, {}).value;
+      for (const d of [900, 1800, 2700]) for (let k = 0; k < 8 && peak < 0.4; k++) peak = Math.max(peak, this.#rangeField(px + Math.cos(k * 0.785) * d, pz + Math.sin(k * 0.785) * d, {}).value);
+      if (peak < 0.4) return 0;
+      // (Not where the redwoods are: their groves keep to the lakes and coves away from the ranges.)
+      if (smoothstep(T.redwood, T.redwood + 0.15, this.lakeNoise.fbm(px * 0.0005 - 40, pz * 0.0005 + 70, 2)) > 0 && peak < 0.5) return 0;
+      return 1;
+    });
   }
 
   /** Where redwoods take over in the heart of a pine forest near a lake or the sea (0..1). */
@@ -3692,7 +3725,7 @@ export class TerrainGenerator {
     if (across > 2.4) return null;
     let dh = 0, open = 0;
     if (!p.tube) {
-      dh -= 1.2 * (1 - smoothstep(0.85, 1.15, across)); // (the channel's floor)
+      dh -= 1.2 * (1 - smoothstep(0.85, 1.15, across)) * (1 - smoothstep(p.d1 - 40, p.d1, d)); // (the channel's floor, shallowing out at its far end)
       open = 1 - smoothstep(0.85, 1.05, across);
     } else dh += 0.6 * (1 - smoothstep(0.9, 1.25, across)); // (the tube's roof, a low hump)
     // The levees: a smooth ridge along each bank, alike on both sides.
@@ -4621,6 +4654,41 @@ export class TerrainGenerator {
           const y = Math.max(mid + 0.15 * c, Math.min(mid + 1.1 * c, stack + 0.45 * c));
           list.push({ sx: slope[0], sz: slope[1], x: px, z: pz, y, a, b, c, ang: hash2(i + t, j + k, s + 9) * Math.PI, seed: hash2(i + 3 * k, j + t, s + 10) * 50, kind: 'bristle' });
         }
+      } else if (t === 0 && w.savanna > 0.6 && this.#kopjeChance(cx, cz) > hash2(i, j, s + 40)) {
+        // A kopje: a pile of great rounded granite boulders rising out of
+        // the grass, the biggest heaped in its heart, two or three high,
+        // smaller ones crowding its foot, a few rolled away round it. Where
+        // the lions lie up in the shade.
+        const R = 7 + 9 * hash2(i, j, s + 41), n = 8 + Math.floor(hash2(i + 1, j, s + 42) * 7);
+        for (let k = 0; k < n; k++) {
+          const ra = hash2(i + k * 13, j, s + 43) * Math.PI * 2, rd = R * Math.sqrt(hash2(i, j + k * 13, s + 44));
+          const px = cx + Math.cos(ra) * rd, pz = cz + Math.sin(ra) * rd;
+          const core = 1 - rd / R;
+          const a = (3.5 + 4.5 * hash2(i - k, j, s + 45)) * (0.7 + 0.8 * core), b = a * (0.7 + 0.25 * hash2(i + k, j - 1, s + 46)), c = a * (0.7 + 0.3 * hash2(i + 2 * k, j, s + 47));
+          ground(px, pz, a * 0.7);
+          if (fall > 0.7 * c) continue;
+          plane(px, pz, a * 0.8);
+          const stack = Math.max(-Infinity, ...list.map((o) => on(o, px, pz)));
+          // (Heaped: resting on whatever's already under it, the heart piled highest.)
+          const y = Math.max(mid + 0.35 * c, Math.min(mid + 1.6 * c, stack + 0.55 * c));
+          list.push({ sx: slope[0], sz: slope[1], x: px, z: pz, y, a, b, c, ang: hash2(i + k, j + 3, s + 48) * Math.PI, seed: hash2(i + 3 * k, j, s + 49) * 50, kind: 'kopje' });
+        }
+        // (Up on its heart, two or three great rounded boulders balanced on the rest.)
+        const crown = 2 + Math.floor(hash2(i, j + 7, s + 56) * 2);
+        for (let k = 0; k < crown; k++) {
+          const ra = hash2(i + k * 19, j, s + 57) * Math.PI * 2, rd = R * 0.3 * hash2(i, j + k * 19, s + 58);
+          const px = cx + Math.cos(ra) * rd, pz = cz + Math.sin(ra) * rd;
+          const a = 3.5 + 3.5 * hash2(i + k, j + 9, s + 59), b = a * (0.75 + 0.2 * hash2(i - k, j, s + 60)), c = a * (0.75 + 0.25 * hash2(i + k, j - 4, s + 61));
+          const top = Math.max(-Infinity, ...list.map((o) => on(o, px, pz)));
+          if (top === -Infinity) continue;
+          list.push({ sx: 0, sz: 0, x: px, z: pz, y: top + 0.6 * c, a, b, c, ang: hash2(i + k, j + 11, s + 62) * Math.PI, seed: hash2(i + 5 * k, j, s + 63) * 50, kind: 'kopje' });
+        }
+        for (let k = 0; k < 4; k++) {
+          const ra = hash2(i + k * 17, j + 2, s + 50) * Math.PI * 2, rd = R * (1.15 + 0.8 * hash2(i + 2, j + k * 17, s + 51));
+          const px = cx + Math.cos(ra) * rd, pz = cz + Math.sin(ra) * rd, a = 1.5 + 2.5 * hash2(i + k, j + 5, s + 52);
+          plane(px, pz, a * 0.8);
+          list.push({ sx: slope[0], sz: slope[1], x: px, z: pz, y: mid + 0.15 * a, a, b: a * (0.6 + 0.3 * hash2(i + k, j - k, s + 53)), c: a * (0.55 + 0.3 * hash2(i - k, j + k, s + 54)), ang: ra, seed: hash2(i, j + k, s + 55) * 50, kind: 'kopje' });
+        }
       } else if (w.blackHills > 0.6 && hash2(i + t, j, s + 11) < 0.75) {
         // A granite outcrop, as the Black Hills' are: a crowd of jointed
         // blocks and pillars, the tallest in its heart and stacked two or
@@ -4677,6 +4745,28 @@ export class TerrainGenerator {
     if (cache.size > 3000) cache.clear();
     cache.set(key, list);
     return list;
+  }
+
+  /**
+   * How likely a kopje is in a 300 m cell of savanna round (x, z): only in
+   * some stretches of the savanna (about two in five, 3 km across), and far
+   * likelier there near mountain-like country (a range, the Black Hills,
+   * the savanna's own mountains, the outback) within a couple of kilometres.
+   */
+  #kopjeChance(x, z) {
+    return this.#gridMemo('kopje', x, z, 600, (px, pz) => {
+      const region = hash2(Math.floor(px / 3000), Math.floor(pz / 3000), this.seed ^ 0x6b0e);
+      let near = 0;
+      for (const d of [0, 1000, 2000]) {
+        for (let k = 0; k < (d ? 8 : 1) && near < 1; k++) {
+          const qx = px + Math.cos(k * 0.785) * d, qz = pz + Math.sin(k * 0.785) * d;
+          const w = this.getBiomeWeights(qx, qz, {});
+          near = Math.max(near, this.getMountainness(qx, qz) * 1.4, w.blackHills, (w.savannaMountains ?? 0) * 1.2, (w.outback ?? 0) * 0.8, (w.bristlecone ?? 0));
+        }
+      }
+      near = Math.min(1, near);
+      return region < 0.4 ? 0.025 + 0.12 * near : 0.003 + 0.018 * near; // (kopje country, or the odd one elsewhere)
+    });
   }
 
   /** The great boulders in a box (see #boulderCell). */
@@ -5105,6 +5195,15 @@ export class TerrainGenerator {
     return some * smoothstep(0.68, 0.76, m) * (1 - smoothstep(0.12, 0.24, slope));
   }
 
+  /**
+   * Whether the meadow at (x, z) is one of the sunflower meadows (0..1):
+   * about a third of the wildflower meadows, in broad stretches, are fields
+   * of wild sunflowers instead. (See placeFlowers.)
+   */
+  sunflowerAt(x, z) {
+    return smoothstep(0.08, 0.26, this.meadowNoise.fbm(x * 0.0006 + 401, z * 0.0006 - 233, 2));
+  }
+
   getMeadow(x, z) {
     const patch = smoothstep(0.1, 0.35, this.meadowNoise.fbm(x * 0.0011 + 11, z * 0.0011 - 19, 2)); // (broad rounded patches)
     if (patch <= 0) return 0;
@@ -5425,6 +5524,7 @@ export class TerrainGenerator {
         if (steep < 0.4 && this.alpineMeadowAt(x, z) > 0.5) return 'Alpine meadow';
         // (Forest on the flanks of the range: pine country.)
         if (w.redwood > 0.5) return 'Redwood forest';
+        if (w.rainforest > 0.5) return 'Temperate rainforest';
         if (w.pine > 0.5) return 'Pine forest';
         // (Foothills only at the foot of real mountains: bare rock heights within a couple of kilometres.
         // Elsewhere, high but rounded country, it's named for what grows there.)
@@ -5468,6 +5568,7 @@ export class TerrainGenerator {
     if (top === 'jungle') return 'Jungle';
     if (top === 'pine') return 'Pine forest';
     if (top === 'redwood') return 'Redwood forest';
+    if (top === 'rainforest') return 'Temperate rainforest';
     if ((top === 'savanna' || top === 'desert') && this.petrifiedAt(x, z) > 0.5) return 'Petrified forest';
     if (top === 'badlands') return 'Badlands';
     if (top === 'desert' && this.oasisAt(x, z) > 0.3) return 'Oasis';
@@ -5483,7 +5584,7 @@ export class TerrainGenerator {
     // (Forest: the woods, and the hill country they stand in, wooded or not.)
     if (this.getForestDensity(x, z) > 0.55 || smoothstep(-0.41, 0.19, this.hillRegionNoise.fbm(x * 0.0007, z * 0.0007, 2)) > 0.6) return 'Forest';
     if (this.giantMeadowAt(x, z) > 0.5) return 'Giant flower meadow';
-    return this.getMeadow(x, z) > 0.5 ? 'Wildflower meadow' : 'Plains';
+    return this.getMeadow(x, z) > 0.5 ? (this.sunflowerAt(x, z) > 0.5 ? 'Sunflower meadow' : 'Wildflower meadow') : 'Plains';
   }
 
   surfaceColor(x, z, height, upness, out, jitter = this.getColorJitter(x, z)) {
@@ -5614,6 +5715,15 @@ export class TerrainGenerator {
     // Lake shores: mud, dirt, grass and rock; rocky outcrops on beaches.
     const shore = ground < 9 ? this.getShore(x, z, ground) : null;
     if (shore) out.lerp(shore.color ?? SHORE[shore.kind], 0.85 * shore.fade);
+    // A great alpine lake's cliffs: bare grey stone straight up out of the
+    // water, never the earth and turf of the slopes round about.
+    if (upness < 0.88 && ground > 20) {
+      const lk = this.rivers.at(x, z, 18);
+      if (lk && lk.cliffs && height < lk.level + 20) {
+        const c = LAKE_CLIFF[Math.floor(hash2(Math.floor(x / 2.5), Math.floor(height / 1.5), this.seed ^ 0x1a6e) * LAKE_CLIFF.length)];
+        out.lerp(c, 0.9 * (1 - smoothstep(0.7, 0.88, upness)) * (1 - smoothstep(lk.level + 14, lk.level + 20, height)));
+      }
+    }
     // Fallen rock at the foot of sea cliffs and round sea stacks.
     if (ground < 7 && ground > -3) {
       const cliffs = this.getSeaCliff(x, z);

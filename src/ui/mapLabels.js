@@ -14,6 +14,8 @@ export const MAP_LABELS = [
   ['Plains', '#a9cf6a'],
   ['Forest', '#3f7d33'],
   ['Birch & aspen parkland', '#c3d77a'],
+  ['Sunflower meadow', '#e8c22a'],
+  ['Temperate rainforest', '#2f5a34'],
   ['Pine forest', '#2f5a36'],
   ['Redwood forest', '#8a3b24'],
   ['Ancient oak wood', '#2c4a22'],

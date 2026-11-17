@@ -37,7 +37,7 @@ function hash01(...n) {
 }
 
 // The calls that aren't creatures' (see call): heard on the effects channel.
-const EFFECTS = new Set(['brush', 'chop', 'clang', 'click', 'crack', 'crackle', 'craft', 'crash', 'creak', 'crit', 'dig', 'drink', 'drip', 'eat', 'grind', 'heartbeat', 'hurt', 'ignite', 'paddle', 'pickup', 'place', 'pour', 'rumble', 'sandslide', 'scrape', 'shake', 'splash', 'bigsplash', 'stab', 'strike', 'thump', 'thunk', 'treebump', 'treefall', 'twang', 'twig', 'wave', 'whoosh', 'winch']);
+const EFFECTS = new Set(['brush', 'chop', 'clang', 'click', 'crack', 'crackle', 'craft', 'crash', 'creak', 'crit', 'dig', 'drink', 'drip', 'eat', 'grind', 'heartbeat', 'hurt', 'ignite', 'paddle', 'pickup', 'place', 'pour', 'rumble', 'sandslide', 'scrape', 'scree', 'shake', 'splash', 'bigsplash', 'stab', 'strike', 'thump', 'thunk', 'treebump', 'treefall', 'twang', 'twig', 'wave', 'whoosh', 'winch']);
 
 export class Sound {
   constructor() {
@@ -1388,6 +1388,12 @@ export class Sound {
       // A branch cracking underfoot: a split second of sharp splintering clicks.
       for (let k = 0; k < 4; k++) noise(t + k * 0.011 + Math.random() * 0.008, 0.02 + Math.random() * 0.015, 1800 + Math.random() * 3000, 1, 0.3);
       wash(t + 0.01, 0.12, 'lowpass', 600, 0.25, 0.002); // (and the dull, woody snap)
+    } else if (kind === 'scree') {
+      // Sliding down a cliff face: boots skidding on rock and loose stones
+      // rattling away underneath, a dry grinding rush with pebbles in it.
+      wash(t, 0.5, 'lowpass', 1100, 0.32, 0.04, 700);
+      wash(t + 0.03, 0.42, 'bandpass', 2600, 0.12, 0.03, 1800);
+      for (let k = 0; k < 5; k++) noise(t + Math.random() * 0.45, 0.02 + Math.random() * 0.03, 1400 + Math.random() * 2600, 2, 0.12 + Math.random() * 0.12);
     } else if (kind === 'sandslide') {
       // A trickle of sand sliding off a dune's crest: a long soft hiss.
       wash(t, 2.2, 'bandpass', 3800, 0.06, 0.6, 2500);

@@ -1916,6 +1916,24 @@ export const BARN_DYES = {
  * another (both faces): plain, a stripe down it, a cross, a chevron, a
  * saltire, quarters, a sun, a wolf's head.
  */
+/**
+ * A flag to plant: a light pole, 2.3 m, with a little pennant of cloth in
+ * `colour` near its top, its tail cut in two, a bright knob on the pole's
+ * tip so it catches the eye; a sharpened foot.
+ */
+export function flagModel(colour = 0xd8442e) {
+  const b = new Parts(311), dark = new Color(colour).multiplyScalar(0.72).getHex();
+  b.add(new CylinderGeometry(0.022, 0.03, 2.3, 5), 0x8a6a44, [0, 1.15, 0]);
+  b.add(new ConeGeometry(0.03, 0.12, 5), 0x6a4a2e, [0, -0.04, 0], [Math.PI, 0, 0]);
+  b.add(new SphereGeometry(0.045, 6, 4), 0xe8d8a0, [0, 2.33, 0]);
+  const W = 0.72, H = 0.46, top = 2.22;
+  b.add(new BoxGeometry(W * 0.75, H, 0.014), colour, [0.03 + W * 0.375, top - H / 2, 0], [0, 0, 0], [1, 1, 1], 0.03);
+  for (const s of [-1, 1]) b.add(new ConeGeometry(H / 4, W * 0.3, 3), s > 0 ? colour : dark, [0.03 + W * 0.75 + W * 0.13, top - H / 2 + s * H / 4, 0], [0, 0, -Math.PI / 2], [1, 1, 0.08]);
+  // (A stripe of the darker shade along its edge, by the pole.)
+  for (const z of [0.009, -0.009]) b.add(new BoxGeometry(0.06, H, 0.006), dark, [0.06, top - H / 2, z], [0, 0, 0], [1, 1, 1], 0.02);
+  return b.build();
+}
+
 export const BANNER_DESIGNS = ['plain', 'a stripe', 'a cross', 'a chevron', 'a saltire', 'quarters', 'a sun', "a wolf's head"];
 export function bannerModel(field = 'red', mark = 'white', design = 0) {
   const b = new Parts(271 + design), [f] = BARN_DYES[field] ?? BARN_DYES.red, [m] = BARN_DYES[mark] ?? BARN_DYES.white;

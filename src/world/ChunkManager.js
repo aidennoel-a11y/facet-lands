@@ -795,7 +795,7 @@ export class ChunkManager {
       let tall = false;
       for (const [u, v] of [[0.5, 0.5], [0, 0], [1, 0], [0, 1], [1, 1]]) {
         const w = this.generator.getBiomeWeights((cx + u) * C, (cz + v) * C, {});
-        if (w.redwood + w.jungle + w.mangrove > 0.001) tall = true;
+        if (w.redwood + w.jungle + w.mangrove + (w.rainforest ?? 0) > 0.001) tall = true;
       }
       if (cache.size > 20000) cache.clear();
       cache.set(key, tall);

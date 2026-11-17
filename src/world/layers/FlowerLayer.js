@@ -74,6 +74,93 @@ function head() {
   return g;
 }
 
+// --- Sunflowers ---------------------------------------------------------------------
+// (The flowers of some of the meadows: data colour 10. See placeFlowers.)
+export const SUNFLOWER = 10;
+/** The sun's direction, for the sunflowers to turn to (set to DayNight's sunDir by main). */
+export const sunflowerSun = { value: new Vector3(1, 0.5, 0) };
+
+/** Coloured triangles into a geometry: [[a, b, c, colour], ...]. */
+function painted(tris) {
+  const pos = [], col = [], c = new Color();
+  for (const [a, b, d, colour] of tris) {
+    pos.push(...a, ...b, ...d);
+    c.set(colour);
+    for (let k = 0; k < 3; k++) col.push(c.r, c.g, c.b);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A sunflower's stalk, 1 m tall (scaled up to its height), thick and hairy-green, with big heart-shaped leaves up it. */
+function sunflowerStalk() {
+  const tris = [], G = 0x4a7a2a, GL = 0x5f9434, GD = 0x3a6422;
+  const ring = (y, r) => [0, 1, 2, 3, 4].map((k) => [Math.cos((k / 5) * Math.PI * 2) * r, y, Math.sin((k / 5) * Math.PI * 2) * r]);
+  const a = ring(0, 0.03), b = ring(1, 0.02);
+  for (let k = 0; k < 5; k++) {
+    const m = (k + 1) % 5;
+    tris.push([a[k], b[k], b[m], G], [a[k], b[m], a[m], G]);
+  }
+  // (The leaves: broad, pointed, drooping a little, round the stalk.)
+  for (let k = 0; k < 5; k++) {
+    const y = 0.22 + k * 0.15, ang = k * 2.4, ca = Math.cos(ang), sa = Math.sin(ang), L = 0.3 - k * 0.03, W = 0.12 - k * 0.01;
+    const base = [ca * 0.02, y, sa * 0.02], tip = [ca * L, y - 0.08, sa * L];
+    const side = (s) => [ca * L * 0.45 - sa * W * s, y + 0.03, sa * L * 0.45 + ca * W * s];
+    tris.push([base, side(1), tip, k % 2 ? GL : GD], [base, tip, side(-1), k % 2 ? GD : GL]);
+  }
+  return painted(tris);
+}
+
+/**
+ * A sunflower's head, facing +z, its middle at the origin: the big brown
+ * seed-disc, a ring of golden petals round it, green bracts behind. (Turned
+ * to the sun in the shader: see sunflowerMaterial.)
+ */
+function sunflowerHead() {
+  const tris = [], N = 16, R0 = 0.13, R1 = 0.3;
+  const DISC = 0x4a2c14, DISC_RIM = 0x6a4420, PETAL = 0xf2c018, PETAL_TIP = 0xf6d84a, BRACT = 0x4f7a2a;
+  for (let k = 0; k < N; k++) {
+    const a0 = (k / N) * Math.PI * 2, a1 = ((k + 1) / N) * Math.PI * 2, am = (a0 + a1) / 2;
+    const at = (a, r, z = 0) => [Math.cos(a) * r, Math.sin(a) * r, z];
+    tris.push([[0, 0, 0.035], at(a1, R0, 0.01), at(a0, R0, 0.01), k % 2 ? DISC : DISC_RIM]); // (the disc, domed a little)
+    tris.push([at(a0, R0 * 0.95, 0.005), at(a1, R0 * 0.95, 0.005), at(am, R1, -0.02), k % 2 ? PETAL : PETAL_TIP]); // (a petal)
+    tris.push([at(a1, R0 * 0.9, -0.02), at(a0, R0 * 0.9, -0.02), [0, 0, -0.07], BRACT]); // (the green back)
+  }
+  return painted(tris);
+}
+
+/** The heads' material: each turned to face the sun (east before dawn), drooping at night; seasonal, swaying a little. */
+function sunflowerMaterial(bloom) {
+  const m = bloom(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide }), 'sunflower-head');
+  const previous = m.onBeforeCompile;
+  m.onBeforeCompile = (shader, renderer) => {
+    shader.uniforms.uSunflowerSun = sunflowerSun;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+uniform vec3 uSunflowerSun;
+mat3 sunflowerTurn() {
+  vec3 sd = normalize(uSunflowerSun);
+  float day = smoothstep(-0.08, 0.12, sd.y);
+  // (By day the sun's way, tilted up towards it; by night east, waiting for it, and drooping.)
+  vec3 face = normalize(mix(vec3(1.0, -0.45, 0.0), vec3(sd.x, clamp(sd.y, -0.1, 0.75) * 0.8, sd.z), day));
+  float yaw = atan(face.x, face.z), pitch = -asin(clamp(face.y, -0.95, 0.95));
+  float cy = cos(yaw), sy = sin(yaw), cp = cos(pitch), sp = sin(pitch);
+  mat3 rx = mat3(1.0, 0.0, 0.0, 0.0, cp, sp, 0.0, -sp, cp);
+  mat3 ry = mat3(cy, 0.0, -sy, 0.0, 1.0, 0.0, sy, 0.0, cy);
+  return ry * rx;
+}`)
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal = sunflowerTurn() * objectNormal;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = sunflowerTurn() * transformed;');
+    previous?.call(m, shader, renderer);
+  };
+  const key = m.customProgramCacheKey?.bind(m);
+  m.customProgramCacheKey = () => `${key ? key() : ''}|sunturn`;
+  return m;
+}
+
 const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), s = new Vector3(), yAxis = new Vector3(0, 1, 0);
 const tilt = new Quaternion(), lean = new Vector3();
 
@@ -102,6 +189,9 @@ export function createFlowerLayer(config) {
     return material;
   };
   const stemMaterial = bloom(new MeshLambertMaterial({ color: 0x4f7a32 }), 'flower-stem');
+  const sunStalks = sunflowerStalk(), sunHeads = sunflowerHead();
+  const sunStalkMaterial = bloom(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide, flatShading: true }), 'sunflower-stalk');
+  const sunHeadMaterial = sunflowerMaterial(bloom);
   const headMaterial = bloom(new MeshLambertMaterial({ side: DoubleSide }), 'flower-head');
 
   return {
@@ -115,8 +205,9 @@ export function createFlowerLayer(config) {
       // (Where they go: worked out by a chunk worker; here only if it wasn't.)
       const data = prepared && prepared.flowers !== undefined ? prepared.flowers : placeFlowers(generator, config, cx, cz, groundHeightAt, COLOURS.length);
       if (!data) return null;
-      const list = [], heather = [];
-      for (let k = 0; k < data.length; k += 8) (data[k + 5] >= 7 ? heather : list).push([data[k], data[k + 1], data[k + 2], data[k + 3], data[k + 4], data[k + 5] >= 7 ? HEATHER[data[k + 5] - 7] : COLOURS[data[k + 5]], data[k + 6], data[k + 7]]);
+      const list = [], heather = [], suns = [];
+      for (let k = 0; k < data.length; k += 8) if (data[k + 5] === SUNFLOWER) suns.push([data[k], data[k + 1], data[k + 2], data[k + 3], data[k + 4], data[k + 6], data[k + 7]]);
+      else (data[k + 5] >= 7 ? heather : list).push([data[k], data[k + 1], data[k + 2], data[k + 3], data[k + 4], data[k + 5] >= 7 ? HEATHER[data[k + 5] - 7] : COLOURS[data[k + 5]], data[k + 6], data[k + 7]]);
       const stemMesh = new InstancedMesh(stems, stemMaterial, list.length);
       const headMesh = new InstancedMesh(heads, headMaterial, list.length);
       list.forEach(([x, y, z, sc, r, colour, nx, nz], k) => {
@@ -135,6 +226,29 @@ export function createFlowerLayer(config) {
       headMesh.computeBoundingSphere();
       headMesh.add(stemMesh);
       headMesh.name = 'flowers';
+      // (The sunflowers: tall stalks, their heads turned to the sun.)
+      if (suns.length) {
+        const stalks = new InstancedMesh(sunStalks, sunStalkMaterial, suns.length), hds = new InstancedMesh(sunHeads, sunHeadMaterial, suns.length);
+        suns.forEach(([x, y, z, sc, r], k) => {
+          const h = sc; // (the stalk's height, m)
+          p.set(x, y - 0.05, z);
+          q.setFromAxisAngle(yAxis, r * Math.PI * 2);
+          s.set(1 + 0.3 * r, h, 1 + 0.3 * r);
+          stalks.setMatrixAt(k, m4.compose(p, q, s));
+          // (The head on top: no turn of its own, so it faces the sun the same as all the rest.)
+          p.set(x, y - 0.05 + h * 0.99, z);
+          q.identity();
+          s.setScalar(0.85 + 0.45 * r);
+          hds.setMatrixAt(k, m4.compose(p, q, s));
+        });
+        stalks.computeBoundingSphere();
+        hds.computeBoundingSphere();
+        stalks.castShadow = hds.castShadow = true;
+        stalks.receiveShadow = hds.receiveShadow = true;
+        stalks.name = 'sunflower stalks';
+        hds.name = 'sunflowers';
+        headMesh.add(stalks, hds);
+      }
       // (The heather: low clumps hugging the ground, not on stems; there all year.)
       if (heather.length) {
         const hm = new InstancedMesh(clump, heatherMaterial, heather.length);

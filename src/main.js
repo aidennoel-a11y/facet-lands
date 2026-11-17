@@ -44,7 +44,7 @@ import { createSeaweedLayer } from './world/layers/SeaweedLayer.js';
 import { createMushroomIslandLayer } from './world/layers/MushroomIslandLayer.js';
 import { Profiler } from './render/Profiler.js';
 import { createLogLayer } from './world/layers/LogLayer.js';
-import { createFlowerLayer } from './world/layers/FlowerLayer.js';
+import { createFlowerLayer, sunflowerSun } from './world/layers/FlowerLayer.js';
 import { createSnowLayer } from './world/layers/SnowLayer.js';
 import { SnowBlanket } from './world/SnowBlanket.js';
 import { TREE_GEOMETRIES } from './world/trees.js';
@@ -307,8 +307,8 @@ function climateHere(dt) {
     const p = camera.position, w = generator.getBiomeWeights(p.x, p.z, {});
     const summer = Math.max(0, 1 - seasonUniforms.uSpring.value - seasonUniforms.uAutumn.value - seasonUniforms.uWinter.value);
     const v = (w.desert ?? 0) * 0.12 + (w.saltFlat ?? 0) * 0.08 + (w.badlands ?? 0) * 0.35 + (w.savanna ?? 0) * (0.35 + 0.45 * summer)
-      + ((w.jungle ?? 0) + (w.mangrove ?? 0) + (w.wetland ?? 0) + (w.redwood ?? 0)) * 1.25;
-    const known = (w.desert ?? 0) + (w.saltFlat ?? 0) + (w.badlands ?? 0) + (w.savanna ?? 0) + (w.jungle ?? 0) + (w.mangrove ?? 0) + (w.wetland ?? 0) + (w.redwood ?? 0);
+      + ((w.jungle ?? 0) + (w.mangrove ?? 0) + (w.wetland ?? 0) + (w.redwood ?? 0) + 1.3 * (w.rainforest ?? 0)) * 1.25; // (the rainforest: rain most days)
+    const known = (w.desert ?? 0) + (w.saltFlat ?? 0) + (w.badlands ?? 0) + (w.savanna ?? 0) + (w.jungle ?? 0) + (w.mangrove ?? 0) + (w.wetland ?? 0) + (w.redwood ?? 0) + (w.rainforest ?? 0);
     climate.target = Math.min(1.3, v + Math.max(0, 1 - known)); // (everywhere else: its full share)
   }
   climate.wet += (climate.target - climate.wet) * Math.min(1, dt / 8);
@@ -468,6 +468,8 @@ const slide = { wait: 5, rumble: 0, hit: 0 };
 // a few seconds, a deep roar; rock shaken loose tumbling down the steep
 // slopes; cracks torn open in the ground; every animal bolting.
 const rockfalls = new Avalanches(scene, true);
+// (How heavy each big one's tread is: see the animals' footfalls.)
+const HEAVY_TREAD = { elephant: 1, hippo: 0.6, rhino: 0.7, mammoth: 1.1, bison: 0.38, moose: 0.32 };
 const quake = { at: null, slot: -1, strength: 0, rumble: 0, hit: 0, fell: false, shake: 0 };
 const CRACK = new THREE.Color(0x1c1612);
 function quakeUpdate(dt) {
@@ -786,7 +788,9 @@ chunks.addLayer(rivers);
 chunks.addLayer(createReedLayer(WORLD));
 chunks.addLayer(createLilyLayer(WORLD));
 chunks.addLayer(createVentLayer(WORLD));
-chunks.addLayer(createGeyserLayer(WORLD));
+let screeWait = 0;
+const geysers = createGeyserLayer(WORLD);
+chunks.addLayer(geysers);
 const coralLayer = createCoralLayer(WORLD);
 chunks.addLayer(coralLayer);
 chunks.addLayer(createMushroomIslandLayer(WORLD));
@@ -861,7 +865,7 @@ let floorTop = null; // (see the Game, below: what's laid on the ground)
 function groundAt(x, feetY, z) {
   const g = generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
   // Boulders are solid: you stand on their tops (and walk into their sides as walls).
-  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), logs.surfaceAt(x, z), ruins.surfaceAt(x, z, feetY), landmarks.surfaceAt(x, z));
+  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), logs.surfaceAt(x, z), ruins.surfaceAt(x, z, feetY), landmarks.surfaceAt(x, z), geysers.surfaceAt?.(x, z) ?? -Infinity);
   // (On a floor you've laid: its boards or flags.)
   const floor = floorTop?.(x, z, feetY);
   if (floor !== null && floor !== undefined) g.height = Math.max(g.height, floor);
@@ -1385,7 +1389,7 @@ function stepSurface(x, z, feetY = null) {
   if (w.volcanic > 0.5 || (hi - lo < 0.18 * hi && (w.badlands > 0.4 || generator.getMountainness(x, z) > 0.55) && groundNormal(x, z).y > 0.8)) return 'gravel';
   if (hi - lo < 0.18 * hi) return 'rock';
   const forest = generator.getForestDensity(x, z);
-  if (w.pine + w.redwood + w.jungle > 0.5 || (w.temperate + w.smoky > 0.5 && forest > 0.55)) return 'leaves';
+  if (w.pine + w.redwood + (w.rainforest ?? 0) + w.jungle > 0.5 || (w.temperate + w.smoky > 0.5 && forest > 0.55)) return 'leaves';
   if (w.savanna + w.badlands > 0.6) return 'dirt';
   return 'grass';
 }
@@ -1917,7 +1921,8 @@ game.onSnow = () => controls.mode === 'walk' && !sheltered && stepSurface(camera
 game.waveAt = (x, z) => water.waveAt(x, z, WORLD.seaLevel - chunks.groundHeightAt(x, z), generator.getOceanness(x, z)); // (trees carried round in a tornado: see Felling.liftUp)
 floorTop = (x, z, feetY) => game.structures.floorTop(x, z, feetY);
 ruins.onChest = (c) => game.ruinChest(c);
-ruins.sun = dayNight.sunDir; // (the Keep's chapel window: see RuinLayer.update)
+ruins.sun = dayNight.sunDir;
+sunflowerSun.value = dayNight.sunDir; // (the sunflowers turn to it) // (the Keep's chapel window: see RuinLayer.update)
 // (A treehouse's platform goes round a tree trunk: the nearest one to where you point.)
 game.structures.treeNear = (x, z, r) => {
   let best = null;
@@ -2050,7 +2055,7 @@ const birdBurst = new BirdBurst(scene);
 birdBurst.fright = (x, y, z, scale = 1) => {
   if (Math.hypot(x - camera.position.x, z - camera.position.z) > 220 || sheltered) return;
   const w = generator.getBiomeWeights(x, z, {});
-  const wooded = (w.temperate ?? 0) * 0.8 + (w.pine ?? 0) + (w.jungle ?? 0) + (w.redwood ?? 0) + (w.parkland ?? 0) * 0.6 + (w.smoky ?? 0) + (w.cascades ?? 0) + (w.bamboo ?? 0) * 0.7 + (w.cherry ?? 0) + (w.wetland ?? 0) * 0.5;
+  const wooded = (w.temperate ?? 0) * 0.8 + (w.pine ?? 0) + (w.jungle ?? 0) + (w.redwood ?? 0) + (w.rainforest ?? 0) + (w.parkland ?? 0) * 0.6 + (w.smoky ?? 0) + (w.cascades ?? 0) + (w.bamboo ?? 0) * 0.7 + (w.cherry ?? 0) + (w.wetland ?? 0) * 0.5;
   if (wooded < 0.25) return;
   const day = 1 - (game.night ?? 0) * 0.75;
   const n = Math.round((8 + 10 * Math.min(1, wooded)) * scale * day);
@@ -2063,6 +2068,19 @@ birdBurst.fright = (x, y, z, scale = 1) => {
   setTimeout(() => sound.call(Math.random() < 0.5 ? 'caw' : 'peep', panTowards(camera, x, z), loud * 0.7), 250);
 };
 game.onFright = (x, y, z, scale) => birdBurst.fright(x, y, z, scale);
+// (A flag you plant: your name (online, as the room knows you; alone, the name you play under), your
+// character's accent colour, and the kind of country it stands in. See Structures.showFlag.)
+game.flagger = () => {
+  let name = mp.connected ? myName : null;
+  try {
+    name ??= localStorage.getItem('facet-lands:name') || 'Wanderer';
+  } catch {
+    name ??= 'Wanderer';
+  }
+  return { name, colour: myLook?.accent ?? 0xd8442e, place: sheltered ? '' : ui.biome?.textContent ?? '' };
+};
+// (Every flag planted, for the maps: { x, z, name, colour }.)
+const flagsOnMap = () => game.structures.list.filter((s) => s.type === 'flag').map((s) => ({ x: s.x, z: s.z, name: s.data?.owner ?? '', colour: `#${(s.data?.colour ?? 0xd8442e).toString(16).padStart(6, '0')}` }));
 game.onChop = (x, z, fell) => fallingLeaves.shake(x, z, fell ? 25 : 5 + Math.floor(Math.random() * 4));
 
 // --- HUD -----------------------------------------------------------------------
@@ -2096,6 +2114,7 @@ const bigMap = new BiomeMap({
   // (A few new places worked out each time it's drawn: it fills in over a moment, never freezing. In survival, only those you've been to.)
   landmarks: (x, z, r) => game.landmarksForMap(x, z, r),
   others: () => othersOnMap(),
+  flags: () => flagsOnMap(),
   more: () => game.mode === 'testing' && !!game.landmarkMore, // (testing: the landmarks still being found, drawn again in a moment)
   ruins: (x, z, r, labelAt) => (game.mode === 'testing' ? ruins.sitesRoughly(x, z, Math.min(r, 20000), generator, labelAt) : ruins.sitesOf(game.ruinsSeen, generator)),
   // (Testing: the shipwrecks too, on the beaches and sunk out at sea.)
@@ -2634,7 +2653,7 @@ function* lookAround(e) {
       jungle += Math.min(1, w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0)) / pts.length; // (the jungle mountains are jungle too, to the ear)
       wetland += (w.wetland + w.mangrove) / pts.length;
       desert += (w.desert + w.saltFlat + 0.6 * w.badlands) / pts.length;
-      pine += (w.pine + w.redwood) / pts.length;
+      pine += (w.pine + w.redwood + (w.rainforest ?? 0)) / pts.length;
     }
     yield;
     const surf = { x: 0, z: 0 };
@@ -2927,9 +2946,10 @@ function marshMist(dt) {
     mistState.dry = w.desert + 0.5 * w.savanna;
     mistState.desert = w.desert;
     mistState.devilCountry = w.desert + w.savanna;
-    mistState.mossy = Math.min(1, 0.55 * w.temperate + 0.9 * w.pine + w.jungle + w.wetland + 0.9 * (w.smoky ?? 0) + (w.monsoon ?? 0) + (w.hangingGardens ?? 0) + (w.bambooGorge ?? 0));
+    mistState.mossy = Math.min(1, 0.55 * w.temperate + 0.9 * w.pine + w.jungle + w.wetland + 0.9 * (w.smoky ?? 0) + (w.monsoon ?? 0) + (w.hangingGardens ?? 0) + (w.bambooGorge ?? 0) + 1.5 * (w.rainforest ?? 0));
     mistState.smoky = w.smoky ?? 0;
     mistState.gorge = w.bambooGorge ?? 0;
+    mistState.rain = sheltered ? 0 : w.rainforest ?? 0;
   }
   // (Moss on the trees in damp country round about.)
   seasonUniforms.uMossy.value += ((mistState.mossy ?? 0) - seasonUniforms.uMossy.value) * Math.min(1, dt / 4);
@@ -2942,7 +2962,7 @@ function marshMist(dt) {
   const dawn = smooth(4.3, 5.8, h) * (1 - smooth(8, 9.8, h));
   const low = 1 - smooth(20, 90, camera.position.y);
   // (And in a bamboo mist gorge, mist hanging in it all day, thickest at dawn.)
-  const target = Math.max(0.25 * mistState.marsh * low * dawn, 0.3 * (mistState.gorge ?? 0) * (0.55 + 0.45 * dawn)); // (a light veil: a quarter of what it was)
+  const target = Math.max(0.25 * mistState.marsh * low * dawn, 0.3 * (mistState.gorge ?? 0) * (0.55 + 0.45 * dawn), 0.22 * (mistState.rain ?? 0) * (0.5 + 0.5 * dawn)); // (a light veil: a quarter of what it was) (and the temperate rainforest: a damp mist among the trunks all day)
   mistState.value += (target - mistState.value) * Math.min(1, dt / 2);
   valleyMist(dt, foggy * dawn * (1 - 0.8 * mistState.dry));
   return mistState.value < 0.002 ? 0 : mistState.value;
@@ -3465,6 +3485,11 @@ function tick(now) {
   }
   if (loading) settleFrame(now);
   controls.update(dt);
+  // (Skidding down a cliff face: the grinding rush of boots and loose stone.)
+  if (controls.sliding) {
+    screeWait -= dt;
+    if (screeWait <= 0) (screeWait = 0.32 + Math.random() * 0.1), sound.call('scree', (Math.random() - 0.5) * 0.3, 0.55);
+  } else screeWait = 0;
   playerTraces(dt);
   camera.getWorldDirection(dir);
   prof.mark('you (moving)');
@@ -3717,6 +3742,14 @@ function tick(now) {
       // (Close by, you hear them: hooves and paws on the ground, a branch
       // cracking as a big one comes through the woods.)
       const d = Math.hypot(x - camera.position.x, z - camera.position.z);
+      // (The giants: an elephant's tread a deep, heavy thud heard a long way off, the ground trembling under you when it's close.)
+      const heavy = (HEAVY_TREAD[a.kind] ?? 0) * (a.scale ?? 1);
+      if (heavy > 0 && d < 30 + 60 * heavy && Math.random() < 0.75) {
+        const pan = panTowards(camera, x, z), loud = Math.min(0.95, heavy * (running ? 1.3 : 0.9) * 14 / (d + 10));
+        sound.from(x, z);
+        sound.call('thump', pan, loud);
+        if (d < 14 * heavy) game.shake = Math.max(game.shake ?? 0, 0.31 + 0.25 * heavy * (1 - d / (14 * heavy)));
+      }
       if (d < 22 && size * a.scale > 0.09) {
         const pan = panTowards(camera, x, z), loud = Math.min(1, 8 / (d + 4)) * (running ? 1 : 0.55) * Math.min(1.4, size * a.scale * 7);
         const surface = stepSurface(x, z);
@@ -3871,6 +3904,7 @@ function tick(now) {
   prof.mark('map marks (ruins)');
   minimap.fog = game.mode === 'survival' ? { explored: game.explored, size: WORLD.chunkSize, version: game.exploredVersion ?? 0 } : null;
   minimap.others = othersOnMap();
+  minimap.flags = flagsOnMap();
   minimap.update(generator, camera.position, Math.atan2(dir.x, -dir.z), WORLD.seaLevel);
   // (The big map, open online: redrawn now and then, so the others move on it.)
   if (mp.connected && bigMap.isOpen && (mapOthersWait = (mapOthersWait ?? 0) - dt) <= 0) (mapOthersWait = 1), bigMap.draw();

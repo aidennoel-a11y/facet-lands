@@ -13,7 +13,7 @@ import { hash2 } from '../noise/random.js';
 export const LANDMARKS = {
   elderTree: { name: 'The Elder Tree', cell: 2600, land: (h, slope) => h > 4 && slope < 0.22, // (on level ground in the deep woods)
     what: 'An ancient tree, the oldest thing in the forest: rest beneath it and your wounds close fast',
-    fits: (w, m, f) => w.temperate + w.parkland + w.smoky + w.redwood > 0.6 && m < 0.45 && f > 0.35 },
+    fits: (w, m, f) => w.temperate + w.parkland + w.smoky + w.redwood + (w.rainforest ?? 0) > 0.6 && m < 0.45 && f > 0.35 },
   stoneArch: { name: 'The Stone Arch', cell: 2600, land: (h, slope, rise) => slope < 0.4 && rise > -2, // (on open rock, not down in a wash)
     what: 'A great arch of red rock among boulders and spires: from under it the land round about is laid out on your map',
     fits: (w, m) => w.badlands + 0.8 * w.desert + w.blackHills > 0.45 && m < 0.6 },

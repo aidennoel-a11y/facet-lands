@@ -20,6 +20,7 @@ the code is the check of what's in the game.
 ## Built so far from the lists
 
 - List E (Nov 2026): 1, 3, 12, 16, 20, 23, 24, 28, 31, 32, 38, 41, 49, 57, 60, 62, 70, 71, 72, 77, 78, plus everyone shown on the maps online
+- List F (Nov 2026): 3 (flags, now plantable anywhere), 60 (temperate rainforest), 61 (kopjes), 63 (sunflowers, as the flowers of some meadows)
 
 ## Suggested in conversation (not in a list)
 

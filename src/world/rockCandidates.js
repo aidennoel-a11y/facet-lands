@@ -50,7 +50,8 @@ export function rockCandidates(generator, config, cx, cz) {
       const bw = generator.getBiomeWeights(wx, wz, {});
       const granite = bw.blackHills;
       // Redwood forests: mossy boulders and stones here and there among the giants.
-      const red = bw.redwood;
+      // (And the temperate rainforest: boulders strewn thick over its floor, every one of them mossed over.)
+      const red = bw.redwood + 2.4 * (bw.rainforest ?? 0);
       // Round a volcano that blew itself apart: a vast field of the
       // boulders and rocks it threw out, black and brown.
       const blast = bw.volcanic + bw.temperate + bw.pine + bw.smoky > 0.3 && bw.desert < 0.5 ? generator.blastAt(wx, wz) : 0;

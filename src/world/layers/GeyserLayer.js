@@ -90,6 +90,17 @@ export function createGeyserLayer(config) {
       .replace('#include <opaque_fragment>', '#include <opaque_fragment>\ngl_FragColor.a *= 0.8 * vFade;');
   };
   material.customProgramCacheKey = () => 'geyser';
+  // The cones built so far, in world space, so they're solid underfoot:
+  // group -> [[x, base, z, r, height], ...].
+  const solid = new Map();
+  const PROFILE = [[1.0, 0.0], [0.82, 0.16], [0.62, 0.38], [0.44, 0.62], [0.3, 0.86], [0.2, 1.0], [0.1, 0.9], [0.0, 0.84]];
+  const rise = (f) => {
+    for (let k = 1; k < PROFILE.length; k++) {
+      const [r0, y0] = PROFILE[k - 1], [r1, y1] = PROFILE[k];
+      if (f >= r1) return y0 + ((r0 - f) / (r0 - r1)) * (y1 - y0);
+    }
+    return PROFILE[PROFILE.length - 1][1];
+  };
 
   return {
     name: 'geysers',
@@ -97,6 +108,19 @@ export function createGeyserLayer(config) {
 
     update(time) {
       uniforms.uTime.value = time;
+    },
+
+    /** The top of a geyser's cone at (x, z), or -Infinity off them all. */
+    surfaceAt(x, z) {
+      let top = -Infinity;
+      for (const list of solid.values()) {
+        for (const [cx, base, cz, r, hgt] of list) {
+          const dx = x - cx, dz = z - cz;
+          if (dx * dx + dz * dz >= r * r * 0.96) continue;
+          top = Math.max(top, base + hgt * rise(Math.sqrt(dx * dx + dz * dz) / r) * 0.97);
+        }
+      }
+      return top;
     },
 
     reuseKey: ({ lod }) => (lod > 2 ? 'none' : 'near'),
@@ -164,6 +188,7 @@ export function createGeyserLayer(config) {
         mesh.receiveShadow = true;
         group.add(mesh);
       }
+      if (cones.length) solid.set(group, cones.map(([x, y, z, r, hgt]) => [x + x0, y, z + z0, r, hgt]));
       for (const [x, y, z, r, hgt, k, turn] of cones) {
         const cone = new Mesh(CONES[k], coneMaterial);
         cone.position.set(x, y, z);
@@ -194,6 +219,7 @@ export function createGeyserLayer(config) {
     },
 
     dispose(group) {
+      solid.delete(group);
       for (const child of group.children) {
         if (child.name === 'geyser') child.geometry.dispose(); // (the rest share theirs)
         child.dispose?.();

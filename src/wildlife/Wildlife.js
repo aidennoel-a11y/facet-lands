@@ -40,13 +40,13 @@ const SWAY = { x: 0, z: 0 };
 // mind): the sound, how far it's heard (m), how long between (s, at the
 // least), when ('day', 'night', or any time), and how loud.
 const IDLE_VOICE = {
-  deer: ['bleat', 90, 60, 'any', 0.4], moose: ['moose', 300, 70, 'any', 0.8], bison: ['grunt', 200, 40, 'day', 0.7], blackBear: ['huff', 90, 50, 'any', 0.6], grizzly: ['huff', 110, 50, 'any', 0.7],
-  fox: ['bark', 220, 70, 'night', 0.6], wolfPup: ['yelp', 80, 40, 'any', 0.5], rabbit: ['squeak', 25, 90, 'any', 0.3], hare: ['squeak', 25, 90, 'any', 0.3], beaver: ['splash', 80, 80, 'any', 0.5],
-  panda: ['panda', 90, 50, 'day', 0.6], crocodile: ['crocBellow', 250, 90, 'any', 0.8], hawk: ['hawk', 300, 45, 'day', 0.6], eagle: ['hawk', 350, 50, 'day', 0.7], vulture: ['vulture', 150, 60, 'day', 0.5],
-  owl: ['owl', 250, 35, 'night', 0.6], seal: ['seal', 200, 35, 'any', 0.7], gull: ['gull', 250, 30, 'day', 0.5], crow: ['caw', 250, 45, 'day', 0.5], python: ['hiss', 20, 40, 'any', 0.4], bat: ['bats', 40, 30, 'night', 0.4],
-  crab: ['click', 8, 40, 'any', 0.25], salamander: ['croak', 30, 60, 'night', 0.3], seaTurtle: ['huff', 20, 90, 'any', 0.25], scorpion: ['scorpion', 8, 40, 'night', 0.3],
+  deer: ['bleat', 50, 60, 'any', 0.4], moose: ['moose', 165, 70, 'any', 0.8], bison: ['grunt', 110, 40, 'day', 0.7], blackBear: ['huff', 50, 50, 'any', 0.6], grizzly: ['huff', 61, 50, 'any', 0.7],
+  fox: ['bark', 121, 70, 'night', 0.6], wolfPup: ['yelp', 44, 40, 'any', 0.5], rabbit: ['squeak', 14, 90, 'any', 0.3], hare: ['squeak', 14, 90, 'any', 0.3], beaver: ['splash', 44, 80, 'any', 0.5],
+  panda: ['panda', 50, 50, 'day', 0.6], crocodile: ['crocBellow', 60, 90, 'any', 0.8], hawk: ['hawk', 165, 45, 'day', 0.6], eagle: ['hawk', 193, 50, 'day', 0.7], vulture: ['vulture', 82, 60, 'day', 0.5],
+  owl: ['owl', 138, 35, 'night', 0.6], seal: ['seal', 110, 35, 'any', 0.7], gull: ['gull', 138, 30, 'day', 0.5], crow: ['caw', 138, 45, 'day', 0.5], python: ['hiss', 11, 40, 'any', 0.4], bat: ['bats', 22, 30, 'night', 0.4],
+  crab: ['click', 8, 40, 'any', 0.25], salamander: ['croak', 16, 60, 'night', 0.3], seaTurtle: ['huff', 11, 90, 'any', 0.25], scorpion: ['scorpion', 8, 40, 'night', 0.3],
 };
-const LOUD_CALLS = new Set(['howl', 'bugle', 'roar', 'moose', 'crocBellow', 'jaguar', 'scream', 'yip', 'trumpet', 'hyena', 'hippo']);
+const LOUD_CALLS = new Set(['howl', 'bugle', 'roar', 'moose', 'jaguar', 'scream', 'yip', 'trumpet', 'hyena', 'hippo']);
 const angleTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 const rnd = (a, b) => a + Math.random() * (b - a);
 
@@ -818,7 +818,14 @@ export class Wildlife {
       a.bossHurt = this.time;
     }
     let outcome;
-    if (a.down) outcome = 'dead';
+    // (An elephant's great skull: a first shot to the head only staggers it, and it takes a second to bring it down.)
+    const thickSkull = a.kind === 'elephant' && !a.boss;
+    if (thickSkull && head) {
+      a.headHits = (a.headHits ?? 0) + 1;
+      a.hits = (a.hits ?? 0) + sharp * 1.5;
+      outcome = a.headHits >= 2 || a.hits >= dead ? 'dead' : 'lame';
+    } else if (a.down && !thickSkull) outcome = 'dead';
+    else if (a.down) outcome = (a.hits = (a.hits ?? 0) + sharp) >= dead ? 'dead' : 'down';
     else if (head) outcome = dead <= 1 ? 'dead' : 'down';
     else {
       a.hits = (a.hits ?? 0) + sharp;
@@ -2200,7 +2207,7 @@ export class Wildlife {
     if (day > 0.5) this.howlReach = 1400;
     if (day < 0.25 && this.farHowl <= 0) {
       this.farHowl = rnd(35, 90);
-      const w = wildWeights(g, cx, cz, {}), wild = (w.pine ?? 0) + (w.smoky ?? 0) + (w.blackHills ?? 0) + (w.redwood ?? 0) * 0.5 + (w.parkland ?? 0) * 0.6 + (w.cascades ?? 0) * 0.7 + (w.temperate ?? 0) * Math.min(1, g.getForestDensity(cx, cz) * 1.5) + (w.tundra ?? 0) * 0.8 + (w.taiga ?? 0);
+      const w = wildWeights(g, cx, cz, {}), wild = (w.pine ?? 0) + (w.smoky ?? 0) + (w.blackHills ?? 0) + (w.redwood ?? 0) * 0.5 + (w.rainforest ?? 0) * 0.8 + (w.parkland ?? 0) * 0.6 + (w.cascades ?? 0) * 0.7 + (w.temperate ?? 0) * Math.min(1, g.getForestDensity(cx, cz) * 1.5) + (w.tundra ?? 0) * 0.8 + (w.taiga ?? 0);
       if (wild > 0.25) {
         const reach = (this.howlReach = Math.max(260, (this.howlReach ?? 1400) * (ctx.sheltered ? 1 : 0.85)));
         const a = rnd(0, TAU), d = rnd(0.75, 1.1) * reach;
@@ -3438,7 +3445,7 @@ export class Wildlife {
       holder.voiceAt = this.time + rnd(18, 70);
       // (A storm coming on, or the rain coming down hard: the animals go quiet.)
       if ((ctx.stormComing ?? 0) > 0.25 || (ctx.storm ?? 0) > 0.4 || (ctx.rain ?? 0) > 0.6) continue;
-      if (t.d > 200) continue;
+      if (t.d > 150) continue; // (only near enough to really hear)
       let call = null;
       switch (a.kind) {
         case 'deer': call = a.young ? 'bleat' : Math.random() < 0.3 ? 'snort' : null; break;
@@ -3483,7 +3490,7 @@ export class Wildlife {
       }
       // (How far a call carries: a howl, a bugle, a roar a long way; a bleat,
       // a grunt, a gobble only a little way, dying away fast.)
-      const carry = LOUD_CALLS.has(call) ? 60 : 18;
+      const carry = LOUD_CALLS.has(call) ? 42 : call === 'crocBellow' ? 12 : 14; // (a crocodile's bellow: a low grumble, close by the water)
       if (call) ctx.sound?.call(call, ctx.pan(a.x, a.z), Math.min(1, (carry / (t.d + carry * 0.5)) ** 2));
     }
   }
@@ -3651,27 +3658,42 @@ export class Wildlife {
     if (holder.escape !== undefined && this.time < (holder.escapeAt ?? 0)) return holder.escape;
     const o = a.herd?.mid ?? a;
     const away = Math.atan2(o.x - from.x, o.z - from.z);
-    let best = away, bestScore = -Infinity;
-    for (let k = 0; k < 24; k++) {
-      const h = away + (k / 24) * TAU;
-      const off = Math.abs(angleTo(away, h));
-      if (off > 2.3) continue; // (never back towards you)
+    const near = Math.hypot(o.x - from.x, o.z - from.z);
+    // (The ways it's just tried and found blocked: not those again for a while.)
+    const failed = (holder.failed ?? []).filter((f) => f.until > this.time);
+    holder.failed = failed;
+    const look = (h) => {
       // (Looking a long way ahead: through the gaps in the trees, round the
-      // steep ground, along the easy way out rather than into a dead end.)
-      let score = Math.cos(off) * 3, clear = 0, wet = 0, y0 = ctx.ground(o.x, o.z), last = 0, climb = 0;
+      // steep ground, along the easy way out rather than into a dead end;
+      // the true lie of the land, so a cliff the drawn ground smooths over
+      // far off still counts as one.)
+      let clear = 0, wet = 0, y0 = ctx.ground(o.x, o.z), last = 0, climb = 0, pass = Infinity;
       for (const d of [4, 9, 15, 23, 32, 44, 60]) {
         const x = o.x + Math.sin(h) * d, z = o.z + Math.cos(h) * d;
         const kind = this.#footing(a, sp, x, z, ctx);
         if (!kind) break;
         const y = ctx.ground(x, z);
-        if (Math.abs(y - y0) > sp.grade * (d - last) * 1.4) break;
+        if (Math.abs(y - y0) > sp.grade * (d - last) * 1.1) break;
+        if (d <= 23 && this.#trueSlope(x, z, ctx) > sp.grade * 1.1) break;
         climb += Math.abs(y - y0) / (d - last);
+        pass = Math.min(pass, Math.hypot(x - from.x, z - from.z));
         y0 = y;
         last = d;
         if (kind === 2) wet++;
         clear++;
       }
-      score += clear * 1.6 - wet * 1.1 - climb * 2.5 - (clear < 2 ? 6 : 0);
+      return { clear, wet, climb, pass };
+    };
+    let best = away, bestScore = -Infinity;
+    for (let k = 0; k < 24; k++) {
+      const h = away + (k / 24) * TAU;
+      const off = Math.abs(angleTo(away, h));
+      const { clear, wet, climb, pass } = look(h);
+      let score = Math.cos(off) * 3 + clear * 1.6 - wet * 1.1 - climb * 2.5 - (clear < 2 ? 6 : 0) - (clear === 0 ? 20 : 0);
+      // (Back past you only when every other way is shut: and then wide of
+      // you, the further from you it would pass the better.)
+      if (off > 2.3) score -= 4 + Math.max(0, 14 - Math.min(pass, near + 4)) * 0.9;
+      for (const f of failed) if (Math.abs(angleTo(f.h, h)) < 0.45) score -= 9;
       if (holder.escape !== undefined) score += Math.cos(angleTo(holder.escape, h)) * 1.4;
       if (score > bestScore) (bestScore = score), (best = h);
     }
@@ -4254,15 +4276,22 @@ export class Wildlife {
       // (The true lie of the land ahead, a few times a second.)
       a.aheadCheck = (a.aheadCheck ?? Math.random() * 0.3) - dt;
       if (a.aheadCheck <= 0) {
-        a.aheadCheck = 0.3;
+        a.aheadCheck = 0.15;
         a.aheadSteep = this.#trueSlope(a.x + sx * (body + 1.5), a.z + sz * (body + 1.5), ctx) > sp.grade * 1.2;
       }
-      const steep = !swimming && (a.onSteep ? probe > a.y - 0.05 : Math.abs(probe - a.y) > sp.grade * (body + 1.5) || this.#slope(nx, nz, ctx) > sp.grade * 1.2 || a.aheadSteep);
+      const steep = !swimming && (a.onSteep ? probe > a.y - 0.05 : Math.abs(probe - a.y) > sp.grade * (body + 1.5) || this.#trueSlope(nx, nz, ctx) > sp.grade * 1.15 || a.aheadSteep);
       // (One that's somehow in water too deep for it, a rabbit pushed in: it paddles out, any way it can.)
       const sunk = !sp.swims && this.#footing(a, sp, a.x, a.z, ctx) === 0;
       const blocked = sunk ? false : !kind || !ahead || (steep && !wet) || (wet && !(fleeing || swimming || a.hunting || a.ridden || a.led));
       if (blocked) {
-        if (fleeing) (a.herd ?? a).escapeAt = 0; // (another way, then)
+        if (fleeing) {
+          // (Another way, then: and not this one again for a while; it turns
+          // away from the slope, even back past you, rather than butting into it.)
+          const hold = a.herd ?? a;
+          hold.escapeAt = 0;
+          (hold.failed ??= []).push({ h: a.heading, until: this.time + 4 });
+          if (hold.failed.length > 8) hold.failed.shift();
+        }
         else if (!a.detour) {
           // (Round it, the way that's clear: along the bank, round the foot of the slope.)
           const open = this.#openWay(a, sp, ctx, a.heading);

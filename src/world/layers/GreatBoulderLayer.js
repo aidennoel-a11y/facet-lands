@@ -9,9 +9,11 @@ const EDGE = 2.6;
 const STONE = {
   bristle: [0xe6e2d8, 0xd8d4c8, 0xeeebe4, 0xccc8bc],
   granite: [0xa8a0a2, 0x9a9294, 0xb2a8a6, 0x8e878c, 0xa49890], // (the Black Hills' own grey, pink-tinged granite)
+  kopje: [0xb09078, 0xa08470, 0xbc9c80, 0x958070, 0xc0a488], // (a kopje's warm, sun-baked granite, rust-stained)
 };
 const tint = new Color(), shade = new Color();
 const MOSS = new Color(0x4f6e34);
+const LICHEN = new Color(0xd88a3a), LICHEN_GREY = new Color(0xb8b8a0);
 
 /**
  * The great boulders (see TerrainGenerator.greatBouldersIn): real rock, not
@@ -137,6 +139,8 @@ function boulderMesh(b, pos, col) {
     const crack = boulderRough(b, mx, my, mz) < -0.6 * Math.min(4, Math.min(b.a, b.b, b.c) * 0.09) ? 0.78 : 1;
     shade.copy(tint).multiplyScalar((0.62 + 0.38 * Math.min(1, (r / RINGS) * 1.6)) * (0.9 + 0.2 * h) * patch * crack);
     // (Moss low down where it meets the ground, in patches, as on the land's own rocks.)
+    // (A kopje's: patched with orange and grey lichen, never moss, in the dry country.)
+    if (b.kind === 'kopje' && Math.sin(mx * 0.9 + b.seed) * Math.cos(mz * 0.8 - b.seed) > 0.55) shade.lerp(h > 0.5 ? LICHEN : LICHEN_GREY, 0.45);
     if (b.kind === 'granite' && my < b.y - 0.15 * b.c && Math.sin(mx * 0.6 + b.seed) + Math.cos(mz * 0.55 - b.seed) > -0.4) shade.lerp(MOSS, 0.55 + 0.25 * h);
     for (const p of [p0, p1, p2]) {
       pos.push(p[0], p[1], p[2]);

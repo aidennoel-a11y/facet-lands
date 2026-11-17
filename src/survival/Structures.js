@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, CanvasTexture, Color, Group, Mesh, MeshLambertMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, CanvasTexture, Color, Group, Mesh, MeshLambertMaterial, PlaneGeometry, Quaternion, Sprite, SpriteMaterial, SRGBColorSpace, Vector3 } from 'three';
 import { Puffs } from '../render/Puffs.js';
 import { seasonUniforms, withering } from '../render/Seasons.js';
 import { Inventory } from './Inventory.js';
@@ -8,7 +8,7 @@ import {
   ropeLengthModel, ropePathModel, ropeStakeModel, stoneWallModel, stoneFenceModel, chimneyModel, CHIMNEY_TOP, slateRoofModel, woodFloorModel, stoneFloorModel, FLOOR_SIZE, FLOOR_TOP, cellarModel, fishTrapModel, smokingRackModel, stoneWindowModel, woodWindowModel, thatchRoofModel, slateRoofPieceModel, ROOF_RISE, snareModel, stakeModel, stretchedHideModel, tanningRackModel, WALL_LENGTH, wallModel,
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
   logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, chimneyWallModel, roofGableModel, flatRoofModel, withLogLift, stepModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, ladderLean, RAISED_MODELS, wallFootingModel,
-  greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, bannerModel, BANNER_DESIGNS, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
+  greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, bannerModel, BANNER_DESIGNS, flagModel, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
 import { RELICS, RELIC_COLOURS } from './items.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -207,6 +207,8 @@ const KINDS = {
   painting: { make: () => paintingModel(0), hung: true, over: true },
   // (A banner on its pole, to mark your ground: Q changes its design, paint colours it.)
   banner: { make: () => bannerModel(), dyeWith: true, box: [0.12, 0.12], tall: 3.4 },
+  // (A flag: planted anywhere, its planter's name and colour on it. See showFlag.)
+  flag: { make: () => flagModel(), box: [0.06, 0.06], tall: 2.3 },
   gable: { make: gableModel, gable: true, over: true },
   // (A floor with a trapdoor: Q opens it; open, you can go up and down through it.)
   hatchFloor: { make: hatchFloorModel, box: [FLOOR_SIZE / 2, FLOOR_SIZE / 2], floor: true, steep: 1.6, hatch: true },
@@ -285,6 +287,49 @@ export class Structures {
   #bannerGeo(d = {}) {
     const key = `banner:${d.dye ?? 'red'}:${d.mark ?? 'white'}:${d.design ?? 0}`;
     return (this.models[key] ??= bannerModel(d.dye ?? 'red', d.mark ?? 'white', d.design ?? 0));
+  }
+
+  #flagGeo(d = {}) {
+    const c = d.colour ?? 0xd8442e;
+    return (this.models[`flag:${c}`] ??= flagModel(c));
+  }
+
+  /**
+   * A flag's words, on a little card floating over it: who planted it, and
+   * when (and what they called the place, if anything). Seen from a way
+   * off, never in the way.
+   */
+  showFlag(s) {
+    const d = s.data ?? {}, key = `${d.owner}|${d.day}|${d.note ?? ''}`;
+    if (s.flagKey === key) return;
+    s.flagKey = key;
+    if (s.flagLabel) (s.mesh.remove(s.flagLabel), s.flagLabel.material.map.dispose(), s.flagLabel.material.dispose());
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = 'rgba(16, 20, 18, 0.72)';
+    g.beginPath();
+    g.roundRect?.(4, 14, 504, 100, 18);
+    g.fill();
+    const hex = `#${(d.colour ?? 0xd8442e).toString(16).padStart(6, '0')}`;
+    g.fillStyle = hex;
+    g.fillRect(22, 34, 14, 60);
+    g.fillStyle = '#fff6dc';
+    g.font = 'bold 44px system-ui, sans-serif';
+    g.textBaseline = 'middle';
+    g.fillText(String(d.owner ?? 'Someone').slice(0, 18), 52, 52);
+    g.fillStyle = '#d8cca8';
+    g.font = '30px system-ui, sans-serif';
+    g.fillText(`${d.place ? `${d.place} · ` : ''}day ${d.day ?? 1}`.slice(0, 34), 52, 92);
+    const tex = new CanvasTexture(c);
+    tex.colorSpace = SRGBColorSpace;
+    const label = new Sprite(new SpriteMaterial({ map: tex, depthWrite: false, transparent: true, fog: true }));
+    label.scale.set(1.6, 0.4, 1);
+    label.position.set(0, 2.85, 0);
+    label.renderOrder = 4;
+    s.mesh.add(label);
+    s.flagLabel = label;
   }
 
   /** A banner's next design; returns its name. */
@@ -1007,7 +1052,7 @@ export class Structures {
     const bk = KINDS[s.type].bridge;
     const ys = s.data?.ys ?? [0, 0];
     const spanModel = s.type === 'stoneRoad' ? stoneRoadModel(s.len ?? 1, ys) : s.type === 'zipLine' ? zipLineModel(s.len ?? 10, s.rise ?? -3) : s.type === 'ditch' ? ditchModel(s.len ?? 1, ys) : null;
-    const body = new Mesh(spanModel ? spanModel : bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : KINDS[s.type].steps ? (this.models[`step:${(s.len ?? 0.6).toFixed(2)}`] ??= stepModel(s.len ?? 0.6)) : KINDS[s.type].raised ? RAISED_MODELS[s.type](s.len ?? 3) : s.type === 'painting' ? (this.models[`painting${s.data.variant}`] ??= paintingModel(s.data.variant)) : s.type === 'banner' ? this.#bannerGeo(s.data) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper, s.rot), this.material);
+    const body = new Mesh(spanModel ? spanModel : bk ? bridgeModel(bk, s.len ?? 6, s.rise ?? 0) : s.type === 'ladder' ? ladderModel(s.len ?? 3) : KINDS[s.type].steps ? (this.models[`step:${(s.len ?? 0.6).toFixed(2)}`] ??= stepModel(s.len ?? 0.6)) : KINDS[s.type].raised ? RAISED_MODELS[s.type](s.len ?? 3) : s.type === 'painting' ? (this.models[`painting${s.data.variant}`] ??= paintingModel(s.data.variant)) : s.type === 'banner' ? this.#bannerGeo(s.data) : s.type === 'flag' ? this.#flagGeo(s.data) : s.data?.dye ? this.#dyed(s.type, s.data.dye) : this.model(s.type, !!s.upper, s.rot), this.material);
     body.castShadow = true;
     body.receiveShadow = true;
     mesh.add(body);
@@ -1122,6 +1167,7 @@ export class Structures {
     this.group.add(mesh);
     s.mesh = mesh;
     if (s.type === 'sign') this.showSign(s);
+    if (s.type === 'flag') this.showFlag(s);
     this.list.push(s);
     if (KINDS[s.type].fire && s.lit) this.#kindle(s);
     this.#showJobs(s);
@@ -1873,6 +1919,7 @@ export class Structures {
       if (rec.data) s.data = { ...rec.data };
       if (s.type === 'banner' && s.body) s.body.geometry = this.#bannerGeo(s.data);
       if (s.type === 'sign') this.showSign(s);
+      if (s.type === 'flag' && s.body) (s.body.geometry = this.#flagGeo(s.data), this.showFlag(s));
       if (s.type === 'plot') {
         s.crop = rec.crop ?? null;
         s.growth = rec.growth ?? 0;

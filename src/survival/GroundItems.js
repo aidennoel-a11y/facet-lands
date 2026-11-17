@@ -168,7 +168,7 @@ export class GroundItems {
         const wooded = Math.max(forest * (w.temperate + w.smoky + w.pine + w.blackHills + w.wetland), w.jungle, 0.6 * w.pine, 0.6 * w.smoky);
         // (Sticks only where trees grow to drop them: none on the salt
         // flats, the open desert or the dunes, nor up on the bare peaks.)
-        const treed = Math.min(1, w.temperate + w.smoky + w.pine + w.blackHills + w.wetland + w.jungle + w.parkland + w.redwood + w.cascades + w.mangrove + 0.5 * w.savanna + 0.3 * w.volcanic + 0.15 * w.badlands);
+        const treed = Math.min(1, w.temperate + w.smoky + w.pine + w.blackHills + w.wetland + w.jungle + w.parkland + w.redwood + (w.rainforest ?? 0) + w.cascades + w.mangrove + 0.5 * w.savanna + 0.3 * w.volcanic + 0.15 * w.badlands);
         const pStick = (0.03 + 0.4 * wooded) * treed;
         // (Loose stones, likewise, not out on the salt.)
         const pRock = (0.05 + 0.12 * mount + 0.06 * (w.savanna + w.desert) + 0.04 * w.volcanic) * (1 - (w.saltFlat ?? 0));

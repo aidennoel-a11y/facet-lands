@@ -23,7 +23,7 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
   const G = 1.0, n = Math.round(size / G), seed = generator.seed ^ 0xf10e;
   const surface = { normalY: 1 };
   const list = [];
-  let cell = -1, meadow = 0, stream = false, high = 0, heath = 0, alp = 0;
+  let cell = -1, meadow = 0, stream = false, high = 0, heath = 0, alp = 0, sun = 0;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const gi = cx * n + i, gj = cz * n + j;
@@ -40,6 +40,7 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
         // (High in the mountains: the alpine flowers, and on the flatter ground the heather, in great patches.)
         const px = x0 + Math.floor(lx / 8) * 8 + 4, pz = z0 + Math.floor(lz / 8) * 8 + 4;
         alp = generator.alpineMeadowAt?.(px, pz) ?? 0;
+        sun = meadow > 0.05 ? generator.sunflowerAt?.(px, pz) ?? 0 : 0; // (one of the sunflower meadows?)
         high = Math.max(generator.getHighFlowers?.(px, pz) ?? 0, alp);
         stream = (meadow > 0.05 || high > 0) && !!generator.rivers?.at(px, pz, 8);
         heath = high > 0 ? Math.max(0, Math.min(1, (generator.meadowNoise.noise2D(px * 0.006 + 71, pz * 0.006 - 33) + 0.1) * 2.5)) : 0;
@@ -64,6 +65,15 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
       if (stream && generator.rivers.at(x0 + lx, z0 + lz, 1.5)) continue; // (not in a stream, nor right on its bank)
       if (generator.onLiveLava?.(x0 + lx, z0 + lz)) continue; // (nor on a lava flow)
       if (generator.landmarks?.underWater(x0 + lx, z0 + lz, y)) continue; // (nor under a landmark's water)
+      // A sunflower meadow: mostly sunflowers, tall (1.4 to 2.5 m), a few of the other flowers among them.
+      if (sun > 0.5) {
+        if (hash2(gi, gj, seed + 9) < 0.86) {
+          if (keep > 0.3 * meadow) continue;
+          list.push(lx, y, lz, 1.4 + 1.1 * hash2(gi, gj, seed + 4), hash2(gi, gj, seed + 5), 10, surface.normalX ?? 0, surface.normalZ ?? 0);
+          continue;
+        }
+        if (keep > 0.3 * meadow) continue;
+      }
       // A few colours to a patch.
       const tone = generator.meadowNoise.noise2D((x0 + lx) * 0.03, (z0 + lz) * 0.03) * 0.5 + 0.5;
       const pick = Math.floor((tone * 3 + hash2(gi, gj, seed + 3) * 1.6) % MEADOW_COLOURS);
@@ -263,12 +273,12 @@ export function placeLogs(generator, config, cx, cz, groundHeightAt) {
     for (let i = 0; i < n; i++) {
       const gi = cx * n + i, gj = cz * n + j;
       const keep = hash2(gi, gj, seed);
-      if (keep > 0.2) continue;
+      if (keep > 0.36) continue;
       const lx = (i + 0.15 + 0.7 * hash2(gi, gj, seed + 1)) * G, lz = (j + 0.15 + 0.7 * hash2(gi, gj, seed + 2)) * G;
       const wx = x0 + lx, wz = z0 + lz;
       const w = generator.getBiomeWeights(wx, wz, {});
-      const woods = w.temperate * generator.getForestDensity(wx, wz) * (1 - 0.8 * smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) + w.blackHills * 0.6 + w.jungle * 0.9 + w.wetland * 0.3 + w.pine * 0.8;
-      if (keep > 0.2 * smoothstep(0.35, 0.7, woods)) continue;
+      const woods = w.temperate * generator.getForestDensity(wx, wz) * (1 - 0.8 * smoothstep(0.1, 0.45, generator.getPlainness(wx, wz))) + w.blackHills * 0.6 + w.jungle * 0.9 + w.wetland * 0.3 + w.pine * 0.8 + 2.2 * (w.rainforest ?? 0); // (the rainforest's floor strewn with fallen giants)
+      if (keep > (0.2 + 0.16 * (w.rainforest ?? 0)) * smoothstep(0.35, 0.7, woods)) continue;
       const y = groundHeightAt(lx, lz);
       if (!(y > sea + 1.2) || y > 150) continue;
       if (generator.rivers.at(wx, wz, 2)) continue;
@@ -288,7 +298,8 @@ export function placeLogs(generator, config, cx, cz, groundHeightAt) {
         continue;
       }
       // A log lies along the ground, following its slope.
-      const len = 3 + 4.5 * hash2(gi, gj, seed + 5), r = 0.22 + 0.2 * hash2(gi, gj, seed + 6);
+      const giant = 1 + 1.3 * (w.rainforest ?? 0); // (the rainforest's fallen trunks: long and thick)
+      const len = (3 + 4.5 * hash2(gi, gj, seed + 5)) * giant, r = (0.22 + 0.2 * hash2(gi, gj, seed + 6)) * giant;
       const ca = Math.cos(a), sa = Math.sin(a);
       const ex = lx + ca * len * 0.5, ez = lz - sa * len * 0.5, bx = lx - ca * len * 0.5, bz = lz + sa * len * 0.5;
       const inside = (x, z) => x >= 0 && z >= 0 && x < size && z < size;
@@ -314,7 +325,7 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
   // (A quick look first: any of the forests that have an understory?)
   const cover = (x, z) => {
     const w = generator.getBiomeWeights(x, z, {});
-    return [Math.min(1, w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + 0.85 * (w.hangingGardens ?? 0)), w.pine * 0.12, (w.cascades ?? 0) * 0.55]; // (the jungle mountains' floor as lush as the jungle's)
+    return [Math.min(1, w.jungle + (w.jungleMountains ?? 0) + (w.jungleFoothills ?? 0) + 0.85 * (w.hangingGardens ?? 0)), w.pine * 0.12, (w.cascades ?? 0) * 0.55, (w.rainforest ?? 0) * 0.82]; // (the temperate rainforest: ferns crowding its whole floor) // (the jungle mountains' floor as lush as the jungle's)
   };
   let any = 0;
   for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) any = Math.max(any, ...cover(x0 + (i * size) / 4, z0 + (j * size) / 4));
@@ -347,17 +358,19 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
         const sh = generator.rivers?.shoreAt(x0 + lx, z0 + lz, 10);
         if (sh && sh.e > 0) lush = Math.min(0.88, (here[2] / 0.55) * 0.88 * (1 - sh.e / 10));
       }
-      if (keep > Math.max(jungle, ferns * 0.6, lush)) continue;
+      const rain = here[3] ?? 0;
+      if (keep > Math.max(jungle, ferns * 0.6, lush, rain)) continue;
       // (The jungle's: the big-leaved plants, and its five kinds of fern, 2-6: see UnderstoryLayer.)
       // (The Cascades': all five kinds of fern, 2-6, along the water.)
       const cascade = keep >= jungle && keep < lush;
-      const kind = keep < jungle ? (r < 0.36 ? Math.floor(r / 0.18) : 2 + Math.min(4, Math.floor(((r - 0.36) / 0.64) * 5))) : cascade ? 2 + Math.min(4, Math.floor(r * 5)) : 2;
+      const rainFern = keep >= jungle && !cascade && keep < rain; // (sword ferns and lady ferns, big and many, all five kinds)
+      const kind = keep < jungle ? (r < 0.36 ? Math.floor(r / 0.18) : 2 + Math.min(4, Math.floor(((r - 0.36) / 0.64) * 5))) : cascade || rainFern ? 2 + Math.min(4, Math.floor(r * 5)) : 2;
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1) || surface.normalY < 0.7) continue;
       if (generator.rivers?.at(x0 + lx, z0 + lz, 1)) continue;
       if (generator.landmarks?.underWater(x0 + lx, z0 + lz, y)) continue;
       // (Some of the Cascades' ferns big: a quarter of them twice the size, head-high by the water.)
-      const big = cascade && hash2(gi, gj, seed + 7) < 0.25 ? 1.9 + 0.5 * hash2(gi, gj, seed + 8) : 1;
+      const big = cascade && hash2(gi, gj, seed + 7) < 0.25 ? 1.9 + 0.5 * hash2(gi, gj, seed + 8) : rainFern ? 1.3 + 0.9 * hash2(gi, gj, seed + 8) : 1;
       list.push(kind, lx, y - 0.05, lz, (0.8 + 0.8 * hash2(gi, gj, seed + 4)) * big, hash2(gi, gj, seed + 5), hash2(gi, gj, seed + 6));
     }
   }

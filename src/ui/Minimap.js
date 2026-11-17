@@ -117,6 +117,24 @@ export class Minimap {
       ctx.strokeStyle = '#f4efe6';
       ctx.stroke();
     }
+    // The flags planted: a tiny pennant each (only those on the map's face).
+    for (const f of this.flags ?? []) {
+      const x = (f.x - position.x) / s, z = (f.z - position.z) / s;
+      if (Math.hypot(x, z) > (n * 0.75) / 2 - 2 || hidden(f.x, f.z)) continue;
+      ctx.lineWidth = 0.7;
+      ctx.strokeStyle = '#1a1612';
+      ctx.beginPath();
+      ctx.moveTo(x, z + 1.5);
+      ctx.lineTo(x, z - 4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, z - 4);
+      ctx.lineTo(x + 3.4, z - 3);
+      ctx.lineTo(x, z - 2);
+      ctx.closePath();
+      ctx.fillStyle = f.colour;
+      ctx.fill();
+    }
     // The others online: a dot in each one's colour (at the edge, pointing, if they're further off).
     for (const o of this.others ?? []) {
       let x = (o.x - position.x) / s, z = (o.z - position.z) / s;
