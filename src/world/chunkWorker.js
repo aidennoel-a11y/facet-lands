@@ -172,7 +172,7 @@ self.onmessage = (event) => {
     if (g.seaCaves && heights.gridY.some((y) => y < config.seaLevel - 0.5)) out.surf = surfSpots(g, cx * config.chunkSize, cz * config.chunkSize, config.chunkSize, config.seaLevel);
   }
   if (wantUnderstory) {
-    out.understory = placeUnderstory(g, config, cx, cz, groundHeightAt);
+    out.understory = placeUnderstory(g, config, cx, cz, groundHeightAt, out.trees ?? null);
     if (out.understory) transfer.push(out.understory.buffer);
   }
   if (wantFarGrass) {

@@ -33,7 +33,27 @@ export function leanSites(generator, config, cx, cz) {
     if (generator.rivers.at(bx, bz, sx + 2) || generator.rivers.at(lx, lz, 2) || generator.rivers.at((bx + lx) / 2, (bz + lz) / 2, 2)) continue;
     if (generator.caves?.field?.nearEntrance?.(bx, bz, sx + 4)) continue;
     if (generator.greatBoulderAt?.(bx, bz) || generator.greatBoulderAt?.(lx, lz) || generator.greatBoulderAt?.((bx + lx) / 2, (bz + lz) / 2)) continue;
-    out.push({ bx, bz, sx, sy, sz, ry: hash2(gi, gj, seed + 9) * Math.PI * 2, ux, uz, lx, lz, r, len });
+    // (Rainforest all along it, not just where the rock is.)
+    if ((generator.getBiomeWeights(lx, lz, {}).rainforest ?? 0) < 0.55 || (generator.getBiomeWeights((bx + lx) / 2, (bz + lz) / 2, {}).rainforest ?? 0) < 0.55) continue;
+    // The rock's crown, as RockLayer sets it into the ground (sunk deeper on a slope).
+    const gx = (generator.getHeight(bx + 2, bz) - generator.getHeight(bx - 2, bz)) / 4, gz = (generator.getHeight(bx, bz + 2) - generator.getHeight(bx, bz - 2)) / 4;
+    const slope = Math.min(0.3, Math.hypot(gx, gz));
+    const top = hb + sy * (0.84 - 0.3 - 0.5 * slope) - slope * Math.max(sx, sz) * 0.4;
+    const cU = top + r * 0.7, cL = hl + r * 0.55; // (its middle line at each end: settled into the rock, and into the ground)
+    if (cU - r - hl < 2.2) continue; // (room to walk under it by the rock, or it's no leaning log)
+    // (Never floating: off the rock its underside comes steadily down to the
+    // ground at its foot, the gap under it never more than that; nor through a rise.)
+    let ok = true;
+    const rockEdge = Math.max(sx, sz) / len;
+    for (let k = 1; k < 10 && ok; k++) {
+      const t = k / 10;
+      if (t <= rockEdge) continue;
+      const y = generator.getHeight(ux + (lx - ux) * t, uz + (lz - uz) * t), bottom = cU + (cL - cU) * t - r;
+      const allowed = (cU - r - hl) * (1 - (t - rockEdge) / (1 - rockEdge)) + 0.6;
+      if (bottom < y - 0.1 || bottom - y > allowed + 0.8) ok = false;
+    }
+    if (!ok) continue;
+    out.push({ bx, bz, sx, sy, sz, ry: hash2(gi, gj, seed + 9) * Math.PI * 2, ux, uz, lx, lz, r, len, cU, cL, slope });
   }
   return out;
 }

@@ -151,6 +151,15 @@ function mossCushion(seed, sides = 9, tufts = 5) {
   return build(tris);
 }
 
+/** A pad of moss for a trunk's side: a cushion stood on edge, its back flat to the bark (z = 0), bulging out along +z, taller than wide. */
+function mossPad(seed, sides, tufts) {
+  const g = mossCushion(seed, sides, tufts);
+  g.rotateX(Math.PI / 2);
+  g.scale(0.7, 1.5, 1);
+  g.computeVertexNormals();
+  return g;
+}
+
 // (Kinds 0 and 1 the big-leaved plants, 2 the common fern, 3-6 the jungle's other ferns: see placeUnderstory.)
 const PLANTS = [
   { shape: leafy(3), plain: leafy(3, true), far: leafy(3, true, true), colors: [0x3f7d2f, 0x4a8a34, 0x2f6a2a, 0x5a9a3a] },
@@ -168,6 +177,8 @@ const PLANTS = [
   { shape: fern(31, { n: 12, len: 0.7, rise: 0.1, droop: 0.18, w: 0.07 }), plain: fern(31, { n: 12, len: 0.7, rise: 0.1, droop: 0.18, w: 0.07 }, true), far: fern(31, { n: 12, len: 0.7, rise: 0.1, droop: 0.18, w: 0.07 }, true, true), colors: [0x3f7430, 0x4a8236, 0x55903c] },
   // (Its moss: deep cushions of it carpeting the floor, over the roots and stones.)
   { shape: mossCushion(37, 7, 3), plain: mossCushion(37, 5, 2), far: mossCushion(37, 4, 0), colors: [0x4f7f2a, 0x5a8c2e, 0x46742a, 0x6a962e, 0x3f6a26], moss: true },
+  // (Moss on the trunks: a thick pad standing up against the bark, bulging out from it: kind 9.)
+  { shape: mossPad(41, 6, 2), plain: mossPad(41, 5, 1), far: mossPad(41, 4, 0), colors: [0x4a7a28, 0x56882c, 0x3f6c24, 0x62922e], moss: true },
 ];
 const color = new Color();
 const m4 = new Matrix4(), p = new Vector3(), q = new Quaternion(), tilt = new Quaternion(), s = new Vector3(), yAxis = new Vector3(0, 1, 0), up = new Vector3();
@@ -244,6 +255,9 @@ export function createUnderstoryLayer(config) {
   const material = addPush(addWind(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide, flatShading: true }), { strength: 0.02, speed: 1.3 }));
   // (Their shadows, the sun's and a torch's, swaying and bent aside with them.)
   const shadowDepth = depthLike(material), shadowDistance = distanceLike(material);
+  // (Moss neither sways nor gives underfoot: its own plain material.)
+  const still = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const matOf = (k) => (PLANTS[k].moss ? still : material);
   const casting = (mesh) => ((mesh.castShadow = true), (mesh.customDepthMaterial = shadowDepth), (mesh.customDistanceMaterial = shadowDistance));
 
   // Within some 35 m of you, each plant in full; past that, plain (the same
@@ -260,9 +274,9 @@ export function createUnderstoryLayer(config) {
   // world's own frame.
   const all = new Group();
   all.name = 'understory';
-  const shared = PLANTS.map((pl) => {
+  const shared = PLANTS.map((pl, k) => {
     const make = (shape) => {
-      const mesh = new InstancedMesh(shape, material, 64);
+      const mesh = new InstancedMesh(shape, matOf(k), 64);
       mesh.count = 0;
       mesh.visible = false;
       mesh.frustumCulled = false; // (spread over the chunks all round you)
@@ -274,7 +288,7 @@ export function createUnderstoryLayer(config) {
     // (The plants right round you cast their shadows, swaying as they do.
     // Further off they'd be specks.)
     const full = make(pl.shape);
-    casting(full);
+    if (!pl.moss) casting(full);
     return { full, plain: make(pl.plain), far: make(pl.far) };
   });
   // (Grown, when there are more plants than room: its buffers made afresh.)
@@ -282,10 +296,10 @@ export function createUnderstoryLayer(config) {
     const mesh = shared[k][which];
     if (mesh.instanceMatrix.count >= need) return mesh;
     const size = Math.max(need, mesh.instanceMatrix.count * 2);
-    const fresh = new InstancedMesh(mesh.geometry, material, size);
+    const fresh = new InstancedMesh(mesh.geometry, matOf(k), size);
     fresh.frustumCulled = false;
     fresh.receiveShadow = true;
-    if (which === 'full') casting(fresh);
+    if (which === 'full' && !PLANTS[k].moss) casting(fresh);
     fresh.instanceMatrix.setUsage(DynamicDrawUsage);
     fresh.setColorAt(0, white);
     all.remove(mesh);

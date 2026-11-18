@@ -286,8 +286,7 @@ export function placeLogs(generator, config, cx, cz, groundHeightAt, boulders = 
   // The rainforest's great trunks lying across boulders, one end up on the rock (see leanLogs).
   for (const b of leanSites(generator, config, cx, cz)) {
     if (!clear(b.ux, b.uz, b.lx, b.lz, b.r, [b.bx, b.bz])) continue;
-    const top = generator.getHeight(b.bx, b.bz) + b.sy * 0.55; // (the rock's crown, the log settled a little into it)
-    const cU = top + b.r * 0.7, cL = generator.getHeight(b.lx, b.lz) + b.r * 0.55; // (its middle line, at each end)
+    const { cU, cL } = b; // (its middle line at each end: see leanLogs)
     const len = Math.hypot(b.lx - b.ux, b.lz - b.uz);
     const dx = (b.lx - b.ux) / len, dz = (b.lz - b.uz) / len, a = Math.atan2(-dz, dx); // (its far end, along +a, the foot)
     const mx = (b.ux + b.lx) / 2, mz = (b.uz + b.lz) / 2, Y = (cU + cL) / 2 - 0.9 * b.r;
@@ -336,6 +335,16 @@ export function placeLogs(generator, config, cx, cz, groundHeightAt, boulders = 
       if (!(ya > sea + 1) || !(yb > sea + 1) || Math.abs(ya - yb) > len * 0.45) continue;
       if (!clear(x0 + ex, z0 + ez, x0 + bx, z0 + bz, r)) continue;
       const mid = Math.min(y, (ya + yb) / 2);
+      // (Lying on the ground all along it: never bridging a dip, floating
+      // over it, nor run through a rise in the middle.)
+      let lies = true;
+      for (let k = 1; k < 8 && lies; k++) {
+        const t = k / 8, gx = ex + (bx - ex) * t, gz = ez + (bz - ez) * t;
+        if (!inside(gx, gz)) continue;
+        const g = groundHeightAt(gx, gz), centre = mid + 0.55 * r + (ya - yb) * (0.5 - t);
+        if (centre - r - g > Math.max(0.3, r * 0.4) || g - (centre - r) > r * 1.3) lies = false;
+      }
+      if (!lies) continue;
       pieces.push(0, lx, mid - r * 0.35, lz, a, Math.atan2(ya - yb, len), len, r * 2, r * 2);
       solid.push(0, wx, mid - r * 0.35, wz, len, r, a, (ya - yb) / len);
     }
@@ -348,7 +357,7 @@ export function placeLogs(generator, config, cx, cz, groundHeightAt, boulders = 
  * the chunks right round you: [kind, x, y, z (chunk-local), size, turn
  * (0..1), colour pick (0..1)] for each, flat; null if there are none.
  */
-export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
+export function placeUnderstory(generator, config, cx, cz, groundHeightAt, trees = null) {
   const size = config.chunkSize, sea = config.seaLevel;
   const x0 = cx * size, z0 = cz * size;
   // (A quick look first: any of the forests that have an understory?)
@@ -398,7 +407,7 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
       const cascade = keep >= jungle && keep < lush;
       const rainFern = keep >= jungle && !cascade && keep < rain; // (sword ferns and lady ferns, big and many, all five kinds)
       // (The rainforest's: over half of them low ferns lying close to the ground, kinds 7 and 5.)
-      const low = rainFern && hash2(gi, gj, seed + 9) < 0.58;
+      const low = rainFern; // (the rainforest's: all of them low ferns lying close to the ground, kinds 7 and 5; none tall)
       const kind = low ? (r < 0.6 ? 7 : 5) : keep < jungle ? (r < 0.36 ? Math.floor(r / 0.18) : 2 + Math.min(4, Math.floor(((r - 0.36) / 0.64) * 5))) : cascade || rainFern ? 2 + Math.min(4, Math.floor(r * 5)) : 2;
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1) || surface.normalY < 0.7) continue;
@@ -407,6 +416,41 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt) {
       // (Some of the Cascades' ferns big: a quarter of them twice the size, head-high by the water.)
       const big = cascade && hash2(gi, gj, seed + 7) < 0.25 ? 1.9 + 0.5 * hash2(gi, gj, seed + 8) : rainFern ? (low ? 0.75 + 0.4 * hash2(gi, gj, seed + 8) : 1.3 + 0.9 * hash2(gi, gj, seed + 8)) : 1;
       list.push(kind, lx, y - 0.05, lz, (0.8 + 0.8 * hash2(gi, gj, seed + 4)) * big, hash2(gi, gj, seed + 5), hash2(gi, gj, seed + 6));
+    }
+  }
+  // Moss on the rainforest's trees: thick pads up the sides of their
+  // trunks (kind 9) and great clumps of it heaped round their feet on the
+  // ground (kind 8); more on some trees, less on others, a few bare.
+  const FOOT = { sitkaSpruce: [1.45, 12, 0.35], cedar: [1.9, 10, 0.32], youngSitka: [0.65, 6, 0.35], hemlock: [0.5, 9, 0.4] }; // (its foot's radius, the height over which it narrows by about the last share)
+  if (trees && anyRain >= 0.05) {
+    const ts = generator.seed ^ 0x7ee5;
+    for (const [type, [R0, H, narrow]] of Object.entries(FOOT)) {
+      for (const t of trees[type] ?? []) {
+        const hx = Math.round(t.x * 7 + cx * 9001), hz = Math.round(t.z * 7 + cz * 7919);
+        const amount = hash2(hx, hz, ts);
+        if (amount < 0.12) continue; // (a bare one now and then)
+        const R = R0 * t.s, base = groundHeightAt(Math.min(size - 0.01, Math.max(0, t.x)), Math.min(size - 0.01, Math.max(0, t.z)), surface);
+        if (!(base > sea + 0.5)) continue;
+        // Up the trunk, mostly on one side (the wetter side), the more the higher up it goes on the mossiest.
+        const side = hash2(hx, hz, ts + 1) * Math.PI * 2, pads = Math.floor(amount * 9);
+        for (let k = 0; k < pads; k++) {
+          const a = side + (hash2(hx + k, hz, ts + 2) - 0.5) * (1.6 + 2.4 * amount);
+          const up = 0.4 + Math.pow(hash2(hx, hz + k, ts + 3), 1.4) * (1.5 + 7 * amount) * t.sy;
+          const r = R * (1 - narrow * Math.min(1, up / (H * t.sy))) * 0.82;
+          const theta = Math.atan2(Math.cos(a), Math.sin(a)); // (its bulge facing straight out from the trunk)
+          list.push(9, t.x + Math.cos(a) * r, base + up, t.z + Math.sin(a) * r, (0.35 + 0.35 * hash2(hx - k, hz, ts + 4)) * (0.6 + 0.6 * amount) * Math.min(1.6, 0.6 + R * 0.5), ((theta / (Math.PI * 2)) % 1 + 1) % 1, hash2(hx, hz - k, ts + 5));
+        }
+        // Round its foot: great clumps over the roots, more and bigger on the mossiest.
+        const clumps = 1 + Math.floor(amount * 5);
+        for (let k = 0; k < clumps; k++) {
+          const a = side + (hash2(hx + k, hz + 3, ts + 6) - 0.5) * 4, d = R * (0.85 + 0.5 * hash2(hx + 3, hz + k, ts + 7));
+          const x = t.x + Math.cos(a) * d, z = t.z + Math.sin(a) * d;
+          if (x < 0 || z < 0 || x >= size || z >= size) continue;
+          const y = groundHeightAt(x, z, surface);
+          if (!(y > sea + 0.5)) continue;
+          list.push(8, x, y - 0.08, z, (0.8 + 0.9 * hash2(hx - k, hz + 1, ts + 8)) * (0.6 + 0.7 * amount) * Math.min(1.5, 0.6 + R * 0.45), hash2(hx, hz + k, ts + 9), hash2(hx + k, hz - 1, ts + 10));
+        }
+      }
     }
   }
   // The rainforest's moss: deep cushions of it over the floor, kind 8,

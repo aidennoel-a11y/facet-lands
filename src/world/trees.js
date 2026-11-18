@@ -1047,6 +1047,16 @@ function cedar() {
   return rainforestSway(wood, crown, beards);
 }
 
+// A young Sitka spruce: some 14 m, a slimmer, smaller copy of the giants.
+function youngSitka() {
+  const g = sitkaSpruce();
+  const S = [0.42, 0.45, 0.42];
+  g.scale(...S);
+  g.userData.crown?.scale(...S);
+  g.userData.lean?.scale(...S);
+  return g;
+}
+
 // Western hemlock: the rainforest's slender tree, some 20 m on a thin, dark
 // trunk; its sprays soft and feathery in drooping layers, its leader
 // nodding over at the top.
@@ -1837,6 +1847,7 @@ export const TREE_GEOMETRIES = {
   sitkaSpruce: sitkaSpruce(),
   cedar: cedar(),
   hemlock: hemlock(),
+  youngSitka: youngSitka(),
   alder: alder(),
   appleTree: appleTree(),
   monsoonTree: monsoonTree(),
@@ -1875,7 +1886,7 @@ const SEASONAL = {
   // (Below nothing: the monsoon forest's, drying yellow through the dry months: see Seasons.seasonalTrees.)
   monsoonTree: [-1, 0, 0], monsoonSal: [-1, 0, 0], monsoonFig: [-0.6, 0, 0], monsoonFlame: [-1, 0, 0], monsoonMango: [-0.4, 0, 0], // (green the year round here: its seasons are the ground's, see Seasons)
   redwood: [0, 1, 0],
-  sitkaSpruce: [0, 1, 0], cedar: [0, 1, 0], hemlock: [0, 1, 0], alder: [1, 1, 0],
+  sitkaSpruce: [0, 1, 0], cedar: [0, 1, 0], hemlock: [0, 1, 0], alder: [1, 1, 0], youngSitka: [0, 1, 0],
   spinifex: [0, 0, 0], termiteMound: [0, 0, 0], ghostGum: [0, 0, 0], jacaranda: [0, 0, 0], bristlecone: [0, 1, 0], pricklyPear: [0, 0, 0], bloomCactus: [0, 0, 0], cliffVines: [0, 0, 0], limberPine: [0, 1, 0], juniper: [0, 1, 0], deadBristlecone: [0, 1, 0],
   cherryBlossom: [1, 1, 1], // (its blossom thickest in spring; red-gold in autumn; bare in winter)
   cherryRound: [1, 1, 1],
@@ -1942,6 +1953,7 @@ export const LEAF_GEOMETRIES = {
   pine: leaves(40, [0.35, 0.6], [0x3f8a4a, 0x4f9c57, 0x5fae62, 0x376f3f], crown('pine'), 11),
   spruce: leaves(40, [0.3, 0.5], [0x2c5e44, 0x3a7050, 0x478260], crown('spruce'), 14),
   sitkaSpruce: leaves(90, [0.4, 0.75], [0x24503e, 0x316250, 0x3e7460], crown('sitkaSpruce'), 44),
+  youngSitka: leaves(40, [0.25, 0.45], [0x24503e, 0x316250, 0x3e7460], crown('youngSitka'), 48),
   hemlock: leaves(80, [0.3, 0.55], [0x2c5a36, 0x3a6c42, 0x4a7e50], crown('hemlock'), 46),
   alder: leaves(60, [0.35, 0.65], [0x6a9a46, 0x7eae52, 0x92c060, 0x5c8a3e], crown('alder'), 47),
   cedar: leaves(110, [0.4, 0.8], [0x32602c, 0x40723a, 0x548a46, 0x2a5226], crown('cedar'), 45),
@@ -1977,7 +1989,7 @@ export const LEAF_GEOMETRIES = {
   bristlecone: leaves(18, [0.25, 0.4], [0x2a4a30, 0x3a5a3a, 0x446a44], crown('bristlecone'), 46),
 };
 // (The rainforest's: their leaves flutter with the foliage they're set on, the tree itself stiff; see rainforestSway.)
-for (const type of ['sitkaSpruce', 'cedar', 'hemlock', 'alder']) {
+for (const type of ['sitkaSpruce', 'cedar', 'hemlock', 'alder', 'youngSitka']) {
   const g = LEAF_GEOMETRIES[type];
   if (g) g.setAttribute('aDangle', new BufferAttribute(new Float32Array(g.attributes.position.count).fill(FLUTTER), 1));
 }

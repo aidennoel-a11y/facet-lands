@@ -169,9 +169,7 @@ export function rockCandidates(generator, config, cx, cz) {
   }
   // (The rainforest's boulders that a great fallen trunk lies across: see leanLogs.)
   for (const b of leanSites(generator, config, cx, cz)) {
-    const gx = (generator.getHeight(b.bx + 2, b.bz) - generator.getHeight(b.bx - 2, b.bz)) / 4;
-    const gz = (generator.getHeight(b.bx, b.bz + 2) - generator.getHeight(b.bx, b.bz - 2)) / 4;
-    list.push({ lx: b.bx - x0, lz: b.bz - z0, wx: b.bx, wz: b.bz, jitter: generator.getColorJitter(b.bx, b.bz), boulder: true, slope: Math.min(0.3, Math.hypot(gx, gz)), sx: b.sx, sy: b.sy, sz: b.sz, surf: false, rx: 0.04, ry: b.ry, rz: -0.03, shape: Math.floor(hash2(Math.round(b.bx), Math.round(b.bz), seed + 50) * ROCK_SHAPE_COUNT), lean: true });
+    list.push({ lx: b.bx - x0, lz: b.bz - z0, wx: b.bx, wz: b.bz, jitter: generator.getColorJitter(b.bx, b.bz), boulder: true, slope: b.slope, sx: b.sx, sy: b.sy, sz: b.sz, surf: false, rx: 0.04, ry: b.ry, rz: -0.03, shape: Math.floor(hash2(Math.round(b.bx), Math.round(b.bz), seed + 50) * ROCK_SHAPE_COUNT), lean: true });
   }
   list.snowLine = snowLine;
   return list;

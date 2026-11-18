@@ -757,12 +757,10 @@ export const BIOMES = {
       species: [
         { type: 'sitkaSpruce', weight: 1, minHeight: -99, maxHeight: 150 },
         { type: 'cedar', weight: 0.9, minHeight: -99, maxHeight: 130 },
-        { type: 'hemlock', weight: 1.1, minHeight: -99, maxHeight: 160 },
-        { type: 'alder', weight: 0.6, minHeight: -99, maxHeight: 90 },
-        { type: 'spruce', weight: 0.45, minHeight: -99, maxHeight: 170 },
-        { type: 'maple', weight: 0.1, minHeight: -99, maxHeight: 80 }, // (a bigleaf maple, here and there by the streams)
-        { type: 'blueberryBush', weight: 0.35, minHeight: -99, maxHeight: 140 }, // (huckleberry)
-        { type: 'bush', weight: 0.25, minHeight: -99, maxHeight: 120 },
+        // (Only the rainforest's own between the giants: hemlocks, young spruce, huckleberry; no common trees.)
+        { type: 'hemlock', weight: 1.6, minHeight: -99, maxHeight: 160 },
+        { type: 'youngSitka', weight: 0.8, minHeight: -99, maxHeight: 150 },
+        { type: 'blueberryBush', weight: 0.45, minHeight: -99, maxHeight: 140 }, // (huckleberry)
       ],
     },
   },

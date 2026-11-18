@@ -329,7 +329,7 @@ const IN_WATER = new Set(['deadPine', 'cypress', 'mangrove']);
 export const TREE_TYPES = ['pine', 'spruce', 'broadleaf', 'birch', 'poplar', 'maple', 'bush', 'deadPine', 'acacia', 'cactus', 'smallCactus', 'dryBush', 'cypress', 'swampWillow',
   'oak', 'larch', 'silverBirch', 'aspen', 'baobab', 'joshuaTree', 'ocotillo', 'charredSnag', 'treeFern', 'weepingWillow', 'mangrove', 'jungleGiant', 'junglePalm', 'bamboo', 'jungleCanopy',
   'appleTree', 'raspberryBush', 'blueberryBush', 'redwood', 'cherryBlossom', 'cherryRound', 'monsoonTree', 'monsoonSal', 'monsoonFig', 'monsoonFlame', 'monsoonMango', 'krummholz',
-  'spinifex', 'termiteMound', 'ghostGum', 'jacaranda', 'bristlecone', 'pricklyPear', 'bloomCactus', 'cliffVines', 'limberPine', 'juniper', 'deadBristlecone', 'sitkaSpruce', 'cedar', 'hemlock', 'alder'];
+  'spinifex', 'termiteMound', 'ghostGum', 'jacaranda', 'bristlecone', 'pricklyPear', 'bloomCactus', 'cliffVines', 'limberPine', 'juniper', 'deadBristlecone', 'sitkaSpruce', 'cedar', 'hemlock', 'alder', 'youngSitka'];
 
 /**
  * Packs placed trees (see placeTrees) for the far-tree layer: per type, a
