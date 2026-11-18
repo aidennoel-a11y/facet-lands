@@ -7,7 +7,7 @@ import { Felling } from './Felling.js';
 import { GroundItems } from './GroundItems.js';
 import { Hud } from './Hud.js';
 import { Inventory } from './Inventory.js';
-import { BLADES, GRINDS, ITEMS, RECIPES, RELICS, TIERS, stackOf, weightOf, tierOf, usesText } from './items.js';
+import { BLADES, BLUEPRINT_MATS, GRINDS, ITEMS, RECIPES, RELICS, TIERS, stackOf, weightOf, tierOf, usesText } from './items.js';
 import { bobberModel, bowModel, ladderLean } from './models.js';
 import { Structures } from './Structures.js';
 import { Survival } from './Survival.js';
@@ -709,7 +709,39 @@ export class Game {
     return found[0] ?? null;
   }
 
+  #addPiece(s) {
+    if (this.cooldown > 0) return;
+    const mats = BLUEPRINT_MATS[s.type] ?? ['log'];
+    const name = ITEMS[s.type]?.name.toLowerCase() ?? 'building';
+    let used = mats[0];
+    if (this.mode === 'survival') {
+      const slot = this.inventory.slots.findIndex((st) => st && mats.includes(st.id));
+      if (slot < 0) return this.hotbar?.flash(`The ${name} wants ${mats.map((m) => countOf(m, 1)).join(' or ')} for its next piece (${s.data.bpOf - s.data.bp} to go)`);
+      used = this.inventory.slots[slot].id;
+      this.inventory.take(slot);
+    }
+    const cam = this.camera.position, dir = new Vector3();
+    this.camera.getWorldDirection(dir);
+    const hands = cam.clone().addScaledVector(dir, 0.7).add(new Vector3(0, -0.45, 0));
+    const r = this.structures.addPiece(s, hands);
+    if (!r) return;
+    this.#animate('chop', 0.4);
+    this.cooldown = 0.35;
+    this.sound?.call(used === 'rock' ? 'dig' : 'chop', 0, 0.45);
+    this.dirty = true;
+    if (r.built) {
+      this.#achieve?.('builder');
+      return this.hotbar?.flash(`The ${name} is built`);
+    }
+    return this.hotbar?.flash(`${ITEMS[used]?.name ?? used} set in place: ${r.n} of ${r.of}${this.mode !== 'survival' ? ` (free in ${this.mode})` : ''}`);
+  }
+
   #structureText(s, held) {
+    // (A blueprint going up: a piece at a time.)
+    if (this.structures.isBlueprint(s)) {
+      const mat = BLUEPRINT_MATS[s.type]?.[0] ?? 'log';
+      return `Blueprint: ${ITEMS[s.type]?.name.toLowerCase()} · add a ${ITEMS[mat]?.name.toLowerCase() ?? mat} (${s.data.bp} of ${s.data.bpOf})${this.mode !== 'survival' ? ` · free in ${this.mode}` : ''}`;
+    }
     // (A site going up: how far along, and what it wants next.)
     const need = this.structures.siteNeeds(s);
     if (need && this.mode !== 'survival') return `Build the ${ITEMS[s.type]?.name.toLowerCase()} (free in ${this.mode})`;
@@ -1120,6 +1152,8 @@ export class Game {
       // Taking it back down.
       if (s.lit) return this.hotbar?.flash('Too hot to take down: let it burn out');
       if (s.contents && s.contents.slots.some(Boolean)) return this.hotbar?.flash('Empty it first');
+      // (A blueprint half up: what's been put into it comes back too.)
+      if (s.data?.bpOf && this.mode === 'survival' && s.data.bp > 0 && !this.structures.isBuilt(s)) this.#give(BLUEPRINT_MATS[s.type]?.[0] ?? 'log', s.data.bp, s);
       for (const st of this.structures.takeAll(s)) this.#give(st.id, st.count ?? 1, s);
       if (s.type === 'plot') {
         this.structures.remove(s);
@@ -1132,6 +1166,10 @@ export class Game {
       this.sound?.call('place', 0, 0.5);
       return this.hotbar?.flash(`${ITEMS[s.type].name} taken down`);
     }
+    // A blueprint: one more piece of it put up, carried from your hands to
+    // its place (in testing and creative, nothing needed; else one of what
+    // it's made of, from your pack).
+    if (this.structures.isBlueprint(s)) return this.#addPiece(s);
     // (Testing and creative: the blueprint first, then each stage of it
     // put up in turn, one a press, nothing brought.)
     const step = this.mode !== 'survival' ? this.structures.advance(s) : null;
@@ -1739,6 +1777,16 @@ export class Game {
       const me = plan.type === 'flag' ? this.flagger?.() ?? {} : null;
       const site = this.structures.build(plan, stages ? { data: { stage: 0, got: {} } } : me ? { data: { owner: me.name ?? 'You', colour: me.colour ?? 0xd8442e, day: Math.floor(this.age ?? 0) + 1, place: me.place ?? '' } } : {});
       if (me) this.hotbar?.flash(`Your flag, planted${me.place ? ` in the ${me.place.toLowerCase()}` : ''}: it shows on the map`);
+      // (The big pieces of a building: set down as a blueprint, then put up a piece at a time.)
+      if (!stages && this.structures.isBlueprintType(plan.type)) {
+        const n = this.structures.startBlueprint(site);
+        const mat = BLUEPRINT_MATS[plan.type]?.[0] ?? 'log';
+        this.#learn(plan.type);
+        this.inventory.take(i);
+        this.cooldown = 0.4;
+        this.sound?.call('place', 0, 0.4);
+        return this.hotbar?.flash(`Blueprint of the ${item.name.toLowerCase()}: Q on it to add a ${ITEMS[mat]?.name.toLowerCase() ?? mat} at a time (${n} in all)${this.mode !== 'survival' ? `, free in ${this.mode}` : ''}`);
+      }
       if (stages) {
         this.#learn(plan.type);
         this.inventory.take(i);
@@ -4060,6 +4108,7 @@ export class Game {
     if ((walking || this.acting) && this.survival.alive && !this.hud.busy && !this.riding) {
       const origin = cam, direction = this.camera.getWorldDirection(dir.clone());
       const t = this.#target({ origin, direction });
+      this.structures.hoverBlueprint(t?.kind === 'structure' ? t.structure : null); // (a blueprint's ghost: only while you look at it)
       const item = held && ITEMS[held.id];
       const placing = item?.place === 'caveLamp' || item?.place === 'lantern' || item?.place === 'candle' ? 'torch' : item?.place ?? (held?.id === 'hoe' ? 'plot' : null);
       if (SPANS[placing]) {

@@ -755,10 +755,14 @@ export const BIOMES = {
       density: 1.0,
       clumped: false,
       species: [
-        { type: 'sitkaSpruce', weight: 1, minHeight: -99, maxHeight: 150 },
-        { type: 'cedar', weight: 0.9, minHeight: -99, maxHeight: 130 },
+        // (About half of them furred with moss up their trunks from the ground.)
+        { type: 'sitkaSpruce', weight: 0.5, minHeight: -99, maxHeight: 150 },
+        { type: 'sitkaMossy', weight: 0.5, minHeight: -99, maxHeight: 150 },
+        { type: 'cedar', weight: 0.45, minHeight: -99, maxHeight: 130 },
+        { type: 'cedarMossy', weight: 0.45, minHeight: -99, maxHeight: 130 },
         // (Only the rainforest's own between the giants: hemlocks, young spruce, huckleberry; no common trees.)
-        { type: 'hemlock', weight: 1.6, minHeight: -99, maxHeight: 160 },
+        { type: 'hemlock', weight: 1.0, minHeight: -99, maxHeight: 160 },
+        { type: 'hemlockMossy', weight: 0.6, minHeight: -99, maxHeight: 160 },
         { type: 'youngSitka', weight: 0.8, minHeight: -99, maxHeight: 150 },
         { type: 'blueberryBush', weight: 0.45, minHeight: -99, maxHeight: 140 }, // (huckleberry)
       ],

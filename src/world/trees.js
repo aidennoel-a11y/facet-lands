@@ -1679,6 +1679,8 @@ function bristlecone() {
   for (let k = 0; k < 4; k++) {
     const next = [at[0] + (rand() - 0.4) * 0.7, at[1] + 0.9 + rand() * 0.4, at[2] + (rand() - 0.5) * 0.6];
     wood.push(limb(at, next, 0.55 - k * 0.1, 0.45 - k * 0.1, k % 2 ? dead : live, k % 2 ? deadTop : dead, 2510 + k));
+    // (A gnarled knot at each bend, so the crooked lengths join with no gap between.)
+    wood.push(part(new DodecahedronGeometry(0.47 - k * 0.1, 0), k % 2 ? deadTop : dead, k % 2 ? dead : live, { x: next[0], y: next[1], z: next[2], lump: 0.12, seed: 2530 + k }));
     pts.push(next);
     at = next;
   }
@@ -1799,6 +1801,7 @@ function deadBristlecone() {
   for (let k = 0; k < 3; k++) {
     const next = [at[0] + (rand() - 0.5) * 0.8, at[1] + 1.0 + rand() * 0.5, at[2] + (rand() - 0.5) * 0.7];
     wood.push(limb(at, next, 0.5 - k * 0.12, 0.4 - k * 0.12, dead, deadTop, 3210 + k));
+    wood.push(part(new DodecahedronGeometry(0.42 - k * 0.12, 0), deadTop, dead, { x: next[0], y: next[1], z: next[2], lump: 0.12, seed: 3230 + k }));
     for (let q = 0; q < 2; q++) {
       const a = rand() * Math.PI * 2, len = 1 + rand() * 1.2;
       const mid = [next[0] + Math.cos(a) * len * 0.5, next[1] + 0.4 + rand() * 0.4, next[2] + Math.sin(a) * len * 0.5];
@@ -1810,6 +1813,33 @@ function deadBristlecone() {
 }
 
 /** Built once and shared by every chunk. */
+/**
+ * A rainforest tree with its foot furred over in moss: the bark of its
+ * trunk green from the ground up to some `upTo` metres, patchy, thinning
+ * out up the trunk and thickest on one side. (A copy: the plain one stays.)
+ */
+function mossyBase(g, upTo, seed) {
+  const m = g.clone();
+  m.userData = { ...g.userData };
+  const pos = m.attributes.position, col = m.attributes.color, crown = m.attributes.aCrown;
+  const c = new Color(), moss = new Color(), MOSS = [0x46702a, 0x557f2e, 0x3c6224, 0x62893a];
+  for (let k = 0; k < pos.count; k++) {
+    if (crown && crown.getX(k) > 0.5) continue;
+    const x = pos.getX(k), y = pos.getY(k), z = pos.getZ(k);
+    if (y > upTo) continue;
+    const a = Math.atan2(z, x);
+    const patch = 0.5 + 0.5 * Math.sin(a * 3 + seed) * Math.cos(y * 2.1 + seed * 0.7) + 0.35 * Math.cos(a + seed); // (thicker on one side, in patches)
+    const f = Math.min(1, Math.max(0, (1 - y / upTo) * 1.4 + patch * 0.6 - 0.35));
+    if (f <= 0) continue;
+    c.setRGB(col.getX(k), col.getY(k), col.getZ(k));
+    moss.setHex(MOSS[Math.floor(hash2(Math.round(a * 4), Math.round(y * 3), seed) * MOSS.length)]);
+    c.lerp(moss, 0.85 * f);
+    col.setXYZ(k, c.r, c.g, c.b);
+  }
+  col.needsUpdate = true;
+  return m;
+}
+
 export const TREE_GEOMETRIES = {
   cherryBlossom: cherryBlossom(),
   cherryRound: cherryRound(),
@@ -1869,6 +1899,10 @@ export const TREE_GEOMETRIES = {
   juniper: juniper(),
   deadBristlecone: deadBristlecone(),
 };
+// (Some of the rainforest's trees mossy at the foot, some not.)
+TREE_GEOMETRIES.sitkaMossy = mossyBase(TREE_GEOMETRIES.sitkaSpruce, 6.5, 3);
+TREE_GEOMETRIES.cedarMossy = mossyBase(TREE_GEOMETRIES.cedar, 5.5, 7);
+TREE_GEOMETRIES.hemlockMossy = mossyBase(TREE_GEOMETRIES.hemlock, 3.5, 11);
 
 // How each species takes the seasons: [deciduous (leaves turn and fall),
 // holds snow, flowers in spring].
@@ -1886,7 +1920,7 @@ const SEASONAL = {
   // (Below nothing: the monsoon forest's, drying yellow through the dry months: see Seasons.seasonalTrees.)
   monsoonTree: [-1, 0, 0], monsoonSal: [-1, 0, 0], monsoonFig: [-0.6, 0, 0], monsoonFlame: [-1, 0, 0], monsoonMango: [-0.4, 0, 0], // (green the year round here: its seasons are the ground's, see Seasons)
   redwood: [0, 1, 0],
-  sitkaSpruce: [0, 1, 0], cedar: [0, 1, 0], hemlock: [0, 1, 0], alder: [1, 1, 0], youngSitka: [0, 1, 0],
+  sitkaSpruce: [0, 1, 0], cedar: [0, 1, 0], hemlock: [0, 1, 0], alder: [1, 1, 0], youngSitka: [0, 1, 0], sitkaMossy: [0, 1, 0], cedarMossy: [0, 1, 0], hemlockMossy: [0, 1, 0],
   spinifex: [0, 0, 0], termiteMound: [0, 0, 0], ghostGum: [0, 0, 0], jacaranda: [0, 0, 0], bristlecone: [0, 1, 0], pricklyPear: [0, 0, 0], bloomCactus: [0, 0, 0], cliffVines: [0, 0, 0], limberPine: [0, 1, 0], juniper: [0, 1, 0], deadBristlecone: [0, 1, 0],
   cherryBlossom: [1, 1, 1], // (its blossom thickest in spring; red-gold in autumn; bare in winter)
   cherryRound: [1, 1, 1],
@@ -1988,6 +2022,9 @@ export const LEAF_GEOMETRIES = {
   ghostGum: leaves(24, [0.3, 0.5], [0x6a7a48, 0x82925a, 0x5a6a3e], crown('ghostGum'), 45),
   bristlecone: leaves(18, [0.25, 0.4], [0x2a4a30, 0x3a5a3a, 0x446a44], crown('bristlecone'), 46),
 };
+LEAF_GEOMETRIES.sitkaMossy = LEAF_GEOMETRIES.sitkaSpruce;
+LEAF_GEOMETRIES.cedarMossy = LEAF_GEOMETRIES.cedar;
+LEAF_GEOMETRIES.hemlockMossy = LEAF_GEOMETRIES.hemlock;
 // (The rainforest's: their leaves flutter with the foliage they're set on, the tree itself stiff; see rainforestSway.)
 for (const type of ['sitkaSpruce', 'cedar', 'hemlock', 'alder', 'youngSitka']) {
   const g = LEAF_GEOMETRIES[type];

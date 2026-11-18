@@ -568,6 +568,31 @@ export const RECIPES = [
   { id: 'caveCloak', needs: { caveBearPelt: 1, rope: 1 }, note: 'The warmest thing to wear there is' },
 ];
 
+// The big pieces of a building (walls, floors, roofs, stairs, gables, stone
+// work): placed as a blueprint, then put up a piece at a time at the site,
+// one of its material for each log, plank or stone you can see in it (see
+// Structures, blueprints). What their recipes ask is only what the
+// blueprint takes; the rest (BLUEPRINT_MATS: what each piece can be made
+// of) is brought to the site.
+export const BLUEPRINT_TYPES = new Set(['wall', 'woodWindow', 'stoneWindow', 'logWall', 'logWindow', 'logDoor', 'plankWall', 'plankWindow', 'plankDoor', 'barnWall', 'barnWindow', 'barnDoor', 'stoneWall', 'stoneDoor', 'cutStoneWall', 'cutWindow', 'cutDoor', 'chimneyWall', 'chimney', 'stoneFence', 'logFloor', 'woodFloor', 'stoneFloor', 'cutStoneFloor', 'hatchFloor', 'logStairs', 'plankStairs', 'stoneStairs', 'cutStairs', 'roof', 'logRoof', 'shingleRoof', 'tileRoof', 'slateRoof', 'barnRoof', 'flatRoof', 'gable']);
+export const BLUEPRINT_MATS = {};
+{
+  const ORDER = ['rock', 'planks', 'log', 'stick', 'vine'];
+  for (const r of RECIPES) {
+    const type = ITEMS[r.id]?.place;
+    if (!BLUEPRINT_TYPES.has(type)) continue;
+    const mat = ORDER.find((m) => r.needs[m]);
+    if (!mat) continue;
+    const mats = (BLUEPRINT_MATS[type] ??= []);
+    if (!mats.includes(mat)) mats.push(mat);
+    const needs = { ...r.needs };
+    delete needs[mat];
+    r.needs = Object.keys(needs).length ? needs : { stick: 1 };
+    r.note = `${r.note} (A blueprint: set it down, then add a ${ITEMS[mat]?.name.toLowerCase() ?? mat} at a time, Q on it, till it's built)`;
+    ITEMS[r.id].weight = Math.min(ITEMS[r.id].weight, 1);
+  }
+}
+
 /**
  * The crafting tree: what you can make, in four tiers, each opened by
  * something the one before lets you do (see Game: progress). Everything

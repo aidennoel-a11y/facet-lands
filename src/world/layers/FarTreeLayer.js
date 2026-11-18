@@ -5,7 +5,7 @@ import { FALL, TREE_GEOMETRIES } from '../trees.js';
 import { packFarTrees, placeTrees } from '../treePlacement.js';
 import { SMALL_PLANTS } from './TreeLayer.js';
 
-const CONES = new Set(['pine', 'spruce', 'larch', 'redwood', 'sitkaSpruce', 'cedar', 'hemlock', 'youngSitka']);
+const CONES = new Set(['pine', 'spruce', 'larch', 'redwood', 'sitkaSpruce', 'cedar', 'hemlock', 'youngSitka', 'sitkaMossy', 'cedarMossy', 'hemlockMossy']);
 // (Drawn as their real model however far off: the redwoods, giants seen from far away, and few.)
 const FULL = new Set(['redwood']);
 const SPIKES = new Set(['deadPine', 'cactus', 'charredSnag', 'bamboo', 'bloomCactus', 'termiteMound']); // (bamboo: a single cane)

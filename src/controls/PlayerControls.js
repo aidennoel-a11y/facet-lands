@@ -664,8 +664,18 @@ export class PlayerControls {
     const at = this.world.terrainAt;
     if (!at || this.underground) return null;
     const here = at(x, z);
-    if (!(Math.abs(floor - here) < 0.3)) return null; // (not on the land itself: a rock, a floor, a log)
-    const d = 0.7, gx = (at(x + d, z) - at(x - d, z)) / (2 * d), gz = (at(x, z + d) - at(x, z - d)) / (2 * d), s = Math.hypot(gx, gz);
+    let g = at, d = 0.7;
+    if (!(Math.abs(floor - here) < 0.3)) {
+      // (Up on a boulder, a great rock, a log: its own surface, as steep as
+      // it is; but only where it's that all round, not at the brink of a
+      // flat top, where the samples would fall off its edge.)
+      if (!this.#ground || floor - here < 0.4) return null;
+      g = (px, pz) => this.#ground(px, floor + 0.4, pz).stand;
+      d = 0.35;
+      const ring = [g(x + d, z), g(x - d, z), g(x, z + d), g(x, z - d)];
+      if (ring.some((y) => !(y > here + 0.25))) return null;
+    }
+    const gx = (g(x + d, z) - g(x - d, z)) / (2 * d), gz = (g(x, z + d) - g(x, z - d)) / (2 * d), s = Math.hypot(gx, gz);
     if (!(s > CLIFF_SLOPE)) return null;
     return { x: -gx / s, z: -gz / s };
   }

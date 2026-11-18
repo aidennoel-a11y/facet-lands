@@ -709,7 +709,11 @@ fires.fuelAt = (x, z) => {
   const w = generator.getBiomeWeights(x, z, {});
   const dry = 1.15 * (w.savanna ?? 0) + 0.85 * ((w.temperate ?? 0) + (w.parkland ?? 0) + (w.cascades ?? 0) + (w.blackHills ?? 0)) + 0.75 * ((w.pine ?? 0) + (w.redwood ?? 0) + (w.smoky ?? 0))
     + 0.45 * ((w.jungle ?? 0) + (w.volcanic ?? 0) + (w.badlands ?? 0)) + 0.25 * ((w.wetland ?? 0) + (w.mangrove ?? 0)) + 0.03 * ((w.desert ?? 0) + (w.saltFlat ?? 0));
-  let f = dry * (0.45 + 0.55 * generator.getGrassDensity(x, z)) + 0.45 * generator.getForestDensity(x, z) * Math.min(1, dry * 1.5);
+  // (Any other land, the newer kinds: as much as an ordinary wood; the rainforest, dripping wet, little.)
+  const named = ['savanna', 'temperate', 'parkland', 'cascades', 'blackHills', 'pine', 'redwood', 'smoky', 'jungle', 'volcanic', 'badlands', 'wetland', 'mangrove', 'desert', 'saltFlat', 'rainforest'].reduce((a, k) => a + (w[k] ?? 0), 0);
+  const fuelOther = 0.7 * Math.max(0, 1 - named) + 0.3 * (w.rainforest ?? 0);
+  const dryAll = dry + fuelOther;
+  let f = dryAll * (0.45 + 0.55 * generator.getGrassDensity(x, z)) + 0.45 * generator.getForestDensity(x, z) * Math.min(1, dryAll * 1.5);
   // (Green grass, growing and full of sap, hardly takes; dry grass goes up:
   // the savanna and the dry country, and everywhere late in the year.)
   const dryness = Math.min(1, Math.max(0, 0.3 + 0.7 * ((w.savanna ?? 0) + (w.desert ?? 0) + (w.badlands ?? 0)) + 0.35 * seasonUniforms.uAutumn.value - 0.25 * seasonUniforms.uSpring.value));

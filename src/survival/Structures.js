@@ -9,7 +9,9 @@ import {
   logWallModel, plankWallModel, cutStoneWallModel, logFloorModel, cutStoneFloorModel, logStairsModel, plankStairsModel, stoneStairsModel, cutStairsModel, STAIRS_LENGTH, STAIRS_WIDTH, STAIRS_RISE,
   logRoofModel, shingleRoofModel, tileRoofModel, bedrollModel, strawBedModel, fancyBedModel, openWallModel, houseDoorModel, HOUSE_DOOR_WIDTH, altarModel, altarSocket, altarStoneModel, leanToModel, waterFilterModel, repairBenchModel, workbenchModel, bridgeModel, bridgeSag, BRIDGE_WIDTH, chairModel, tableModel, shelfModel, trophyRackModel, plantingModel, waterMillModel, millWheelModel, windmillModel, windmillSailsModel, barnWallModel, barnDoorModel, barnRoofModel, stoneRoadModel, zipLineModel, ditchModel, gatehouseModel, fireplaceModel, chimneyWallModel, roofGableModel, flatRoofModel, withLogLift, stepModel, lanternPostModel, flowerBedModel, dockModel, coopModel, beeBoxModel, signModel, canoeModel, sailboatModel, ladderModel, ladderLean, RAISED_MODELS, wallFootingModel,
   greenhouseFrameModel, greenhouseGlassModel, armourStandModel, weaponRackModel, rugModel, paintingModel, bannerModel, BANNER_DESIGNS, flagModel, gableModel, hatchFloorModel, hatchLidModel, HATCH } from './models.js';
-import { RELICS, RELIC_COLOURS } from './items.js';
+import { BLUEPRINT_TYPES, RELICS, RELIC_COLOURS } from './items.js';
+import { splitPieces } from './blueprintPieces.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const FLAMES = [new Color(1, 0.55, 0.12), new Color(1, 0.75, 0.25), new Color(1, 0.38, 0.08)];
@@ -424,6 +426,7 @@ export class Structures {
 
   /** Whether it's finished (anything without stages always is). */
   isBuilt(s) {
+    if (s.data?.bpOf) return (s.data.bp ?? 0) >= s.data.bpOf;
     const st = this.#stages(s);
     return !st || (s.data?.stage ?? st.length) >= st.length;
   }
@@ -457,6 +460,118 @@ export class Structures {
     }
     this.onChange?.();
     return { took, stageDone, built: this.isBuilt(s), name: need.name };
+  }
+
+  /** Whether this kind goes up as a blueprint, a piece at a time (walls, floors, roofs...). */
+  isBlueprintType(type) {
+    return BLUEPRINT_TYPES.has(type) && !!KINDS[type];
+  }
+
+  /** The blueprint under your crosshair (or null): its ghost shown, every other one's hidden. */
+  hoverBlueprint(s) {
+    const b = s && this.isBlueprint(s) ? s : null;
+    if (b === this.hovered) return;
+    if (this.hovered?.bpGhost) this.hovered.bpGhost.visible = false;
+    this.hovered = b;
+    if (b?.bpGhost) b.bpGhost.visible = true;
+  }
+
+  /** Whether it's a blueprint still going up. */
+  isBlueprint(s) {
+    return !!s.data?.bpOf && !this.isBuilt(s);
+  }
+
+  // Its pieces, in the order they go up (remembered per model).
+  #bpPieces(s) {
+    s.fullGeometry ??= s.body.geometry;
+    this.bpCache ??= new WeakMap();
+    let p = this.bpCache.get(s.fullGeometry);
+    if (!p) this.bpCache.set(s.fullGeometry, (p = splitPieces(s.fullGeometry, 6)));
+    return p;
+  }
+
+  /** Makes a just-placed piece a blueprint: nothing of it up yet. Returns how many pieces it takes. */
+  startBlueprint(s) {
+    const n = this.#bpPieces(s).length;
+    s.data = { ...(s.data ?? {}), bp: 0, bpOf: n };
+    this.#showBlueprint(s);
+    this.onChange?.();
+    return n;
+  }
+
+  /**
+   * One more piece on a blueprint, carried from `from` (world: your hands)
+   * and set in its place. Returns { n, of, built }, or null.
+   */
+  addPiece(s, from = null) {
+    if (!this.isBlueprint(s)) return null;
+    const pieces = this.#bpPieces(s), k = s.data.bp;
+    s.data = { ...s.data, bp: k + 1 };
+    // (Seen carried there: from your hands, up and over, settling into its place.)
+    if (from && s.mesh) {
+      const m = new Mesh(pieces[k], this.material);
+      const bb = pieces[k].boundingBox, centre = new Vector3().addVectors(bb.min, bb.max).multiplyScalar(0.5);
+      s.mesh.updateMatrixWorld(true);
+      const start = s.mesh.worldToLocal(from.clone()).sub(centre);
+      m.position.copy(start);
+      m.castShadow = true;
+      s.mesh.add(m);
+      (this.flying ??= []).push({ s, m, start, t: 0, dur: 0.55 });
+      this.#showBlueprint(s, 1); // (the rest as it was, this one still on its way)
+    } else this.#showBlueprint(s);
+    this.onChange?.();
+    return { n: k + 1, of: s.data.bpOf, built: this.isBuilt(s) };
+  }
+
+  // The pieces in flight to their places.
+  #flyPieces(dt) {
+    if (!this.flying?.length) return;
+    for (let i = this.flying.length - 1; i >= 0; i--) {
+      const f = this.flying[i];
+      f.t += dt;
+      const e = Math.min(1, f.t / f.dur), ease = 1 - (1 - e) * (1 - e);
+      f.m.position.copy(f.start).multiplyScalar(1 - ease);
+      f.m.position.y += Math.sin(Math.PI * e) * 0.7;
+      f.m.rotation.set((1 - ease) * 0.35, 0, (1 - ease) * -0.5);
+      if (e >= 1) {
+        f.m.parent?.remove(f.m);
+        this.flying.splice(i, 1);
+        if (!this.flying.some((o) => o.s === f.s)) this.#showBlueprint(f.s);
+      }
+    }
+  }
+
+  // A blueprint as far as it's got: the pieces put up so far (all but the
+  // last `held` of them, still on their way), and a faint ghost of the whole.
+  #showBlueprint(s, held = 0) {
+    if (!s.body || !s.data?.bpOf) return;
+    const pieces = this.#bpPieces(s), full = s.fullGeometry;
+    s.siteBits?.forEach((m) => m.parent?.remove(m));
+    s.siteBits = [];
+    const built = this.isBuilt(s) && !held;
+    if (s.door) s.door.visible = built;
+    if (s.lid) s.lid.visible = built;
+    s.gables?.forEach((g) => (g.visible = built));
+    if (built) {
+      s.body.geometry = full;
+      return;
+    }
+    const n = Math.max(0, Math.min(pieces.length, (s.data.bp ?? 0) - held));
+    s.bpMade ??= new Map();
+    let g = s.bpMade.get(n);
+    if (!g) {
+      g = n ? mergeGeometries(pieces.slice(0, n).map((p) => (p.index ? p.toNonIndexed() : p))) : new BufferGeometry();
+      if (s.bpMade.size > 6) s.bpMade.clear();
+      s.bpMade.set(n, g);
+    }
+    s.body.geometry = g;
+    this.blueprintGhost ??= new MeshLambertMaterial({ color: 0x9cc8f0, transparent: true, opacity: 0.22, depthWrite: false, emissive: 0x2a4a6a });
+    const ghost = new Mesh(full, this.blueprintGhost);
+    ghost.renderOrder = 2;
+    ghost.visible = this.hovered === s; // (only while you're looking at it: see hoverBlueprint)
+    s.bpGhost = ghost;
+    s.body.parent.add(ghost);
+    s.siteBits.push(ghost);
   }
 
   // A site as far as it's got: what's built of it so far (the model up to
@@ -1161,6 +1276,7 @@ export class Structures {
     s.jobGroup = new Group();
     mesh.add(s.jobGroup);
     if (this.#stages(s)) this.#showSite(s);
+    if (s.data?.bpOf) this.#showBlueprint(s);
     mesh.position.set(s.x, s.y, s.z);
     this.#orient(mesh, s.rot, s.tilt);
     mesh.userData.structure = s;
@@ -1488,6 +1604,7 @@ export class Structures {
    * Torches.update). @param ctx { time, wind, light (Color), rain }
    */
   update(dt, ctx) {
+    this.#flyPieces(dt);
     const lights = [];
     for (const s of this.list) {
       const kind = KINDS[s.type];
@@ -1623,6 +1740,7 @@ export class Structures {
   /** Pushes a circle (you, walking: feet at `feetY`) out of what's built. */
   collide(position, radius, feetY) {
     for (const s of this.list) {
+      if (s.data?.bpOf && (s.data.bp ?? 0) < s.data.bpOf) continue; // (a blueprint still going up: nothing to stand on, bump into or shelter under yet)
       const k = KINDS[s.type];
       if (Math.abs(s.x - position.x) > 5 || Math.abs(s.z - position.z) > 5) continue;
       if (k.floor || k.stairs) continue; // (stood on: see floorTop)
@@ -1706,6 +1824,7 @@ export class Structures {
   wallTopAt(x, z, r = 0.4) {
     let top = -Infinity;
     for (const s of this.list) {
+      if (s.data?.bpOf && (s.data.bp ?? 0) < s.data.bpOf) continue; // (a blueprint still going up: nothing to stand on, bump into or shelter under yet)
       const k = KINDS[s.type];
       if (!k.line || Math.abs(s.x - x) > 4 || Math.abs(s.z - z) > 4) continue;
       const ax = Math.cos(s.rot), az = -Math.sin(s.rot);
@@ -1719,6 +1838,7 @@ export class Structures {
   obstacles(x, z, reach) {
     const out = [];
     for (const s of this.list) {
+      if (s.data?.bpOf && (s.data.bp ?? 0) < s.data.bpOf) continue; // (a blueprint still going up: nothing to stand on, bump into or shelter under yet)
       if (Math.abs(s.x - x) > reach + 3 || Math.abs(s.z - z) > reach + 3) continue;
       if (s.type === 'snare' || KINDS[s.type].boat || s.type === 'rope' || s.type === 'ladder' || s.type === 'plot') continue;
       const kind = KINDS[s.type];
@@ -1917,6 +2037,7 @@ export class Structures {
       s.caught = s.type === 'fishTrap' ? rec.caught || 0 : !!rec.caught;
       if (s.catchMesh) s.catchMesh.visible = !!s.caught;
       if (rec.data) s.data = { ...rec.data };
+      if (s.data?.bpOf && !this.flying?.some((f) => f.s === s)) this.#showBlueprint(s);
       if (s.type === 'banner' && s.body) s.body.geometry = this.#bannerGeo(s.data);
       if (s.type === 'sign') this.showSign(s);
       if (s.type === 'flag' && s.body) (s.body.geometry = this.#flagGeo(s.data), this.showFlag(s));
@@ -1964,6 +2085,7 @@ export class Structures {
   /** Whether (x, z) is under a roof or on a floor (for the lying snow: none there). */
   snowShelterAt(x, z) {
     for (const s of this.list) {
+      if (s.data?.bpOf && (s.data.bp ?? 0) < s.data.bpOf) continue; // (a blueprint still going up: nothing to stand on, bump into or shelter under yet)
       const k = KINDS[s.type];
       if (!(k.roof || k.floor) || Math.abs(s.x - x) > 3.4 || Math.abs(s.z - z) > 3.4) continue;
       const ox = x - s.x, oz = z - s.z, u = ox * Math.cos(s.rot) - oz * Math.sin(s.rot), v = ox * Math.sin(s.rot) + oz * Math.cos(s.rot);
@@ -1975,6 +2097,7 @@ export class Structures {
   floorTop(x, z, feetY = Infinity) {
     let top = null;
     for (const s of this.list) {
+      if (s.data?.bpOf && (s.data.bp ?? 0) < s.data.bpOf) continue; // (a blueprint still going up: nothing to stand on, bump into or shelter under yet)
       const k = KINDS[s.type];
       if (k.bridge) {
         // (A bridge: along its length, its deck, sagging in the middle if it's a rope one.)
@@ -2044,6 +2167,7 @@ export class Structures {
     const top = this.floorTop(x, z, feetY);
     if (top === null || Math.abs(top - feetY) > 0.35) return null;
     for (const s of this.list) {
+      if (s.data?.bpOf && (s.data.bp ?? 0) < s.data.bpOf) continue; // (a blueprint still going up: nothing to stand on, bump into or shelter under yet)
       const k = KINDS[s.type];
       if (k.bridge && Math.hypot(s.x - x, s.z - z) < (s.len ?? 6) + 1) return 'wood';
       if (k.dock && Math.hypot(s.x - x, s.z - z) < 9) return 'wood';
@@ -2057,6 +2181,7 @@ export class Structures {
     let roof = 0;
     const lines = [];
     for (const s of this.list) {
+      if (s.data?.bpOf && (s.data.bp ?? 0) < s.data.bpOf) continue; // (a blueprint still going up: nothing to stand on, bump into or shelter under yet)
       if (Math.abs(s.x - x) > 9 || Math.abs(s.z - z) > 9) continue;
       const k = KINDS[s.type];
       if (k.posts || k.roof) {

@@ -421,7 +421,7 @@ export function placeUnderstory(generator, config, cx, cz, groundHeightAt, trees
   // Moss on the rainforest's trees: thick pads up the sides of their
   // trunks (kind 9) and great clumps of it heaped round their feet on the
   // ground (kind 8); more on some trees, less on others, a few bare.
-  const FOOT = { sitkaSpruce: [1.45, 12, 0.35], cedar: [1.9, 10, 0.32], youngSitka: [0.65, 6, 0.35], hemlock: [0.5, 9, 0.4] }; // (its foot's radius, the height over which it narrows by about the last share)
+  const FOOT = { sitkaSpruce: [1.45, 12, 0.35], cedar: [1.9, 10, 0.32], youngSitka: [0.65, 6, 0.35], hemlock: [0.5, 9, 0.4], sitkaMossy: [1.45, 12, 0.35], cedarMossy: [1.9, 10, 0.32], hemlockMossy: [0.5, 9, 0.4] }; // (its foot's radius, the height over which it narrows by about the last share)
   if (trees && anyRain >= 0.05) {
     const ts = generator.seed ^ 0x7ee5;
     for (const [type, [R0, H, narrow]] of Object.entries(FOOT)) {

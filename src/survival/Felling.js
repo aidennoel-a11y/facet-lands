@@ -151,8 +151,16 @@ export class Felling {
     if (e.k === 'chop') {
       const from = { x: e.from?.[0] ?? hit.x, z: e.from?.[1] ?? hit.z };
       this.#chips(hit.x, (e.at ?? hit.y + 0.8), hit.z, from);
-      this.shaking = { hit, time: 0.3, matrix: this.trees.matrixOf(hit).clone(), from };
+      // (Their notch, cut deeper with each of their blows.)
+      let state = this.hits.get(hit.key);
+      if (!state) this.hits.set(hit.key, (state = { blows: 0, cut: Math.max(0.25, Math.min(1.3, (e.at ?? hit.y + 0.8) - hit.y)) }));
+      state.blows++;
+      const dx = from.x - hit.x, dz = from.z - hit.z, d = Math.hypot(dx, dz) || 1;
+      state.fx = (state.fx ?? 0) + dx / d;
+      state.fz = (state.fz ?? 0) + dz / d;
+      if (!hit.bush) this.#notch(hit, state, from);
     } else if (e.k === 'fell') {
+      this.hits.delete(hit.key);
       if (hit.bush) return this.trees.remove(hit);
       this.#fell(hit, e.cut, e);
     }
@@ -178,9 +186,17 @@ export class Felling {
       this.hits.set(hit.key, state);
     }
     state.blows += power;
+    // (Which side it's being cut from: the notch is cut there, and that's the way it'll go.)
+    {
+      const dx = from.x - hit.x, dz = from.z - hit.z, d = Math.hypot(dx, dz) || 1;
+      state.fx = (state.fx ?? 0) + dx / d;
+      state.fz = (state.fz ?? 0) + dz / d;
+    }
     this.#chips(hit.x, hit.y + state.cut, hit.z, from);
-    if (state.blows < this.blows(hit)) this.onEvent?.({ k: 'chop', key: hit.key, from: [from.x, from.z], at: hit.y + state.cut });
-    if (state.blows < this.blows(hit)) {
+    // (Through, near enough, three quarters of the way: the rest of it can't hold the tree up.)
+    const through = hit.bush || hit.type === 'bamboo' ? this.blows(hit) : Math.max(1, Math.ceil(this.blows(hit) * 0.75));
+    if (state.blows < through) this.onEvent?.({ k: 'chop', key: hit.key, from: [from.x, from.z], at: hit.y + state.cut });
+    if (state.blows < through) {
       this.shaking = { hit, time: 0.3, matrix: this.trees.matrixOf(hit).clone(), from: { x: from.x, z: from.z } };
       if (!hit.bush) this.#notch(hit, state, from);
       return 'chop';
@@ -191,11 +207,13 @@ export class Felling {
       this.trees.remove(hit);
       return 'bush';
     }
-    // Which way: away from you, pulled round by the way it leans and by the wind.
-    let fx = hit.x - from.x, fz = hit.z - from.z;
+    // Which way: as a real one does, towards the notch, the side the wood's
+    // been taken out of (the hinge left at the back tips it that way),
+    // pulled round a little by the way it leans and by the wind.
+    let fx = state.fx ?? hit.x - from.x, fz = state.fz ?? hit.z - from.z;
     const d = Math.hypot(fx, fz) || 1;
-    fx = fx / d + (hit.t.leanX ?? 0) * 3 + wind.x * 0.04 + rnd(-0.25, 0.25);
-    fz = fz / d + (hit.t.leanZ ?? 0) * 3 + wind.z * 0.04 + rnd(-0.25, 0.25);
+    fx = fx / d + (hit.t.leanX ?? 0) * 1.5 + wind.x * 0.02 + rnd(-0.12, 0.12);
+    fz = fz / d + (hit.t.leanZ ?? 0) * 1.5 + wind.z * 0.02 + rnd(-0.12, 0.12);
     const how = {
       away: Math.atan2(fx, fz), angle: rnd(0.015, 0.04), speed: rnd(0.02, 0.08),
       heft: rnd(0.8, 1.25), // (how its weight's spread: a heavy crown falls faster than a bare pole)
@@ -209,7 +227,8 @@ export class Felling {
   // Down it comes: the tree above the cut (`cutAt` metres up) falls,
   // tipping towards `away` (as `how` says), and a stump stays.
   #fell(hit, cutAt, how) {
-    const world = this.trees.matrixOf(hit).clone();
+    const stood = this.#clearStand(hit.key);
+    const world = stood ?? this.trees.matrixOf(hit).clone();
     const cut = cutAt / hit.t.sy; // (in the tree's own units)
     const whole = how.burnt ? woodOnly(treeGeometry(hit.type, true)) : treeGeometry(hit.type, this.trees.bare);
     const falling = clipGeometry(whole, cut, true);
@@ -246,34 +265,88 @@ export class Felling {
     });
   }
 
-  // The cut in a standing trunk, where the axe has been biting: a dark
-  // groove, the pale wood showing at its lips, going round the trunk from
-  // the side you've struck it, further with each blow (all the way round,
-  // and it's through).
+  // The cut in a standing trunk, where the axe has been biting: a wedge
+  // taken out of it on the side you've been striking, at the height you
+  // strike it, deeper with each blow (three quarters through, and it goes).
+  // The tree's drawn as itself above and below the cut, and the notched
+  // length of trunk between made afresh each blow; the real one hidden
+  // meanwhile (still there to bump into and to strike).
   #notch(hit, state, from) {
-    const done = Math.min(1, state.blows / this.blows(hit));
-    const r = this.trees.trunkRadius(hit.type) * hit.t.s * 1.02;
-    const arc = Math.PI * 2 * Math.max(0.12, done);
-    this.#unnotch(state);
-    const group = new Group();
-    const groove = new Mesh(new TorusGeometry(r, 0.018 + 0.03 * done, 4, 28, arc), this.notchDark ??= new MeshLambertMaterial({ color: 0x2e1e12 }));
-    const lip = new Mesh(new TorusGeometry(r * 1.01, 0.01 + 0.015 * done, 3, 28, arc), this.chipMaterial);
-    lip.position.y = 0.035 + 0.03 * done;
-    group.add(groove, lip);
-    // (The arc centred on the side you struck, lying round the trunk.)
-    const face = Math.atan2(from.x - hit.x, from.z - hit.z);
-    group.position.set(hit.x, hit.y + state.cut, hit.z);
-    group.rotation.set(0, face - Math.PI / 2 + arc / 2, 0);
-    for (const m of group.children) m.rotation.x = Math.PI / 2;
-    this.scene.add(group);
-    state.notch = group;
+    const through = Math.max(1, Math.ceil(this.blows(hit) * 0.75));
+    const done = Math.min(1, state.blows / through);
+    const R = this.trees.trunkRadius(hit.type) * hit.t.s * 1.04, h = Math.min(0.7, Math.max(0.3, R * 1.3));
+    const sy = hit.t.sy;
+    if (!state.stand) {
+      const world = this.trees.matrixOf(hit).clone();
+      const whole = treeGeometry(hit.type, this.trees.bare);
+      const lo = (state.cut - h / 2) / sy, hi = (state.cut + h / 2) / sy;
+      const group = new Group();
+      const parts = [[clipGeometry(whole, lo, false), this.trees.material], [clipGeometry(whole, hi, true), this.trees.material]];
+      if (LEAF_GEOMETRIES[hit.type]) parts.push([clipGeometry(LEAF_GEOMETRIES[hit.type], hi, true), this.trees.leafMaterial]);
+      for (const [g, mat] of parts) {
+        const m = new InstancedMesh(g, mat, 1);
+        m.setMatrixAt(0, world);
+        m.castShadow = m.receiveShadow = true;
+        m.frustumCulled = false;
+        group.add(m);
+      }
+      this.scene.add(group);
+      // (The real one hidden: drawn at nothing.)
+      const mesh = hit.group.userData.meshes[hit.type];
+      mesh.setMatrixAt(hit.t.index, m4.makeScale(0, 0, 0));
+      mesh.instanceMatrix.needsUpdate = true;
+      state.stand = { group, world, hit, section: null };
+      this.standing ??= new Map();
+      this.standing.set(hit.key, state.stand);
+    }
+    // The notched length: rings round the trunk, each pushed in, on the cut
+    // side, to the flat back of the notch there (a V, deepest at the middle).
+    const st = state.stand;
+    if (st.section) (st.group.remove(st.section), st.section.geometry.dispose());
+    const face = Math.atan2(state.fx ?? from.x - hit.x, state.fz ?? from.z - hit.z), D = 2 * R * 0.75 * done;
+    const A = 18, Y = 6, pos = [], col = [];
+    const bark = new Color(0x4e3c2c), wood = WOOD, dark = new Color(0xa8824e);
+    const ring = (k) => {
+      const y = -h / 2 + (h * k) / Y, d = D * Math.max(0, 1 - Math.abs((2 * y) / h)), c = Math.sqrt(Math.max(0, R * R - (R - d) ** 2));
+      return Array.from({ length: A }, (_, a) => {
+        const th = (a / A) * Math.PI * 2;
+        let u = R * Math.cos(th), w = R * Math.sin(th), cut = false;
+        if (d > 0.005 && u > R - d) (u = R - d), (w = Math.max(-c, Math.min(c, w))), (cut = true);
+        // (u: towards the side it's cut from; w: across it.)
+        const x = Math.sin(face) * u + Math.cos(face) * w, z = Math.cos(face) * u - Math.sin(face) * w;
+        return { p: [hit.x + x, hit.y + state.cut + y, hit.z + z], cut, deep: d / Math.max(0.01, D) };
+      });
+    };
+    const rings = Array.from({ length: Y + 1 }, (_, k) => ring(k));
+    for (let k = 0; k < Y; k++) for (let a = 0; a < A; a++) {
+      const q = [rings[k][a], rings[k][(a + 1) % A], rings[k + 1][(a + 1) % A], rings[k + 1][a]];
+      for (const tri of [[q[0], q[2], q[1]], [q[0], q[3], q[2]]]) {
+        const cutFace = tri.every((v) => v.cut);
+        const c = cutFace ? (k < Y / 2 ? wood : dark) : bark;
+        for (const v of tri) pos.push(...v.p), col.push(c.r, c.g, c.b);
+      }
+    }
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+    g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
+    g.computeVertexNormals();
+    st.section = new Mesh(g, this.notchMaterial ??= new MeshLambertMaterial({ vertexColors: true, flatShading: true, side: 2 }));
+    st.section.castShadow = st.section.receiveShadow = true;
+    st.group.add(st.section);
+  }
+
+  // A notched tree's stand-in taken away (it's down, or gone): returns the transform it stood with, or null.
+  #clearStand(key) {
+    const st = this.standing?.get(key);
+    if (!st) return null;
+    this.standing.delete(key);
+    this.scene.remove(st.group);
+    for (const m of st.group.children) (m.geometry?.dispose(), m.isInstancedMesh && m.dispose());
+    return st.world;
   }
 
   #unnotch(state) {
-    if (!state?.notch) return;
-    this.scene.remove(state.notch);
-    for (const m of state.notch.children) m.geometry.dispose();
-    state.notch = null;
+    // (The stand-in stays till the tree's down: see #clearStand.)
   }
 
   // The crown of a falling tree, crushed down where it meets the ground:
@@ -602,12 +675,14 @@ export class Felling {
    * @param onLand (x, y, z, size) => void: a tree hits the ground (for the sound)
    */
   update(dt, ground, onLand) {
+    // (A notched tree whose land has gone from round you: its stand-in goes too; it'll be whole again.)
+    if (this.standing?.size) for (const [key, st] of this.standing) if (!st.hit.group.parent) (this.#clearStand(key), this.hits.delete(key));
     // A shaken tree quivers from the blow.
     if (this.shaking) {
       const sh = this.shaking;
       sh.time -= dt;
       const mesh = sh.hit.group.userData.meshes[sh.hit.type];
-      if (!sh.hit.t.removed) {
+      if (!sh.hit.t.removed && !this.standing?.has(sh.hit.key)) {
         // (Rocked a little about its foot, away from the blow, in its own chunk's frame.)
         const a = sh.time > 0 ? Math.sin(sh.time * 50) * 0.03 * (sh.time / 0.3) : 0;
         const bx = sh.hit.x - sh.from.x, bz = sh.hit.z - sh.from.z, bl = Math.hypot(bx, bz) || 1;
@@ -733,6 +808,7 @@ export class Felling {
   clear() {
     for (const f of this.falling) this.scene.remove(f.group);
     for (const st of this.hits.values()) this.#unnotch(st);
+    for (const key of [...(this.standing?.keys() ?? [])]) this.#clearStand(key);
     this.falling = [];
     this.hits.clear();
     this.loadStumps([]);
