@@ -125,6 +125,18 @@ export class Felling {
     this.chipGeometry = new BoxGeometry(0.06, 0.03, 0.08);
     this.chipMaterial = new MeshLambertMaterial({ color: 0xd8b882, flatShading: true });
     this.shaking = null;
+    // (The notch's own material, made at the start and drawn once, unseen,
+    // so its shader's ready: no stall the first time you swing at a tree.)
+    this.notchMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true, side: 2 });
+    {
+      const g = new BufferGeometry();
+      g.setAttribute('position', new BufferAttribute(new Float32Array(9), 3));
+      g.setAttribute('color', new BufferAttribute(new Float32Array(9), 3));
+      g.setAttribute('normal', new BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
+      const warm = new Mesh(g, this.notchMaterial);
+      warm.frustumCulled = false;
+      scene.add(warm);
+    }
     this.onEvent = null; // (online: a blow, a fall, a trunk cut up, for the others to see: see remote)
   }
 
@@ -274,38 +286,61 @@ export class Felling {
   #notch(hit, state, from) {
     const through = Math.max(1, Math.ceil(this.blows(hit) * 0.75));
     const done = Math.min(1, state.blows / through);
-    const R = this.trees.trunkRadius(hit.type) * hit.t.s * 1.04, h = Math.min(0.7, Math.max(0.3, R * 1.3));
     const sy = hit.t.sy;
     if (!state.stand) {
       const world = this.trees.matrixOf(hit).clone();
       const whole = treeGeometry(hit.type, this.trees.bare);
-      const lo = (state.cut - h / 2) / sy, hi = (state.cut + h / 2) / sy;
+      const mesh = hit.group.userData.meshes[hit.type];
+      // (Its own trunk measured where it's being cut: how thick it really
+      // is there, and its bark's colour, so the notched length matches it.)
+      const est = this.trees.trunkRadius(hit.type) * hit.t.s;
+      let h = Math.min(0.7, Math.max(0.3, est * 1.3));
+      // (Never down into the ground: the whole cut a little above it.)
+      state.cut = Math.max(state.cut, h / 2 + 0.12);
+      const trunk = this.#measure(whole, world, hit, state.cut, est);
+      const R = trunk.r * 0.985;
+      h = Math.min(0.7, Math.max(0.3, R * 1.3));
+      state.cut = Math.max(state.cut, h / 2 + 0.12);
+      const tint = new Color(1, 1, 1);
+      if (mesh.instanceColor) mesh.getColorAt(hit.t.index, tint);
+      const lo = Math.round(((state.cut - h / 2) / sy) * 50) / 50, hi = Math.round(((state.cut + h / 2) / sy) * 50) / 50;
+      // (The tree above and below the cut, as it's drawn: worked out once for each kind and height of cut, and kept.)
+      const clip = (src, at, above, tag) => {
+        this.clipCache ??= new Map();
+        const key = `${hit.type}:${this.trees.bare ? 1 : 0}:${tag}:${at}:${above ? 1 : 0}`;
+        let g = this.clipCache.get(key);
+        if (!g) {
+          if (this.clipCache.size > 60) this.clipCache.clear();
+          this.clipCache.set(key, (g = clipGeometry(src, at, above)));
+        }
+        return g;
+      };
       const group = new Group();
-      const parts = [[clipGeometry(whole, lo, false), this.trees.material], [clipGeometry(whole, hi, true), this.trees.material]];
-      if (LEAF_GEOMETRIES[hit.type]) parts.push([clipGeometry(LEAF_GEOMETRIES[hit.type], hi, true), this.trees.leafMaterial]);
+      const parts = [[clip(whole, lo, false, 'w'), this.trees.material], [clip(whole, hi, true, 'w'), this.trees.material]];
+      if (LEAF_GEOMETRIES[hit.type]) parts.push([clip(LEAF_GEOMETRIES[hit.type], hi, true, 'l'), this.trees.leafMaterial]);
       for (const [g, mat] of parts) {
         const m = new InstancedMesh(g, mat, 1);
         m.setMatrixAt(0, world);
+        m.setColorAt(0, tint); // (its own tint, as it stood: and drawn the very same way as the trees round it)
         m.castShadow = m.receiveShadow = true;
         m.frustumCulled = false;
         group.add(m);
       }
       this.scene.add(group);
       // (The real one hidden: drawn at nothing.)
-      const mesh = hit.group.userData.meshes[hit.type];
       mesh.setMatrixAt(hit.t.index, m4.makeScale(0, 0, 0));
       mesh.instanceMatrix.needsUpdate = true;
-      state.stand = { group, world, hit, section: null };
+      state.stand = { group, world, hit, section: null, R, h, bark: trunk.colour.multiply(tint), axis: trunk.axis };
       this.standing ??= new Map();
       this.standing.set(hit.key, state.stand);
     }
     // The notched length: rings round the trunk, each pushed in, on the cut
     // side, to the flat back of the notch there (a V, deepest at the middle).
-    const st = state.stand;
+    const st = state.stand, { R, h } = st;
     if (st.section) (st.group.remove(st.section), st.section.geometry.dispose());
     const face = Math.atan2(state.fx ?? from.x - hit.x, state.fz ?? from.z - hit.z), D = 2 * R * 0.75 * done;
     const A = 18, Y = 6, pos = [], col = [];
-    const bark = new Color(0x4e3c2c), wood = WOOD, dark = new Color(0xa8824e);
+    const bark = st.bark, wood = WOOD, dark = new Color(0xa8824e);
     const ring = (k) => {
       const y = -h / 2 + (h * k) / Y, d = D * Math.max(0, 1 - Math.abs((2 * y) / h)), c = Math.sqrt(Math.max(0, R * R - (R - d) ** 2));
       return Array.from({ length: A }, (_, a) => {
@@ -314,7 +349,7 @@ export class Felling {
         if (d > 0.005 && u > R - d) (u = R - d), (w = Math.max(-c, Math.min(c, w))), (cut = true);
         // (u: towards the side it's cut from; w: across it.)
         const x = Math.sin(face) * u + Math.cos(face) * w, z = Math.cos(face) * u - Math.sin(face) * w;
-        return { p: [hit.x + x, hit.y + state.cut + y, hit.z + z], cut, deep: d / Math.max(0.01, D) };
+        return { p: [st.axis.x + x, hit.y + state.cut + y, st.axis.z + z], cut, deep: d / Math.max(0.01, D) };
       });
     };
     const rings = Array.from({ length: Y + 1 }, (_, k) => ring(k));
@@ -330,9 +365,31 @@ export class Felling {
     g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
     g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
     g.computeVertexNormals();
-    st.section = new Mesh(g, this.notchMaterial ??= new MeshLambertMaterial({ vertexColors: true, flatShading: true, side: 2 }));
+    st.section = new Mesh(g, this.notchMaterial);
     st.section.castShadow = st.section.receiveShadow = true;
     st.group.add(st.section);
+  }
+
+  // How thick the trunk really is at `cut` metres up (and where its middle
+  // is there, leaning as it may), and its bark's colour: from the drawn
+  // tree's own wood near that height.
+  #measure(geometry, world, hit, cut, est) {
+    const pos = geometry.attributes.position, col = geometry.attributes.color, crown = geometry.attributes.aCrown;
+    const y0 = hit.y + cut, p = new Vector3(), ds = [], c = new Color(0, 0, 0);
+    const axis = new Vector3(0, cut / hit.t.sy, 0).applyMatrix4(world);
+    let n = 0;
+    for (let k = 0; k < pos.count; k++) {
+      if (crown && crown.getX(k) > 0.5) continue;
+      p.fromBufferAttribute(pos, k).applyMatrix4(world);
+      if (Math.abs(p.y - y0) > 0.8) continue;
+      const d = Math.hypot(p.x - axis.x, p.z - axis.z);
+      if (d > est * 2.5 + 0.2) continue;
+      ds.push(d);
+      if (col) (c.r += col.getX(k)), (c.g += col.getY(k)), (c.b += col.getZ(k)), n++;
+    }
+    ds.sort((a, b) => a - b);
+    const r = ds.length >= 4 ? ds[Math.floor(ds.length * 0.6)] : est;
+    return { r: Math.max(0.05, Math.min(est * 2, r)), colour: n ? c.multiplyScalar(1 / n) : new Color(0x4e3c2c), axis };
   }
 
   // A notched tree's stand-in taken away (it's down, or gone): returns the transform it stood with, or null.
@@ -341,7 +398,7 @@ export class Felling {
     if (!st) return null;
     this.standing.delete(key);
     this.scene.remove(st.group);
-    for (const m of st.group.children) (m.geometry?.dispose(), m.isInstancedMesh && m.dispose());
+    for (const m of st.group.children) m.isInstancedMesh ? m.dispose() : m.geometry?.dispose(); // (the clipped tree kept for next time: see #notch)
     return st.world;
   }
 

@@ -793,6 +793,11 @@ chunks.addLayer(createReedLayer(WORLD));
 chunks.addLayer(createLilyLayer(WORLD));
 chunks.addLayer(createVentLayer(WORLD));
 let screeWait = 0;
+// A veil of leaves over the view, when your head's in a tree's crown.
+const leafVeil = { v: 0, target: 0, shown: 0, el: document.createElement('div') };
+leafVeil.el.style.cssText = 'position:fixed;inset:0;pointer-events:none;opacity:0;z-index:4;transition:none;'
+  + 'background:radial-gradient(ellipse at 20% 30%, rgba(96,150,60,0.9) 0 9%, transparent 10%),radial-gradient(ellipse at 70% 20%, rgba(70,120,44,0.9) 0 11%, transparent 12%),radial-gradient(ellipse at 45% 70%, rgba(110,165,70,0.85) 0 10%, transparent 11%),radial-gradient(ellipse at 85% 65%, rgba(60,105,40,0.9) 0 12%, transparent 13%),radial-gradient(ellipse at 10% 80%, rgba(80,135,50,0.9) 0 10%, transparent 11%),radial-gradient(ellipse at 55% 40%, rgba(100,155,64,0.6) 0 18%, transparent 19%),linear-gradient(rgba(42,78,30,0.92), rgba(30,60,24,0.95))';
+document.body.appendChild(leafVeil.el);
 const geysers = createGeyserLayer(WORLD);
 chunks.addLayer(geysers);
 const coralLayer = createCoralLayer(WORLD);
@@ -3498,6 +3503,14 @@ function tick(now) {
   }
   if (loading) settleFrame(now);
   controls.update(dt);
+  // (Your head in a tree's crown: nothing but leaves before your eyes, green and close.)
+  {
+    const deep = controls.mode === 'walk' || controls.mode === undefined ? trees.insideCrown(camera.position.x, camera.position.y, camera.position.z) : 0;
+    leafVeil.target = Math.min(1, deep * 2.2);
+    leafVeil.v += (leafVeil.target - leafVeil.v) * Math.min(1, dt * 10);
+    const o = leafVeil.v < 0.01 ? 0 : 0.55 + 0.42 * leafVeil.v;
+    if (Math.abs(o - leafVeil.shown) > 0.01) (leafVeil.el.style.opacity = o.toFixed(2)), (leafVeil.shown = o);
+  }
   // (Skidding down a cliff face: the grinding rush of boots and loose stone.)
   if (controls.sliding) {
     screeWait -= dt;

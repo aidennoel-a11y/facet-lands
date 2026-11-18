@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, CanvasTexture, Color, Group, Mesh, MeshLambertMaterial, PlaneGeometry, Quaternion, Sprite, SpriteMaterial, SRGBColorSpace, Vector3 } from 'three';
+import { Box3, Matrix4, Ray, BufferAttribute, BufferGeometry, CanvasTexture, Color, Group, Mesh, MeshLambertMaterial, PlaneGeometry, Quaternion, Sprite, SpriteMaterial, SRGBColorSpace, Vector3 } from 'three';
 import { Puffs } from '../render/Puffs.js';
 import { seasonUniforms, withering } from '../render/Seasons.js';
 import { Inventory } from './Inventory.js';
@@ -1908,6 +1908,18 @@ export class Structures {
         const off = Math.sqrt(Math.max(0, ox * ox + oy * oy + oz * oz - t * t));
         if (off > r) continue;
         if (!best || t < best.distance) best = { structure: s, distance: t };
+      }
+      // (A blueprint: aimed at anywhere on the whole of it, ghost and all.)
+      if (s.data?.bpOf && s.fullGeometry && s.mesh && !this.isBuilt(s)) {
+        s.fullGeometry.boundingBox ?? s.fullGeometry.computeBoundingBox();
+        s.mesh.updateMatrixWorld();
+        const inv = (this._bpInv ??= new Matrix4()).copy(s.mesh.matrixWorld).invert();
+        const ray = (this._bpRay ??= new Ray()).set(origin.clone(), dir.clone()).applyMatrix4(inv);
+        const box = (this._bpBox ??= new Box3()).copy(s.fullGeometry.boundingBox), at = (this._bpHit ??= origin.clone());
+        if (ray.intersectBox(box, at)) {
+          const t = this._bpHit.applyMatrix4(s.mesh.matrixWorld).distanceTo(origin);
+          if (t <= reach + 0.5 && (!best || t < best.distance)) best = { structure: s, distance: t };
+        }
       }
     }
     return best;

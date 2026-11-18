@@ -359,6 +359,28 @@ export function createTreeLayer({ rocks = null } = {}) {
      * can lean a little way in, not walk through), and how much they slow
      * you (1: not at all).
      */
+    /** How deep in a tree's crown the point (x, y, z) is: 0 out of it, up to 1 in the thick of it. */
+    insideCrown(x, y, z) {
+      const size = layer.chunkSize;
+      if (!size) return 0;
+      const cx = Math.floor(x / size), cz = Math.floor(z / size);
+      let deep = 0;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const list = layer.foliage.get(`${cx + dx},${cz + dz}`);
+        if (!list) continue;
+        for (let k = 0; k < list.length; k += 6) {
+          const ox = x - list[k], oz = z - list[k + 1];
+          if (Math.abs(ox) > 9 || Math.abs(oz) > 9) continue;
+          const bottom = list[k + 2], top = list[k + 3];
+          if (y < bottom + 0.15 || y > top - 0.1) continue;
+          const r = list[k + 4] * (list[k + 5] ? Math.max(0.2, (top - y) / (top - bottom)) : Math.sin(Math.PI * Math.min(1, Math.max(0, (y - bottom) / (top - bottom)))) * 0.5 + 0.5) * 0.85;
+          const d = Math.hypot(ox, oz);
+          if (d < r) deep = Math.max(deep, 1 - d / r);
+        }
+      }
+      return deep;
+    },
+
     leaves(position, radius, feetY, height = 1.8) {
       const size = layer.chunkSize;
       if (!size) return 1;
