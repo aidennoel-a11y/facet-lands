@@ -796,7 +796,7 @@ export function chimneyWallModel() {
   logPlate(b, -L / 2 - 0.04, -gap);
   logPlate(b, gap, L / 2 + 0.04);
   for (const [k, y] of logCourses().entries()) {
-    const r = 0.17 + rand() * 0.02, past = (k + (LOG_LIFT ? 1 : 0)) % 2 ? 0.18 : 0.04, col = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
+    const r = 0.17 + rand() * 0.02, past = (k + (LOG_LIFT ? 1 : 0)) % 2 ? 0.42 : 0.03, col = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
     b.log([-L / 2 - past, y, 0], [-gap, y, 0], r, col, 0xc8a070, 7);
     b.log([gap, y, 0], [L / 2 + past, y, 0], r, col, 0xc8a070, 7);
   }
@@ -2038,7 +2038,7 @@ export function logWallModel() {
   const b = new Parts(171), rand = mulberry32(171), L = WALL_LENGTH;
   logPlate(b, -L / 2 - 0.04, L / 2 + 0.04);
   for (const [k, y] of logCourses().entries()) {
-    const r = 0.17 + rand() * 0.02, past = (k + (LOG_LIFT ? 1 : 0)) % 2 ? 0.18 : 0.04;
+    const r = 0.17 + rand() * 0.02, past = (k + (LOG_LIFT ? 1 : 0)) % 2 ? 0.42 : 0.03;
     b.log([-L / 2 - past, y, (rand() - 0.5) * 0.03], [L / 2 + past, y, (rand() - 0.5) * 0.03], r, [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)], 0xc8a070, 7);
   }
   // (The chinking: moss and clay pressed between the logs.)
@@ -2076,13 +2076,12 @@ export function cutStoneWallModel() {
 /** A log floor, 4 m square: logs flattened on top, side by side on sleepers and stumps. */
 export function logFloorModel(upper = false) {
   const b = new Parts(177), rand = mulberry32(177), h = FLOOR_SIZE / 2;
+  // (Whole logs, side by side, their tops the floor: no boards laid over them.)
   for (let z = -h + 0.17; z < h; z += 0.34) {
-    b.log([-h, FLOOR_TOP - 0.15, z], [h, FLOOR_TOP - 0.15, z], 0.16, [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)], 0xc8a070, 7);
-    b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.04, 0.24), 0xa88a5c, [0, FLOOR_TOP - 0.02, z], [0, 0, 0], [1, 1, 1], 0.05); // (adzed flat)
+    b.log([-h, FLOOR_TOP - 0.16, z], [h, FLOOR_TOP - 0.16, z], 0.17, [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)], 0xc8a070, 7);
   }
-  // (Boards under the logs, the gaps between them chinked: no light through, seen from the room below.)
-  b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.05, FLOOR_SIZE - 0.02), 0x6a4c32, [0, FLOOR_TOP - 0.29, 0], [0, 0, 0], [1, 1, 1], 0.03);
-  b.add(new BoxGeometry(FLOOR_SIZE - 0.02, 0.2, FLOOR_SIZE - 0.04), 0x5e4630, [0, FLOOR_TOP - 0.15, 0], [0, 0, 0], [1, 1, 1], 0.02);
+  // (The gaps between them chinked with moss and clay: no light through, seen from the room below.)
+  b.add(new BoxGeometry(FLOOR_SIZE - 0.04, 0.18, FLOOR_SIZE - 0.06), 0x5a5440, [0, FLOOR_TOP - 0.2, 0], [0, 0, 0], [1, 1, 1], 0.02);
   if (upper) return b.build();
   for (const x of [-h + 0.2, h - 0.2]) b.log([x, FLOOR_TOP - 0.42, -h], [x, FLOOR_TOP - 0.42, h], 0.15, 0x5e4630, 0xc8a070, 6);
   for (const x of [-h + 0.2, h - 0.2]) for (const z of [-h + 0.25, 0, h - 0.25]) b.add(new CylinderGeometry(0.17, 0.19, 1.6, 7), 0x5a4230, [x, FLOOR_TOP - 1.3, z]);
@@ -2214,7 +2213,7 @@ export function openWallModel(style, what) {
   if (style === 'log') {
     logPlate(b, -L / 2 - 0.04, L / 2 + 0.04);
     for (const [k, y] of logCourses().entries()) {
-      const r = 0.17 + rand() * 0.02, past = (k + (LOG_LIFT ? 1 : 0)) % 2 ? 0.18 : 0.04, bark = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
+      const r = 0.17 + rand() * 0.02, past = (k + (LOG_LIFT ? 1 : 0)) % 2 ? 0.42 : 0.03, bark = [0x7a5a3a, 0x6e5034, 0x83603e][Math.floor(rand() * 3)];
       if (y > o.lo - r && y < o.hi + r * 0.5) {
         b.log([-L / 2 - past, y, 0], [-o.w / 2 - 0.08, y, 0], r, bark, 0xc8a070, 7);
         b.log([o.w / 2 + 0.08, y, 0], [L / 2 + past, y, 0], r, bark, 0xc8a070, 7);

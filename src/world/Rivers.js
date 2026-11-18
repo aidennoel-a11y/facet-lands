@@ -925,7 +925,20 @@ export class Rivers {
 
   static pondRadius(pond, x, z) {
     const a = Math.atan2(z - pond.z, x - pond.x);
-    return pond.r * (1 + 0.14 * Math.sin(a * 3 + pond.seed) + 0.07 * Math.sin(a * 5 + pond.seed * 2));
+    // (Its shore its own: broad lobes, and round them little bays and points,
+    // ragged as a real pond's, never a smooth round; the same everywhere it's asked.)
+    let shape = pond._shape;
+    if (!shape) {
+      shape = pond._shape = new Float32Array(26);
+      let h = Math.floor(Math.abs(pond.seed * 1000)) || 1;
+      for (let k = 0; k < shape.length; k++) {
+        h = (h * 1103515245 + 12345) & 0x7fffffff;
+        shape[k] = (h / 0x7fffffff) * 2 - 1;
+      }
+    }
+    const u = ((a / (Math.PI * 2)) % 1 + 1) % 1 * shape.length, k0 = Math.floor(u) % shape.length, f = u - Math.floor(u);
+    const f2 = f * f * (3 - 2 * f), ragged = shape[k0] + (shape[(k0 + 1) % shape.length] - shape[k0]) * f2;
+    return pond.r * (1 + 0.14 * Math.sin(a * 3 + pond.seed) + 0.07 * Math.sin(a * 5 + pond.seed * 2) + 0.045 * Math.sin(a * 9 + pond.seed * 3.3) + 0.08 * ragged);
   }
 
   /**

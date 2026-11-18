@@ -1919,6 +1919,13 @@ export class TerrainGenerator {
       if (!(r < 0.05 && this.getAridity(px, pz, r) < 0.44 && this.#volcanoBelt(px, pz) < 0.3 && this.#mountainsAround(px, pz) < 0.05 && this.#seaCoast(px, pz) < 0.05 && this.getOceanness(px, pz) < 0.1)) return 0;
       // (Never touching dry country.)
       for (let k = 0; k < 10; k++) for (const d of [700, 1100]) if (this.getAridity(px + Math.cos(k * 0.628) * d, pz + Math.sin(k * 0.628) * d) > T.savannaStart + 0.1) return 0;
+      // (Nor near the Smoky Mountains, nor any hill country: a swamp lies low
+      // in the flat, never sunk in against a mountainside in a wall of bare earth.)
+      if (this.#smokyBlob(px, pz) > 0) return 0;
+      for (let k = 0; k < 10; k++) for (const d of [900, 1600, 2400]) {
+        const qx = px + Math.cos(k * 0.628 + 0.3) * d, qz = pz + Math.sin(k * 0.628 + 0.3) * d;
+        if (this.#smokyBlob(qx, qz) > 0.02 || this.getMountainness(qx, qz) > 0.15) return 0;
+      }
       return 1;
     });
   }

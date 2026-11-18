@@ -4108,7 +4108,7 @@ export class Game {
     if ((walking || this.acting) && this.survival.alive && !this.hud.busy && !this.riding) {
       const origin = cam, direction = this.camera.getWorldDirection(dir.clone());
       const t = this.#target({ origin, direction });
-      this.structures.hoverBlueprint(t?.kind === 'structure' ? t.structure : null); // (a blueprint's ghost: only while you look at it)
+      this.structures.hoverBlueprint(t?.kind === 'structure' ? t.structure : null, !!held && this.structures.isBlueprintType(ITEMS[held.id]?.place)); // (a blueprint's ghost: only while you look at it, or hold a building piece)
       const item = held && ITEMS[held.id];
       const placing = item?.place === 'caveLamp' || item?.place === 'lantern' || item?.place === 'candle' ? 'torch' : item?.place ?? (held?.id === 'hoe' ? 'plot' : null);
       if (SPANS[placing]) {
@@ -4491,7 +4491,7 @@ export class Game {
     else if (id === 'crossbow') mesh.rotation.set(0, Math.PI, 0), mesh.scale.setScalar(0.9), mesh.position.set(-0.14, 0.08, -0.12);
     else if (id === 'fishingRod') mesh.rotation.set(-1.05, 0, 0), mesh.scale.setScalar(0.75), mesh.position.set(0, -0.05, 0);
     else if (TORCHES.has(id)) mesh.rotation.set(0, 0, Math.PI / 2 - 0.2), mesh.scale.setScalar(0.7);
-    else if (id === 'log') mesh.rotation.set(0, Math.PI / 2 - 0.25, 0.15), mesh.scale.setScalar(0.85), mesh.position.set(0.05, 0.22, 0.25); // (on your shoulder)
+    else if (id === 'log') mesh.rotation.set(0.1, Math.PI / 2 - 0.45, 0.1), mesh.scale.setScalar(0.55), mesh.position.set(0.12, -0.02, -0.28); // (carried low on your right, out in front: never back through your head)
     else {
       // (Anything else held small enough to sit in your hand.)
       if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();

@@ -168,6 +168,7 @@ export class PlayerControls {
           this.grounded = false;
           this.dodging = 0.4;
           this.dodgeCool = 0.9;
+          this.lungeRun = 0.7; // (run on out of it, at full speed)
           this.dodgeSide = sx || 0;
           this.onDodge?.();
           this.lastTap = null;
@@ -209,7 +210,9 @@ export class PlayerControls {
     if (this.mode === 'fly') return this.flySpeed * (fast ? this.flyBoost : 1);
     if (this.swimming) return this.swimSpeed;
     if (this.crouch) return this.walkSpeed * 0.45 * this.speedFactor * this.burden;
-    return (fast && !this.noSprint ? this.sprintSpeed : this.walkSpeed) * this.speedFactor * this.burden;
+    // (A run takes a couple of seconds to get up to speed: see runUp.)
+    const r = this.runUp ?? 1, up = r * (2 - r);
+    return (fast && !this.noSprint ? this.walkSpeed + (this.sprintSpeed - this.walkSpeed) * up : this.walkSpeed) * this.speedFactor * this.burden;
   }
 
   /** How many times you've jumped since last asked. */
@@ -395,6 +398,12 @@ export class PlayerControls {
     const fast = k.has('ShiftLeft') || k.has('ShiftRight');
     this.moving = input.forward !== 0 || input.strafe !== 0;
     this.sprinting = this.moving && fast && !this.crouch && !this.swimming && !this.noSprint;
+    // Getting up to a run: two seconds from a walk to full speed; straight
+    // into it, though, out of a lunge (you're moving fast already).
+    this.lungeRun = Math.max(0, (this.lungeRun ?? 0) - dt);
+    if (!this.sprinting) this.runUp = 0;
+    else if ((this.dodging ?? 0) > 0 || this.lungeRun > 0) this.runUp = 1;
+    else this.runUp = Math.min(1, (this.runUp ?? 0) + dt / 2);
     // In deep water, swimming.
     const water = this.#water(pos.x, pos.z);
     const under = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z);
@@ -536,6 +545,9 @@ export class PlayerControls {
     // you drop off it, falling, not snapped straight down onto what's below.)
     const drop = feetNow - floor, ledge = drop > 0.15 && drop > Math.hypot(pos.x - fromX, pos.z - fromZ) * 1.6 + 0.05;
     this.sliding = !!(cliff && feet <= floor + 0.05);
+    // (How high up the face you started sliding: coming off at the bottom,
+    // it's as if you'd fallen a good part of that, and it hurts as a fall does.)
+    if (this.sliding) this.slideTop = Math.max(this.slideTop ?? -Infinity, feetNow);
     if (cliff && feet <= floor + 0.05) {
       feet = floor;
       // (The face drags at you: a slide, never faster than some 6 m/s down, so
@@ -547,7 +559,13 @@ export class PlayerControls {
       if (ps > 6) (this.push.x *= 6 / ps), (this.push.z *= 6 / ps); // (off its face, not flung far out from it)
       this.grounded = false;
     } else if (feet <= floor || (wasGrounded && this.velocityY <= 0 && drop < 0.6 && !ledge)) {
-      if (!wasGrounded && this.velocityY < -8 && !this.softLanding) {
+      let slid = false;
+      if (this.slideTop !== undefined && this.slideTop !== null && !this.softLanding) {
+        const fell = this.slideTop - floor, hit = Math.sqrt(2 * 9.8 * Math.max(0, fell) * 0.6);
+        this.slideTop = null;
+        if (hit > 8 && hit > -this.velocityY) (this.velocityY = -hit), (slid = true); // (landed as hard as that)
+      }
+      if ((!wasGrounded || slid) && this.velocityY < -8 && !this.softLanding) {
         this.onLand?.(-this.velocityY);
         // (Your knees taking it: the view dips, and comes back up as you straighten. See the eye's easing.)
         const dip = Math.min(0.55, (-this.velocityY - 8) * 0.045 + 0.12);

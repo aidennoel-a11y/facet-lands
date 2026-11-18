@@ -34,6 +34,39 @@ function woodOnly(source) {
   return out;
 }
 
+/**
+ * Splits every face of a (non-indexed) geometry that crosses the level
+ * `y` (in its own units) along it, every attribute blended at the split:
+ * the same shape, with a ring of corners along that line.
+ */
+function sliceAt(source, y) {
+  const g = source.index ? source.toNonIndexed() : source;
+  const names = Object.keys(g.attributes), attrs = names.map((n) => g.attributes[n]), pos = g.attributes.position;
+  const out = names.map(() => []);
+  const vert = (i) => attrs.map((a) => Array.from({ length: a.itemSize }, (_, c) => a.array[i * a.itemSize + c]));
+  const mix = (a, b, t) => a.map((arr, k) => arr.map((v, c) => v + (b[k][c] - v) * t));
+  const emit = (...vs) => vs.forEach((v) => v.forEach((arr, n) => out[n].push(...arr)));
+  const pi = names.indexOf('position');
+  for (let i = 0; i < pos.count; i += 3) {
+    const tri = [vert(i), vert(i + 1), vert(i + 2)], ys = tri.map((v) => v[pi][1]);
+    const above = ys.map((v) => v > y);
+    const nAbove = above.filter(Boolean).length;
+    if (nAbove === 0 || nAbove === 3 || ys.some((v) => Math.abs(v - y) < 1e-6)) {
+      emit(...tri);
+      continue;
+    }
+    // (The odd corner out, alone on its side of the line; the other two across it.)
+    const lone = above.findIndex((a) => (nAbove === 1 ? a : !a));
+    const a = tri[lone], b = tri[(lone + 1) % 3], c = tri[(lone + 2) % 3];
+    const ya = ys[lone], yb = ys[(lone + 1) % 3], yc = ys[(lone + 2) % 3];
+    const ab = mix(a, b, (y - ya) / (yb - ya)), ac = mix(a, c, (y - ya) / (yc - ya));
+    emit(a, ab, ac, ab, b, c, ab, c, ac);
+  }
+  const r = new BufferGeometry();
+  names.forEach((n, k) => r.setAttribute(n, new BufferAttribute(new Float32Array(out[k]), attrs[k].itemSize, attrs[k].normalized)));
+  return r;
+}
+
 function clipGeometry(source, cut, above) {
   const g = source.index ? source.toNonIndexed() : source;
   const names = Object.keys(g.attributes);
@@ -125,18 +158,6 @@ export class Felling {
     this.chipGeometry = new BoxGeometry(0.06, 0.03, 0.08);
     this.chipMaterial = new MeshLambertMaterial({ color: 0xd8b882, flatShading: true });
     this.shaking = null;
-    // (The notch's own material, made at the start and drawn once, unseen,
-    // so its shader's ready: no stall the first time you swing at a tree.)
-    this.notchMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true, side: 2 });
-    {
-      const g = new BufferGeometry();
-      g.setAttribute('position', new BufferAttribute(new Float32Array(9), 3));
-      g.setAttribute('color', new BufferAttribute(new Float32Array(9), 3));
-      g.setAttribute('normal', new BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
-      const warm = new Mesh(g, this.notchMaterial);
-      warm.frustumCulled = false;
-      scene.add(warm);
-    }
     this.onEvent = null; // (online: a blow, a fall, a trunk cut up, for the others to see: see remote)
   }
 
@@ -278,11 +299,13 @@ export class Felling {
   }
 
   // The cut in a standing trunk, where the axe has been biting: a wedge
-  // taken out of it on the side you've been striking, at the height you
-  // strike it, deeper with each blow (three quarters through, and it goes).
-  // The tree's drawn as itself above and below the cut, and the notched
-  // length of trunk between made afresh each blow; the real one hidden
-  // meanwhile (still there to bump into and to strike).
+  // taken out of the tree itself on the side you've been striking, at the
+  // height you strike it, deeper with each blow (three quarters through,
+  // and it goes). The tree's own shape, the very same faces and colours,
+  // with more rings worked into it round the cut and those pushed in to the
+  // notch's flat back, the wood showing pale where they've been cut; drawn
+  // just as it was (the same material, its own tint), the one in the
+  // forest hidden meanwhile (still there to bump into and to strike).
   #notch(hit, state, from) {
     const through = Math.max(1, Math.ceil(this.blows(hit) * 0.75));
     const done = Math.min(1, state.blows / through);
@@ -291,105 +314,88 @@ export class Felling {
       const world = this.trees.matrixOf(hit).clone();
       const whole = treeGeometry(hit.type, this.trees.bare);
       const mesh = hit.group.userData.meshes[hit.type];
-      // (Its own trunk measured where it's being cut: how thick it really
-      // is there, and its bark's colour, so the notched length matches it.)
-      const est = this.trees.trunkRadius(hit.type) * hit.t.s;
-      let h = Math.min(0.7, Math.max(0.3, est * 1.3));
-      // (Never down into the ground: the whole cut a little above it.)
-      state.cut = Math.max(state.cut, h / 2 + 0.12);
-      const trunk = this.#measure(whole, world, hit, state.cut, est);
-      const R = trunk.r * 0.985;
-      h = Math.min(0.7, Math.max(0.3, R * 1.3));
-      state.cut = Math.max(state.cut, h / 2 + 0.12);
+      const est = this.trees.trunkRadius(hit.type); // (in the tree's own units)
+      // (How thick its trunk is at the cut, and where its middle is: from its own wood.)
+      const h = Math.min(0.7, Math.max(0.3, est * hit.t.s * 1.3));
+      state.cut = Math.max(state.cut, h / 2 + 0.12); // (never down into the ground)
+      const yl = state.cut / sy, lo = (state.cut - h / 2) / sy, hi = (state.cut + h / 2) / sy;
+      const pos0 = whole.index ? whole.toNonIndexed() : whole;
+      // (More rings round the cut: its faces split along level lines, so there's something to push in.)
+      let g = pos0;
+      for (let k = 0; k <= 8; k++) g = sliceAt(g, lo + ((hi - lo) * k) / 8);
+      // (How thick its trunk is at the cut, and where its middle is there: from the rings just made.)
+      const P = g.attributes.position, crown = g.attributes.aCrown;
+      const ring = [];
+      for (let k = 0; k < P.count; k++) {
+        if (crown && crown.getX(k) > 0.5) continue;
+        const y = P.getY(k);
+        if (Math.abs(y - yl) > 1e-4) continue;
+        ring.push(P.getX(k), P.getZ(k));
+      }
+      // (The trunk's own ring, not a limb's or a root's: the corners nearest the foot's axis, grown out from the one nearest.)
+      let cx = 0, cz = 0;
+      if (ring.length) {
+        let best = 0;
+        for (let k = 0; k < ring.length; k += 2) if (Math.hypot(ring[k], ring[k + 1]) < Math.hypot(ring[best], ring[best + 1])) best = k;
+        const mine = [];
+        for (let k = 0; k < ring.length; k += 2) if (Math.hypot(ring[k] - ring[best], ring[k + 1] - ring[best + 1]) < est * 2.6 + 0.05) mine.push(ring[k], ring[k + 1]);
+        let lx = Infinity, hx = -Infinity, lz = Infinity, hz = -Infinity;
+        for (let k = 0; k < mine.length; k += 2) (lx = Math.min(lx, mine[k])), (hx = Math.max(hx, mine[k])), (lz = Math.min(lz, mine[k + 1])), (hz = Math.max(hz, mine[k + 1]));
+        (cx = (lx + hx) / 2), (cz = (lz + hz) / 2);
+      }
+      const ds = [];
+      for (let k = 0; k < ring.length; k += 2) {
+        const d = Math.hypot(ring[k] - cx, ring[k + 1] - cz);
+        if (d < est * 2.2 + 0.05) ds.push(d);
+      }
+      ds.sort((a, b) => a - b);
+      const R = ds.length >= 3 ? ds[Math.floor(ds.length * 0.85)] : est;
       const tint = new Color(1, 1, 1);
       if (mesh.instanceColor) mesh.getColorAt(hit.t.index, tint);
-      const lo = Math.round(((state.cut - h / 2) / sy) * 50) / 50, hi = Math.round(((state.cut + h / 2) / sy) * 50) / 50;
-      // (The tree above and below the cut, as it's drawn: worked out once for each kind and height of cut, and kept.)
-      const clip = (src, at, above, tag) => {
-        this.clipCache ??= new Map();
-        const key = `${hit.type}:${this.trees.bare ? 1 : 0}:${tag}:${at}:${above ? 1 : 0}`;
-        let g = this.clipCache.get(key);
-        if (!g) {
-          if (this.clipCache.size > 60) this.clipCache.clear();
-          this.clipCache.set(key, (g = clipGeometry(src, at, above)));
-        }
-        return g;
-      };
       const group = new Group();
-      const parts = [[clip(whole, lo, false, 'w'), this.trees.material], [clip(whole, hi, true, 'w'), this.trees.material]];
-      if (LEAF_GEOMETRIES[hit.type]) parts.push([clip(LEAF_GEOMETRIES[hit.type], hi, true, 'l'), this.trees.leafMaterial]);
-      for (const [g, mat] of parts) {
-        const m = new InstancedMesh(g, mat, 1);
+      const wood = new InstancedMesh(g, this.trees.material, 1);
+      const parts = [wood];
+      if (LEAF_GEOMETRIES[hit.type]) parts.push(new InstancedMesh(LEAF_GEOMETRIES[hit.type], this.trees.leafMaterial, 1));
+      for (const m of parts) {
         m.setMatrixAt(0, world);
-        m.setColorAt(0, tint); // (its own tint, as it stood: and drawn the very same way as the trees round it)
+        m.setColorAt(0, tint);
         m.castShadow = m.receiveShadow = true;
         m.frustumCulled = false;
         group.add(m);
       }
       this.scene.add(group);
-      // (The real one hidden: drawn at nothing.)
       mesh.setMatrixAt(hit.t.index, m4.makeScale(0, 0, 0));
       mesh.instanceMatrix.needsUpdate = true;
-      state.stand = { group, world, hit, section: null, R, h, bark: trunk.colour.multiply(tint), axis: trunk.axis };
+      // (Which way the cut faces, in the tree's own frame.)
+      const inv = world.clone().invert();
+      state.stand = { group, world, hit, wood, geometry: g, base: Float32Array.from(g.attributes.position.array), baseCol: Float32Array.from(g.attributes.color.array), R, cx, cz, lo, hi, inv };
       this.standing ??= new Map();
       this.standing.set(hit.key, state.stand);
     }
-    // The notched length: rings round the trunk, each pushed in, on the cut
-    // side, to the flat back of the notch there (a V, deepest at the middle).
-    const st = state.stand, { R, h } = st;
-    if (st.section) (st.group.remove(st.section), st.section.geometry.dispose());
-    const face = Math.atan2(state.fx ?? from.x - hit.x, state.fz ?? from.z - hit.z), D = 2 * R * 0.75 * done;
-    const A = 18, Y = 6, pos = [], col = [];
-    const bark = st.bark, wood = WOOD, dark = new Color(0xa8824e);
-    const ring = (k) => {
-      const y = -h / 2 + (h * k) / Y, d = D * Math.max(0, 1 - Math.abs((2 * y) / h)), c = Math.sqrt(Math.max(0, R * R - (R - d) ** 2));
-      return Array.from({ length: A }, (_, a) => {
-        const th = (a / A) * Math.PI * 2;
-        let u = R * Math.cos(th), w = R * Math.sin(th), cut = false;
-        if (d > 0.005 && u > R - d) (u = R - d), (w = Math.max(-c, Math.min(c, w))), (cut = true);
-        // (u: towards the side it's cut from; w: across it.)
-        const x = Math.sin(face) * u + Math.cos(face) * w, z = Math.cos(face) * u - Math.sin(face) * w;
-        return { p: [st.axis.x + x, hit.y + state.cut + y, st.axis.z + z], cut, deep: d / Math.max(0.01, D) };
-      });
-    };
-    const rings = Array.from({ length: Y + 1 }, (_, k) => ring(k));
-    for (let k = 0; k < Y; k++) for (let a = 0; a < A; a++) {
-      const q = [rings[k][a], rings[k][(a + 1) % A], rings[k + 1][(a + 1) % A], rings[k + 1][a]];
-      for (const tri of [[q[0], q[2], q[1]], [q[0], q[3], q[2]]]) {
-        const cutFace = tri.every((v) => v.cut);
-        const c = cutFace ? (k < Y / 2 ? wood : dark) : bark;
-        for (const v of tri) pos.push(...v.p), col.push(c.r, c.g, c.b);
+    const st = state.stand, g = st.geometry, P = g.attributes.position, C = g.attributes.color, crown = g.attributes.aCrown;
+    const fw = new Vector3(state.fx ?? from.x - hit.x, 0, state.fz ?? from.z - hit.z).transformDirection(st.inv);
+    const fl = Math.hypot(fw.x, fw.z) || 1, fx = fw.x / fl, fz = fw.z / fl, px = -fz, pz = fx;
+    const R = st.R, D = 2 * R * 0.75 * done, mid = (st.lo + st.hi) / 2, half = (st.hi - st.lo) / 2;
+    const cs = C.itemSize, dark = new Color(0xa8824e);
+    for (let k = 0; k < P.count; k++) {
+      let x = st.base[k * 3], y = st.base[k * 3 + 1], z = st.base[k * 3 + 2];
+      for (let c = 0; c < cs; c++) C.array[k * cs + c] = st.baseCol[k * cs + c];
+      if (!(crown && crown.getX(k) > 0.5) && y > st.lo - 1e-4 && y < st.hi + 1e-4) {
+        const d = D * Math.max(0, 1 - Math.abs(y - mid) / half), ox = x - st.cx, oz = z - st.cz;
+        const u = ox * fx + oz * fz, w = ox * px + oz * pz;
+        if (d > 1e-3 && u > R - d && Math.hypot(ox, oz) < R * 1.8) {
+          const c = Math.sqrt(Math.max(0, R * R - (R - d) ** 2)), u2 = R - d, w2 = Math.max(-c, Math.min(c, w));
+          x = st.cx + fx * u2 + px * w2;
+          z = st.cz + fz * u2 + pz * w2;
+          const col = y > mid ? WOOD : dark;
+          C.array[k * cs] = col.r, C.array[k * cs + 1] = col.g, C.array[k * cs + 2] = col.b;
+        }
       }
+      P.array[k * 3] = x, P.array[k * 3 + 1] = y, P.array[k * 3 + 2] = z;
     }
-    const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
-    g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
-    g.computeVertexNormals();
-    st.section = new Mesh(g, this.notchMaterial);
-    st.section.castShadow = st.section.receiveShadow = true;
-    st.group.add(st.section);
-  }
-
-  // How thick the trunk really is at `cut` metres up (and where its middle
-  // is there, leaning as it may), and its bark's colour: from the drawn
-  // tree's own wood near that height.
-  #measure(geometry, world, hit, cut, est) {
-    const pos = geometry.attributes.position, col = geometry.attributes.color, crown = geometry.attributes.aCrown;
-    const y0 = hit.y + cut, p = new Vector3(), ds = [], c = new Color(0, 0, 0);
-    const axis = new Vector3(0, cut / hit.t.sy, 0).applyMatrix4(world);
-    let n = 0;
-    for (let k = 0; k < pos.count; k++) {
-      if (crown && crown.getX(k) > 0.5) continue;
-      p.fromBufferAttribute(pos, k).applyMatrix4(world);
-      if (Math.abs(p.y - y0) > 0.8) continue;
-      const d = Math.hypot(p.x - axis.x, p.z - axis.z);
-      if (d > est * 2.5 + 0.2) continue;
-      ds.push(d);
-      if (col) (c.r += col.getX(k)), (c.g += col.getY(k)), (c.b += col.getZ(k)), n++;
-    }
-    ds.sort((a, b) => a - b);
-    const r = ds.length >= 4 ? ds[Math.floor(ds.length * 0.6)] : est;
-    return { r: Math.max(0.05, Math.min(est * 2, r)), colour: n ? c.multiplyScalar(1 / n) : new Color(0x4e3c2c), axis };
+    P.needsUpdate = true;
+    C.needsUpdate = true;
+    if (g.attributes.normal) g.computeVertexNormals();
   }
 
   // A notched tree's stand-in taken away (it's down, or gone): returns the transform it stood with, or null.
@@ -398,7 +404,8 @@ export class Felling {
     if (!st) return null;
     this.standing.delete(key);
     this.scene.remove(st.group);
-    for (const m of st.group.children) m.isInstancedMesh ? m.dispose() : m.geometry?.dispose(); // (the clipped tree kept for next time: see #notch)
+    st.geometry?.dispose();
+    for (const m of st.group.children) m.dispose();
     return st.world;
   }
 

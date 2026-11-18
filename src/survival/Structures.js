@@ -468,10 +468,15 @@ export class Structures {
   }
 
   /** The blueprint under your crosshair (or null): its ghost shown, every other one's hidden. */
-  hoverBlueprint(s) {
+  hoverBlueprint(s, all = false) {
     const b = s && this.isBlueprint(s) ? s : null;
+    // (A building piece in hand: every blueprint round about shown, to build on.)
+    if (all !== !!this.allGhosts) {
+      this.allGhosts = all;
+      for (const o of this.list) if (o.bpGhost) o.bpGhost.visible = all || o === b;
+    }
     if (b === this.hovered) return;
-    if (this.hovered?.bpGhost) this.hovered.bpGhost.visible = false;
+    if (this.hovered?.bpGhost) this.hovered.bpGhost.visible = all;
     this.hovered = b;
     if (b?.bpGhost) b.bpGhost.visible = true;
   }
@@ -568,7 +573,7 @@ export class Structures {
     this.blueprintGhost ??= new MeshLambertMaterial({ color: 0x9cc8f0, transparent: true, opacity: 0.22, depthWrite: false, emissive: 0x2a4a6a });
     const ghost = new Mesh(full, this.blueprintGhost);
     ghost.renderOrder = 2;
-    ghost.visible = this.hovered === s; // (only while you're looking at it: see hoverBlueprint)
+    ghost.visible = this.hovered === s || !!this.allGhosts; // (only while you're looking at it, or holding a building piece: see hoverBlueprint)
     s.bpGhost = ghost;
     s.body.parent.add(ghost);
     s.siteBits.push(ghost);
