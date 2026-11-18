@@ -84,6 +84,13 @@ export function createReedLayer(config) {
     reedGeometry(11, { heads: 0, blades: 14, tall: [1.0, 1.1], width: [0.02, 0.02] }),
     reedGeometry(23, { heads: 0, blades: 18, tall: [0.45, 0.45], lean: [0.15, 0.35], width: [0.03, 0.03], low: SEDGE_LOW, high: SEDGE_HIGH }),
   ];
+  // (Further off, the next ring of land out: plainer clumps, a few blades
+  // each, and only one clump in three: a marsh holds tens of thousands.)
+  const plain = [
+    reedGeometry(7, { blades: 4, heads: 0.45 }),
+    reedGeometry(11, { heads: 0, blades: 4, tall: [1.0, 1.1], width: [0.03, 0.03] }),
+    reedGeometry(23, { heads: 0, blades: 4, tall: [0.45, 0.45], lean: [0.15, 0.35], width: [0.045, 0.045], low: SEDGE_LOW, high: SEDGE_HIGH }),
+  ];
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
   // In the autumn they brown; in the winter they stand dead and straw-pale,
   // and where they stand in the water, it freezes over them: they're under
@@ -131,7 +138,7 @@ export function createReedLayer(config) {
   return {
     name: 'reeds',
 
-    reuseKey: ({ lod, resolution }) => (lod > 1 ? 'none' : `${resolution}`),
+    reuseKey: ({ lod, resolution }) => (lod > 1 ? 'none' : `${resolution}:${lod}`),
 
     build({ cx, cz, lod, groundHeightAt, generator, heights, prepared }) {
       if (lod > 1 || !generator.rivers) return null;
@@ -140,9 +147,9 @@ export function createReedLayer(config) {
       if (!data) return null;
       const group = new Group();
       group.name = 'reeds';
-      geometries.forEach((geometry, kind) => {
+      (lod >= 1 ? plain : geometries).forEach((geometry, kind) => {
         const which = [];
-        data.shades.forEach((_, k) => (data.kinds?.[k] ?? 0) === kind && which.push(k));
+        data.shades.forEach((_, k) => (data.kinds?.[k] ?? 0) === kind && (lod < 1 || k % 3 === 0) && which.push(k));
         if (!which.length) return;
         const mesh = new InstancedMesh(geometry, material, which.length);
         mesh.name = 'reeds';

@@ -1924,7 +1924,7 @@ export class TerrainGenerator {
       if (this.#smokyBlob(px, pz) > 0) return 0;
       for (let k = 0; k < 10; k++) for (const d of [900, 1600, 2400]) {
         const qx = px + Math.cos(k * 0.628 + 0.3) * d, qz = pz + Math.sin(k * 0.628 + 0.3) * d;
-        if (this.#smokyBlob(qx, qz) > 0.02 || this.getMountainness(qx, qz) > 0.15) return 0;
+        if (this.#smokyBlob(qx, qz) > 0.02) return 0;
       }
       return 1;
     });
