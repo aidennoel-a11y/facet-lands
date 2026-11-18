@@ -593,8 +593,11 @@ export class ChunkManager {
     if (level === -2) return Math.max(2, base / 4); // (the sea bed out in open water: a quarter the detail, near or far)
     if (level < 0 && lod >= 1) return Math.max(4, base / 2);
     if (!level || level < 0) return base;
-    const finest = this.config.lods[Math.min(2, this.config.lods.length - 1)].resolution;
-    return Math.max(base, Math.min(finest, base * (level === 2 ? 4 : 2)));
+    // (The steepest, spikiest land, seen from far off: as fine as the land
+    // round you out to a kilometre and a half, so its peaks aren't cut down
+    // and blunted at a distance; broken land finer too.)
+    const L = this.config.lods, finest = level === 2 && lod <= 4 ? L[Math.min(1, L.length - 1)].resolution : L[Math.min(2, L.length - 1)].resolution;
+    return Math.max(base, Math.min(finest, base * (level === 2 ? 8 : 4)));
   }
 
   /**

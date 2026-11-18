@@ -602,6 +602,25 @@ export class Felling {
   }
 
   /** The fallen trunk a ray meets (within reach): its falling record, or null. */
+  /** The top of a fallen trunk at (x, z) (world), or -Infinity: it's solid, stood on and stepped over, never walked through. */
+  trunkTopAt(x, z) {
+    let top = -Infinity;
+    for (const f of this.falling) {
+      if (!f.fallen || f.gone || !f.trunk) continue;
+      const sa = Math.sin(f.angle), ca = Math.cos(f.angle);
+      if (sa < 0.3) continue;
+      const ox = x - f.pivot.x, oz = z - f.pivot.z;
+      if (Math.abs(ox) > f.length + 2 || Math.abs(oz) > f.length + 2) continue;
+      const t = ox * f.dir.x + oz * f.dir.z, Lh = sa * f.length * 0.85; // (along it, as far as its trunk's stout: not out through the crown's thin top)
+      if (t < -0.2 || t > Lh) continue;
+      const p = Math.abs(ox * f.dir.z - oz * f.dir.x), along = Math.max(0, t / sa);
+      const r = f.trunk * (1 - 0.6 * Math.min(1, along / f.length));
+      if (p >= r) continue;
+      top = Math.max(top, f.pivot.y + ca * along + Math.sqrt(r * r - p * p));
+    }
+    return top;
+  }
+
   pickFallen(origin, dir, reach) {
     let best = null;
     for (const f of this.falling) {

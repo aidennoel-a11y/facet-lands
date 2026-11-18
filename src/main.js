@@ -871,10 +871,12 @@ for (const m of [terrainMaterial, trees.material, trees.leafMaterial, grass.mate
  * the cave meshes are built from, so floors, walls and roofs match them.
  */
 let floorTop = null; // (see the Game, below: what's laid on the ground)
+// (Trees you've felled, lying where they came down: see Felling.trunkTopAt; set once the game's made.)
+let felledTop = null;
 function groundAt(x, feetY, z) {
   const g = generator.caves.groundAt(x, feetY, z, chunks.groundHeightAt(x, z));
   // Boulders are solid: you stand on their tops (and walk into their sides as walls).
-  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), ruins.surfaceAt(x, z, feetY), landmarks.surfaceAt(x, z), geysers.surfaceAt?.(x, z) ?? -Infinity);
+  if (!g.inCave) g.height = Math.max(g.height, rocks.surfaceAt(x, z), ruins.surfaceAt(x, z, feetY), landmarks.surfaceAt(x, z), geysers.surfaceAt?.(x, z) ?? -Infinity, felledTop?.(x, z) ?? -Infinity); // (and a tree you've felled, lying where it came down)
   // (A log: stood on; but one lying up across a boulder, with head room
   // under it, walked in under, its trunk the roof overhead.)
   if (!g.inCave) {
@@ -1842,6 +1844,7 @@ torches.loadWorld(WORLD.seed);
 // (See Game: your pack, health, hunger, thirst, warmth; crafting, building,
 // felling and hunting; and the world remembering what you've done.)
 const geese = new Geese(scene); // (skeins of geese passing over, spring and autumn)
+
 const game = new Game({
   scene, camera, controls, chunks, trees, rocks, logs, mushrooms, fish, traces, torches, wildlife, sound, config: WORLD,
   solidHit: (origin, direction, reach) => solidHit(origin, direction, reach),
@@ -1898,6 +1901,7 @@ const game = new Game({
     return Number.isFinite(h) ? Math.max(h, rocks.surfaceAt(x, z)) : generator.getHeight(x, z);
   },
 });
+felledTop = (x, z) => game.felling.trunkTopAt(x, z);
 // The deep snow lying over the land round about you (see SnowBlanket).
 const snowColds = new Map();
 const snowBlanket = new SnowBlanket(scene, {

@@ -398,12 +398,12 @@ export class PlayerControls {
     const fast = k.has('ShiftLeft') || k.has('ShiftRight');
     this.moving = input.forward !== 0 || input.strafe !== 0;
     this.sprinting = this.moving && fast && !this.crouch && !this.swimming && !this.noSprint;
-    // Getting up to a run: two seconds from a walk to full speed; straight
+    // Getting up to a run: a second from a walk to full speed; straight
     // into it, though, out of a lunge (you're moving fast already).
     this.lungeRun = Math.max(0, (this.lungeRun ?? 0) - dt);
     if (!this.sprinting) this.runUp = 0;
     else if ((this.dodging ?? 0) > 0 || this.lungeRun > 0) this.runUp = 1;
-    else this.runUp = Math.min(1, (this.runUp ?? 0) + dt / 2);
+    else this.runUp = Math.min(1, (this.runUp ?? 0) + dt);
     // In deep water, swimming.
     const water = this.#water(pos.x, pos.z);
     const under = this.world.groundAt(pos.x, pos.y - this.eyeHeight, pos.z);
