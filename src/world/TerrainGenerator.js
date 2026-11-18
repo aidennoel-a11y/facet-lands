@@ -5250,7 +5250,7 @@ export class TerrainGenerator {
    * of wild sunflowers instead. (See placeFlowers.)
    */
   sunflowerAt(x, z) {
-    return smoothstep(0.08, 0.26, this.meadowNoise.fbm(x * 0.0006 + 401, z * 0.0006 - 233, 2));
+    return smoothstep(0.08, 0.26, this.meadowNoise.fbm(x * 0.00085 + 401, z * 0.00085 - 233, 2));
   }
 
   getMeadow(x, z) {

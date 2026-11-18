@@ -149,13 +149,20 @@ self.onmessage = (event) => {
     }
   }
   if (wantTrees) out.trees = placeTrees(g, config, cx, cz, groundHeightAt, boulders);
+  // (And the trunks of the trees: no grass or flower up through one either. World x, z, radius.)
+  let blockers = boulders;
+  if (wantGrass && out.trees && boulders) {
+    blockers = boulders.slice();
+    const ox = cx * config.chunkSize, oz = cz * config.chunkSize;
+    for (const list of Object.values(out.trees)) if (Array.isArray(list)) for (const t of list) if (t && Number.isFinite(t.x)) blockers.push(ox + t.x, oz + t.z, 0.25 + 0.45 * (t.s ?? 1));
+  }
   if (wantGrass) {
-    out.grass = placeGrass(g, config, cx, cz, groundHeightAt, false, boulders);
+    out.grass = placeGrass(g, config, cx, cz, groundHeightAt, false, blockers);
     transfer.push(out.grass.matrices.buffer, out.grass.colors.buffer, out.grass.kinds.buffer, out.grass.warms.buffer);
   }
   // (The small things, here so the main thread needn't: see decorPlacement.)
   if (wantGrass) {
-    out.flowers = placeFlowers(g, config, cx, cz, groundHeightAt);
+    out.flowers = placeFlowers(g, config, cx, cz, groundHeightAt, 7, blockers);
     if (out.flowers) transfer.push(out.flowers.buffer);
   }
   if (wantReeds) {

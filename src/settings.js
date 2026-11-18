@@ -9,9 +9,10 @@
  *  shadows      'off', 'low', 'normal' (the quality's own) or 'high'
  *  sensitivity  1 as it was; the mouse turning you slower or faster
  *  fov          the field of view, degrees (up and down)
+ *  farDetail    0 as the quality has it; 1 to 3, far trees drawn in more detail further off
  */
 const KEY = 'facet-lands:settings';
-export const DEFAULTS = { view: null, grass: 1, shadows: 'normal', sensitivity: 1, fov: 60, brightness: 1, volume: 1, effectsVol: 1, animalsVol: 1, weatherVol: 1, ambienceVol: 1, menuVol: 1, fpsCap: 0, rays: true, difficulty: 'normal' };
+export const DEFAULTS = { view: null, farDetail: 0, grass: 1, shadows: 'normal', sensitivity: 1, fov: 60, brightness: 1, volume: 1, effectsVol: 1, animalsVol: 1, weatherVol: 1, ambienceVol: 1, menuVol: 1, fpsCap: 0, rays: true, difficulty: 'normal' };
 
 /**
  * How hard survival is (see Game, Survival, Wildlife): `hurt`, how much
@@ -58,6 +59,14 @@ export function fitWorld(WORLD, max) {
     const k = 1 / Math.sqrt(Math.max(0.25, s.grass)); // (the spacing: thicker grass, closer together)
     WORLD.grassSpacing *= k;
     if (WORLD.farGrassSpacing) WORLD.farGrassSpacing *= k;
+  }
+  // (Far detail: the far trees with their own shapes (not cones and diamonds) further out,
+  // and higher up the full trees further out, and the far ones drawn further.)
+  const fd = Math.max(0, Math.min(3, Math.round(s.farDetail ?? 0)));
+  if (fd > 0) {
+    if (fd >= 2) WORLD.farTreeMaxLod = (WORLD.farTreeMaxLod ?? 5) + 1;
+    WORLD.farTreeDetailLod = Math.min(WORLD.farTreeMaxLod ?? 5, (WORLD.farTreeDetailLod ?? 3) + (fd === 1 ? 1 : 3));
+    if (fd >= 3) WORLD.treeMaxLod = (WORLD.treeMaxLod ?? 1) + 1;
   }
   if (s.shadows === 'low') WORLD.shadowMapSize = Math.min(WORLD.shadowMapSize, 1024);
   if (s.shadows === 'high') WORLD.shadowMapSize = Math.max(WORLD.shadowMapSize, 4096);

@@ -12,7 +12,7 @@ import { leanSites } from './leanLogs.js';
  * [x, y, z (chunk-local), size, turn (0..1), colour index, slope x, slope z] for
  * each, flat in a Float32Array; null if there are none.
  */
-export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours = 7) {
+export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours = 7, blockers = null) {
   if (!generator.getMeadow) return null;
   const size = config.chunkSize, sea = config.seaLevel;
   const x0 = cx * size, z0 = cz * size;
@@ -50,6 +50,16 @@ export function placeFlowers(generator, config, cx, cz, groundHeightAt, colours 
       if (!isMeadow && !isHigh) continue;
       const y = groundHeightAt(lx, lz, surface);
       if (!(y > sea + 1.5) || surface.normalY < 0.85 || y > 150) continue;
+      // (Never up through a boulder or a tree's trunk, nor on the great boulders' bare rock.)
+      if (blockers) {
+        let hit = false;
+        for (let k = 0; k < blockers.length && !hit; k += 3) {
+          const dx = x0 + lx - blockers[k], dz = z0 + lz - blockers[k + 1], r = blockers[k + 2] + 0.25;
+          if (dx * dx + dz * dz < r * r) hit = true;
+        }
+        if (hit) continue;
+      }
+      if (generator.bareRockAt?.(x0 + lx, z0 + lz)) continue;
       if (isHigh) {
         // (Below the bare rock and the snow, on the green high ground: some 60 to 103 m.)
         if (y > 102 || (y < 60 && alp < 0.3)) continue;

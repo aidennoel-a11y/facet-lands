@@ -495,8 +495,8 @@ export class PlayerControls {
     // sinks gently and slowly loses way.
     const glide = this.canGlide && !wasGrounded && this.keys.has('Space') && (this.gliding || this.velocityY < -1.5) && feetNow - floor > 0.8;
     if (glide) {
-      if (!this.gliding) this.glideSpeed = Math.max(12, Math.hypot(this.push.x, this.push.z), -this.velocityY * 0.9);
-      const yaw = this.euler.y, pitch = Math.max(-1.1, Math.min(0.6, this.euler.x)), cp = Math.cos(pitch), sp = Math.sin(pitch);
+      if (!this.gliding) this.glideSpeed = Math.max(16, Math.hypot(this.push.x, this.push.z), -this.velocityY * 0.95);
+      const yaw = this.euler.y, pitch = Math.max(-Math.PI / 2, Math.min(0.6, this.euler.x)), cp = Math.cos(pitch), sp = Math.sin(pitch);
       let g = this.glideSpeed;
       // (Gravity along the way it's going: nosed down it picks up speed fast,
       // the full pull of it; the air's drag; and a glider's own steady loss of
@@ -507,16 +507,20 @@ export class PlayerControls {
       // off, but slowly enough that a dive's speed carries you a long way,
       // or up again: speed traded for height. Nosed down, the full pull of
       // gravity: some 45 m/s at the steepest.)
-      const TRIM = 18;
-      g += (-sp * 9.8 + 1.3 * (1 - (g * g) / (TRIM * TRIM))) * dt;
-      g = Math.max(3, Math.min(60, g));
+      // (Quick and slippery: a fast cruise, a dive gathering speed hard, and the
+      // air taking it off only slowly, so the speed's kept and carried on.)
+      // (Pointed straight down it's a free fall, as falling without one: the full
+      // pull of gravity, no lift and no drag of the wings, up to the same top speed.)
+      const TRIM = 26, pull = (g > TRIM ? 0.55 : 1.6) * cp;
+      g += (-sp * this.gravity + pull * (1 - (g * g) / (TRIM * TRIM))) * dt;
+      g = Math.max(3, Math.min(Math.max(75, this.maxFallSpeed), g));
       this.glideSpeed = g;
       const stall = g < 9 ? (9 - g) * 1.3 : 0;
-      const vy = g * sp - 2.2 * Math.min(1.4, g / TRIM) - stall;
+      const vy = g * sp - (2.2 * Math.min(1.4, g / TRIM) + stall) * cp;
       this.velocityY += (vy - this.velocityY) * Math.min(1, dt * 9);
       this.push.x += (-Math.sin(yaw) * g * cp - this.push.x) * Math.min(1, dt * 7);
       this.push.z += (-Math.cos(yaw) * g * cp - this.push.z) * Math.min(1, dt * 7);
-      this.softLanding = true;
+      this.softLanding = pitch > -1.25; // (diving straight into the ground hurts, as any fall does)
     } else this.velocityY = Math.max(-this.maxFallSpeed, this.velocityY - this.gravity * dt);
     this.gliding = glide;
     let feet = feetNow + this.velocityY * dt;

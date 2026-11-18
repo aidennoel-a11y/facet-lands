@@ -71,6 +71,8 @@ export function rockCandidates(generator, config, cx, cz) {
       // heaped all round their banks and tumbled into the shallows.)
       const lk = generator.rivers.at(wx, wz, 12);
       const rockyLake = lk && (lk.pond || lk.big) && !lk.hot && lk.d > lk.water - 1.6 && lk.d < lk.water + (lk.cliffs ? 10 : 7) && (lk.cliffs || hash2(Math.floor(wx / 260), Math.floor(wz / 260), seed + 77) < 0.33) ? (lk.cliffs ? 1.3 : 1) * (1 - smoothstep(3, lk.cliffs ? 10 : 7, lk.d - lk.water)) : 0;
+      // (A lake's island: rocks among its grass and trees, boulders round its shore.)
+      const isle = lk && lk.pond ? generator.rivers.islandAt?.(wx, wz) ?? 0 : 0;
       const greatLake = lk && lk.cliffs ? 1 : 0; // (a great alpine lake: great boulders fallen from its cliffs)
       // Flat, bare stone high in the mountains: strewn with boulders
       // and rubble, so it's never a dead plain.
@@ -138,13 +140,13 @@ export function rockCandidates(generator, config, cx, cz) {
       const shoreRock = shore ? (shore.kind === 'rock' ? (shore.ocean ? 1.4 : 1) : shore.ocean ? 0 : 0.08) * Math.max(shore.fade, 0.6) : 0;
       // Open grassy plains: only the odd stone.
       const plain = generator.getPlainness(wx, wz);
-      const chance = ((0.025 + 0.2 * foothill * flat) * (1 - 0.8 * plain) + 0.75 * foot + 0.2 * cliff + 0.25 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.12 + 0.88 * smoothstep(0.2, 0.7, slope)) + 0.16 * red + 1.1 * blast + lavaRock) * soft + strewn + surf + 0.9 * rockyLake;
+      const chance = ((0.025 + 0.2 * foothill * flat) * (1 - 0.8 * plain) + 0.75 * foot + 0.2 * cliff + 0.25 * bank + 0.55 * stony + 0.6 * shoreRock + 0.9 * granite * (0.12 + 0.88 * smoothstep(0.2, 0.7, slope)) + 0.16 * red + 1.1 * blast + lavaRock) * soft + strewn + surf + 0.9 * rockyLake + (isle > 0 ? 0.35 + 0.5 * (1 - isle) : 0);
       // (And on open grassland, plains and meadows, 70% fewer again.)
       const open = bw.temperate > 0.5 ? Math.max(plain, bw.temperate * (1 - smoothstep(0.45, 0.6, generator.getForestDensity(wx, wz))) * (1 - smoothstep(0.3, 0.5, foothill))) : 0;
-      if (roll > chance * (1 - 0.7 * open * (1 - rockyLake))) continue;
+      if (roll > chance * (1 - 0.7 * open * (1 - Math.max(rockyLake, isle > 0 ? 1 : 0)))) continue;
 
       const r = hash2(gi, gj, seed + 3);
-      const boulder = surf > 0 || r < lavaRock || r < 0.75 * rockyLake || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite * smoothstep(0.12, 0.45, slope) + 0.4 * red + 0.55 * blast + 0.35 * strewn + 0.4 * toe);
+      const boulder = surf > 0 || r < lavaRock || r < 0.75 * rockyLake || r < 0.45 * (isle > 0 ? 1 : 0) || r < (bank ? 0.12 : 0.1 + 0.15 * foothill + 0.7 * foot + 0.2 * cliff + 0.45 * stony + (shore && shore.kind === 'rock' ? 0.35 : 0) + 0.5 * granite * smoothstep(0.12, 0.45, slope) + 0.4 * red + 0.55 * blast + 0.35 * strewn + 0.4 * toe);
       if (boulder && surf <= 0 && hash2(gi, gj, seed + 31) < 0.3 * open) continue; // (and a third fewer boulders out on the grassland)
       if (generator.caves.field.nearEntrance(wx, wz, 1.5)) continue; // keep cave entrances clear
       if (generator.nearTidePool?.(wx, wz)) continue; // and tide pools

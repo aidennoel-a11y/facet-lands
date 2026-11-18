@@ -385,9 +385,11 @@ export class Rivers {
     if (level < this.seaLevel + 1) return null;
     // (A bigger pond or lake, now and then, has an island in it.)
     const ih = hash2(Math.round(x * 3), Math.round(z * 3), 0x15a7);
-    const island = r >= 16 && ih < 0.4 ? (() => {
-      const a = hash2(Math.round(z * 3), Math.round(x * 3), 0x15a8) * Math.PI * 2, off = ih * r * 0.8;
-      return { x: x + Math.cos(a) * off, z: z + Math.sin(a) * off, r: r * (0.13 + 0.1 * hash2(Math.round(x), Math.round(z), 0x15a9)) };
+    // (Less often than they were, but more to them: a ragged rocky knoll, grass and trees on it.)
+    const island = r >= 20 && ih < 0.16 ? (() => {
+      const a = hash2(Math.round(z * 3), Math.round(x * 3), 0x15a8) * Math.PI * 2, off = (ih / 0.16) * r * 0.45;
+      const k = hash2(Math.round(x), Math.round(z), 0x15a9);
+      return { x: x + Math.cos(a) * off, z: z + Math.sin(a) * off, r: r * (0.18 + 0.12 * k), top: 2.5 + 4 * hash2(Math.round(x * 5), Math.round(z * 5), 0x15aa), p: [k * 6.28, ih * 40, k * 17] };
     })() : null;
     return {
       x, z, r, level, seed: rand() * 100, outlet, island,
@@ -918,9 +920,27 @@ export class Rivers {
 
   /** A pond's (wobbly) radius in the direction of (x, z). */
   /** Whether (x, z) is up on a pond's island (above its water), if it has one. */
-  static onIsland(pond, x, z) {
+  static onIsland(pond, x, z, inset = 0) {
     const i = pond.island;
-    return !!i && !pond.crater && !pond.hot && !pond.oasis && Math.hypot(x - i.x, z - i.z) < i.r;
+    return !!i && !pond.crater && !pond.hot && !pond.oasis && Math.hypot(x - i.x, z - i.z) < Rivers.islandRadius(i, x, z) - inset;
+  }
+
+  /** A pond's island's (ragged) radius in the direction of (x, z): bays and points, never a round. */
+  static islandRadius(i, x, z) {
+    if (!i.p) return i.r;
+    const a = Math.atan2(z - i.z, x - i.x);
+    return i.r * (1 + 0.24 * Math.sin(3 * a + i.p[0]) + 0.13 * Math.sin(5 * a + i.p[1]) + 0.07 * Math.sin(9 * a + i.p[2]));
+  }
+
+  /** How far in on a lake's island (x, z) is (0 at its shore, 1 at its middle), or 0 if not on one. */
+  islandAt(x, z) {
+    for (const item of this.#near(x, z) ?? []) {
+      const pond = item.pond;
+      if (!pond || !Rivers.onIsland(pond, x, z)) continue;
+      const R = Rivers.islandRadius(pond.island, x, z);
+      return Math.max(0, 1 - Math.hypot(x - pond.island.x, z - pond.island.z) / R);
+    }
+    return 0;
   }
 
   static pondRadius(pond, x, z) {
@@ -973,10 +993,13 @@ export class Rivers {
         const isl = pond.island;
         if (isl && !pond.crater && !pond.hot && !pond.oasis) {
           const di = Math.hypot(x - isl.x, z - isl.z);
-          if (di < isl.r + 2.5) {
-            const t = Math.max(0, isl.r - di);
-            island = Math.max(island, pond.level + 0.55 + Math.min(4, t * 0.35 + 0.03 * t * t) - Math.max(0, di - isl.r) * 0.6);
-            if (di < isl.r) continue;
+          const IR = Rivers.islandRadius(isl, x, z);
+          if (di < IR + 2.5) {
+            const t = Math.max(0, IR - di), top = isl.top ?? 4;
+            // (A knoll: shelving up from the water, then rising to a rough top, lumpy all over.)
+            const lump = isl.p ? 0.5 * Math.sin(x * 0.45 + isl.p[0]) * Math.sin(z * 0.4 + isl.p[1]) * Math.min(1, t / 3) : 0;
+            island = Math.max(island, pond.level + 0.55 + Math.min(top, t * 0.35 + (0.03 + 0.02 * top / 4) * t * t) + lump - Math.max(0, di - IR) * 0.6);
+            if (di < IR) continue;
           }
         }
         // (A great alpine lake: along much of its shore the land stands up in cliffs straight out of the water.)
@@ -1080,7 +1103,7 @@ export class Rivers {
         const r = Rivers.pondRadius(pond, x, z);
         const half = Math.max(r, 4.5);
         if (d > half + margin) continue;
-        if (Rivers.onIsland(pond, x, z) && margin < 1) continue; // (out on its island: dry land)
+        if (Rivers.onIsland(pond, x, z, Math.max(0, margin))) continue; // (out on its island, as far in as asked: dry land)
         if (!best || d - half < best.d - best.half) best = { d, level: pond.level, water: r, half, stream: false, pond: true, crater: !!pond.crater, alpine: !!pond.alpine, cliffs: !!pond.cliffs, hot: !!pond.hot, oasis: !!pond.oasis, fx: 0, fz: 0, drop: 0 };
         continue;
       }

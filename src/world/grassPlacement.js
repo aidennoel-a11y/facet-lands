@@ -59,6 +59,16 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
     }
     return v;
   };
+  // (A giant flower meadow: the grass cropped short under the great flowers. On a 24 m grid, remembered.)
+  const giants = new Map();
+  const giantAt = (wx, wz) => {
+    if (!generator.giantMeadowAt) return 0;
+    const key = Math.floor(wx / 24) * 65536 + Math.floor(wz / 24);
+    let v = giants.get(key);
+    if (v === undefined) giants.set(key, (v = generator.giantMeadowAt(Math.floor(wx / 24) * 24 + 12, Math.floor(wz / 24) * 24 + 12)));
+    return v;
+  };
+  const tilt = new Quaternion(), yaw = new Quaternion(), normal = new Vector3(), probe = { normalY: 1 };
   let count = 0;
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
@@ -141,8 +151,9 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       // it grows tall and rank (nearly twice as long) or cropped short.
       const n = generator.grassNoise.fbm(wx * 0.006 + 50, wz * 0.006 - 50, 2);
       const tall = smoothstep(0.08, 0.38, n), short = smoothstep(-0.08, -0.38, n);
-      const long = (1 + 0.9 * tallLand) * (1 + 0.95 * tall) * (1 - 0.4 * short) * (1 + 0.25 * bw.parkland);
-      const stalky = Math.min(1, tallLand + 0.6 * tall);
+      const giant = giantAt(wx, wz);
+      const long = (1 + 0.9 * tallLand * (1 - giant)) * (1 + 0.95 * tall * (1 - giant)) * (1 - 0.4 * short) * (1 + 0.25 * bw.parkland) * (1 - 0.6 * giant);
+      const stalky = Math.min(1, tallLand + 0.6 * tall) * (1 - giant);
       const pick = hash2(gi, gj, seed + 8);
       // Sedges by the water and in the marshes; fine golden-headed grass
       // where it runs yellow.
@@ -153,8 +164,22 @@ export function placeGrass(generator, config, cx, cz, groundHeightAt, far = fals
       const kind = hash2(gi, gj, seed + 10) < marsh ? 5 : pick < sedge ? 3 : pick < sedge + golden ? 4 : pick < sedge + golden + 0.35 * stalky ? 1 : pick < sedge + golden + 0.35 * stalky + 0.12 + 0.15 * stalky ? 2 : 0;
       kinds[count] = kind;
       warms[count] = warmAt(wx, wz);
-      position.set(lx, ground - 0.05, lz);
-      rotation.setFromAxisAngle(up, hash2(gi, gj, seed + 5) * Math.PI * 2);
+      // (Leaning with the slope, so the uphill blades don't start inside the hill; and lifted
+      // where the clump sits across a fold of the ground, so none starts under the far facet.)
+      normal.set(surface.normalX ?? 0, surface.normalY, surface.normalZ ?? 0).normalize();
+      const reach = 0.4 * s;
+      let lift = 0;
+      for (let k = 0; k < 4; k++) {
+        const ox = k === 0 ? reach : k === 1 ? -reach : 0, oz = k === 2 ? reach : k === 3 ? -reach : 0;
+        const px = Math.min(chunkSize - 0.01, Math.max(0.01, lx + ox)), pz = Math.min(chunkSize - 0.01, Math.max(0.01, lz + oz));
+        const g = groundHeightAt(px, pz, probe);
+        const plane = ground - (normal.x * (px - lx) + normal.z * (pz - lz)) / Math.max(0.3, normal.y);
+        if (Number.isFinite(g)) lift = Math.max(lift, g - plane);
+      }
+      position.set(lx, ground - 0.05 + Math.min(0.6, lift), lz);
+      tilt.setFromUnitVectors(up, normal);
+      yaw.setFromAxisAngle(up, hash2(gi, gj, seed + 5) * Math.PI * 2);
+      rotation.multiplyQuaternions(tilt, yaw);
       scale.set(s, s * (0.8 + hash2(gi, gj, seed + 6) * 0.5) * (kind === 1 || kind === 3 ? 1 + 0.3 * wet : long), s);
       matrix.compose(position, rotation, scale).toArray(matrices, count * 16);
       count++;

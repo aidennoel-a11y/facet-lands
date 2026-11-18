@@ -42,6 +42,8 @@ function warned(set = false) {
 }
 const esc = (v) => String(v).replace(/[&"<]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;' })[c]);
 
+const FAR_DETAIL = ['Normal', 'More', 'High', 'Ultra'];
+
 export const MODES = {
   survival: { name: 'Survival', blurb: 'Hunger, thirst, cold and wild animals. Gather, craft and build to stay alive. No flying.' },
   creative: { name: 'Creative', blurb: 'No health or hunger. Fly anywhere and explore the world freely.' },
@@ -502,6 +504,8 @@ export class StartMenu {
       </div>
       <p class="sm-qnote">${QUALITY[quality()].blurb}${qualityChosen() ? '' : ' <em>Picked to suit this computer.</em>'} <em>(Takes effect when a world is next started.)</em></p>
       <label class="sm-field sm-slide">View distance <output>${km(view)}</output><input type="range" data-k="view" min="5" max="${MAX_VIEW}" step="1" value="${view}" /></label>
+      <label class="sm-field sm-slide">Far detail <output>${FAR_DETAIL[s.farDetail ?? 0]}</output><input type="range" data-k="farDetail" min="0" max="3" step="1" value="${s.farDetail ?? 0}" /></label>
+      <p class="sm-note">How good the trees and woods look far off. Higher costs frame rate; shows as the land round you is next built.</p>
       ${pick('Grass', [[0.5, 'Less'], [1, 'Normal'], [1.6, 'More']], s.grass)}
       ${pick('Shadows', [['off', 'Off'], ['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], s.shadows)}
       <label class="sm-field sm-slide">Mouse sensitivity <output>${s.sensitivity.toFixed(2)}×</output><input type="range" data-k="sensitivity" min="0.25" max="2.5" step="0.05" value="${s.sensitivity}" /></label>
@@ -533,7 +537,7 @@ export class StartMenu {
       input.addEventListener('input', () => {
         const k = input.dataset.k, v = +input.value;
         s[k] = k === 'view' ? (v === preset ? null : v) : v;
-        input.previousElementSibling.textContent = k === 'view' ? km(v) : k === 'fov' ? `${v}°` : `${v.toFixed(2)}×`;
+        input.previousElementSibling.textContent = k === 'view' ? km(v) : k === 'farDetail' ? FAR_DETAIL[v] : k === 'fov' ? `${v}°` : `${v.toFixed(2)}×`;
         changed();
       });
     }

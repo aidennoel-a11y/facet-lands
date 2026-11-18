@@ -163,6 +163,21 @@ export class Wildfires {
     return true;
   }
 
+  // (Flames licking up a burnt tree's trunk, where the crown's flames were.)
+  #trunkFire(cell, t) {
+    const eye = this.eye;
+    if (eye && Math.hypot(t.x - eye.x, t.z - eye.z) > 500) return;
+    const top = t.crown ? t.crown.bottom + (t.crown.top - t.crown.bottom) * 0.35 : t.y + 4;
+    for (let n = 0; n < 4; n++) {
+      const slot = this.freeFlames.pop();
+      if (slot === undefined) break;
+      const h = t.y + (top - t.y) * (n + Math.random()) / 4, a = Math.random() * Math.PI * 2, r = (t.radius ?? 0.3) * 0.9;
+      this.flames.setSlot(slot, { offset: [t.x + Math.cos(a) * r, h, t.z + Math.sin(a) * r], velocity: [0, rnd(1.5, 2.6), 0], period: rnd(0.6, 1), phase: Math.random(), from: rnd(0.6, 1.1), to: 0.15, colour: FLAMES[Math.floor(Math.random() * 3)], glow: 1 });
+      cell.flames.push(slot);
+    }
+    this.puffsDirty = true;
+  }
+
   #out(cell) {
     cell.state = 2;
     cell.day = this.day;
@@ -276,7 +291,15 @@ export class Wildfires {
         for (const b of c.trees ?? []) {
           if (b.scorched) continue;
           b.burnt += step;
-          if (b.burnt > (b.t.bush ? 14 : 32)) (b.scorched = true), this.onScorch?.(b.t);
+          if (b.burnt > (b.t.bush ? 14 : 32)) {
+            b.scorched = true;
+            this.onScorch?.(b.t);
+            // (Its leaves gone, the blackened tree burns on: flames up its trunk a while yet, not out at once.)
+            if (!b.t.bush) {
+              c.dur = Math.max(c.dur, c.t + 35 + 15 * ((Math.sin(c.i * 13.1 + c.k * 7.7) * 43758.5) % 1 + 1) % 1);
+              this.#trunkFire(c, b.t);
+            }
+          }
         }
         if (c.t >= c.dur || (rain > 0.5 && roll(c.i, c.k, 0, 0) < step * 0.04 * rain)) {
           this.#out(c);
