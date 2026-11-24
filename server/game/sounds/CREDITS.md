@@ -15,7 +15,7 @@ pitch and volume. Sounds not listed here are synthesized in the game itself.
 | `snap-1` | blukotek | CC0 1.0 | freesound.org/people/blukotek/sounds/251660 (via Minetest Game) |
 | `stream-*` | Yuval | CC0 1.0 | Minetest Game, env_sounds mod |
 | `splash-1` | tran5ient | CC0 1.0 | freesound.org/people/tran5ient/sounds/190080 (via VoxeLibre) |
-| `bark-*`, `wolf-growl-1` | Hybrid Dog | CC0 1.0 | github.com/HybridDog/dogblocks (via VoxeLibre) |
+| `bark-*`, `wolf-growl-*` (deepened and roughened from his growl) | Hybrid Dog | CC0 1.0 | github.com/HybridDog/dogblocks (via VoxeLibre) |
 | `sheep-2`, `sheep-3` | VoxeLibre contributors | CC0 1.0 | VoxeLibre mobs_mc |
 | `step-rock-*` | Erdie | CC BY 3.0 | freesound.org/people/Erdie/sounds/41579 (via Minetest Game) |
 | `step-water-*` | AGFX | CC BY 3.0 | freesound.org/people/AGFX/packs/1253 (via Minetest Game) |

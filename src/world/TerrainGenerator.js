@@ -631,7 +631,7 @@ export class TerrainGenerator {
       const km = smoothstep(0.4, 0.8, jb);
       const kj = smoothstep(0.04, 0.4, jb) * (1 - km); // (all of it its own: nothing else mixed in)
       const cl = this.#cherryLand(x, z), bl = this.#bambooLand(x, z);
-      const kc = cl * own * (1 - kj - km), kb = bl * own * (1 - kj - km - kc);
+      const kc = cl > 0 ? cl * Math.max(0, own - out.jungle) * (1 - smoothstep(0, 0.12, out.jungle)) * (1 - kj - km) : 0, kb = bl * own * (1 - kj - km - kc);
       // (Round every jungle and every jungle range, a band of monsoon forest; out in
       // the green lowlands now and then, an ancient oak wood. See #monsoonRing, #oakLand.)
       const rest = own * (1 - kj - km - kc - kb);

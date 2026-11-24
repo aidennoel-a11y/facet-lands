@@ -253,6 +253,11 @@ export function placeTrees(generator, config, cx, cz, groundHeightAt, boulders =
       const scorch = generator.scorchAt ? generator.scorchAt(wx, wz) : 0; // (whatever country it's burnt into)
       if (scorch >= 2) continue;
       if (scorch >= 1) species = { type: hash2(gi, gj, seed + 26) < 0.6 ? 'charredSnag' : 'deadPine' };
+      // (No cherry trees in or at the edge of a jungle, in the lowlands or up its mountains: none there at all.)
+      if (species.type === 'cherryBlossom' || species.type === 'cherryRound') {
+        const w = generator.getBiomeWeights(wx, wz, {});
+        if ((w.jungle ?? 0) + (w.jungleMountains ?? 0) + (w.monsoon ?? 0) > 0.02) continue;
+      }
       // Thickets of bamboo along the jungle's edges.
       if (biome.id === 'jungle' || biome.id === 'temperate' || biome.id === 'wetland') {
         const j = generator.getBiomeWeights(wx, wz, {}).jungle;

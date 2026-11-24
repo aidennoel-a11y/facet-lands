@@ -373,7 +373,7 @@ export function createTreeLayer({ rocks = null } = {}) {
           if (Math.abs(ox) > 9 || Math.abs(oz) > 9) continue;
           const bottom = list[k + 2], top = list[k + 3];
           if (y < bottom + 0.15 || y > top - 0.1) continue;
-          const r = list[k + 4] * (list[k + 5] ? Math.max(0.2, (top - y) / (top - bottom)) : Math.sin(Math.PI * Math.min(1, Math.max(0, (y - bottom) / (top - bottom)))) * 0.5 + 0.5) * 0.85;
+          const r = list[k + 4] * (list[k + 5] & 1 ? Math.max(0.2, (top - y) / (top - bottom)) : Math.sin(Math.PI * Math.min(1, Math.max(0, (y - bottom) / (top - bottom)))) * 0.5 + 0.5) * 0.85;
           const d = Math.hypot(ox, oz);
           if (d < r) deep = Math.max(deep, 1 - d / r);
         }
@@ -396,10 +396,25 @@ export function createTreeLayer({ rocks = null } = {}) {
             const bottom = list[k + 2], top = list[k + 3];
             const low = Math.max(bottom, feetY + 0.35);
             if (low > feetY + height || top < feetY + 0.35) continue;
-            // (A pine's crown is widest at its foot.)
-            const r = list[k + 4] * (list[k + 5] ? Math.max(0.25, (top - low) / (top - bottom)) : 1);
+            const bush = list[k + 5] & 2;
+            // (How wide the crown is where it meets your body: a pine's widest at its foot, a round crown
+            // at its middle, narrowing over and under.)
+            const hi = Math.min(top, feetY + height);
+            const at = list[k + 5] & 1 ? low : Math.min(hi, Math.max(low, (bottom + top) / 2));
+            const r = bush ? list[k + 4] * (list[k + 5] & 1 ? Math.max(0.25, (top - low) / (top - bottom)) : 1)
+              : list[k + 4] * (list[k + 5] & 1 ? Math.max(0.25, (top - at) / (top - bottom)) : 0.5 + 0.5 * Math.sin(Math.PI * Math.min(1, Math.max(0, (at - bottom) / (top - bottom))))) * 0.88;
             const d = Math.hypot(ox, oz);
             if (d > r + radius) continue;
+            // (A tree's crown: solid leaves and boughs, no part of you in them.)
+            if (!bush) {
+              const hard = r + radius;
+              if (d < hard) {
+                const ux = d > 1e-4 ? ox / d : 1, uz = d > 1e-4 ? oz / d : 0;
+                position.x += ux * (hard - d);
+                position.z += uz * (hard - d);
+              }
+              continue;
+            }
             // (Hard going: down to a fifth of your pace in the thick of a
             // bush or the low boughs, and more for each one you're in.)
             slow *= 0.2 + 0.8 * Math.min(1, Math.max(0, (d - r * 0.4) / (r * 0.6 + radius)));
@@ -571,7 +586,7 @@ export function createTreeLayer({ rocks = null } = {}) {
         for (const [type, list] of Object.entries(placed)) {
           const c = profileOf(type);
           if (!c || STIFF.has(type)) continue;
-          for (const t of list) foliage.push(originX + t.x, originZ + t.z, t.y + c.bottom * t.sy, t.y + c.top * t.sy, c.radius * t.s, c.cone ? 1 : 0);
+          for (const t of list) foliage.push(originX + t.x, originZ + t.z, t.y + c.bottom * t.sy, t.y + c.top * t.sy, c.radius * t.s, (c.cone ? 1 : 0) | (c.bottom * t.sy < 1.3 ? 2 : 0)); // (flags: 1 a cone, 2 low down, a bush's)
         }
       }
 

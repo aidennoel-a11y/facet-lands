@@ -22,7 +22,7 @@ const CLIPS = {
   'step-grass': 3, 'step-dirt': 2, 'step-gravel': 4, 'step-rock': 3, 'step-sand': 3, 'step-snow': 5, 'step-water': 3,
   wood: 2, snap: 1, chop: 3, dig: 2, hurt: 1, splash: 2, stream: 4,
   'rock-surf': 1, 'body-splash': 3, 'shore-calm': 1, 'shore-mid': 1, 'shore-waves': 1, 'rock-coast': 1, 'rough-sea': 1,
-  bark: 3, 'wolf-growl': 1, 'bear-growl': 3, 'bear-huff': 3, hiss: 1, pig: 2, sheep: 3, turkey: 1, frog: 3,
+  bark: 3, 'wolf-growl': 2, 'bear-growl': 3, 'bear-huff': 3, hiss: 1, pig: 2, sheep: 3, turkey: 1, frog: 3,
   'bird-cardinal': 3, 'bird-bluebird': 3, 'bird-goldfinch': 3,
   horse: 5, roar: 4, elephant: 3, cattle: 4, goat: 4, rabbit: 4,
   'wolf-howl': 3, owl: 1, eagle: 2, goose: 3, hippo: 1, camel: 1, moose: 1, monkey: 3, parrot: 4, toucan: 1, croc: 1, boar: 1, fox: 3, tiger: 1,
