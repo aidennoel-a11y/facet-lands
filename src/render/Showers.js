@@ -62,10 +62,14 @@ const fragmentShader = /* glsl */ `
     float around = atan(vNormal.z, vNormal.x);
     float streaks = 0.6 + 0.4 * noise(vec2(around * vRadius * 0.12, vWorld.y * 0.012 + time * 0.9));
     float body = 0.35 + 0.65 * noise(vec2(around * 2.2 + vAxis.x * 0.01, vY * 1.6 - time * 0.04 + vAxis.y * 0.01));
-    float hang = smoothstep(0.0, 0.1, vY) * (1.0 - smoothstep(0.9, 1.0, vY));
-    // Not when you're in it (the rain round you is drawn up close: see Rain).
-    float near = smoothstep(vRadius * 0.7, vRadius * 0.7 + 260.0, distance(cameraPosition.xz, vAxis));
     float dist = distance(cameraPosition, vWorld);
+    // (Thinning out towards the ground, ragged, as it nears you: a far one reaches the land, too far
+    // off to see it cut through the trees; a near one hangs from its cloud and fades out above the woods.)
+    float farness = smoothstep(900.0, 3200.0, dist);
+    float ragged = 0.7 + 0.3 * noise(vec2(around * 3.1 + vAxis.x * 0.02, time * 0.05));
+    float hang = smoothstep(0.0, mix(0.55, 0.12, farness) * ragged, vY) * (1.0 - smoothstep(0.9, 1.0, vY));
+    // Not when you're in it or close by (the rain round you is drawn up close: see Rain): it fades away as it comes.
+    float near = smoothstep(vRadius * 0.9, vRadius * 0.9 + 1100.0, distance(cameraPosition.xz, vAxis));
     float haze = smoothstep(fogNear, fogFar * 1.3, dist);
     float a = opacity * vRain * pow(through, 0.9) * streaks * body * hang * near * (1.0 - 0.45 * haze);
     float lit = flash * (1.0 - smoothstep(0.0, 450.0, distance(vAxis, flashAt)));
